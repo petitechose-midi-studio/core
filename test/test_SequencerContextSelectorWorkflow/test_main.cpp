@@ -119,6 +119,7 @@ void test_exact_target_and_hidden_state_fail_closed() {
 
     workflow.press(Focus::PAGE, true, 7U, false);
     state.reset();
+    assert(!workflow.active());
     result = workflow.release();
     assert(result.action == Action::NONE);
     assert(!workflow.active());

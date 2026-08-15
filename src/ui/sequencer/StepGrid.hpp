@@ -48,12 +48,7 @@ private:
     static void onTileButtonDrawEvent(lv_event_t* event);
     void markGeometryDirty();
     void renderTileIndex(uint8_t tileIndex, const TileRenderState& state, const TileRenderDiff& diff);
-    void renderTileShape(uint8_t tileIndex,
-                         const sequencer::grid::StepVisualStyle& visual,
-                         lv_coord_t noteBaseX,
-                         lv_coord_t noteBaseY,
-                         lv_opa_t strokeOpa);
-    void renderTileBar(uint8_t tileIndex, bool visible, bool active);
+    void renderTilePlayhead(uint8_t tileIndex, bool visible, bool active);
     void renderTile(uint8_t tileIndex,
                     const TileRenderState& state,
                     const TileRenderDiff& diff,
@@ -86,6 +81,12 @@ private:
 
     struct RenderCacheState {
         std::array<TileRenderCache, 8> tiles{};
+        sequencer::grid::StepGridPresentation presentation =
+            sequencer::grid::StepGridPresentation::MELODIC;
+        uint32_t accentColor = 0;
+        sequencer::grid::StepPitchViewport pitchViewport{};
+        oc::note::sequencer::StepSequencerScaleSettings scaleSettings{};
+        bool chromaticPitchEditing = false;
         core::state::sequencer::StepProperty property =
             core::state::sequencer::StepProperty::NOTE;
         InlineFeedbackSnapshot feedback{};
@@ -102,7 +103,6 @@ private:
     std::array<lv_obj_t*, 8> original_note_labels_{};
     std::array<lv_obj_t*, 8> step_inline_icons_{};
     std::array<lv_obj_t*, 8> step_buttons_{};
-    std::array<lv_obj_t*, 8> step_shapes_{};
     std::array<TileButtonDrawContext, 8> tile_button_draw_contexts_{};
     GeometryCacheState geometry_{};
     RenderCacheState render_cache_{};

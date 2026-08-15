@@ -67,7 +67,7 @@ FLASHMEM void ProjectHandler::navigate(float delta) {
         navigation_.clearLifecycleFeedback();
     }
     if (isProjectNameEditorNode(navigation_.currentNode.get())) {
-        navigation_.projectNameKeyIndex = core::state::project::projectNameKeyboardMoveColumn(
+        navigation_.projectNameKeyIndex = core::state::interaction::textKeyboardMoveColumn(
             navigation_.projectNameKeyIndex,
             signedStepCount(delta)
         );

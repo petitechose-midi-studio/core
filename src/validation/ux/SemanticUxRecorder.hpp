@@ -21,6 +21,28 @@ enum class EncoderValueKind : uint8_t {
     Absolute,
 };
 
+enum class EncoderContractOwner : uint8_t {
+    SequencerRoot,
+    DrumLaneEditor,
+};
+
+enum class EncoderContractMode : uint8_t {
+    Raw,
+    Normalized,
+};
+
+struct EncoderContractTraceEvent {
+    EncoderContractOwner owner = EncoderContractOwner::SequencerRoot;
+    EncoderContractMode mode = EncoderContractMode::Normalized;
+    oc::type::EncoderID encoderId = 0;
+    int32_t minimumMilli = 0;
+    int32_t maximumMilli = 1000;
+    int32_t positionMilli = 0;
+    int32_t normalizedTurnsMilli = 0;
+    uint8_t discreteSteps = 0;
+    uint8_t discreteTicksPerStep = 0;
+};
+
 struct SemanticUxSnapshot {
     core::ui::ViewType view = core::ui::ViewType::MACRO;
     core::ui::OverlayType overlay = core::ui::OverlayType::NONE;
@@ -57,6 +79,7 @@ public:
     void onBindingTrace(const oc::core::input::InputBindingTraceEvent& event);
     void onBindingTrace(const oc::core::input::InputBindingTraceEvent& event,
                         const SemanticUxSnapshot& preSnapshot);
+    void onEncoderContractTrace(const EncoderContractTraceEvent& event);
     void flush(uint32_t nowMs, const core::state::CoreState& state);
     void flush(uint32_t nowMs, const SemanticUxSnapshot& snapshot);
 
@@ -83,6 +106,7 @@ private:
     enum class RecordKind : uint8_t {
         Button,
         Encoder,
+        EncoderContract,
     };
 
     struct PendingRecord {
@@ -99,6 +123,7 @@ private:
         oc::type::ScopeID authorityScope = 0;
         EncoderValueKind encoderValueKind = EncoderValueKind::Absolute;
         int32_t encoderValueMilli = 0;
+        EncoderContractTraceEvent encoderContract{};
         SemanticUxSnapshot preSnapshot{};
         SemanticUxContext preContext{};
         oc::core::input::InputBindingTraceEvent traceEvent{};
@@ -122,6 +147,8 @@ private:
     uint32_t dropped_count_ = 0;
     uint32_t reported_dropped_count_ = 0;
     oc::core::input::InputBindingTraceEvent last_semantic_event_{};
+    core::state::interaction::ControllerIntent last_semantic_intent_ =
+        core::state::interaction::ControllerIntent::NONE;
     const char* last_semantic_effect_ = nullptr;
     const char* last_semantic_outcome_ = nullptr;
     uint32_t last_semantic_sequence_ = 0;
@@ -130,5 +157,22 @@ private:
     SemanticUxLineSink* sink_ = nullptr;
     bool enabled_ = false;
 };
+
+// Diagnostic producers stay allocation-free and unaware of the recorder
+// lifetime. The firmware installs its PSRAM-backed recorder explicitly; the
+// normal product profile leaves this provider unset and pays no runtime cost.
+void setCurrentEncoderContractTraceRecorder(SemanticUxRecorder* recorder);
+void clearCurrentEncoderContractTraceRecorder(SemanticUxRecorder* recorder);
+void recordEncoderContractTrace(
+    EncoderContractOwner owner,
+    EncoderContractMode mode,
+    oc::type::EncoderID encoderId,
+    float minimum,
+    float maximum,
+    uint8_t discreteSteps,
+    uint8_t discreteTicksPerStep,
+    float normalizedTurns,
+    float position
+);
 
 }  // namespace core::validation::ux

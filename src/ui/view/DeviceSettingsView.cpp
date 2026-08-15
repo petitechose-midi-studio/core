@@ -4,6 +4,7 @@
 #include <config/Timing.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include "ui/theme/StandaloneListVisuals.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
 
 namespace core::ui {
@@ -121,6 +122,7 @@ void DeviceSettingsView::render() {
         .rowCount = page.rowCount,
         .selectedIndex = page.selectedIndex,
         .dataRevision = page.dataRevision,
+        .visualTokens = &standalone::theme::CONTROLLER_LIST_VISUALS,
     });
 
 }

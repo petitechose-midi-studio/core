@@ -10,6 +10,7 @@
 namespace {
 
 using core::state::project::ProjectNodeId;
+using core::state::project::ProjectMenuRowTone;
 using core::state::project::ProjectTab;
 namespace scale_catalog = core::state::sequencer::scale_catalog;
 
@@ -36,12 +37,24 @@ core::state::project::ProjectMenuContext projectContext(const char* id,
 }
 
 void switchToStorage(core::state::project::ProjectNavigationState& navigation) {
-    core::state::project::switchProjectTab(navigation, 1);
-    core::state::project::switchProjectTab(navigation, 1);
-    core::state::project::switchProjectTab(navigation, 1);
+    core::state::project::switchProjectTab(navigation, 4);
 }
 
-void test_overview_root_exposes_project_actions() {
+void test_project_tab_catalog_is_explicit_and_excludes_modulators() {
+    using core::state::project::projectRootTabAt;
+    using core::state::project::projectRootTabCount;
+    using core::state::project::projectRootTabIndex;
+
+    assert(projectRootTabCount() == 5U);
+    assert(projectRootTabAt(0) == ProjectTab::OVERVIEW);
+    assert(projectRootTabAt(1) == ProjectTab::MUSIC);
+    assert(projectRootTabAt(2) == ProjectTab::TRANSPORT);
+    assert(projectRootTabAt(3) == ProjectTab::ROUTING);
+    assert(projectRootTabAt(4) == ProjectTab::STORAGE);
+    assert(projectRootTabIndex(ProjectTab::MODULATORS) < 0);
+}
+
+void test_overview_root_is_a_navigable_project_summary() {
     core::state::project::ProjectNavigationState navigation;
 
     const auto page = core::state::project::buildProjectMenuPage(
@@ -51,16 +64,28 @@ void test_overview_root_exposes_project_actions() {
     assert(page.rowCount == 5);
     assert(page.selectedIndex == 0);
     assert(std::string(page.meta) == "OVERVIEW  p002*");
-    assert(std::string(page.rows[0].label) == "New Project");
-    assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Action);
+    assert(std::string(page.rows[0].label) == "Music");
+    assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[0].enabled);
-    assert(std::string(rowValue(page.rows[0])) == "Reset");
-    assert(std::string(page.rows[3].label) == "Save As");
-    assert(std::string(rowValue(page.rows[3])) == "Name");
-    assert(std::string(page.rows[4].label) == "Rename");
-    assert(std::string(rowValue(page.rows[4])) == "Current");
+    assert(page.rows[0].hasTarget);
+    assert(page.rows[0].target == ProjectNodeId::MUSIC_ROOT);
+    assert(std::string(page.rows[1].label) == "Tempo");
+    assert(std::string(rowValue(page.rows[1])) == "120 BPM");
+    assert(page.rows[1].target == ProjectNodeId::TRANSPORT_ROOT);
+    assert(std::string(page.rows[2].label) == "Clock");
+    assert(std::string(rowValue(page.rows[2])) == "Auto");
+    assert(std::string(page.rows[3].label) == "Routing");
+    assert(std::string(rowValue(page.rows[3])) == "16 Tracks");
+    assert(std::string(page.rows[4].label) == "Storage");
+    assert(std::string(rowValue(page.rows[4])) == "Modified");
+    assert(page.rows[4].target == ProjectNodeId::STORAGE_ROOT);
 
-    std::cout << "[PASS] test_overview_root_exposes_project_actions\n";
+    assert(core::state::project::enterFocusedProjectRow(navigation));
+    assert(navigation.activeTab.get() == ProjectTab::MUSIC);
+    assert(navigation.currentNode.get() == ProjectNodeId::MUSIC_ROOT);
+    assert(navigation.depth.get() == 0U);
+
+    std::cout << "[PASS] Overview is a navigable project summary\n";
 }
 
 void test_enter_music_then_scale_and_back() {
@@ -102,8 +127,8 @@ void test_project_settings_tab_cycle_excludes_first_rank_modulators() {
     core::state::project::ProjectNavigationState navigation;
 
     core::state::project::switchProjectTab(navigation, -1);
-    assert(navigation.activeTab.get() == ProjectTab::ROUTING);
-    assert(navigation.currentNode.get() == ProjectNodeId::ROUTING_ROOT);
+    assert(navigation.activeTab.get() == ProjectTab::STORAGE);
+    assert(navigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
     core::state::project::switchProjectTab(navigation, 1);
     assert(navigation.activeTab.get() == ProjectTab::OVERVIEW);
@@ -152,6 +177,7 @@ void test_new_project_confirmation_page_defaults_to_save_choice() {
     assert(std::string(page.rows[1].label) == "Don't Save");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "Reset");
+    assert(page.rows[1].tone == ProjectMenuRowTone::Destructive);
     assert(std::string(page.rows[2].label) == "Cancel");
     assert(page.rows[2].enabled);
 
@@ -210,7 +236,7 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     context.projectScale.type = scale_catalog::StepSequencerScaleType::HarmonicMinor;
 
     const auto page = core::state::project::buildProjectMenuPage(navigation, context);
-    assert(page.rowCount == 8);
+    assert(page.rowCount == 5);
     assert(std::string(page.rows[0].label) == "Scale");
     assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[0].hasTarget);
@@ -219,14 +245,28 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     assert(std::string(page.rows[3].label) == "Step Paste");
     assert(page.rows[3].kind == core::state::project::ProjectMenuRowKind::Value);
     assert(std::string(rowValue(page.rows[3])) == "Extend");
-    assert(std::string(page.rows[4].label) == "Lane 1 Default");
-    assert(std::string(rowValue(page.rows[4])) == "CC 1");
-    assert(std::string(page.rows[5].label) == "Lane 2 Default");
-    assert(std::string(rowValue(page.rows[5])) == "CC 11");
-    assert(std::string(page.rows[6].label) == "Lane 3 Default");
-    assert(std::string(rowValue(page.rows[6])) == "CC 74");
-    assert(std::string(page.rows[7].label) == "Lane 4 Default");
-    assert(std::string(rowValue(page.rows[7])) == "CC 71");
+    assert(std::string(page.rows[4].label) == "CC Defaults");
+    assert(std::string(rowValue(page.rows[4])) == "4 Lanes");
+    assert(page.rows[4].kind == core::state::project::ProjectMenuRowKind::Folder);
+    assert(page.rows[4].hasTarget);
+    assert(page.rows[4].target == ProjectNodeId::MUSIC_CC_DEFAULTS);
+
+    navigation.focusedRow.set(4U);
+    assert(core::state::project::enterFocusedProjectRow(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MUSIC_CC_DEFAULTS);
+    assert(navigation.depth.get() == 1U);
+    const auto defaultsPage = core::state::project::buildProjectMenuPage(navigation, context);
+    assert(defaultsPage.rowCount == 4U);
+    assert(std::string(defaultsPage.meta) == "MUSIC > CC DEFAULTS");
+    assert(std::string(defaultsPage.rows[0].label) == "Lane 1");
+    assert(std::string(rowValue(defaultsPage.rows[0])) == "CC 1");
+    assert(std::string(rowValue(defaultsPage.rows[1])) == "CC 11");
+    assert(std::string(rowValue(defaultsPage.rows[2])) == "CC 74");
+    assert(std::string(defaultsPage.rows[3].label) == "Lane 4");
+    assert(std::string(rowValue(defaultsPage.rows[3])) == "CC 71");
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MUSIC_ROOT);
+    assert(navigation.focusedRow.get() == 4U);
 
     std::cout << "[PASS] test_music_root_scale_row_summarizes_key_and_folder_target\n";
 }
@@ -253,7 +293,7 @@ void test_transport_rows_use_runtime_context() {
 
 void test_routing_rows_expose_all_track_output_channels() {
     core::state::project::ProjectNavigationState navigation;
-    core::state::project::switchProjectTab(navigation, 4);
+    core::state::project::switchProjectTab(navigation, 3);
 
     auto context = core::state::project::ProjectMenuContext{};
     for (uint8_t i = 0; i < context.outputMidiChannels.size(); ++i) {
@@ -287,6 +327,9 @@ void test_storage_has_six_rows_and_read_only_project_identity() {
     );
     assert(page.rowCount == 6);
     assert(std::string(page.meta) == "STORAGE  p002*");
+    for (uint8_t row = 0; row < 5U; ++row) {
+        assert(page.rows[row].tone == ProjectMenuRowTone::Neutral);
+    }
     assert(std::string(page.rows[5].label) == "Project");
     assert(page.rows[5].kind == core::state::project::ProjectMenuRowKind::Disabled);
     assert(std::string(rowValue(page.rows[5])) == "p002");
@@ -380,6 +423,7 @@ void test_load_project_confirmation_prompts_dirty_session_choice() {
     assert(std::string(page.rows[2].label) == "Don't Save");
     assert(page.rows[2].enabled);
     assert(std::string(rowValue(page.rows[2])) == "Load p003");
+    assert(page.rows[2].tone == ProjectMenuRowTone::Destructive);
     assert(std::string(page.rows[3].label) == "Cancel");
 
     assert(core::state::project::backProjectNavigation(navigation));
@@ -725,7 +769,8 @@ void test_destination_picker_exposes_hierarchy_and_sparse_macro_positions() {
 }  // namespace
 
 int main() {
-    test_overview_root_exposes_project_actions();
+    test_project_tab_catalog_is_explicit_and_excludes_modulators();
+    test_overview_root_is_a_navigable_project_summary();
     test_enter_music_then_scale_and_back();
     test_switch_tab_resets_to_target_tab_root();
     test_project_settings_tab_cycle_excludes_first_rank_modulators();

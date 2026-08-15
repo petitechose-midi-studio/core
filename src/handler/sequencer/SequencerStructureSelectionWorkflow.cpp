@@ -11,6 +11,9 @@ namespace core::handler {
 
 FLASHMEM bool
 SequencerStructureEditWorkflow::selectionHoldActionAvailable() const {
+    if (sequencer_.drumSequencer.laneSelection.active) {
+        return false;
+    }
     if (track_ui_.selection.active.get()) {
         if (navigation_focus_.get() !=
                 core::state::StructureNavigationFocus::TRACK ||
@@ -54,6 +57,10 @@ SequencerStructureEditWorkflow::selectionHoldActionAvailable() const {
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
+    if (sequencer_.drumSequencer.laneSelection.active) {
+        clearDrumLaneSelection();
+        return;
+    }
     if (track_ui_.selection.active.get()) {
         if (navigation_focus_.get() !=
                 core::state::StructureNavigationFocus::TRACK ||
@@ -102,6 +109,9 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
+    if (sequencer_.drumSequencer.laneSelection.active) {
+        return;
+    }
     if (track_ui_.selection.active.get()) {
         if (navigation_focus_.get() !=
                 core::state::StructureNavigationFocus::TRACK ||

@@ -28,7 +28,6 @@ public:
     SequencerPatternEditorHandler(StateRefs state,
                                   oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                                   oc::api::EncoderAPI& encoders, oc::api::ButtonAPI& buttons,
-                                  oc::type::ScopeID sequencerViewScope,
                                   oc::type::ScopeID overlayScope);
 
     SequencerPatternEditorHandler(const SequencerPatternEditorHandler&) = delete;
@@ -69,7 +68,6 @@ private:
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID overlay_scope_ = 0;
     core::state::sequencer::SequencerPatternEditorField edit_field_ =
         core::state::sequencer::SequencerPatternEditorField::LENGTH;

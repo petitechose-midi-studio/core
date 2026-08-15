@@ -1,0 +1,13 @@
+# UX workflow: compact sequencer rejection feedback.
+# Purpose: keeps an unavailable edit explicit without presenting a punitive or
+# redundant three-line error, then proves that the transient card expires.
+# Expect: capture_changed:history_unavailable_no_change=history_feedback_expired
+
+0 scenario seq-history-unavailable-feedback
+80 capture screen history_unavailable_no_change
+
+1600 tick
+1680 capture screen history_feedback_expired
+
+# Keep the workflow subject to the normal binding-dispatch gate.
+1760 tap BOTTOM_CENTER 60

@@ -7,6 +7,7 @@
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include "state/sequencer/StepPropertyDisplay.hpp"
+#include "ui/sequencer/StepGridDataPalette.hpp"
 #include "ui/sequencer/StepGridGeometryLogic.hpp"
 #include "ui/sequencer/StepGridRenderLogic.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
@@ -25,7 +26,7 @@ constexpr lv_opa_t STEP_PROBABILITY_MASKED_OPA = LV_OPA_30;
 constexpr lv_opa_t STEP_SOURCE_NOTE_REMINDER_OPA = LV_OPA_50;
 constexpr uint32_t STEP_SCALE_DEGREE_COLOR =
     core::ui::sequencer::semantic::color(core::ui::sequencer::semantic::Tone::PITCH);
-constexpr uint32_t STEP_OUT_OF_SCALE_COLOR = 0xFF6B6B;
+constexpr uint32_t STEP_OUT_OF_SCALE_COLOR = palette::OUT_OF_SCALE;
 constexpr uint32_t STEP_CHILD_OFFSET_COLOR =
     core::ui::sequencer::semantic::color(core::ui::sequencer::semantic::Tone::PITCH);
 constexpr const char* STEP_SCALE_SEPARATOR = ":";
@@ -238,10 +239,12 @@ void renderTileNoteLabel(uint8_t tileIndex,
                          const TileRenderState& state,
                          const TileRenderDiff& diff,
                          bool propertyVisualChanged,
-                         bool tileFeedbackChanged,
-                         bool geometryChanged,
-                         core::state::sequencer::StepProperty activeProperty,
-                         const InlineFeedbackSnapshot& feedback,
+                          bool tileFeedbackChanged,
+                          bool geometryChanged,
+                          core::state::sequencer::StepProperty activeProperty,
+                          StepGridPresentation presentationMode,
+                          uint32_t accentColor,
+                          const InlineFeedbackSnapshot& feedback,
                          const visual::StepPropertyVisualSpec& propertyVisual,
                          lv_coord_t noteBaseX,
                          lv_coord_t noteLabelY,
@@ -255,7 +258,8 @@ void renderTileNoteLabel(uint8_t tileIndex,
         state,
         propertyVisual,
         activeProperty,
-        feedback
+        feedback,
+        presentationMode
     );
 
     if (!labelPresentation.showLabel) {
@@ -279,7 +283,9 @@ void renderTileNoteLabel(uint8_t tileIndex,
         cache.noteLabelVisible = true;
     }
 
-    const bool showOriginalNoteLabel = showsSecondaryPitchLabel(state);
+    const bool showOriginalNoteLabel =
+        presentationMode != StepGridPresentation::DRUM_LANE &&
+        showsSecondaryPitchLabel(state);
     if (showOriginalNoteLabel) {
         if (!cache.originalNoteLabelVisible) {
             lv_obj_clear_flag(originalNoteLabel, LV_OBJ_FLAG_HIDDEN);
@@ -386,8 +392,11 @@ void renderTileNoteLabel(uint8_t tileIndex,
         diff.gateChanged || diff.nudgeChanged || diff.probabilityChanged || diff.variationChanged ||
         diff.probabilityCycleActiveChanged || diff.childContentChanged || diff.childPitchSummaryChanged) {
         const lv_color_t nextNoteLabelColor =
-            state.enabled
-                ? (state.childPitchSummaryVisible
+            !state.enabled
+                ? lv_color_hex(STEP_TEXT_DISABLED_COLOR)
+                : presentationMode == StepGridPresentation::DRUM_LANE
+                    ? lv_color_hex(accentColor)
+                    : (state.childPitchSummaryVisible
                        ? (hasRuntimePitchFeedback(state)
                               ? (runtimePitchShowsScaleDegree(state)
                                      ? lv_color_hex(STEP_SCALE_DEGREE_COLOR)
@@ -400,9 +409,8 @@ void renderTileNoteLabel(uint8_t tileIndex,
                        ? lv_color_hex(STEP_SCALE_DEGREE_COLOR)
                        : ((labelPresentation.displayProperty == core::state::sequencer::StepProperty::NOTE &&
                            primaryLabelShowsOutOfScaleMarker(state))
-                              ? lv_color_hex(STEP_OUT_OF_SCALE_COLOR)
-                              : noteLabelColor(runtimePitchDisplayNote(state))))
-                : lv_color_hex(STEP_TEXT_DISABLED_COLOR);
+                        ? lv_color_hex(STEP_OUT_OF_SCALE_COLOR)
+                               : noteLabelColor(runtimePitchDisplayNote(state))));
         const lv_opa_t nextNoteLabelOpa =
             state.enabled
                 ? (labelPresentation.probabilityMasked
@@ -411,8 +419,19 @@ void renderTileNoteLabel(uint8_t tileIndex,
                                                           : STEP_INLINE_VALUE_OPA))
                 : STEP_TEXT_DISABLED_OPA;
         const lv_color_t nextInlineIconColor =
-            state.enabled ? probabilityInlineIconColor(state.note, state.probability)
-                          : lv_color_hex(STEP_TEXT_DISABLED_COLOR);
+            state.enabled
+                ? presentationMode == StepGridPresentation::DRUM_LANE
+                    ? drumLaneAccentColor(
+                          accentColor,
+                          static_cast<uint8_t>(
+                              (static_cast<uint16_t>(state.probability) *
+                               VELOCITY_MAX) /
+                              100U
+                          ),
+                          true
+                      )
+                    : probabilityInlineIconColor(state.note, state.probability)
+                : lv_color_hex(STEP_TEXT_DISABLED_COLOR);
         const lv_opa_t nextInlineIconOpa =
             state.enabled
                 ? (labelPresentation.probabilityMasked ? STEP_PROBABILITY_MASKED_OPA
@@ -495,7 +514,9 @@ void renderTileNoteLabel(uint8_t tileIndex,
         lv_coord_t primaryLabelWidth = 0;
         if (inlineScaleStatus) {
             lv_point_t textSize{};
-            const lv_font_t* font = fonts.inter_13_bold ? fonts.inter_13_bold : LV_FONT_DEFAULT;
+            const lv_font_t* font = fonts.compact_selected()
+                ? fonts.compact_selected()
+                : LV_FONT_DEFAULT;
             lv_text_get_size(
                 &textSize,
                 cache.noteLabelText,

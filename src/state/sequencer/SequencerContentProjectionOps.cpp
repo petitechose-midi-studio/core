@@ -100,7 +100,7 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     out.enabled = resolved.enabled;
     out.parentEnabled = base.enabled;
     out.parentNote = base.note;
-    out.note = resolved.note;
+    out.note = sequencer.contentView.drumOwnerActive ? base.note : resolved.note;
     out.parentVelocity = base.velocity;
     out.velocity = resolved.velocity;
     out.parentGate = base.gate;
@@ -109,8 +109,10 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     out.nudge = resolved.nudge;
     out.parentProbability = base.probability;
     out.probability = resolved.probability;
-    out.inheritedChord = resolved.inheritedChord;
-    out.noteOffset = node->noteOffset;
+    out.inheritedChord = sequencer.contentView.drumOwnerActive
+        ? oc::note::sequencer::StepSequencerInheritedChord{}
+        : resolved.inheritedChord;
+    out.noteOffset = sequencer.contentView.drumOwnerActive ? 0 : node->noteOffset;
     out.velocityOffset = node->velocityOffset;
     out.gateOffset = node->gateOffset;
     out.nudgeOffset = node->nudgeOffset;
@@ -274,10 +276,23 @@ FLASHMEM SequencerContentPlaybackProjection resolveActiveContentPlaybackProjecti
     }
 
     const uint32_t ticks = sequencer.playheadStepTicks == 0 ? 1U : sequencer.playheadStepTicks;
+    const uint32_t integerTickOffset = std::min<uint32_t>(
+        sequencer.playheadStepTickOffset.get(),
+        ticks - 1U
+    );
+    const uint32_t reconstructedTickPositionQ8 =
+        static_cast<uint32_t>(sequencer.playheadStepPhaseQ8.get()) * ticks;
+    const uint32_t integerTickPositionQ8 = integerTickOffset * 256U;
+    const uint32_t subTickQ8 = reconstructedTickPositionQ8 > integerTickPositionQ8
+        ? std::min<uint32_t>(
+              255U,
+              reconstructedTickPositionQ8 - integerTickPositionQ8
+          )
+        : 0U;
     uint32_t spanTicks = effectiveGateSpan(ticks, rootOwner.gate);
     uint32_t elapsedTicks =
         static_cast<uint32_t>(stepsSinceOwner) * ticks +
-        static_cast<uint32_t>(sequencer.playheadStepTickOffset.get());
+        integerTickOffset;
     if (elapsedTicks >= spanTicks) return {};
 
     uint32_t localCycleIndex = sequencer.probabilityCycleIndex;
@@ -332,6 +347,8 @@ FLASHMEM SequencerContentPlaybackProjection resolveActiveContentPlaybackProjecti
     }
 
     uint8_t childPlayhead = 0;
+    uint32_t childElapsedTicks = elapsedTicks;
+    uint32_t childSpanTicks = std::max<uint32_t>(1U, spanTicks);
     if (frame->kind == SequencerContentViewKind::MICRO_SEQUENCE) {
         if (elapsedTicks >= spanTicks) return {};
         childPlayhead = static_cast<uint8_t>(
@@ -340,6 +357,18 @@ FLASHMEM SequencerContentPlaybackProjection resolveActiveContentPlaybackProjecti
         if (childPlayhead >= frame->length) {
             childPlayhead = static_cast<uint8_t>(frame->length - 1U);
         }
+        const uint32_t childStart = boundaryTick(
+            childPlayhead,
+            spanTicks,
+            frame->length
+        );
+        const uint32_t childEnd = boundaryTick(
+            static_cast<uint8_t>(childPlayhead + 1U),
+            spanTicks,
+            frame->length
+        );
+        childElapsedTicks = elapsedTicks - childStart;
+        childSpanTicks = std::max<uint32_t>(1U, childEnd - childStart);
     } else {
         childPlayhead = static_cast<uint8_t>(localCycleIndex % frame->length);
     }
@@ -357,6 +386,14 @@ FLASHMEM SequencerContentPlaybackProjection resolveActiveContentPlaybackProjecti
         .visible = true,
         .active = active,
         .step = childPlayhead,
+        .progress = static_cast<uint8_t>(std::min<uint32_t>(
+            255U,
+            static_cast<uint32_t>(
+                ((static_cast<uint64_t>(childElapsedTicks) * 256U + subTickQ8) *
+                 255U) /
+                (static_cast<uint64_t>(childSpanTicks) * 256U)
+            )
+        )),
     };
 }
 

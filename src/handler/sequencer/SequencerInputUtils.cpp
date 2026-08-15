@@ -2,9 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 #include "state/sequencer/DrumPatternState.hpp"
-#endif
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler::sequencer::input_utils {
@@ -71,8 +69,7 @@ FLASHMEM StepPropertyEncoderConfig encoderConfigForProperty(
     return config;
 }
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
+using DrumProperty = core::state::sequencer::DrumSequencerProperty;
 
 FLASHMEM StepProperty drumStepProperty(DrumProperty property) {
     switch (property) {
@@ -109,23 +106,23 @@ FLASHMEM StepPropertyEncoderConfig encoderConfigForDrumProperty(
 }
 
 FLASHMEM float drumStepPropertyToNormalized(
-    const core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    const core::state::sequencer::DrumSequencerState& drumUi,
     uint8_t laneIndex,
     uint8_t step,
     DrumProperty property
 ) {
-    if (!prototype.drumTrack || laneIndex >= prototype.LANE_COUNT ||
-        step >= prototype.MAX_STEPS) {
+    if (!drumUi.drumTrack || laneIndex >= drumUi.LANE_COUNT ||
+        step >= drumUi.MAX_STEPS) {
         return 0.0f;
     }
     if (property == DrumProperty::STATE) {
-        return prototype.drumTrack->pattern.stepEnabled(laneIndex, step)
+        return drumUi.drumTrack->pattern.stepEnabled(laneIndex, step)
             ? 1.0f
             : 0.0f;
     }
 
-    const auto& descriptor = prototype.drumTrack->kit.lanes[laneIndex];
-    const auto& lane = prototype.drumTrack->pattern.lanes[laneIndex];
+    const auto& descriptor = drumUi.drumTrack->kit.lanes[laneIndex];
+    const auto& lane = drumUi.drumTrack->pattern.lanes[laneIndex];
     return stepPropertyToNormalized(
         drumStepProperty(property),
         descriptor.midiNote,
@@ -137,7 +134,7 @@ FLASHMEM float drumStepPropertyToNormalized(
 }
 
 FLASHMEM bool applyNormalizedToDrumStep(
-    core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    core::state::sequencer::DrumSequencerState& drumUi,
     uint8_t lane,
     uint8_t step,
     DrumProperty property,
@@ -145,25 +142,25 @@ FLASHMEM bool applyNormalizedToDrumStep(
 ) {
     switch (property) {
         case DrumProperty::STATE:
-            return prototype.setStepEnabled(
+            return drumUi.setStepEnabled(
                 lane,
                 step,
                 clampNormalized(normalized) >= 0.5f
             );
         case DrumProperty::PROBABILITY:
-            return prototype.setStepProbability(
+            return drumUi.setStepProbability(
                 lane,
                 step,
                 normalizedToProbability(normalized)
             );
         case DrumProperty::GATE:
-            return prototype.setStepGate(
+            return drumUi.setStepGate(
                 lane,
                 step,
                 normalizedToGatePercent(normalized)
             );
         case DrumProperty::NUDGE:
-            return prototype.setStepNudge(
+            return drumUi.setStepNudge(
                 lane,
                 step,
                 normalizedToNudge(normalized)
@@ -171,14 +168,13 @@ FLASHMEM bool applyNormalizedToDrumStep(
         case DrumProperty::VELOCITY:
         case DrumProperty::COUNT:
         default:
-            return prototype.setStepVelocity(
+            return drumUi.setStepVelocity(
                 lane,
                 step,
                 normalizedToMidi7(normalized)
             );
     }
 }
-#endif
 
 FLASHMEM StepPropertyEncoderConfig encoderConfigForProperty(
     StepProperty property,

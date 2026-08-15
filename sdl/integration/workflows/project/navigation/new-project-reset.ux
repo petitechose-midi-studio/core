@@ -1,7 +1,10 @@
-# UX workflow: reset the current musical project from Project Overview.
-# Purpose: validates that New Project is an enabled action and resets project
+# UX workflow: reset the current musical project from Project Storage.
+# Purpose: validates that Storage owns New Project and resets project
 # musical defaults without relying on save/load persistence.
 # Expect: capture_changed:music_scale_default=music_scale_changed, capture_match:music_scale_default=scale_defaults_after_new_project
+# Expect: semantic:new_project_confirm:property=storage, semantic:new_project_confirm:value_label=new_confirm, semantic:new_project_confirm:target_index=0
+# Expect: semantic:overview_after_new_project:property=overview, semantic:overview_after_new_project:value_label=overview_root
+# Expect: semantic:scale_defaults_after_new_project:property=music, semantic:scale_defaults_after_new_project:value_label=music_scale
 
 0 capture screen boot
 
@@ -17,7 +20,7 @@
 
 # Change the global project scale root from F to F#.
 820 button LEFT_CENTER down
-1420 encoder NAV 1
+1420 encoder NAV 0.01
 1560 capture screen project_music_tab
 1640 button LEFT_CENTER up
 1740 tap NAV 60
@@ -25,22 +28,28 @@
 2060 tap NAV 60
 2280 capture screen music_scale_changed
 
-# Go back to Overview and trigger New Project.
+# Go back to Music root, switch to Storage, and trigger New Project.
 2380 tap LEFT_TOP 60
 2600 capture screen music_root_after_scale_change
 2700 button LEFT_CENTER down
-3300 encoder NAV -1
-3460 capture screen overview_before_new_project
-3540 button LEFT_CENTER up
-3640 tap NAV 60
-3920 capture screen new_project_confirm
-4020 tap NAV 60
-4300 capture screen overview_after_new_project
+3300 encoder NAV -0.01
+3380 encoder NAV -0.01
+3540 capture screen storage_before_new_project
+3620 button LEFT_CENTER up
+3720 encoder NAV 0.01
+3800 encoder NAV 0.01
+3880 encoder NAV 0.01
+4020 capture screen storage_new_project_focused
+4100 tap NAV 60
+4380 capture screen new_project_confirm
+4480 encoder NAV 0.01
+4620 tap NAV 60
+4900 capture screen overview_after_new_project
 
 # Re-open Music > Scale and verify defaults are visible again.
-4400 button LEFT_CENTER down
-5000 encoder NAV 1
-5160 capture screen music_after_new_project
-5240 button LEFT_CENTER up
-5340 tap NAV 60
-5600 capture screen scale_defaults_after_new_project
+5000 button LEFT_CENTER down
+5600 encoder NAV 0.01
+5760 capture screen music_after_new_project
+5840 button LEFT_CENTER up
+5940 tap NAV 60
+6200 capture screen scale_defaults_after_new_project

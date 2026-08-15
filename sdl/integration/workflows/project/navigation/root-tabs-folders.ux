@@ -1,8 +1,14 @@
-# UX workflow: enter Project view, navigate first-level tabs and one nested folder.
+# UX workflow: navigate Project roots plus the Scale and CC Defaults folders.
 # Purpose: validates the ADR-0020 navigation contract without exercising save/load
 # persistence. LEFT_CENTER+NAV switches tabs; LEFT_TOP backs inside Project
 # folders, then opens the global view selector when Project is at any tab root.
 # Expect: capture_changed:project_overview_tab=project_music_tab, capture_changed:project_transport_tab=selector_from_project_root
+# Expect: semantic:project_music_tab:mode=project, semantic:project_music_tab:property=music, semantic:project_music_tab:value_label=music_root
+# Expect: semantic:project_music_scale:property=music, semantic:project_music_scale:value_label=music_scale
+# Expect: semantic:project_music_cc_defaults:property=music, semantic:project_music_cc_defaults:value_label=music_cc, semantic:project_music_cc_defaults:target_index=0
+# Expect: semantic:project_transport_tab:property=transport, semantic:project_transport_tab:value_label=transport_root
+# Expect: semantic:project_overview_tab:property=overview, semantic:project_overview_tab:value_label=overview_root, semantic:project_overview_tab:target_index=0
+# Expect: semantic:selector_from_project_root:overlay=view_selector
 
 0 capture screen boot
 
@@ -18,7 +24,7 @@
 
 # Switch to Music, then enter the Scale folder.
 820 button LEFT_CENTER down
-1420 encoder NAV 1
+1420 encoder NAV 0.01
 1560 capture screen project_music_tab
 1640 button LEFT_CENTER up
 1740 tap NAV 60
@@ -28,13 +34,26 @@
 2060 tap LEFT_TOP 60
 2280 capture screen project_music_after_back
 
+# CC Defaults is one nested group rather than four rows at Music root.
+2380 encoder NAV 0.01
+2460 encoder NAV 0.01
+2540 encoder NAV 0.01
+2620 encoder NAV 0.01
+2760 capture screen project_music_cc_defaults_folder
+2840 tap NAV 60
+3060 capture screen project_music_cc_defaults
+3160 tap NAV 60
+3380 capture screen project_music_cc_lane_1_changed
+3480 tap LEFT_TOP 60
+3700 capture screen project_music_after_cc_back
+
 # LEFT_CENTER held makes NAV switch first-level project sections.
-2380 button LEFT_CENTER down
-2980 encoder NAV 1
-3160 capture screen project_transport_tab
-3260 button LEFT_CENTER up
+3800 button LEFT_CENTER down
+4400 encoder NAV 0.01
+4580 capture screen project_transport_tab
+4680 button LEFT_CENTER up
 
 # At a Project tab root, LEFT_TOP opens the global selector again.
-3360 button LEFT_TOP down
-3540 capture screen selector_from_project_root
-3620 button LEFT_TOP up
+4780 button LEFT_TOP down
+4960 capture screen selector_from_project_root
+5040 button LEFT_TOP up

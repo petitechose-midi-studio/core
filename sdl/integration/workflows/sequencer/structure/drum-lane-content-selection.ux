@@ -1,0 +1,74 @@
+# Drum Pattern content-selection acceptance path.
+# Purpose: proves that Pattern selection targets musical Lane content, supports
+# sparse source selection and contiguous placement, and never exposes Lane
+# creation/reorder semantics inside the selection workflow.
+# Expect: capture_changed:lane_selection_entered=lanes_2_4_selected, capture_changed:lanes_2_4_selected=lane_selection_placing
+# Expect: capture_changed:lane_selection_placing=lane_selection_destination, capture_changed:lane_selection_destination=lane_selection_pasted
+# Expect: semantic:lane_selection_entered:mode=sequencer.drum_lane_selection, semantic:lane_selection_entered:target=drum_lane_content, semantic:lane_selection_entered:property=cursor, semantic:lane_selection_entered:target_index=1
+# Expect: semantic:lanes_2_4_selected:property=selected, semantic:lanes_2_4_selected:target_index=3, semantic:lanes_2_4_selected:target_mask=10
+# Expect: semantic:lane_selection_placing:property=placement, semantic:lane_selection_placing:target_mask=24
+# Expect: semantic:lane_selection_destination:property=placement, semantic:lane_selection_destination:target_index=4, semantic:lane_selection_destination:target_mask=48
+
+0 scenario drum-sequencer
+80 capture screen instrument_grid_before_create
+
+# Create a General MIDI Drum Track through the real Track-kind workflow.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1280 capture screen structure_tracks_open
+1530 encoder NAV 1
+1730 capture screen track_2_add_preview
+1830 tap NAV 60
+2150 capture screen type_instrument
+2300 encoder NAV 1
+2500 capture screen type_drum
+2650 tap NAV 60
+2950 capture screen kit_empty
+3100 encoder NAV 1
+3300 capture screen kit_general_midi
+3450 tap NAV 60
+4200 capture screen pattern_overview
+
+# Author distinct source rhythms on Lane 2 and Lane 4.
+4350 encoder NAV 1
+4500 tap MACRO_1 60
+4650 tap MACRO_5 60
+4800 encoder NAV 2
+4950 tap MACRO_3 60
+5100 tap MACRO_7 60
+5250 encoder NAV -2
+5500 capture screen source_lanes_programmed
+
+# A stationary NAV hold enters selection at Lane 2. The paired release must
+# not select anything; the following short press is the first real toggle.
+5600 button NAV down
+6680 tick
+6760 button NAV up
+7000 capture screen lane_selection_entered
+7100 tap NAV 60
+7300 capture screen lane_2_selected
+
+# Sparse selection: move to Lane 4 and add it without touching Lane identity.
+7400 encoder NAV 1
+7500 encoder NAV 1
+7650 tap NAV 60
+7850 capture screen lanes_2_4_selected
+
+# Copy maps the two selected source payloads to a contiguous destination.
+7950 tap BOTTOM_RIGHT 60
+8200 capture screen lane_selection_placing
+8300 encoder NAV 1
+8550 capture screen lane_selection_destination
+8650 button BOTTOM_RIGHT down
+9730 tick
+9810 button BOTTOM_RIGHT up
+10050 capture screen lane_selection_pasted
+
+# Back clears placement only; short reset then clears the original selected
+# Lane content while retaining the selection surface and Lane identities.
+10150 tap LEFT_TOP 60
+10400 capture screen lane_selection_source_restored
+10500 tap BOTTOM_LEFT 60
+10800 capture screen selected_lane_content_cleared

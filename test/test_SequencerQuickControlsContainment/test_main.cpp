@@ -381,9 +381,9 @@ void assertHistoryRejection(
                   << feedback.line2.data() << '\n';
     }
     assert(feedback.revision.get() == expectedRevision);
-    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
     assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
-    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+    assert(std::strcmp(feedback.line3.data(), "") == 0);
 }
 
 void test_direct_failure_is_atomic() {

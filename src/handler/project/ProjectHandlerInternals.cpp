@@ -75,53 +75,37 @@ FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) 
            node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME;
 }
 
-FLASHMEM char selectedProjectNameKey(
-    const core::state::project::ProjectNavigationState& navigation
-) {
-    char key = core::state::project::projectNameKeyboardCellAt(
-        navigation.projectNameKeyIndex
-    ).character;
-    if (navigation.projectNameShiftActive && key >= 'a' && key <= 'z') {
-        key = static_cast<char>(key - 'a' + 'A');
+FLASHMEM bool appendProjectNameKey(core::state::project::ProjectNavigationState& navigation) {
+    const char character = core::state::interaction::textKeyboardCharacterAt(
+        navigation.projectNameKeyIndex,
+        navigation.projectNameShiftActive
+    );
+    if (!core::state::interaction::textKeyboardAppend(
+            navigation.editingProjectSlug.data(),
+            navigation.editingProjectSlug.size(),
+            character
+        )) {
+        return false;
     }
-    return key;
-}
-
-FLASHMEM bool appendProjectNameChar(
-    core::state::project::ProjectNavigationState& navigation,
-    char character
-) {
-    if (character == '\0') return false;
-    char* buffer = navigation.editingProjectSlug.data();
-    const size_t length = std::strlen(buffer);
-    if (length >= core::state::project::PROJECT_SLUG_MAX_LENGTH) return false;
-    buffer[length] = character;
-    buffer[length + 1U] = '\0';
     navigation.notifyContentChanged();
     return true;
 }
 
-FLASHMEM bool appendProjectNameKey(core::state::project::ProjectNavigationState& navigation) {
-    return appendProjectNameChar(navigation, selectedProjectNameKey(navigation));
-}
-
-FLASHMEM bool appendProjectNameSpace(core::state::project::ProjectNavigationState& navigation) {
-    return appendProjectNameChar(navigation, ' ');
-}
-
 FLASHMEM bool backspaceProjectName(core::state::project::ProjectNavigationState& navigation) {
-    char* buffer = navigation.editingProjectSlug.data();
-    const size_t length = std::strlen(buffer);
-    if (length == 0) return true;
-    buffer[length - 1U] = '\0';
-    navigation.notifyContentChanged();
+    if (core::state::interaction::textKeyboardBackspace(
+            navigation.editingProjectSlug.data()
+        )) {
+        navigation.notifyContentChanged();
+    }
     return true;
 }
 
 FLASHMEM bool clearProjectName(core::state::project::ProjectNavigationState& navigation) {
-    if (navigation.editingProjectSlug[0] == '\0') return true;
-    navigation.editingProjectSlug = {};
-    navigation.notifyContentChanged();
+    if (core::state::interaction::textKeyboardClear(
+            navigation.editingProjectSlug.data()
+        )) {
+        navigation.notifyContentChanged();
+    }
     return true;
 }
 

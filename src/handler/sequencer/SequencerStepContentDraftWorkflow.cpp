@@ -6,6 +6,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler::sequencer::step_content_draft_workflow {
@@ -39,6 +40,44 @@ FLASHMEM bool apply(
         noteFailure(sequencer, seq::SequencerStepContentDraftFailure::UNPUBLISHABLE_MUTATION
         );
         return false;
+    }
+
+    if (seq::isDrumContentView(sequencer)) {
+        const auto& owner = sequencer.contentView;
+        const seq::SequencerHistoryDescriptor descriptor{
+            .kind = seq::SequencerHistoryActionKind::DrumAdvancedContent,
+            .trackIndex = owner.drumOwnerTrack,
+            .laneIndex = owner.drumOwnerLane,
+            .stepIndex = owner.drumOwnerStep,
+            .property = seq::StepProperty::NOTE,
+        };
+        if (!seq::publishStepContentDraft(sequencer)) {
+            noteFailure(
+                sequencer,
+                seq::SequencerStepContentDraftFailure::UNPUBLISHABLE_MUTATION
+            );
+            return false;
+        }
+        tracks.publishDrumMutation(owner.drumOwnerTrack);
+        if (!history.sealCoalescedDrumEdit(true, descriptor)) {
+            (void)history.abortCoalescedDrumEdit();
+            sequencer.contentView.reset();
+            noteFailure(
+                sequencer,
+                seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE
+            );
+            return false;
+        }
+        if (history.commitCoalescedDrumEditOutcome() ==
+            seq::SequencerPatternHistoryCommitOutcome::Failed) {
+            sequencer.contentView.reset();
+            noteFailure(
+                sequencer,
+                seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE
+            );
+            return false;
+        }
+        return true;
     }
 
     auto change = core::app::makeExtmemUnique<seq::SequencerHistoryPatternChange>();
@@ -106,6 +145,28 @@ FLASHMEM BackResult requestBack(
     return BackResult::CONTINUE_EDITING;
 }
 
+FLASHMEM BackResult requestBack(
+    core::state::sequencer::SequencerState& sequencer,
+    const core::handler::SequencerHistoryDomainServices& history
+) {
+    namespace seq = core::state::sequencer;
+    if (!sequencer.stepContentDraft.active.get()) return BackResult::NONE;
+    if (sequencer.stepContentDraft.modified()) {
+        sequencer.stepContentDraft.showExitPrompt();
+        return BackResult::CONTINUE_EDITING;
+    }
+    if (seq::isDrumContentView(sequencer) &&
+        !history.abortCoalescedDrumEdit()) {
+        noteFailure(
+            sequencer,
+            seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE
+        );
+        return BackResult::FAILED;
+    }
+    seq::abandonStepContentDraft(sequencer);
+    return BackResult::DISCARDED;
+}
+
 FLASHMEM void moveExitChoice(
     core::state::sequencer::SequencerState& sequencer,
     float delta
@@ -144,6 +205,14 @@ FLASHMEM BackResult applyExitChoice(
             sequencer.stepContentDraft.hideExitPrompt();
             return BackResult::CONTINUE_EDITING;
         case seq::SequencerStepContentDraftExitChoice::DISCARD:
+            if (seq::isDrumContentView(sequencer) &&
+                !history.abortCoalescedDrumEdit()) {
+                noteFailure(
+                    sequencer,
+                    seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE
+                );
+                return BackResult::FAILED;
+            }
             seq::abandonStepContentDraft(sequencer);
             return BackResult::DISCARDED;
         case seq::SequencerStepContentDraftExitChoice::SAVE:

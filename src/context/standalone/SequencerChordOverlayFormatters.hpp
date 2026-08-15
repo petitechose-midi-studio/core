@@ -33,8 +33,7 @@ FLASHMEM void populateChordDetailOverlay(
     uint8_t focusedFormulaItem,
     bool sourceSelectorActive,
     core::state::sequencer::SequencerChordSourceChoice focusedSourceChoice,
-    bool enabled,
-    bool presetLibraryAvailable
+    bool enabled
 );
 
 }  // namespace core::context::standalone::sequencer_overlay_presenter

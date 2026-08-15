@@ -4,7 +4,9 @@
 
 namespace core::context::standalone::sequencer_overlay_presenter {
 
-StepEditRenderData buildStepEditRenderData(const Source& source);
+// `data` owns the character buffers referenced by its overlay props. Keeping
+// it address-stable is part of the rendering contract.
+void buildStepEditRenderData(const Source& source, StepEditRenderData& data);
 core::ui::ContextActionStripProps buildStepEditActionStripProps(const ActionSource& source);
 PresetLibraryRenderData buildPresetLibraryRenderData(
     const Source& source

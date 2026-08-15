@@ -56,7 +56,8 @@ FLASHMEM void ProjectNavigationState::resetTransient() {
     modulatorGuard.set({});
     pendingLoadProjectId = {};
     editingProjectSlug = {};
-    projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    projectNameKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
     projectNameOptRawPosition = 0.0f;
     projectNameOptRowAccumulator = 0.0f;
     projectNameShiftActive = false;
@@ -119,6 +120,7 @@ FLASHMEM ProjectTab tabForRootNode(ProjectNodeId node) {
     switch (node) {
         case ProjectNodeId::MUSIC_ROOT:
         case ProjectNodeId::MUSIC_SCALE:
+        case ProjectNodeId::MUSIC_CC_DEFAULTS:
             return ProjectTab::MUSIC;
         case ProjectNodeId::TRANSPORT_ROOT:
             return ProjectTab::TRANSPORT;

@@ -51,6 +51,11 @@ private:
     void setupBindings();
     void handleTurn(uint8_t indexInPage, float normalized);
     void handleFocusedStepTurn(float normalized);
+    void handleDrumOwnedStepTurn(
+        uint8_t step,
+        float normalized,
+        uint32_t nowMs
+    );
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;

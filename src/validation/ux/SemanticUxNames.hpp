@@ -5,6 +5,7 @@
 
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
+#include "state/interaction/ControllerInteractionContract.hpp"
 
 namespace core::validation::ux {
 
@@ -14,5 +15,8 @@ const char* buttonGestureName(oc::core::input::ButtonBindingType type);
 const char* encoderGestureName(oc::core::input::EncoderBindingType type);
 const char* viewName(core::ui::ViewType view);
 const char* overlayName(core::ui::OverlayType overlay);
+const char* controllerIntentName(
+    core::state::interaction::ControllerIntent intent
+);
 
 }  // namespace core::validation::ux

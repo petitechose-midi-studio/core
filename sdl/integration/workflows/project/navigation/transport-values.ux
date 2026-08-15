@@ -2,6 +2,8 @@
 # Purpose: validates the immediate LEFT_CENTER tab hold, quick NAV tab movement,
 # direct OPT value editing, and NAV activation for focused transport values.
 # Expect: capture_changed:transport_tempo_focused=transport_tempo_opt_up, capture_match:transport_tempo_focused=transport_tempo_opt_down, capture_changed:transport_clock_focused=transport_clock_master
+# Expect: semantic:transport_tempo_focused:property=transport, semantic:transport_tempo_focused:value_label=transport_root, semantic:transport_tempo_focused:target_index=0
+# Expect: semantic:transport_clock_focused:target_index=2
 
 0 capture screen boot
 
@@ -17,8 +19,8 @@
 
 # Two quick tab ticks to Transport while LEFT_CENTER is physically held.
 820 button LEFT_CENTER down
-900 encoder NAV 1
-960 encoder NAV 1
+900 encoder NAV 0.01
+960 encoder NAV 0.01
 1040 capture screen project_transport_tab
 1120 button LEFT_CENTER up
 1260 capture screen transport_tempo_focused
@@ -30,13 +32,13 @@
 1820 capture screen transport_tempo_opt_down
 
 # Swing placeholder is editable for current UX validation.
-1920 encoder NAV 1
+1920 encoder NAV 0.01
 2040 capture screen transport_swing_focused
 2140 tap NAV 60
 2320 capture screen transport_swing_1
 
 # Clock cycles through the real MIDI sync mode state.
-2420 encoder NAV 1
+2420 encoder NAV 0.01
 2540 capture screen transport_clock_focused
 2640 tap NAV 60
 2820 capture screen transport_clock_master

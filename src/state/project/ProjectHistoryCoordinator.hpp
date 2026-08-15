@@ -20,13 +20,13 @@ namespace core::state::project {
 class ProjectHistoryCoordinator {
 public:
     // Sized for every payload that MacroHistory (8), SequencerHistory
-    // (32 Pattern + 8 Structure + 4 Full Bank), TrackHistory (8), and
+    // (32 Pattern + 8 Structure + 4 Full Bank + 24 Drum), TrackHistory (8), and
     // SettingsHistory (8) can
     // retain simultaneously, so
     // capacity alone never drops a global reference. The complete coordinator
     // lives in PSRAM. A domain eviction may still establish an intentional
     // boundary: actions older than an unavailable payload become unreachable.
-    static constexpr uint8_t ENTRY_LIMIT = 68;
+    static constexpr uint8_t ENTRY_LIMIT = 92;
     static constexpr uint32_t RETAINED_BYTE_BUDGET = 2U * 1024U * 1024U;
     static constexpr uint16_t RETAINED_SPAN_BUDGET = 655U;
 

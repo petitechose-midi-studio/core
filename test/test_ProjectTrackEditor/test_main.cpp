@@ -21,7 +21,7 @@ void testStateOpenCloseBoundsAndNoOps() {
     project::ProjectTrackEditorState editor{};
     constexpr uint16_t enabled = 0x8009U;
 
-    assert(sizeof(editor) == 8U);
+    assert(sizeof(editor) == 12U);
     assert(!editor.active);
     assert(editor.trackIndex == 0U);
     assert(editor.selectedProperty ==
@@ -131,7 +131,7 @@ void testRetargetAndPropertySelectionAreAtomic() {
     assert(editor.revision == 3U);
     assert(project::moveProjectTrackEditorProperty(editor, 1).changed());
     assert(editor.selectedProperty ==
-           project::ProjectTrackEditorProperty::CHANNEL);
+           project::ProjectTrackEditorProperty::TYPE);
     assert(project::moveProjectTrackEditorProperty(editor, -1).changed());
     assert(editor.selectedProperty ==
            project::ProjectTrackEditorProperty::DELAY);
@@ -150,6 +150,37 @@ void testRetargetAndPropertySelectionAreAtomic() {
     editor.revision = std::numeric_limits<uint32_t>::max();
     assert(project::moveProjectTrackEditorProperty(editor, 1).changed());
     assert(editor.revision == 1U);
+}
+
+void testDirtyKindDraftKeepsItsOpeningTrack() {
+    project::ProjectTrackEditorState editor{};
+    constexpr uint16_t enabled = 0x0003U;
+
+    assert(project::openProjectTrackEditor(editor, 0U, enabled).changed());
+    assert(project::syncProjectTrackEditorKind(
+        editor,
+        project::ProjectTrackEditorKind::INSTRUMENT
+    ).status == project::ProjectTrackEditorMutationStatus::NO_CHANGE);
+    assert(project::selectProjectTrackEditorDraftKind(
+        editor,
+        project::ProjectTrackEditorKind::DRUM
+    ).changed());
+    assert(project::projectTrackEditorKindDraftDirty(editor));
+
+    const auto before = editor;
+    assert(project::retargetProjectTrackEditor(editor, 1U, enabled).status ==
+           project::ProjectTrackEditorMutationStatus::DIRTY_DRAFT);
+    assert(editor == before);
+    assert(project::moveProjectTrackEditorTrack(editor, enabled, 1).status ==
+           project::ProjectTrackEditorMutationStatus::DIRTY_DRAFT);
+    assert(editor == before);
+
+    assert(project::syncProjectTrackEditorKind(
+        editor,
+        project::ProjectTrackEditorKind::DRUM
+    ).changed());
+    assert(!project::projectTrackEditorKindDraftDirty(editor));
+    assert(project::retargetProjectTrackEditor(editor, 1U, enabled).changed());
 }
 
 void testViewModelIsTruthfulBoundedAndMinimal() {
@@ -183,7 +214,7 @@ void testViewModelIsTruthfulBoundedAndMinimal() {
     assert(model.canSwitchTrack);
     assert(model.trackIndex == 15U);
     assert(model.trackNumber == 16U);
-    assert(std::strcmp(model.title.data(), "TRACK 16") == 0);
+    assert(std::strcmp(model.title.data(), "Track 16") == 0);
     assert(std::strcmp(model.port.data(), "USB") == 0);
     assert(!model.portEditable);
     assert(model.midiChannel == 16U);
@@ -237,7 +268,7 @@ void testRetargetProjectsOneCoherentDestination() {
     assert(project::retargetProjectTrackEditor(editor, 7U, enabled).changed());
     assert(editor.revision == before + 1U);
     model = ui::buildProjectTrackEditorViewModel(editor, tracks, enabled);
-    assert(std::strcmp(model.title.data(), "TRACK 8") == 0);
+    assert(std::strcmp(model.title.data(), "Track 8") == 0);
     assert(model.trackIndex == 7U);
     assert(model.midiChannel == 12U);
     assert(model.delayMs == 73);
@@ -263,6 +294,7 @@ int main() {
     testStateOpenCloseBoundsAndNoOps();
     testSparseEnabledTrackWrapAndEmptyMask();
     testRetargetAndPropertySelectionAreAtomic();
+    testDirtyKindDraftKeepsItsOpeningTrack();
     testViewModelIsTruthfulBoundedAndMinimal();
     testRetargetProjectsOneCoherentDestination();
     std::cout << "Project Track Editor tests passed\n";

@@ -112,6 +112,11 @@ using SequencerPreparedTrackStructurePrepareMacroAfterFn =
                    core::state::macro::TRACK_COUNT>& afterTracks,
         core::state::modulation::ProjectControlDomainState& afterControl
     ) noexcept;
+using SequencerPreparedTrackStructurePrepareSequencerAfterFn = bool (*)(
+    const void* context,
+    const SequencerPreparedTrackStructurePlan& plan,
+    core::state::sequencer::SequencerHistoryTrackStructureChange& change
+) noexcept;
 using SequencerPreparedTrackStructureRevalidateFn = bool (*)(
     const void* context,
     const SequencerPreparedTrackStructurePlan& plan,
@@ -138,6 +143,8 @@ public:
         SequencerPreparedTrackStructureBuildPlanFn buildPlan = nullptr;
         SequencerPreparedTrackStructurePrepareMacroAfterFn prepareMacroAfter =
             nullptr;
+        SequencerPreparedTrackStructurePrepareSequencerAfterFn
+            prepareSequencerAfter = nullptr;
         SequencerPreparedTrackStructureRevalidateFn revalidate = nullptr;
         SequencerPreparedTrackStructureReconcileCommittedFn
             reconcileCommitted = nullptr;

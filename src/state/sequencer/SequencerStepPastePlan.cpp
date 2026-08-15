@@ -109,7 +109,8 @@ FLASHMEM SequencerStepPastePreviewPlan buildStepPastePreviewPlan(
         return plan;
     }
 
-    if (clipboard.rootContext != targetRootContext) {
+    if (clipboard.drumContext ||
+        clipboard.rootContext != targetRootContext) {
         plan.blocked = true;
         plan.aggregate = SequencerStepPastePreview::BLOCKED;
         return plan;

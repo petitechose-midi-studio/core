@@ -14,6 +14,8 @@
 namespace core::validation::ux {
 namespace {
 
+SemanticUxRecorder* currentEncoderContractTraceRecorder = nullptr;
+
 FLASHMEM int32_t milliFromFloat(float value) {
     if (!std::isfinite(value)) return 0;
 
@@ -44,6 +46,26 @@ FLASHMEM const char* valueKindName(EncoderValueKind kind) {
             return "absolute";
     }
     return "absolute";
+}
+
+FLASHMEM const char* encoderContractOwnerName(EncoderContractOwner owner) {
+    switch (owner) {
+        case EncoderContractOwner::SequencerRoot:
+            return "sequencer_root";
+        case EncoderContractOwner::DrumLaneEditor:
+            return "drum_lane_editor";
+    }
+    return "unknown";
+}
+
+FLASHMEM const char* encoderContractModeName(EncoderContractMode mode) {
+    switch (mode) {
+        case EncoderContractMode::Raw:
+            return "raw";
+        case EncoderContractMode::Normalized:
+            return "normalized";
+    }
+    return "unknown";
 }
 
 FLASHMEM std::size_t escapedJsonLength(const char* value) {
@@ -226,6 +248,11 @@ FLASHMEM void formatContextFields(char* out,
         (!pre.mode || !post.mode || std::strcmp(pre.mode, post.mode) == 0) &&
         (!pre.target || !post.target || std::strcmp(pre.target, post.target) == 0);
 
+    const auto intent =
+        pre.intent != core::state::interaction::ControllerIntent::NONE
+            ? pre.intent
+            : post.intent;
+    appendField(out, size, "intent", controllerIntentName(intent));
     appendField(out, size, "mode", pre.mode ? pre.mode : post.mode);
     appendField(out, size, "effect", pre.effect ? pre.effect : post.effect);
     appendField(out, size, "outcome", pre.outcome ? pre.outcome : post.outcome);
@@ -440,7 +467,8 @@ FLASHMEM void formatContextFields(char* out,
 }
 
 FLASHMEM bool hasSemanticContext(const SemanticUxContext& context) {
-    return context.mode || context.effect || context.outcome || context.reason ||
+    return context.intent != core::state::interaction::ControllerIntent::NONE ||
+           context.mode || context.effect || context.outcome || context.reason ||
            context.target || context.routePolicy || context.projection ||
            context.source || context.winner || context.winnerSource ||
            context.property ||
@@ -562,6 +590,19 @@ FLASHMEM void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBin
     enqueue_(record);
 }
 
+FLASHMEM void SemanticUxRecorder::onEncoderContractTrace(
+    const EncoderContractTraceEvent& event
+) {
+    if (!enabled_ || sink_ == nullptr) return;
+
+    PendingRecord record{};
+    record.kind = RecordKind::EncoderContract;
+    record.sequence = next_sequence_++;
+    record.encoderId = event.encoderId;
+    record.encoderContract = event;
+    enqueue_(record);
+}
+
 FLASHMEM void SemanticUxRecorder::flush(uint32_t nowMs, const core::state::CoreState& state) {
     flush(nowMs, makeSemanticUxSnapshot(state));
 }
@@ -601,6 +642,7 @@ FLASHMEM void SemanticUxRecorder::capture(uint32_t nowMs,
 
 FLASHMEM void SemanticUxRecorder::resetCaptureContext(bool allowCurrentSurfaceProjection) {
     has_last_semantic_event_ = false;
+    last_semantic_intent_ = core::state::interaction::ControllerIntent::NONE;
     last_semantic_effect_ = nullptr;
     last_semantic_outcome_ = nullptr;
     last_semantic_sequence_ = 0;
@@ -641,6 +683,38 @@ FLASHMEM bool SemanticUxRecorder::pop_(PendingRecord& record) {
 FLASHMEM void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
                                       const PendingRecord& record,
                                       const SemanticUxSnapshot& postSnapshot) {
+    if (record.kind == RecordKind::EncoderContract) {
+        const auto& contract = record.encoderContract;
+        char line[640];
+        std::snprintf(
+            line,
+            sizeof(line),
+            "UXR {\"seq\":%lu,\"ms\":%lu,\"kind\":\"encoder_contract\","
+            "\"owner\":\"%s\",\"encoder\":\"%s\",\"encoder_id\":%u,"
+            "\"mode\":\"%s\",\"minimum_milli\":%ld,\"maximum_milli\":%ld,"
+            "\"position_milli\":%ld,\"discrete_steps\":%u,"
+            "\"ticks_per_step\":%u,\"normalized_turns_milli\":%ld,"
+            "\"view\":\"%s\",\"overlay\":\"%s\"}",
+            static_cast<unsigned long>(record.sequence),
+            static_cast<unsigned long>(nowMs),
+            encoderContractOwnerName(contract.owner),
+            encoderName(contract.encoderId),
+            static_cast<unsigned int>(contract.encoderId),
+            encoderContractModeName(contract.mode),
+            static_cast<long>(contract.minimumMilli),
+            static_cast<long>(contract.maximumMilli),
+            static_cast<long>(contract.positionMilli),
+            static_cast<unsigned int>(contract.discreteSteps),
+            static_cast<unsigned int>(contract.discreteTicksPerStep),
+            static_cast<long>(contract.normalizedTurnsMilli),
+            viewName(postSnapshot.view),
+            overlayName(postSnapshot.overlay)
+        );
+        line[sizeof(line) - 1U] = '\0';
+        sink_->writeLine(line);
+        return;
+    }
+
     SemanticUxContext postContext{};
     if (auto* provider = currentSemanticUxContextProvider()) {
         provider->captureSemanticUxContext(record.traceEvent, postContext);
@@ -654,6 +728,11 @@ FLASHMEM void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
     if (hasSemanticContext(meaningfulContext) &&
         !ignoredContext) {
         last_semantic_event_ = record.traceEvent;
+        last_semantic_intent_ =
+            record.preContext.intent !=
+                    core::state::interaction::ControllerIntent::NONE
+                ? record.preContext.intent
+                : postContext.intent;
         last_semantic_effect_ = record.preContext.effect
             ? record.preContext.effect
             : postContext.effect;
@@ -755,6 +834,10 @@ FLASHMEM void SemanticUxRecorder::writeCapture_(uint32_t nowMs,
         if (auto* provider = currentSemanticUxContextProvider()) {
             provider->captureSemanticUxContext(last_semantic_event_, context);
         }
+        if (last_semantic_intent_ !=
+            core::state::interaction::ControllerIntent::NONE) {
+            context.intent = last_semantic_intent_;
+        }
         if (last_semantic_effect_) context.effect = last_semantic_effect_;
         if (last_semantic_outcome_ && !context.outcome) {
             context.outcome = last_semantic_outcome_;
@@ -816,6 +899,45 @@ FLASHMEM void SemanticUxRecorder::writeDropReport_(uint32_t nowMs) {
     );
     line[sizeof(line) - 1U] = '\0';
     sink_->writeLine(line);
+}
+
+FLASHMEM void setCurrentEncoderContractTraceRecorder(
+    SemanticUxRecorder* recorder
+) {
+    currentEncoderContractTraceRecorder = recorder;
+}
+
+FLASHMEM void clearCurrentEncoderContractTraceRecorder(
+    SemanticUxRecorder* recorder
+) {
+    if (currentEncoderContractTraceRecorder == recorder) {
+        currentEncoderContractTraceRecorder = nullptr;
+    }
+}
+
+FLASHMEM void recordEncoderContractTrace(
+    EncoderContractOwner owner,
+    EncoderContractMode mode,
+    oc::type::EncoderID encoderId,
+    float minimum,
+    float maximum,
+    uint8_t discreteSteps,
+    uint8_t discreteTicksPerStep,
+    float normalizedTurns,
+    float position
+) {
+    if (currentEncoderContractTraceRecorder == nullptr) return;
+    currentEncoderContractTraceRecorder->onEncoderContractTrace({
+        .owner = owner,
+        .mode = mode,
+        .encoderId = encoderId,
+        .minimumMilli = milliFromFloat(minimum),
+        .maximumMilli = milliFromFloat(maximum),
+        .positionMilli = milliFromFloat(position),
+        .normalizedTurnsMilli = milliFromFloat(normalizedTurns),
+        .discreteSteps = discreteSteps,
+        .discreteTicksPerStep = discreteTicksPerStep,
+    });
 }
 
 }  // namespace core::validation::ux

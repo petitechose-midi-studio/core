@@ -54,6 +54,13 @@ constexpr const char* const ROUTING_TRACK_LABELS[] PROGMEM = {
     "Track 16",
 };
 
+constexpr const char* const CC_DEFAULT_LABELS[] PROGMEM = {
+    "Lane 1",
+    "Lane 2",
+    "Lane 3",
+    "Lane 4",
+};
+
 FLASHMEM void setRowValue(ProjectMenuRow& target, const char* value) {
     target.value = value ? value : "";
     target.valueText[0] = '\0';
@@ -208,12 +215,55 @@ FLASHMEM void addRow(ProjectMenuPage& page, ProjectMenuRow next) {
     page.rows[page.rowCount++] = next;
 }
 
-FLASHMEM void buildOverviewRows(ProjectMenuPage& page) {
-    addRow(page, row("New Project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
-    addRow(page, row("Load Project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
-    addRow(page, row("Save", "Current", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
-    addRow(page, row("Save As", "Name", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
-    addRow(page, row("Rename", "Current", ProjectMenuRowKind::Action, ProjectNodeId::OVERVIEW_ROOT));
+FLASHMEM void buildOverviewRows(ProjectMenuPage& page, ProjectMenuContext context) {
+    context.projectScale.clamp();
+
+    auto music = row(
+        "Music",
+        "",
+        ProjectMenuRowKind::Folder,
+        ProjectNodeId::MUSIC_ROOT,
+        true
+    );
+    setScaleSummary(music, context.projectScale);
+    addRow(page, music);
+
+    auto tempo = row(
+        "Tempo",
+        "",
+        ProjectMenuRowKind::Folder,
+        ProjectNodeId::TRANSPORT_ROOT,
+        true
+    );
+    setRowValue(
+        tempo,
+        static_cast<unsigned>(roundedProjectTempoBpm(context.tempoBpm)),
+        " BPM"
+    );
+    addRow(page, tempo);
+    addRow(page, row(
+        "Clock",
+        clockModeValue(context.clockMode),
+        ProjectMenuRowKind::Folder,
+        ProjectNodeId::TRANSPORT_ROOT,
+        true
+    ));
+    addRow(page, row(
+        "Routing",
+        "16 Tracks",
+        ProjectMenuRowKind::Folder,
+        ProjectNodeId::ROUTING_ROOT,
+        true
+    ));
+    addRow(page, row(
+        "Storage",
+        context.projectDirty
+            ? "Modified"
+            : (context.projectHasSavedIdentity ? "Saved" : "Unsaved"),
+        ProjectMenuRowKind::Folder,
+        ProjectNodeId::STORAGE_ROOT,
+        true
+    ));
 }
 
 FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
@@ -236,7 +286,14 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
         );
         addRow(page, saveAsNew);
     }
-    addRow(page, row("Don't Save", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
+    auto dontSave = row(
+        "Don't Save",
+        "Reset",
+        ProjectMenuRowKind::Action,
+        ProjectNodeId::NEW_PROJECT_CONFIRM
+    );
+    dontSave.tone = ProjectMenuRowTone::Destructive;
+    addRow(page, dontSave);
     addRow(page, row("Cancel", "Back", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
 }
 
@@ -273,6 +330,7 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
         ProjectMenuRowKind::Action,
         ProjectNodeId::LOAD_PROJECT_CONFIRM
     );
+    dontSave.tone = ProjectMenuRowTone::Destructive;
     {
         auto* buffer = dontSave.valueText.data();
         const auto size = dontSave.valueText.size();
@@ -298,10 +356,24 @@ FLASHMEM void buildMusicRootRows(ProjectMenuPage& page, ProjectMenuContext conte
     addRow(page, row("Pattern Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
     addRow(page, row("Clip Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
     addRow(page, row("Step Paste", "Extend", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
-    addRow(page, row("Lane 1 Default", "CC 1", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
-    addRow(page, row("Lane 2 Default", "CC 11", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
-    addRow(page, row("Lane 3 Default", "CC 74", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
-    addRow(page, row("Lane 4 Default", "CC 71", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row(
+        "CC Defaults",
+        "4 Lanes",
+        ProjectMenuRowKind::Folder,
+        ProjectNodeId::MUSIC_CC_DEFAULTS,
+        true
+    ));
+}
+
+FLASHMEM void buildMusicCcDefaultRows(ProjectMenuPage& page) {
+    for (uint8_t lane = 0; lane < PROJECT_CC_LANE_DEFAULT_COUNT; ++lane) {
+        addRow(page, row(
+            CC_DEFAULT_LABELS[lane],
+            "",
+            ProjectMenuRowKind::Value,
+            ProjectNodeId::MUSIC_CC_DEFAULTS
+        ));
+    }
 }
 
 FLASHMEM void buildMusicScaleRows(ProjectMenuPage& page, ProjectMenuContext context) {
@@ -347,7 +419,9 @@ FLASHMEM void buildProjectNameEditorRows(ProjectMenuPage& page,
     addRow(page, nameRow);
 
     auto keyRow = row("Key", "", ProjectMenuRowKind::Value, navigation.currentNode.get());
-    const auto& key = projectNameKeyboardCellAt(navigation.projectNameKeyIndex);
+    const auto& key = core::state::interaction::textKeyboardCellAt(
+        navigation.projectNameKeyIndex
+    );
     char keyLabel[4] = {};
     if (key.character == ' ') {
         std::snprintf(keyLabel, sizeof(keyLabel), "%s", key.label);
@@ -419,6 +493,9 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
             return;
         case ProjectNodeId::MUSIC_SCALE:
             page.meta = "MUSIC > SCALE";
+            return;
+        case ProjectNodeId::MUSIC_CC_DEFAULTS:
+            page.meta = "MUSIC > CC DEFAULTS";
             return;
         case ProjectNodeId::TRANSPORT_ROOT:
             page.meta = "TRANSPORT";
@@ -545,11 +622,13 @@ FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
             if (page.rowCount > 3) {
                 setRowValue(page.rows[3], stepPasteModeValue(navigation.stepPasteMode));
             }
+            break;
+        case ProjectNodeId::MUSIC_CC_DEFAULTS:
             for (uint8_t lane = 0;
-                 lane < PROJECT_CC_LANE_DEFAULT_COUNT && 4U + lane < page.rowCount;
+                 lane < PROJECT_CC_LANE_DEFAULT_COUNT && lane < page.rowCount;
                  ++lane) {
                 setMidiCcValue(
-                    page.rows[static_cast<uint8_t>(4U + lane)],
+                    page.rows[lane],
                     navigation.ccLaneDefaultControllers[lane]
                 );
             }
@@ -591,6 +670,9 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
         case ProjectNodeId::MUSIC_SCALE:
             buildMusicScaleRows(page, context);
             break;
+        case ProjectNodeId::MUSIC_CC_DEFAULTS:
+            buildMusicCcDefaultRows(page);
+            break;
         case ProjectNodeId::TRANSPORT_ROOT:
             buildTransportRows(page, context);
             break;
@@ -625,7 +707,7 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
             break;
         case ProjectNodeId::OVERVIEW_ROOT:
         default:
-            buildOverviewRows(page);
+            buildOverviewRows(page, context);
             break;
     }
     applyDynamicValues(page, navigation);

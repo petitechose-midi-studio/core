@@ -70,11 +70,7 @@ private:
     core::ui::SequencerChordVoiceRail&
         preset_library_chord_voice_rail_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    oc::state::StaticWatchGroup<15> step_edit_watcher_;
-#else
-    oc::state::StaticWatchGroup<14> step_edit_watcher_;
-#endif
+    oc::state::StaticWatchGroup<16> step_edit_watcher_;
     oc::state::StaticWatchGroup<3> step_edit_action_watcher_;
     oc::state::StaticWatchGroup<16> preset_library_watcher_;
     oc::state::StaticWatchGroup<8> preset_library_action_watcher_;

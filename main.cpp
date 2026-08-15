@@ -77,6 +77,13 @@ namespace {
 
 constexpr uint32_t STORAGE_RECOVERY_SAMPLE_MS = 500;
 constexpr uint32_t STORAGE_RECOVERY_RETRY_BACKOFF_MS = 5000;
+#if !defined(MS_PROJECT_STORE_SMOKE)
+constexpr uint32_t DISPLAY_INIT_RETRY_BACKOFF_MS = 1000;
+const char kDisplayInitRetryLog[] PROGMEM =
+    "Display init attempt {} failed: {} context={}; retrying";
+const char kDisplayInitRecoveredLog[] PROGMEM =
+    "Display init recovered on attempt {}";
+#endif
 const char kPersistenceTurnRejected[] PROGMEM =
     "[Persistence] Foreground turn rejected: {}";
 const char kNoRecoveryErrorContext[] PROGMEM = "none";
@@ -515,19 +522,44 @@ core::app::ExtmemUniquePtr<core::validation::ux::SemanticUxRecorder>
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void checkOrHalt(const oc::type::Result<void>& result, const char* component) {
     if (!result) {
-        OC_LOG_ERROR("{} init failed: {}", component,
-                     oc::type::errorCodeToString(result.error().code));
+        const auto error = result.error();
+        OC_LOG_ERROR("{} init failed: {} context={}", component,
+                     oc::type::errorCodeToString(error.code),
+                     error.context ? error.context : "none");
         while (true) {}
     }
 }
 
 static FLASHMEM void initDisplay() {
-    display = oc::hal::teensy::Ili9341(
-        device::display::CONFIG,
-        {.framebuffer = device::buffers::framebuffer,
-         .diff1 = device::buffers::diff1,
-         .diff2 = device::buffers::diff2});
-    checkOrHalt(display->init(), "Display");
+    uint32_t attempt = 0;
+    while (true) {
+        ++attempt;
+        // Reconstruct the driver between attempts so a partially initialized
+        // SPI/DMA state cannot leak into the next cold-start handshake.
+        display.reset();
+        display.emplace(
+            device::display::CONFIG,
+            oc::hal::teensy::Ili9341Buffers{
+                .framebuffer = device::buffers::framebuffer,
+                .diff1 = device::buffers::diff1,
+                .diff2 = device::buffers::diff2,
+            });
+
+        const auto initialized = display->init();
+        if (initialized) {
+            if (attempt > 1U) {
+                OC_LOG_INFO(kDisplayInitRecoveredLog, attempt);
+            }
+            return;
+        }
+
+        const auto error = initialized.error();
+        OC_LOG_WARN(kDisplayInitRetryLog,
+                    attempt,
+                    oc::type::errorCodeToString(error.code),
+                    error.context ? error.context : "none");
+        delay(DISPLAY_INIT_RETRY_BACKOFF_MS);
+    }
 }
 
 static FLASHMEM void initLVGL() {
@@ -651,6 +683,9 @@ static FLASHMEM void initApp() {
         OC_LOG_ERROR("Semantic UX recorder init failed: EXTMEM allocation failed");
         while (true) {}
     }
+    core::validation::ux::setCurrentEncoderContractTraceRecorder(
+        semanticUxRecorder.get()
+    );
 #endif
 
     oc::hal::teensy::AppBuilder appBuilder;

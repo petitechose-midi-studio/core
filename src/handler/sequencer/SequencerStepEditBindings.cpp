@@ -21,13 +21,12 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(sequencer_view_scope_)
             .when([this]() {
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-                if (sequencer_.drumTrackUxPrototype.gridVisible()) {
-                    return !overlay_state_.hasVisible() &&
-                           navigation_focus_.get() ==
-                               core::state::StructureNavigationFocus::STEP;
+                if (core::state::sequencer::isDrumOverviewActive(sequencer_)) {
+                    // A pad hold targets the visible hit directly. Pattern
+                    // focus must not turn the same physical gesture into a
+                    // late tap/toggle merely because NAV was not on Step.
+                    return !overlay_state_.hasVisible();
                 }
-#endif
                 const auto policy = interaction_policy::build(
                     sequencer_,
                     track_ui_,
@@ -36,7 +35,9 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
                 );
                 return interaction_policy::canOpenStepEditor(policy);
             })
-            .then([this, i]() { openForMacroInPage(i); });
+            .then([this, i]() {
+                openForMacroInPage(i);
+            });
     }
 
     // ===== OVERLAY SCOPE =====
@@ -45,20 +46,17 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(overlay_scope_)
-        .when([this]() {
-            return step_retarget_active_ &&
-                   !sequencer_.stepContentDraft.exitPromptVisible.get();
-        })
-        .then([this](float delta) { retargetEditedStep(delta); });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(overlay_scope_)
-        .when([this]() {
-            return !step_retarget_active_ ||
-                   sequencer_.stepContentDraft.exitPromptVisible.get();
-        })
-        .then([this](float delta) { moveFocus(delta); });
+        .then([this](float delta) {
+            if (step_retarget_active_ &&
+                !sequencer_.stepContentDraft.exitPromptVisible.get()) {
+                retargetEditedStep(delta);
+            } else if (lane_retarget_active_ &&
+                       !sequencer_.stepContentDraft.exitPromptVisible.get()) {
+                retargetEditedDrumLane(delta);
+            } else {
+                moveFocus(delta);
+            }
+        });
 
     // OPT encoder: edit focused value
     encoders_.encoder(Config::EncoderID::OPT)
@@ -85,9 +83,6 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(overlay_scope_)
         .when([this]() {
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-            if (drumStepEditActive()) return false;
-#endif
             return core::state::sequencer::preset_library_entry_policy::
                 canOpenStepPresets(sequencer_);
         })
@@ -103,9 +98,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(overlay_scope_)
         .when([this]() {
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
             if (drumStepEditActive()) return false;
-#endif
             return core::state::sequencer::preset_library_entry_policy::
                 canOpenChordPresets(sequencer_);
         })
@@ -130,7 +123,10 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
                    !chordEditorActive() &&
                    !sequencer_.stepContentDraft.exitPromptVisible.get();
         })
-        .then([this]() { step_retarget_active_ = true; });
+        .then([this]() {
+            lane_retarget_active_ = false;
+            step_retarget_active_ = true;
+        });
 
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .release()
@@ -151,9 +147,15 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() {
             return !sequencer_.stepContentDraft.exitPromptVisible.get() &&
-                   focusedRowSupportsLocalVariation();
+                   (canRetargetEditedDrumLane() ||
+                    focusedRowSupportsLocalVariation());
         })
         .then([this]() {
+            if (canRetargetEditedDrumLane()) {
+                step_retarget_active_ = false;
+                lane_retarget_active_ = true;
+                return;
+            }
             sequencer_.stepEdit.localVariationEditActive.set(true);
             configureOptForFocusedRow();
         });
@@ -162,10 +164,12 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .release()
         .scope(overlay_scope_)
         .when([this]() {
-            return !sequencer_.stepContentDraft.exitPromptVisible.get() &&
+            return lane_retarget_active_ ||
                    sequencer_.stepEdit.localVariationEditActive.get();
         })
         .then([this]() {
+            lane_retarget_active_ = false;
+            if (!sequencer_.stepEdit.localVariationEditActive.get()) return;
             sequencer_.stepEdit.localVariationEditActive.set(false);
             configureOptForFocusedRow();
         });

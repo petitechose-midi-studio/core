@@ -177,7 +177,7 @@ FLASHMEM void SequencerChordVoiceRail::draw(lv_layer_t* layer) {
                 layer,
                 cell,
                 item.value.data(),
-                fonts.inter_14_semibold,
+                fonts.primary_value(),
                 color_,
                 opacity
             );
@@ -200,7 +200,7 @@ FLASHMEM void SequencerChordVoiceRail::draw(lv_layer_t* layer) {
             layer,
             labelArea,
             item.label.data(),
-            fonts.inter_12_medium,
+            fonts.meta_label(),
             theme::color::TEXT_SECONDARY,
             opacity
         );
@@ -208,7 +208,7 @@ FLASHMEM void SequencerChordVoiceRail::draw(lv_layer_t* layer) {
             layer,
             valueArea,
             item.value.data(),
-            fonts.inter_13_bold,
+            fonts.compact_selected(),
             color_,
             opacity
         );

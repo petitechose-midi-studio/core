@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include <algorithm>
+#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 #include <new>
@@ -114,6 +115,103 @@ FLASHMEM SequencerHistoryFullBankChange::SequencerHistoryFullBankChange(
     SequencerHistoryFullBankChange&&) noexcept = default;
 FLASHMEM SequencerHistoryFullBankChange& SequencerHistoryFullBankChange::operator=(
     SequencerHistoryFullBankChange&&) noexcept = default;
+
+FLASHMEM SequencerHistoryDrumChangePtr prepareHistoryDrumChangeBefore(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryDescriptor descriptor
+) {
+    const uint8_t target = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    auto change = core::app::makeExtmemUnique<SequencerHistoryDrumChange>();
+    if (!change) return {};
+    change->trackIndex = target;
+    change->beforeKind = bank.trackKind(target);
+    change->afterKind = change->beforeKind;
+    change->descriptor = descriptor;
+    change->descriptor.trackIndex = target;
+    change->before = bank.drumTrack(target);
+    change->after = change->before;
+    change->capturesGraph =
+        descriptor.kind == SequencerHistoryActionKind::DrumAdvancedContent ||
+        descriptor.kind == SequencerHistoryActionKind::DrumLaneContent;
+    if (change->capturesGraph) {
+        const auto& source = target == bank.activeTrackIndex()
+            ? active.pattern
+            : bank.track(target);
+        change->beforeGraphRevision = source.graphRevision.get();
+        change->afterGraphRevision = change->beforeGraphRevision;
+        const auto* sourceGraph = graphView(source);
+        if (sourceGraph != nullptr) {
+            change->beforeGraph =
+                core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>(
+                    *sourceGraph);
+            if (!change->beforeGraph) return {};
+        }
+        // Reserve the prospective post-edit owner before the first live graph
+        // write. It is released on seal when the result remains graphless.
+        change->afterGraph =
+            core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+        if (!change->afterGraph) return {};
+    }
+    return change;
+}
+
+FLASHMEM bool capturePreparedHistoryDrumAfter(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryDrumChange& change
+) {
+    if (change.trackIndex >= SequencerTrackBankState::TRACK_COUNT) return false;
+    change.afterKind = bank.trackKind(change.trackIndex);
+    change.after = bank.drumTrack(change.trackIndex);
+    if (change.capturesGraph) {
+        const auto& source = change.trackIndex == bank.activeTrackIndex()
+            ? active.pattern
+            : bank.track(change.trackIndex);
+        change.afterGraphRevision = source.graphRevision.get();
+        const auto* sourceGraph = graphView(source);
+        if (sourceGraph == nullptr) {
+            change.afterGraph.reset();
+        } else {
+            if (!change.afterGraph) return false;
+            *change.afterGraph = *sourceGraph;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool restorePreparedHistoryDrumBefore(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    SequencerHistoryDrumChange& change
+) noexcept {
+    if (change.trackIndex >= SequencerTrackBankState::TRACK_COUNT) return false;
+
+    bank.restoreDrumTrack(
+        change.trackIndex,
+        change.beforeKind,
+        change.before
+    );
+    if (!change.capturesGraph) return true;
+
+    auto& target = change.trackIndex == bank.activeTrackIndex()
+        ? active.pattern
+        : bank.track(change.trackIndex);
+    if (!change.beforeGraph) {
+        target.graph.reset();
+    } else {
+        // A pre-existing Graph owner cannot disappear during the supported
+        // advanced Drum edits. Reuse it so rollback remains allocation-free.
+        if (!target.graph) return false;
+        *target.graph = *change.beforeGraph;
+    }
+    target.graphRevision.set(change.beforeGraphRevision);
+    if (change.trackIndex == bank.activeTrackIndex()) {
+        refreshContentView(active);
+    }
+    return true;
+}
 
 FLASHMEM SequencerHistoryEntry::SequencerHistoryEntry() = default;
 FLASHMEM SequencerHistoryEntry::~SequencerHistoryEntry() = default;
@@ -578,7 +676,10 @@ FLASHMEM uint8_t scopeLimit(SequencerHistoryScope scope) {
         case SequencerHistoryScope::Structure:
             return SequencerHistoryService::STRUCTURE_ENTRY_LIMIT;
         case SequencerHistoryScope::FullBank:
-        default: return SequencerHistoryService::FULL_BANK_ENTRY_LIMIT;
+            return SequencerHistoryService::FULL_BANK_ENTRY_LIMIT;
+        case SequencerHistoryScope::Drum:
+            return SequencerHistoryService::DRUM_ENTRY_LIMIT;
+        default: return 0U;
     }
 }
 
@@ -675,7 +776,14 @@ FLASHMEM uint16_t fullBankChangeRetainedSpans(
 FLASHMEM size_t
 structureSnapshotRetainedBytes(const SequencerHistoryTrackStructureSnapshot& snapshot) {
     size_t bytes = 0;
-    for (const auto& track : snapshot.tracks) { bytes += patternSnapshotRetainedBytes(track); }
+    for (uint8_t track = 0U;
+         track < SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        bytes += patternSnapshotRetainedBytes(snapshot.tracks[track]);
+        if (snapshot.drumTracks[track] != nullptr) {
+            bytes += sizeof(DrumTrackState) + kExtmemAllocationOverheadEstimate;
+        }
+    }
     return bytes;
 }
 
@@ -683,10 +791,14 @@ FLASHMEM uint16_t structureSnapshotRetainedSpans(
     const SequencerHistoryTrackStructureSnapshot& snapshot
 ) {
     uint16_t spans = 0U;
-    for (const auto& track : snapshot.tracks) {
+    for (uint8_t index = 0U;
+         index < SequencerTrackBankState::TRACK_COUNT;
+         ++index) {
+        const auto& track = snapshot.tracks[index];
         spans = static_cast<uint16_t>(
             spans + patternSnapshotRetainedSpans(track)
         );
+        if (snapshot.drumTracks[index] != nullptr) ++spans;
     }
     return spans;
 }
@@ -729,6 +841,28 @@ FLASHMEM uint16_t structureChangeRetainedSpans(
 FLASHMEM size_t patternChangeRetainedBytes(const SequencerHistoryPatternChange& change) {
     return sizeof(SequencerHistoryPatternChange) + kExtmemAllocationOverheadEstimate +
            patternSnapshotRetainedBytes(change.before) + patternSnapshotRetainedBytes(change.after);
+}
+
+FLASHMEM size_t drumChangeRetainedBytes(const SequencerHistoryDrumChange& change) {
+    size_t bytes = sizeof(SequencerHistoryDrumChange) +
+        kExtmemAllocationOverheadEstimate;
+    if (change.beforeGraph) {
+        bytes += sizeof(oc::note::sequencer::StepSequencerGraph) +
+            kExtmemAllocationOverheadEstimate;
+    }
+    if (change.afterGraph) {
+        bytes += sizeof(oc::note::sequencer::StepSequencerGraph) +
+            kExtmemAllocationOverheadEstimate;
+    }
+    return bytes;
+}
+
+FLASHMEM uint16_t drumChangeRetainedSpans(
+    const SequencerHistoryDrumChange& change
+) {
+    return static_cast<uint16_t>(
+        1U + (change.beforeGraph ? 1U : 0U) +
+        (change.afterGraph ? 1U : 0U));
 }
 
 FLASHMEM uint16_t patternChangeRetainedSpans(
@@ -777,6 +911,8 @@ FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
         case SequencerHistoryScope::FullBank:
             if (!entry.fullBank) return 0;
             return fullBankChangeRetainedBytes(*entry.fullBank);
+        case SequencerHistoryScope::Drum:
+            return entry.drum ? drumChangeRetainedBytes(*entry.drum) : 0U;
         default: return 0;
     }
 }
@@ -795,6 +931,8 @@ FLASHMEM uint16_t entryRetainedSpans(const SequencerHistoryEntry& entry) {
             return entry.fullBank
                 ? fullBankChangeRetainedSpans(*entry.fullBank)
                 : 0U;
+        case SequencerHistoryScope::Drum:
+            return entry.drum ? drumChangeRetainedSpans(*entry.drum) : 0U;
         default:
             return 0U;
     }
@@ -839,6 +977,8 @@ FLASHMEM uintptr_t projectHistoryIdentity(const SequencerHistoryEntry& entry) {
             return reinterpret_cast<uintptr_t>(entry.structure.get());
         case SequencerHistoryScope::FullBank:
             return reinterpret_cast<uintptr_t>(entry.fullBank.get());
+        case SequencerHistoryScope::Drum:
+            return reinterpret_cast<uintptr_t>(entry.drum.get());
         default: return 0U;
     }
 }
@@ -969,6 +1109,47 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
     // escape through this generic allocating path.
     if (entry.scope == SequencerHistoryScope::Structure) return false;
 
+    if (entry.scope == SequencerHistoryScope::Drum) {
+        if (!entry.drum) return false;
+        const auto& change = *entry.drum;
+        const auto* graph = after
+            ? change.afterGraph.get()
+            : change.beforeGraph.get();
+        const uint32_t graphRevision = after
+            ? change.afterGraphRevision
+            : change.beforeGraphRevision;
+
+        GraphPtr editorGraph;
+        GraphPtr bankGraph;
+        if (change.capturesGraph) {
+            if (!cloneGraph(graph, bankGraph)) return false;
+            if (change.trackIndex == bank.activeTrackIndex() &&
+                !cloneGraph(graph, editorGraph)) {
+                return false;
+            }
+        }
+        bank.restoreDrumTrack(
+            change.trackIndex,
+            after ? change.afterKind : change.beforeKind,
+            after ? change.after : change.before
+        );
+        if (change.capturesGraph) {
+            installGraph(
+                bank.track(change.trackIndex),
+                std::move(bankGraph),
+                graphRevision
+            );
+            if (change.trackIndex == bank.activeTrackIndex()) {
+                installGraph(
+                    active.pattern,
+                    std::move(editorGraph),
+                    graphRevision
+                );
+            }
+        }
+        return true;
+    }
+
     if (!entry.fullBank) return false;
     return applyHistorySnapshot(bank, active,
                                 after ? entry.fullBank->after : entry.fullBank->before);
@@ -989,6 +1170,12 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(const SequencerHistoryEnt
 
     if (entry.scope == SequencerHistoryScope::FullBank && entry.fullBank) {
         descriptor = entry.fullBank->descriptor;
+        return descriptor;
+    }
+
+    if (entry.scope == SequencerHistoryScope::Drum && entry.drum) {
+        descriptor = entry.drum->descriptor;
+        descriptor.trackIndex = entry.drum->trackIndex;
         return descriptor;
     }
 
@@ -1611,6 +1798,21 @@ FLASHMEM bool sameMusicalHistorySnapshot(const SequencerHistoryPatternSnapshot& 
             sameOptionalSequencerCcLaneBank(lhs.ccLanes.get(), rhs.ccLanes.get()));
 }
 
+FLASHMEM bool sameMusicalHistoryDrumChange(
+    const SequencerHistoryDrumChange& change
+) {
+    if (change.beforeKind != change.afterKind) return false;
+    const bool sameDrum = std::memcmp(
+               &change.before,
+               &change.after,
+               sizeof(DrumTrackState)
+           ) == 0;
+    if (!sameDrum) return false;
+    if (!change.capturesGraph) return true;
+    return change.beforeGraphRevision == change.afterGraphRevision &&
+        sameGraph(change.beforeGraph.get(), change.afterGraph.get());
+}
+
 FLASHMEM bool sameMusicalPatternState(
     const SequencerPatternState& lhs,
     const SequencerPatternState& rhs
@@ -2114,6 +2316,38 @@ FLASHMEM void SequencerHistoryService::recordPreparedPattern(
     SequencerHistoryEntry entry;
     entry.scope = SequencerHistoryScope::PatternOnly;
     entry.pattern = std::move(change);
+    commitPreparedEntry(std::move(entry));
+}
+
+FLASHMEM bool SequencerHistoryService::canRecordDrum(
+    const SequencerHistoryDrumChange& change
+) const {
+    const RetainedUsage incoming{
+        .bytes = static_cast<uint32_t>(drumChangeRetainedBytes(change)),
+        .spans = drumChangeRetainedSpans(change),
+    };
+    return change.trackIndex < SequencerTrackBankState::TRACK_COUNT &&
+        !sameMusicalHistoryDrumChange(change) &&
+        incomingEntryFitsRetainedBudget(incoming) &&
+        (project_history_sink_ == nullptr ||
+         project_history_sink_->admitsRetainedUsage(
+             core::state::project::ProjectHistoryDomain::Sequencer,
+             incoming
+         ));
+}
+
+FLASHMEM void SequencerHistoryService::recordPreparedDrum(
+    SequencerHistoryDrumChangePtr change
+) {
+    assert(change);
+    if (!change) return;
+    change->trackIndex = SequencerTrackBankState::clampTrackIndex(
+        change->trackIndex);
+    change->descriptor.trackIndex = change->trackIndex;
+
+    SequencerHistoryEntry entry;
+    entry.scope = SequencerHistoryScope::Drum;
+    entry.drum = std::move(change);
     commitPreparedEntry(std::move(entry));
 }
 

@@ -39,10 +39,18 @@ class VirtualListKeyValueOverlay;
 class VirtualListSelectorOverlay;
 }
 
+namespace oc::api {
+class MidiAPI;
+}
+
 namespace core::ui {
 class SequencerChordVoiceRail;
 class SequencerPatternEditorOverlay;
 class SequencerStepEditOverlay;
+}
+
+namespace core::ui::interaction {
+class TextKeyboardView;
 }
 
 namespace core::ui::project {
@@ -50,6 +58,7 @@ class ProjectTrackEditorOverlay;
 }
 
 namespace core::context::standalone {
+class DrumLaneEditorPresenter;
 class PatternPitchSettingsOverlayPresenter;
 class OverlayPresentationRegistry;
 class ProjectTrackEditorPresenter;
@@ -60,6 +69,7 @@ class SequencerPatternEditorPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
+class DrumLaneEditorHandler;
 class PatternPitchSettingsHandler;
 class ProjectTrackEditorHandler;
 class SequencerCcLaneHandler;
@@ -125,6 +135,7 @@ public:
                            OverlayPresentationRegistry& overlayPresentations,
                            oc::api::EncoderAPI& encoders,
                            oc::api::ButtonAPI& buttons,
+                           oc::api::MidiAPI& midi,
                            lv_obj_t* overlayRoot,
                            lv_obj_t* sequencerViewScope
 #if defined(MS_UX_RECORDER)
@@ -161,6 +172,8 @@ private:
     core::context::standalone::ux::SequencerQuickControlsUxSurface quick_controls_ux_surface_;
     core::context::standalone::ux::SequencerStructureUxSurface structure_ux_surface_;
     core::context::standalone::ux::SequencerStepEditUxSurface step_edit_ux_surface_;
+    core::context::standalone::ux::DrumLaneEditorUxSurface
+        drum_lane_editor_ux_surface_;
     core::context::standalone::ux::SequencerStepGridUxSurface step_grid_ux_surface_;
 #endif
 
@@ -178,6 +191,8 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
         track_editor_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::SequencerStepEditOverlay> step_edit_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::interaction::TextKeyboardView>
+        drum_lane_name_keyboard_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> step_edit_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         preset_library_overlay_;
@@ -200,6 +215,8 @@ private:
         track_editor_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerCcLaneOverlayPresenter>
         cc_lane_presenter_;
+    core::app::ExtmemUniquePtr<core::context::standalone::DrumLaneEditorPresenter>
+        drum_lane_editor_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::PatternPitchSettingsOverlayPresenter>
         pattern_pitch_settings_presenter_;
     core::app::ExtmemUniquePtr<core::handler::SequencerStepHandler> step_handler_;
@@ -209,6 +226,8 @@ private:
         pattern_editor_handler_;
     core::app::ExtmemUniquePtr<core::handler::ProjectTrackEditorHandler>
         track_editor_handler_;
+    core::app::ExtmemUniquePtr<core::handler::DrumLaneEditorHandler>
+        drum_lane_editor_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerStepEditHandler> step_edit_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerStepContentHandler>
         step_content_handler_;

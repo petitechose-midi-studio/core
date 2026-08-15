@@ -38,7 +38,7 @@ ProjectSnapshotCodecWorkspace& ProjectSnapshotCodecWorkspace::operator=(
 ) noexcept = default;
 
 FLASHMEM bool ProjectSnapshotCodecWorkspace::prepare() {
-    static_assert(sizeof(Storage) == 436855U, "project encode scratch ABI drift");
+    static_assert(sizeof(Storage) == 600295U, "project encode scratch ABI drift");
     if (!storage_) {
         storage_ = core::app::makeExtmemUniqueForOverwrite<Storage>();
     }
@@ -367,6 +367,7 @@ FLASHMEM bool buildSequencerEnvelope(
 
     sequencer_codec::ProjectSequencerSnapshotEncodeSource source{};
     source.flat = &snapshot.sequencer.flat;
+    source.drums = snapshot.drumTracks.get();
     source.focusedStep = snapshot.sequencer.focusedStep;
     source.activeStepProperty = snapshot.sequencer.activeStepProperty;
     const uint8_t activeTrack = snapshot.sequencer.flat.activeTrack;
@@ -464,6 +465,25 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
                   chunk->versionMajor,
                   chunk->versionMinor);
         return false;
+    }
+
+    if (bank->drumTrackMask() != 0U) {
+        if (!target.drumTracks) {
+            target.drumTracks = core::app::makeExtmemUnique<
+                core::state::sequencer::DrumTrackBankSnapshot>();
+        }
+        if (!target.drumTracks) {
+            addReport(report,
+                      project_file::LoadSeverity::ERROR,
+                      project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
+                      chunk->id,
+                      chunk->versionMajor,
+                      chunk->versionMinor);
+            return false;
+        }
+        bank->captureDrumTrackBank(*target.drumTracks);
+    } else {
+        target.drumTracks.reset();
     }
 
     return true;

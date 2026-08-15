@@ -289,7 +289,7 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
         lv_obj_set_pos(source_icon_, 5, 2);
         lv_obj_set_size(source_icon_, 18, 17);
     }
-    title_ = createLabel(root_, fonts.inter_14_semibold, theme::color::TEXT_PRIMARY);
+    title_ = createLabel(root_, fonts.context_title(), theme::color::TEXT_PRIMARY);
     if (title_) {
         lv_obj_set_pos(title_, 27, 1);
         lv_obj_set_size(title_, 110, HEADER_HEIGHT);
@@ -306,7 +306,7 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
     }
     state_text_ = createLabel(
         root_,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY,
         LV_TEXT_ALIGN_RIGHT
     );
@@ -350,7 +350,7 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
         lv_obj_set_style_border_width(edit_feedback_, 1, 0);
         lv_obj_set_style_border_color(
             edit_feedback_,
-            lv_color_hex(theme::color::MACRO_MODULATION),
+            lv_color_hex(theme::color::FOCUS_EDIT),
             0
         );
         lv_obj_set_style_border_opa(edit_feedback_, LV_OPA_80, 0);
@@ -360,7 +360,7 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
     }
     edit_feedback_key_ = createLabel(
         edit_feedback_,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY
     );
     if (edit_feedback_key_) {
@@ -369,7 +369,7 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
     }
     edit_feedback_value_ = createLabel(
         edit_feedback_,
-        fonts.inter_14_semibold,
+        fonts.primary_value(),
         theme::color::TEXT_PRIMARY
     );
     if (edit_feedback_value_) {
@@ -405,7 +405,7 @@ FLASHMEM void ProjectModulatorWorkspace::createCard(uint8_t index) {
     }
     card.label = createLabel(
         card.root,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY
     );
     if (card.label) {
@@ -414,7 +414,7 @@ FLASHMEM void ProjectModulatorWorkspace::createCard(uint8_t index) {
     }
     card.value = createLabel(
         card.root,
-        fonts.inter_13_bold,
+        fonts.compact_selected(),
         theme::color::TEXT_PRIMARY
     );
     if (card.value) {
@@ -463,9 +463,10 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     lv_obj_set_style_text_color(
         state_icon_,
         lv_color_hex(
-            audition || enabled
-                ? theme::color::MACRO_MODULATION
-                : theme::color::INACTIVE
+            recording || audition
+                ? theme::color::LIVE_TIME
+                : (enabled ? theme::color::CONTENT_ACTIVE
+                           : theme::color::INACTIVE)
         ),
         0
     );
@@ -547,9 +548,10 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     lv_obj_set_style_text_color(
         state_text_,
         lv_color_hex(
-            audition || enabled
-                ? theme::color::TEXT_SECONDARY
-                : theme::color::INACTIVE
+            recording || audition
+                ? theme::color::LIVE_TIME
+                : (enabled ? theme::color::CONTENT_ACTIVE
+                           : theme::color::INACTIVE)
         ),
         0
     );
@@ -679,13 +681,24 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
         const uint32_t accent = mutableValue || action
             ? theme::color::MACRO_MODULATION
             : theme::color::TEXT_SECONDARY;
-        lv_obj_set_style_border_color(card.root, lv_color_hex(accent), 0);
+        const uint32_t selectionColor = selected
+            ? theme::color::FOCUS_EDIT
+            : accent;
+        lv_obj_set_style_border_color(
+            card.root,
+            lv_color_hex(selectionColor),
+            0
+        );
         lv_obj_set_style_border_opa(
             card.root,
             selected ? LV_OPA_COVER : LV_OPA_20,
             0
         );
-        lv_obj_set_style_bg_color(card.root, lv_color_hex(accent), 0);
+        lv_obj_set_style_bg_color(
+            card.root,
+            lv_color_hex(selectionColor),
+            0
+        );
         lv_obj_set_style_bg_opa(
             card.root,
             selected ? LV_OPA_10 : LV_OPA_TRANSP,
@@ -976,7 +989,7 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
         .baseColor = theme::color::TEXT_PRIMARY,
         .impactColor = theme::color::MACRO_MODULATION,
         .guideColor = theme::color::TEXT_SECONDARY,
-        .markerColor = theme::color::PLAY_ACTIVE,
+        .markerColor = theme::color::LIVE_TIME,
         .curveOpacity = static_cast<lv_opa_t>(
             enabled ? LV_OPA_COVER : LV_OPA_40
         ),

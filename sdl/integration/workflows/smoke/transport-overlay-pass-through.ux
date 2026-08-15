@@ -3,6 +3,8 @@
 # it stops and restarts playback without closing or mutating the View Selector.
 # Expect: semantic:playing_at_root:effect=transport_start, semantic:selector_stopped:effect=transport_stop
 # Expect: semantic:selector_restarted:effect=transport_start, semantic:stopped_at_root:effect=transport_stop
+# Expect: semantic:playing_at_root:intent=transport, semantic:selector_stopped:intent=transport
+# Expect: semantic:selector_restarted:intent=transport, semantic:stopped_at_root:intent=transport
 # Expect: semantic:selector_stopped:overlay=view_selector, semantic:selector_stopped:playing=false
 # Expect: semantic:selector_restarted:overlay=view_selector, semantic:selector_restarted:playing=true
 

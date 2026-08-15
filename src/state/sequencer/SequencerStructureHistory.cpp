@@ -46,13 +46,32 @@ FLASHMEM bool captureStructureSnapshot(
     out.capturedTrackMask = sequencerHistorySanitizeTrackMask(
         static_cast<uint16_t>(trackMask | activeTrackBit(bank))
     );
+    out.drumTrackMask = static_cast<uint16_t>(
+        bank.drumTrackMask() & out.capturedTrackMask
+    );
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((out.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0) continue;
+        const uint16_t bit = sequencerHistoryTrackBit(i);
+        if ((out.capturedTrackMask & bit) == 0) {
+            out.drumTracks[i].reset();
+            continue;
+        }
         const bool captured = reuseGraphStorage
             ? captureHistorySnapshotUsingReservedGraph(bank, active, i, out.tracks[i])
             : captureHistorySnapshot(bank, active, i, out.tracks[i]);
         if (!captured) return false;
+        if ((out.drumTrackMask & bit) != 0U) {
+            if (reuseGraphStorage && out.drumTracks[i]) {
+                *out.drumTracks[i] = bank.drumTrack(i);
+            } else {
+                out.drumTracks[i] = core::app::makeExtmemUnique<DrumTrackState>(
+                    bank.drumTrack(i)
+                );
+                if (!out.drumTracks[i]) return false;
+            }
+        } else {
+            out.drumTracks[i].reset();
+        }
     }
     return true;
 }
@@ -89,7 +108,9 @@ FLASHMEM bool validStructureSnapshotSource(
         (snapshot.capturedTrackMask &
             sequencerHistoryTrackBit(snapshot.activeTrack)) == 0U ||
         (snapshot.enabledMask &
-            sequencerHistoryTrackBit(snapshot.activeTrack)) == 0U) {
+            sequencerHistoryTrackBit(snapshot.activeTrack)) == 0U ||
+        (snapshot.drumTrackMask &
+            static_cast<uint16_t>(~snapshot.capturedTrackMask)) != 0U) {
         return false;
     }
     for (uint8_t track = 0U;
@@ -97,6 +118,11 @@ FLASHMEM bool validStructureSnapshotSource(
          ++track) {
         if ((snapshot.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
             continue;
+        }
+        const bool drum = (snapshot.drumTrackMask &
+            sequencerHistoryTrackBit(track)) != 0U;
+        if (drum != static_cast<bool>(snapshot.drumTracks[track])) {
+            return false;
         }
         const auto& source = snapshot.tracks[track];
         if (!source.ccLanesCaptured ||
@@ -174,7 +200,9 @@ FLASHMEM void SequencerHistoryTrackStructureSnapshot::reset() {
     focusedStep = 0U;
     page = 0U;
     capturedTrackMask = 0x0001U;
+    drumTrackMask = 0U;
     for (auto& track : tracks) track.reset();
+    for (auto& drumTrack : drumTracks) drumTrack.reset();
 }
 
 FLASHMEM SequencerHistoryTrackStructureChange::SequencerHistoryTrackStructureChange() = default;
@@ -253,15 +281,26 @@ FLASHMEM bool reserveHistoryStructureSnapshotStorage(
         static_cast<uint16_t>(trackMask | activeTrackBit(bank))
     );
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0U) {
+        const uint16_t bit = sequencerHistoryTrackBit(i);
+        if ((capturedMask & bit) == 0U) {
             out.tracks[i].reset();
+            out.drumTracks[i].reset();
             continue;
         }
         if (!reserveHistorySnapshotStorage(bank, active, i, out.tracks[i])) {
             return false;
         }
+        if (bank.isDrumTrack(i)) {
+            out.drumTracks[i] = core::app::makeExtmemUnique<DrumTrackState>();
+            if (!out.drumTracks[i]) return false;
+        } else {
+            out.drumTracks[i].reset();
+        }
     }
     out.capturedTrackMask = capturedMask;
+    out.drumTrackMask = static_cast<uint16_t>(
+        bank.drumTrackMask() & capturedMask
+    );
     return true;
 }
 
@@ -275,8 +314,10 @@ FLASHMEM bool captureHistoryStructureSnapshotUsingReservedStorage(
         static_cast<uint16_t>(trackMask | activeTrackBit(bank))
     );
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0U) {
+        const uint16_t bit = sequencerHistoryTrackBit(i);
+        if ((capturedMask & bit) == 0U) {
             out.tracks[i].reset();
+            out.drumTracks[i].reset();
             continue;
         }
         if (!captureHistorySnapshotUsingReservedStorage(
@@ -287,12 +328,21 @@ FLASHMEM bool captureHistoryStructureSnapshotUsingReservedStorage(
             )) {
             return false;
         }
+        if (bank.isDrumTrack(i)) {
+            if (!out.drumTracks[i]) return false;
+            *out.drumTracks[i] = bank.drumTrack(i);
+        } else {
+            out.drumTracks[i].reset();
+        }
     }
     out.enabledMask = bank.currentEnabledMask();
     out.activeTrack = bank.activeTrackIndex();
     out.focusedStep = active.focusedStep.get();
     out.page = active.page.get();
     out.capturedTrackMask = capturedMask;
+    out.drumTrackMask = static_cast<uint16_t>(
+        bank.drumTrackMask() & capturedMask
+    );
     return true;
 }
 
@@ -403,6 +453,9 @@ FLASHMEM bool buildHistoryStructureSnapshotAfterFromBefore(
     after.focusedStep = focusedStep;
     after.page = page;
     after.capturedTrackMask = frozenMask;
+    after.drumTrackMask = static_cast<uint16_t>(
+        before.drumTrackMask & static_cast<uint16_t>(~canonicalResetTrackMask)
+    );
 
     for (uint8_t track = 0U;
          track < SequencerTrackBankState::TRACK_COUNT;
@@ -415,6 +468,7 @@ FLASHMEM bool buildHistoryStructureSnapshotAfterFromBefore(
                 focusedStep,
                 after.tracks[track]
             );
+            after.drumTracks[track].reset();
             continue;
         }
         // Frozen order: After Graph then CC, ascending Track.
@@ -424,6 +478,13 @@ FLASHMEM bool buildHistoryStructureSnapshotAfterFromBefore(
                 after.tracks[track]
             )) {
             return false;
+        }
+        if ((before.drumTrackMask & bit) != 0U) {
+            if (!before.drumTracks[track]) return false;
+            after.drumTracks[track] = core::app::makeExtmemUnique<
+                DrumTrackState
+            >(*before.drumTracks[track]);
+            if (!after.drumTracks[track]) return false;
         }
     }
     return true;
@@ -452,6 +513,17 @@ FLASHMEM bool liveHistoryStructureSnapshotMatches(
             ? active.pattern
             : bank.track(track);
         if (!liveHistoryPatternSnapshotMatches(live, snapshot.tracks[track])) {
+            return false;
+        }
+        const bool expectedDrum = (snapshot.drumTrackMask &
+            sequencerHistoryTrackBit(track)) != 0U;
+        if (bank.isDrumTrack(track) != expectedDrum) return false;
+        if (expectedDrum && (!snapshot.drumTracks[track] ||
+            std::memcmp(
+                &bank.drumTrack(track),
+                snapshot.drumTracks[track].get(),
+                sizeof(DrumTrackState)
+            ) != 0)) {
             return false;
         }
     }
@@ -533,10 +605,40 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
         snapshot->tracks[targetActive].flat.graphRevision
     );
     installSequencerCcLaneBank(active.pattern, std::move(replay.editorCcLanes));
+    commitHistoryStructureDrumSnapshot(bank, *snapshot);
     bank.syncSharedTrackState(snapshot->enabledMask, targetActive);
     active.focusedStep.set(snapshot->focusedStep);
     active.page.set(snapshot->page);
     replay.ready = false;
+}
+
+FLASHMEM void commitHistoryStructureDrumSnapshot(
+    SequencerTrackBankState& bank,
+    const SequencerHistoryTrackStructureSnapshot& snapshot
+) noexcept {
+    if (!validStructureSnapshotSource(snapshot)) {
+        failStructureHistoryInvariant();
+    }
+    for (uint8_t track = 0U;
+         track < SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        const uint16_t bit = sequencerHistoryTrackBit(track);
+        if ((snapshot.capturedTrackMask & bit) == 0U) continue;
+        if ((snapshot.drumTrackMask & bit) != 0U) {
+            if (!snapshot.drumTracks[track]) failStructureHistoryInvariant();
+            bank.restoreDrumTrack(
+                track,
+                SequencerTrackKind::DRUM,
+                *snapshot.drumTracks[track]
+            );
+        } else {
+            (void)bank.setTrackKind(
+                track,
+                SequencerTrackKind::INSTRUMENT,
+                false
+            );
+        }
+    }
 }
 
 FLASHMEM bool sameMusicalHistoryStructureSnapshot(
@@ -544,7 +646,8 @@ FLASHMEM bool sameMusicalHistoryStructureSnapshot(
     const SequencerHistoryTrackStructureSnapshot& rhs
 ) {
     if (lhs.enabledMask != rhs.enabledMask ||
-        lhs.activeTrack != rhs.activeTrack) {
+        lhs.activeTrack != rhs.activeTrack ||
+        lhs.drumTrackMask != rhs.drumTrackMask) {
         return false;
     }
 
@@ -558,6 +661,19 @@ FLASHMEM bool sameMusicalHistoryStructureSnapshot(
         }
 
         if (!sameMusicalHistorySnapshot(lhs.tracks[i], rhs.tracks[i])) {
+            return false;
+        }
+        const bool lhsDrum = (lhs.drumTrackMask &
+            sequencerHistoryTrackBit(i)) != 0U;
+        const bool rhsDrum = (rhs.drumTrackMask &
+            sequencerHistoryTrackBit(i)) != 0U;
+        if (lhsDrum != rhsDrum) return false;
+        if (lhsDrum && (!lhs.drumTracks[i] || !rhs.drumTracks[i] ||
+            std::memcmp(
+                lhs.drumTracks[i].get(),
+                rhs.drumTracks[i].get(),
+                sizeof(DrumTrackState)
+            ) != 0)) {
             return false;
         }
     }

@@ -19,6 +19,8 @@
 namespace core::context::standalone::ux {
 namespace {
 
+using ControllerIntent = core::state::interaction::ControllerIntent;
+
 FLASHMEM bool isButton(const oc::core::input::InputBindingTraceEvent& event,
               Config::ButtonID button,
               oc::core::input::ButtonBindingType type) {
@@ -138,6 +140,7 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
             : "Empty";
         copyValueLabel(out.valueLabel, out.property);
         out.effect = undo ? "undo_project_action" : "redo_project_action";
+        out.intent = undo ? ControllerIntent::UNDO : ControllerIntent::REDO;
         return true;
     }
 
@@ -150,11 +153,16 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
 
     if (opening) {
         out.effect = "open_view_selector";
+        // LEFT_TOP always moves toward the controller root. At the root, the
+        // visible result is the View Selector rather than another back step.
+        out.intent = ControllerIntent::BACK;
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_view";
+        out.intent = ControllerIntent::MOVE_FOCUS;
     } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
                isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "apply_view";
+        out.intent = ControllerIntent::APPLY;
     }
     return true;
 }
@@ -190,8 +198,10 @@ FLASHMEM bool DeviceSettingsUxSurface::captureSemanticUxContext(
         }
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "focus_setting";
+            out.intent = ControllerIntent::MOVE_FOCUS;
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "open_setting_value";
+            out.intent = ControllerIntent::ACTIVATE;
         }
         return true;
     }
@@ -212,10 +222,13 @@ FLASHMEM bool DeviceSettingsUxSurface::captureSemanticUxContext(
         }
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "select_setting_value";
+            out.intent = ControllerIntent::MOVE_FOCUS;
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "apply_setting_value";
+            out.intent = ControllerIntent::APPLY;
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "cancel_setting_value";
+            out.intent = ControllerIntent::CANCEL;
         }
         return true;
     }
@@ -239,6 +252,7 @@ FLASHMEM bool TransportUxSurface::captureSemanticUxContext(
     out.mode = "transport";
     out.target = "transport";
     out.effect = status_bar_.playing.get() ? "transport_stop" : "transport_start";
+    out.intent = ControllerIntent::TRANSPORT;
     return true;
 }
 

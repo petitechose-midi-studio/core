@@ -337,7 +337,6 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
             core_state_.statusBar,
             core_state_.viewSelector,
             core_state_.deviceSettings,
-            core_state_.sequencerSettings,
             core_state_.projectNavigation,
             core_state_.sequencerTrackActivations,
         }

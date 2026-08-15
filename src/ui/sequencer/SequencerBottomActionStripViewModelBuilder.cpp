@@ -16,9 +16,7 @@
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerStepPastePlan.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 #include "state/sequencer/DrumPatternState.hpp"
-#endif
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/SequencerTrackPastePendingViewModel.hpp"
@@ -51,7 +49,7 @@ FLASHMEM uint8_t countSelectedItems(uint16_t mask) {
     return count;
 }
 
-Visual interactionVisual(InteractionVisibility visibility) {
+FLASHMEM Visual interactionVisual(InteractionVisibility visibility) {
     switch (visibility) {
         case InteractionVisibility::ACTIVE:
             return Visual::ACTIVE;
@@ -63,7 +61,10 @@ Visual interactionVisual(InteractionVisibility visibility) {
     }
 }
 
-uint8_t countSelectedSteps(oc::note::sequencer::StepBitMask128 mask, uint8_t limit) {
+FLASHMEM uint8_t countSelectedSteps(
+    oc::note::sequencer::StepBitMask128 mask,
+    uint8_t limit
+) {
     uint8_t count = 0;
     for (uint8_t i = 0; i < limit; ++i) {
         if (mask.test(i)) ++count;
@@ -71,13 +72,13 @@ uint8_t countSelectedSteps(oc::note::sequencer::StepBitMask128 mask, uint8_t lim
     return count;
 }
 
-TrackTransferProjection trackTransferProjection(
+FLASHMEM TrackTransferProjection trackTransferProjection(
     const SequencerViewModelSource& source
 ) {
     return projectSequencerTrackPaste(source);
 }
 
-bool trackPasteAvailable(const TrackTransferProjection& projection) {
+FLASHMEM bool trackPasteAvailable(const TrackTransferProjection& projection) {
     return core::state::contextual::canExecute(projection.action.hold);
 }
 
@@ -97,14 +98,17 @@ FLASHMEM bool showPastePending(
     return true;
 }
 
-Tone trackPasteTone(const TrackTransferProjection& projection) {
+FLASHMEM Tone trackPasteTone(const TrackTransferProjection& projection) {
     return projection.action.hold.visual.tone ==
                core::state::contextual::ContextTone::AMBER
         ? Tone::WARNING
         : Tone::POSITIVE;
 }
 
-void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
+FLASHMEM void formatSelectionLabel(
+    std::array<char, 16>& out,
+    uint8_t count
+) {
     std::snprintf(
         out.data(),
         out.size(),
@@ -113,7 +117,7 @@ void formatSelectionLabel(std::array<char, 16>& out, uint8_t count) {
     );
 }
 
-SlotProps makeSelectionCountSlot(uint8_t selectedCount) {
+FLASHMEM SlotProps makeSelectionCountSlot(uint8_t selectedCount) {
     SlotProps slot{
         .visualState = Visual::ACTIVE,
         .tone = Tone::NEUTRAL,
@@ -125,7 +129,7 @@ SlotProps makeSelectionCountSlot(uint8_t selectedCount) {
     return slot;
 }
 
-void applyHoldProgress(SlotProps& slot,
+FLASHMEM void applyHoldProgress(SlotProps& slot,
                        const core::state::StructureHoldState& holdState,
                        bool active) {
     slot.holdActive = active;
@@ -133,7 +137,7 @@ void applyHoldProgress(SlotProps& slot,
     slot.holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
 }
 
-void applyTrackPasteProgress(
+FLASHMEM void applyTrackPasteProgress(
     SlotProps& slot,
     const core::state::contextual::GuardedActionState& guard
 ) {
@@ -143,7 +147,9 @@ void applyTrackPasteProgress(
     slot.holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
 }
 
-Tone variationStatusTone(core::state::sequencer::StepProperty property) {
+FLASHMEM Tone variationStatusTone(
+    core::state::sequencer::StepProperty property
+) {
     switch (property) {
         case core::state::sequencer::StepProperty::VELOCITY:
             return Tone::WARNING;
@@ -158,7 +164,7 @@ Tone variationStatusTone(core::state::sequencer::StepProperty property) {
     }
 }
 
-void formatVariationStatusLabel(std::array<char, 16>& out,
+FLASHMEM void formatVariationStatusLabel(std::array<char, 16>& out,
                                 core::state::sequencer::StepProperty property,
                                 uint8_t range) {
     constexpr const char* plusMinus = "\xC2\xB1";
@@ -177,7 +183,9 @@ void formatVariationStatusLabel(std::array<char, 16>& out,
     );
 }
 
-bool focusedStepHasChildContent(const SequencerViewModelSource& source) {
+FLASHMEM bool focusedStepHasChildContent(
+    const SequencerViewModelSource& source
+) {
     const auto& sequencer = source.sequencer;
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(
         sequencer,
@@ -189,7 +197,7 @@ bool focusedStepHasChildContent(const SequencerViewModelSource& source) {
     );
 }
 
-bool canPasteStepContent(const SequencerViewModelSource& source) {
+FLASHMEM bool canPasteStepContent(const SequencerViewModelSource& source) {
     return source.structureClipboard.hasSequencerStepContent(
                core::state::SequencerStepContentClipboardKind::ALL
            ) &&
@@ -199,6 +207,27 @@ bool canPasteStepContent(const SequencerViewModelSource& source) {
            );
 }
 
+FLASHMEM bool canPasteDrumStep(const SequencerViewModelSource& source) {
+    const auto& clipboard = source.structureClipboard;
+    if (!clipboard.hasSequencerSteps() ||
+        !clipboard.sequencerSteps.drumContext ||
+        clipboard.sequencerSteps.count != 1U ||
+        !clipboard.sequencerSteps.entries[0].valid) {
+        return false;
+    }
+    const auto nodeId = clipboard.sequencerSteps.entries[0].sourceNodeId;
+    if (nodeId ==
+        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID) {
+        return true;
+    }
+    return clipboard.sequencerGraph &&
+        core::state::sequencer::inspectSequencerGraphPayload(
+            *clipboard.sequencerGraph,
+            nodeId,
+            0U
+        ).ok();
+}
+
 struct StepSelectionPasteProjection {
     core::state::sequencer::SequencerStepPastePreviewPlan plan{};
     uint8_t overwriteCount = 0U;
@@ -206,7 +235,7 @@ struct StepSelectionPasteProjection {
     bool canPaste = false;
 };
 
-StepSelectionPasteProjection stepSelectionPasteProjection(
+FLASHMEM StepSelectionPasteProjection stepSelectionPasteProjection(
     const SequencerViewModelSource& source
 ) {
     StepSelectionPasteProjection projection{};
@@ -217,6 +246,7 @@ StepSelectionPasteProjection stepSelectionPasteProjection(
         selection.clipboardRevision.get() ==
             source.structureClipboard.revision.get() &&
         source.structureClipboard.hasSequencerSteps() &&
+        !source.structureClipboard.sequencerSteps.drumContext &&
         source.structureClipboard.sequencerSteps.rootContext ==
             core::state::sequencer::isRootContentView(source.sequencer);
     if (!projection.compatibleClipboard) return projection;
@@ -305,6 +335,20 @@ makeBottomInteractionContext(
             context.selectionPasteAvailable;
         return context;
     }
+    if (context.drumLaneSelectionActive) {
+        const auto& selection =
+            source.sequencer.drumSequencer.laneSelection;
+        context.selectedItemsAvailable = selection.anySelected();
+        context.selectionPlacementActive = selection.placementActive();
+        context.selectionPasteAvailable =
+            selection.placementActive() &&
+            !selection.pasteBlocked &&
+            selection.destinationMask != 0U &&
+            selection.clipboardRevision ==
+                source.structureClipboard.revision.get() &&
+            source.structureClipboard.hasSequencerDrumLaneSelection();
+        return context;
+    }
 
     if (source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP) {
         const bool focusedStepValid =
@@ -315,6 +359,7 @@ makeBottomInteractionContext(
         context.currentStructureCanCopy = focusedStepValid;
         context.compatibleClipboardAvailable =
             source.structureClipboard.hasSequencerSteps() &&
+            !source.structureClipboard.sequencerSteps.drumContext &&
             source.structureClipboard.sequencerSteps.rootContext ==
                 core::state::sequencer::isRootContentView(source.sequencer);
         return context;
@@ -349,19 +394,128 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
 ) {
     StripProps props;
     props.visible = true;
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (source.sequencer.drumTrackUxPrototype.active()) {
-        const auto& prototype = source.sequencer.drumTrackUxPrototype;
-        if (!prototype.gridVisible()) return props;
-        if (prototype.selectorVisible()) return props;
-        const uint8_t length = prototype.drumTrack->pattern.effectiveLength(
-            prototype.selectedLane
+    if (core::state::sequencer::isDrumOverviewActive(source.sequencer) ||
+        (source.sequencer.drumSequencer.active() &&
+         !source.sequencer.drumSequencer.gridVisible())) {
+        const auto& drumUi = source.sequencer.drumSequencer;
+        if (!drumUi.gridVisible()) return props;
+        if (drumUi.selectorVisible()) return props;
+        if (drumUi.laneAddSlotFocused()) return props;
+        if (drumUi.laneSelection.active) {
+            const auto& selection = drumUi.laneSelection;
+            const uint8_t selectedCount = countSelectedItems(
+                selection.selectedMask
+            );
+            const auto interaction =
+                core::state::sequencer::buildSequencerInteractionPolicy(
+                    makeBottomInteractionContext(source)
+                );
+            if (selection.moveActive()) {
+                props.slots[0].visualState = Visual::HIDDEN;
+                props.slots[1] = makeSelectionCountSlot(selectedCount);
+                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::ACTION_APPLY,
+                    Visual::ACTIVE,
+                    Tone::POSITIVE
+                );
+                return props;
+            }
+            if (selection.placementActive()) {
+                const uint8_t overwriteCount = countSelectedItems(
+                    selection.overwriteMask
+                );
+                const bool canPaste = !selection.pasteBlocked &&
+                    selection.destinationMask != 0U;
+                const auto& hold = source.sequencer.structureUi.pageHold;
+                const bool holdActive = canPaste &&
+                    hold.action.get() ==
+                        core::state::StructureHoldAction::PASTE;
+                props.slots[0].visualState = Visual::HIDDEN;
+                props.slots[1] = makeSelectionCountSlot(selectedCount);
+                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::ACTION_PASTE,
+                    holdActive
+                        ? Visual::ARMED
+                        : interactionVisual(
+                              interaction.bottomRightVisibility
+                          ),
+                    selection.pasteBlocked
+                        ? Tone::DESTRUCTIVE
+                        : overwriteCount > 0U
+                            ? Tone::WARNING
+                            : Tone::POSITIVE
+                );
+                if (overwriteCount > 0U) {
+                    props.slots[2].showLabel = true;
+                    std::snprintf(
+                        props.slots[2].labelText.data(),
+                        props.slots[2].labelText.size(),
+                        "PST \xC2\xB7 %u OVR",
+                        static_cast<unsigned>(overwriteCount)
+                    );
+                }
+                applyHoldProgress(props.slots[2], hold, holdActive);
+                return props;
+            }
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                interactionActionIcon(InteractionAction::CLEAR_SELECTION),
+                selectedCount > 0U ? Visual::ACTIVE : Visual::DISABLED,
+                Tone::WARNING
+            );
+            props.slots[1] = makeSelectionCountSlot(selectedCount);
+            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                interactionActionIcon(
+                    InteractionAction::COPY_STRUCTURE_SELECTION
+                ),
+                interactionVisual(interaction.bottomRightVisibility),
+                Tone::NEUTRAL
+            );
+            return props;
+        }
+        const auto focus = source.navigationFocus.get();
+        if (focus == core::state::StructureNavigationFocus::TRACK) {
+            // Track Mute/Remove/Copy/Paste is domain-agnostic and already
+            // snapshots the complete Drum payload. Let the common builder
+            // project exactly the same contract as an Instrument Track.
+        } else if (focus == core::state::StructureNavigationFocus::STEP) {
+            const auto& hold = source.sequencer.structureUi.pageHold;
+            const bool resetHold = hold.action.get() ==
+                core::state::StructureHoldAction::REMOVE;
+            const bool pasteAvailable = canPasteDrumStep(source);
+            const bool pasteHold = pasteAvailable &&
+                hold.action.get() == core::state::StructureHoldAction::PASTE;
+
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                interactionActionIcon(
+                    resetHold
+                        ? InteractionAction::RESET_CURRENT_STEP_DEEP
+                        : InteractionAction::RESET_CURRENT_STEP_SHALLOW
+                ),
+                resetHold ? Visual::ARMED : Visual::ACTIVE,
+                resetHold ? Tone::DESTRUCTIVE : Tone::WARNING
+            );
+            applyHoldProgress(props.slots[0], hold, resetHold);
+            props.slots[1].visualState = Visual::HIDDEN;
+            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                interactionActionIcon(
+                    pasteHold
+                        ? InteractionAction::PASTE_CURRENT_STEP
+                        : InteractionAction::COPY_CURRENT_STEP
+                ),
+                pasteHold ? Visual::ARMED : Visual::ACTIVE,
+                pasteHold ? Tone::POSITIVE : Tone::NEUTRAL
+            );
+            applyHoldProgress(props.slots[2], hold, pasteHold);
+            return props;
+        } else {
+        const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(
+            drumUi.selectedLane
         );
         const uint8_t pageCount = std::max<uint8_t>(
             1U,
             static_cast<uint8_t>(
-                (length + prototype.STEPS_PER_PAGE - 1U) /
-                prototype.STEPS_PER_PAGE
+                (length + drumUi.STEPS_PER_PAGE - 1U) /
+                drumUi.STEPS_PER_PAGE
             )
         );
         const Visual pagingVisual = pageCount > 1U
@@ -382,8 +536,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         );
         props.slots[2].iconRotated180 = true;
         return props;
+        }
     }
-#endif
 
     const bool trackFocus =
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;

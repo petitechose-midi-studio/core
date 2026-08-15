@@ -6,9 +6,7 @@
 
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
 #include "app/ExtmemAllocator.hpp"
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 #include "sequencer/DrumPlaybackEngine.hpp"
-#endif
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerMidiEventSink.hpp"
 #include "sequencer/SequencerCcLaneRuntime.hpp"
@@ -22,6 +20,7 @@
 namespace core::sequencer {
 
 struct SequencerCcLaneRuntimeProjectSnapshot;
+struct SequencerDrumRuntimeProjectSnapshot;
 struct ProjectTrackRuntimeSnapshot;
 class MidiCcGlobalFrameCoordinator;
 
@@ -35,6 +34,21 @@ struct SequencerCcTemporalRuntimeScratch {
 };
 
 static_assert(sizeof(SequencerCcTemporalRuntimeScratch) < 8U * 1024U);
+
+/** One PSRAM cache for the currently inspected Drum viewport only. */
+struct SequencerDrumResolvedProjectionCache {
+    DrumResolvedPageSignature signature{};
+    core::state::sequencer::DrumResolvedPageProjection projection{};
+    bool valid = false;
+
+    void invalidate() {
+        signature = {};
+        projection.reset();
+        valid = false;
+    }
+};
+
+static_assert(sizeof(SequencerDrumResolvedProjectionCache) < 640U);
 }
 
 namespace core::sequencer {
@@ -55,14 +69,24 @@ public:
         bool ccOutPulse = false;
         bool beatPulse = false;
         std::array<uint8_t, TRACK_COUNT> trackVelocity{};
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
         std::array<
             uint8_t,
-            core::state::sequencer::DrumTrackUxPrototypeState::
+            core::state::sequencer::DrumSequencerState::
                 RUNTIME_LANE_CAPACITY> drumLaneSteps{};
+        std::array<
+            uint8_t,
+            core::state::sequencer::DrumSequencerState::
+                RUNTIME_LANE_CAPACITY> drumLanePhaseQ8{};
+        std::array<
+            uint8_t,
+            core::state::sequencer::DrumSequencerState::
+                RUNTIME_LANE_CAPACITY> drumLaneDecisionSteps{};
         uint16_t drumLaneValidMask = 0U;
+        uint16_t drumLaneDecisionValidMask = 0U;
+        uint16_t drumLaneDecisionPlayedMask = 0U;
+        core::state::sequencer::DrumResolvedPageProjection
+            drumResolvedPage{};
         bool drumPlaying = false;
-#endif
     };
 
     SequencerPlaybackService(core::state::sequencer::SequencerState& sequencer,
@@ -92,11 +116,8 @@ public:
                 bool publishRuntimeState = true,
                 const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot = nullptr,
                 bool allowPredictiveLookahead = false
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-                , const core::state::sequencer::DrumPatternRuntimeSnapshot*
-                      drumPrototypeSnapshot = nullptr
-                , uint8_t drumPrototypeTrack = TRACK_COUNT
-#endif
+                , const SequencerDrumRuntimeProjectSnapshot* drumSnapshot =
+                      nullptr
                 );
     void stopTrack(uint8_t trackIndex);
     void completeStop();
@@ -185,6 +206,11 @@ private:
     MidiCcGlobalFrameCoordinator* cc_coordinator_ = nullptr;
     core::app::ExtmemUniquePtr<SequencerCcTemporalRuntimeScratch>
         cc_temporal_scratch_;
+    // Advanced-content previews are noncritical UI data. Keeping the single
+    // active viewport cache in PSRAM avoids multiplying it across 16 hot Drum
+    // engines in RAM2.
+    core::app::ExtmemUniquePtr<SequencerDrumResolvedProjectionCache>
+        drum_resolved_projection_cache_;
     PendingUiProjection pending_ui_projection_{};
     PendingNoteActivityObserver note_activity_observer_{pending_ui_projection_};
     // SequencerRealtimeLane owns this service in one RAM2 allocation. Keeping
@@ -197,12 +223,13 @@ private:
     std::array<
         std::optional<oc::note::sequencer::StepSequencerEngine>,
         TRACK_COUNT> track_engines_{};
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    // A single opt-in vertical-slice engine proves the one-scheduler-per-Drum-
-    // Track contract without preallocating sixteen additional schedulers.
-    std::optional<DrumPlaybackEngine> drum_prototype_engine_{};
-    uint8_t drum_prototype_track_ = TRACK_COUNT;
-#endif
+    // A bounded scheduler per Track keeps the timer lane allocation-free and
+    // preserves independent polyrhythmic phase for simultaneous Drum Tracks.
+    // These hot schedulers intentionally remain in RAM2 with melodic engines;
+    // their large authored/runtime payloads remain in PSRAM.
+    std::array<std::optional<DrumPlaybackEngine>, TRACK_COUNT>
+        drum_track_engines_{};
+    uint16_t runtime_drum_mask_ = 0U;
     uint8_t runtime_active_track_ = 0;
     uint16_t runtime_enabled_mask_ = 0x0001;
     uint16_t runtime_audible_mask_ = 0x0001;
@@ -211,6 +238,9 @@ private:
     uint16_t runtime_resync_mask_ = 0U;
     bool runtime_project_tracks_initialized_ = false;
     uint32_t runtime_tick_period_us_ = 0U;
+    uint32_t runtime_transport_tick_ = 0U;
+    uint32_t runtime_tick_anchor_us_ = 0U;
+    bool runtime_tick_anchor_valid_ = false;
     bool runtime_predictive_lookahead_ = false;
 
     int16_t last_playhead_ = -1;

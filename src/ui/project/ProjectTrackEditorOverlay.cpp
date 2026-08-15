@@ -7,6 +7,7 @@
 
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/interaction/InteractiveSurfaceVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::project {
@@ -20,9 +21,6 @@ constexpr lv_coord_t SURFACE_Y = 4;
 constexpr lv_coord_t SURFACE_WIDTH = 304;
 constexpr lv_coord_t SURFACE_HEIGHT = 196;
 
-constexpr lv_opa_t OPACITY_12 = static_cast<lv_opa_t>(31);
-constexpr lv_opa_t OPACITY_18 = static_cast<lv_opa_t>(46);
-constexpr lv_opa_t OPACITY_35 = static_cast<lv_opa_t>(89);
 constexpr lv_opa_t OPACITY_55 = static_cast<lv_opa_t>(140);
 
 template <std::size_t N>
@@ -71,6 +69,31 @@ FLASHMEM void drawLabel(
     lv_draw_label(layer, &descriptor, &area);
 }
 
+FLASHMEM void drawInteractiveSurface(
+    lv_layer_t* layer,
+    const lv_area_t& area,
+    bool selected,
+    bool enabled
+) {
+    using core::ui::interaction::InteractiveSurfaceState;
+    const auto state = !enabled
+        ? InteractiveSurfaceState::DISABLED
+        : (selected
+               ? InteractiveSurfaceState::FOCUSED
+               : InteractiveSurfaceState::IDLE);
+    const auto visual = core::ui::interaction::interactiveSurfaceVisual(state);
+    lv_draw_rect_dsc_t descriptor;
+    lv_draw_rect_dsc_init(&descriptor);
+    descriptor.bg_color = lv_color_hex(visual.backgroundColor);
+    descriptor.bg_opa = visual.backgroundOpacity;
+    descriptor.border_color = lv_color_hex(visual.borderColor);
+    descriptor.border_width =
+        theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH;
+    descriptor.border_opa = visual.borderOpacity;
+    descriptor.radius = theme::layout::INTERACTIVE_SURFACE_RADIUS;
+    lv_draw_rect(layer, &descriptor, &area);
+}
+
 FLASHMEM lv_area_t translated(
     const lv_area_t& origin,
     lv_coord_t x,
@@ -86,38 +109,6 @@ FLASHMEM lv_area_t translated(
     };
 }
 
-FLASHMEM void drawStateChip(
-    lv_layer_t* layer,
-    const lv_area_t& origin,
-    lv_coord_t x,
-    lv_coord_t width,
-    const char* text,
-    uint32_t color,
-    bool active,
-    bool enabled
-) {
-    const auto area = translated(origin, x, 1, width, 25);
-    const uint32_t effectiveColor = enabled ? color : theme::color::INACTIVE;
-    drawRect(
-        layer,
-        area,
-        effectiveColor,
-        active && enabled ? OPACITY_35 : LV_OPA_TRANSP,
-        1,
-        active && enabled ? LV_OPA_COVER : OPACITY_35,
-        5
-    );
-    drawLabel(
-        layer,
-        area,
-        text,
-        fonts.inter_12_medium,
-        active && enabled ? theme::color::TEXT_PRIMARY : effectiveColor,
-        enabled ? LV_OPA_COVER : OPACITY_55,
-        LV_TEXT_ALIGN_CENTER
-    );
-}
-
 FLASHMEM void drawPropertyCard(
     lv_layer_t* layer,
     const lv_area_t& origin,
@@ -131,15 +122,7 @@ FLASHMEM void drawPropertyCard(
 ) {
     const auto card = translated(origin, 0, y, SURFACE_WIDTH, 54);
     const uint32_t effectiveColor = enabled ? color : theme::color::INACTIVE;
-    drawRect(
-        layer,
-        card,
-        effectiveColor,
-        selected && enabled ? OPACITY_18 : OPACITY_12,
-        selected ? 2 : 1,
-        selected && enabled ? LV_OPA_COVER : OPACITY_35,
-        7
-    );
+    drawInteractiveSurface(layer, card, selected, enabled);
 
     const auto iconArea = translated(origin, 12, y + 18, 18, 18);
     drawLabel(
@@ -155,7 +138,7 @@ FLASHMEM void drawPropertyCard(
         layer,
         translated(origin, 40, y + 7, 170, 15),
         key,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY,
         enabled ? LV_OPA_80 : OPACITY_55
     );
@@ -163,7 +146,7 @@ FLASHMEM void drawPropertyCard(
         layer,
         translated(origin, 40, y + 23, 228, 22),
         value,
-        fonts.inter_14_semibold,
+        fonts.primary_value(),
         enabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,
         enabled ? LV_OPA_COVER : OPACITY_55
     );
@@ -172,8 +155,8 @@ FLASHMEM void drawPropertyCard(
             layer,
             translated(origin, 252, y + 7, 38, 15),
             "OPT",
-            fonts.inter_12_medium,
-            effectiveColor,
+            fonts.meta_label(),
+            theme::color::FOCUS_EDIT,
             enabled ? LV_OPA_80 : OPACITY_55,
             LV_TEXT_ALIGN_RIGHT
         );
@@ -235,10 +218,10 @@ FLASHMEM void ProjectTrackEditorOverlay::render(
     copyText(next.route, props.route);
     copyText(next.delay, props.delay);
     copyText(next.structureHint, props.structureHint);
+    copyText(next.status, props.status);
     next.trackColor = props.trackColor;
+    next.statusColor = props.statusColor;
     next.selectedProperty = props.selectedProperty;
-    next.muted = props.muted;
-    next.soloed = props.soloed;
     next.trackEnabled = props.trackEnabled;
 
     if (!rendered_ || !(cache_ == next)) {
@@ -260,20 +243,31 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
     lv_obj_get_coords(surface_, &origin);
     drawRect(layer, origin, theme::color::BACKGROUND, LV_OPA_COVER);
 
+    drawRect(
+        layer,
+        translated(origin, 0, 3, 3, 20),
+        cache_.trackEnabled ? cache_.trackColor : theme::color::INACTIVE,
+        cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55,
+        0,
+        LV_OPA_TRANSP,
+        2
+    );
+
     drawLabel(
         layer,
-        translated(origin, 0, 2, 148, 24),
+        translated(origin, 10, 2, 174, 24),
         cache_.title.data(),
-        fonts.inter_14_semibold,
-        cache_.trackEnabled ? cache_.trackColor : theme::color::INACTIVE
+        fonts.context_title(),
+        cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE
     );
-    drawStateChip(
-        layer, origin, 154, 69, "MUTE", theme::color::STEP_NUDGE,
-        cache_.muted, cache_.trackEnabled
-    );
-    drawStateChip(
-        layer, origin, 231, 73, "SOLO", theme::color::MACRO_4,
-        cache_.soloed, cache_.trackEnabled
+    drawLabel(
+        layer,
+        translated(origin, 184, 4, 120, 18),
+        cache_.status.data(),
+        fonts.meta_label(),
+        cache_.trackEnabled ? cache_.statusColor : theme::color::INACTIVE,
+        cache_.trackEnabled ? LV_OPA_80 : OPACITY_55,
+        LV_TEXT_ALIGN_RIGHT
     );
 
     drawPropertyCard(
@@ -281,7 +275,7 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
         origin,
         38,
         icons::MIDI_CHANNEL,
-        "OUTPUT",
+        "MIDI OUTPUT",
         cache_.route.data(),
         theme::color::STEP_STATE,
         cache_.selectedProperty ==
@@ -302,38 +296,47 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
     );
 
     const auto structure = translated(origin, 0, 165, SURFACE_WIDTH, 31);
-    drawRect(
+    drawInteractiveSurface(
         layer,
         structure,
-        cache_.trackEnabled ? cache_.trackColor : theme::color::INACTIVE,
-        OPACITY_12,
-        1,
-        OPACITY_35,
-        6
+        cache_.selectedProperty ==
+            core::state::project::ProjectTrackEditorProperty::TYPE,
+        cache_.trackEnabled
     );
     drawLabel(
         layer,
         translated(origin, 12, 173, 142, 16),
-        "STRUCTURE",
-        fonts.inter_12_medium,
+        "TYPE",
+        fonts.meta_label(),
         cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,
         cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55
     );
     drawLabel(
         layer,
-        translated(origin, 156, 173, 122, 16),
+        translated(origin, 156, 173, 88, 16),
         cache_.structureHint.data(),
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY,
         cache_.trackEnabled ? LV_OPA_80 : OPACITY_55,
         LV_TEXT_ALIGN_RIGHT
     );
     drawLabel(
         layer,
-        translated(origin, 282, 171, 12, 19),
-        ">",
-        fonts.inter_14_semibold,
-        cache_.trackEnabled ? cache_.trackColor : theme::color::INACTIVE,
+        translated(origin, 254, 171, 40, 19),
+        cache_.selectedProperty ==
+                core::state::project::ProjectTrackEditorProperty::TYPE
+            ? "OPT"
+            : ">",
+        cache_.selectedProperty ==
+                core::state::project::ProjectTrackEditorProperty::TYPE
+            ? fonts.meta_label()
+            : fonts.primary_value(),
+        cache_.selectedProperty ==
+                core::state::project::ProjectTrackEditorProperty::TYPE
+            ? theme::color::FOCUS_EDIT
+            : (cache_.trackEnabled
+                   ? theme::color::TEXT_SECONDARY
+                   : theme::color::INACTIVE),
         cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55,
         LV_TEXT_ALIGN_RIGHT
     );

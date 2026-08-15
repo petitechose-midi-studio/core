@@ -283,6 +283,12 @@ FLASHMEM ms::ui::KeyValueSparkline buildSource(
         .runtimeIndex = runtimeProjectionIndex,
         .enabled = true,
         .centerLine = !sourceUsesPositiveDomain(control, source),
+        .curveColorRole = static_cast<uint8_t>(
+            ms::ui::KeyValueSparklineColorRole::DATA
+        ),
+        .markerColorRole = static_cast<uint8_t>(
+            ms::ui::KeyValueSparklineColorRole::LIVE
+        ),
         .sampleProvider = &sampleSource,
         .markerProvider = &sampleRuntimeMarker,
     };

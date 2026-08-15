@@ -17,6 +17,7 @@ enum class ProjectTrackEditorMutationStatus : uint8_t {
     TRACK_DISABLED,
     NO_ENABLED_TRACK,
     INVALID_PROPERTY,
+    DIRTY_DRAFT,
 };
 
 struct ProjectTrackEditorMutationResult {
@@ -44,6 +45,12 @@ struct ProjectTrackEditorMutationResult {
         (enabledMask & static_cast<uint16_t>(1U << track)) != 0U;
 }
 
+[[nodiscard]] constexpr bool projectTrackEditorKindDraftDirty(
+    const ProjectTrackEditorState& editor
+) {
+    return editor.active && editor.currentKind != editor.draftKind;
+}
+
 /**
  * Allocation-free wrapped lookup over enabled Tracks only.
  *
@@ -67,7 +74,12 @@ ProjectTrackEditorMutationResult closeProjectTrackEditor(
     ProjectTrackEditorState& editor
 );
 
-/** Hot-retargets the retained editor without caching any authored values. */
+/**
+ * Hot-retargets the retained editor without caching authored values.
+ *
+ * A pending type conversion is a visible draft and therefore keeps ownership
+ * of its opening Track until Apply or Cancel.
+ */
 ProjectTrackEditorMutationResult retargetProjectTrackEditor(
     ProjectTrackEditorState& editor,
     uint8_t track,
@@ -88,6 +100,16 @@ ProjectTrackEditorMutationResult selectProjectTrackEditorProperty(
 ProjectTrackEditorMutationResult moveProjectTrackEditorProperty(
     ProjectTrackEditorState& editor,
     int direction
+);
+
+ProjectTrackEditorMutationResult syncProjectTrackEditorKind(
+    ProjectTrackEditorState& editor,
+    ProjectTrackEditorKind kind
+);
+
+ProjectTrackEditorMutationResult selectProjectTrackEditorDraftKind(
+    ProjectTrackEditorState& editor,
+    ProjectTrackEditorKind kind
 );
 
 }  // namespace core::state::project

@@ -57,7 +57,12 @@ public:
     const SharedTrackDomainServices& sharedTrackServices() const noexcept {
         return shared_tracks_;
     }
-    SequencerPreparedTrackStructureResult createPreviewedTrackStructure();
+    SequencerPreparedTrackStructureResult createPreviewedTrackStructure(
+        core::state::sequencer::SequencerTrackKind kind =
+            core::state::sequencer::SequencerTrackKind::INSTRUMENT,
+        core::state::sequencer::DrumKitPreset drumPreset =
+            core::state::sequencer::DrumKitPreset::GENERAL_MIDI
+    );
 
     bool canRemoveCurrentStructure() const;
     bool canPasteCurrentStructure() const;
@@ -86,6 +91,9 @@ public:
     void applySelectionBottomLeftTap();
     void applySelectionBottomLeftHold();
     bool canPasteStructureSelection() const;
+    bool canMoveDrumLaneSelection() const;
+    void beginDrumLaneMove();
+    void applyDrumLaneMove();
     void copyStructureSelection();
     void pasteStructureSelection();
     void applyCurrentStructureLongPress();
@@ -135,6 +143,25 @@ private:
     ) const;
     void settleRejectedSelectionTrackRemoveLongPress();
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
+    bool drumStepActionsAvailable() const;
+    bool canPasteDrumFocusedStep() const;
+    bool canPasteDrumLaneSelection() const;
+    bool clearDrumLaneAdvancedContent(uint16_t laneMask, bool& changed);
+    bool drumLaneSelectionPasteMatches() const;
+    void clearDrumLaneSelection();
+    void copyDrumLaneSelection();
+    void pasteDrumLaneSelection();
+    bool clearDrumAdvancedStep(uint8_t lane, uint8_t step, bool& changed);
+    void resetDrumFocusedStep(bool deep);
+    void copyDrumFocusedStep();
+    void pasteDrumFocusedStep();
+    bool beginDrumStepActionHistory(
+        core::state::sequencer::SequencerHistoryDescriptor descriptor
+    );
+    bool sealDrumStepActionHistory(
+        bool changed,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor
+    );
     bool canPasteFocusedStep() const;
     void copyFocusedStep();
     void pasteFocusedStep();

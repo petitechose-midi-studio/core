@@ -30,7 +30,7 @@ void expectsRootFocusMatrix() {
     assert(track.optTurn == Action::NONE);
     assert(track.leftCenterPress == Action::NONE);
     assert(track.macroLongPress == Action::OPEN_STEP_EDITOR);
-    assert(track.bottomLeftTap == Action::CLEAR_CURRENT_STRUCTURE);
+    assert(track.bottomLeftTap == Action::MUTE_CURRENT_TRACK);
     assert(track.bottomLeftHold == Action::REMOVE_CURRENT_STRUCTURE);
     assert(track.leftCenterVisibility == Visibility::HIDDEN);
     assert(track.leftBottomVisibility == Visibility::HIDDEN);
@@ -234,6 +234,16 @@ void expectsStepEditorOverridesEverything() {
     assert(policy.leftBottomVisibility == Visibility::ACTIVE);
     assert(policy.bottomLeftVisibility == Visibility::HIDDEN);
     assert(policy.bottomRightVisibility == Visibility::HIDDEN);
+
+    context.stepEditorDrumRoot = true;
+    context.stepEditorLaneRetargetAvailable = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.leftBottomPress == Action::RETARGET_STEP_EDITOR_LANE);
+    assert(policy.leftBottomVisibility == Visibility::ACTIVE);
+    context.stepEditorLaneRetargetAvailable = false;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.leftBottomVisibility == Visibility::DISABLED);
+    context.stepEditorDrumRoot = false;
 
     context.stepEditorValueRowFocused = true;
     policy = buildSequencerInteractionPolicy(context);

@@ -4,6 +4,10 @@ This is the current code-local contract for physical controls. Product
 rationale lives in ADR-0055 in the documentation vault; framework mechanics
 live in `open-control/framework/INPUT_ROUTING_POLICY.md`.
 
+The controller-wide intention and muscle-memory contract lives in
+[CONTROLLER_INTERACTION_GRAMMAR.md](CONTROLLER_INTERACTION_GRAMMAR.md). This
+file owns physical routing; that document owns the semantic gesture families.
+
 ## Routing boundary
 
 Core enables the strict framework combination:
@@ -68,9 +72,10 @@ remain valid.
 | Surface | Bindings |
 |---|---|
 | View Selector | `NAV` select/confirm, `LEFT_CENTER` Undo, `LEFT_BOTTOM` Redo, `LEFT_TOP` apply/close |
-| Track Editor | `BOTTOM_LEFT` Mute, `BOTTOM_RIGHT` Solo |
+| Track Editor | `NAV` field, `OPT` value/type draft, `LEFT_CENTER + NAV` changes Track only with a clean type draft, `LEFT_TOP` Back/Cancel, `BOTTOM_LEFT` Mute, `BOTTOM_RIGHT` Solo or Apply type |
 | Track Paste preflight | `LEFT_CENTER` Summary/Details, `BOTTOM_RIGHT` Copy/Paste and guard |
 | Step Editor | short `NAV` focused-row action; long `NAV` opens the Step Preset library |
+| Drum Lane Editor | `NAV` field, `OPT` draft value, short `NAV` edits Name, `LEFT_CENTER + NAV` changes lane only with a clean draft, `LEFT_TOP` Cancel, `BOTTOM_RIGHT` Apply, held `BOTTOM_LEFT` Delete |
 | Chord Editor root | `NAV` field/action; long `NAV` opens the Chord Preset library; Formula and Source keep their local grammar |
 | Preset Library | `NAV` selects then enters Detail, `OPT` adjusts an explicit detail row only, `BOTTOM_LEFT` Load/Save, `BOTTOM_RIGHT` primary action/guard, `LEFT_TOP` backs out one level, `LEFT_CENTER` is consumed without action |
 | Project name keyboard | `NAV` key/insert including `SPC`, `OPT` row, held `LEFT_CENTER` Shift, `BOTTOM_LEFT` Backspace, `LEFT_BOTTOM` Clear, `LEFT_TOP` Cancel, `BOTTOM_RIGHT` Validate |

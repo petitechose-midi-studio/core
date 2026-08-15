@@ -73,7 +73,8 @@ FLASHMEM bool SequencerStructureNavigationWorkflow::allowsMainBindings() const {
 FLASHMEM bool SequencerStructureNavigationWorkflow::selectionActive() const {
     return track_ui_.selection.active.get() ||
            sequencer_.structureUi.pageSelection.active.get() ||
-           sequencer_.structureUi.stepSelection.active.get();
+           sequencer_.structureUi.stepSelection.active.get() ||
+           sequencer_.drumSequencer.laneSelection.active;
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::selectedItemsAvailable() const {
@@ -101,6 +102,21 @@ FLASHMEM bool SequencerStructureNavigationWorkflow::selectedItemsAvailable() con
             }
         }
         return false;
+    }
+    if (sequencer_.drumSequencer.laneSelection.active) {
+        const auto& drumUi = sequencer_.drumSequencer;
+        const uint8_t laneCount = drumUi.drumTrack == nullptr
+            ? 0U
+            : std::min<uint8_t>(
+                  drumUi.drumTrack->kit.laneCount,
+                  core::state::sequencer::DRUM_MAX_LANES
+              );
+        const uint16_t activeMask = laneCount >= 16U
+            ? 0xFFFFU
+            : laneCount == 0U
+                ? 0U
+                : static_cast<uint16_t>((uint16_t{1U} << laneCount) - 1U);
+        return (drumUi.laneSelection.selectedMask & activeMask) != 0U;
     }
     return false;
 }
@@ -146,6 +162,17 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
             return;
         }
         case core::state::StructureNavigationFocus::PAGE: {
+            auto& drumUi = sequencer_.drumSequencer;
+            if (core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+                drumUi.drumTrack != nullptr &&
+                drumUi.drumTrack->kit.laneCount > 0U &&
+                !drumUi.laneAddSlotFocused()) {
+                auto& selection = drumUi.laneSelection;
+                selection.reset(drumUi.selectedLane);
+                selection.active = true;
+                drumUi.bump();
+                return;
+            }
             auto& selection = sequencer_.structureUi.pageSelection;
             const uint8_t cursor = currentActiveContentPage(sequencer_);
             selection.reset(core::state::StructureSelectionScope::PAGE, cursor);
@@ -168,6 +195,42 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::backSelectionMode() {
     const auto focus = navigation_focus_.get();
+    if (sequencer_.drumSequencer.laneSelection.active) {
+        auto& drumUi = sequencer_.drumSequencer;
+        auto& selection = drumUi.laneSelection;
+        if (selection.moving) {
+            selection.moving = false;
+            selection.pasteBlocked = false;
+            selection.destinationMask = 0U;
+            selection.overwriteMask = 0U;
+            const uint16_t selectedMask = selection.selectedMask;
+            for (uint8_t lane = 0U;
+                 lane < core::state::sequencer::DRUM_MAX_LANES;
+                 ++lane) {
+                if ((selectedMask & static_cast<uint16_t>(1U << lane)) == 0U) {
+                    continue;
+                }
+                selection.cursorLane = lane;
+                drumUi.selectedLane = lane;
+                break;
+            }
+            drumUi.ensureSelectedLaneVisible();
+        } else if (selection.placing) {
+            selection.placing = false;
+            selection.pasteBlocked = false;
+            selection.destinationMask = 0U;
+            selection.overwriteMask = 0U;
+            selection.clipboardRevision = 0U;
+            selection.clipboardCount = 0U;
+        } else if (selection.anySelected()) {
+            selection.clearCurrent();
+        } else {
+            const uint8_t cursor = drumUi.selectedLane;
+            selection.reset(cursor);
+        }
+        drumUi.bump();
+        return true;
+    }
     if (track_ui_.selection.active.get()) {
         auto& selection = track_ui_.selection;
         if (selection.placing.get() || selection.anySelected()) {
@@ -218,6 +281,23 @@ FLASHMEM bool SequencerStructureNavigationWorkflow::backSelectionMode() {
 }
 
 FLASHMEM void SequencerStructureNavigationWorkflow::toggleSelectionAtCursor() {
+    if (sequencer_.drumSequencer.laneSelection.active) {
+        auto& drumUi = sequencer_.drumSequencer;
+        auto& selection = drumUi.laneSelection;
+        if (selection.placing || selection.moving ||
+            drumUi.drumTrack == nullptr) return;
+        const uint8_t laneCount = std::min<uint8_t>(
+            drumUi.drumTrack->kit.laneCount,
+            core::state::sequencer::DRUM_MAX_LANES
+        );
+        if (selection.cursorLane >= laneCount) return;
+        selection.selectedMask = static_cast<uint16_t>(
+            selection.selectedMask ^
+            static_cast<uint16_t>(1U << selection.cursorLane)
+        );
+        drumUi.bump();
+        return;
+    }
     if (track_ui_.selection.active.get()) {
         auto& selection = track_ui_.selection;
         if (selection.placing.get()) return;
@@ -274,6 +354,33 @@ FLASHMEM void SequencerStructureNavigationWorkflow::navigateSelection(float delt
     if (!nav::hasTurnDelta(delta)) return;
 
     const int direction = nav::turnStep(delta);
+    if (sequencer_.drumSequencer.laneSelection.active) {
+        auto& drumUi = sequencer_.drumSequencer;
+        auto& selection = drumUi.laneSelection;
+        if (drumUi.drumTrack == nullptr) return;
+        const uint8_t laneCount = std::min<uint8_t>(
+            drumUi.drumTrack->kit.laneCount,
+            core::state::sequencer::DRUM_MAX_LANES
+        );
+        if (laneCount == 0U) return;
+        selection.cursorLane = structure_slots::wrapIndex(
+            selection.cursorLane,
+            direction,
+            laneCount
+        );
+        drumUi.selectedLane = selection.cursorLane;
+        drumUi.laneAddSlotSelected = false;
+        if (selection.moving) {
+            selection.destinationMask = static_cast<uint16_t>(
+                1U << selection.cursorLane
+            );
+            selection.overwriteMask = 0U;
+            selection.pasteBlocked = false;
+        }
+        drumUi.ensureSelectedLaneVisible();
+        drumUi.bump();
+        return;
+    }
     if (track_ui_.selection.active.get()) {
         auto& selection = track_ui_.selection;
         if (selection.placing.get()) {

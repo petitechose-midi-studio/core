@@ -5,6 +5,7 @@
 #include <oc/note/sequencer/StepSequencerScale.hpp>
 
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
+#include "state/sequencer/DrumPatternState.hpp"
 
 namespace core::state::sequencer::content_view_internal {
 FLASHMEM int normalizedToInclusiveInt(float normalized, int maxInclusive) {
@@ -265,6 +266,33 @@ FLASHMEM ResolvedStep contentBaseForKind(
 }
 
 FLASHMEM ResolvedStep rootBase(const SequencerState& sequencer, uint8_t rootStep) {
+    const auto& edit = sequencer.stepEdit;
+    const auto& content = sequencer.contentView;
+    const auto& drumUi = sequencer.drumSequencer;
+    const bool contentOwner = content.drumOwnerActive &&
+        content.drumOwnerRootSlot == rootStep;
+    const bool editorOwner = edit.drumContext && edit.drumRootSlot == rootStep;
+    const uint8_t lane = contentOwner ? content.drumOwnerLane : edit.drumLane;
+    const uint8_t step = contentOwner ? content.drumOwnerStep : edit.drumStep;
+    if ((contentOwner || editorOwner) &&
+        drumUi.drumTrack != nullptr &&
+        drumUi.stepInRange(lane, step)) {
+        const auto& drum = *drumUi.drumTrack;
+        const auto& lanePattern = drum.pattern.lanes[lane];
+        return {
+            .valid = true,
+            .enabled = drum.pattern.stepEnabled(lane, step),
+            .note = drum.kit.lanes[lane].midiNote,
+            .velocity = lanePattern.velocity[step],
+            .gate = lanePattern.gate[step],
+            .nudge = lanePattern.nudge[step],
+            .probability = SequencerState::clampProbability(
+                lanePattern.probability[step]
+            ),
+            .chordState = oc::note::sequencer::defaultRootChordState(),
+            .inheritedChord = {},
+        };
+    }
     if (rootStep >= SequencerState::MAX_STEPS) return {};
     return {
         .valid = true,
@@ -634,6 +662,11 @@ FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
         scaleSettings,
         noteOffsetsUseScaleDegrees
     );
+    if (view.drumOwnerActive) {
+        current.note = rootBase(sequencer, first.ownerRootStep).note;
+        current.chordState = oc::note::sequencer::defaultRootChordState();
+        current.inheritedChord = {};
+    }
 
     for (uint8_t i = 1; i < frameDepth; ++i) {
         const auto& frame = view.frames[i];
@@ -646,6 +679,11 @@ FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
             scaleSettings,
             noteOffsetsUseScaleDegrees
         );
+        if (view.drumOwnerActive) {
+            current.note = rootBase(sequencer, first.ownerRootStep).note;
+            current.chordState = oc::note::sequencer::defaultRootChordState();
+            current.inheritedChord = {};
+        }
     }
     return current;
 }

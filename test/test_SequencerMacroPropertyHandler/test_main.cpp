@@ -128,9 +128,9 @@ void assertHistoryRejection(const core::state::sequencer::SequencerState& sequen
     const auto& feedback = sequencer.historyFeedback;
     assert(feedback.visible.get());
     assert(feedback.revision.get() == expectedRevision);
-    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
     assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
-    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+    assert(std::strcmp(feedback.line3.data(), "") == 0);
 }
 
 struct SequencerMacroPropertyHarness {

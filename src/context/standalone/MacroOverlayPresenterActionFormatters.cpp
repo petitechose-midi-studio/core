@@ -271,8 +271,8 @@ FLASHMEM SelectorRenderData buildEditSelectorRenderData(const Source& source, co
     }
 
     const uint8_t row = selector.editingRow.get();
-    data.title = "VALUE";
-    data.meta = "CC";
+    data.title = "Destination";
+    data.meta = "MIDI CC";
     data.items = items.ccItems.data();
     data.itemCount = 128;
     data.selectedIndex = std::clamp(selector.selectedIndex.get(), 0, data.itemCount - 1);

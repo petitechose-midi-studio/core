@@ -100,6 +100,9 @@ FLASHMEM ProjectTrackEditorMutationResult retargetProjectTrackEditor(
     if (editor.trackIndex == track) {
         return result(ProjectTrackEditorMutationStatus::NO_CHANGE, track);
     }
+    if (projectTrackEditorKindDraftDirty(editor)) {
+        return result(ProjectTrackEditorMutationStatus::DIRTY_DRAFT, track);
+    }
 
     editor.trackIndex = track;
     bumpRevision(editor);
@@ -195,6 +198,37 @@ FLASHMEM ProjectTrackEditorMutationResult moveProjectTrackEditorProperty(
         editor,
         static_cast<ProjectTrackEditorProperty>(next)
     );
+}
+
+FLASHMEM ProjectTrackEditorMutationResult syncProjectTrackEditorKind(
+    ProjectTrackEditorState& editor,
+    ProjectTrackEditorKind kind
+) {
+    if (!editor.active) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    if (editor.currentKind == kind && editor.draftKind == kind) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    editor.currentKind = kind;
+    editor.draftKind = kind;
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult selectProjectTrackEditorDraftKind(
+    ProjectTrackEditorState& editor,
+    ProjectTrackEditorKind kind
+) {
+    if (!editor.active) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    if (editor.draftKind == kind) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    editor.draftKind = kind;
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
 }
 
 }  // namespace core::state::project

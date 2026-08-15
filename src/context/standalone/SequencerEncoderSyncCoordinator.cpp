@@ -10,13 +10,14 @@
 
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 #include "state/sequencer/DrumPatternState.hpp"
-#endif
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
+#if defined(MS_UX_RECORDER)
+#include "validation/ux/SemanticUxRecorder.hpp"
+#endif
 
 namespace core::context::standalone {
 
@@ -97,10 +98,9 @@ FLASHMEM input_utils::StepPropertyEncoderConfig offsetEncoderConfig(
     return config;
 }
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 using DrumDimension =
-    core::state::sequencer::DrumTrackUxPrototypeDimension;
-using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
+    core::state::sequencer::DrumSequencerDimension;
+using DrumProperty = core::state::sequencer::DrumSequencerProperty;
 
 FLASHMEM input_utils::StepPropertyEncoderConfig drumDimensionEncoderConfig(
     DrumDimension dimension
@@ -125,20 +125,20 @@ FLASHMEM input_utils::StepPropertyEncoderConfig drumDimensionEncoderConfig(
 }
 
 FLASHMEM float drumDimensionToNormalized(
-    const core::state::sequencer::DrumTrackUxPrototypeState& prototype
+    const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!prototype.drumTrack) return 0.0f;
-    const auto& pattern = prototype.drumTrack->pattern;
-    switch (prototype.dimension) {
+    if (!drumUi.drumTrack) return 0.0f;
+    const auto& pattern = drumUi.drumTrack->pattern;
+    switch (drumUi.dimension) {
         case DrumDimension::MODE:
-            return pattern.lanes[prototype.selectedLane].timing.mode ==
+            return pattern.lanes[drumUi.selectedLane].timing.mode ==
                     core::state::sequencer::DrumLaneTimingMode::CUSTOM
                 ? 1.0f
                 : 0.0f;
         case DrumDimension::DIVISION:
             return input_utils::indexToNormalized(
                 input_utils::findStepsPerBeatChoiceIndex(
-                    pattern.effectiveStepsPerBeat(prototype.selectedLane)
+                    pattern.effectiveStepsPerBeat(drumUi.selectedLane)
                 ),
                 static_cast<int>(input_utils::STEPS_PER_BEAT_CHOICES.size())
             );
@@ -147,13 +147,12 @@ FLASHMEM float drumDimensionToNormalized(
         default:
             return input_utils::indexToNormalized(
                 static_cast<int>(
-                    pattern.effectiveLength(prototype.selectedLane) - 1U
+                    pattern.effectiveLength(drumUi.selectedLane) - 1U
                 ),
                 core::state::sequencer::DRUM_MAX_STEPS
             );
     }
 }
-#endif
 
 FLASHMEM QuickItem validQuickItemForContext(
     const core::state::sequencer::SequencerState& sequencer
@@ -227,11 +226,8 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         sequencer_.pattern.patternTimingRevision,
         sequencer_.patternQuickControls.previewRevision
     );
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    return watcher_.watch(sequencer_.drumTrackUxPrototype.revision) && bound;
-#else
-    return bound;
-#endif
+    return watcher_.watch(track_bank_.drumRevisionSignal()) &&
+           watcher_.watch(sequencer_.drumSequencer.revision) && bound;
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::reset() {
@@ -387,6 +383,19 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncOptPosition(float normalized)
         encoders_.setPosition(Config::EncoderID::OPT, normalized);
         opt_position_cache_ = normalized;
         opt_position_valid_ = true;
+#if defined(MS_UX_RECORDER)
+        core::validation::ux::recordEncoderContractTrace(
+            core::validation::ux::EncoderContractOwner::SequencerRoot,
+            core::validation::ux::EncoderContractMode::Normalized,
+            static_cast<oc::type::EncoderID>(Config::EncoderID::OPT),
+            0.0f,
+            1.0f,
+            opt_steps_configured_,
+            opt_ticks_per_step_configured_,
+            opt_turns_configured_,
+            normalized
+        );
+#endif
     }
 }
 
@@ -455,21 +464,20 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
     syncOptPosition(input_utils::quickControlToNormalized(sequencer_, item));
 }
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() {
-    const auto& prototype = sequencer_.drumTrackUxPrototype;
+FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumSequencerValues() {
+    const auto& drumUi = sequencer_.drumSequencer;
 
     ensureMacroEncoderConfig(
-        input_utils::encoderConfigForDrumProperty(prototype.property)
+        input_utils::encoderConfigForDrumProperty(drumUi.property)
     );
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        const uint8_t step = prototype.visibleStep(i);
+        const uint8_t step = drumUi.visibleStep(i);
         const float normalized = input_utils::drumStepPropertyToNormalized(
-            prototype,
-            prototype.selectedLane,
+            drumUi,
+            drumUi.selectedLane,
             step,
-            prototype.property
+            drumUi.property
         );
         if (!macro_position_valid_[i] ||
             hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
@@ -479,55 +487,59 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() 
         }
     }
 
-    if (prototype.selector ==
-        core::state::sequencer::DrumTrackUxPrototypeSelector::PROPERTY) {
+    if (drumUi.selector ==
+        core::state::sequencer::DrumSequencerSelector::PROPERTY) {
         invalidateOptEncoderCache();
         return;
     }
     if (navigation_focus_.get() ==
             core::state::StructureNavigationFocus::STEP &&
-        !prototype.selectorVisible()) {
+        !drumUi.selectorVisible()) {
         ensureOptEncoderConfig(
-            input_utils::encoderConfigForDrumProperty(prototype.property)
+            input_utils::encoderConfigForDrumProperty(drumUi.property)
         );
         syncOptPosition(
             input_utils::drumStepPropertyToNormalized(
-                prototype,
-                prototype.selectedLane,
-                prototype.focusedStep,
-                prototype.property
+                drumUi,
+                drumUi.selectedLane,
+                drumUi.focusedStep,
+                drumUi.property
             )
         );
         return;
     }
-    ensureOptEncoderConfig(drumDimensionEncoderConfig(prototype.dimension));
-    syncOptPosition(drumDimensionToNormalized(prototype));
+    ensureOptEncoderConfig(drumDimensionEncoderConfig(drumUi.dimension));
+    syncOptPosition(drumDimensionToNormalized(drumUi));
 }
-#endif
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) return;
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (sequencer_.drumTrackUxPrototype.active()) {
-        if (sequencer_.drumTrackUxPrototype.gridVisible()) {
-            syncDrumTrackUxPrototypeValues();
+    // Visible overlays own OPT. Check that authority before specialized root
+    // surfaces: Drum remains a visible GRID while its Lane Editor is open, so
+    // allowing the root synchronizer to run here would overwrite the editor's
+    // discrete contract (for example 8 icons) with the Pattern Length contract
+    // (128 steps).
+    if (overlays_.hasVisible()) {
+        invalidateOptEncoderCache();
+        return;
+    }
+
+    if (core::state::sequencer::isDrumOverviewActive(sequencer_) ||
+        (sequencer_.drumSequencer.active() &&
+         !sequencer_.drumSequencer.gridVisible())) {
+        if (core::state::sequencer::isDrumOverviewActive(sequencer_)) {
+            syncDrumSequencerValues();
         } else {
             invalidateOptEncoderCache();
             macro_position_valid_.fill(false);
         }
         return;
     }
-#endif
 
     if (sequencer_.ccLaneUi.visible()) {
         invalidateOptEncoderCache();
         macro_position_valid_.fill(false);
-        return;
-    }
-
-    if (overlays_.hasVisible()) {
-        invalidateOptEncoderCache();
         return;
     }
 

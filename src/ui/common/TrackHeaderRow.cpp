@@ -21,7 +21,7 @@ namespace {
 constexpr uint32_t COLOR_DIM_TEXT = theme::color::TEXT_PRIMARY;
 constexpr lv_coord_t ROW_HEIGHT = 20;
 constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
-constexpr lv_opa_t LABEL_OPA = LV_OPA_80;
+constexpr lv_opa_t LABEL_OPA = LV_OPA_COVER;
 constexpr lv_coord_t ACCENT_WIDTH = 4;
 constexpr lv_coord_t ITEM_SIZE_WIDE = 10;
 constexpr lv_coord_t ITEM_GAP_WIDE = 4;
@@ -86,7 +86,7 @@ FLASHMEM void TrackHeaderRow::createUI(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(accent_, LV_OPA_COVER, 0);
 
     label_ = lv_label_create(container_);
-    lv_obj_set_style_text_font(label_, fonts.inter_14_medium, 0);
+    lv_obj_set_style_text_font(label_, fonts.header_label(), 0);
     lv_obj_set_style_text_color(label_, lv_color_hex(COLOR_DIM_TEXT), 0);
     lv_obj_set_style_text_opa(label_, LABEL_OPA, 0);
     lv_label_set_long_mode(label_, LV_LABEL_LONG_CLIP);

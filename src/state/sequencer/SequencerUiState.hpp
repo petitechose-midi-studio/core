@@ -11,9 +11,9 @@
 #include <oc/state/Signal.hpp>
 #include <oc/time/Time.hpp>
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 #include "app/ExtmemAllocator.hpp"
-#endif
+#include "state/interaction/TextKeyboardLayout.hpp"
+#include "state/sequencer/DrumPatternState.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
@@ -152,6 +152,15 @@ struct SequencerContentViewState {
     uint8_t rootPageSnapshot = 0;
     uint8_t rootFocusSnapshot = 0;
     uint8_t stackDepth = 0;
+    // Musical ownership of a Drum child graph must survive closing the root
+    // Step Editor. Keeping this compact address on the content view lets the
+    // common StepGrid/Step Editor own every child depth without consulting a
+    // hidden overlay session.
+    bool drumOwnerActive = false;
+    uint8_t drumOwnerTrack = 0;
+    uint8_t drumOwnerLane = 0;
+    uint8_t drumOwnerStep = 0;
+    uint8_t drumOwnerRootSlot = 0xFFU;
     std::array<SequencerContentViewFrame, MAX_CHILD_DEPTH> frames{};
 
     SequencerContentViewState();
@@ -193,13 +202,13 @@ struct SequencerStepEditOverlayState {
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
     Signal<bool> localVariationEditActive{false};
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     // The retained Step Editor is shared by melodic and Drum tracks. These
     // two cold session fields select the authored domain without duplicating
     // the overlay or projecting Drum edits through the melodic Pattern.
     bool drumContext = false;
     uint8_t drumLane = 0;
-#endif
+    uint8_t drumStep = 0;
+    uint8_t drumRootSlot = 0xFFU;
     SequencerChordEditorState chordEditor;
 
     core::state::StructureHoldState contextHold;
@@ -654,28 +663,29 @@ struct SequencerTrackPasteUiState {
     void reset();
 };
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 struct DrumTrackState;
+struct SequencerTrackBankState;
 
 /**
- * Native-only interaction shell used to validate Drum Track authoring before
- * the persistent TrackKind is introduced.
+ * Retained Drum interaction projection for the selected persistent Track.
  *
- * Authored rhythm delegates to the production-neutral Drum domain. The shell
- * remains session-only and cannot leak into project serialization.
+ * Authored ownership lives in SequencerTrackBankState and is serialized with
+ * the Project; this object keeps only navigation/editor and runtime-display
+ * state. Drum sequencing is a first-class product path in every build profile.
  */
-enum class DrumTrackUxPrototypePhase : uint8_t {
+enum class DrumSequencerPhase : uint8_t {
     INACTIVE = 0,
     TYPE_PICKER,
+    KIT_PICKER,
     GRID,
 };
 
-enum class DrumTrackUxPrototypeKind : uint8_t {
+enum class DrumSequencerKind : uint8_t {
     INSTRUMENT = 0,
     DRUM,
 };
 
-enum class DrumTrackUxPrototypeProperty : uint8_t {
+enum class DrumSequencerProperty : uint8_t {
     STATE = 0,
     PROBABILITY,
     VELOCITY,
@@ -684,22 +694,110 @@ enum class DrumTrackUxPrototypeProperty : uint8_t {
     COUNT,
 };
 
-enum class DrumTrackUxPrototypeDimension : uint8_t {
+enum class DrumSequencerDimension : uint8_t {
     MODE = 0,
     LENGTH,
     DIVISION,
     COUNT,
 };
 
-enum class DrumTrackUxPrototypeSelector : uint8_t {
+enum class DrumSequencerSelector : uint8_t {
     NONE = 0,
     DIMENSION,
     PROPERTY,
+    LANE_EDITOR,
+    PATTERN_DEFAULTS,
 };
 
-struct DrumTrackUxPrototypeState {
+enum class DrumLaneEditorMode : uint8_t {
+    CREATE = 0,
+    EDIT,
+};
+
+enum class DrumLaneEditorField : uint8_t {
+    NAME = 0,
+    NOTE,
+    ICON,
+    COLOR,
+    POSITION,
+    ROLE,
+    COUNT,
+};
+
+struct DrumLaneEditorState {
+    bool active = false;
+    bool dirty = false;
+    bool textEditing = false;
+    bool dirtyBeforeTextEditing = false;
+    bool textShiftActive = false;
+    DrumLaneEditorMode mode = DrumLaneEditorMode::CREATE;
+    DrumLaneEditorField field = DrumLaneEditorField::NAME;
+    uint8_t sourceLane = 0U;
+    uint8_t targetLane = 0U;
+    uint8_t textKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
+    float textOptRawPosition = 0.0f;
+    float textOptRowAccumulator = 0.0f;
+    uint8_t overrideMaskBeforeTextEditing = 0U;
+    std::array<char, DRUM_LANE_NAME_MAX_LENGTH + 1U> nameBeforeTextEditing{};
+    DrumLaneDescriptor draft{};
+
+    // Compact visibility contract used by ExclusiveVisibilityStack. Authored
+    // invalidation remains on the parent Drum projection revision.
+    [[nodiscard]] bool get() const { return active; }
+    void set(bool visible) { active = visible; }
+};
+
+/**
+ * Compact Pattern-focus selection for Drum Lane musical content.
+ *
+ * This is deliberately not a StructureSelectionState: Lane selection is a
+ * content operation and must never acquire descriptor/CRUD semantics. One
+ * parent revision invalidates the complete projection, avoiding a bank of
+ * Signals in scarce internal RAM.
+ */
+struct DrumLaneContentSelectionState {
+    bool active = false;
+    bool placing = false;
+    bool pasteBlocked = false;
+    // Direct Pattern reorder reuses the selection cursor and destination
+    // projection without acquiring clipboard semantics. This consumes the
+    // existing alignment byte, so the hot UI-state footprint stays stable.
+    bool moving = false;
+    uint8_t cursorLane = 0U;
+    uint8_t clipboardCount = 0U;
+    uint16_t selectedMask = 0U;
+    uint16_t destinationMask = 0U;
+    uint16_t overwriteMask = 0U;
+    uint32_t clipboardRevision = 0U;
+
+    void reset(uint8_t cursor = 0U);
+    void clearCurrent();
+
+    [[nodiscard]] bool anySelected() const {
+        return selectedMask != 0U;
+    }
+    [[nodiscard]] bool placementActive() const {
+        return active && placing;
+    }
+    [[nodiscard]] bool moveActive() const {
+        return active && moving;
+    }
+    [[nodiscard]] bool selected(uint8_t lane) const {
+        return lane < DRUM_MAX_LANES &&
+            (selectedMask & static_cast<uint16_t>(1U << lane)) != 0U;
+    }
+};
+
+enum class DrumPatternDefaultField : uint8_t {
+    LENGTH = 0,
+    DIVISION,
+    COUNT,
+};
+
+struct DrumSequencerState {
     // Keep the thin UI shell independent from the cold Drum domain header.
-    static constexpr uint8_t LANE_COUNT = 8U;
+    static constexpr uint8_t LANE_COUNT = DRUM_MAX_LANES;
     static constexpr uint8_t VISIBLE_LANE_COUNT = 8;
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t PAGE_COUNT = 16;
@@ -707,67 +805,125 @@ struct DrumTrackUxPrototypeState {
     static constexpr uint8_t RUNTIME_LANE_CAPACITY = 16U;
     static constexpr uint8_t INVALID_TRACK = 0xFFU;
 
-    bool armed = false;
-    DrumTrackUxPrototypePhase phase = DrumTrackUxPrototypePhase::INACTIVE;
-    DrumTrackUxPrototypeKind selectedKind =
-        DrumTrackUxPrototypeKind::INSTRUMENT;
-    DrumTrackUxPrototypeProperty property =
-        DrumTrackUxPrototypeProperty::VELOCITY;
-    DrumTrackUxPrototypeDimension dimension =
-        DrumTrackUxPrototypeDimension::LENGTH;
-    DrumTrackUxPrototypeSelector selector =
-        DrumTrackUxPrototypeSelector::NONE;
+    DrumSequencerPhase phase = DrumSequencerPhase::INACTIVE;
+    DrumSequencerKind selectedKind =
+        DrumSequencerKind::INSTRUMENT;
+    DrumKitPreset selectedKitPreset = DrumKitPreset::EMPTY;
+    DrumSequencerProperty property =
+        DrumSequencerProperty::VELOCITY;
+    DrumSequencerDimension dimension =
+        DrumSequencerDimension::LENGTH;
+    DrumSequencerSelector selector =
+        DrumSequencerSelector::NONE;
     uint8_t targetTrack = INVALID_TRACK;
     uint8_t selectedLane = 0;
+    bool laneAddSlotSelected = false;
+    uint8_t laneWindowStart = 0;
     uint8_t focusedStep = 0;
     uint8_t page = 0;
-    DrumTrackUxPrototypeProperty selectorSnapshotProperty =
-        DrumTrackUxPrototypeProperty::VELOCITY;
-    DrumTrackUxPrototypeDimension selectorSnapshotDimension =
-        DrumTrackUxPrototypeDimension::LENGTH;
+    DrumSequencerProperty selectorSnapshotProperty =
+        DrumSequencerProperty::VELOCITY;
+    DrumSequencerDimension selectorSnapshotDimension =
+        DrumSequencerDimension::LENGTH;
     uint8_t selectorSnapshotLane = 0;
     uint8_t selectorSnapshotTimingMode = 0;
     uint8_t selectorSnapshotLength = 0;
     uint8_t selectorSnapshotStepsPerBeat = 0;
-    // The fixed-capacity authored payload is cold and prototype-only. Keep it
-    // out of the hot SequencerState object and in PSRAM.
-    core::app::ExtmemUniquePtr<DrumTrackState> drumTrack;
+    DrumLaneEditorState laneEditor{};
+    DrumLaneContentSelectionState laneSelection{};
+    DrumPatternDefaultField patternDefaultField =
+        DrumPatternDefaultField::LENGTH;
+    uint8_t patternDefaultSnapshotLength = DRUM_DEFAULT_LENGTH;
+    uint8_t patternDefaultSnapshotStepsPerBeat = DRUM_DEFAULT_STEPS_PER_BEAT;
+    // Non-owning editor projection. Persistent ownership belongs to the
+    // selected slot in SequencerTrackBankState.
+    DrumTrackState* drumTrack = nullptr;
+    SequencerTrackBankState* drumTrackBank = nullptr;
     Signal<uint32_t, 8> revision{0};
     // Realtime playback publishes only a bounded lane-position projection.
     // It is kept separate from authored revision so the Step Editor is not
     // reformatted every time a playhead advances.
     std::array<uint8_t, RUNTIME_LANE_CAPACITY> playheadSteps{};
+    std::array<uint8_t, RUNTIME_LANE_CAPACITY> playheadPhasesQ8{};
+    std::array<uint8_t, RUNTIME_LANE_CAPACITY> chanceDecisionSteps{};
     uint16_t playheadValidMask = 0U;
+    uint16_t chanceDecisionValidMask = 0U;
+    uint16_t chanceDecisionPlayedMask = 0U;
+    DrumResolvedPageProjection resolvedPage{};
     bool playbackActive = false;
     Signal<uint32_t, 4> playbackRevision{0};
 
-    DrumTrackUxPrototypeState();
-    ~DrumTrackUxPrototypeState();
+    DrumSequencerState();
+    ~DrumSequencerState();
 
     [[nodiscard]] bool active() const {
-        return phase != DrumTrackUxPrototypePhase::INACTIVE;
+        return phase != DrumSequencerPhase::INACTIVE;
+    }
+    [[nodiscard]] bool typePickerVisible() const {
+        return phase == DrumSequencerPhase::TYPE_PICKER;
+    }
+    [[nodiscard]] bool kitPickerVisible() const {
+        return phase == DrumSequencerPhase::KIT_PICKER;
     }
     [[nodiscard]] bool pickerVisible() const {
-        return phase == DrumTrackUxPrototypePhase::TYPE_PICKER;
+        return typePickerVisible() || kitPickerVisible();
     }
     [[nodiscard]] bool gridVisible() const {
-        return phase == DrumTrackUxPrototypePhase::GRID && drumTrack != nullptr;
+        return phase == DrumSequencerPhase::GRID && drumTrack != nullptr;
     }
     [[nodiscard]] bool selectorVisible() const {
-        return selector != DrumTrackUxPrototypeSelector::NONE;
+        return selector != DrumSequencerSelector::NONE;
+    }
+    [[nodiscard]] bool laneAddSlotVisible() const {
+        return gridVisible() && drumTrack != nullptr &&
+            drumTrack->kit.laneCount < LANE_COUNT;
+    }
+    [[nodiscard]] bool laneAddSlotFocused() const {
+        return laneAddSlotSelected && laneAddSlotVisible();
     }
 
     void reset();
-    void arm();
+    void bindTrack(
+        uint8_t track,
+        DrumTrackState& state,
+        SequencerTrackBankState& bank
+    );
+    void unbindTrack();
     void openTypePicker(uint8_t track);
     void moveKind(float delta);
+    void openKitPicker();
+    void moveKitPreset(float delta);
+    void returnToTypePicker();
     void enterGrid();
     void close();
     void moveLane(float delta);
+    void ensureSelectedLaneVisible();
+    [[nodiscard]] uint8_t overviewLength() const;
+    [[nodiscard]] uint8_t overviewPageCount() const;
+    void clampOverviewPage();
+    bool focusAuthoredLane();
     void moveFocusedStep(float delta);
     void movePage(int direction);
     void openDimensionSelector();
     void openPropertySelector();
+    bool openLaneEditor(bool create);
+    bool retargetLaneEditor(float delta);
+    void moveLaneEditorField(float delta);
+    void editLaneEditorValue(float normalized);
+    void toggleLaneNameEditing();
+    void moveLaneNameKey(float delta);
+    void moveLaneNameRow(float rawPosition);
+    void insertLaneNameKey();
+    void backspaceLaneName();
+    void setLaneNameShift(bool active);
+    void acceptLaneNameEditing();
+    void cancelLaneNameEditing();
+    bool applyLaneEditor();
+    bool removeLaneFromEditor();
+    void cancelLaneEditor();
+    void openPatternDefaults();
+    void movePatternDefaultField(float delta);
+    void editPatternDefaultValue(float normalized);
     void moveSelector(float delta);
     void applySelector();
     void cancelSelector();
@@ -781,6 +937,12 @@ struct DrumTrackUxPrototypeState {
     void setVisibleStepNudge(uint8_t indexInPage, int8_t nudgePercent);
     void setVisibleStepProbability(uint8_t indexInPage, uint8_t probability);
     [[nodiscard]] bool stepInRange(uint8_t lane, uint8_t step) const;
+    [[nodiscard]] bool adjacentLaneForStep(
+        uint8_t lane,
+        uint8_t step,
+        int direction,
+        uint8_t& adjacentLane
+    ) const;
     bool focusStep(uint8_t lane, uint8_t step);
     bool setStepEnabled(uint8_t lane, uint8_t step, bool enabled);
     bool setStepVelocity(uint8_t lane, uint8_t step, uint8_t velocity);
@@ -789,14 +951,19 @@ struct DrumTrackUxPrototypeState {
     bool setStepProbability(uint8_t lane, uint8_t step, uint8_t probability);
     void publishPlayback(
         const std::array<uint8_t, RUNTIME_LANE_CAPACITY>& laneSteps,
+        const std::array<uint8_t, RUNTIME_LANE_CAPACITY>& lanePhasesQ8,
         uint16_t validMask,
+        const std::array<uint8_t, RUNTIME_LANE_CAPACITY>& decisionSteps,
+        uint16_t decisionValidMask,
+        uint16_t decisionPlayedMask,
+        const DrumResolvedPageProjection& resolved,
         bool playing
     );
     [[nodiscard]] uint8_t visibleStep(uint8_t indexInPage) const;
     [[nodiscard]] uint8_t visibleLane(uint8_t row) const;
+    void publishAuthoredMutation();
     void bump();
 };
-#endif
 
 struct SequencerStructureUiState {
     Signal<uint8_t, 4> previewPageIndex{0};

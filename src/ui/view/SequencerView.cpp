@@ -1,9 +1,6 @@
 #include "SequencerView.hpp"
 
-#include <array>
-#include <algorithm>
 #include <cstddef>
-#include <cstdio>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
@@ -14,89 +11,13 @@
 #include "ui/sequencer/SequencerTrackPasteProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-#include "state/sequencer/DrumPatternState.hpp"
-#endif
+#include "state/project/ProjectTrackDomainOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::ui {
 
 namespace theme = standalone::theme;
-
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-namespace {
-
-constexpr uint32_t DRUM_ACCENT = standalone::theme::color::STEP_VELOCITY;
-constexpr uint32_t DRUM_TIMING = standalone::theme::color::STEP_DIVISION;
-constexpr lv_coord_t DRUM_HEADER_HEIGHT = 16;
-constexpr lv_coord_t DRUM_LANE_HEIGHT = 15;
-constexpr lv_coord_t DRUM_LABEL_WIDTH = 70;
-
-using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
-
-FLASHMEM const char* drumPropertyShortLabel(DrumProperty property) {
-    switch (property) {
-        case DrumProperty::STATE: return "STATE";
-        case DrumProperty::PROBABILITY: return "CHANCE";
-        case DrumProperty::GATE: return "GATE";
-        case DrumProperty::NUDGE: return "NUDGE";
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default: return "VEL";
-    }
-}
-
-FLASHMEM uint32_t drumPropertyColor(DrumProperty property) {
-    switch (property) {
-        case DrumProperty::STATE: return theme::color::STEP_STATE;
-        case DrumProperty::PROBABILITY: return theme::color::STEP_CHANCE;
-        case DrumProperty::GATE: return theme::color::STEP_GATE;
-        case DrumProperty::NUDGE: return theme::color::STEP_NUDGE;
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default: return DRUM_ACCENT;
-    }
-}
-
-FLASHMEM void drawDrumPrototypeRect(
-    lv_layer_t* layer,
-    const lv_area_t& area,
-    uint32_t color,
-    lv_opa_t backgroundOpacity,
-    lv_coord_t borderWidth = 0,
-    lv_opa_t borderOpacity = LV_OPA_TRANSP,
-    lv_coord_t radius = 0
-) {
-    lv_draw_rect_dsc_t dsc;
-    lv_draw_rect_dsc_init(&dsc);
-    dsc.bg_color = lv_color_hex(color);
-    dsc.bg_opa = backgroundOpacity;
-    dsc.border_color = lv_color_hex(color);
-    dsc.border_width = borderWidth;
-    dsc.border_opa = borderOpacity;
-    dsc.radius = radius;
-    lv_draw_rect(layer, &dsc, &area);
-}
-
-FLASHMEM void drawDrumPrototypeLabel(
-    lv_layer_t* layer,
-    const lv_area_t& area,
-    const char* text,
-    uint32_t color,
-    lv_opa_t opacity,
-    lv_text_align_t alignment = LV_TEXT_ALIGN_CENTER
-) {
-    lv_draw_label_dsc_t dsc;
-    lv_draw_label_dsc_init(&dsc);
-    dsc.text = text;
-    dsc.font = fonts.inter_12_medium ? fonts.inter_12_medium : LV_FONT_DEFAULT;
-    dsc.color = lv_color_hex(color);
-    dsc.opa = opacity;
-    dsc.align = alignment;
-    lv_draw_label(layer, &dsc, &area);
-}
-
-}  // namespace
-#endif
 
 FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
@@ -116,9 +37,7 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     createGrid();
     if (!step_grid_ || !step_grid_->getElement() ||
         !cc_lane_grid_ || !cc_lane_grid_->getElement()
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-        || !drum_track_ux_prototype_grid_
-#endif
+        || !drum_overview_surface_ || !drum_overview_surface_->getElement()
     ) return;
     createTrackPastePreflightCard();
     if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
@@ -131,12 +50,7 @@ FLASHMEM SequencerView::~SequencerView() {
     render_scheduler_.reset();
 
     track_paste_preflight_card_.reset();
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (drum_track_ux_prototype_grid_) {
-        lv_obj_delete(drum_track_ux_prototype_grid_);
-        drum_track_ux_prototype_grid_ = nullptr;
-    }
-#endif
+    drum_overview_surface_.reset();
     cc_lane_grid_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
@@ -190,436 +104,11 @@ FLASHMEM void SequencerView::createGrid() {
         center_column_,
         SequencerCcLaneGridLayout::EMBEDDED
     );
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    createDrumTrackUxPrototypeGrid();
-#endif
-}
-
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-FLASHMEM void SequencerView::createDrumTrackUxPrototypeGrid() {
-    if (!center_column_) return;
-
-    drum_track_ux_prototype_grid_ = lv_obj_create(center_column_);
-    if (!drum_track_ux_prototype_grid_) return;
-    lv_obj_remove_style_all(drum_track_ux_prototype_grid_);
-    lv_obj_add_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_FLOATING);
-    lv_obj_add_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_add_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(drum_track_ux_prototype_grid_, 0, 0);
-    lv_obj_set_size(drum_track_ux_prototype_grid_, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(
-        drum_track_ux_prototype_grid_,
-        lv_color_hex(theme::color::BACKGROUND),
-        0
-    );
-    lv_obj_set_style_bg_opa(drum_track_ux_prototype_grid_, LV_OPA_COVER, 0);
-    lv_obj_add_event_cb(
-        drum_track_ux_prototype_grid_,
-        onDrumTrackUxPrototypeDrawEvent,
-        LV_EVENT_DRAW_MAIN,
-        this
-    );
-}
-
-FLASHMEM void SequencerView::onDrumTrackUxPrototypeDrawEvent(
-    lv_event_t* event
-) {
-    auto* self = static_cast<SequencerView*>(lv_event_get_user_data(event));
-    if (!self) return;
-    self->drawDrumTrackUxPrototypeGrid(lv_event_get_layer(event));
-}
-
-FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
-    lv_layer_t* layer
-) {
-    if (!layer || !drum_track_ux_prototype_grid_) return;
-    const auto& prototype = state_refs_.sequencer.drumTrackUxPrototype;
-    if (!prototype.gridVisible()) return;
-
-    lv_area_t surface{};
-    lv_obj_get_coords(drum_track_ux_prototype_grid_, &surface);
-    const lv_coord_t width = static_cast<lv_coord_t>(
-        surface.x2 - surface.x1 + 1
-    );
-    if (width <= DRUM_LABEL_WIDTH) return;
-    const lv_coord_t cellWidth = static_cast<lv_coord_t>(
-        (width - DRUM_LABEL_WIDTH) /
-        core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
-    );
-
-    const auto focus = state_refs_.structureNavigationFocus.get() ==
-            core::state::StructureNavigationFocus::STEP
-        ? core::state::StructureNavigationFocus::STEP
-        : core::state::StructureNavigationFocus::PAGE;
-    const auto& descriptor =
-        prototype.drumTrack->kit.lanes[prototype.selectedLane];
-    const auto& selectedLanePattern =
-        prototype.drumTrack->pattern.lanes[prototype.selectedLane];
-    const uint8_t selectedLength =
-        prototype.drumTrack->pattern.effectiveLength(prototype.selectedLane);
-    const uint8_t selectedStepsPerBeat =
-        prototype.drumTrack->pattern.effectiveStepsPerBeat(
-            prototype.selectedLane
+    drum_overview_surface_ =
+        core::app::makeExtmemUnique<core::ui::sequencer::DrumOverviewSurface>(
+            center_column_
         );
-    char header[64] = {};
-    std::snprintf(
-        header,
-        sizeof(header),
-        "%s L%u %s%u %u 1/%u%s %s",
-        focus == core::state::StructureNavigationFocus::STEP
-            ? "STEP"
-            : "DRUM",
-        static_cast<unsigned>(prototype.selectedLane + 1U),
-        core::state::sequencer::drumLaneRoleLabel(descriptor.role),
-        static_cast<unsigned>(descriptor.midiNote),
-        static_cast<unsigned>(selectedLength),
-        static_cast<unsigned>(selectedStepsPerBeat * 4U),
-        selectedLanePattern.timing.mode == core::state::sequencer::
-                DrumLaneTimingMode::CUSTOM
-            ? "*"
-            : "",
-        drumPropertyShortLabel(prototype.property)
-    );
-    const lv_area_t headerArea{
-        .x1 = static_cast<lv_coord_t>(surface.x1 + 2),
-        .y1 = surface.y1,
-        .x2 = static_cast<lv_coord_t>(surface.x2 - 2),
-        .y2 = static_cast<lv_coord_t>(surface.y1 + DRUM_HEADER_HEIGHT - 1),
-    };
-    drawDrumPrototypeLabel(
-        layer,
-        headerArea,
-        header,
-        drumPropertyColor(prototype.property),
-        LV_OPA_COVER,
-        LV_TEXT_ALIGN_LEFT
-    );
-
-    const uint8_t pageStart = static_cast<uint8_t>(
-        prototype.page *
-        core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
-    );
-    const lv_coord_t gridStart = static_cast<lv_coord_t>(
-        surface.x1 + DRUM_LABEL_WIDTH
-    );
-    const lv_coord_t gridEnd = static_cast<lv_coord_t>(
-        gridStart + cellWidth *
-            core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
-    );
-
-    for (uint8_t row = 0;
-         row < core::state::sequencer::
-             DrumTrackUxPrototypeState::VISIBLE_LANE_COUNT;
-         ++row) {
-        const uint8_t lane = prototype.visibleLane(row);
-        const bool selected = lane == prototype.selectedLane;
-        const lv_coord_t rowY = static_cast<lv_coord_t>(
-            surface.y1 + DRUM_HEADER_HEIGHT + row * DRUM_LANE_HEIGHT
-        );
-        const lv_area_t rowArea{
-            .x1 = surface.x1,
-            .y1 = rowY,
-            .x2 = surface.x2,
-            .y2 = static_cast<lv_coord_t>(rowY + DRUM_LANE_HEIGHT - 1),
-        };
-        if (selected) {
-            drawDrumPrototypeRect(
-                layer,
-                rowArea,
-                DRUM_ACCENT,
-                LV_OPA_10
-            );
-        }
-
-        const auto& lanePattern = prototype.drumTrack->pattern.lanes[lane];
-        const uint8_t laneLength =
-            prototype.drumTrack->pattern.effectiveLength(lane);
-        const uint8_t stepsPerBeat =
-            prototype.drumTrack->pattern.effectiveStepsPerBeat(lane);
-        const lv_area_t nameArea{
-            .x1 = static_cast<lv_coord_t>(surface.x1 + 2),
-            .y1 = rowY,
-            .x2 = static_cast<lv_coord_t>(
-                surface.x1 + DRUM_LABEL_WIDTH - 3
-            ),
-            .y2 = static_cast<lv_coord_t>(rowY + DRUM_LANE_HEIGHT - 1),
-        };
-        char name[20] = {};
-        const auto& laneDescriptor = prototype.drumTrack->kit.lanes[lane];
-        std::snprintf(
-            name,
-            sizeof(name),
-            "%s %u/%u%s",
-            core::state::sequencer::drumLaneRoleLabel(laneDescriptor.role),
-            static_cast<unsigned>(laneLength),
-            static_cast<unsigned>(stepsPerBeat * 4U),
-            lanePattern.timing.mode == core::state::sequencer::
-                    DrumLaneTimingMode::CUSTOM
-                ? "*"
-                : ""
-        );
-        drawDrumPrototypeLabel(
-            layer,
-            nameArea,
-            name,
-            lanePattern.timing.mode == core::state::sequencer::
-                    DrumLaneTimingMode::CUSTOM
-                ? DRUM_TIMING
-                : selected
-                ? drumPropertyColor(prototype.property)
-                : theme::color::TEXT_SECONDARY,
-            selected ? LV_OPA_COVER : LV_OPA_70,
-            LV_TEXT_ALIGN_LEFT
-        );
-
-        for (uint8_t column = 0;
-             column < core::state::sequencer::
-                 DrumTrackUxPrototypeState::STEPS_PER_PAGE;
-             ++column) {
-            const uint8_t step = prototype.visibleStep(column);
-            const bool available = step < laneLength;
-            const bool active = available &&
-                prototype.drumTrack->pattern.stepEnabled(lane, step);
-            const lv_coord_t cellX = static_cast<lv_coord_t>(
-                gridStart + column * cellWidth
-            );
-            const lv_area_t cellArea{
-                .x1 = static_cast<lv_coord_t>(cellX + 1),
-                .y1 = static_cast<lv_coord_t>(rowY + 1),
-                .x2 = static_cast<lv_coord_t>(cellX + cellWidth - 2),
-                .y2 = static_cast<lv_coord_t>(
-                    rowY + DRUM_LANE_HEIGHT - 2
-                ),
-            };
-            const bool focused = selected &&
-                focus == core::state::StructureNavigationFocus::STEP &&
-                step == prototype.focusedStep;
-
-            // Each lane owns its own beat division. The persistent separator
-            // makes mixed 1/8, 1/16, ... timelines legible in one overview.
-            if (available && stepsPerBeat > 0U &&
-                step % stepsPerBeat == 0U) {
-                const lv_area_t beatLine{
-                    .x1 = cellX,
-                    .y1 = static_cast<lv_coord_t>(rowY + 1),
-                    .x2 = cellX,
-                    .y2 = static_cast<lv_coord_t>(
-                        rowY + DRUM_LANE_HEIGHT - 2
-                    ),
-                };
-                drawDrumPrototypeRect(
-                    layer,
-                    beatLine,
-                    theme::color::STEP_DIVISION,
-                    LV_OPA_30
-                );
-            }
-
-            // Available/unused cells remain a quiet rhythmic scaffold. Focus
-            // is an outline only and never replaces musical data encoding.
-            drawDrumPrototypeRect(
-                layer,
-                cellArea,
-                available ? theme::color::STEP_STATE : theme::color::INACTIVE,
-                available ? LV_OPA_10 : LV_OPA_20,
-                focused ? 2 : selected && available ? 1 : 0,
-                focused
-                    ? LV_OPA_COVER
-                    : selected && available
-                    ? LV_OPA_70
-                    : LV_OPA_TRANSP,
-                1
-            );
-
-            if (!active) continue;
-
-            const uint8_t velocity = lanePattern.velocity[step];
-            const uint16_t gate = lanePattern.gate[step];
-            const int8_t nudge = lanePattern.nudge[step];
-            const uint8_t probability = lanePattern.probability[step];
-            const lv_coord_t innerWidth = std::max<lv_coord_t>(
-                2,
-                static_cast<lv_coord_t>(cellWidth - 4)
-            );
-            const lv_coord_t innerBottom = static_cast<lv_coord_t>(
-                rowY + DRUM_LANE_HEIGHT - 3
-            );
-            const lv_coord_t maxHitHeight = static_cast<lv_coord_t>(
-                DRUM_LANE_HEIGHT - 5
-            );
-            const lv_coord_t hitHeight = static_cast<lv_coord_t>(
-                2 + (static_cast<uint16_t>(velocity) *
-                         static_cast<uint16_t>(maxHitHeight - 2)) /
-                        127U
-            );
-            const lv_coord_t nominalOnset = static_cast<lv_coord_t>(cellX + 2);
-            const lv_coord_t nudgeOffset = static_cast<lv_coord_t>(
-                (static_cast<int32_t>(nudge) * innerWidth) / 100
-            );
-            const lv_coord_t onset = std::clamp<lv_coord_t>(
-                static_cast<lv_coord_t>(nominalOnset + nudgeOffset),
-                static_cast<lv_coord_t>(gridStart + 1),
-                static_cast<lv_coord_t>(gridEnd - 2)
-            );
-            const lv_coord_t gateWidth = std::max<lv_coord_t>(
-                2,
-                static_cast<lv_coord_t>(
-                    (static_cast<uint32_t>(gate) * innerWidth) / 100U
-                )
-            );
-            const lv_coord_t gateEnd = std::clamp<lv_coord_t>(
-                static_cast<lv_coord_t>(onset + gateWidth - 1),
-                onset,
-                static_cast<lv_coord_t>(gridEnd - 2)
-            );
-            const lv_area_t hitArea{
-                .x1 = onset,
-                .y1 = static_cast<lv_coord_t>(innerBottom - hitHeight + 1),
-                .x2 = gateEnd,
-                .y2 = innerBottom,
-            };
-            const lv_opa_t velocityOpacity = static_cast<lv_opa_t>(
-                70U + (static_cast<uint16_t>(velocity) * 170U) / 127U
-            );
-            drawDrumPrototypeRect(
-                layer,
-                hitArea,
-                theme::color::STEP_GATE,
-                velocityOpacity,
-                0,
-                LV_OPA_TRANSP,
-                1
-            );
-
-            // A compact onset marker preserves the Velocity identity while
-            // the body's width communicates Gate.
-            const lv_area_t onsetArea{
-                .x1 = onset,
-                .y1 = hitArea.y1,
-                .x2 = static_cast<lv_coord_t>(
-                    std::min<lv_coord_t>(gateEnd, onset + 1)
-                ),
-                .y2 = hitArea.y2,
-            };
-            drawDrumPrototypeRect(
-                layer,
-                onsetArea,
-                theme::color::STEP_VELOCITY,
-                LV_OPA_COVER
-            );
-
-            if (nudge != 0) {
-                const lv_area_t nudgeArea{
-                    .x1 = std::min(nominalOnset, onset),
-                    .y1 = static_cast<lv_coord_t>(rowY + 1),
-                    .x2 = std::max(nominalOnset, onset),
-                    .y2 = static_cast<lv_coord_t>(rowY + 2),
-                };
-                drawDrumPrototypeRect(
-                    layer,
-                    nudgeArea,
-                    theme::color::STEP_NUDGE,
-                    LV_OPA_COVER
-                );
-            }
-
-            if (probability < 100U) {
-                const lv_coord_t chanceX = std::clamp<lv_coord_t>(
-                    static_cast<lv_coord_t>(onset + 2),
-                    static_cast<lv_coord_t>(cellX + 2),
-                    static_cast<lv_coord_t>(cellX + cellWidth - 4)
-                );
-                const lv_area_t chanceArea{
-                    .x1 = chanceX,
-                    .y1 = static_cast<lv_coord_t>(rowY + 2),
-                    .x2 = static_cast<lv_coord_t>(chanceX + 2),
-                    .y2 = static_cast<lv_coord_t>(rowY + 4),
-                };
-                drawDrumPrototypeRect(
-                    layer,
-                    chanceArea,
-                    theme::color::STEP_CHANCE,
-                    LV_OPA_COVER,
-                    0,
-                    LV_OPA_TRANSP,
-                    2
-                );
-            }
-        }
-
-        // Loop end remains visible even when this lane is not focused.
-        if (laneLength > pageStart &&
-            laneLength <= static_cast<uint8_t>(
-                pageStart + core::state::sequencer::
-                    DrumTrackUxPrototypeState::STEPS_PER_PAGE
-            )) {
-            const uint8_t endColumn = static_cast<uint8_t>(
-                laneLength - pageStart
-            );
-            const lv_coord_t endX = static_cast<lv_coord_t>(
-                gridStart + endColumn * cellWidth
-            );
-            const lv_area_t loopCap{
-                .x1 = static_cast<lv_coord_t>(endX - 1),
-                .y1 = static_cast<lv_coord_t>(rowY + 1),
-                .x2 = endX,
-                .y2 = static_cast<lv_coord_t>(
-                    rowY + DRUM_LANE_HEIGHT - 2
-                ),
-            };
-            drawDrumPrototypeRect(
-                layer,
-                loopCap,
-                theme::color::STEP_LENGTH,
-                LV_OPA_80
-            );
-            const lv_area_t loopHook{
-                .x1 = static_cast<lv_coord_t>(endX - 4),
-                .y1 = static_cast<lv_coord_t>(rowY + 1),
-                .x2 = endX,
-                .y2 = static_cast<lv_coord_t>(rowY + 2),
-            };
-            drawDrumPrototypeRect(
-                layer,
-                loopHook,
-                theme::color::STEP_LENGTH,
-                LV_OPA_80
-            );
-        }
-
-        const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
-        if (prototype.playbackActive &&
-            (prototype.playheadValidMask & laneBit) != 0U) {
-            const uint8_t playhead = prototype.playheadSteps[lane];
-            if (playhead >= pageStart &&
-                playhead < static_cast<uint8_t>(
-                    pageStart + core::state::sequencer::
-                        DrumTrackUxPrototypeState::STEPS_PER_PAGE
-                )) {
-                const lv_coord_t playheadX = static_cast<lv_coord_t>(
-                    gridStart + (playhead - pageStart) * cellWidth +
-                    cellWidth / 2
-                );
-                const lv_area_t playheadArea{
-                    .x1 = playheadX,
-                    .y1 = rowY,
-                    .x2 = playheadX,
-                    .y2 = static_cast<lv_coord_t>(
-                        rowY + DRUM_LANE_HEIGHT - 1
-                    ),
-                };
-                drawDrumPrototypeRect(
-                    layer,
-                    playheadArea,
-                    theme::color::PLAY_ACTIVE,
-                    LV_OPA_COVER
-                );
-            }
-        }
-    }
 }
-#endif
 
 FLASHMEM void SequencerView::createPropertySelectionOverlay() {
     if (!container_) return;
@@ -637,12 +126,16 @@ FLASHMEM void SequencerView::createHistoryToast() {
     lv_obj_add_flag(history_toast_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(history_toast_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(history_toast_, 150, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(history_toast_, lv_color_hex(theme::color::BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(history_toast_, LV_OPA_90, 0);
+    lv_obj_set_style_bg_color(
+        history_toast_, lv_color_hex(theme::color::SURFACE_RAISED), 0
+    );
+    lv_obj_set_style_bg_opa(history_toast_, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(history_toast_, 1, 0);
-    lv_obj_set_style_border_color(history_toast_, lv_color_hex(theme::color::TEXT_SECONDARY), 0);
-    lv_obj_set_style_border_opa(history_toast_, LV_OPA_50, 0);
-    lv_obj_set_style_radius(history_toast_, 5, 0);
+    lv_obj_set_style_border_color(
+        history_toast_, lv_color_hex(theme::color::BORDER_SUBTLE), 0
+    );
+    lv_obj_set_style_border_opa(history_toast_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(history_toast_, 3, 0);
     lv_obj_set_style_pad_left(history_toast_, 8, 0);
     lv_obj_set_style_pad_right(history_toast_, 8, 0);
     lv_obj_set_style_pad_top(history_toast_, 5, 0);
@@ -670,11 +163,11 @@ FLASHMEM void SequencerView::createHistoryToast() {
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     }
 
-    lv_obj_set_style_text_font(history_toast_line1_, fonts.inter_13_bold, 0);
+    lv_obj_set_style_text_font(history_toast_line1_, fonts.compact_selected(), 0);
     lv_obj_set_style_text_color(history_toast_line1_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(history_toast_line2_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_font(history_toast_line2_, fonts.compact_label(), 0);
     lv_obj_set_style_text_color(history_toast_line2_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(history_toast_line3_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_font(history_toast_line3_, fonts.compact_label(), 0);
     lv_obj_set_style_text_color(history_toast_line3_, lv_color_hex(theme::color::TEXT_SECONDARY), 0);
 }
 
@@ -769,7 +262,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.contentView.revision,
         state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.patternQuickControls.previewRevision
+        state_refs_.sequencer.patternQuickControls.previewRevision,
+        state_refs_.sequencer.drumSequencer.revision
     );
 }
 
@@ -857,19 +351,20 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.patternQuickControls.previewRevision
     );
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     grid_watcher_.watch(
-        state_refs_.sequencer.drumTrackUxPrototype.revision
+        state_refs_.tracks.drumRevisionSignal()
     );
     grid_watcher_.watch(
-        state_refs_.sequencer.drumTrackUxPrototype.playbackRevision
+        state_refs_.sequencer.drumSequencer.revision
     );
-#endif
+    grid_watcher_.watch(
+        state_refs_.sequencer.drumSequencer.playbackRevision
+    );
     grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
         *this, 11, "SequencerView.gridTick"
     );
     grid_tick_watcher_.watch(
-        state_refs_.sequencer.playheadStepTickOffset
+        state_refs_.sequencer.playheadStepPhaseQ8
     );
 }
 
@@ -904,11 +399,9 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.patternQuickControls.previewRevision
     );
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     selector_overlay_watcher_.watch(
-        state_refs_.sequencer.drumTrackUxPrototype.revision
+        state_refs_.sequencer.drumSequencer.revision
     );
-#endif
 }
 
 FLASHMEM void SequencerView::bindOverlayVisibilityState() {
@@ -920,9 +413,7 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.sequencer.patternEditor.active,
         state_refs_.deviceSettings.visible,
-        state_refs_.deviceSettings.selector.visible,
-        state_refs_.sequencerSettings.visible,
-        state_refs_.sequencerSettings.selector.visible
+        state_refs_.deviceSettings.selector.visible
     );
 }
 
@@ -942,11 +433,9 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.ccLaneUi.revision
     );
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     left_action_strip_watcher_.watch(
-        state_refs_.sequencer.drumTrackUxPrototype.revision
+        state_refs_.sequencer.drumSequencer.revision
     );
-#endif
 }
 
 FLASHMEM void SequencerView::bindBottomActionStripState() {
@@ -978,11 +467,9 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.ccLaneUi.actionGuard,
         state_refs_.sequencer.ccLaneUi.operationFeedback
     );
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     bottom_action_strip_watcher_.watch(
-        state_refs_.sequencer.drumTrackUxPrototype.revision
+        state_refs_.sequencer.drumSequencer.revision
     );
-#endif
 }
 
 FLASHMEM void SequencerView::bindHistoryFeedbackState() {
@@ -1057,9 +544,7 @@ bool SequencerView::hasBlockingOverlay() const {
            state_refs_.sequencer.stepEdit.visible.get() ||
            state_refs_.sequencer.patternEditor.active.get() ||
            state_refs_.deviceSettings.visible.get() ||
-           state_refs_.deviceSettings.selector.visible.get() ||
-           state_refs_.sequencerSettings.visible.get() ||
-           state_refs_.sequencerSettings.selector.visible.get();
+           state_refs_.deviceSettings.selector.visible.get();
 }
 
 void SequencerView::handleOverlayVisibilityChanged() {
@@ -1093,7 +578,11 @@ void SequencerView::requestHeaderStripRender() {
 }
 
 void SequencerView::requestHeaderAndLeftRender() {
-    requestRender(RENDER_HEADER_TOP | RENDER_LEFT_ACTION_STRIP);
+    requestRender(
+        RENDER_HEADER_TOP |
+        RENDER_HEADER_STRIP |
+        RENDER_LEFT_ACTION_STRIP
+    );
 }
 
 void SequencerView::requestHeaderStripAndLeftRender() {
@@ -1219,22 +708,29 @@ void SequencerView::render(uint32_t flags) {
     }
 
     if (needsGrid) {
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-        if (state_refs_.sequencer.drumTrackUxPrototype.gridVisible()) {
-            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-prototype");
+        const auto& drumProjection =
+            state_refs_.sequencer.drumSequencer;
+        if (core::state::sequencer::isDrumOverviewActive(
+                state_refs_.sequencer)) {
+            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-overview");
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             cc_lane_grid_->render({.visible = false});
-            lv_obj_clear_flag(
-                drum_track_ux_prototype_grid_,
-                LV_OBJ_FLAG_HIDDEN
-            );
-            lv_obj_invalidate(drum_track_ux_prototype_grid_);
+            drum_overview_surface_->render({
+                .visible = true,
+                .projection = &drumProjection,
+                .navigationFocus = state_refs_.structureNavigationFocus.get(),
+                .midiChannel = static_cast<uint8_t>(
+                    core::state::project::projectTrackMidiChannel(
+                        state_refs_.projectTracks,
+                        drumProjection.targetTrack
+                    ) + 1U
+                ),
+                .authoredRevision =
+                    state_refs_.tracks.drumRevisionSignal().get(),
+                .uiRevision = drumProjection.revision.get(),
+            });
         } else {
-            lv_obj_add_flag(
-                drum_track_ux_prototype_grid_,
-                LV_OBJ_FLAG_HIDDEN
-            );
-#endif
+            drum_overview_surface_->render({.visible = false});
         const auto ccLaneProps = sequencer::buildSequencerCcLaneGridProps(source);
         if (ccLaneProps.visible) {
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
@@ -1247,9 +743,7 @@ void SequencerView::render(uint32_t flags) {
             lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             step_grid_->render(stepGridProps);
         }
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
         }
-#endif
     }
 
     if (needsHistoryToast) {
@@ -1287,9 +781,19 @@ void SequencerView::renderHistoryToast() {
         return;
     }
 
-    lv_label_set_text(history_toast_line1_, feedback.line1.data());
-    lv_label_set_text(history_toast_line2_, feedback.line2.data());
-    lv_label_set_text(history_toast_line3_, feedback.line3.data());
+    const auto renderLine = [](lv_obj_t* label, const char* text) {
+        if (!label) return;
+        const bool hasText = text != nullptr && text[0] != '\0';
+        lv_label_set_text(label, hasText ? text : "");
+        if (hasText) {
+            lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        }
+    };
+    renderLine(history_toast_line1_, feedback.line1.data());
+    renderLine(history_toast_line2_, feedback.line2.data());
+    renderLine(history_toast_line3_, feedback.line3.data());
     lv_obj_align(history_toast_, LV_ALIGN_TOP_MID, 0, 34);
     // Outcome feedback has priority over any contextual paste card occupying
     // the same temporary-information zone.

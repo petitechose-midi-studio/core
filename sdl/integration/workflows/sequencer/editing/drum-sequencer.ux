@@ -1,0 +1,137 @@
+# Drum Sequencer acceptance path: typed creation, Track/Pattern/Step grammar,
+# lane editing, shared Step Editor, advanced rhythmic content and return.
+# Expect: capture_changed:type_drum=kit_empty, capture_changed:kit_empty=kit_general_midi, capture_changed:kit_general_midi=pattern_overview
+# Expect: capture_changed:pattern_overview=kick_programmed, capture_changed:kick_programmed=snare_programmed
+# Expect: capture_changed:lane_editor_name_initial=lane_color_edited, capture_changed:lane_color_edited=overview_lane_color
+# Expect: semantic:lane_editor_name_initial:mode=sequencer.drum_lane_edit, semantic:lane_editor_name_initial:property=name, semantic:lane_editor_name_initial:draft_active=true, semantic:lane_editor_name_initial:dirty=false
+# Expect: semantic:lane_color_edited:property=color, semantic:lane_color_edited:effect=edit_drum_lane_draft, semantic:lane_color_edited:intent=edit_value, semantic:lane_color_edited:dirty=true
+# Expect: semantic:overview_lane_color:effect=apply_drum_lane_draft, semantic:overview_lane_color:intent=apply, semantic:overview_lane_color:draft_active=false, semantic:overview_lane_color:published=true, semantic:overview_lane_color:projection=published
+# Expect: semantic:pattern_overview:view=sequencer, semantic:pattern_overview:overlay=none, semantic:pattern_overview:shared_track=1
+# Expect: semantic:step_focus:mode=sequencer.step, semantic:step_focus:target=step, semantic:step_focus:target_index=0
+# Expect: semantic:per_lane_playheads:playing=true, semantic:per_lane_playheads:effect=transport_start
+# Expect: capture_changed:step_focus=step_two_focused, capture_changed:step_editor_state=micro_action, capture_changed:micro_action=micro_child
+# Expect: capture_changed:micro_child=micro_child_edited, capture_changed:advanced_root=overview_advanced_marker
+# Expect: capture_changed:overview_advanced_marker=cycle_action, capture_changed:cycle_action=cycle_child
+# Expect: capture_changed:cycle_child=cycle_child_edited, capture_changed:cycle_root=overview_cycle_marker
+# Expect: capture_changed:overview_cycle_marker=per_lane_playheads, capture_changed:per_lane_playheads=transport_stopped
+
+0 scenario drum-sequencer
+80 capture screen instrument_grid_before_create
+
+# Open Structure > Tracks, select the first add slot and open typed creation.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1280 capture screen structure_tracks_open
+1530 encoder NAV 1
+1730 capture screen track_2_add_preview
+1830 tap NAV 60
+2150 capture screen type_instrument
+
+# Drum creation is deliberately two-stage: choose Track kind, then either a
+# blank kit or an optional routing preset. General MIDI gives this scenario
+# eight immediately playable lanes while New kit remains the product default.
+2300 encoder NAV 1
+2500 capture screen type_drum
+2650 tap NAV 60
+2950 capture screen kit_empty
+3100 encoder NAV 1
+3300 capture screen kit_general_midi
+3450 tap NAV 60
+4200 capture screen pattern_overview
+
+# The new Drum Track enters Pattern focus. NAV changes lane and the eight
+# macro buttons author visible hits without opening another screen.
+4350 tap MACRO_1 60
+4550 tap MACRO_5 60
+4850 capture screen kick_programmed
+5000 encoder NAV 1
+5150 tap MACRO_3 60
+5350 tap MACRO_7 60
+5650 capture screen snare_programmed
+
+# A short NAV at Pattern opens the selected lane editor. Change its stable
+# color metadata and apply; the overview must reflect it immediately.
+5800 tap NAV 60
+6150 capture screen lane_editor_name_initial
+6300 encoder NAV 1
+6450 encoder NAV 1
+6600 encoder NAV 1
+6800 encoder OPT 0.75
+7100 capture screen lane_color_edited
+7250 tap BOTTOM_RIGHT 60
+7650 capture screen overview_lane_color
+
+# One context turn enters Step focus. NAV now moves horizontally and a
+# short press opens the same shared Step Editor as the melodic sequencer.
+7850 button NAV down
+7950 encoder NAV 1
+8050 button NAV up
+8400 capture screen step_focus
+8550 encoder NAV 1
+8700 tap MACRO_2 60
+8950 capture screen step_two_focused
+9100 tap NAV 60
+9500 capture screen step_editor_state
+
+# Root Drum rows are State, Chance, Velocity, Gate, Nudge, Micro and Cycle:
+# fixed lane pitch means Pitch/Chord are intentionally absent.
+9650 encoder NAV 1
+9850 encoder OPT 0.70
+10050 encoder NAV 1
+10250 encoder OPT 0.85
+10450 encoder NAV 1
+10650 encoder OPT 0.45
+10850 encoder NAV 1
+11050 encoder OPT 0.65
+11250 encoder NAV 1
+11500 capture screen micro_action
+
+# Create a MicroSequence through NAV. The shared editor remains open inside
+# the child, still exposes the compact rhythm rows and keeps the lane note.
+11650 tap NAV 60
+12200 capture screen micro_child
+12400 encoder NAV 1
+12600 encoder NAV 1
+12800 encoder OPT 0.55
+13100 capture screen micro_child_edited
+
+# Back exposes the explicit dirty-draft decision. NAV validates the default
+# Save choice, ascends one graph level, then Back closes the root editor.
+# Returning to the overview preserves the scalar geometry and Micro badge.
+13300 tap LEFT_TOP 60
+13600 tap NAV 60
+14000 capture screen advanced_root
+14200 tap LEFT_TOP 60
+14600 capture screen overview_advanced_marker
+
+# Re-open the same root Step and enter Cycle through the adjacent shared row.
+# The child uses the same Drum-lane presentation as Micro: fixed lane pitch,
+# compact rhythm geometry and no melodic Pitch/Chord detour.
+14800 button NAV down
+14900 encoder NAV 1
+15000 button NAV up
+15300 tap NAV 60
+15600 encoder NAV 1
+15750 encoder NAV 1
+15900 encoder NAV 1
+16050 encoder NAV 1
+16200 encoder NAV 1
+16350 encoder NAV 1
+16600 capture screen cycle_action
+16750 tap NAV 60
+17400 capture screen cycle_child
+17550 tap MACRO_2 60
+17900 capture screen cycle_child_edited
+18100 tap LEFT_TOP 60
+18400 tap NAV 60
+18800 capture screen cycle_root
+19000 tap LEFT_TOP 60
+19400 capture screen overview_cycle_marker
+
+# Runtime publishes an independent continuous playhead for every lane.
+19600 tap BOTTOM_CENTER 60
+20300 capture screen per_lane_playheads
+20500 tap BOTTOM_CENTER 60
+20800 capture screen transport_stopped

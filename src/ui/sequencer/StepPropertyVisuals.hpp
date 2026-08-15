@@ -26,11 +26,21 @@ struct StepPropertyVisualSpec {
     bool showNoteLabel = false;
 };
 
+struct DrumPropertyVisualSpec {
+    const char* icon = "";
+    const char* label = "";
+    uint32_t color = 0U;
+};
+
 const char* propertyIconGlyph(core::state::sequencer::StepProperty property);
 
 StepPropertyVisualSpec buildStepPropertyVisual(
     core::state::sequencer::StepProperty property,
     bool inPattern
+);
+
+DrumPropertyVisualSpec buildDrumPropertyVisual(
+    core::state::sequencer::DrumSequencerProperty property
 );
 
 }  // namespace core::ui::sequencer::visual

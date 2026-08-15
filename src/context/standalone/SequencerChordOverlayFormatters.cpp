@@ -401,8 +401,7 @@ FLASHMEM void populateChordDetailOverlay(
     uint8_t focusedFormulaItem,
     bool sourceSelectorActive,
     core::state::sequencer::SequencerChordSourceChoice focusedSourceChoice,
-    bool enabled,
-    bool presetLibraryAvailable
+    bool enabled
 ) {
     using Field = core::state::sequencer::SequencerChordEditField;
     using SourceChoice =
@@ -674,7 +673,7 @@ FLASHMEM void populateChordDetailOverlay(
         copyText(
             data.chordFieldTitle.data(),
             data.chordFieldTitle.size(),
-            presetLibraryAvailable ? "Chord · NAV hold" : "Chord"
+            "Chord"
         );
     }
 
@@ -694,7 +693,6 @@ FLASHMEM void populateChordDetailOverlay(
     data.overlayProps.selectedIndex = data.selectedIndex;
     data.overlayProps.actionsVisible = false;
     data.overlayProps.selectedVisualSlot = selectedSlot;
-    data.overlayProps.focusColor = selectedColor;
     data.overlayProps.titleColor = selectedColor;
     data.overlayProps.chordPreview = core::ui::SequencerChordPreviewProps{
         .visible = true,

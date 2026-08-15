@@ -10,9 +10,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 #include "state/sequencer/DrumPatternState.hpp"
-#endif
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerCcLanePropertySelection.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -33,77 +31,31 @@ namespace {
 
 using QuickItem = core::state::sequencer::PatternQuickControlItem;
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 using DrumDimension =
-    core::state::sequencer::DrumTrackUxPrototypeDimension;
-using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
-
-FLASHMEM const char* drumPropertyIcon(DrumProperty property) {
-    using StepProperty = core::state::sequencer::StepProperty;
-    switch (property) {
-        case DrumProperty::STATE: return standalone::icons::ACTION_VALIDATE;
-        case DrumProperty::PROBABILITY:
-            return visual::propertyIconGlyph(StepProperty::PROBABILITY);
-        case DrumProperty::GATE:
-            return visual::propertyIconGlyph(StepProperty::GATE);
-        case DrumProperty::NUDGE:
-            return visual::propertyIconGlyph(StepProperty::NUDGE);
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default: return visual::propertyIconGlyph(StepProperty::VELOCITY);
-    }
-}
-
-FLASHMEM const char* drumPropertyLabel(DrumProperty property) {
-    switch (property) {
-        case DrumProperty::STATE: return "State";
-        case DrumProperty::PROBABILITY: return "Chance";
-        case DrumProperty::GATE: return "Gate";
-        case DrumProperty::NUDGE: return "Nudge";
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default: return "Velocity";
-    }
-}
-
-FLASHMEM uint32_t drumPropertyColor(DrumProperty property) {
-    using StepProperty = core::state::sequencer::StepProperty;
-    switch (property) {
-        case DrumProperty::STATE:
-            return standalone::theme::color::STEP_STATE;
-        case DrumProperty::PROBABILITY:
-            return semantic::colorForProperty(StepProperty::PROBABILITY);
-        case DrumProperty::GATE:
-            return semantic::colorForProperty(StepProperty::GATE);
-        case DrumProperty::NUDGE:
-            return semantic::colorForProperty(StepProperty::NUDGE);
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default:
-            return semantic::colorForProperty(StepProperty::VELOCITY);
-    }
-}
+    core::state::sequencer::DrumSequencerDimension;
+using DrumProperty = core::state::sequencer::DrumSequencerProperty;
+using DrumPatternField = core::state::sequencer::DrumPatternDefaultField;
 
 FLASHMEM void formatDrumPropertyValue(
     char* buffer,
     size_t size,
-    const core::state::sequencer::DrumTrackUxPrototypeState& prototype
+    const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!buffer || size == 0U || !prototype.drumTrack) return;
+    if (!buffer || size == 0U || !drumUi.drumTrack) return;
     const uint8_t step = std::min<uint8_t>(
-        prototype.focusedStep,
-        static_cast<uint8_t>(prototype.MAX_STEPS - 1U)
+        drumUi.focusedStep,
+        static_cast<uint8_t>(drumUi.MAX_STEPS - 1U)
     );
     const auto& lane =
-        prototype.drumTrack->pattern.lanes[prototype.selectedLane];
-    switch (prototype.property) {
+        drumUi.drumTrack->pattern.lanes[drumUi.selectedLane];
+    switch (drumUi.property) {
         case DrumProperty::STATE:
             std::snprintf(
                 buffer,
                 size,
                 "%s",
-                prototype.drumTrack->pattern.stepEnabled(
-                    prototype.selectedLane,
+                drumUi.drumTrack->pattern.stepEnabled(
+                    drumUi.selectedLane,
                     step
                 ) ? "On" : "Off"
             );
@@ -180,17 +132,17 @@ FLASHMEM uint32_t drumDimensionColor(DrumDimension dimension) {
 FLASHMEM void formatDrumDimensionValue(
     char* buffer,
     size_t size,
-    const core::state::sequencer::DrumTrackUxPrototypeState& prototype
+    const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!buffer || size == 0U || !prototype.drumTrack) return;
-    const auto& pattern = prototype.drumTrack->pattern;
-    switch (prototype.dimension) {
+    if (!buffer || size == 0U || !drumUi.drumTrack) return;
+    const auto& pattern = drumUi.drumTrack->pattern;
+    switch (drumUi.dimension) {
         case DrumDimension::MODE:
             std::snprintf(
                 buffer,
                 size,
                 "%s",
-                pattern.lanes[prototype.selectedLane].timing.mode ==
+                pattern.lanes[drumUi.selectedLane].timing.mode ==
                         core::state::sequencer::DrumLaneTimingMode::CUSTOM
                     ? "Custom"
                     : "Inherited"
@@ -202,7 +154,7 @@ FLASHMEM void formatDrumDimensionValue(
                 size,
                 "1/%u",
                 static_cast<unsigned>(
-                    pattern.effectiveStepsPerBeat(prototype.selectedLane) * 4U
+                    pattern.effectiveStepsPerBeat(drumUi.selectedLane) * 4U
                 )
             );
             return;
@@ -214,13 +166,55 @@ FLASHMEM void formatDrumDimensionValue(
                 size,
                 "%u steps",
                 static_cast<unsigned>(
-                    pattern.effectiveLength(prototype.selectedLane)
+                    pattern.effectiveLength(drumUi.selectedLane)
                 )
             );
             return;
     }
 }
-#endif
+
+FLASHMEM const char* drumPatternFieldIcon(DrumPatternField field) {
+    return field == DrumPatternField::DIVISION
+        ? standalone::icons::DIVISION
+        : standalone::icons::LENGTH;
+}
+
+FLASHMEM const char* drumPatternFieldLabel(DrumPatternField field) {
+    return field == DrumPatternField::DIVISION
+        ? "Default division"
+        : "Default length";
+}
+
+FLASHMEM uint32_t drumPatternFieldColor(DrumPatternField field) {
+    return field == DrumPatternField::DIVISION
+        ? standalone::theme::color::STEP_DIVISION
+        : standalone::theme::color::STEP_LENGTH;
+}
+
+FLASHMEM void formatDrumPatternFieldValue(
+    char* buffer,
+    size_t size,
+    const core::state::sequencer::DrumSequencerState& drumUi
+) {
+    if (!buffer || size == 0U || !drumUi.drumTrack) return;
+    if (drumUi.patternDefaultField == DrumPatternField::DIVISION) {
+        std::snprintf(
+            buffer,
+            size,
+            "1/%u",
+            static_cast<unsigned>(
+                drumUi.drumTrack->pattern.defaultStepsPerBeat * 4U
+            )
+        );
+    } else {
+        std::snprintf(
+            buffer,
+            size,
+            "%u steps",
+            static_cast<unsigned>(drumUi.drumTrack->pattern.defaultLength)
+        );
+    }
+}
 
 const char* sequencerContextLabel(core::state::StructureNavigationFocus focus) {
     switch (focus) {
@@ -484,10 +478,9 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
 ) {
     const auto& sequencer = source.sequencer;
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (sequencer.drumTrackUxPrototype.pickerVisible()) {
-        const bool drum = sequencer.drumTrackUxPrototype.selectedKind ==
-            core::state::sequencer::DrumTrackUxPrototypeKind::DRUM;
+    if (sequencer.drumSequencer.typePickerVisible()) {
+        const bool drum = sequencer.drumSequencer.selectedKind ==
+            core::state::sequencer::DrumSequencerKind::DRUM;
         return {
             .visible = true,
             .customContent = true,
@@ -501,37 +494,66 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
                 : standalone::theme::color::STEP_PITCH,
         };
     }
-    if (sequencer.drumTrackUxPrototype.gridVisible() &&
-        sequencer.drumTrackUxPrototype.selectorVisible()) {
-        const auto& prototype = sequencer.drumTrackUxPrototype;
+    if (sequencer.drumSequencer.kitPickerVisible()) {
+        const auto preset =
+            sequencer.drumSequencer.selectedKitPreset;
+        return {
+            .visible = true,
+            .customContent = true,
+            .icon = preset == core::state::sequencer::DrumKitPreset::EMPTY
+                ? standalone::icons::ACTION_CLEAR
+                : standalone::icons::CYCLE_STATE,
+            .label = core::state::sequencer::drumKitPresetLabel(preset),
+            .value = "Turn NAV · press",
+            .color = standalone::theme::color::STEP_VELOCITY,
+        };
+    }
+    if (sequencer.drumSequencer.gridVisible() &&
+        sequencer.drumSequencer.selectorVisible()) {
+        const auto& drumUi = sequencer.drumSequencer;
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::LANE_EDITOR) {
+            return {};
+        }
         StepPropertySelectionOverlayProps props{
             .visible = true,
             .customContent = true,
             .useValueText = true,
         };
-        if (prototype.selector == core::state::sequencer::
-                DrumTrackUxPrototypeSelector::DIMENSION) {
-            props.icon = drumDimensionIcon(prototype.dimension);
-            props.label = drumDimensionLabel(prototype.dimension);
-            props.color = drumDimensionColor(prototype.dimension);
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::DIMENSION) {
+            props.icon = drumDimensionIcon(drumUi.dimension);
+            props.label = drumDimensionLabel(drumUi.dimension);
+            props.color = drumDimensionColor(drumUi.dimension);
             formatDrumDimensionValue(
                 props.valueText.data(),
                 props.valueText.size(),
-                prototype
+                drumUi
             );
-        } else {
-            props.icon = drumPropertyIcon(prototype.property);
-            props.label = drumPropertyLabel(prototype.property);
-            props.color = drumPropertyColor(prototype.property);
+        } else if (drumUi.selector == core::state::sequencer::
+                       DrumSequencerSelector::PROPERTY) {
+            const auto propertyVisual =
+                visual::buildDrumPropertyVisual(drumUi.property);
+            props.icon = propertyVisual.icon;
+            props.label = propertyVisual.label;
+            props.color = propertyVisual.color;
             formatDrumPropertyValue(
                 props.valueText.data(),
                 props.valueText.size(),
-                prototype
+                drumUi
+            );
+        } else {
+            props.icon = drumPatternFieldIcon(drumUi.patternDefaultField);
+            props.label = drumPatternFieldLabel(drumUi.patternDefaultField);
+            props.color = drumPatternFieldColor(drumUi.patternDefaultField);
+            formatDrumPatternFieldValue(
+                props.valueText.data(),
+                props.valueText.size(),
+                drumUi
             );
         }
         return props;
     }
-#endif
 
     if (sequencer.stepContentDraft.exitPromptVisible.get()) {
         using Choice = core::state::sequencer::SequencerStepContentDraftExitChoice;

@@ -11,6 +11,7 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/interaction/InteractiveSurfaceVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
@@ -28,6 +29,7 @@ constexpr lv_coord_t GRAPH_X = 8;
 constexpr lv_coord_t GRAPH_Y = 72;
 constexpr lv_coord_t GRAPH_WIDTH = 304;
 constexpr lv_coord_t GRAPH_HEIGHT = 92;
+
 template <size_t N>
 bool copyText(std::array<char, N>& destination, const char* source) {
     static_assert(N > 1U);
@@ -80,11 +82,11 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     lv_obj_clear_flag(root_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
 
-    title_ = createLabel(root_, fonts.inter_14_semibold, theme::color::TEXT_PRIMARY);
+    title_ = createLabel(root_, fonts.context_title(), theme::color::TEXT_PRIMARY);
     lv_obj_set_pos(title_, 10, 7);
     lv_obj_set_size(title_, 150, 18);
     meta_ = createLabel(
-        root_, fonts.inter_12_medium, theme::color::TEXT_SECONDARY,
+        root_, fonts.meta_label(), theme::color::TEXT_SECONDARY,
         LV_TEXT_ALIGN_RIGHT
     );
     lv_obj_set_pos(meta_, 160, 8);
@@ -103,21 +105,25 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
         lv_obj_set_size(graph, GRAPH_WIDTH, GRAPH_HEIGHT);
         lv_obj_set_style_bg_color(
             graph,
-            lv_color_hex(theme::color::TEXT_PRIMARY),
+            lv_color_hex(theme::color::SURFACE_IDLE),
             0
         );
-        lv_obj_set_style_bg_opa(graph, LV_OPA_10, 0);
-        lv_obj_set_style_border_width(graph, 1, 0);
+        lv_obj_set_style_bg_opa(graph, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(
+            graph, theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH, 0
+        );
         lv_obj_set_style_border_color(
             graph,
-            lv_color_hex(theme::color::TEXT_SECONDARY),
+            lv_color_hex(theme::color::BORDER_SUBTLE),
             0
         );
-        lv_obj_set_style_border_opa(graph, LV_OPA_20, 0);
-        lv_obj_set_style_radius(graph, 3, 0);
+        lv_obj_set_style_border_opa(graph, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(
+            graph, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+        );
     }
     clipping_ = createLabel(
-        root_, fonts.inter_12_medium, theme::color::MACRO_CONFLICT,
+        root_, fonts.meta_label(), theme::color::MACRO_CONFLICT,
         LV_TEXT_ALIGN_RIGHT
     );
     lv_label_set_text(clipping_, "CLIP");
@@ -126,7 +132,7 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     lv_obj_add_flag(clipping_, LV_OBJ_FLAG_HIDDEN);
 
     hint_ = createLabel(
-        root_, fonts.inter_12_medium, theme::color::TEXT_SECONDARY,
+        root_, fonts.meta_label(), theme::color::TEXT_SECONDARY,
         LV_TEXT_ALIGN_CENTER
     );
     lv_obj_set_pos(hint_, 8, 185);
@@ -136,14 +142,18 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     lv_obj_remove_style_all(interaction_overlay_);
     lv_obj_set_pos(interaction_overlay_, 44, 88);
     lv_obj_set_size(interaction_overlay_, 232, 62);
-    lv_obj_set_style_bg_color(
+    lv_obj_set_style_border_width(
         interaction_overlay_,
-        lv_color_hex(theme::color::KNOB_BACKGROUND),
+        theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
         0
     );
-    lv_obj_set_style_bg_opa(interaction_overlay_, LV_OPA_90, 0);
-    lv_obj_set_style_border_width(interaction_overlay_, 1, 0);
-    lv_obj_set_style_radius(interaction_overlay_, 4, 0);
+    lv_obj_set_style_radius(
+        interaction_overlay_, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+    );
+    core::ui::interaction::applyInteractiveSurfaceChrome(
+        interaction_overlay_,
+        core::ui::interaction::InteractiveSurfaceState::FOCUSED
+    );
     lv_obj_clear_flag(interaction_overlay_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(interaction_overlay_, LV_OBJ_FLAG_HIDDEN);
 
@@ -154,13 +164,13 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     lv_obj_set_pos(interaction_icon_, 10, 21);
     lv_obj_set_size(interaction_icon_, 26, 20);
     interaction_label_ = createLabel(
-        interaction_overlay_, fonts.inter_12_medium,
+        interaction_overlay_, fonts.meta_label(),
         theme::color::TEXT_SECONDARY
     );
     lv_obj_set_pos(interaction_label_, 45, 9);
     lv_obj_set_size(interaction_label_, 176, 17);
     interaction_value_ = createLabel(
-        interaction_overlay_, fonts.inter_14_semibold,
+        interaction_overlay_, fonts.primary_value(),
         theme::color::TEXT_PRIMARY
     );
     lv_obj_set_pos(interaction_value_, 45, 29);
@@ -183,20 +193,26 @@ FLASHMEM void MacroEditorOverlay::createTab(
         TAB_Y
     );
     lv_obj_set_size(tab.root, TAB_WIDTH, TAB_HEIGHT);
-    lv_obj_set_style_radius(tab.root, 3, 0);
-    lv_obj_set_style_border_width(tab.root, 1, 0);
-    lv_obj_set_style_border_color(tab.root, lv_color_hex(color), 0);
-    lv_obj_set_style_bg_color(tab.root, lv_color_hex(color), 0);
+    lv_obj_set_style_radius(
+        tab.root, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+    );
+    lv_obj_set_style_border_width(
+        tab.root, theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH, 0
+    );
+    core::ui::interaction::applyInteractiveSurfaceChrome(
+        tab.root,
+        core::ui::interaction::InteractiveSurfaceState::IDLE
+    );
     lv_obj_clear_flag(tab.root, LV_OBJ_FLAG_SCROLLABLE);
     tab.icon = createLabel(tab.root, standalone_fonts.icons_12, color);
     lv_label_set_text(tab.icon, icon);
     lv_obj_set_pos(tab.icon, 5, 5);
     lv_obj_set_size(tab.icon, 15, 14);
-    tab.label = createLabel(tab.root, fonts.inter_12_medium, theme::color::TEXT_PRIMARY);
+    tab.label = createLabel(tab.root, fonts.meta_label(), theme::color::TEXT_PRIMARY);
     lv_label_set_text(tab.label, label);
     lv_obj_set_pos(tab.label, 22, 3);
     lv_obj_set_size(tab.label, 72, 14);
-    tab.value = createLabel(tab.root, fonts.inter_12_medium, theme::color::TEXT_SECONDARY);
+    tab.value = createLabel(tab.root, fonts.meta_label(), theme::color::TEXT_SECONDARY);
     lv_obj_set_pos(tab.value, 22, 17);
     lv_obj_set_size(tab.value, 70, 14);
     tab.state = lv_obj_create(tab.root);
@@ -222,28 +238,32 @@ FLASHMEM void MacroEditorOverlay::renderTab(
         lv_label_set_text_static(tab.value, tab.valueText.data());
     }
     if (!tab.rendered || tab.color != color) {
-        lv_obj_set_style_bg_color(tab.root, lv_color_hex(color), 0);
+        lv_obj_set_style_text_color(tab.icon, lv_color_hex(color), 0);
+        lv_obj_set_style_bg_color(tab.state, lv_color_hex(color), 0);
         tab.color = color;
     }
     if (!tab.rendered || tab.selected != selected) {
-        lv_obj_set_style_bg_opa(
-            tab.root,
-            selected ? LV_OPA_10 : LV_OPA_TRANSP,
-            0
+        const auto surfaceState = selected
+            ? core::ui::interaction::InteractiveSurfaceState::FOCUSED
+            : core::ui::interaction::InteractiveSurfaceState::IDLE;
+        const auto visual = core::ui::interaction::interactiveSurfaceVisual(
+            surfaceState
         );
-        lv_obj_set_style_border_opa(
-            tab.root,
-            selected ? LV_OPA_80 : LV_OPA_20,
-            0
+        core::ui::interaction::applyInteractiveSurfaceChrome(
+            tab.root, visual
+        );
+        lv_obj_set_style_text_color(
+            tab.label, lv_color_hex(visual.textColor), 0
         );
         lv_obj_set_style_text_opa(
-            tab.label,
-            selected ? LV_OPA_COVER : LV_OPA_70,
-            0
+            tab.label, visual.textOpacity, 0
+        );
+        lv_obj_set_style_text_color(
+            tab.value, lv_color_hex(theme::color::TEXT_SECONDARY), 0
         );
         lv_obj_set_style_text_opa(
             tab.value,
-            selected ? LV_OPA_COVER : LV_OPA_60,
+            selected ? LV_OPA_80 : LV_OPA_60,
             0
         );
         tab.selected = selected;
@@ -590,9 +610,6 @@ FLASHMEM void MacroEditorOverlay::render(
             ? props.interactionColor
             : theme::color::TEXT_PRIMARY;
         if (interactionColor_ != color) {
-            lv_obj_set_style_border_color(
-                interaction_overlay_, lv_color_hex(color), 0
-            );
             lv_obj_set_style_text_color(
                 interaction_icon_, lv_color_hex(color), 0
             );

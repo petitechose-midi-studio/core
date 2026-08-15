@@ -9,11 +9,6 @@ namespace core::state::project {
 
 namespace {
 
-FLASHMEM uint32_t nextNonZero(uint32_t current) {
-    const uint32_t next = current + 1U;
-    return next == 0U ? 1U : next;
-}
-
 FLASHMEM void publishCommittedTrackMutation(void* context) {
     auto* state = static_cast<core::state::CoreState*>(context);
     if (state == nullptr) return;
@@ -24,9 +19,11 @@ FLASHMEM void publishCommittedTrackMutation(void* context) {
             core::state::macro::kMacroConfigDirtyAll
         )
     );
-    state->sequencerRuntimeProjectRevision.set(
-        nextNonZero(state->sequencerRuntimeProjectRevision.get())
-    );
+    // ProjectTrackState already publishes a compact authored revision. The
+    // realtime snapshot bank consumes it every generation and reconciles only
+    // the Track whose route, delay, mute, or solo state changed. Raising the
+    // Project-reset revision here would stop every Track and emit a global
+    // All Notes Off for an ordinary live control gesture.
     state->markProjectMutated();
 }
 

@@ -288,11 +288,7 @@ target_compile_definitions(${APP_EXE_NAME} PRIVATE
 # Firmware keeps the recorder opt-in through the dedicated PlatformIO target.
 if(BUILD_NATIVE AND APP_ID STREQUAL "core")
     target_compile_definitions(${APP_EXE_NAME} PRIVATE
-        MS_UX_RECORDER
-        # Desktop side of the opt-in Drum product exploration. The matching
-        # Development/Standalone firmware define lives in platformio.ini;
-        # release profiles and the persisted project format remain unchanged.
-        MS_DRUM_TRACK_UX_PROTOTYPE)
+        MS_UX_RECORDER)
 endif()
 target_link_libraries(${APP_EXE_NAME} PRIVATE lvgl libremidi)
 

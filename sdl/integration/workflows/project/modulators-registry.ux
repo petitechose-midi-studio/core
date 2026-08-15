@@ -3,7 +3,7 @@
 # live trace, root bypass, direct detail access, and stable Back focus.
 # Expect: capture_changed:project_overview=modulators_registry, capture_changed:modulators_registry=modulator_primary_edited, capture_changed:modulator_primary_edited=modulator_bypassed, capture_changed:modulator_bypassed=modulator_detail
 # Expect: semantic:modulators_registry:mode=project.modulators, semantic:modulators_registry:source=lfo, semantic:modulators_registry:mapping_count=2
-# Expect: semantic:modulator_primary_edited:effect=edit_modulator_property, semantic:modulator_bypassed:effect=toggle_modulator
+# Expect: semantic:modulator_primary_edited:effect=edit_modulator_property, semantic:modulator_bypassed:effect=toggle_modulator, semantic:modulator_bypassed:operation_status=disabled
 # Expect: semantic:modulator_detail:effect=open_modulator_detail, semantic:registry_focus_restored:effect=back_modulator_context
 
 0 scenario project-modulators

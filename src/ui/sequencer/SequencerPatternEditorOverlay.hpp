@@ -31,6 +31,7 @@ struct SequencerPatternEditorOverlayProps {
     const char* meta = "";
     const char* layer = "";
     const char* transientHint = "";
+    uint32_t layerColor = 0U;
     uint8_t fieldCount = static_cast<uint8_t>(FIELD_COUNT);
     std::array<SequencerPatternEditorFieldChip, FIELD_COUNT> fields{};
     const core::ui::sequencer::SequencerPatternTimelineGeometry* geometry = nullptr;
@@ -38,6 +39,8 @@ struct SequencerPatternEditorOverlayProps {
     core::ui::sequencer::SequencerPatternTimelinePlayhead playhead{};
     core::state::sequencer::SequencerPatternEditorLayer focusedLayer =
         core::state::sequencer::SequencerPatternEditorLayer::NOTES;
+    core::state::sequencer::SequencerPatternEditorNavigationMode navigationMode =
+        core::state::sequencer::SequencerPatternEditorNavigationMode::FIELDS;
     oc::note::sequencer::StepBitMask128 randomizeChangedSteps{};
     core::state::sequencer::SequencerPatternRandomizeProperty randomizeProperty =
         core::state::sequencer::SequencerPatternRandomizeProperty::NOTE;
@@ -97,9 +100,12 @@ private:
     core::ui::sequencer::SequencerPatternTimelinePlayhead playhead_{};
     core::state::sequencer::SequencerPatternEditorLayer focused_layer_ =
         core::state::sequencer::SequencerPatternEditorLayer::NOTES;
+    core::state::sequencer::SequencerPatternEditorNavigationMode navigation_mode_ =
+        core::state::sequencer::SequencerPatternEditorNavigationMode::FIELDS;
     oc::note::sequencer::StepBitMask128 randomize_changed_steps_{};
     core::state::sequencer::SequencerPatternRandomizeProperty randomize_property_ =
         core::state::sequencer::SequencerPatternRandomizeProperty::NOTE;
+    uint32_t layer_color_ = 0U;
     bool randomize_preview_ = false;
     std::array<CachedField, SequencerPatternEditorOverlayProps::FIELD_COUNT>
         field_cache_{};

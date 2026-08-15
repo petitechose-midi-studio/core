@@ -1226,7 +1226,10 @@ void test_history_limits_prune_by_scope() {
            SequencerHistoryService::STRUCTURE_ENTRY_LIMIT);
     assert(history.undoCount(SequencerHistoryScope::FullBank) ==
            SequencerHistoryService::FULL_BANK_ENTRY_LIMIT);
-    assert(history.undoCount() == SequencerHistoryService::ENTRY_LIMIT);
+    assert(history.undoCount() ==
+           SequencerHistoryService::PATTERN_ENTRY_LIMIT +
+               SequencerHistoryService::STRUCTURE_ENTRY_LIMIT +
+               SequencerHistoryService::FULL_BANK_ENTRY_LIMIT);
 
     std::cout << "[PASS] test_history_limits_prune_by_scope\n";
 }
@@ -1260,6 +1263,57 @@ void test_history_prunes_graph_heavy_entries_to_psram_budget() {
     assert(history.undoCount(SequencerHistoryScope::FullBank) > 0);
 
     std::cout << "[PASS] test_history_prunes_graph_heavy_entries_to_psram_budget\n";
+}
+
+void test_drum_history_evicts_oldest_entry_at_scope_limit() {
+    SequencerTrackBankState bank;
+    SequencerState state;
+    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+
+    SequencerHistoryService history;
+    for (uint8_t edit = 0U;
+         edit < SequencerHistoryService::DRUM_ENTRY_LIMIT + 1U;
+         ++edit) {
+        const SequencerHistoryDescriptor descriptor{
+            .kind = SequencerHistoryActionKind::DrumStepPropertyEdit,
+            .trackIndex = 0U,
+            .laneIndex = 0U,
+            .stepIndex = 0U,
+            .property = StepProperty::VELOCITY,
+        };
+        auto change = core::state::sequencer::prepareHistoryDrumChangeBefore(
+            bank,
+            state,
+            0U,
+            descriptor
+        );
+        assert(change);
+        assert(bank.drumTrack(0U).pattern.setStepVelocity(
+            0U,
+            0U,
+            static_cast<uint8_t>(edit + 1U)
+        ));
+        assert(core::state::sequencer::capturePreparedHistoryDrumAfter(
+            bank,
+            state,
+            *change
+        ));
+        assert(history.canRecordDrum(*change));
+        history.recordPreparedDrum(std::move(change));
+    }
+
+    assert(history.undoCount(SequencerHistoryScope::Drum) ==
+           SequencerHistoryService::DRUM_ENTRY_LIMIT);
+    for (uint8_t edit = 0U;
+         edit < SequencerHistoryService::DRUM_ENTRY_LIMIT;
+         ++edit) {
+        assert(history.undo(bank, state));
+    }
+    assert(bank.drumTrack(0U).pattern.lanes[0U].velocity[0U] == 1U);
+    assert(!history.canUndo());
+
+    std::cout
+        << "[PASS] test_drum_history_evicts_oldest_entry_at_scope_limit\n";
 }
 
 void test_clear_resets_stacks() {
@@ -1307,6 +1361,7 @@ int main() {
     test_track_switch_rotates_graph_and_cc_ownership_without_cloning();
     test_history_limits_prune_by_scope();
     test_history_prunes_graph_heavy_entries_to_psram_budget();
+    test_drum_history_evicts_oldest_entry_at_scope_limit();
     test_clear_resets_stacks();
 
     std::cout << "All SequencerHistory tests passed\n";

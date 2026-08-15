@@ -7,6 +7,7 @@
 
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/project/ProjectModulatorUiModel.hpp"
+#include "ui/theme/StandaloneListVisuals.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
 
 namespace core::ui {
@@ -339,6 +340,7 @@ void ProjectView::renderModulators() {
             static_cast<uint32_t>(
                 state_refs_.navigation.destinationPickerPage
             ),
+        .visualTokens = &standalone::theme::CONTROLLER_LIST_VISUALS,
     });
     renderModulatorActionStrips(source);
 }

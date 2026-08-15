@@ -176,12 +176,11 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
             }
 
             case UxActionKind::Capture: {
-                // SDL exposes the most recently flushed LVGL draw buffer.
-                // Force one complete refresh before sampling it so captures
-                // never observe the unsynchronised half of a direct/double
-                // buffered partial update.
+                // A regular app tick may legally service only one retained
+                // damage band, so explicitly render the complete active screen
+                // before sampling it. This does not advance product state.
                 lv_obj_invalidate(lv_screen_active());
-                flushFrame(env, app, state, stateTick);
+                lv_refr_now(nullptr);
                 const std::string fileName = std::to_string(action.dueMs) + "_" +
                     safeName(action.id) + "_" + uxScopeName(action.scope) + ".bmp";
                 const std::filesystem::path path = outputDir / fileName;

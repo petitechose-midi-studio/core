@@ -15,6 +15,11 @@ FLASHMEM uint8_t firstEnabledTrack(uint16_t enabledMask) {
     return 0;
 }
 
+FLASHMEM uint32_t nextRevision(uint32_t current) {
+    uint32_t next = current + 1U;
+    return next == 0U ? 1U : next;
+}
+
 }  // namespace
 
 FLASHMEM SequencerTrackBankState::SequencerTrackBankState()
@@ -22,7 +27,10 @@ FLASHMEM SequencerTrackBankState::SequencerTrackBankState()
     , enabled_mask_{0x0001}
     , project_scale_revision_{0}
     , project_scale_settings_{defaultProjectScaleSettings()}
-    , tracks_{} {}
+    , tracks_{} {
+    for (auto& drumTrack : drum_tracks_) drumTrack.reset();
+    drum_track_revisions_.fill(1U);
+}
 
 FLASHMEM uint16_t SequencerTrackBankState::sanitizeEnabledMask(uint16_t enabledMask) {
     constexpr uint16_t availableMask =
@@ -79,6 +87,79 @@ FLASHMEM bool SequencerTrackBankState::setProjectScaleSettings(
     return true;
 }
 
+FLASHMEM void SequencerTrackBankState::publishDrumMutation(uint8_t index) {
+    const uint8_t trackIndex = clampTrackIndex(index);
+    drum_track_revisions_[trackIndex] = nextRevision(
+        drum_track_revisions_[trackIndex]);
+    drum_revision_.set(nextRevision(drum_revision_.get()));
+}
+
+FLASHMEM bool SequencerTrackBankState::setTrackKind(
+    uint8_t index,
+    SequencerTrackKind kind,
+    bool resetPayload,
+    DrumKitPreset drumPreset
+) {
+    const uint8_t trackIndex = clampTrackIndex(index);
+    const uint16_t bit = static_cast<uint16_t>(1U << trackIndex);
+    const uint16_t nextMask = kind == SequencerTrackKind::DRUM
+        ? static_cast<uint16_t>(drum_track_mask_ | bit)
+        : static_cast<uint16_t>(drum_track_mask_ & static_cast<uint16_t>(~bit));
+    const bool kindChanged = nextMask != drum_track_mask_;
+    if (resetPayload) {
+        drum_tracks_[trackIndex].reset(drumPreset);
+    }
+    if (!kindChanged && !resetPayload) return false;
+    drum_track_mask_ = nextMask;
+    publishDrumMutation(trackIndex);
+    return true;
+}
+
+FLASHMEM void SequencerTrackBankState::restoreDrumTrack(
+    uint8_t index,
+    SequencerTrackKind kind,
+    const DrumTrackState& state
+) {
+    const uint8_t trackIndex = clampTrackIndex(index);
+    const uint16_t bit = static_cast<uint16_t>(1U << trackIndex);
+    drum_track_mask_ = kind == SequencerTrackKind::DRUM
+        ? static_cast<uint16_t>(drum_track_mask_ | bit)
+        : static_cast<uint16_t>(
+              drum_track_mask_ & static_cast<uint16_t>(~bit));
+    drum_tracks_[trackIndex] = state;
+    publishDrumMutation(trackIndex);
+}
+
+FLASHMEM void SequencerTrackBankState::captureDrumTrackBank(
+    DrumTrackBankSnapshot& out
+) const {
+    out.drumTrackMask = drum_track_mask_;
+    out.tracks = drum_tracks_;
+}
+
+FLASHMEM bool SequencerTrackBankState::applyDrumTrackBank(
+    const DrumTrackBankSnapshot& snapshot
+) {
+    drum_track_mask_ = snapshot.drumTrackMask;
+    drum_tracks_ = snapshot.tracks;
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        drum_track_revisions_[track] = nextRevision(
+            drum_track_revisions_[track]);
+    }
+    drum_revision_.set(nextRevision(drum_revision_.get()));
+    return true;
+}
+
+FLASHMEM void SequencerTrackBankState::clearDrumTrackBank() {
+    drum_track_mask_ = 0U;
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        drum_tracks_[track].reset();
+        drum_track_revisions_[track] = nextRevision(
+            drum_track_revisions_[track]);
+    }
+    drum_revision_.set(nextRevision(drum_revision_.get()));
+}
+
 FLASHMEM void SequencerTrackBankState::reset() {
     syncSharedTrackState(0x0001, 0);
     project_scale_settings_ = defaultProjectScaleSettings();
@@ -88,6 +169,7 @@ FLASHMEM void SequencerTrackBankState::reset() {
         auto& seq = tracks_[i];
         seq.reset();
     }
+    clearDrumTrackBank();
 }
 
 }  // namespace core::state::sequencer

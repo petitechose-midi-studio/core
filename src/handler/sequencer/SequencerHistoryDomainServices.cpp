@@ -93,6 +93,41 @@ commitCoalescedPatternEditFromCoreState(void* context) {
     return state->commitSequencerPatternHistoryCoalescingOutcome();
 }
 
+FLASHMEM core::state::sequencer::SequencerHistoryOpenOutcome
+beginCoalescedDrumEditFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor,
+    uint32_t nowMs
+) {
+    using Outcome = core::state::sequencer::SequencerHistoryOpenOutcome;
+    if (context == nullptr) return Outcome::HistoryUnavailable;
+    return static_cast<core::state::CoreState*>(context)
+        ->beginOrContinueSequencerDrumHistory(descriptor, nowMs);
+}
+
+FLASHMEM bool sealCoalescedDrumEditFromCoreState(
+    void* context,
+    bool mutationChanged,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) {
+    return context != nullptr && static_cast<core::state::CoreState*>(context)
+        ->sealSequencerDrumHistory(mutationChanged, descriptor);
+}
+
+FLASHMEM core::state::sequencer::SequencerPatternHistoryCommitOutcome
+commitCoalescedDrumEditFromCoreState(void* context) {
+    using Outcome = core::state::sequencer::SequencerPatternHistoryCommitOutcome;
+    return context != nullptr
+        ? static_cast<core::state::CoreState*>(context)
+              ->commitSequencerDrumHistoryCoalescingOutcome()
+        : Outcome::Failed;
+}
+
+FLASHMEM bool abortCoalescedDrumEditFromCoreState(void* context) {
+    return context != nullptr && static_cast<core::state::CoreState*>(context)
+        ->abortSequencerDrumHistory();
+}
+
 FLASHMEM core::state::sequencer::SequencerTrackStructureChronologyResult
 openTrackStructureChronologyBoundaryFromCoreState(void* context) {
     if (context == nullptr) return {};
@@ -215,6 +250,10 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
         .sealCoalescedPatternEdit = sealCoalescedPatternEditFromCoreState,
         .beginCoalescedCcLaneEventEdit = beginCoalescedCcLaneEventEditFromCoreState,
         .commitCoalescedPatternEdit = commitCoalescedPatternEditFromCoreState,
+        .beginCoalescedDrumEdit = beginCoalescedDrumEditFromCoreState,
+        .sealCoalescedDrumEdit = sealCoalescedDrumEditFromCoreState,
+        .commitCoalescedDrumEdit = commitCoalescedDrumEditFromCoreState,
+        .abortCoalescedDrumEdit = abortCoalescedDrumEditFromCoreState,
         .openTrackStructureChronologyBoundary =
             openTrackStructureChronologyBoundaryFromCoreState,
         .beginPreparedPatternEdit = beginPreparedPatternEditFromCoreState,
@@ -299,6 +338,39 @@ SequencerHistoryDomainServices::commitCoalescedPatternEditOutcome() const {
     return operations_->commitCoalescedPatternEdit != nullptr
                ? operations_->commitCoalescedPatternEdit(context_)
                : Outcome::Failed;
+}
+
+FLASHMEM core::state::sequencer::SequencerHistoryOpenOutcome
+SequencerHistoryDomainServices::beginCoalescedDrumEdit(
+    core::state::sequencer::SequencerHistoryDescriptor descriptor,
+    uint32_t nowMs
+) const {
+    using Outcome = core::state::sequencer::SequencerHistoryOpenOutcome;
+    return operations_->beginCoalescedDrumEdit != nullptr
+        ? operations_->beginCoalescedDrumEdit(context_, descriptor, nowMs)
+        : Outcome::HistoryUnavailable;
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::sealCoalescedDrumEdit(
+    bool mutationChanged,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) const {
+    return operations_->sealCoalescedDrumEdit != nullptr &&
+        operations_->sealCoalescedDrumEdit(
+            context_, mutationChanged, descriptor);
+}
+
+FLASHMEM core::state::sequencer::SequencerPatternHistoryCommitOutcome
+SequencerHistoryDomainServices::commitCoalescedDrumEditOutcome() const {
+    using Outcome = core::state::sequencer::SequencerPatternHistoryCommitOutcome;
+    return operations_->commitCoalescedDrumEdit != nullptr
+        ? operations_->commitCoalescedDrumEdit(context_)
+        : Outcome::Failed;
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::abortCoalescedDrumEdit() const {
+    return operations_->abortCoalescedDrumEdit != nullptr &&
+        operations_->abortCoalescedDrumEdit(context_);
 }
 
 FLASHMEM core::state::sequencer::SequencerTrackStructureChronologyResult

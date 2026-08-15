@@ -34,6 +34,7 @@ using core::state::sequencer::enterMicroSequenceContentView;
 using core::state::sequencer::graphView;
 using core::state::sequencer::nodeLocalVariationRange;
 using core::state::sequencer::rootStepNodeId;
+using core::state::sequencer::projectStepGraphPresetToDestinationPitch;
 using core::state::sequencer::setNodeChordMode;
 using core::state::sequencer::setNodeChordSpec;
 using core::state::sequencer::setNodeEnabledOverride;
@@ -51,6 +52,7 @@ using oc::note::sequencer::STEP_NODE_CHORD_MODE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 using oc::note::sequencer::STEP_NODE_ENABLED_OVERRIDE;
 using oc::note::sequencer::STEP_NODE_ENABLED_VALUE;
+using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 using oc::note::sequencer::StepSequencerChordMode;
 using oc::note::sequencer::StepSequencerChordHarmony;
 using oc::note::sequencer::StepSequencerChordSpec;
@@ -296,6 +298,114 @@ void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
     assert(node->has(STEP_NODE_CHILD_SEQUENCE));
 
     std::cout << "[PASS] test_child_step_graph_preset_roundtrip_preserves_local_payload_only\n";
+}
+
+void test_destination_owned_pitch_projection_is_recursive_and_lossless_for_rhythm() {
+    SequencerState source;
+    source.pattern.setContentLength(8U);
+    source.pattern.pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
+    source.pattern.setEnabled(1U, true);
+    assert(source.setStepDataAt(1U, 71U, 103U, 145U, -8, 63U));
+    const auto root = rootStepNodeId(1U);
+    assert(setNodeChordSpec(
+        source.pattern,
+        root,
+        makeChord(
+            4U,
+            StepSequencerChordHarmony::Minor,
+            StepSequencerChordVoicing::Open,
+            2U,
+            7,
+            -5
+        )
+    ));
+    assert(setNodeLocalVariationRange(
+        source.pattern,
+        root,
+        StepProperty::NOTE,
+        9
+    ));
+    assert(setNodeLocalVariationRange(
+        source.pattern,
+        root,
+        StepProperty::VELOCITY,
+        17
+    ));
+    const auto micro = createMicroSequence(source.pattern, root, 3U);
+    assert(micro.ok);
+    const auto* graph = graphView(source.pattern);
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto child = static_cast<uint16_t>(sequence->firstStepNode + 1U);
+    assert(setNodeNoteOffset(source.pattern, child, 7));
+    assert(setNodeChordMode(
+        source.pattern,
+        child,
+        StepSequencerChordMode::Single
+    ));
+    assert(setNodeVelocityOffset(source.pattern, child, -21));
+    const auto cycle = createCycleStateSet(source.pattern, child, 2U);
+    assert(cycle.ok);
+    graph = graphView(source.pattern);
+    const auto* states = graph->cycleSet(cycle.id);
+    assert(states != nullptr);
+    assert(setNodeNoteOffset(
+        source.pattern,
+        static_cast<uint16_t>(states->firstStateNode + 1U),
+        -12
+    ));
+
+    SequencerStepGraphPreset preset{};
+    SequencerGraphAssetReport report{};
+    assert(captureStepGraphPreset(
+        source,
+        1U,
+        constrainedScale(),
+        preset,
+        &report
+    ));
+    bool changed = false;
+    assert(projectStepGraphPresetToDestinationPitch(
+        preset,
+        38U,
+        &changed
+    ));
+    assert(changed);
+    assert(preset.note == 38U);
+    assert(preset.velocity == 103U);
+    assert(preset.gate == 145U);
+    assert(preset.nudge == -8);
+    assert(preset.probability == 63U);
+    assert(preset.scalePolicy ==
+           SequencerStepGraphPreset::ScalePolicy::CHROMATIC);
+    assert(!preset.sourceScale.isConstrained());
+    assert(preset.graph.sequenceCount == 1U);
+    assert(preset.graph.cycleSetCount == 1U);
+    for (uint16_t index = 0U; index < preset.graph.stepNodeCount; ++index) {
+        const auto& node = preset.graph.stepNodes[index];
+        assert(!node.has(STEP_NODE_NOTE_OFFSET));
+        assert(!node.has(STEP_NODE_CHORD_MODE));
+        assert(!node.has(STEP_NODE_CHORD_LOCAL));
+        assert(node.noteOffset == 0);
+        assert(node.localVariation.pitchSemitones == 0U);
+    }
+    const auto* projectedRoot = preset.graph.stepNode(0U);
+    assert(projectedRoot != nullptr);
+    assert(nodeLocalVariationRange(
+        *projectedRoot,
+        StepProperty::VELOCITY
+    ) == 17U);
+    const auto* projectedSequence = preset.graph.sequence(0U);
+    assert(projectedSequence != nullptr);
+    const auto* projectedChild = preset.graph.stepNode(
+        static_cast<uint16_t>(projectedSequence->firstStepNode + 1U)
+    );
+    assert(projectedChild != nullptr);
+    assert(projectedChild->velocityOffset == -21);
+
+    std::cout
+        << "[PASS] destination-owned pitch projection strips pitch recursively\n";
 }
 
 void test_context_mismatch_is_reported() {
@@ -710,6 +820,7 @@ void test_pitch_metadata_and_root_values_have_one_canonical_encoding() {
 int main() {
     test_root_step_graph_preset_roundtrip_preserves_nested_payload();
     test_child_step_graph_preset_roundtrip_preserves_local_payload_only();
+    test_destination_owned_pitch_projection_is_recursive_and_lossless_for_rhythm();
     test_context_mismatch_is_reported();
     test_decode_rejects_invalid_buffers();
     test_pitch_policy_is_asset_level_and_unknown_node_flags_are_rejected();

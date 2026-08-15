@@ -16,7 +16,7 @@ namespace add_slot_icon_ns = core::ui::add_slot_icon;
 
 namespace {
 
-constexpr lv_coord_t STRIP_HEIGHT = 12;
+constexpr lv_coord_t STRIP_HEIGHT = 6;
 constexpr lv_coord_t ITEM_MIN_SIZE = 11;
 constexpr lv_coord_t ITEM_GAP = 2;
 constexpr lv_opa_t ITEM_BASE_OPA = static_cast<lv_opa_t>(34);
@@ -25,14 +25,14 @@ constexpr lv_opa_t ITEM_SOLO_EXCLUDED_OPA = static_cast<lv_opa_t>(13);
 constexpr lv_opa_t ITEM_INAUDIBLE_ACTIVE_MIN_OPA = LV_OPA_20;
 constexpr lv_opa_t ITEM_ACTIVE_MIN_OPA = LV_OPA_80;
 constexpr lv_opa_t ITEM_ACTIVITY_RANGE = static_cast<lv_opa_t>(42);
-constexpr lv_coord_t ACTIVE_CURSOR_HEIGHT = 2;
-constexpr lv_coord_t CURRENT_CURSOR_WIDTH = 2;
+constexpr lv_coord_t ACTIVE_CURSOR_HEIGHT = 1;
+constexpr lv_coord_t CURRENT_CURSOR_WIDTH = 1;
 constexpr lv_opa_t CURRENT_CURSOR_OPA = LV_OPA_COVER;
 constexpr lv_coord_t SOLO_BORDER_WIDTH = 1;
 constexpr lv_opa_t SOLO_BORDER_OPA = LV_OPA_COVER;
 constexpr lv_coord_t SELECTION_OUTLINE_WIDTH = 1;
 constexpr lv_opa_t SELECTION_OUTLINE_OPA = LV_OPA_70;
-constexpr lv_coord_t DESTINATION_MARKER_HEIGHT = 2;
+constexpr lv_coord_t DESTINATION_MARKER_HEIGHT = 1;
 
 }  // namespace
 

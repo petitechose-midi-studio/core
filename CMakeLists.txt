@@ -47,7 +47,14 @@ endif()
 # that target, and propagate the identical layout to every consumer.
 target_compile_definitions(
     oc_framework_native
-    PUBLIC OC_MAX_PENDING_NOTIFICATIONS=${MS_CORE_NOTIFICATION_QUEUE_CAPACITY})
+    PUBLIC
+        OC_MAX_PENDING_NOTIFICATIONS=${MS_CORE_NOTIFICATION_QUEUE_CAPACITY}
+        # Tests must exercise the product registry, not OpenControl's small
+        # library defaults. Otherwise enabling a real feature can silently
+        # drop later bindings and manufacture false navigation failures.
+        OC_MAX_BUTTONS=48
+        OC_MAX_BUTTON_BINDINGS=256
+        OC_MAX_ENCODER_BINDINGS=96)
 
 if(NOT TARGET oc_note_native)
     set(OC_NOTE_BUILD_TESTS OFF CACHE BOOL "Build OpenControl note tests" FORCE)

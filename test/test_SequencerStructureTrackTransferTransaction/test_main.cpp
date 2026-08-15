@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 
 #include <iostream>
 #include <utility>
@@ -13,6 +14,7 @@
 #include "../support/NotificationTestUtils.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructureSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
@@ -928,6 +930,167 @@ void test_track_copy_paste_undo_redo_preserves_canonical_destination_identity() 
     std::cout << "[PASS] Track content Copy/Paste/Undo/Redo preserves canonical identity\n";
 }
 
+void test_drum_track_copy_paste_is_detached_and_history_exact() {
+    namespace seq = core::state::sequencer;
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+
+    constexpr uint8_t sourceTrack = 0U;
+    constexpr uint8_t targetTrack = 1U;
+    assert(state.sequencerTracks.setTrackKind(
+        sourceTrack,
+        seq::SequencerTrackKind::DRUM,
+        true,
+        seq::DrumKitPreset::GENERAL_MIDI
+    ));
+    auto& source = state.sequencerTracks.drumTrack(sourceTrack);
+    assert(source.pattern.setStepEnabled(0U, 0U, true));
+    assert(source.pattern.setStepVelocity(0U, 0U, 111U));
+    assert(source.pattern.setLaneTimingCustom(0U, 7U, 4U));
+    const seq::DrumTrackState expected = source;
+
+    seq::SequencerPatternSnapshot snapshot{};
+    seq::captureSnapshot(state.sequencer.pattern, snapshot);
+    assert(state.structureClipboard.storeSequencerTrack(
+        snapshot,
+        seq::graphView(state.sequencer.pattern),
+        sourceTrack,
+        seq::sequencerCcLaneView(state.sequencer.pattern),
+        &source
+    ));
+
+    // Prove the clipboard owns a detached snapshot rather than aliasing the
+    // live source Track.
+    assert(source.pattern.setStepVelocity(0U, 0U, 23U));
+
+    const auto paste = core::handler::executeSequencerTrackTransfer(
+        state.sequencerTracks,
+        state.projectTracks,
+        state.sequencer,
+        state.structureClipboard,
+        core::handler::SharedTrackDomainServices::fromCoreState(state),
+        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+        targetTrack,
+        0U,
+        &state.sequencerTrackActivations,
+        false
+    );
+    assert(paste.applied());
+    assert(state.sequencerTracks.isDrumTrack(targetTrack));
+    assert(std::memcmp(
+        &state.sequencerTracks.drumTrack(targetTrack),
+        &expected,
+        sizeof(expected)
+    ) == 0);
+
+    assert(state.undoSequencerHistory());
+    assert(!state.sequencerTracks.isDrumTrack(targetTrack));
+    assert(state.redoSequencerHistory());
+    assert(state.sequencerTracks.isDrumTrack(targetTrack));
+    assert(std::memcmp(
+        &state.sequencerTracks.drumTrack(targetTrack),
+        &expected,
+        sizeof(expected)
+    ) == 0);
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] Drum Track paste is detached and Undo/Redo exact\n";
+}
+
+void test_instrument_paste_over_drum_restores_drum_on_undo() {
+    namespace seq = core::state::sequencer;
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+
+    constexpr uint8_t targetTrack = 1U;
+    assert(state.publishPreparedSequencerTrackState(0x0003U, 0U));
+    assert(state.sequencerTracks.setTrackKind(
+        targetTrack,
+        seq::SequencerTrackKind::DRUM,
+        true,
+        seq::DrumKitPreset::GENERAL_MIDI
+    ));
+    auto& originalDrum = state.sequencerTracks.drumTrack(targetTrack);
+    assert(originalDrum.pattern.setStepEnabled(1U, 3U, true));
+    assert(originalDrum.pattern.setStepProbability(1U, 3U, 37U));
+    const seq::DrumTrackState expected = originalDrum;
+
+    storeSourceClipboard(state.structureClipboard, state.sequencer);
+    const auto paste = core::handler::executeSequencerTrackTransfer(
+        state.sequencerTracks,
+        state.projectTracks,
+        state.sequencer,
+        state.structureClipboard,
+        core::handler::SharedTrackDomainServices::fromCoreState(state),
+        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+        targetTrack,
+        0U,
+        &state.sequencerTrackActivations,
+        false
+    );
+    assert(paste.applied());
+    assert(!state.sequencerTracks.isDrumTrack(targetTrack));
+
+    assert(state.undoSequencerHistory());
+    assert(state.sequencerTracks.isDrumTrack(targetTrack));
+    assert(std::memcmp(
+        &state.sequencerTracks.drumTrack(targetTrack),
+        &expected,
+        sizeof(expected)
+    ) == 0);
+    assert(state.redoSequencerHistory());
+    assert(!state.sequencerTracks.isDrumTrack(targetTrack));
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] Instrument paste restores overwritten Drum Track on Undo\n";
+}
+
+void test_typed_drum_creation_is_one_atomic_structure_action() {
+    namespace seq = core::state::sequencer;
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+
+    constexpr uint8_t targetTrack = 1U;
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::TRACK
+    );
+    state.trackNavigation.previewAddSlot.set(true);
+    state.trackNavigation.previewTrackIndex.set(targetTrack);
+
+    const auto result = core::handler::executeSequencerCreateTrackStructure(
+        {
+            state.sequencerTracks,
+            state.sequencer,
+            state.structureNavigationFocus,
+            state.trackNavigation,
+            state.structureClipboard,
+            state.pages,
+            state.sequencerTrackActivations,
+            core::handler::SharedTrackDomainServices::fromCoreState(state),
+            core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+        },
+        seq::SequencerTrackKind::DRUM,
+        seq::DrumKitPreset::EMPTY
+    );
+    assert(result.status == Status::Committed);
+    assert(state.sequencerTracks.currentEnabledMask() == 0x0003U);
+    assert(state.sequencerTracks.activeTrackIndex() == targetTrack);
+    assert(state.sequencerTracks.isDrumTrack(targetTrack));
+    assert(state.sequencerTracks.drumTrack(targetTrack).kit.laneCount == 0U);
+
+    assert(state.undoSequencerHistory());
+    assert(state.sequencerTracks.currentEnabledMask() == 0x0001U);
+    assert(!state.sequencerTracks.isDrumTrack(targetTrack));
+    assert(state.redoSequencerHistory());
+    assert(state.sequencerTracks.currentEnabledMask() == 0x0003U);
+    assert(state.sequencerTracks.isDrumTrack(targetTrack));
+    assert(state.sequencerTracks.drumTrack(targetTrack).kit.laneCount == 0U);
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] Typed Drum creation is one atomic Structure action\n";
+}
+
 void test_track_paste_rebases_lane_lifecycle_and_clears_destination_hold() {
     namespace seq = core::state::sequencer;
     test_support::CoreStorages storages;
@@ -1254,6 +1417,9 @@ int main() {
     test_stacked_same_track_history_traverses_after_each_boundary();
     test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history();
     test_track_copy_paste_undo_redo_preserves_canonical_destination_identity();
+    test_drum_track_copy_paste_is_detached_and_history_exact();
+    test_instrument_paste_over_drum_restores_drum_on_undo();
+    test_typed_drum_creation_is_one_atomic_structure_action();
     test_track_paste_rebases_lane_lifecycle_and_clears_destination_hold();
     test_maximum_selection_transfer_retains_exact_103_allocation_contract();
     test_maximum_selection_transfer_fails_atomically_at_every_ordinal();

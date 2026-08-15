@@ -1,4 +1,4 @@
-#include "handler/settings/SequencerSettingsDomainServices.hpp"
+#include "handler/project/ProjectScaleSettingsDomainServices.hpp"
 
 #include <algorithm>
 
@@ -15,10 +15,10 @@ namespace catalog = core::state::sequencer::scale_catalog;
 
 }  // namespace
 
-FLASHMEM SequencerSettingsDomainServices::SequencerSettingsDomainServices(StateRefs state)
+FLASHMEM ProjectScaleSettingsDomainServices::ProjectScaleSettingsDomainServices(StateRefs state)
     : track_bank_(&state.trackBank) {}
 
-FLASHMEM int SequencerSettingsDomainServices::currentChoiceIndex(uint8_t row) const {
+FLASHMEM int ProjectScaleSettingsDomainServices::currentChoiceIndex(uint8_t row) const {
     const StepSequencerScaleSettings projectSettings = track_bank_->projectScaleSettings();
     switch (row) {
         case 0:
@@ -32,7 +32,7 @@ FLASHMEM int SequencerSettingsDomainServices::currentChoiceIndex(uint8_t row) co
     }
 }
 
-FLASHMEM int SequencerSettingsDomainServices::choiceCount(uint8_t row) const {
+FLASHMEM int ProjectScaleSettingsDomainServices::choiceCount(uint8_t row) const {
     switch (row) {
         case 0: return catalog::ROOT_COUNT;
         case 1: return catalog::SCALE_TYPE_COUNT;

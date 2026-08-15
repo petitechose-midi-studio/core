@@ -20,31 +20,10 @@ using Visual = core::ui::ContextActionStripVisualState;
 using InteractionAction = core::state::sequencer::SequencerInteractionAction;
 using InteractionVisibility = core::state::sequencer::SequencerInteractionVisibility;
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-FLASHMEM const char* drumPropertyIcon(
-    core::state::sequencer::DrumTrackUxPrototypeProperty property
-) {
-    using Property = core::state::sequencer::DrumTrackUxPrototypeProperty;
-    using StepProperty = core::state::sequencer::StepProperty;
-    switch (property) {
-        case Property::STATE: return standalone::icons::ACTION_VALIDATE;
-        case Property::PROBABILITY:
-            return visual::propertyIconGlyph(StepProperty::PROBABILITY);
-        case Property::GATE:
-            return visual::propertyIconGlyph(StepProperty::GATE);
-        case Property::NUDGE:
-            return visual::propertyIconGlyph(StepProperty::NUDGE);
-        case Property::VELOCITY:
-        case Property::COUNT:
-        default:
-            return visual::propertyIconGlyph(StepProperty::VELOCITY);
-    }
-}
-
 FLASHMEM const char* drumDimensionIcon(
-    core::state::sequencer::DrumTrackUxPrototypeDimension dimension
+    core::state::sequencer::DrumSequencerDimension dimension
 ) {
-    using Dimension = core::state::sequencer::DrumTrackUxPrototypeDimension;
+    using Dimension = core::state::sequencer::DrumSequencerDimension;
     switch (dimension) {
         case Dimension::MODE: return standalone::icons::ROUTE_PIN;
         case Dimension::DIVISION: return standalone::icons::DIVISION;
@@ -53,7 +32,6 @@ FLASHMEM const char* drumDimensionIcon(
         default: return standalone::icons::LENGTH;
     }
 }
-#endif
 
 Visual visualForInteractionVisibility(InteractionVisibility visibility) {
     switch (visibility) {
@@ -99,6 +77,8 @@ const char* iconForLeftAction(
             return standalone::icons::NOTE_PROP_RANDOM;
         case InteractionAction::RETARGET_STEP_EDITOR:
             return standalone::icons::ACTION_PLACE_TARGET;
+        case InteractionAction::RETARGET_STEP_EDITOR_LANE:
+            return standalone::icons::DRUM_GENERIC;
         case InteractionAction::ENTER_SELECTION:
             return standalone::icons::ACTION_PLACE_TARGET;
         default:
@@ -126,55 +106,128 @@ FLASHMEM void setStripIconFromAction(
 FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     const SequencerViewModelSource& source
 ) {
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (source.sequencer.drumTrackUxPrototype.active()) {
-        const auto& prototype = source.sequencer.drumTrackUxPrototype;
+    if (core::state::sequencer::isDrumOverviewActive(source.sequencer) ||
+        (source.sequencer.drumSequencer.active() &&
+         !source.sequencer.drumSequencer.gridVisible())) {
+        const auto& drumUi = source.sequencer.drumSequencer;
         StripProps props;
         props.visible = true;
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        if (!prototype.gridVisible()) return props;
+        if (!drumUi.gridVisible()) return props;
 
-        const bool stepFocus = source.navigationFocus.get() ==
-            core::state::StructureNavigationFocus::STEP;
-        if (prototype.selector == core::state::sequencer::
-                DrumTrackUxPrototypeSelector::DIMENSION) {
-            props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-                drumDimensionIcon(prototype.dimension),
+        if (drumUi.laneSelection.active) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_BACKWARD,
+                Visual::ACTIVE
+            );
+            const uint16_t selectedMask =
+                drumUi.laneSelection.selectedMask;
+            const bool oneSelected = selectedMask != 0U &&
+                (selectedMask & static_cast<uint16_t>(selectedMask - 1U)) ==
+                    0U;
+            if (!drumUi.laneSelection.placementActive() &&
+                !drumUi.laneSelection.moveActive() && oneSelected) {
+                props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::ACTION_PLACE_TARGET,
+                    Visual::ACTIVE
+                );
+            }
+            return props;
+        }
+
+        const auto focus = source.navigationFocus.get();
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            focus == core::state::StructureNavigationFocus::TRACK
+                ? standalone::icons::ACTION_PLACE_TARGET
+                : standalone::icons::ACTION_BACKWARD,
+            Visual::ACTIVE
+        );
+
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::LANE_EDITOR) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_CANCEL,
                 Visual::ACTIVE
             );
             return props;
         }
-        if (prototype.selector == core::state::sequencer::
-                DrumTrackUxPrototypeSelector::PROPERTY) {
+
+        const bool stepFocus = focus ==
+            core::state::StructureNavigationFocus::STEP;
+        const bool trackFocus = focus ==
+            core::state::StructureNavigationFocus::TRACK;
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::DIMENSION) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_CANCEL,
+                Visual::ACTIVE
+            );
+            props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                drumDimensionIcon(drumUi.dimension),
+                Visual::ACTIVE
+            );
+            return props;
+        }
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::PROPERTY) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_CANCEL,
+                Visual::ACTIVE
+            );
             props.slots[stepFocus ? 1U : 2U] =
                 core::ui::makeStandaloneIconStripSlot(
-                    drumPropertyIcon(prototype.property),
+                    visual::buildDrumPropertyVisual(drumUi.property).icon,
                     Visual::ACTIVE
                 );
+            return props;
+        }
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::PATTERN_DEFAULTS) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_CANCEL,
+                Visual::ACTIVE
+            );
+            props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                drumUi.patternDefaultField == core::state::sequencer::
+                        DrumPatternDefaultField::DIVISION
+                    ? standalone::icons::DIVISION
+                    : standalone::icons::LENGTH,
+                Visual::ACTIVE
+            );
             return props;
         }
 
         if (stepFocus) {
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-                drumPropertyIcon(prototype.property),
+                visual::buildDrumPropertyVisual(drumUi.property).icon,
+                Visual::ACTIVE
+            );
+        } else if (trackFocus) {
+            // Pattern defaults remain reachable until their dedicated Track
+            // editor row lands, but the strip must describe the actual action
+            // instead of advertising lane dimensions and a dead third slot.
+            props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                drumUi.patternDefaultField == core::state::sequencer::
+                        DrumPatternDefaultField::DIVISION
+                    ? standalone::icons::DIVISION
+                    : standalone::icons::LENGTH,
                 Visual::ACTIVE
             );
         } else {
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-                drumDimensionIcon(prototype.dimension),
+                drumDimensionIcon(drumUi.dimension),
                 Visual::ACTIVE
             );
             props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                drumPropertyIcon(prototype.property),
+                visual::buildDrumPropertyVisual(drumUi.property).icon,
                 Visual::ACTIVE
             );
         }
         return props;
     }
-#endif
 
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();

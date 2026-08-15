@@ -20,7 +20,6 @@
 #include "MacroState.hpp"
 #include "MidiSyncState.hpp"
 #include "PatternPitchSettingsState.hpp"
-#include "SequencerSettingsState.hpp"
 #include "StatusBarState.hpp"
 #include "StructureClipboardState.hpp"
 #include "TrackNavigationState.hpp"
@@ -133,6 +132,7 @@ struct MacroDomainState {
 struct SequencerDomainState {
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
     static constexpr uint32_t COALESCED_CC_LANE_HISTORY_IDLE_MS = 320;
+    static constexpr uint32_t COALESCED_DRUM_HISTORY_IDLE_MS = 500;
 
     struct CoalescedPatternHistory {
         enum class Kind : uint8_t {
@@ -206,13 +206,41 @@ struct SequencerDomainState {
         void clear();
     };
 
+    struct CoalescedDrumHistory {
+        bool pending = false;
+        bool sealed = false;
+        bool hasChange = false;
+        uint32_t lastTouchedMs = 0U;
+        sequencer::SequencerHistoryDescriptor key{};
+        sequencer::SequencerHistoryDrumChangePtr change{};
+
+        [[nodiscard]] bool matches(
+            const sequencer::SequencerHistoryDescriptor& next
+        ) const {
+            return pending && key.kind == next.kind &&
+                key.trackIndex == next.trackIndex &&
+                key.laneIndex == next.laneIndex &&
+                key.stepIndex == next.stepIndex && key.property == next.property;
+        }
+
+        void clear() {
+            pending = false;
+            sealed = false;
+            hasChange = false;
+            lastTouchedMs = 0U;
+            key = {};
+            change.reset();
+        }
+    };
+
     core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
     core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;
     oc::state::Signal<uint32_t> runtimeProjectRevision{1};
     CoalescedPatternHistory coalescedPatternHistory;
-    std::unique_ptr<oc::state::ChangeCoalescer<15>> mutationCoalescer;
+    CoalescedDrumHistory coalescedDrumHistory;
+    std::unique_ptr<oc::state::ChangeCoalescer<16>> mutationCoalescer;
 
     SequencerDomainState();
     ~SequencerDomainState();
@@ -245,7 +273,6 @@ struct UiSystemState {
     StatusBarState statusBar;
     MidiSyncState midiSync;
     DeviceSettingsState deviceSettings;
-    SequencerSettingsState sequencerSettings;
     PatternPitchSettingsState patternPitchSettings;
     MacroEditState macroEdit;
     macro::MacroUiState macroUi;
@@ -320,7 +347,6 @@ public:
     StatusBarState& statusBar;
     MidiSyncState& midiSync;
     DeviceSettingsState& deviceSettings;
-    SequencerSettingsState& sequencerSettings;
     PatternPitchSettingsState& patternPitchSettings;
     MacroEditState& macroEdit;
     macro::MacroUiState& macroUi;
@@ -441,6 +467,17 @@ public:
         const sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);
     sequencer::SequencerPatternHistoryCommitOutcome
     commitSequencerPatternHistoryCoalescingOutcome();
+    sequencer::SequencerHistoryOpenOutcome beginOrContinueSequencerDrumHistory(
+        sequencer::SequencerHistoryDescriptor descriptor,
+        uint32_t nowMs
+    );
+    bool sealSequencerDrumHistory(
+        bool mutationChanged,
+        sequencer::SequencerHistoryDescriptor descriptor
+    );
+    sequencer::SequencerPatternHistoryCommitOutcome
+    commitSequencerDrumHistoryCoalescingOutcome();
+    bool abortSequencerDrumHistory();
     /**
      * Opens the single Track Structure chronology boundary.
      *
@@ -495,6 +532,7 @@ private:
         const sequencer::SequencerGraphCompactionRemap* compactionRemap, bool graphCompacted);
     SequencerPatternHistoryCommitOutcome abandonUnsafeSequencerPatternHistory_(const char* reason);
     SequencerPatternHistoryCommitOutcome commitSequencerPatternHistoryCoalescing_();
+    SequencerPatternHistoryCommitOutcome commitSequencerDrumHistoryCoalescing_();
     project::ProjectSaveToken requestProjectSessionSave_();
     bool advanceProjectSessionIdentity_();
     void publishProjectSessionReplacement_();

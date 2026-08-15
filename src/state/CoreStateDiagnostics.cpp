@@ -92,12 +92,6 @@ FLASHMEM void configureDebugLabels(CoreState& state) {
     state.deviceSettings.selector.visible.setDebugLabel("core.deviceSettings.selector.visible");
     state.deviceSettings.selector.selectedIndex.setDebugLabel("core.deviceSettings.selector.selectedIndex");
     state.deviceSettings.selector.editingRow.setDebugLabel("core.deviceSettings.selector.editingRow");
-    state.sequencerSettings.flowPhase.setDebugLabel("core.sequencerSettings.flowPhase");
-    state.sequencerSettings.visible.setDebugLabel("core.sequencerSettings.visible");
-    state.sequencerSettings.focusedRow.setDebugLabel("core.sequencerSettings.focusedRow");
-    state.sequencerSettings.selector.visible.setDebugLabel("core.sequencerSettings.selector.visible");
-    state.sequencerSettings.selector.selectedIndex.setDebugLabel("core.sequencerSettings.selector.selectedIndex");
-    state.sequencerSettings.selector.editingRow.setDebugLabel("core.sequencerSettings.selector.editingRow");
     state.patternPitchSettings.flowPhase.setDebugLabel("core.patternPitchSettings.flowPhase");
     state.patternPitchSettings.visible.setDebugLabel("core.patternPitchSettings.visible");
     state.patternPitchSettings.focusedRow.setDebugLabel("core.patternPitchSettings.focusedRow");

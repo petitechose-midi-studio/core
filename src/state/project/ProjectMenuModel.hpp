@@ -23,12 +23,20 @@ enum class ProjectMenuRowKind : uint8_t {
     Disabled,
 };
 
+enum class ProjectMenuRowTone : uint8_t {
+    Neutral = 0,
+    Positive,
+    Warning,
+    Destructive,
+};
+
 struct ProjectMenuRow {
     static constexpr uint8_t VALUE_TEXT_SIZE = 20;
 
     const char* label = "";
     const char* value = "";
     ProjectMenuRowKind kind = ProjectMenuRowKind::Value;
+    ProjectMenuRowTone tone = ProjectMenuRowTone::Neutral;
     bool enabled = true;
     ProjectNodeId target = ProjectNodeId::OVERVIEW_ROOT;
     bool hasTarget = false;

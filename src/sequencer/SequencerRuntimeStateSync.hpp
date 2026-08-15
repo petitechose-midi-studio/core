@@ -70,6 +70,9 @@ struct SequencerRuntimeTelemetrySnapshot {
     int16_t playheadStep = -1;
     uint16_t playheadStepTickOffset = 0;
     uint16_t playheadStepTicks = 1;
+    // UI-only normalized phase inside the current root step. The musical
+    // scheduler remains authoritative through the integer tick fields above.
+    uint8_t playheadStepPhaseQ8 = 0;
     uint32_t probabilityCycleIndex = 0;
     oc::note::sequencer::StepBitMask128 probabilityCycleMask{};
     uint32_t variationTelemetryRevision = 0;
@@ -105,6 +108,18 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
 SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
     const oc::note::sequencer::StepSequencerRuntimeState& runtimeState
 );
+
+/**
+ * Projects a stable 0..255 visual phase from integer transport telemetry.
+ *
+ * Passing a zero tick period disables sub-tick extrapolation, which keeps the
+ * helper deterministic for tests and non-realtime callers.
+ */
+uint8_t projectPlaybackPhaseQ8(uint16_t tickOffset,
+                               uint16_t ticksPerStep,
+                               uint32_t tickAnchorUs,
+                               uint32_t tickPeriodUs,
+                               uint32_t nowUs);
 
 void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
                              const SequencerRuntimeTelemetrySnapshot& telemetry);

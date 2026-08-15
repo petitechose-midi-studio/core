@@ -18,6 +18,7 @@
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerCcLaneGridProjection.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/theme/StandaloneListVisuals.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
@@ -273,6 +274,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
             .selectedIndex = 0,
             .visible = true,
             .dataRevision = ui.revision.get(),
+            .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,
         });
         if (lane == nullptr) {
             grid_.render({.visible = false});
@@ -293,10 +295,6 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         );
         const uint8_t start = static_cast<uint8_t>(
             (ui.focusedStep / GRID_WINDOW) * GRID_WINDOW
-        );
-        const uint8_t end = std::min<uint8_t>(
-            length,
-            static_cast<uint8_t>(start + GRID_WINDOW)
         );
         const uint8_t channel = lane->destination.routePolicy ==
                 seq::SequencerCcLaneRoutePolicy::PINNED
@@ -334,17 +332,14 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         }
         if (ui.transitionAppliedFeedback) {
             std::snprintf(
-                hint_.data(), hint_.size(), "Step %u · %s applied",
+                hint_.data(), hint_.size(), "S%u · %s applied",
                 static_cast<unsigned>(ui.transitionStep + 1U),
                 transitionLabel(ui.selectedTransition)
             );
         } else if (feedbackText[0]) {
-            std::snprintf(hint_.data(), hint_.size(), "%s · knobs value · press toggle",
-                          feedbackText);
-        } else {
-            std::snprintf(hint_.data(), hint_.size(), "Steps %u-%u · knobs value · hold+turn shape",
-                          static_cast<unsigned>(start + 1U),
-                          static_cast<unsigned>(end));
+            std::snprintf(
+                hint_.data(), hint_.size(), "%s", feedbackText
+            );
         }
 
         core::ui::SequencerCcLaneGridProps gridProps{
@@ -421,6 +416,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
             .selectedIndex = 0,
             .visible = true,
             .dataRevision = ui.revision.get(),
+            .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,
         });
         grid_.render({
             .visible = true,
@@ -501,10 +497,15 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         } else if (!ui.routeValid) {
             std::snprintf(meta_.data(), meta_.size(), "No MIDI route · Lane stays silent");
         } else if (feedbackText[0]) {
-            std::snprintf(meta_.data(), meta_.size(), "%s Ch%u · %s",
+            std::snprintf(meta_.data(), meta_.size(), "%s Ch%u · %s%s",
                           routePolicyLabel(draft.destination.routePolicy),
                           static_cast<unsigned>(channel + 1U),
+                          ui.draftDirty ? "Edited · " : "",
                           feedbackText);
+        } else if (ui.draftDirty) {
+            std::snprintf(meta_.data(), meta_.size(), "%s Ch%u · Edited",
+                          routePolicyLabel(draft.destination.routePolicy),
+                          static_cast<unsigned>(channel + 1U));
         } else {
             std::snprintf(meta_.data(), meta_.size(), "%s Ch%u · Ready",
                           routePolicyLabel(draft.destination.routePolicy),
@@ -521,6 +522,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         .dimUnselected = false,
         .visible = true,
         .dataRevision = ui.revision.get(),
+        .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,
     });
 }
 

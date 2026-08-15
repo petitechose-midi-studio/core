@@ -261,7 +261,7 @@ CoreState::applyPreparedProjectScaleChoice(
     using Outcome = sequencer::SequencerPreparedFullBankEditOutcome;
 
     sequencer::SequencerPreparedFullBankEditResult result{};
-    if (owner != Owner::ProjectScale && owner != Owner::SequencerSettingsScale) {
+    if (owner != Owner::ProjectScale) {
         return result;
     }
 
@@ -269,7 +269,7 @@ CoreState::applyPreparedProjectScaleChoice(
         sequencerTracks.projectScaleSettings(), row, choiceIndex);
     if (!choice.valid) return result;
 
-    if (owner == Owner::ProjectScale && !choice.changes) {
+    if (!choice.changes) {
         result.outcome = Outcome::NoChange;
         return result;
     }
@@ -284,11 +284,6 @@ CoreState::applyPreparedProjectScaleChoice(
         sequencer.stepContentDraft.noteBlockedTransition(
             sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD);
         result.outcome = Outcome::Blocked;
-        return result;
-    }
-
-    if (!choice.changes) {
-        result.outcome = Outcome::NoChange;
         return result;
     }
 
@@ -388,6 +383,11 @@ CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan, bool stateProperty) {
     using Outcome = sequencer::SequencerHistoryOpenOutcome;
     if (step >= sequencer::SequencerPatternState::MAX_STEPS) { return Outcome::Blocked; }
+    if (sequencerDomain_.coalescedDrumHistory.pending &&
+        commitSequencerDrumHistoryCoalescing_() ==
+            SequencerPatternHistoryCommitOutcome::Failed) {
+        return Outcome::HistoryUnavailable;
+    }
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
@@ -471,6 +471,12 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
     sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal) {
     using Outcome = sequencer::SequencerPreparedPatternEditBeginOutcome;
+
+    if (sequencerDomain_.coalescedDrumHistory.pending &&
+        commitSequencerDrumHistoryCoalescing_() ==
+            SequencerPatternHistoryCommitOutcome::Failed) {
+        return Outcome::HistoryUnavailable;
+    }
 
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
     const uint32_t qualificationDetail =
@@ -952,6 +958,11 @@ CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
     uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
     const sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs) {
     using Outcome = sequencer::SequencerHistoryOpenOutcome;
+    if (sequencerDomain_.coalescedDrumHistory.pending &&
+        commitSequencerDrumHistoryCoalescing_() ==
+            SequencerPatternHistoryCommitOutcome::Failed) {
+        return Outcome::HistoryUnavailable;
+    }
     if (lane >= sequencer::SequencerCcLaneBank::MAX_LANES ||
         step >= sequencer::SequencerCcLaneBank::MAX_STEPS || beforeValue < -1 ||
         beforeValue > 127 || afterValue < 0 || afterValue > 127 || afterBank == nullptr ||
@@ -1031,6 +1042,134 @@ CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
     pending.lastTouchedMs = nowMs;
     pending.preparedCcLaneChange = std::move(change);
     return Outcome::Started;
+}
+
+FLASHMEM sequencer::SequencerHistoryOpenOutcome
+CoreState::beginOrContinueSequencerDrumHistory(
+    sequencer::SequencerHistoryDescriptor descriptor,
+    uint32_t nowMs
+) {
+    using Outcome = sequencer::SequencerHistoryOpenOutcome;
+    const uint8_t track = descriptor.trackIndex ==
+            sequencer::SequencerHistoryDescriptor::INVALID_INDEX
+        ? sequencerTracks.activeTrackIndex()
+        : descriptor.trackIndex;
+    if (track >= sequencer::SequencerTrackBankState::TRACK_COUNT) {
+        return Outcome::Blocked;
+    }
+    descriptor.trackIndex = track;
+
+    auto& pending = sequencerDomain_.coalescedDrumHistory;
+    if (pending.matches(descriptor)) {
+        if (!pending.sealed || !pending.change ||
+            pending.change->trackIndex != track) {
+            return Outcome::HistoryUnavailable;
+        }
+        pending.sealed = false;
+        pending.lastTouchedMs = nowMs;
+        return Outcome::Continued;
+    }
+
+    if (pending.pending && commitSequencerDrumHistoryCoalescing_() ==
+            SequencerPatternHistoryCommitOutcome::Failed) {
+        return Outcome::HistoryUnavailable;
+    }
+    if (sequencerDomain_.coalescedPatternHistory.pending &&
+        commitSequencerPatternHistoryCoalescing_() ==
+            SequencerPatternHistoryCommitOutcome::Failed) {
+        return Outcome::HistoryUnavailable;
+    }
+
+    auto change = sequencer::prepareHistoryDrumChangeBefore(
+        sequencerTracks,
+        sequencer,
+        track,
+        descriptor
+    );
+    if (!change) return Outcome::ResourceUnavailable;
+
+    pending.clear();
+    pending.pending = true;
+    pending.lastTouchedMs = nowMs;
+    pending.key = descriptor;
+    pending.change = std::move(change);
+    return Outcome::Started;
+}
+
+FLASHMEM bool CoreState::sealSequencerDrumHistory(
+    bool mutationChanged,
+    sequencer::SequencerHistoryDescriptor descriptor
+) {
+    auto& pending = sequencerDomain_.coalescedDrumHistory;
+    if (!pending.pending || pending.sealed || !pending.change ||
+        !pending.matches(descriptor) ||
+        !sequencer::capturePreparedHistoryDrumAfter(
+            sequencerTracks,
+            sequencer,
+            *pending.change
+        )) {
+        return false;
+    }
+    descriptor.trackIndex = pending.change->trackIndex;
+    pending.key = descriptor;
+    pending.change->descriptor = descriptor;
+    pending.hasChange = mutationChanged &&
+        !sequencer::sameMusicalHistoryDrumChange(*pending.change);
+    pending.sealed = true;
+    return true;
+}
+
+FLASHMEM CoreState::SequencerPatternHistoryCommitOutcome
+CoreState::commitSequencerDrumHistoryCoalescing_() {
+    auto& pending = sequencerDomain_.coalescedDrumHistory;
+    if (!pending.pending) {
+        return SequencerPatternHistoryCommitOutcome::NoPending;
+    }
+    if (!pending.sealed || !pending.change) {
+        return SequencerPatternHistoryCommitOutcome::Failed;
+    }
+
+    auto change = std::move(pending.change);
+    pending.clear();
+    if (!change) return SequencerPatternHistoryCommitOutcome::Failed;
+    if (sequencer::sameMusicalHistoryDrumChange(*change)) {
+        consumePendingSequencerMutation_();
+        return SequencerPatternHistoryCommitOutcome::NoChange;
+    }
+    if (!sequencerHistory.canRecordDrum(*change)) {
+        if (!sequencer::restorePreparedHistoryDrumBefore(
+                sequencerTracks,
+                sequencer,
+                *change
+            )) {
+            OC_LOG_ERROR("[CoreState] Failed allocation-free Drum history rollback");
+        }
+        consumePendingSequencerMutation_();
+        return SequencerPatternHistoryCommitOutcome::Failed;
+    }
+
+    sequencerHistory.recordPreparedDrum(std::move(change));
+    consumePendingSequencerMutation_();
+    markSequencerProjectMutated_();
+    return SequencerPatternHistoryCommitOutcome::Committed;
+}
+
+FLASHMEM sequencer::SequencerPatternHistoryCommitOutcome
+CoreState::commitSequencerDrumHistoryCoalescingOutcome() {
+    return commitSequencerDrumHistoryCoalescing_();
+}
+
+FLASHMEM bool CoreState::abortSequencerDrumHistory() {
+    auto& pending = sequencerDomain_.coalescedDrumHistory;
+    if (!pending.pending || !pending.change) return false;
+    const bool restored = sequencer::restorePreparedHistoryDrumBefore(
+        sequencerTracks,
+        sequencer,
+        *pending.change
+    );
+    pending.clear();
+    consumePendingSequencerMutation_();
+    return restored;
 }
 
 FLASHMEM CoreState::SequencerPatternHistoryCommitOutcome
@@ -1290,7 +1429,19 @@ CoreState::abortSequencerPreparedPatternEdit(
 
 FLASHMEM sequencer::SequencerPatternHistoryCommitOutcome
 CoreState::commitSequencerPatternHistoryCoalescingOutcome() {
-    return commitSequencerPatternHistoryCoalescing_();
+    const auto drum = commitSequencerDrumHistoryCoalescing_();
+    if (drum == SequencerPatternHistoryCommitOutcome::Failed) return drum;
+    const auto pattern = commitSequencerPatternHistoryCoalescing_();
+    if (pattern == SequencerPatternHistoryCommitOutcome::Failed) return pattern;
+    if (drum == SequencerPatternHistoryCommitOutcome::Committed ||
+        pattern == SequencerPatternHistoryCommitOutcome::Committed) {
+        return SequencerPatternHistoryCommitOutcome::Committed;
+    }
+    if (drum == SequencerPatternHistoryCommitOutcome::NoChange ||
+        pattern == SequencerPatternHistoryCommitOutcome::NoChange) {
+        return SequencerPatternHistoryCommitOutcome::NoChange;
+    }
+    return SequencerPatternHistoryCommitOutcome::NoPending;
 }
 
 FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
@@ -1299,6 +1450,13 @@ FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
 }
 
 FLASHMEM bool CoreState::updateSequencerPatternHistoryCoalescing(uint32_t nowMs) {
+    const auto& drumPending = sequencerDomain_.coalescedDrumHistory;
+    if (drumPending.pending && drumPending.sealed &&
+        static_cast<uint32_t>(nowMs - drumPending.lastTouchedMs) >=
+            SequencerDomainState::COALESCED_DRUM_HISTORY_IDLE_MS) {
+        return commitSequencerDrumHistoryCoalescing_() ==
+            SequencerPatternHistoryCommitOutcome::Committed;
+    }
     const auto& pending = sequencerDomain_.coalescedPatternHistory;
     if (!pending.pending) { return false; }
     if (pending.kind == SequencerDomainState::CoalescedPatternHistory::Kind::PreparedFamily) {
@@ -1315,7 +1473,8 @@ FLASHMEM bool CoreState::updateSequencerPatternHistoryCoalescing(uint32_t nowMs)
 }
 
 bool CoreState::hasPendingSequencerPatternHistoryCoalescing() const {
-    return sequencerDomain_.coalescedPatternHistory.pending;
+    return sequencerDomain_.coalescedPatternHistory.pending ||
+        sequencerDomain_.coalescedDrumHistory.pending;
 }
 
 }  // namespace core::state

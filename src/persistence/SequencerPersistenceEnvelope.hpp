@@ -5,6 +5,7 @@
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
+#include "persistence/DrumTrackPersistenceCodec.hpp"
 #include "persistence/SequencerCcLanePersistenceCodec.hpp"
 #include "persistence/SequencerGraphRecordCodec.hpp"
 #include "persistence/SequencerPersistencePayloads.hpp"
@@ -14,7 +15,8 @@
 
 namespace core::persistence::sequencer_codec {
 
-inline constexpr uint8_t ENVELOPE_VERSION = 11;
+inline constexpr uint8_t ENVELOPE_VERSION = 15;
+inline constexpr uint8_t LEGACY_ENVELOPE_VERSION = 11;
 inline constexpr uint32_t ENVELOPE_HEADER_SIZE = 12;
 inline constexpr uint32_t ENVELOPE_SECTION_HEADER_SIZE = 10;
 inline constexpr uint16_t PATTERN_REGION_RECORD_SIZE = 3;
@@ -30,6 +32,14 @@ inline constexpr uint32_t MAX_CC_LANE_ENVELOPE_SIZE =
     ENVELOPE_SECTION_HEADER_SIZE + SEQUENCER_CC_LANE_BANK_RECORD_SIZE;
 inline constexpr uint32_t MAX_PATTERN_REGION_ENVELOPE_SIZE =
     ENVELOPE_SECTION_HEADER_SIZE + PATTERN_REGION_RECORD_SIZE;
+inline constexpr uint32_t MAX_DRUM_TRACK_ENVELOPE_SIZE =
+    ENVELOPE_SECTION_HEADER_SIZE + DRUM_TRACK_RECORD_SIZE +
+    MAX_GRAPH_ENVELOPE_SIZE;
+inline constexpr uint32_t MAX_TRACK_CONTENT_ENVELOPE_SIZE =
+    (MAX_GRAPH_ENVELOPE_SIZE + MAX_CC_LANE_ENVELOPE_SIZE) >
+            MAX_DRUM_TRACK_ENVELOPE_SIZE
+        ? (MAX_GRAPH_ENVELOPE_SIZE + MAX_CC_LANE_ENVELOPE_SIZE)
+        : MAX_DRUM_TRACK_ENVELOPE_SIZE;
 inline constexpr uint32_t MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE =
     ENVELOPE_HEADER_SIZE + ENVELOPE_SECTION_HEADER_SIZE + PATTERN_PAYLOAD_SIZE +
     MAX_GRAPH_ENVELOPE_SIZE + MAX_CC_LANE_ENVELOPE_SIZE +
@@ -37,19 +47,17 @@ inline constexpr uint32_t MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE =
 inline constexpr uint32_t MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE =
     ENVELOPE_HEADER_SIZE + ENVELOPE_SECTION_HEADER_SIZE + PROJECT_SEQUENCER_PAYLOAD_SIZE +
     PERSISTED_TRACK_COUNT *
-        (MAX_GRAPH_ENVELOPE_SIZE + MAX_CC_LANE_ENVELOPE_SIZE +
-         MAX_PATTERN_REGION_ENVELOPE_SIZE);
+        (MAX_TRACK_CONTENT_ENVELOPE_SIZE + MAX_PATTERN_REGION_ENVELOPE_SIZE);
 inline constexpr uint32_t MAX_SET_ENVELOPE_PAYLOAD_SIZE =
     ENVELOPE_HEADER_SIZE + ENVELOPE_SECTION_HEADER_SIZE + SET_PAYLOAD_SIZE +
     PERSISTED_TRACK_COUNT *
-        (MAX_GRAPH_ENVELOPE_SIZE + MAX_CC_LANE_ENVELOPE_SIZE +
-         MAX_PATTERN_REGION_ENVELOPE_SIZE);
+        (MAX_TRACK_CONTENT_ENVELOPE_SIZE + MAX_PATTERN_REGION_ENVELOPE_SIZE);
 inline constexpr uint32_t MAX_ENVELOPE_PAYLOAD_SIZE =
     MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE;
 
 static_assert(MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE == 16445U);
-static_assert(MAX_SET_ENVELOPE_PAYLOAD_SIZE == 262800U);
-static_assert(MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 262863U);
+static_assert(MAX_SET_ENVELOPE_PAYLOAD_SIZE == 426240U);
+static_assert(MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 426303U);
 
 template<uint32_t Capacity>
 struct FixedEnvelopeBuffer {
@@ -66,6 +74,7 @@ struct EnvelopeEncodeResult {
 
 struct ProjectSequencerSnapshotEncodeSource {
     const state::sequencer::SequencerTrackBankSnapshot* flat = nullptr;
+    const state::sequencer::DrumTrackBankSnapshot* drums = nullptr;
     uint8_t focusedStep = 0;
     state::sequencer::StepProperty activeStepProperty =
         state::sequencer::StepProperty::NOTE;

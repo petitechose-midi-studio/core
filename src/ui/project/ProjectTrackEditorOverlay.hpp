@@ -18,11 +18,11 @@ struct ProjectTrackEditorOverlayProps {
     const char* route = "";
     const char* delay = "";
     const char* structureHint = "";
+    const char* status = "";
     uint32_t trackColor = 0U;
+    uint32_t statusColor = 0U;
     core::state::project::ProjectTrackEditorProperty selectedProperty =
         core::state::project::ProjectTrackEditorProperty::CHANNEL;
-    bool muted = false;
-    bool soloed = false;
     bool trackEnabled = false;
 };
 
@@ -51,20 +51,21 @@ private:
         std::array<char, 24> route{};
         std::array<char, 16> delay{};
         std::array<char, 24> structureHint{};
+        std::array<char, 20> status{};
         uint32_t trackColor = 0U;
+        uint32_t statusColor = 0U;
         core::state::project::ProjectTrackEditorProperty selectedProperty =
             core::state::project::ProjectTrackEditorProperty::CHANNEL;
-        bool muted = false;
-        bool soloed = false;
         bool trackEnabled = false;
 
         friend bool operator==(const RenderCache& left, const RenderCache& right) {
             return left.title == right.title && left.route == right.route &&
                 left.delay == right.delay &&
                 left.structureHint == right.structureHint &&
+                left.status == right.status &&
                 left.trackColor == right.trackColor &&
+                left.statusColor == right.statusColor &&
                 left.selectedProperty == right.selectedProperty &&
-                left.muted == right.muted && left.soloed == right.soloed &&
                 left.trackEnabled == right.trackEnabled;
         }
     };

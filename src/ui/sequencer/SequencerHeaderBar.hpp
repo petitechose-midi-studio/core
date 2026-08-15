@@ -14,12 +14,18 @@
 
 #include "state/sequencer/SequencerState.hpp"
 #include "state/StatusBarState.hpp"
+#include "ui/common/CompactMetricRow.hpp"
 
 namespace core::ui {
 
 struct SequencerHeaderBarStripSegmentGeometry {
     lv_coord_t x = 0;
     lv_coord_t width = 0;
+};
+
+struct SequencerHeaderMetricProps {
+    const char* icon = "";
+    std::array<char, 8> value{};
 };
 
 struct SequencerHeaderBarProps {
@@ -37,8 +43,13 @@ struct SequencerHeaderBarProps {
     uint16_t pageDestinationPreviewMask = 0;
     uint16_t pageDestinationOverwriteMask = 0;
     uint16_t pageDestinationBlockedMask = 0;
+    bool pageStripVisible = true;
     const char* leftText = "";
-    std::array<char, 12> badgeText{};
+    std::array<char, 20> badgeText{};
+    std::array<SequencerHeaderMetricProps, 2> metrics{};
+    const char* contextIcon = "";
+    uint32_t contextIconColor = 0U;
+    std::array<char, 8> pageText{};
 };
 
 /**
@@ -62,24 +73,36 @@ public:
 
 private:
     static constexpr uint8_t PAGE_COUNT = core::state::sequencer::SequencerState::PAGE_COUNT;
-    static constexpr lv_coord_t HEADER_HEIGHT = 28;
+    static constexpr lv_coord_t HEADER_HEIGHT = 24;
 
     void createUI(lv_obj_t* parent);
     static void onStripDrawEvent(lv_event_t* event);
     void renderTopRow(const SequencerHeaderBarProps& props);
     void renderStrip(const SequencerHeaderBarProps& props);
+    void updatePageStripVisibility(bool visible);
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* accent_ = nullptr;
     lv_obj_t* label_ = nullptr;
     lv_obj_t* badge_ = nullptr;
+    CompactMetricRow metric_row_{};
+    lv_obj_t* context_icon_ = nullptr;
+    lv_obj_t* page_label_ = nullptr;
     lv_obj_t* strip_row_ = nullptr;
     lv_obj_t* view_cursor_ = nullptr;
     lv_obj_t* strip_cursor_ = nullptr;
     std::array<SequencerHeaderBarStripSegmentGeometry, PAGE_COUNT> strip_segment_geometry_{};
 
     std::array<char, 16> left_text_cache_{};
-    std::array<char, 12> badge_text_cache_{};
+    std::array<char, 20> badge_text_cache_{};
+    std::array<char, 8> context_icon_cache_{};
+    std::array<char, 8> page_text_cache_{};
+    bool badge_visible_cache_ = false;
+    bool metrics_visible_cache_ = false;
+    bool context_icon_visible_cache_ = false;
+    uint32_t context_icon_color_cache_ = UINT32_MAX;
+    bool page_label_visible_cache_ = false;
+    bool page_strip_visible_cache_ = true;
     bool surface_cache_initialized_ = false;
     uint32_t accent_cache_color_ = 0;
     lv_opa_t accent_cache_opa_ = LV_OPA_TRANSP;

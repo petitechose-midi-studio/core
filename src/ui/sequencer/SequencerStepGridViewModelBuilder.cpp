@@ -8,6 +8,7 @@
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStepPastePlan.hpp"
 #include "ui/sequencer/StepGridFrameLogic.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::sequencer {
 
@@ -69,6 +70,23 @@ FLASHMEM grid::StepGridFrameState buildSequencerStepGridProps(
         source.tracks.projectScaleSettings(),
         source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP
     );
+    frame.accentColor = standalone::theme::color::trackColor(
+        source.sharedTrackActive.get()
+    );
+    if (core::state::sequencer::isDrumContentView(source.sequencer)) {
+        const auto& content = source.sequencer.contentView;
+        const auto* drumTrack = source.sequencer.drumSequencer.drumTrack;
+        if (drumTrack != nullptr &&
+            content.drumOwnerLane < drumTrack->kit.laneCount &&
+            content.drumOwnerLane < core::state::sequencer::DRUM_MAX_LANES) {
+            frame.presentation = grid::StepGridPresentation::DRUM_LANE;
+            frame.accentColor = standalone::theme::color::trackColor(
+                core::state::sequencer::drumLaneDisplayColorIndex(
+                    drumTrack->kit.lanes[content.drumOwnerLane]
+                )
+            );
+        }
+    }
     applyStepPasteFootprint(frame, source);
     return frame;
 }

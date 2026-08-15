@@ -33,7 +33,7 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
         .meta = "",
         .hint = ui.transitionAppliedFeedback
             ? "Curve applied"
-            : "Knobs value · hold+turn curve",
+            : "",
         .accentColor = ::standalone::theme::color::MACRO_CC_COLOR,
         .statusColor = ui.routeValid
             ? ::standalone::theme::color::MACRO_CC_COLOR

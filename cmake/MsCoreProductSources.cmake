@@ -3,6 +3,7 @@
 set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/context/StandaloneContext.cpp
     src/context/standalone/DeviceSettingsSelectorPresenter.cpp
+    src/context/standalone/DrumLaneEditorPresenter.cpp
     src/context/standalone/MacroFeatureModule.cpp
     src/context/standalone/MacroOverlayInvalidationBindings.cpp
     src/context/standalone/MacroOverlayPresenter.cpp
@@ -24,8 +25,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/context/standalone/SequencerOverlayPresenterFormatters.cpp
     src/context/standalone/SequencerOverlayPresenterPresetLibraryFormatters.cpp
     src/context/standalone/SequencerPatternEditorPresenter.cpp
-    src/context/standalone/SequencerSettingsOverlayPresenter.cpp
-    src/context/standalone/SequencerSettingsOverlayPresenterFormatters.cpp
     src/context/standalone/SettingsFeatureModule.cpp
     src/context/standalone/StandaloneFeatureAssembly.cpp
     src/context/standalone/StandaloneGlobalHandlerAssembly.cpp
@@ -76,6 +75,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/project/ProjectHandlerNavigation.cpp
     src/handler/project/ProjectHandlerValueEditing.cpp
     src/handler/project/ProjectLifecycleDomainServices.cpp
+    src/handler/sequencer/DrumLaneEditorHandler.cpp
     src/handler/sequencer/PatternPitchSettingsDomainServices.cpp
     src/handler/sequencer/PatternPitchSettingsHandler.cpp
     src/handler/sequencer/ProjectTrackEditorHandler.cpp
@@ -129,14 +129,14 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp
     src/handler/settings/DeviceSettingsDomainServices.cpp
     src/handler/settings/DeviceSettingsHandler.cpp
-    src/handler/settings/SequencerSettingsDomainServices.cpp
-    src/handler/settings/SequencerSettingsHandler.cpp
+    src/handler/project/ProjectScaleSettingsDomainServices.cpp
     src/handler/transport/TransportHandler.cpp
     src/handler/view/ViewSwitcherHandler.cpp
     src/persistence/AtomicProductFile.cpp
     src/persistence/ChordPresetFileStore.cpp
     src/persistence/DeviceSettingsCodec.cpp
     src/persistence/DeviceSettingsStore.cpp
+    src/persistence/DrumTrackPersistenceCodec.cpp
     src/persistence/MacroTrackBankPersistenceCodec.cpp
     src/persistence/PersistenceChecksum.cpp
     src/persistence/ProductAssetFileStore.cpp
@@ -276,7 +276,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/project/ProjectMenuModel.cpp
     src/state/project/ProjectMenuNavigation.cpp
     src/state/project/ProjectModulatorMenuModel.cpp
-    src/state/project/ProjectNameKeyboard.cpp
+    src/state/interaction/TextKeyboardLayout.cpp
     src/state/project/ProjectNavigationState.cpp
     src/state/project/ProjectSettingsHistory.cpp
     src/state/project/ProjectSlug.cpp
@@ -290,6 +290,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/project/ProjectTrackHistory.cpp
     src/state/project/ProjectTrackState.cpp
     src/state/sequencer/DrumPatternState.cpp
+    src/state/sequencer/DrumSequencerUiState.cpp
     src/state/sequencer/SequencerCcLaneDomain.cpp
     src/state/sequencer/SequencerCcLanePatternOps.cpp
     src/state/sequencer/SequencerCcLaneProjectionOps.cpp
@@ -340,6 +341,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/shared/StructureSlotOps.cpp
     src/ui/common/AddSlotIcon.cpp
     src/ui/common/CoalescedLvglRenderScheduler.cpp
+    src/ui/common/CompactMetricRow.cpp
     src/ui/common/GlobalTrackNavigationStripModel.cpp
     src/ui/common/TrackHeaderRow.cpp
     src/ui/common/TrackNavigationStrip.cpp
@@ -351,10 +353,11 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/modulation/ModulatorSparklineModel.cpp
     src/ui/project/ProjectModulatorUiModel.cpp
     src/ui/project/ProjectModulatorWorkspace.cpp
-    src/ui/project/ProjectNameKeyboardView.cpp
+    src/ui/interaction/TextKeyboardView.cpp
     src/ui/project/ProjectTrackEditorOverlay.cpp
     src/ui/project/ProjectTrackEditorViewModel.cpp
     src/ui/sequencer/SequencerBottomActionStripViewModelBuilder.cpp
+    src/ui/sequencer/DrumOverviewSurface.cpp
     src/ui/sequencer/SequencerCcLaneGrid.cpp
     src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.cpp
     src/ui/sequencer/SequencerChordPresetPresentation.cpp

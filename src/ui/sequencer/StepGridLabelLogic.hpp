@@ -46,7 +46,8 @@ NoteLabelPresentation buildNoteLabelPresentation(
     const TileRenderState& state,
     const visual::StepPropertyVisualSpec& propertyVisual,
     core::state::sequencer::StepProperty activeProperty,
-    const InlineFeedbackSnapshot& feedback
+    const InlineFeedbackSnapshot& feedback,
+    StepGridPresentation presentation = StepGridPresentation::MELODIC
 );
 
 }  // namespace core::ui::sequencer::grid

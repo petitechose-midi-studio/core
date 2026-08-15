@@ -16,9 +16,7 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 #include "state/sequencer/DrumPatternState.hpp"
-#endif
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -1537,8 +1535,7 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     return true;
 }
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-bool prepareDrumTrackUxPrototypeScenario(core::state::CoreState& state) {
+bool prepareDrumSequencerScenario(core::state::CoreState& state) {
     using namespace core::state;
 
     state.activeView.set(core::ui::ViewType::SEQUENCER);
@@ -1553,17 +1550,11 @@ bool prepareDrumTrackUxPrototypeScenario(core::state::CoreState& state) {
     // A fresh fixture already owns T1; this synchronization can be a no-op.
     (void)state.setSharedTrackState(0x0001, 0);
     state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
-    // Exercise lane-local timing in the exact controller viewport. These are
-    // capture-fixture values, not the product defaults used by a new Drum Track.
-    if (!state.sequencer.drumTrackUxPrototype.drumTrack) return false;
-    (void)state.sequencer.drumTrackUxPrototype.drumTrack->pattern
-        .setLaneTimingCustom(1U, 7U, 4U);
-    (void)state.sequencer.drumTrackUxPrototype.drumTrack->pattern
-        .setLaneTimingCustom(2U, 4U, 2U);
-    state.sequencer.drumTrackUxPrototype.arm();
+    // A Track payload is bound only after the picker atomically creates it.
+    // The workflow itself authors lane-local timing later, so this fixture
+    // intentionally leaves the editor unbound.
     return true;
 }
-#endif
 
 bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     using namespace core::state;
@@ -1776,11 +1767,9 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (std::strcmp(scenario, "drum-track-ux-prototype") == 0) {
-        return prepareDrumTrackUxPrototypeScenario(state);
+    if (std::strcmp(scenario, "drum-sequencer") == 0) {
+        return prepareDrumSequencerScenario(state);
     }
-#endif
 
     if (std::strcmp(scenario, "seq-track-paste-single") == 0) {
         return prepareSequencerTrackPasteCaptureScenario(state);
@@ -1915,6 +1904,20 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
+    if (std::strcmp(
+            scenario,
+            "seq-history-unavailable-feedback"
+        ) == 0) {
+        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.overlays.hideAll();
+        state.sequencer.historyFeedback.showRejection(
+            core::state::sequencer::
+                SequencerHistoryRejectionReason::HistoryUnavailable,
+            SDL_GetTicks()
+        );
+        return true;
+    }
+
     if (std::strcmp(scenario, "seq-step-preset-browse") == 0) {
         prepareStepPresetCaptureBase(state);
         return true;
@@ -1927,7 +1930,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         picker.setEntry(1, "mono-drift", "Mono Drift", true);
         picker.setEntry(2, "odd-pulse", "Odd Pulse", true);
         picker.setEntry(3, "rain-grid", "Rain Grid", true);
-        picker.setEntry(4, "soft-ratchet", "Soft Ratchet", true);
+        picker.setEntry(4, "soft-micro", "Soft Micro", true);
         picker.setEntry(5, "wide-cycle", "Wide Cycle", true);
         picker.hasPreviousPage.set(true);
         picker.hasNextPage.set(false);
@@ -1947,7 +1950,10 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
-    if (std::strcmp(scenario, "seq-step-preset-detail-mixed") == 0) {
+    if (std::strcmp(
+            scenario,
+            "seq-step-preset-detail-scale-relative"
+        ) == 0) {
         prepareStepPresetCaptureBase(state);
         state.sequencer.presetLibrary.detailVisible.set(true);
         state.sequencer.presetLibrary.detailFocus.set(3);

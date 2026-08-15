@@ -32,14 +32,14 @@ FLASHMEM uint32_t toneColor(SequencerTrackPastePreflightTone tone) {
     switch (tone) {
         case SequencerTrackPastePreflightTone::CONSTRUCTIVE:
         case SequencerTrackPastePreflightTone::SUCCESS:
-            return theme::color::STEP_VELOCITY;
+            return theme::color::POSITIVE;
         case SequencerTrackPastePreflightTone::WARNING:
-            return theme::color::MACRO_SUSPENDED;
+            return theme::color::WARNING;
         case SequencerTrackPastePreflightTone::ERROR:
-            return theme::color::MACRO_AUTOMATION;
+            return theme::color::DESTRUCTIVE;
         case SequencerTrackPastePreflightTone::NEUTRAL:
         default:
-            return theme::color::TEXT_SECONDARY;
+            return theme::color::SECONDARY;
     }
 }
 
@@ -57,10 +57,12 @@ FLASHMEM SequencerTrackPastePreflightCard::SequencerTrackPastePreflightCard(
     lv_obj_clear_flag(panel_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(panel_, 276, LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(panel_, 166, 0);
-    lv_obj_set_style_bg_color(panel_, lv_color_hex(theme::color::BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(panel_, LV_OPA_90, 0);
-    lv_obj_set_style_border_width(panel_, 2, 0);
-    lv_obj_set_style_radius(panel_, 6, 0);
+    lv_obj_set_style_bg_color(
+        panel_, lv_color_hex(theme::color::SURFACE_RAISED), 0
+    );
+    lv_obj_set_style_bg_opa(panel_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(panel_, 1, 0);
+    lv_obj_set_style_radius(panel_, 3, 0);
     lv_obj_set_style_pad_left(panel_, 8, 0);
     lv_obj_set_style_pad_right(panel_, 8, 0);
     lv_obj_set_style_pad_top(panel_, 6, 0);
@@ -78,37 +80,44 @@ FLASHMEM SequencerTrackPastePreflightCard::SequencerTrackPastePreflightCard(
 
     header_ = createLabel(
         panel_,
-        fonts.inter_13_bold,
+        fonts.compact_selected(),
         theme::color::TEXT_PRIMARY
     );
     mapping_ = createLabel(
         panel_,
-        fonts.inter_12_medium,
+        fonts.compact_selected(),
         theme::color::TEXT_PRIMARY
     );
     footprint_ = createLabel(
         panel_,
-        fonts.inter_12_medium,
+        fonts.compact_label(),
         theme::color::TEXT_PRIMARY
     );
     route_ = createLabel(
         panel_,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY
     );
     lane_bindings_ = createLabel(
         panel_,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY
     );
     detail_ = createLabel(
         panel_,
-        fonts.inter_12_medium,
+        fonts.compact_label(),
         theme::color::TEXT_SECONDARY
     );
 
     if (!panel_ || !header_ || !mapping_ || !footprint_ || !route_ ||
         !lane_bindings_ || !detail_) return;
+    lv_obj_set_style_border_side(detail_, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_width(detail_, 1, 0);
+    lv_obj_set_style_border_color(
+        detail_, lv_color_hex(theme::color::BORDER_SUBTLE), 0
+    );
+    lv_obj_set_style_border_opa(detail_, LV_OPA_50, 0);
+    lv_obj_set_style_pad_top(detail_, 3, 0);
     applied_timer_.emplace(
         APPLIED_CONFIRMATION_MS,
         &SequencerTrackPastePreflightCard::onAppliedTimeout,

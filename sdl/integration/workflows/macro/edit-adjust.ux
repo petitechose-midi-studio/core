@@ -1,7 +1,7 @@
 # UX workflow: adjust a macro, open its edit overlay, edit one field, and close.
 # Purpose: validates macro performance input, explicit Edit-chord opening,
-# overlay-local NAV/OPT routing, and commit/close behavior.
-# Expect: capture_changed:edit_open=edit_adjusted
+# the shared opaque value selector, overlay-local NAV/OPT routing, and commit.
+# Expect: capture_changed:edit_open=destination_selector_open, capture_changed:destination_selector_open=destination_selector_moved, capture_changed:destination_selector_moved=destination_applied, capture_changed:edit_open=edit_adjusted
 
 0 scenario macro
 50 capture screen macro_ready
@@ -18,11 +18,20 @@
 1450 capture screen edit_open
 1500 button LEFT_BOTTOM up
 
-# Move focus and edit the focused property with OPT.
-1600 encoder NAV 1
-1700 encoder OPT 0.50
-1800 capture screen edit_adjusted
+# Open the Destination value selector, move once, and apply. The selector must
+# replace the editor chrome instead of letting its text leak through.
+1600 tap NAV 60
+1820 capture screen destination_selector_open
+1920 encoder NAV 1
+2140 capture screen destination_selector_moved
+2240 tap NAV 60
+2460 capture screen destination_applied
+
+# Move focus and edit the next property with OPT.
+2560 encoder NAV 1
+2660 encoder OPT 0.50
+2880 capture screen edit_adjusted
 
 # Close and commit.
-1900 tap LEFT_TOP 60
-2100 capture screen edit_closed
+2980 tap LEFT_TOP 60
+3200 capture screen edit_closed

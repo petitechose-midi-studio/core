@@ -34,6 +34,19 @@ public:
                  const core::state::sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);
     using CommitCoalescedPatternEditFn =
         core::state::sequencer::SequencerPatternHistoryCommitOutcome (*)(void* context);
+    using BeginCoalescedDrumEditFn =
+        core::state::sequencer::SequencerHistoryOpenOutcome (*)(
+            void* context,
+            core::state::sequencer::SequencerHistoryDescriptor descriptor,
+            uint32_t nowMs);
+    using SealCoalescedDrumEditFn = bool (*)(
+        void* context,
+        bool mutationChanged,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor);
+    using CommitCoalescedDrumEditFn =
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome (*)(
+            void* context);
+    using AbortCoalescedDrumEditFn = bool (*)(void* context);
     using OpenTrackStructureChronologyBoundaryFn =
         core::state::sequencer::SequencerTrackStructureChronologyResult (*)(
             void* context);
@@ -87,6 +100,10 @@ public:
         SealCoalescedPatternEditFn sealCoalescedPatternEdit = nullptr;
         BeginCoalescedCcLaneEventEditFn beginCoalescedCcLaneEventEdit = nullptr;
         CommitCoalescedPatternEditFn commitCoalescedPatternEdit = nullptr;
+        BeginCoalescedDrumEditFn beginCoalescedDrumEdit = nullptr;
+        SealCoalescedDrumEditFn sealCoalescedDrumEdit = nullptr;
+        CommitCoalescedDrumEditFn commitCoalescedDrumEdit = nullptr;
+        AbortCoalescedDrumEditFn abortCoalescedDrumEdit = nullptr;
         OpenTrackStructureChronologyBoundaryFn
             openTrackStructureChronologyBoundary = nullptr;
         BeginPreparedPatternEditFn beginPreparedPatternEdit = nullptr;
@@ -135,6 +152,15 @@ public:
                                        uint32_t nowMs) const;
     core::state::sequencer::SequencerPatternHistoryCommitOutcome commitCoalescedPatternEditOutcome()
         const;
+    core::state::sequencer::SequencerHistoryOpenOutcome beginCoalescedDrumEdit(
+        core::state::sequencer::SequencerHistoryDescriptor descriptor,
+        uint32_t nowMs) const;
+    bool sealCoalescedDrumEdit(
+        bool mutationChanged,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor) const;
+    core::state::sequencer::SequencerPatternHistoryCommitOutcome
+    commitCoalescedDrumEditOutcome() const;
+    bool abortCoalescedDrumEdit() const;
     [[nodiscard]] core::state::sequencer::SequencerTrackStructureChronologyResult
     openTrackStructureChronologyBoundary() const;
     core::state::sequencer::SequencerPreparedPatternEditBeginOutcome beginPreparedPatternEdit(

@@ -121,34 +121,32 @@ inline float swingOffsetToNormalized(int8_t offset) {
 
 StepPropertyEncoderConfig encoderConfigForProperty(StepProperty property);
 
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
 StepProperty drumStepProperty(
-    core::state::sequencer::DrumTrackUxPrototypeProperty property
+    core::state::sequencer::DrumSequencerProperty property
 );
 
-core::state::sequencer::DrumTrackUxPrototypeProperty drumPropertyForStepProperty(
+core::state::sequencer::DrumSequencerProperty drumPropertyForStepProperty(
     StepProperty property
 );
 
 StepPropertyEncoderConfig encoderConfigForDrumProperty(
-    core::state::sequencer::DrumTrackUxPrototypeProperty property
+    core::state::sequencer::DrumSequencerProperty property
 );
 
 float drumStepPropertyToNormalized(
-    const core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    const core::state::sequencer::DrumSequencerState& drumUi,
     uint8_t lane,
     uint8_t step,
-    core::state::sequencer::DrumTrackUxPrototypeProperty property
+    core::state::sequencer::DrumSequencerProperty property
 );
 
 bool applyNormalizedToDrumStep(
-    core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    core::state::sequencer::DrumSequencerState& drumUi,
     uint8_t lane,
     uint8_t step,
-    core::state::sequencer::DrumTrackUxPrototypeProperty property,
+    core::state::sequencer::DrumSequencerProperty property,
     float normalized
 );
-#endif
 
 inline bool usesScaleDegreePitchEdit(
     StepProperty property,

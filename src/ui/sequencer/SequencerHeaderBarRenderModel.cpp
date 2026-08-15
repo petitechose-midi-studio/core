@@ -62,11 +62,9 @@ FLASHMEM TopRowVisualState buildTopRowVisualState(
         props.selectingTrack || props.selectingPage || props.selectingStep;
 
     state.accentColor = accentColor;
-    state.accentOpa = LV_OPA_80;
-    state.backgroundColor = accentColor;
-    state.backgroundOpa = props.selectingTrack
-        ? TRACK_BG_OPA_SELECTING
-        : TRACK_BG_OPA_IDLE;
+    state.accentOpa = props.selectingTrack ? LV_OPA_COVER : LV_OPA_80;
+    state.backgroundColor = theme::color::BACKGROUND;
+    state.backgroundOpa = LV_OPA_COVER;
     state.badgeBgColor = selectionMode ? theme::color::TEXT_PRIMARY : accentColor;
     state.badgeBgOpa =
         showBadge ? (selectionMode ? LV_OPA_20 : static_cast<lv_opa_t>(24)) : LV_OPA_TRANSP;

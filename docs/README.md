@@ -9,8 +9,9 @@ Read these first, in order:
 1. [DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md)
 2. [CORE_ARCHITECTURE.md](CORE_ARCHITECTURE.md)
 3. [INPUT_BINDINGS.md](INPUT_BINDINGS.md)
-4. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
-5. [CODE_STYLE.md](CODE_STYLE.md)
+4. [CONTROLLER_INTERACTION_GRAMMAR.md](CONTROLLER_INTERACTION_GRAMMAR.md)
+5. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
+6. [CODE_STYLE.md](CODE_STYLE.md)
 
 Architecture contracts should live as close as possible to the code they
 constrain. Put durable "why" comments in `.hpp` files when a reader needs the

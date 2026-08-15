@@ -85,6 +85,25 @@ FLASHMEM bool presetPitchContextMatchesDestination(
     return presetScaleRelative == destinationUsesScaleRelativePitch(state, destinationScale);
 }
 
+FLASHMEM bool sameFrozenTarget(
+    const SequencerStepPresetTarget& lhs,
+    const SequencerStepPresetTarget& rhs
+) {
+    return lhs.valid == rhs.valid &&
+        lhs.trackIndex == rhs.trackIndex &&
+        lhs.stepIndex == rhs.stepIndex &&
+        lhs.contentContext == rhs.contentContext &&
+        lhs.ownerNodeId == rhs.ownerNodeId &&
+        lhs.sequenceId == rhs.sequenceId &&
+        lhs.cycleSetId == rhs.cycleSetId &&
+        lhs.targetNodeId == rhs.targetNodeId &&
+        lhs.destinationOwnsPitch == rhs.destinationOwnsPitch &&
+        lhs.destinationNote == rhs.destinationNote &&
+        lhs.drumLaneIndex == rhs.drumLaneIndex &&
+        lhs.drumRootStepIndex == rhs.drumRootStepIndex &&
+        lhs.drumRootSlot == rhs.drumRootSlot;
+}
+
 FLASHMEM void formatScale(oc::note::sequencer::StepSequencerScaleSettings scale, char* out,
                           size_t outSize) {
     scale.clamp();
@@ -178,6 +197,11 @@ FLASHMEM void copyContentViewState(
     target.rootFocusSnapshot = source.rootFocusSnapshot;
     target.stackDepth = source.stackDepth;
     target.frames = source.frames;
+    target.drumOwnerActive = source.drumOwnerActive;
+    target.drumOwnerTrack = source.drumOwnerTrack;
+    target.drumOwnerLane = source.drumOwnerLane;
+    target.drumOwnerStep = source.drumOwnerStep;
+    target.drumOwnerRootSlot = source.drumOwnerRootSlot;
 }
 
 FLASHMEM void copyEditorContextForStaging(core::state::sequencer::SequencerState& target,
@@ -207,15 +231,40 @@ FLASHMEM bool nodePopulated(const oc::note::sequencer::StepSequencerStepNode& no
            variationPresent(node);
 }
 
-FLASHMEM bool targetPopulated(const core::state::sequencer::SequencerState& sequencer,
+FLASHMEM bool targetPopulated(const core::state::CoreState& state,
                               const SequencerStepPresetTarget& target) {
+    const auto& sequencer = state.sequencer;
     if (!target.valid ||
         target.stepIndex >= core::state::sequencer::activeContentLength(sequencer)) {
-        return false;
+        if (!target.destinationOwnsPitch ||
+            target.contentContext !=
+                core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
+            return false;
+        }
     }
 
     bool populated = false;
-    if (target.contentContext == core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
+    if (target.destinationOwnsPitch &&
+        target.contentContext ==
+            core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
+        const auto& drum = state.sequencerTracks.drumTrack(target.trackIndex);
+        if (target.drumLaneIndex < drum.kit.laneCount &&
+            target.drumRootStepIndex <
+                drum.pattern.effectiveLength(target.drumLaneIndex)) {
+            const auto& lane = drum.pattern.lanes[target.drumLaneIndex];
+            const uint8_t step = target.drumRootStepIndex;
+            populated =
+                drum.pattern.stepEnabled(target.drumLaneIndex, step) ||
+                lane.velocity[step] !=
+                    core::state::sequencer::DRUM_DEFAULT_VELOCITY ||
+                lane.gate[step] !=
+                    core::state::sequencer::DRUM_DEFAULT_GATE_PERCENT ||
+                lane.nudge[step] != 0 ||
+                lane.probability[step] !=
+                    core::state::sequencer::DRUM_DEFAULT_PROBABILITY;
+        }
+    } else if (target.contentContext ==
+               core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
         const uint8_t step = target.stepIndex;
         populated =
             sequencer.pattern.isEnabled(step) ||
@@ -232,6 +281,16 @@ FLASHMEM bool targetPopulated(const core::state::sequencer::SequencerState& sequ
     const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
     const auto* node = graph ? graph->stepNode(target.targetNodeId) : nullptr;
     return populated || (node != nullptr && nodePopulated(*node));
+}
+
+FLASHMEM bool presetHasAdvancedGraphPayload(
+    const SequencerStepGraphPreset& preset
+) {
+    const auto* root = preset.graph.stepNode(
+        SequencerStepGraphPreset::ASSET_ROOT_NODE_ID
+    );
+    return root != nullptr &&
+        !core::state::sequencer::isDefaultSequencerGraphNodePayload(*root);
 }
 
 FLASHMEM bool graphCapacityAvailable(const core::state::sequencer::SequencerState& sequencer,
@@ -371,6 +430,212 @@ FLASHMEM void setCompatibilityReason(SequencerStepPresetDescriptor& descriptor) 
         core::state::sequencer::sequencerStepPresetCompatibilityLabel(descriptor.compatibility));
 }
 
+FLASHMEM bool capturePresetForTarget(
+    const core::state::CoreState& state,
+    const SequencerStepPresetTarget& target,
+    oc::note::sequencer::StepSequencerScaleSettings sourceScale,
+    SequencerStepGraphPreset& preset,
+    core::state::sequencer::SequencerGraphAssetReport& report
+) {
+    bool captured = false;
+    if (target.destinationOwnsPitch &&
+        target.contentContext ==
+            core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
+        const auto& drum = state.sequencerTracks.drumTrack(target.trackIndex);
+        if (target.drumLaneIndex >= drum.kit.laneCount ||
+            target.drumRootStepIndex >=
+                drum.pattern.effectiveLength(target.drumLaneIndex)) {
+            report.status = SequencerGraphAssetStatus::INCOMPATIBLE_TARGET;
+            return false;
+        }
+        const auto& lane = drum.pattern.lanes[target.drumLaneIndex];
+        const uint8_t step = target.drumRootStepIndex;
+        const core::state::sequencer::SequencerStepGraphRootValues values{
+            .enabled = drum.pattern.stepEnabled(target.drumLaneIndex, step),
+            .note = target.destinationNote,
+            .velocity = lane.velocity[step],
+            .gate = lane.gate[step],
+            .nudge = lane.nudge[step],
+            .probability = lane.probability[step],
+        };
+        const auto sourceNodeId = target.drumRootSlot == 0xFFU
+            ? oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID
+            : core::state::sequencer::rootStepNodeId(target.drumRootSlot);
+        captured = core::state::sequencer::captureRootStepGraphPreset(
+            state.sequencer.pattern,
+            sourceNodeId,
+            values,
+            sourceScale,
+            preset,
+            &report
+        );
+    } else {
+        captured = core::state::sequencer::captureStepGraphPreset(
+            state.sequencer,
+            target.stepIndex,
+            sourceScale,
+            preset,
+            &report
+        );
+    }
+    if (!captured) return false;
+    if (target.destinationOwnsPitch &&
+        !core::state::sequencer::projectStepGraphPresetToDestinationPitch(
+            preset,
+            target.destinationNote
+        )) {
+        report.status = SequencerGraphAssetStatus::INVALID_ARGUMENT;
+        return false;
+    }
+    return true;
+}
+
+FLASHMEM SequencerStepPresetStatus historyStatusFor(
+    core::state::sequencer::SequencerHistoryOpenOutcome outcome
+) {
+    return outcome ==
+            core::state::sequencer::SequencerHistoryOpenOutcome::ResourceUnavailable
+        ? SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE
+        : SequencerStepPresetStatus::HISTORY_UNAVAILABLE;
+}
+
+FLASHMEM bool applyPreparedDrumPreset(
+    core::state::CoreState& state,
+    const SequencerStepPresetTarget& target,
+    const SequencerStepGraphPreset& preset,
+    SequencerStepPresetActionResult& result
+) {
+    namespace seq = core::state::sequencer;
+    if (!target.destinationOwnsPitch ||
+        target.trackIndex >= seq::SequencerTrackBankState::TRACK_COUNT ||
+        !state.sequencerTracks.isDrumTrack(target.trackIndex)) {
+        result.status = SequencerStepPresetStatus::INCOMPATIBLE;
+        result.assetStatus = SequencerGraphAssetStatus::INCOMPATIBLE_TARGET;
+        return false;
+    }
+
+    seq::SequencerHistoryDescriptor descriptor{
+        .kind = seq::SequencerHistoryActionKind::DrumAdvancedContent,
+        .trackIndex = target.trackIndex,
+        .laneIndex = target.drumLaneIndex,
+        .stepIndex = target.drumRootStepIndex,
+        .property = seq::StepProperty::NOTE,
+    };
+    const auto opened = state.beginOrContinueSequencerDrumHistory(descriptor, 0U);
+    if (!seq::sequencerHistoryOpenAccepted(opened)) {
+        result.status = historyStatusFor(opened);
+        result.assetStatus = opened == seq::SequencerHistoryOpenOutcome::ResourceUnavailable
+            ? SequencerGraphAssetStatus::RESOURCE_EXHAUSTED
+            : SequencerGraphAssetStatus::OK;
+        return false;
+    }
+
+    bool applied = false;
+    seq::SequencerGraphAssetReport applyReport{};
+    if (target.contentContext == seq::SequencerStepPresetTargetContext::ROOT) {
+        auto& drum = state.sequencerTracks.drumTrack(target.trackIndex);
+        if (target.drumLaneIndex < drum.kit.laneCount &&
+            target.drumRootStepIndex <
+                drum.pattern.effectiveLength(target.drumLaneIndex)) {
+            auto& pattern = state.sequencer.pattern;
+            const bool hasAdvancedPayload = presetHasAdvancedGraphPayload(preset);
+            int16_t rootSlot = drum.advancedRootSlot(
+                target.drumLaneIndex,
+                target.drumRootStepIndex
+            );
+            if (hasAdvancedPayload && rootSlot < 0) {
+                bool mappingChanged = false;
+                rootSlot = seq::ensureDrumAdvancedRootSlot(
+                    drum,
+                    pattern,
+                    target.drumLaneIndex,
+                    target.drumRootStepIndex,
+                    mappingChanged
+                );
+            }
+
+            bool graphApplied = rootSlot < 0 && !hasAdvancedPayload;
+            if (hasAdvancedPayload && rootSlot >= 0) {
+                graphApplied = seq::applyStepGraphPresetGraphToNode(
+                    pattern,
+                    seq::rootStepNodeId(static_cast<uint8_t>(rootSlot)),
+                    preset,
+                    &applyReport
+                );
+            } else if (!hasAdvancedPayload && rootSlot >= 0) {
+                const auto nodeId = seq::rootStepNodeId(
+                    static_cast<uint8_t>(rootSlot)
+                );
+                const auto* graph = seq::graphView(pattern);
+                const auto* node = graph != nullptr ? graph->stepNode(nodeId) : nullptr;
+                graphApplied = node == nullptr ||
+                    seq::isDefaultSequencerGraphNodePayload(*node) ||
+                    seq::resetStepNodePayload(pattern, nodeId);
+                if (graphApplied) {
+                    graphApplied = seq::compactGraph(pattern).ok &&
+                        drum.releaseAdvancedRootSlot(
+                            target.drumLaneIndex,
+                            target.drumRootStepIndex
+                        );
+                }
+            }
+
+            if (graphApplied && preset.rootValuesValid) {
+                const uint8_t lane = target.drumLaneIndex;
+                const uint8_t step = target.drumRootStepIndex;
+                (void)drum.pattern.setStepEnabled(lane, step, preset.enabled);
+                (void)drum.pattern.setStepVelocity(lane, step, preset.velocity);
+                (void)drum.pattern.setStepGate(lane, step, preset.gate);
+                (void)drum.pattern.setStepNudge(lane, step, preset.nudge);
+                (void)drum.pattern.setStepProbability(
+                    lane,
+                    step,
+                    preset.probability
+                );
+            }
+            applied = graphApplied;
+        }
+    } else {
+        applied = seq::applyStepGraphPreset(
+            state.sequencer,
+            target.stepIndex,
+            preset,
+            &applyReport
+        );
+    }
+
+    if (!applied) {
+        (void)state.abortSequencerDrumHistory();
+        result.assetStatus = applyReport.ok()
+            ? SequencerGraphAssetStatus::GRAPH_LIMIT_REACHED
+            : applyReport.status;
+        result.status = result.assetStatus ==
+                SequencerGraphAssetStatus::RESOURCE_EXHAUSTED
+            ? SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE
+            : statusFromAsset(result.assetStatus);
+        return false;
+    }
+
+    state.sequencerTracks.publishDrumMutation(target.trackIndex);
+    state.sequencer.drumSequencer.bump();
+    if (!state.sealSequencerDrumHistory(true, descriptor)) {
+        (void)state.abortSequencerDrumHistory();
+        result.status = SequencerStepPresetStatus::HISTORY_UNAVAILABLE;
+        return false;
+    }
+    const auto committed = state.commitSequencerDrumHistoryCoalescingOutcome();
+    if (committed == seq::SequencerPatternHistoryCommitOutcome::Failed) {
+        result.status = SequencerStepPresetStatus::HISTORY_UNAVAILABLE;
+        return false;
+    }
+
+    state.sequencer.invalidateVariationTelemetry();
+    result.status = SequencerStepPresetStatus::OK;
+    result.assetStatus = SequencerGraphAssetStatus::OK;
+    result.activation = SequencerStepPresetActivation::APPLIED;
+    return true;
+}
+
 }  // namespace
 
 FLASHMEM SequencerStepPresetDomainServices::SequencerStepPresetDomainServices(
@@ -459,11 +724,49 @@ FLASHMEM SequencerStepPresetTarget SequencerStepPresetDomainServices::captureTar
     target.ownerNodeId = sequencer.contentView.ownerNodeId.get();
     target.sequenceId = sequencer.contentView.sequenceId.get();
     target.cycleSetId = sequencer.contentView.cycleSetId.get();
-    target.targetNodeId =
-        core::state::sequencer::activeContentStepNodeId(sequencer, target.stepIndex);
+    const bool drumContext = sequencer.stepEdit.drumContext &&
+        state_->sequencerTracks.isDrumTrack(target.trackIndex);
+    if (drumContext) {
+        target.destinationOwnsPitch = true;
+        if (core::state::sequencer::isDrumContentView(sequencer)) {
+            target.drumLaneIndex = sequencer.contentView.drumOwnerLane;
+            target.drumRootStepIndex = sequencer.contentView.drumOwnerStep;
+            target.drumRootSlot = sequencer.contentView.drumOwnerRootSlot;
+        } else {
+            target.drumLaneIndex = sequencer.stepEdit.drumLane;
+            target.drumRootStepIndex = sequencer.stepEdit.drumStep;
+            target.drumRootSlot = sequencer.stepEdit.drumRootSlot;
+        }
+        const auto& drum = state_->sequencerTracks.drumTrack(target.trackIndex);
+        if (target.drumLaneIndex < drum.kit.laneCount) {
+            target.destinationNote =
+                drum.kit.lanes[target.drumLaneIndex].midiNote;
+        }
+    }
+    if (target.destinationOwnsPitch &&
+        target.contentContext ==
+            core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
+        target.targetNodeId = target.drumRootSlot == 0xFFU
+            ? oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID
+            : core::state::sequencer::rootStepNodeId(target.drumRootSlot);
+    } else {
+        target.targetNodeId =
+            core::state::sequencer::activeContentStepNodeId(sequencer, target.stepIndex);
+    }
     target.projectRevision = state_->project.metadata.modifiedCounter;
-    target.valid = target.stepIndex < core::state::sequencer::activeContentLength(sequencer) &&
-                   target.targetNodeId != oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    if (target.destinationOwnsPitch &&
+        target.contentContext ==
+            core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
+        const auto& drum = state_->sequencerTracks.drumTrack(target.trackIndex);
+        target.valid = target.drumLaneIndex < drum.kit.laneCount &&
+            target.drumRootStepIndex <
+                drum.pattern.effectiveLength(target.drumLaneIndex);
+    } else {
+        target.valid =
+            target.stepIndex < core::state::sequencer::activeContentLength(sequencer) &&
+            target.targetNodeId !=
+                oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    }
 
     const char* context = "Root";
     if (target.contentContext ==
@@ -473,9 +776,20 @@ FLASHMEM SequencerStepPresetTarget SequencerStepPresetDomainServices::captureTar
                core::state::sequencer::SequencerStepPresetTargetContext::CYCLE_STATES) {
         context = "Cycle";
     }
-    std::snprintf(target.contextLabel, sizeof(target.contextLabel), "T%u %s S%02u",
-                  static_cast<unsigned>(target.trackIndex + 1U), context,
-                  static_cast<unsigned>(target.stepIndex + 1U));
+    if (target.destinationOwnsPitch) {
+        std::snprintf(
+            target.contextLabel,
+            sizeof(target.contextLabel),
+            "T%u Drum L%u S%02u",
+            static_cast<unsigned>(target.trackIndex + 1U),
+            static_cast<unsigned>(target.drumLaneIndex + 1U),
+            static_cast<unsigned>(target.drumRootStepIndex + 1U)
+        );
+    } else {
+        std::snprintf(target.contextLabel, sizeof(target.contextLabel), "T%u %s S%02u",
+                      static_cast<unsigned>(target.trackIndex + 1U), context,
+                      static_cast<unsigned>(target.stepIndex + 1U));
+    }
     return target;
 }
 
@@ -485,15 +799,7 @@ FLASHMEM bool SequencerStepPresetDomainServices::targetMatches(
         state_->sequencerTracks.activeTrackIndex() != target.trackIndex) {
         return false;
     }
-    const auto& sequencer = state_->sequencer;
-    const auto currentContext = captureTarget().contentContext;
-    return currentContext == target.contentContext &&
-           sequencer.contentView.ownerNodeId.get() == target.ownerNodeId &&
-           sequencer.contentView.sequenceId.get() == target.sequenceId &&
-           sequencer.contentView.cycleSetId.get() == target.cycleSetId &&
-           target.stepIndex < core::state::sequencer::activeContentLength(sequencer) &&
-           core::state::sequencer::activeContentStepNodeId(sequencer, target.stepIndex) ==
-               target.targetNodeId;
+    return sameFrozenTarget(captureTarget(), target);
 }
 
 FLASHMEM uint32_t SequencerStepPresetDomainServices::projectRevision() const {
@@ -583,11 +889,25 @@ FLASHMEM SequencerStepPresetInspectResult SequencerStepPresetDomainServices::ins
     copyText(descriptor.semanticName, sizeof(descriptor.semanticName),
              preparedPreset->semanticName);
 
-    descriptor.stepNodeCount = report.stepNodeCount;
-    descriptor.sequenceCount = report.sequenceCount;
-    descriptor.cycleSetCount = report.cycleSetCount;
+    bool destinationPitchAdapted = false;
+    if (target.destinationOwnsPitch &&
+        !core::state::sequencer::projectStepGraphPresetToDestinationPitch(
+            *preparedPreset,
+            target.destinationNote,
+            &destinationPitchAdapted
+        )) {
+        result.status = SequencerStepPresetStatus::CORRUPT;
+        result.assetStatus = SequencerGraphAssetStatus::INVALID_FORMAT;
+        descriptor.compatibility = SequencerStepPresetCompatibility::CORRUPT;
+        setCompatibilityReason(descriptor);
+        return result;
+    }
+
+    descriptor.stepNodeCount = preparedPreset->graph.stepNodeCount;
+    descriptor.sequenceCount = preparedPreset->graph.sequenceCount;
+    descriptor.cycleSetCount = preparedPreset->graph.cycleSetCount;
     fillContentFacts(*preparedPreset, descriptor);
-    descriptor.footprint = targetPopulated(state_->sequencer, target)
+    descriptor.footprint = targetPopulated(*state_, target)
                                ? SequencerStepPresetFootprint::REPLACE
                                : SequencerStepPresetFootprint::FREE;
 
@@ -595,21 +915,36 @@ FLASHMEM SequencerStepPresetInspectResult SequencerStepPresetDomainServices::ins
     const auto sourceScale = preparedPreset->sourceScale;
     const bool scaleRelative =
         preparedPreset->scalePolicy == SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE;
-    const bool pitchContextMatches =
+    const bool pitchContextMatches = target.destinationOwnsPitch ||
         presetPitchContextMatchesDestination(*preparedPreset, *state_, destinationScale);
     descriptor.scalePolicy =
         scaleRelative ? core::state::sequencer::SequencerStepPresetScalePolicy::SCALE_RELATIVE
                       : core::state::sequencer::SequencerStepPresetScalePolicy::CHROMATIC;
     bool pitchAdapted = false;
-    if (pitchContextMatches && !core::state::sequencer::adaptStepGraphPresetPitchToDestination(
-                                   *preparedPreset, destinationScale, &pitchAdapted)) {
+    if (!target.destinationOwnsPitch && pitchContextMatches &&
+        !core::state::sequencer::adaptStepGraphPresetPitchToDestination(
+            *preparedPreset,
+            destinationScale,
+            &pitchAdapted
+        )) {
         result.status = SequencerStepPresetStatus::CORRUPT;
         result.assetStatus = SequencerGraphAssetStatus::INVALID_FORMAT;
         descriptor.compatibility = SequencerStepPresetCompatibility::CORRUPT;
         setCompatibilityReason(descriptor);
         return result;
     }
-    if (!pitchContextMatches) {
+    if (target.destinationOwnsPitch) {
+        descriptor.adaptation =
+            core::state::sequencer::SequencerStepPresetAdaptation::DESTINATION_PITCH;
+        char noteName[8]{};
+        formatNoteName(target.destinationNote, noteName, sizeof(noteName));
+        std::snprintf(
+            descriptor.adaptationSummary,
+            sizeof(descriptor.adaptationSummary),
+            "Pitch from lane · %s",
+            noteName
+        );
+    } else if (!pitchContextMatches) {
         copyText(descriptor.adaptationSummary, sizeof(descriptor.adaptationSummary),
                  scaleRelative ? "Requires Follow Scale" : "Requires Chromatic");
     } else if (scaleRelative) {
@@ -627,11 +962,20 @@ FLASHMEM SequencerStepPresetInspectResult SequencerStepPresetDomainServices::ins
         copyText(descriptor.adaptationSummary, sizeof(descriptor.adaptationSummary),
                  "Chromatic: absolute pitch");
     }
-    copyText(descriptor.replaceFacts, sizeof(descriptor.replaceFacts),
-             preparedPreset->rootContext ? "Step values + child graph" : "Child values + graph");
-    copyText(descriptor.preserveFacts, sizeof(descriptor.preserveFacts),
-             preparedPreset->rootContext ? "Track route, scale, other steps"
-                                         : "Root step and track route");
+    copyText(
+        descriptor.replaceFacts,
+        sizeof(descriptor.replaceFacts),
+        preparedPreset->rootContext ? "Step values + child graph" : "Child values + graph"
+    );
+    copyText(
+        descriptor.preserveFacts,
+        sizeof(descriptor.preserveFacts),
+        target.destinationOwnsPitch
+            ? "Lane note, name, icon, color, route"
+            : (preparedPreset->rootContext
+                ? "Track route, scale, other steps"
+                : "Root step and track route")
+    );
 
     if (!targetMatches(target) || projectRevision() != target.projectRevision) {
         result.status = SequencerStepPresetStatus::STALE_TARGET;
@@ -649,7 +993,8 @@ FLASHMEM SequencerStepPresetInspectResult SequencerStepPresetDomainServices::ins
         descriptor.compatibility = SequencerStepPresetCompatibility::BLOCKED_CAPACITY;
     } else {
         result.status = SequencerStepPresetStatus::OK;
-        if (scaleRelative && !sameScale(sourceScale, destinationScale)) {
+        if (destinationPitchAdapted ||
+            (scaleRelative && !sameScale(sourceScale, destinationScale))) {
             descriptor.compatibility = SequencerStepPresetCompatibility::WARNING_ADAPTED;
         } else {
             descriptor.compatibility = SequencerStepPresetCompatibility::READY;
@@ -711,8 +1056,13 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::save
 
     core::state::sequencer::SequencerGraphAssetReport captureReport{};
     const auto sourceScale = effectiveScale(*state_);
-    if (!core::state::sequencer::captureStepGraphPreset(state_->sequencer, target.stepIndex,
-                                                        sourceScale, *preset, &captureReport)) {
+    if (!capturePresetForTarget(
+            *state_,
+            target,
+            sourceScale,
+            *preset,
+            captureReport
+        )) {
         result.assetStatus = captureReport.status;
         result.status = statusFromAsset(captureReport.status);
         return result;
@@ -815,6 +1165,16 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     // Release the encoded workspace before allocating staging/history graphs,
     // which lowers peak PSRAM while retaining the prepared decoded graph.
     buffer.reset();
+
+    if (target.destinationOwnsPitch) {
+        if (!targetMatches(target) ||
+            projectRevision() != target.projectRevision) {
+            result.status = SequencerStepPresetStatus::STALE_TARGET;
+            return result;
+        }
+        (void)applyPreparedDrumPreset(*state_, target, *preset, result);
+        return result;
+    }
 
     auto change =
         core::app::makeExtmemUnique<core::state::sequencer::SequencerHistoryPatternChange>();

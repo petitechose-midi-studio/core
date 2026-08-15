@@ -40,6 +40,7 @@ FLASHMEM void SequencerPageClipboard::reset() {
 FLASHMEM void SequencerStepsClipboard::reset() {
     valid = false;
     rootContext = true;
+    drumContext = false;
     count = 0;
     span = 0;
     entries = {};
@@ -170,6 +171,9 @@ FLASHMEM void releaseOwnedPayloads(core::state::StructureClipboardState& clipboa
     clipboard.macroModulationAssignment.reset();
     clipboard.sequencerGraph.reset();
     clipboard.sequencerCcLanes.reset();
+    clipboard.sequencerDrumTrack.reset();
+    clipboard.sequencerDrumLaneSelectionMask = 0U;
+    clipboard.sequencerDrumLaneSelectionCount = 0U;
     clipboard.sequencerTrackSelection.reset();
     clipboard.macroPageSelection.reset();
     clipboard.sequencerTrackSource =
@@ -667,16 +671,26 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrack(
     const core::state::sequencer::SequencerPatternSnapshot& track,
     const oc::note::sequencer::StepSequencerGraph* graph,
     uint8_t sourceTrack,
-    const core::state::sequencer::SequencerCcLaneBank* ccLanes
+    const core::state::sequencer::SequencerCcLaneBank* ccLanes,
+    const core::state::sequencer::DrumTrackState* drumTrack
 ) {
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
     core::state::sequencer::SequencerCcLaneBankPtr ccLaneCopy;
+    core::app::ExtmemUniquePtr<
+        core::state::sequencer::DrumTrackState
+    > drumTrackCopy;
     if (!cloneSequencerGraph(graphCopy, graph) ||
         !core::state::sequencer::cloneSequencerCcLaneBank(
             ccLaneCopy,
             ccLanes
         )) {
         return false;
+    }
+    if (drumTrack != nullptr) {
+        drumTrackCopy = core::app::makeExtmemUnique<
+            core::state::sequencer::DrumTrackState
+        >(*drumTrack);
+        if (!drumTrackCopy) return false;
     }
 
     releaseOwnedPayloads(*this);
@@ -686,6 +700,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrack(
         : core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     sequencerGraph = std::move(graphCopy);
     sequencerCcLanes = std::move(ccLaneCopy);
+    sequencerDrumTrack = std::move(drumTrackCopy);
     commitClipboardKind(*this, StructureClipboardKind::SEQUENCER_TRACK);
     return true;
 }
@@ -751,6 +766,76 @@ FLASHMEM bool StructureClipboardState::storeSequencerPageSelection(
     commitClipboardKind(
         *this,
         StructureClipboardKind::SEQUENCER_PAGE_SELECTION
+    );
+    return true;
+}
+
+FLASHMEM bool StructureClipboardState::storeSequencerDrumLaneSelection(
+    const core::state::sequencer::DrumTrackState& source,
+    uint16_t selectedMask,
+    const oc::note::sequencer::StepSequencerGraph* graph
+) {
+    const uint8_t laneCount = source.kit.laneCount >
+            core::state::sequencer::DRUM_MAX_LANES
+        ? core::state::sequencer::DRUM_MAX_LANES
+        : source.kit.laneCount;
+    const uint16_t activeMask = laneCount >= 16U
+        ? 0xFFFFU
+        : static_cast<uint16_t>((uint16_t{1U} << laneCount) - 1U);
+    selectedMask = static_cast<uint16_t>(selectedMask & activeMask);
+    if (selectedMask == 0U) return false;
+
+    auto content = core::app::makeExtmemUnique<
+        core::state::sequencer::DrumTrackState
+    >();
+    if (!content) return false;
+    content->reset(core::state::sequencer::DrumKitPreset::EMPTY);
+    content->kit.laneCount = laneCount;
+
+    uint8_t selectedCount = 0U;
+    bool advancedContent = false;
+    for (uint8_t lane = 0U; lane < laneCount; ++lane) {
+        if ((selectedMask & static_cast<uint16_t>(1U << lane)) == 0U) {
+            continue;
+        }
+        ++selectedCount;
+        content->pattern.lanes[lane] = source.pattern.lanes[lane];
+        for (uint8_t step = 0U;
+             step < core::state::sequencer::DRUM_MAX_STEPS;
+             ++step) {
+            const int16_t slot = source.advancedRootSlot(lane, step);
+            if (slot < 0) continue;
+            if (graph == nullptr ||
+                !core::state::sequencer::inspectSequencerGraphPayload(
+                    *graph,
+                    core::state::sequencer::rootStepNodeId(
+                        static_cast<uint8_t>(slot)
+                    ),
+                    0U
+                ).ok()) {
+                return false;
+            }
+            content->advancedStepKeys[static_cast<uint8_t>(slot)] =
+                source.advancedStepKeys[static_cast<uint8_t>(slot)];
+            advancedContent = true;
+        }
+    }
+
+    core::app::ExtmemUniquePtr<
+        oc::note::sequencer::StepSequencerGraph
+    > graphCopy;
+    if (advancedContent && !cloneSequencerGraph(graphCopy, graph)) {
+        return false;
+    }
+
+    releaseOwnedPayloads(*this);
+    sequencerDrumTrack = std::move(content);
+    sequencerGraph = std::move(graphCopy);
+    sequencerDrumLaneSelectionMask = selectedMask;
+    sequencerDrumLaneSelectionCount = selectedCount;
+    commitClipboardKind(
+        *this,
+        StructureClipboardKind::SEQUENCER_DRUM_LANE_SELECTION
     );
     return true;
 }

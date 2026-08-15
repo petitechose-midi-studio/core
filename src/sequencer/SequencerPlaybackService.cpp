@@ -6,6 +6,7 @@
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/note/clock/ClockConstants.hpp>
 
+#include "config/TimeCompat.hpp"
 #include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "sequencer/SequencerRuntimeSnapshotBank.hpp"
@@ -26,6 +27,25 @@ int16_t projectTrackDelayMs(
     uint8_t track
 ) {
     return projectTracks.delayMs[track];
+}
+
+uint8_t extrapolatedDrumLanePhaseQ8(
+    const DrumPlaybackTelemetry& telemetry,
+    uint8_t lane,
+    uint32_t nowUs
+) {
+    if (lane >= telemetry.laneTicksPerStep.size()) return 0U;
+    const uint8_t ticksPerStep = std::max<uint8_t>(
+        1U,
+        telemetry.laneTicksPerStep[lane]
+    );
+    return projectPlaybackPhaseQ8(
+        static_cast<uint16_t>(telemetry.transportTick % ticksPerStep),
+        ticksPerStep,
+        telemetry.tickAnchorUs,
+        nowUs == 0U ? 0U : telemetry.tickPeriodUs,
+        nowUs
+    );
 }
 
 uint16_t projectTrackEnabledMask(
@@ -104,6 +124,9 @@ void SequencerPlaybackService::handleActiveTrackSwitch_() {
 
     last_playhead_ = activeRuntimeState_().playheadStep;
     last_active_track_ = activeTrack;
+    if (drum_resolved_projection_cache_) {
+        drum_resolved_projection_cache_->invalidate();
+    }
 }
 
 FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
@@ -127,12 +150,17 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     , cc_temporal_scratch_(
           core::app::makeExtmemUnique<SequencerCcTemporalRuntimeScratch>()
       )
+    , drum_resolved_projection_cache_(
+          core::app::makeExtmemUnique<
+              SequencerDrumResolvedProjectionCache>()
+      )
 {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         track_event_sinks_[i].emplace(midiQueue, i, &note_activity_observer_);
         track_engines_[i].emplace(track_runtime_states_[i], *track_event_sinks_[i]);
+        drum_track_engines_[i].emplace(*track_event_sinks_[i]);
     }
-    publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
+    publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
 }
 
 void SequencerPlaybackService::update(
@@ -145,14 +173,22 @@ void SequencerPlaybackService::update(
     bool publishRuntimeState,
     const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot,
     bool allowPredictiveLookahead
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    , const core::state::sequencer::DrumPatternRuntimeSnapshot*
-          drumPrototypeSnapshot
-    , uint8_t drumPrototypeTrack
-#endif
+    , const SequencerDrumRuntimeProjectSnapshot* drumSnapshot
 ) {
     OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
     OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
+    const bool phaseClockValid = playing && tickPeriodUs != 0U && nowUs != 0U;
+    if (phaseClockValid) {
+        if (!runtime_tick_anchor_valid_ ||
+            runtime_transport_tick_ != tick ||
+            runtime_tick_period_us_ != tickPeriodUs) {
+            runtime_tick_anchor_us_ = nowUs;
+        }
+        runtime_transport_tick_ = tick;
+        runtime_tick_anchor_valid_ = true;
+    } else {
+        runtime_tick_anchor_valid_ = false;
+    }
     for (uint8_t track = 0U; track < track_event_sinks_.size(); ++track) {
         auto& sink = track_event_sinks_[track];
         if (sink) {
@@ -198,6 +234,9 @@ void SequencerPlaybackService::update(
         tickPeriodUs,
         allowPredictiveLookahead
     );
+    runtime_drum_mask_ = drumSnapshot != nullptr
+        ? drumSnapshot->presentMask
+        : 0U;
 
     handleActiveTrackSwitch_();
     if (!playing) {
@@ -206,14 +245,14 @@ void SequencerPlaybackService::update(
                 trackEngine->update(tick, false);
             }
         }
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-        if (drum_prototype_engine_) {
-            drum_prototype_engine_->update(tick, false);
+        for (auto& drumEngine : drum_track_engines_) {
+            if (drumEngine) {
+                drumEngine->update(tick, false);
+            }
         }
-#endif
         last_playhead_ = -1;
         if (publishRuntimeState) {
-            publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
+            publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
         }
         return;
     }
@@ -225,35 +264,25 @@ void SequencerPlaybackService::update(
         const bool trackPlaying =
             (runtime_audible_mask_ & trackBit) != 0 &&
             track_runtime_states_[i].midiChannel <= 15U;
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-        const bool prototypeDrumTrack =
-            drumPrototypeSnapshot != nullptr &&
-            drumPrototypeTrack == i;
-        if (prototypeDrumTrack) {
+        const auto* drumPattern = drumSnapshot != nullptr
+            ? drumSnapshot->patternForTrack(i)
+            : nullptr;
+        auto& drumEngine = drum_track_engines_[i];
+        if (drumPattern != nullptr && drumEngine) {
             // Retire the mutually exclusive melodic engine before the Drum
             // scheduler owns this Track's active-note set.
             trackEngine->update(tick, false);
-            if (!drum_prototype_engine_ || drum_prototype_track_ != i) {
-                if (drum_prototype_engine_) {
-                    drum_prototype_engine_->update(tick, false);
-                }
-                drum_prototype_engine_.reset();
-                drum_prototype_engine_.emplace(*track_event_sinks_[i]);
-                drum_prototype_track_ = i;
-            }
-            drum_prototype_engine_->setPattern(
-                drumPrototypeSnapshot,
+            drumEngine->setPattern(
+                drumPattern,
+                runtime_graph_bank_.graphForTrack(i),
                 projectTrackChannel(projectTracks, i)
             );
-            drum_prototype_engine_->update(tick, trackPlaying);
+            drumEngine->update(tick, trackPlaying, nowUs, tickPeriodUs);
             continue;
         }
-        if (drum_prototype_engine_ && drum_prototype_track_ == i) {
-            drum_prototype_engine_->update(tick, false);
-            drum_prototype_engine_.reset();
-            drum_prototype_track_ = TRACK_COUNT;
+        if (drumEngine) {
+            drumEngine->update(tick, false);
         }
-#endif
         const int32_t deadlineOffsetUs = projectTrackDeadlineOffsetUs(
             projectTracks,
             i,
@@ -303,7 +332,7 @@ void SequencerPlaybackService::update(
     }
 
     if (publishRuntimeState) {
-        publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
+        publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
     }
 
     const auto& activeRuntime = activeRuntimeState_();
@@ -318,19 +347,26 @@ void SequencerPlaybackService::update(
 }
 
 FLASHMEM void SequencerPlaybackService::stopTrack(uint8_t trackIndex) {
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (drum_prototype_engine_ && drum_prototype_track_ == trackIndex) {
-        drum_prototype_engine_->reset();
+    if (trackIndex < drum_track_engines_.size() &&
+        drum_track_engines_[trackIndex]) {
+        drum_track_engines_[trackIndex]->reset();
     }
-#endif
+    if (trackIndex == runtime_active_track_ &&
+        drum_resolved_projection_cache_) {
+        drum_resolved_projection_cache_->invalidate();
+    }
     if (trackIndex >= track_engines_.size() || !track_engines_[trackIndex]) return;
     track_engines_[trackIndex]->reset();
 }
 
 FLASHMEM void SequencerPlaybackService::completeStop() {
-    publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
+    runtime_tick_anchor_valid_ = false;
+    publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
     last_playhead_ = -1;
     pending_ui_projection_.reset();
+    if (drum_resolved_projection_cache_) {
+        drum_resolved_projection_cache_->invalidate();
+    }
 }
 
 void SequencerPlaybackService::markCcTransportStopped() {
@@ -831,13 +867,16 @@ FLASHMEM void SequencerPlaybackService::publishUiProjection(const UiProjectionSn
         if (velocity == 0) continue;
         status_bar_.pulseTrackNote(track, velocity, nowMs);
     }
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    sequencer_.drumTrackUxPrototype.publishPlayback(
+    sequencer_.drumSequencer.publishPlayback(
         projection.drumLaneSteps,
+        projection.drumLanePhaseQ8,
         projection.drumLaneValidMask,
+        projection.drumLaneDecisionSteps,
+        projection.drumLaneDecisionValidMask,
+        projection.drumLaneDecisionPlayedMask,
+        projection.drumResolvedPage,
         projection.drumPlaying
     );
-#endif
 }
 
 FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService::takeUiProjectionSnapshot() {
@@ -847,14 +886,51 @@ FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService
         .beatPulse = pending_ui_projection_.beatPulse,
         .trackVelocity = pending_ui_projection_.trackVelocity,
     };
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    if (drum_prototype_engine_) {
-        const auto& telemetry = drum_prototype_engine_->telemetry();
+    const uint16_t activeTrackBit = static_cast<uint16_t>(
+        1U << runtime_active_track_);
+    if ((runtime_drum_mask_ & activeTrackBit) != 0U &&
+        drum_track_engines_[runtime_active_track_]) {
+        const auto& telemetry =
+            drum_track_engines_[runtime_active_track_]->telemetry();
         snapshot.drumLaneSteps = telemetry.laneSteps;
+        const uint32_t nowUs = core::time_compat::micros();
+        for (uint8_t lane = 0U; lane < snapshot.drumLanePhaseQ8.size(); ++lane) {
+            snapshot.drumLanePhaseQ8[lane] = extrapolatedDrumLanePhaseQ8(
+                telemetry,
+                lane,
+                nowUs
+            );
+        }
+        snapshot.drumLaneDecisionSteps = telemetry.laneDecisionSteps;
         snapshot.drumLaneValidMask = telemetry.laneValidMask;
+        snapshot.drumLaneDecisionValidMask = telemetry.laneDecisionValidMask;
+        snapshot.drumLaneDecisionPlayedMask = telemetry.laneDecisionPlayedMask;
+        const auto& drumUi = sequencer_.drumSequencer;
+        const bool previewRequested = drumUi.gridVisible() &&
+            drumUi.targetTrack == runtime_active_track_;
+        if (drum_resolved_projection_cache_ && previewRequested) {
+            auto& cache = *drum_resolved_projection_cache_;
+            const auto signature =
+                drum_track_engines_[runtime_active_track_]
+                    ->captureResolvedPageSignature(
+                        drumUi.page,
+                        drumUi.laneWindowStart
+                    );
+            if (!cache.valid || !cache.signature.matches(signature)) {
+                drum_track_engines_[runtime_active_track_]
+                    ->buildResolvedPageProjection(
+                        signature,
+                        cache.projection
+                    );
+                cache.signature = signature;
+                cache.valid = true;
+            }
+            snapshot.drumResolvedPage = cache.projection;
+        } else if (drum_resolved_projection_cache_) {
+            drum_resolved_projection_cache_->invalidate();
+        }
         snapshot.drumPlaying = telemetry.playing;
     }
-#endif
     pending_ui_projection_.reset();
     return snapshot;
 }
@@ -865,7 +941,17 @@ SequencerPlaybackService::activeRuntimeState_() const {
 }
 
 SequencerRuntimeTelemetrySnapshot SequencerPlaybackService::copyActiveRuntimeTelemetry() const {
-    return captureRuntimeTelemetry(activeRuntimeState_());
+    auto telemetry = captureRuntimeTelemetry(activeRuntimeState_());
+    telemetry.playheadStepPhaseQ8 = telemetry.playheadStep < 0
+        ? 0U
+        : projectPlaybackPhaseQ8(
+              telemetry.playheadStepTickOffset,
+              telemetry.playheadStepTicks,
+              runtime_tick_anchor_us_,
+              runtime_tick_anchor_valid_ ? runtime_tick_period_us_ : 0U,
+              core::time_compat::micros()
+          );
+    return telemetry;
 }
 
 }  // namespace core::sequencer

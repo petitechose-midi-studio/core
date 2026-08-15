@@ -1,6 +1,5 @@
 #include "state/DeviceSettingsState.hpp"
 #include "state/PatternPitchSettingsState.hpp"
-#include "state/SequencerSettingsState.hpp"
 
 #include <config/PlatformCompat.hpp>
 
@@ -44,42 +43,6 @@ FLASHMEM void DeviceSettingsState::closeSelector() {
     selector.reset();
     flowPhase.set(visible.get() ? DeviceSettingsFlowPhase::VIEW
                                 : DeviceSettingsFlowPhase::CLOSED);
-}
-
-FLASHMEM void SequencerSettingsValueSelectorState::reset() {
-    visible.set(false);
-    editingRow.set(0);
-    selectedIndex.set(0);
-}
-
-FLASHMEM void SequencerSettingsState::reset() {
-    visible.set(false);
-    focusedRow.set(0);
-    flowPhase.set(SequencerSettingsFlowPhase::CLOSED);
-    selector.reset();
-}
-
-FLASHMEM void SequencerSettingsState::openOverlay() {
-    reset();
-    visible.set(true);
-    flowPhase.set(SequencerSettingsFlowPhase::OVERLAY);
-}
-
-FLASHMEM void SequencerSettingsState::closeOverlay() {
-    reset();
-}
-
-FLASHMEM void SequencerSettingsState::openSelector(uint8_t row, int selected) {
-    selector.editingRow.set(row);
-    selector.selectedIndex.set(selected);
-    selector.visible.set(true);
-    flowPhase.set(SequencerSettingsFlowPhase::VALUE_SELECTOR);
-}
-
-FLASHMEM void SequencerSettingsState::closeSelector() {
-    selector.reset();
-    flowPhase.set(visible.get() ? SequencerSettingsFlowPhase::OVERLAY
-                                : SequencerSettingsFlowPhase::CLOSED);
 }
 
 FLASHMEM void PatternPitchSettingsValueSelectorState::reset() {

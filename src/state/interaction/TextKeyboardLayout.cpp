@@ -1,14 +1,15 @@
-#include "state/project/ProjectNameKeyboard.hpp"
+#include "state/interaction/TextKeyboardLayout.hpp"
 
 #include <array>
+#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
-namespace core::state::project {
+namespace core::state::interaction {
 
 namespace {
 
-constexpr std::array<ProjectNameKeyboardCell, PROJECT_NAME_KEYBOARD_CELL_COUNT> CELLS PROGMEM{{
+constexpr std::array<TextKeyboardCell, TEXT_KEYBOARD_CELL_COUNT> CELLS PROGMEM{{
     {"1", '1', 0, 0, 1},
     {"2", '2', 0, 1, 1},
     {"3", '3', 0, 2, 1},
@@ -54,14 +55,14 @@ constexpr std::array<ProjectNameKeyboardCell, PROJECT_NAME_KEYBOARD_CELL_COUNT> 
 }};
 
 FLASHMEM uint8_t clampIndex(uint8_t index) {
-    return index < CELLS.size() ? index : PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    return index < CELLS.size() ? index : TEXT_KEYBOARD_DEFAULT_INDEX;
 }
 
 FLASHMEM uint8_t rowStart(uint8_t row) {
     for (uint8_t i = 0; i < CELLS.size(); ++i) {
         if (CELLS[i].row == row) return i;
     }
-    return PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    return TEXT_KEYBOARD_DEFAULT_INDEX;
 }
 
 FLASHMEM uint8_t nearestInRow(uint8_t row, uint8_t targetColumn) {
@@ -82,15 +83,23 @@ FLASHMEM uint8_t nearestInRow(uint8_t row, uint8_t targetColumn) {
 
 }  // namespace
 
-FLASHMEM const ProjectNameKeyboardCell& projectNameKeyboardCellAt(uint8_t index) {
+FLASHMEM const TextKeyboardCell& textKeyboardCellAt(uint8_t index) {
     return CELLS[clampIndex(index)];
 }
 
-FLASHMEM uint8_t projectNameKeyboardCellCount() {
+FLASHMEM char textKeyboardCharacterAt(uint8_t index, bool shiftActive) {
+    char character = textKeyboardCellAt(index).character;
+    if (shiftActive && character >= 'a' && character <= 'z') {
+        character = static_cast<char>(character - 'a' + 'A');
+    }
+    return character;
+}
+
+FLASHMEM uint8_t textKeyboardCellCount() {
     return static_cast<uint8_t>(CELLS.size());
 }
 
-FLASHMEM uint8_t projectNameKeyboardMoveColumn(uint8_t currentIndex, int delta) {
+FLASHMEM uint8_t textKeyboardMoveColumn(uint8_t currentIndex, int delta) {
     if (delta == 0) return clampIndex(currentIndex);
     const uint8_t current = clampIndex(currentIndex);
     int next = static_cast<int>(current) + delta;
@@ -100,13 +109,40 @@ FLASHMEM uint8_t projectNameKeyboardMoveColumn(uint8_t currentIndex, int delta) 
     return static_cast<uint8_t>(next);
 }
 
-FLASHMEM uint8_t projectNameKeyboardMoveRow(uint8_t currentIndex, int delta) {
+FLASHMEM uint8_t textKeyboardMoveRow(uint8_t currentIndex, int delta) {
     if (delta == 0) return clampIndex(currentIndex);
     const uint8_t current = clampIndex(currentIndex);
     int nextRow = static_cast<int>(CELLS[current].row) + delta;
-    while (nextRow < 0) nextRow += PROJECT_NAME_KEYBOARD_ROW_COUNT;
-    nextRow %= PROJECT_NAME_KEYBOARD_ROW_COUNT;
+    while (nextRow < 0) nextRow += TEXT_KEYBOARD_ROW_COUNT;
+    nextRow %= TEXT_KEYBOARD_ROW_COUNT;
     return nearestInRow(static_cast<uint8_t>(nextRow), CELLS[current].column);
 }
 
-}  // namespace core::state::project
+FLASHMEM bool textKeyboardAppend(
+    char* buffer,
+    size_t capacity,
+    char character
+) {
+    if (!buffer || capacity < 2U || character == '\0') return false;
+    const size_t length = std::strlen(buffer);
+    if (length >= capacity - 1U) return false;
+    buffer[length] = character;
+    buffer[length + 1U] = '\0';
+    return true;
+}
+
+FLASHMEM bool textKeyboardBackspace(char* buffer) {
+    if (!buffer) return false;
+    const size_t length = std::strlen(buffer);
+    if (length == 0U) return false;
+    buffer[length - 1U] = '\0';
+    return true;
+}
+
+FLASHMEM bool textKeyboardClear(char* buffer) {
+    if (!buffer || buffer[0] == '\0') return false;
+    buffer[0] = '\0';
+    return true;
+}
+
+}  // namespace core::state::interaction

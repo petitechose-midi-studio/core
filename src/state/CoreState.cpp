@@ -149,7 +149,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
       trackNavigation(systemUi_->trackNavigation),
       structureClipboard(systemUi_->structureClipboard), viewSelector(systemUi_->viewSelector),
       statusBar(systemUi_->statusBar), midiSync(systemUi_->midiSync),
-      deviceSettings(systemUi_->deviceSettings), sequencerSettings(systemUi_->sequencerSettings),
+      deviceSettings(systemUi_->deviceSettings),
       patternPitchSettings(systemUi_->patternPitchSettings), macroEdit(systemUi_->macroEdit),
       macroUi(systemUi_->macroUi), projectNavigation(systemUi_->projectNavigation),
       projectTrackEditor(systemUi_->projectTrackEditor) {
@@ -188,6 +188,7 @@ FLASHMEM void CoreState::resetStandaloneTransientUi() {
         // The departing context cannot recover this transient owner. Keep the
         // published Pattern authoritative and preserve committed undo entries.
         sequencerDomain_.coalescedPatternHistory.clear();
+        sequencerDomain_.coalescedDrumHistory.clear();
     }
     CoreStateLifecycle::resetStandaloneTransientUi(*this);
 }

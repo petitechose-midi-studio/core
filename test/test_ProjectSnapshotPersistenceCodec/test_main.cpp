@@ -16,6 +16,8 @@
 #include "persistence/ProjectTrackStatePersistenceCodec.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 #include "state/project/ProjectTrackState.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace {
 
@@ -23,6 +25,7 @@ namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
 namespace snapshot_codec = core::persistence::project_snapshot_codec;
 namespace track_codec = core::persistence::project_track_codec;
+namespace sequencer = core::state::sequencer;
 
 using ProjectBytes = std::array<uint8_t, core::persistence::PROJECT_FILE_MAX_SIZE>;
 
@@ -90,6 +93,64 @@ project::ProjectSnapshot makeSnapshot() {
     snapshot.sequencer.flat.activeTrack = snapshot.sharedTrackActive;
     snapshot.sequencer.flat.tracks[6].note[0] = 64U;
     snapshot.sequencer.flat.tracks[6].velocity[0] = 103U;
+    snapshot.drumTracks = core::app::makeExtmemUnique<
+        core::state::sequencer::DrumTrackBankSnapshot>();
+    assert(snapshot.drumTracks);
+    for (auto& track : snapshot.drumTracks->tracks) track.reset();
+    snapshot.drumTracks->drumTrackMask = static_cast<uint16_t>(1U << 6U);
+    auto& drum = snapshot.drumTracks->tracks[6U];
+    assert(drum.pattern.setStepEnabled(1U, 3U, true));
+    assert(drum.pattern.setStepVelocity(1U, 3U, 111U));
+    assert(drum.pattern.setLaneTimingCustom(1U, 7U, 2U));
+
+    // One Drum hit owns Graph root slot 0. Persist a nested Micro -> Cycle
+    // payload so the Project round-trip covers both the cold lane mapping and
+    // the Graph owned by the active sequencer Track.
+    sequencer::SequencerState advanced{};
+    assert(advanced.setStepDataAt(0U, 64U, 103U, 100U, 0, 100U));
+    const auto root = sequencer::rootStepNodeId(0U);
+    const auto micro = sequencer::createMicroSequence(
+        advanced.pattern,
+        root,
+        3U
+    );
+    assert(micro.ok);
+    const auto* graph = sequencer::graphView(advanced.pattern);
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    const auto microNode = static_cast<sequencer::SequencerGraphNodeId>(
+        sequence->firstStepNode + 1U
+    );
+    assert(sequencer::setNodeVelocityOffset(
+        advanced.pattern,
+        microNode,
+        -23
+    ));
+    const auto cycle = sequencer::createCycleStateSet(
+        advanced.pattern,
+        microNode,
+        2U
+    );
+    assert(cycle.ok);
+    graph = sequencer::graphView(advanced.pattern);
+    assert(graph != nullptr);
+    const auto* cycleSet = graph->cycleSet(cycle.id);
+    assert(cycleSet != nullptr);
+    const auto cycleNode = static_cast<sequencer::SequencerGraphNodeId>(
+        cycleSet->firstStateNode + 1U
+    );
+    assert(sequencer::setNodeGateOffset(
+        advanced.pattern,
+        cycleNode,
+        17
+    ));
+    assert(drum.bindAdvancedRootSlot(0U, 1U, 3U));
+    sequencer::captureSnapshot(
+        advanced.pattern,
+        snapshot.sequencer.flat.tracks[6U]
+    );
+    snapshot.sequencer.editorGraph = std::move(advanced.pattern.graph);
     return snapshot;
 }
 
@@ -228,6 +289,41 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     assert(loaded.sharedTrackActive == source.sharedTrackActive);
     assert(loaded.macroTracks[6].pages[2].cc[2] == 74U);
     assert(loaded.sequencer.flat.tracks[6].note[0] == 64U);
+    assert(loaded.drumTracks);
+    assert(loaded.drumTracks->drumTrackMask == static_cast<uint16_t>(1U << 6U));
+    assert(loaded.drumTracks->tracks[6U].pattern.stepEnabled(1U, 3U));
+    assert(loaded.drumTracks->tracks[6U].pattern.lanes[1U].velocity[3U] == 111U);
+    assert(loaded.drumTracks->tracks[6U].pattern.effectiveLength(1U) == 7U);
+    assert(loaded.drumTracks->tracks[6U].advancedRootSlot(1U, 3U) == 0);
+    assert(loaded.sequencer.editorGraph);
+    const auto* rootNode = loaded.sequencer.editorGraph->stepNode(
+        sequencer::rootStepNodeId(0U)
+    );
+    assert(rootNode != nullptr);
+    const auto* microSequence = loaded.sequencer.editorGraph->sequence(
+        rootNode->childSequenceId
+    );
+    assert(microSequence != nullptr);
+    assert(microSequence->length == 3U);
+    const auto* microNode = loaded.sequencer.editorGraph->stepNode(
+        static_cast<sequencer::SequencerGraphNodeId>(
+            microSequence->firstStepNode + 1U
+        )
+    );
+    assert(microNode != nullptr);
+    assert(microNode->velocityOffset == -23);
+    const auto* cycleSet = loaded.sequencer.editorGraph->cycleSet(
+        microNode->cycleSetId
+    );
+    assert(cycleSet != nullptr);
+    assert(cycleSet->length == 2U);
+    const auto* cycleNode = loaded.sequencer.editorGraph->stepNode(
+        static_cast<sequencer::SequencerGraphNodeId>(
+            cycleSet->firstStateNode + 1U
+        )
+    );
+    assert(cycleNode != nullptr);
+    assert(cycleNode->gateOffset == 17);
     assert(sameTracks(loaded.projectTracks, source.projectTracks));
 
     std::cout << "[PASS] current snapshot round-trip is deterministic\n";

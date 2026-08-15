@@ -1682,7 +1682,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (project_transactions, r"files\.projectReadWorkspace\s*\(\s*lease\s*\)", "Project load must borrow only read capability under its lease"),
         (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project save/cancel must revalidate write capability", 2),
         (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*8U", "Project file store must remain two references on ARM"),
-        (project_codec_source, r"sizeof\(Storage\)\s*==\s*436855U", "Project encode scratch must remain exactly 436,855 B"),
+        (project_codec_source, r"sizeof\(Storage\)\s*==\s*600295U", "Project encode scratch must remain exactly 600,295 B in cold PSRAM"),
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*52U", "session store must remain 52 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*280U", "RPC write session must remain 280 B on ARM"),
@@ -3250,8 +3250,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
         "executeSequencerCreateTrackStructure",
         r"\bexecuteDirect\s*\(\s*state\s*,\s*Action::SequencerCreate\s*,\s*"
-        r"TrackBank::TRACK_COUNT\s*\)",
-        "Create wrapper must route the frozen SequencerCreate action",
+        r"TrackBank::TRACK_COUNT\s*,\s*kind\s*,\s*drumPreset\s*\)",
+        "Create wrapper must route the frozen SequencerCreate action and typed Track intent",
     )
     require_in_function(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
@@ -4479,8 +4479,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"executeSequencerCreateTrackStructure\s*\(\s*\{\s*tracks_\s*,\s*"
         r"sequencer_\s*,\s*navigation_focus_\s*,\s*track_ui_\s*,\s*"
         r"structure_clipboard_\s*,\s*macro_pages_\s*,\s*\*track_activations_\s*,\s*"
-        r"shared_tracks_\s*,\s*history_\s*,\s*\}\s*\)",
-        "Track Create edit workflow must validate activation ownership and pass every intent source",
+        r"shared_tracks_\s*,\s*history_\s*,\s*\}\s*,\s*kind\s*,\s*drumPreset\s*\)",
+        "Track Create edit workflow must validate activation ownership and pass every state and typed intent source",
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
@@ -4492,9 +4492,21 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"outcome\.previewTarget.*?"
         r"if\s*\(\s*outcome\.previewAddSlot\s*\).*?"
         r"track_ui_\.previewAddSlot\.get\s*\(\s*\).*?"
-        r"edit_workflow_\.createPreviewedTrackStructure\s*\(\s*\)"
-        r"\.settled\s*\(\s*\)",
-        "Track Create binding must delegate without a duplicate Pattern barrier",
+        r"sequencer_\.drumSequencer\.openTypePicker\s*\(\s*"
+        r"outcome\.previewTarget\s*\)",
+        "Track Add release must validate its exact preview and open the typed Track picker",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::confirmDrumSequencerType",
+        r"drumUi\.typePickerVisible\s*\(\s*\)\s*&&\s*drum.*?"
+        r"drumUi\.openKitPicker\s*\(\s*\).*?"
+        r"edit_workflow_\.createPreviewedTrackStructure\s*\(\s*"
+        r"drum\s*\?\s*seq::SequencerTrackKind::DRUM\s*:\s*"
+        r"seq::SequencerTrackKind::INSTRUMENT\s*,\s*"
+        r"drumUi\.selectedKitPreset\s*\).*?"
+        r"if\s*\(\s*!result\.settled\s*\(\s*\)\s*\)\s*return",
+        "typed Track confirmation must route Drum through kit choice and settle only successful creation",
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
@@ -4502,6 +4514,14 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\bcommitPatternHistoryBarrier\s*\(",
         "context release must retain exactly one boundary for context changes only",
         count=1,
+    )
+    require(
+        SEQUENCER_STEP_HANDLER,
+        r"FLASHMEM\s+bool\s+commitPatternHistoryBarrier\s*\([^)]*\)\s*\{.*?"
+        r"sequencer\.stepContentDraft\.active\.get\s*\(\s*\)\s*&&\s*"
+        r"seq::isDrumContentView\s*\(\s*sequencer\s*\).*?return\s+true\s*;.*?"
+        r"history\.commitCoalescedPatternEditOutcome\s*\(\s*\)",
+        "Drum child draft navigation must not prematurely commit its prepared Drum history",
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
@@ -4765,7 +4785,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_across_files(
         r"\bsequencer\.stepEdit\.contextHold\.startedAtMs\b",
-        "Context hold progress topology must remain one observer plus three reads",
+        "Context hold progress topology must remain one observer, one diagnostic label and two projection reads",
         4,
     )
     for retired_selection_cancel_owner in (
@@ -4798,12 +4818,16 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require(
         SEQUENCER_VIEW_HEADER,
-        r"StaticWatchGroup\s*<\s*14\s*>\s+header_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*15\s*>\s+header_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+header_strip_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*42\s*>\s+grid_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*25\s*>\s+selector_overlay_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*23\s*>\s+bottom_action_strip_watcher_\s*;",
-        "Sequencer UI watcher capacities must retain the post-PageCreate compact locks",
+        r"StaticWatchGroup\s*<\s*2U\s*\*\s*"
+        r"core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT\s*>\s*"
+        r"structure_selection_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*45\s*>\s+grid_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*26\s*>\s+selector_overlay_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*11\s*>\s+left_action_strip_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*24\s*>\s+bottom_action_strip_watcher_\s*;",
+        "Sequencer UI watcher capacities must retain the shared selection and Drum UI locks",
     )
 
     require_in_type(
@@ -5111,13 +5135,17 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
 
     require(
         SEQUENCER_STEP_HANDLER,
-        r"return\s+sequencer_\.structureUi\.pageSelection\.active\.get\s*"
-        r"\(\s*\).*?SelectionAction::PASTE_SELECTION\s*;\s*\}\s*\)\s*"
+        r"const\s+bool\s+structureSelection\s*=\s*"
+        r"sequencer_\.drumSequencer\.laneSelection\.active\s*\|\|\s*"
+        r"sequencer_\.structureUi\.pageSelection\.active\.get\s*\(\s*\)\s*;\s*"
+        r"return\s+structureSelection\s*&&\s*"
+        r"selectionInteractionPolicy\s*\(\s*\)\.bottomRightLongPress\s*==\s*"
+        r"SelectionAction::PASTE_SELECTION\s*;\s*\}\s*\)\s*"
         r"\.then\s*\(\s*\[this\]\s*\(\s*\)\s*\{\s*"
         r"bottom_action_release_latch_\.arm\s*\(\s*"
         r"Config::ButtonID::BOTTOM_RIGHT\s*\)\s*;.*?#endif\s*"
         r"edit_workflow_\.pasteStructureSelection\s*\(\s*\)\s*;",
-        "Page-selection BottomRight must latch then delegate without an old barrier",
+        "Page/Drum selection BottomRight must share one latched paste dispatch without an old barrier",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -5167,7 +5195,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\(\s*\)\s*\)\s*\{\s*"
         r"edit_workflow_\.applyLatchedTrackSelectionShortPress\s*\(\s*\)\s*;\s*"
         r"return\s*;\s*\}.*?"
-        r"commitPatternHistoryBarrier\s*\(\s*history_\s*\).*?"
+        r"commitPatternHistoryBarrier\s*\(\s*sequencer_\s*,\s*history_\s*\).*?"
         r"applySelectionBottomLeftTap\s*\(\s*\)",
         "selection BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
     )
@@ -5185,7 +5213,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\s*\{\s*edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*"
         r"return\s*;\s*\}.*?"
         r"if\s*\(\s*trackFocusActive\s*\(\s*\)\s*\).*?"
-        r"commitPatternHistoryBarrier\s*\(\s*history_\s*\).*?"
+        r"commitPatternHistoryBarrier\s*\(\s*sequencer_\s*,\s*history_\s*\).*?"
         r"applyCurrentStructureShortPress\s*\(\s*\)",
         "current BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
     )

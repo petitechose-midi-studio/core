@@ -41,7 +41,8 @@ NoteLabelPresentation buildNoteLabelPresentation(
     const TileRenderState& state,
     const visual::StepPropertyVisualSpec& propertyVisual,
     core::state::sequencer::StepProperty activeProperty,
-    const InlineFeedbackSnapshot& feedback
+    const InlineFeedbackSnapshot& feedback,
+    StepGridPresentation presentationMode
 ) {
     NoteLabelPresentation presentation;
 
@@ -60,10 +61,10 @@ NoteLabelPresentation buildNoteLabelPresentation(
 
     presentation.probabilityMasked = state.enabled && !state.probabilityCycleActive;
     presentation.showLabel =
-        state.childContentContext ||
         showRuntimeActiveProperty ||
         showRuntimePitch ||
-        isNoteMode ||
+        (isNoteMode && state.stepSelectionCursor) ||
+        (state.childContentContext && state.stepSelectionCursor) ||
         (isFeedbackStep && isFeedbackProperty);
     presentation.showInlineIcon =
         !state.childContentContext &&
@@ -79,6 +80,31 @@ NoteLabelPresentation buildNoteLabelPresentation(
             : showRuntimePitch
             ? core::state::sequencer::StepProperty::NOTE
             : displayPropertyForInlineLabelMode(propertyVisual.inlineLabelMode);
+    if (presentationMode == StepGridPresentation::MELODIC &&
+        presentation.displayProperty ==
+            core::state::sequencer::StepProperty::NOTE) {
+        // Pitch is already encoded by rail height. The exact note/degree lives
+        // in the focused header, leaving the musical surface unobstructed.
+        presentation.showLabel = false;
+        presentation.showInlineIcon = false;
+        presentation.showNoteStyle = false;
+        return presentation;
+    }
+    if (presentationMode == StepGridPresentation::DRUM_LANE) {
+        // Drum pitch is owned by the lane, so repeating it in every child tile
+        // adds noise and suggests a value that cannot be edited here. Scalar
+        // text is limited to the focused/touched tile; the retained geometry
+        // already communicates Velocity, Gate and Nudge across the grid.
+        presentation.showLabel =
+            presentation.displayProperty !=
+                core::state::sequencer::StepProperty::NOTE &&
+            (state.stepSelectionCursor ||
+             (isFeedbackStep && isFeedbackProperty));
+        presentation.showInlineIcon =
+            presentation.showLabel && propertyVisual.showInlineIcon;
+        presentation.showNoteStyle = false;
+        return presentation;
+    }
     presentation.showNoteStyle =
         presentation.displayProperty == core::state::sequencer::StepProperty::NOTE &&
         (isNoteMode || showRuntimePitch);

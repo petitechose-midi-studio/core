@@ -1,6 +1,7 @@
 #include "handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 
@@ -126,6 +127,9 @@ struct IntentToken {
     uint8_t activeTrack = TrackBank::TRACK_COUNT;
     uint8_t previewTrack = TrackBank::TRACK_COUNT;
     uint8_t pagePreview = 0U;
+    // Immutable creation payload, deliberately excluded from the live UI
+    // intent comparison. 0xFF denotes Instrument; Drum encodes its preset.
+    uint8_t createDrumPreset = 0xFFU;
     bool previewAddTrack = false;
     SelectionIntentToken trackSelection{};
     SelectionIntentToken pageSelection{};
@@ -512,6 +516,42 @@ FLASHMEM bool revalidate(
                canReconcilePreparedSequencerActiveTrackPresentation();
 }
 
+FLASHMEM bool prepareSequencerAfter(
+    const void* opaque,
+    const Plan& plan,
+    core::state::sequencer::SequencerHistoryTrackStructureChange& change
+) noexcept {
+    if (opaque == nullptr) return false;
+    const auto& context = *static_cast<const DirectContext*>(opaque);
+    if (plan.action != Action::SequencerCreate) return true;
+    if (plan.targetTrack >= TrackBank::TRACK_COUNT) return false;
+
+    const uint16_t targetBit = core::state::shared::slotBit(
+        plan.targetTrack
+    );
+    auto& after = change.after;
+    after.drumTracks[plan.targetTrack].reset();
+    after.drumTrackMask = static_cast<uint16_t>(
+        after.drumTrackMask & static_cast<uint16_t>(~targetBit)
+    );
+    if (context.token.createDrumPreset == 0xFFU) {
+        return true;
+    }
+
+    auto drum = core::app::makeExtmemUnique<
+        core::state::sequencer::DrumTrackState
+    >();
+    if (!drum) return false;
+    drum->reset(static_cast<core::state::sequencer::DrumKitPreset>(
+        context.token.createDrumPreset
+    ));
+    after.drumTracks[plan.targetTrack] = std::move(drum);
+    after.drumTrackMask = static_cast<uint16_t>(
+        after.drumTrackMask | targetBit
+    );
+    return true;
+}
+
 FLASHMEM void reconcileCommitted(
     void* opaque,
     const Plan& plan,
@@ -547,6 +587,7 @@ const SequencerPreparedTrackStructureExecution::Operations
     kDirectOperations{
         .buildPlan = buildPlan,
         .prepareMacroAfter = nullptr,
+        .prepareSequencerAfter = prepareSequencerAfter,
         .revalidate = revalidate,
         .reconcileCommitted = reconcileCommitted,
         .settleNoChange = nullptr,
@@ -556,7 +597,11 @@ const SequencerPreparedTrackStructureExecution::Operations
 FLASHMEM Result executeDirect(
     const SequencerDirectTrackStructureStateRefs& state,
     Action action,
-    uint8_t latchedTargetTrack
+    uint8_t latchedTargetTrack,
+    core::state::sequencer::SequencerTrackKind createKind =
+        core::state::sequencer::SequencerTrackKind::INSTRUMENT,
+    core::state::sequencer::DrumKitPreset drumPreset =
+        core::state::sequencer::DrumKitPreset::GENERAL_MIDI
 ) {
     // Draft owns Track transition priority even when another dispatch token or
     // publication capability is also invalid. Mirror the kernel's first gate
@@ -577,10 +622,12 @@ FLASHMEM Result executeDirect(
             canReconcilePreparedSequencerActiveTrackPresentation()) {
         return {Status::PublicationUnavailable, {}};
     }
-    DirectContext context{
-        state,
-        captureIntent(state, action, latchedTargetTrack),
-    };
+    auto intent = captureIntent(state, action, latchedTargetTrack);
+    if (action == Action::SequencerCreate && createKind ==
+            core::state::sequencer::SequencerTrackKind::DRUM) {
+        intent.createDrumPreset = static_cast<uint8_t>(drumPreset);
+    }
+    DirectContext context{state, intent};
     if (!validIntent(context, action)) {
         return {
             action != Action::SequencerCreate
@@ -616,12 +663,16 @@ FLASHMEM Result executeDirect(
 }  // namespace
 
 FLASHMEM Result executeSequencerCreateTrackStructure(
-    SequencerDirectTrackStructureStateRefs state
+    SequencerDirectTrackStructureStateRefs state,
+    core::state::sequencer::SequencerTrackKind kind,
+    core::state::sequencer::DrumKitPreset drumPreset
 ) {
     return executeDirect(
         state,
         Action::SequencerCreate,
-        TrackBank::TRACK_COUNT
+        TrackBank::TRACK_COUNT,
+        kind,
+        drumPreset
     );
 }
 

@@ -19,7 +19,7 @@ namespace {
 // continuously enqueue session saves.
 constexpr uint32_t MACRO_VALUE_PROJECT_SAVE_DELAY_MS = 5000;
 constexpr uint32_t SEQUENCER_PROJECT_SAVE_DELAY_MS = 300;
-constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 15;
+constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 16;
 
 [[noreturn]] FLASHMEM void failSequencerCoalescerSetup() {
     OC_LOG_ERROR("{}", "[CoreState] Sequencer mutation coalescer setup failed");
@@ -61,6 +61,7 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
     coalescer.watch(state.sequencer.pattern.patternTimingRevision);
     coalescer.watch(state.sequencer.pattern.swingOffsetPercent);
     coalescer.watch(state.sequencer.pattern.patternNudgePercent);
+    coalescer.watch(state.sequencerTracks.drumRevisionSignal());
     // Project Track channel/mute mirrors are intentionally absent: their
     // canonical service already publishes dirty and runtime revisions once at
     // gesture commit. Watching the projected mirrors would duplicate it.
@@ -87,6 +88,10 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
         state.projectTrackEditor
     );
     state.overlays.registerItem(
+        core::ui::OverlayType::SEQ_DRUM_LANE_EDIT,
+        state.sequencer.drumSequencer.laneEditor
+    );
+    state.overlays.registerItem(
         core::ui::OverlayType::PRESET_LIBRARY,
         state.sequencer.presetLibrary.visible
     );
@@ -98,8 +103,6 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
         core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
         state.deviceSettings.selector.visible
     );
-    state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS, state.sequencerSettings.visible);
-    state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR, state.sequencerSettings.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, state.patternPitchSettings.visible);
     state.overlays.registerItem(core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR, state.patternPitchSettings.selector.visible);
 }

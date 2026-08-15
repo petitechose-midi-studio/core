@@ -182,13 +182,13 @@ FLASHMEM const char* label(Field field) {
 FLASHMEM const char* icon(Field field) {
     switch (field) {
         case Field::SHAPE:
-            return ::standalone::icons::CHORD_PROP_HARMONY;
+            return ::standalone::icons::CHORD_PROP_COLOR;
         case Field::FORMULA:
             return ::standalone::icons::SCALE;
         case Field::INVERSION:
-            return ::standalone::icons::CHORD_PROP_INVERSION;
+            return ::standalone::icons::CHORD_PROP_SHAPE;
         case Field::VOICING:
-            return ::standalone::icons::CHORD_PROP_VOICING;
+            return ::standalone::icons::DIVISION;
         case Field::STRUM:
             return ::standalone::icons::SWING;
         case Field::VELOCITY_CONTOUR:

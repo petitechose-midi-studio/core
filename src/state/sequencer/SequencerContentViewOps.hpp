@@ -50,6 +50,10 @@ struct StepContentOpenResult {
 
 bool isRootContentView(const SequencerState& sequencer);
 bool isChildContentView(const SequencerState& sequencer);
+// Root-only ownership gate for specialized Drum rendering and bindings.
+// A Drum Track remains active while its Micro/Cycle child uses the common UI.
+bool isDrumOverviewActive(const SequencerState& sequencer);
+bool isDrumContentView(const SequencerState& sequencer);
 bool isMicroSequenceContentView(const SequencerState& sequencer);
 bool isCycleStatesContentView(const SequencerState& sequencer);
 uint8_t activeContentDepth(const SequencerState& sequencer);
@@ -89,6 +93,7 @@ struct SequencerContentPlaybackProjection {
     bool visible = false;
     bool active = false;
     uint8_t step = 0;
+    uint8_t progress = 0;
 };
 
 struct SequencerChildContentSummary {

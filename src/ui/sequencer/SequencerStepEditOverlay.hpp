@@ -9,6 +9,7 @@
 #include <oc/ui/lvgl/IWidget.hpp>
 
 #include "state/sequencer/SequencerStepEditRows.hpp"
+#include "ui/common/CompactMetricRow.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerChordVoiceRail.hpp"
 
@@ -19,6 +20,7 @@ struct SequencerStepEditPropertyChip {
     const char* value = "";
     const char* icon = "";
     uint32_t color = 0;
+    uint32_t valueColor = 0;
     bool active = true;
 };
 
@@ -27,6 +29,7 @@ struct SequencerStepEditActionChip {
     const char* value = "";
     const char* icon = "";
     uint32_t color = 0;
+    uint32_t valueColor = 0;
 };
 
 struct SequencerChordPreviewVoiceMarker {
@@ -79,6 +82,11 @@ enum class SequencerStepEditVisualSlot : uint8_t {
     AUTO = 255,
 };
 
+enum class SequencerStepEditPrimaryRowLayout : uint8_t {
+    EQUAL = 0,
+    PRIMARY_WIDE,
+};
+
 struct SequencerStepEditOverlayProps {
     static constexpr size_t PROPERTY_COUNT =
         core::state::sequencer::step_edit_rows::PROPERTIES.size();
@@ -90,22 +98,23 @@ struct SequencerStepEditOverlayProps {
     bool visible = false;
     const char* stepBadge = "";
     const char* title = "";
+    const char* context = "";
     const char* meta = "";
+    std::array<CompactMetricProps, 2> headerMetrics{};
     const char* focusLabel = "";
     bool titleCentered = false;
     bool focusLabelVisible = true;
+    SequencerStepEditPrimaryRowLayout primaryRowLayout =
+        SequencerStepEditPrimaryRowLayout::EQUAL;
     bool chordDetailLayout = false;
     bool chordFormulaLayout = false;
     bool chordSourceLayout = false;
     bool enabled = false;
-    bool microSequence = false;
-    bool cycleStates = false;
-    bool probabilityActive = false;
     bool actionsVisible = true;
     uint32_t dataRevision = 0;
     int selectedIndex = 0;
     SequencerStepEditVisualSlot selectedVisualSlot = SequencerStepEditVisualSlot::AUTO;
-    uint32_t focusColor = 0;
+    uint32_t stepBadgeColor = 0;
     uint32_t titleColor = 0;
     uint32_t metaColor = 0;
     SequencerStepEditPropertyChip state{};
@@ -125,6 +134,7 @@ public:
     SequencerStepEditOverlay& operator=(const SequencerStepEditOverlay&) = delete;
 
     void render(const SequencerStepEditOverlayProps& props);
+    void setContentVisible(bool visible);
 
     lv_obj_t* getElement() const override { return overlay_; }
 
@@ -171,7 +181,10 @@ private:
     lv_obj_t* summary_column_ = nullptr;
     lv_obj_t* step_badge_ = nullptr;
     lv_obj_t* title_ = nullptr;
+    lv_obj_t* title_separator_ = nullptr;
+    lv_obj_t* context_ = nullptr;
     lv_obj_t* meta_ = nullptr;
+    CompactMetricRow header_metric_row_{};
     lv_obj_t* focus_label_ = nullptr;
     lv_obj_t* chord_preview_ = nullptr;
     lv_obj_t* chord_preview_name_ = nullptr;
@@ -224,15 +237,20 @@ private:
     bool actions_visible_cache_ = true;
     bool title_centered_cache_ = false;
     bool focus_label_visible_cache_ = true;
+    SequencerStepEditPrimaryRowLayout primary_row_layout_cache_ =
+        SequencerStepEditPrimaryRowLayout::EQUAL;
     bool chord_detail_layout_cache_ = false;
     bool chord_formula_layout_cache_ = false;
     bool chord_source_layout_cache_ = false;
     SequencerStepEditVisualSlot selected_visual_slot_cache_ =
         SequencerStepEditVisualSlot::AUTO;
-    uint32_t focus_color_cache_ = 0;
     LabelRenderCache step_badge_cache_{};
+    uint32_t step_badge_color_cache_ = UINT32_MAX;
     LabelRenderCache title_cache_{};
+    LabelRenderCache context_cache_{};
     LabelRenderCache meta_cache_{};
+    bool context_visible_cache_ = false;
+    bool meta_visible_cache_ = true;
     LabelRenderCache focus_label_cache_{};
     LabelRenderCache chord_preview_name_cache_{};
     LabelRenderCache chord_preview_detail_cache_{};
@@ -251,5 +269,7 @@ private:
     std::array<ChipRenderCache, MUSICAL_PROPERTY_COUNT> property_cache_{};
     std::array<ChipRenderCache, ACTION_WIDGET_COUNT> action_cache_{};
 };
+
+static_assert(sizeof(SequencerStepEditPrimaryRowLayout) == 1U);
 
 }  // namespace core::ui

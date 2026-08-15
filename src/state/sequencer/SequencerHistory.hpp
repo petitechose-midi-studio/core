@@ -93,6 +93,7 @@ enum class SequencerHistoryScope : uint8_t {
     PatternOnly = 0,
     Structure,
     FullBank,
+    Drum,
 };
 
 enum class SequencerHistoryPatternStorage : uint8_t {
@@ -126,11 +127,10 @@ enum class SequencerPreparedPatternEditOwner : uint8_t {
     QuickControls,
 };
 
-// FullBank edit ownership remains typed across the handler facade so Project
-// navigation and the Settings modal can retain distinct boundary semantics.
+// FullBank edit ownership remains typed across the handler facade. Project is
+// now the sole authority for Project-scale mutation.
 enum class SequencerPreparedFullBankEditOwner : uint8_t {
     ProjectScale = 0,
-    SequencerSettingsScale,
 };
 
 using SequencerPreparedFullBankEditOutcome = SequencerHistoryGestureOutcome;
@@ -257,6 +257,14 @@ enum class SequencerHistoryActionKind : uint8_t {
     FullBank,
     // Appended so persisted/diagnostic identities of existing actions remain stable.
     PatternRandomize,
+    DrumStepToggle,
+    DrumStepPropertyEdit,
+    DrumLaneEdit,
+    DrumLaneStructure,
+    DrumPatternSettings,
+    DrumTrackKind,
+    DrumAdvancedContent,
+    DrumLaneContent,
 };
 
 struct SequencerHistoryDescriptor {
@@ -361,6 +369,51 @@ using SequencerHistoryFullBankChangePtr =
 using SequencerHistoryTrackStructureChangePtr =
     core::app::ExtmemUniquePtr<SequencerHistoryTrackStructureChange>;
 
+/**
+ * Cold, exact Drum-track history payload.
+ *
+ * Drum authoring never runs in the realtime scheduler. Keeping the complete
+ * before/after Track in one PSRAM allocation makes lane CRUD, kit changes and
+ * future sparse Micro/Cycle content transactional without reserving scarce
+ * RAM1/RAM2 or maintaining a second fragile delta format. Encoder-rate edits
+ * reuse one prepared owner and are committed only once per gesture.
+ */
+struct SequencerHistoryDrumChange {
+    uint8_t trackIndex = 0U;
+    SequencerTrackKind beforeKind = SequencerTrackKind::INSTRUMENT;
+    SequencerTrackKind afterKind = SequencerTrackKind::INSTRUMENT;
+    bool capturesGraph = false;
+    SequencerHistoryDescriptor descriptor{};
+    DrumTrackState before{};
+    DrumTrackState after{};
+    uint32_t beforeGraphRevision = 0U;
+    uint32_t afterGraphRevision = 0U;
+    SequencerHistoryGraphPtr beforeGraph{};
+    SequencerHistoryGraphPtr afterGraph{};
+};
+
+using SequencerHistoryDrumChangePtr =
+    core::app::ExtmemUniquePtr<SequencerHistoryDrumChange>;
+
+SequencerHistoryDrumChangePtr prepareHistoryDrumChangeBefore(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryDescriptor descriptor = {}
+);
+bool capturePreparedHistoryDrumAfter(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryDrumChange& change
+);
+/** Allocation-free rollback for an admitted Drum mutation that cannot commit. */
+bool restorePreparedHistoryDrumBefore(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    SequencerHistoryDrumChange& change
+) noexcept;
+bool sameMusicalHistoryDrumChange(const SequencerHistoryDrumChange& change);
+
 // Prepared-provider protocol:
 // 1. capture Before and reserve every After/publication owner before live data
 //    changes; 2. abandon the whole bundle on any false return (partial owners
@@ -425,6 +478,7 @@ struct SequencerHistoryEntry {
     core::app::ExtmemUniquePtr<SequencerHistoryPatternChange> pattern;
     SequencerHistoryTrackStructureChangePtr structure;
     core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange> fullBank;
+    SequencerHistoryDrumChangePtr drum;
 
     SequencerHistoryEntry();
     ~SequencerHistoryEntry();
@@ -436,7 +490,8 @@ struct SequencerHistoryEntry {
     bool valid() const {
         return (scope == SequencerHistoryScope::PatternOnly && pattern.get() != nullptr) ||
                (scope == SequencerHistoryScope::Structure && structure.get() != nullptr) ||
-               (scope == SequencerHistoryScope::FullBank && fullBank.get() != nullptr);
+               (scope == SequencerHistoryScope::FullBank && fullBank.get() != nullptr) ||
+               (scope == SequencerHistoryScope::Drum && drum.get() != nullptr);
     }
 };
 
@@ -611,8 +666,10 @@ public:
     static constexpr uint8_t PATTERN_ENTRY_LIMIT = 32;
     static constexpr uint8_t STRUCTURE_ENTRY_LIMIT = 8;
     static constexpr uint8_t FULL_BANK_ENTRY_LIMIT = 4;
+    static constexpr uint8_t DRUM_ENTRY_LIMIT = 24;
     static constexpr uint8_t ENTRY_LIMIT =
-        PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT;
+        PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT +
+        DRUM_ENTRY_LIMIT;
     static constexpr size_t RETAINED_BYTE_BUDGET = 1024U * 1024U;
     static constexpr uint16_t RETAINED_SPAN_BUDGET = 511U;
 
@@ -629,6 +686,9 @@ public:
     // Precondition: canRecordPattern(change) was true and change was not
     // modified afterwards. Under that contract this commit cannot fail.
     void recordPreparedPattern(SequencerHistoryPatternChangePtr change);
+
+    bool canRecordDrum(const SequencerHistoryDrumChange& change) const;
+    void recordPreparedDrum(SequencerHistoryDrumChangePtr change);
 
     bool canRecordFullBank(const SequencerHistoryFullBankChange& change) const;
     // Internal no-fail tail for a FullBank change whose immutable payload and

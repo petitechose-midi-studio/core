@@ -111,10 +111,7 @@ void SequencerInternalTimerLane::onTimer_() {
         false,
         snapshot_bank_.laneSnapshot(inputIndex),
         true
-#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-        , snapshot_bank_.drumPrototypeSnapshot(inputIndex)
-        , snapshot_bank_.drumPrototypeTrack(inputIndex)
-#endif
+        , snapshot_bank_.drumSnapshot(inputIndex)
     );
     drainRealtimeMidiQueue_(core::time_compat::micros());
     OC_PERF_UNITS(perfTimer, pendingClockCount, playing ? 1U : 0U);

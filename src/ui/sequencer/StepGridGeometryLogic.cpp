@@ -11,10 +11,12 @@ namespace core::ui::sequencer::grid {
 namespace {
 
 constexpr lv_coord_t STEP_NOTE_LABEL_PAD_X = 4;
-constexpr lv_coord_t STEP_NOTE_LABEL_PAD_BOTTOM = STEP_BAR_HEIGHT + 4;
+constexpr lv_coord_t STEP_NOTE_LABEL_PAD_BOTTOM = STEP_BOTTOM_RESERVED_HEIGHT + 4;
 constexpr lv_coord_t STEP_INLINE_ICON_GAP = 3;
+constexpr lv_coord_t STEP_RAIL_MIN_WIDTH = 6;
+constexpr lv_coord_t STEP_BUTTON_MIN_HEIGHT = 56;
 constexpr lv_coord_t STEP_GUIDE_HEIGHT = 8;
-constexpr lv_coord_t STEP_GUIDE_BOTTOM = STEP_BAR_HEIGHT + 5;
+constexpr lv_coord_t STEP_GUIDE_BOTTOM = STEP_BOTTOM_RESERVED_HEIGHT + 5;
 constexpr std::array<float, 3> STEP_GUIDE_POSITIONS = {
     0.0f,
     1.0f / 3.0f,
@@ -24,11 +26,11 @@ constexpr std::array<float, 3> STEP_GUIDE_POSITIONS = {
 }  // namespace
 
 lv_coord_t measureRailWidth(lv_coord_t contentWidth) {
-    return std::max<lv_coord_t>(STEP_SHAPE_MIN_WIDTH, contentWidth);
+    return std::max<lv_coord_t>(STEP_RAIL_MIN_WIDTH, contentWidth);
 }
 
 lv_coord_t measureButtonHeight(lv_coord_t contentHeight) {
-    return std::max<lv_coord_t>(STEP_BUTTON_SIZE, contentHeight);
+    return std::max<lv_coord_t>(STEP_BUTTON_MIN_HEIGHT, contentHeight);
 }
 
 StepGuideLayout buildGuideLayout(uint8_t guideIndex, lv_coord_t railWidth, lv_coord_t buttonHeight) {
@@ -38,7 +40,6 @@ StepGuideLayout buildGuideLayout(uint8_t guideIndex, lv_coord_t railWidth, lv_co
     const float position =
         (guideIndex < STEP_GUIDE_POSITIONS.size()) ? STEP_GUIDE_POSITIONS[guideIndex] : 0.0f;
     layout.x = static_cast<lv_coord_t>(
-        STEP_SHAPE_PAD_X +
         std::round(position * static_cast<float>(std::max<lv_coord_t>(0, railWidth - 1)))
     );
     layout.y = static_cast<lv_coord_t>(

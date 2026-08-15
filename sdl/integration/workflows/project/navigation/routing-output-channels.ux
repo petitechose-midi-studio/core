@@ -2,6 +2,8 @@
 # Purpose: validates the V1 routing contract: all 16 tracks are listed and each
 # row can assign its output MIDI channel from Project > Routing.
 # Expect: capture_changed:routing_track_1_focused=routing_track_1_ch_2, capture_changed:routing_track_2_focused=routing_track_2_opt_changed
+# Expect: semantic:routing_track_1_focused:property=routing, semantic:routing_track_1_focused:value_label=routing_root, semantic:routing_track_1_focused:target_index=0
+# Expect: semantic:routing_track_2_focused:target_index=1, semantic:routing_track_8_visible:target_index=7
 
 0 capture screen boot
 
@@ -17,10 +19,9 @@
 
 # Switch to Routing.
 820 button LEFT_CENTER down
-1420 encoder NAV 1
-1500 encoder NAV 1
-1580 encoder NAV 1
-1660 encoder NAV 1
+1420 encoder NAV 0.01
+1500 encoder NAV 0.01
+1580 encoder NAV 0.01
 1840 capture screen project_routing_tab
 1920 button LEFT_CENTER up
 2120 capture screen routing_track_1_focused
@@ -30,7 +31,7 @@
 2440 capture screen routing_track_1_ch_2
 
 # OPT can directly edit another track channel.
-2540 encoder NAV 1
+2540 encoder NAV 0.01
 2680 capture screen routing_track_2_focused
 2780 encoder OPT 1
 3020 capture screen routing_track_2_opt_changed
@@ -40,10 +41,10 @@
 3360 capture screen routing_track_2_nav_changed
 
 # The list exposes lower tracks through normal row navigation.
-3460 encoder NAV 1
-3540 encoder NAV 1
-3620 encoder NAV 1
-3700 encoder NAV 1
-3780 encoder NAV 1
-3860 encoder NAV 1
+3460 encoder NAV 0.01
+3540 encoder NAV 0.01
+3620 encoder NAV 0.01
+3700 encoder NAV 0.01
+3780 encoder NAV 0.01
+3860 encoder NAV 0.01
 4060 capture screen routing_track_8_visible

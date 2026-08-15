@@ -23,20 +23,9 @@ inline constexpr std::array<const char*, VIEW_SELECTOR_ITEM_COUNT> VIEW_SELECTOR
     "Macros",
     "Sequencer",
     "Modulators",
-    "Project Settings",
-    "Device Settings",
+    "Project",
+    "Device",
 };
-
-inline constexpr std::array<const char*, VIEW_SELECTOR_ITEM_COUNT>
-    VIEW_SELECTOR_ITEM_DESCRIPTIONS = {
-        "Macro performance and mapping",
-        "Pattern and note sequencing",
-        "Project modulation sources",
-        "Project scale, transport, routing",
-        "Hardware and MIDI sync",
-};
-
-inline constexpr const char* SETTINGS_SECTION_LABEL = "Settings";
 
 inline ViewSelectorItem viewSelectorItemAt(int index) {
     if (index < 0 || index >= VIEW_SELECTOR_ITEM_COUNT) {
@@ -47,10 +36,6 @@ inline ViewSelectorItem viewSelectorItemAt(int index) {
 
 inline const char* viewSelectorItemLabel(ViewSelectorItem item) {
     return VIEW_SELECTOR_ITEM_LABELS[static_cast<int>(item)];
-}
-
-inline const char* viewSelectorItemDescription(ViewSelectorItem item) {
-    return VIEW_SELECTOR_ITEM_DESCRIPTIONS[static_cast<int>(item)];
 }
 
 inline ViewSelectorItem viewSelectorItemForView(core::ui::ViewType view) {

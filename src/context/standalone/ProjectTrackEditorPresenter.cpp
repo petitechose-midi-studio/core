@@ -79,7 +79,7 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
     std::snprintf(
         route_.data(),
         route_.size(),
-        "%s \xC2\xB7 CH %u",
+        "%s \xC2\xB7 Ch %u",
         viewModel.port.data(),
         static_cast<unsigned>(viewModel.midiChannel)
     );
@@ -99,42 +99,55 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         .title = viewModel.title.data(),
         .route = route_.data(),
         .delay = delay_.data(),
-        .structureHint = "OPEN",
+        .structureHint = viewModel.draftDrum ? "Drum" : "Instrument",
+        .status = viewModel.typeChangePending
+            ? "Type \xC2\xB7 Edited"
+            : (viewModel.selectedProperty ==
+                    core::state::project::ProjectTrackEditorProperty::TYPE
+                ? "Type \xC2\xB7 Ready"
+                : "Direct"),
         .trackColor = theme::color::trackColor(viewModel.trackIndex),
+        .statusColor = viewModel.typeChangePending
+            ? theme::color::WARNING
+            : theme::color::TEXT_SECONDARY,
         .selectedProperty = viewModel.selectedProperty,
-        .muted = viewModel.muted,
-        .soloed = viewModel.soloed,
         .trackEnabled = viewModel.trackEnabled,
     });
 
     core::ui::ContextActionStripProps actions{.visible = true};
-    actions.slots[0] = {
-        .visualState = viewModel.trackEnabled
-            ? (viewModel.muted
-                ? core::ui::ContextActionStripVisualState::ARMED
-                : core::ui::ContextActionStripVisualState::AVAILABLE)
-            : core::ui::ContextActionStripVisualState::DISABLED,
-        .tone = core::ui::ContextActionStripTone::WARNING,
-        .showLabel = true,
-        .label = "MUTE",
-    };
-    actions.slots[1] = {
-        .visualState = viewModel.trackEnabled
-            ? (viewModel.soloed
-                ? core::ui::ContextActionStripVisualState::ARMED
-                : core::ui::ContextActionStripVisualState::AVAILABLE)
-            : core::ui::ContextActionStripVisualState::DISABLED,
-        .tone = core::ui::ContextActionStripTone::POSITIVE,
-        .showLabel = true,
-        .label = "SOLO",
-    };
+    if (viewModel.typeChangePending) {
+        actions.slots[0] = {
+            .visualState = core::ui::ContextActionStripVisualState::AVAILABLE,
+            .tone = core::ui::ContextActionStripTone::NEUTRAL,
+            .showLabel = true,
+            .label = "CANCEL",
+        };
+    } else {
+        actions.slots[0] = {
+            .visualState = viewModel.trackEnabled
+                ? (viewModel.muted
+                    ? core::ui::ContextActionStripVisualState::ARMED
+                    : core::ui::ContextActionStripVisualState::AVAILABLE)
+                : core::ui::ContextActionStripVisualState::DISABLED,
+            .tone = core::ui::ContextActionStripTone::WARNING,
+            .showLabel = true,
+            .label = "MUTE",
+        };
+    }
+    // BOTTOM_CENTER remains the global Transport control.
+    actions.slots[1].visualState =
+        core::ui::ContextActionStripVisualState::HIDDEN;
     actions.slots[2] = {
         .visualState = viewModel.trackEnabled
-            ? core::ui::ContextActionStripVisualState::AVAILABLE
+            ? (viewModel.typeChangePending || !viewModel.soloed
+                ? core::ui::ContextActionStripVisualState::AVAILABLE
+                : core::ui::ContextActionStripVisualState::ARMED)
             : core::ui::ContextActionStripVisualState::DISABLED,
-        .tone = core::ui::ContextActionStripTone::NEUTRAL,
+        .tone = viewModel.typeChangePending
+            ? core::ui::ContextActionStripTone::POSITIVE
+            : core::ui::ContextActionStripTone::NEUTRAL,
         .showLabel = true,
-        .label = "STRUCT",
+        .label = viewModel.typeChangePending ? "APPLY" : "SOLO",
     };
     action_strip_.render(actions);
 }

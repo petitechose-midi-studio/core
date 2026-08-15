@@ -6,13 +6,13 @@
 
 namespace core::handler {
 
-class SequencerSettingsDomainServices {
+class ProjectScaleSettingsDomainServices {
 public:
     struct StateRefs {
         core::state::sequencer::SequencerTrackBankState& trackBank;
     };
 
-    explicit SequencerSettingsDomainServices(StateRefs state);
+    explicit ProjectScaleSettingsDomainServices(StateRefs state);
 
     int currentChoiceIndex(uint8_t row) const;
     int choiceCount(uint8_t row) const;

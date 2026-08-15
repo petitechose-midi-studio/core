@@ -82,6 +82,61 @@ FLASHMEM int scaleDegreeForPitchClass(
     return -1;
 }
 
+FLASHMEM const char* romanDegreeLabel(int degree) {
+    static const char LABELS[][5] PROGMEM = {
+        "I", "II", "III", "IV", "V", "VI", "VII",
+        "VIII", "IX", "X", "XI", "XII",
+    };
+    return degree >= 0 &&
+            degree < static_cast<int>(sizeof(LABELS) / sizeof(LABELS[0]))
+        ? LABELS[degree]
+        : "";
+}
+
+FLASHMEM int nearestScaleDegree(
+    uint8_t pitchClass,
+    oc::note::sequencer::StepSequencerScaleSettings settings,
+    int& accidental
+) {
+    settings.clamp();
+    const uint8_t relative = static_cast<uint8_t>(
+        (pitchClass + 12U - settings.root) % 12U
+    );
+    const uint16_t mask = oc::note::sequencer::scaleMask(settings.type);
+    const int exact = scaleDegreeForPitchClass(pitchClass, settings);
+    if (exact >= 0) {
+        accidental = 0;
+        return exact;
+    }
+
+    // Prefer the lower degree on equal distance (F# in C => #IV): this keeps
+    // chromatic alterations legible and matches common tonal notation.
+    for (int distance = 1; distance <= 6; ++distance) {
+        const uint8_t lower = static_cast<uint8_t>(
+            (static_cast<int>(relative) + 12 - distance) % 12
+        );
+        if ((mask & static_cast<uint16_t>(1U << lower)) != 0U) {
+            accidental = distance;
+            return scaleDegreeForPitchClass(
+                static_cast<uint8_t>((settings.root + lower) % 12U),
+                settings
+            );
+        }
+        const uint8_t upper = static_cast<uint8_t>(
+            (relative + distance) % 12U
+        );
+        if ((mask & static_cast<uint16_t>(1U << upper)) != 0U) {
+            accidental = -distance;
+            return scaleDegreeForPitchClass(
+                static_cast<uint8_t>((settings.root + upper) % 12U),
+                settings
+            );
+        }
+    }
+    accidental = 0;
+    return -1;
+}
+
 FLASHMEM const char* diatonicPitchClassLabel(
     uint8_t pitchClass,
     oc::note::sequencer::StepSequencerScaleSettings settings,
@@ -163,6 +218,49 @@ FLASHMEM void formatNoteName(
         outSize,
         pos,
         static_cast<int>(note) / 12 - 1
+    );
+    oc::type::text::terminate(out, outSize, pos);
+}
+
+FLASHMEM void formatTonalNoteLabel(
+    char* out,
+    size_t outSize,
+    uint8_t note,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    if (!out || outSize == 0U) return;
+    scaleSettings.clamp();
+    formatNoteName(out, outSize, note, scaleSettings);
+    if (scaleSettings.type ==
+        oc::note::sequencer::StepSequencerScaleType::Chromatic) {
+        return;
+    }
+
+    size_t pos = 0U;
+    while (pos < outSize && out[pos] != '\0') ++pos;
+    pos = oc::type::text::appendString(out, outSize, pos, " ");
+    int accidental = 0;
+    const int degree = nearestScaleDegree(
+        static_cast<uint8_t>(note % 12U),
+        scaleSettings,
+        accidental
+    );
+    if (accidental > 0) {
+        const int count = accidental > 2 ? 2 : accidental;
+        for (int index = 0; index < count; ++index) {
+            pos = oc::type::text::appendString(out, outSize, pos, "#");
+        }
+    } else if (accidental < 0) {
+        const int count = accidental < -2 ? 2 : -accidental;
+        for (int index = 0; index < count; ++index) {
+            pos = oc::type::text::appendString(out, outSize, pos, "b");
+        }
+    }
+    pos = oc::type::text::appendString(
+        out,
+        outSize,
+        pos,
+        romanDegreeLabel(degree)
     );
     oc::type::text::terminate(out, outSize, pos);
 }
