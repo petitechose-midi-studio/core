@@ -40,7 +40,8 @@ void test_roundtrip_current_format() {
     setSentinel(sync);
 
     core::persistence::DeviceSettingsStore store(storage);
-    assert(store.saveAll(sync));
+    assert(store.saveAllStatus(sync) ==
+           core::persistence::PersistenceWriteStatus::OK);
 
     core::state::MidiSyncState loadedSync;
     assert(store.load(loadedSync));
@@ -66,7 +67,8 @@ void test_current_format_has_exact_canonical_bytes() {
     setSentinel(sync);
 
     core::persistence::DeviceSettingsStore store(storage);
-    assert(store.saveAll(sync));
+    assert(store.saveAllStatus(sync) ==
+           core::persistence::PersistenceWriteStatus::OK);
 
     std::array<uint8_t, StorageLayout::STORAGE_END> encoded{};
     assert(storage.read(0, encoded.data(), encoded.size()) == encoded.size());
@@ -167,7 +169,8 @@ void test_noncanonical_current_payload_is_rejected_atomically() {
 
     core::persistence::DeviceSettingsStore store(storage);
     core::state::MidiSyncState persisted;
-    assert(store.saveAll(persisted));
+    assert(store.saveAllStatus(persisted) ==
+           core::persistence::PersistenceWriteStatus::OK);
 
     const uint8_t invalidFollowTransport = 2U;
     assert(storage.write(
@@ -206,7 +209,8 @@ void test_reconcile_does_not_rewrite_equal_current_settings() {
     core::state::MidiSyncState sync;
     setSentinel(sync);
     core::persistence::DeviceSettingsStore store(storage);
-    assert(store.saveAll(sync));
+    assert(store.saveAllStatus(sync) ==
+           core::persistence::PersistenceWriteStatus::OK);
     const int initialCommitCount = storage.commitCount;
 
     assert(store.reconcileAllStatus(sync) ==

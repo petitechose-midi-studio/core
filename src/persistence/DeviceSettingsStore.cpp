@@ -53,16 +53,12 @@ FLASHMEM bool DeviceSettingsStore::load(state::MidiSyncState& midiSync) {
         return false;
     }
 
-    if (!loadMidiSync_(midiSync)) {
+    if (!device_settings::loadMidiSync(backend_, midiSync)) {
         OC_LOG_WARN("[DeviceSettingsStore] Invalid current settings payload");
         return false;
     }
 
     return true;
-}
-
-FLASHMEM bool DeviceSettingsStore::saveAll(const state::MidiSyncState& midiSync) {
-    return saveAllStatus(midiSync) == PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveAllStatus(
@@ -80,7 +76,7 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::reconcileAllStatus(
     const auto formatStatus = currentFormatStatus_();
     if (formatStatus == PersistenceWriteStatus::OK) {
         state::MidiSyncState durable;
-        if (!loadMidiSync_(durable)) {
+        if (!device_settings::loadMidiSync(backend_, durable)) {
             // The durable payload is not a usable exact-current snapshot.
             // Recovery is RAM-authoritative, so replace it once rather than
             // preserving a malformed current-format header indefinitely.
@@ -100,10 +96,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::reconcileAllStatus(
     return saveAllStatus(midiSync);
 }
 
-FLASHMEM bool DeviceSettingsStore::saveMidiSyncMode(state::MidiSyncMode mode) {
-    return saveMidiSyncModeStatus(mode) == PersistenceWriteStatus::OK;
-}
-
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiSyncModeStatus(
     state::MidiSyncMode mode
 ) {
@@ -113,10 +105,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiSyncModeStatus(
     const auto formatStatus = currentFormatStatus_();
     if (formatStatus != PersistenceWriteStatus::OK) return formatStatus;
     return device_settings::stageMidiSyncMode(backend_, mode);
-}
-
-FLASHMEM bool DeviceSettingsStore::saveMidiFollowTransport(bool followTransport) {
-    return saveMidiFollowTransportStatus(followTransport) == PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiFollowTransportStatus(
@@ -130,10 +118,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiFollowTransportStat
     );
 }
 
-FLASHMEM bool DeviceSettingsStore::saveMidiAutoFallbackMs(uint16_t fallbackMs) {
-    return saveMidiAutoFallbackMsStatus(fallbackMs) == PersistenceWriteStatus::OK;
-}
-
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoFallbackMsStatus(
     uint16_t fallbackMs
 ) {
@@ -143,10 +127,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoFallbackMsStatu
     const auto formatStatus = currentFormatStatus_();
     if (formatStatus != PersistenceWriteStatus::OK) return formatStatus;
     return device_settings::stageMidiAutoFallbackMs(backend_, fallbackMs);
-}
-
-FLASHMEM bool DeviceSettingsStore::saveMidiAutoLockClockCount(uint8_t lockCount) {
-    return saveMidiAutoLockClockCountStatus(lockCount) == PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoLockClockCountStatus(
@@ -160,17 +140,9 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoLockClockCountS
     return device_settings::stageMidiAutoLockClockCount(backend_, lockCount);
 }
 
-FLASHMEM bool DeviceSettingsStore::commit() {
-    return commitStatus() == PersistenceWriteStatus::OK;
-}
-
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::commitStatus() {
     if (!backend_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     return backend_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
-}
-
-FLASHMEM bool DeviceSettingsStore::factoryReset() {
-    return factoryResetStatus() == PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::factoryResetStatus() {
@@ -196,10 +168,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::currentFormatStatus_() {
     return magic == StorageLayout::MAGIC && version == StorageLayout::VERSION
         ? PersistenceWriteStatus::OK
         : PersistenceWriteStatus::INVALID_CONFIG;
-}
-
-FLASHMEM bool DeviceSettingsStore::loadMidiSync_(state::MidiSyncState& midiSync) {
-    return device_settings::loadMidiSync(backend_, midiSync);
 }
 
 }  // namespace core::persistence

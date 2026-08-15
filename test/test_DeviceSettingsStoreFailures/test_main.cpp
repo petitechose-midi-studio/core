@@ -92,7 +92,7 @@ private:
     std::vector<uint8_t> data_;
 };
 
-void test_save_all_returns_false_on_short_write() {
+void test_save_all_reports_short_write() {
     FaultyStorage storage;
     storage.init();
     storage.setFaultMode(FaultyStorage::FaultMode::SHORT_WRITE);
@@ -100,13 +100,12 @@ void test_save_all_returns_false_on_short_write() {
     core::state::MidiSyncState sync;
 
     core::persistence::DeviceSettingsStore store(storage);
-    assert(!store.saveAll(sync));
     assert(
         store.saveAllStatus(sync) ==
         core::persistence::PersistenceWriteStatus::IO_ERROR
     );
 
-    std::cout << "[PASS] test_save_all_returns_false_on_short_write\n";
+    std::cout << "[PASS] test_save_all_reports_short_write\n";
 }
 
 void test_short_read_rejects_without_publishing_partial_state() {
@@ -119,7 +118,8 @@ void test_short_read_rejects_without_publishing_partial_state() {
     persisted.followTransport.set(false);
     persisted.autoFallbackMs.set(750U);
     persisted.autoLockClockCount.set(12U);
-    assert(store.saveAll(persisted));
+    assert(store.saveAllStatus(persisted) ==
+           core::persistence::PersistenceWriteStatus::OK);
 
     core::state::MidiSyncState loaded;
     storage.setFaultMode(FaultyStorage::FaultMode::SHORT_READ);
@@ -170,7 +170,6 @@ void test_commit_failure_propagates() {
     storage.setFaultMode(FaultyStorage::FaultMode::COMMIT_FAIL);
 
     core::persistence::DeviceSettingsStore store(storage);
-    assert(!store.commit());
     assert(store.commitStatus() == core::persistence::PersistenceWriteStatus::COMMIT_FAILED);
 
     std::cout << "[PASS] test_commit_failure_propagates\n";
@@ -182,7 +181,6 @@ void test_factory_reset_failure_propagates() {
     storage.setFaultMode(FaultyStorage::FaultMode::ERASE_FAIL);
 
     core::persistence::DeviceSettingsStore store(storage);
-    assert(!store.factoryReset());
     assert(store.factoryResetStatus() == core::persistence::PersistenceWriteStatus::ERASE_FAILED);
 
     std::cout << "[PASS] test_factory_reset_failure_propagates\n";
@@ -191,7 +189,7 @@ void test_factory_reset_failure_propagates() {
 }  // namespace
 
 int main() {
-    test_save_all_returns_false_on_short_write();
+    test_save_all_reports_short_write();
     test_short_read_rejects_without_publishing_partial_state();
     test_unavailable_storage_reports_unavailable_statuses();
     test_noncanonical_values_are_rejected_before_io();
