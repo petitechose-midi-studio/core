@@ -1221,7 +1221,11 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
         return SequencerPatternHistoryCommitOutcome::Failed;
     }
 
-    auto& targetPattern = activeTarget ? sequencer.pattern : sequencerTracks.track(targetTrack);
+    auto& targetPattern = sequencer::mutableCanonicalTrackPattern(
+        sequencerTracks,
+        sequencer,
+        targetTrack
+    );
     sequencer::synchronizeHistoryPatternRevisionSignals(
         targetPattern, pending.preparedPatternChange->after.flat,
         pending.preparedPatternChange->after.ccLaneRevision);

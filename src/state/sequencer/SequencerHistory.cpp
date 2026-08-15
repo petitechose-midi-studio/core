@@ -191,9 +191,7 @@ FLASHMEM bool restorePreparedHistoryDrumBefore(
     );
     if (!change.capturesGraph) return true;
 
-    auto& target = change.trackIndex == bank.activeTrackIndex()
-        ? active.pattern
-        : bank.track(change.trackIndex);
+    auto& target = mutableCanonicalTrackPattern(bank, active, change.trackIndex);
     if (!change.beforeGraph) {
         target.graph.reset();
     } else {

@@ -72,6 +72,16 @@ static_assert(
     uint8_t trackIndex
 ) noexcept;
 
+/**
+ * Mutable canonical Pattern selection for an already-admitted transaction.
+ * Revision publication and active-editor synchronization remain caller-owned.
+ */
+[[nodiscard]] SequencerPatternState& mutableCanonicalTrackPattern(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex
+) noexcept;
+
 /** Exact allocation-free comparison of persisted flat bytes and revisions. */
 [[nodiscard]] bool sequencerPatternMatchesFlatSnapshot(
     const SequencerPatternState& pattern,

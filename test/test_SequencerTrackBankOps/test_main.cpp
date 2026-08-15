@@ -227,7 +227,13 @@ void test_canonical_track_pattern_resolves_editor_and_bank_authority() {
         seq::SequencerTrackBankState::TRACK_COUNT
     ).note[0] == 64U);
 
-    std::cout << "[PASS] canonical Track reads resolve editor and bank authority\n";
+    seq::mutableCanonicalTrackPattern(bank, active, 1U).note[1] = 65U;
+    seq::mutableCanonicalTrackPattern(bank, active, 2U).note[1] = 66U;
+    assert(active.pattern.note[1] == 65U);
+    assert(bank.track(1U).note[1] != 65U);
+    assert(bank.track(2U).note[1] == 66U);
+
+    std::cout << "[PASS] canonical Track access resolves editor and bank authority\n";
 }
 
 void test_prepared_rotation_preserves_payloads_without_publication_or_allocation() {

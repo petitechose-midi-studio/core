@@ -177,6 +177,15 @@ FLASHMEM const SequencerPatternState& canonicalTrackPattern(
     return target == bank.activeTrackIndex() ? active.pattern : bank.track(target);
 }
 
+FLASHMEM SequencerPatternState& mutableCanonicalTrackPattern(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex
+) noexcept {
+    const uint8_t target = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    return target == bank.activeTrackIndex() ? active.pattern : bank.track(target);
+}
+
 FLASHMEM bool sequencerPatternMatchesFlatSnapshot(
     const SequencerPatternState& pattern,
     SequencerTrackFlatSnapshotView expected
