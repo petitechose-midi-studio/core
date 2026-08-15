@@ -18,7 +18,7 @@
 
 # Switch to Music and open Scale.
 820 button LEFT_CENTER down
-1420 encoder NAV 1
+1420 encoder NAV 0.01
 1560 capture screen project_music_tab
 1640 button LEFT_CENTER up
 1740 tap NAV 60

@@ -22,7 +22,7 @@
 #include "state/StatusBarState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include "ui/project/ProjectModulatorWorkspace.hpp"
-#include "ui/project/ProjectNameKeyboardView.hpp"
+#include "ui/interaction/TextKeyboardView.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
 
@@ -62,7 +62,7 @@ private:
     void requestModulatorCaptureRender();
     void render();
     void renderModulatorCapture();
-    void renderTabs();
+    void renderTabs(bool visible);
     void renderKeyboardActionStrips(bool visible);
     void renderModulators();
     void renderModulatorActionStrips(
@@ -91,13 +91,12 @@ private:
     struct TabWidgets {
         lv_obj_t* container = nullptr;
         lv_obj_t* icon = nullptr;
-        lv_obj_t* label = nullptr;
         bool contentInitialized = false;
         bool styleInitialized = false;
         bool active = false;
         bool holdActive = false;
     };
-    std::array<TabWidgets, core::state::project::projectTabCount()> tab_widgets_{};
+    std::array<TabWidgets, core::state::project::projectRootTabCount()> tab_widgets_{};
     bool tabs_rendered_ = false;
     core::state::project::ProjectTab rendered_active_tab_ =
         core::state::project::ProjectTab::COUNT;
@@ -107,7 +106,7 @@ private:
         modulator_registry_;
     core::app::ExtmemUniquePtr<core::ui::project::ProjectModulatorWorkspace>
         modulator_workspace_;
-    std::optional<core::ui::project::ProjectNameKeyboardView>
+    std::optional<core::ui::interaction::TextKeyboardView>
         project_name_keyboard_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;

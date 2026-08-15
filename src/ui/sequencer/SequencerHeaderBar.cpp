@@ -7,6 +7,7 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
+#include "ui/font/StandaloneFonts.hpp"
 #include "ui/sequencer/SequencerHeaderBarRenderModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -22,12 +23,14 @@ constexpr uint32_t COLOR_DIM_TEXT = theme::color::TEXT_PRIMARY;
 constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
 constexpr lv_coord_t ACCENT_WIDTH = 4;
 constexpr lv_coord_t LABEL_MAX_WIDTH = 46;
-constexpr lv_coord_t BADGE_WIDTH = 52;
+constexpr lv_coord_t BADGE_WIDTH = 60;
+constexpr lv_coord_t CONTEXT_ICON_WIDTH = 18;
+constexpr lv_coord_t PAGE_LABEL_WIDTH = 32;
 constexpr lv_coord_t TITLE_SEPARATOR_WIDTH = 5;
-constexpr uint32_t PAGE_CURSOR_COLOR = theme::color::MACRO_1;
+constexpr uint32_t PAGE_CURSOR_COLOR = theme::color::LIVE_TIME;
 constexpr uint32_t PAGE_SELECTION_COLOR = theme::color::MACRO_6;
 constexpr uint32_t PAGE_DUPLICATE_PREVIEW_COLOR = theme::color::MACRO_4;
-constexpr uint32_t PAGE_DUPLICATE_OVERWRITE_COLOR = 0xFFB000;
+constexpr uint32_t PAGE_DUPLICATE_OVERWRITE_COLOR = theme::color::WARNING;
 constexpr uint32_t PAGE_DUPLICATE_BLOCKED_COLOR =
     theme::color::MACRO_AUTOMATION_RECORDING;
 
@@ -89,6 +92,8 @@ FLASHMEM SequencerHeaderBar::~SequencerHeaderBar() {
         accent_ = nullptr;
         label_ = nullptr;
         badge_ = nullptr;
+        context_icon_ = nullptr;
+        page_label_ = nullptr;
         strip_row_ = nullptr;
         view_cursor_ = nullptr;
         strip_cursor_ = nullptr;
@@ -129,14 +134,14 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(accent_, LV_OPA_COVER, 0);
 
     label_ = lv_label_create(container_);
-    lv_obj_set_style_text_font(label_, fonts.inter_14_medium, 0);
+    lv_obj_set_style_text_font(label_, fonts.header_label(), 0);
     lv_obj_set_style_text_color(label_, lv_color_hex(COLOR_DIM_TEXT), 0);
-    lv_obj_set_style_text_opa(label_, LV_OPA_80, 0);
+    lv_obj_set_style_text_opa(label_, LV_OPA_COVER, 0);
     lv_label_set_long_mode(label_, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(label_, LABEL_MAX_WIDTH);
 
     badge_ = lv_label_create(container_);
-    lv_obj_set_style_text_font(badge_, fonts.inter_13_bold, 0);
+    lv_obj_set_style_text_font(badge_, fonts.meta_label(), 0);
     lv_obj_set_style_text_color(badge_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
     lv_obj_set_style_text_opa(badge_, LV_OPA_80, 0);
     lv_obj_set_style_radius(badge_, 3, 0);
@@ -147,6 +152,9 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     lv_label_set_long_mode(badge_, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(badge_, BADGE_WIDTH);
     lv_obj_set_style_text_align(badge_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_add_flag(badge_, LV_OBJ_FLAG_HIDDEN);
+
+    if (!metric_row_.create(container_)) return;
 
     auto* spacer = lv_obj_create(container_);
     style::apply(spacer).size(0, 1).transparent().noBorder().noScroll().pad(0);
@@ -162,6 +170,38 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     lv_obj_set_flex_grow(strip_row_, 1);
     lv_obj_add_flag(strip_row_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_add_event_cb(strip_row_, onStripDrawEvent, LV_EVENT_DRAW_MAIN, this);
+
+    context_icon_ = lv_label_create(container_);
+    lv_obj_set_style_text_font(
+        context_icon_,
+        standalone_fonts.icons_14
+            ? standalone_fonts.icons_14
+            : LV_FONT_DEFAULT,
+        0
+    );
+    lv_obj_set_style_text_color(
+        context_icon_,
+        lv_color_hex(theme::color::FOCUS_EDIT),
+        0
+    );
+    lv_obj_set_style_text_opa(context_icon_, LV_OPA_COVER, 0);
+    lv_label_set_long_mode(context_icon_, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(context_icon_, CONTEXT_ICON_WIDTH);
+    lv_obj_set_style_text_align(context_icon_, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_add_flag(context_icon_, LV_OBJ_FLAG_HIDDEN);
+
+    page_label_ = lv_label_create(container_);
+    lv_obj_set_style_text_font(page_label_, fonts.meta_label(), 0);
+    lv_obj_set_style_text_color(
+        page_label_,
+        lv_color_hex(theme::color::TEXT_SECONDARY),
+        0
+    );
+    lv_obj_set_style_text_opa(page_label_, LV_OPA_COVER, 0);
+    lv_label_set_long_mode(page_label_, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(page_label_, PAGE_LABEL_WIDTH);
+    lv_obj_set_style_text_align(page_label_, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_add_flag(page_label_, LV_OBJ_FLAG_HIDDEN);
 
     view_cursor_ = lv_obj_create(strip_row_);
     lv_obj_remove_style_all(view_cursor_);
@@ -199,10 +239,76 @@ FLASHMEM void SequencerHeaderBar::renderStripOnly(const SequencerHeaderBarProps&
 }
 
 FLASHMEM void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& props) {
-    if (!container_ || !accent_ || !label_ || !badge_) return;
+    if (!container_ || !accent_ || !label_ || !badge_ || !metric_row_.element() ||
+        !context_icon_ || !page_label_) {
+        return;
+    }
 
+    updatePageStripVisibility(props.pageStripVisible);
     setLabelTextIfChanged(label_, left_text_cache_, props.leftText);
     setLabelTextIfChanged(badge_, badge_text_cache_, props.badgeText.data());
+    std::array<CompactMetricProps, 2> compactMetrics{};
+    for (size_t index = 0; index < compactMetrics.size(); ++index) {
+        compactMetrics[index] = {
+            .icon = props.metrics[index].icon,
+            .value = props.metrics[index].value.data(),
+        };
+    }
+    const bool metricsVisible = metric_row_.render(compactMetrics);
+    bool headerLayoutChanged = false;
+    if (metricsVisible != metrics_visible_cache_) {
+        metrics_visible_cache_ = metricsVisible;
+        headerLayoutChanged = true;
+    }
+    const bool badgeVisible = !metricsVisible && props.badgeText[0] != '\0';
+    if (badgeVisible != badge_visible_cache_) {
+        if (badgeVisible) {
+            lv_obj_clear_flag(badge_, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(badge_, LV_OBJ_FLAG_HIDDEN);
+        }
+        badge_visible_cache_ = badgeVisible;
+        headerLayoutChanged = true;
+    }
+    setLabelTextIfChanged(
+        context_icon_, context_icon_cache_, props.contextIcon
+    );
+    const bool contextIconVisible =
+        props.contextIcon != nullptr && props.contextIcon[0] != '\0';
+    if (contextIconVisible != context_icon_visible_cache_) {
+        if (contextIconVisible) {
+            lv_obj_clear_flag(context_icon_, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(context_icon_, LV_OBJ_FLAG_HIDDEN);
+        }
+        context_icon_visible_cache_ = contextIconVisible;
+        headerLayoutChanged = true;
+    }
+    if (context_icon_color_cache_ != props.contextIconColor) {
+        lv_obj_set_style_text_color(
+            context_icon_,
+            lv_color_hex(props.contextIconColor),
+            0
+        );
+        context_icon_color_cache_ = props.contextIconColor;
+    }
+    setLabelTextIfChanged(
+        page_label_, page_text_cache_, props.pageText.data()
+    );
+    const bool pageLabelVisible = props.pageText[0] != '\0';
+    if (pageLabelVisible != page_label_visible_cache_) {
+        if (pageLabelVisible) {
+            lv_obj_clear_flag(page_label_, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(page_label_, LV_OBJ_FLAG_HIDDEN);
+        }
+        page_label_visible_cache_ = pageLabelVisible;
+        headerLayoutChanged = true;
+    }
+    if (headerLayoutChanged) {
+        lv_obj_update_layout(container_);
+        strip_cached_width_ = -1;
+    }
     const auto visual = header_model::buildTopRowVisualState(props);
 
     if (!badge_cache_initialized_ || badge_bg_color_cache_ != visual.badgeBgColor) {
@@ -248,6 +354,18 @@ FLASHMEM void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& pr
 
     surface_cache_initialized_ = true;
     badge_cache_initialized_ = true;
+}
+
+FLASHMEM void SequencerHeaderBar::updatePageStripVisibility(bool visible) {
+    if (!strip_row_ || page_strip_visible_cache_ == visible) return;
+
+    if (visible) {
+        lv_obj_clear_flag(strip_row_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(strip_row_, LV_OBJ_FLAG_HIDDEN);
+    }
+    page_strip_visible_cache_ = visible;
+    strip_cached_width_ = -1;
 }
 
 FLASHMEM void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
@@ -330,6 +448,9 @@ FLASHMEM void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
 
 FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
     if (!strip_row_) return;
+
+    updatePageStripVisibility(props.pageStripVisible);
+    if (!props.pageStripVisible) return;
 
     const auto stripState = header_model::buildStripState(props);
 

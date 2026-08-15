@@ -24,24 +24,24 @@
 2000 capture screen shape_feedback
 
 # The complete supported Sync range is explicit on the Rate card.
-2120 encoder NAV 1
-2180 encoder NAV 1
+2120 encoder NAV 0.01
+2180 encoder NAV 0.01
 2300 encoder OPT 0.00
 2520 capture screen sync_fast_feedback
 2640 encoder OPT 1.00
 2860 capture screen sync_slow_feedback
 
 # Free keeps the same card and spans fast control to slow evolving movement.
-2980 encoder NAV -1
+2980 encoder NAV -0.01
 3100 encoder OPT 1.00
-3220 encoder NAV 1
+3220 encoder NAV 0.01
 3340 encoder OPT 0.00
 3560 capture screen free_fast_feedback
 3680 encoder OPT 1.00
 3900 capture screen free_slow_feedback
 
 # Details is local and keeps the source curve visible.
-4020 encoder NAV 1
+4020 encoder NAV 0.01
 4140 tap NAV 60
 4360 capture screen details_workspace
 4480 encoder OPT 0.90
@@ -50,8 +50,8 @@
 5860 capture screen phase_stable
 
 # Rename is the third Details card and returns to the same local context.
-5980 encoder NAV 1
-6040 encoder NAV 1
+5980 encoder NAV 0.01
+6040 encoder NAV 0.01
 6160 tap NAV 60
 6380 capture screen rename_keyboard
 6500 tap LEFT_BOTTOM 60
@@ -62,17 +62,17 @@
 # Back remains local first, then restores registry focus. Open Recorded Shape.
 7080 tap LEFT_TOP 60
 7200 tap LEFT_TOP 60
-7320 encoder NAV 1
-7380 encoder NAV 1
+7320 encoder NAV 0.01
+7380 encoder NAV 0.01
 7500 tap NAV 60
 7720 capture screen recorded_workspace
 
 # Disabled remains explicit; Destinations stays visible and directly reachable.
 7840 tap BOTTOM_LEFT 60
 8060 capture screen recorded_disabled
-8180 encoder NAV 1
-8240 encoder NAV 1
-8300 encoder NAV 1
+8180 encoder NAV 0.01
+8240 encoder NAV 0.01
+8300 encoder NAV 0.01
 8520 capture screen recorded_destinations_focused
 8640 tap NAV 60
 8860 capture screen recorded_destinations

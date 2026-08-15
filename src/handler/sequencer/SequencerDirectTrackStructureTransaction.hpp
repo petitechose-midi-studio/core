@@ -40,7 +40,11 @@ static_assert(
 
 [[nodiscard]] SequencerPreparedTrackStructureResult
 executeSequencerCreateTrackStructure(
-    SequencerDirectTrackStructureStateRefs state
+    SequencerDirectTrackStructureStateRefs state,
+    core::state::sequencer::SequencerTrackKind kind =
+        core::state::sequencer::SequencerTrackKind::INSTRUMENT,
+    core::state::sequencer::DrumKitPreset drumPreset =
+        core::state::sequencer::DrumKitPreset::GENERAL_MIDI
 );
 
 [[nodiscard]] SequencerPreparedTrackStructureResult

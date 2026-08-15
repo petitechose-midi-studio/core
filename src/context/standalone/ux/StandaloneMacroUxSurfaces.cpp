@@ -30,6 +30,8 @@ namespace core::context::standalone::ux {
 namespace {
 
 namespace detail_policy = core::state::macro;
+using MacroAction = core::state::macro::MacroInteractionAction;
+using MacroPolicy = core::state::macro::MacroInteractionPolicy;
 
 FLASHMEM const char* recordedShapeOperationStatus(
     core::state::modulation::ProjectRecordedShapeCaptureStatus status
@@ -144,6 +146,44 @@ FLASHMEM bool isButton(const oc::core::input::InputBindingTraceEvent& event,
 FLASHMEM bool isEncoder(const oc::core::input::InputBindingTraceEvent& event, Config::EncoderID encoder) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
            event.encoderId == static_cast<oc::type::EncoderID>(encoder);
+}
+
+FLASHMEM MacroAction macroStructureActionForEvent(
+    const core::state::macro::MacroInteractionContext& context,
+    const oc::core::input::InputBindingTraceEvent& event
+) {
+    using ButtonType = oc::core::input::ButtonBindingType;
+    if (isEncoder(event, Config::EncoderID::NAV)) {
+        return MacroPolicy::navTurn(context);
+    }
+    if (isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE)) {
+        return MacroPolicy::navRelease(context);
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_LEFT, ButtonType::PRESS)) {
+        const auto hold = MacroPolicy::bottomLeftLongPress(context);
+        return hold != MacroAction::NONE
+            ? hold
+            : MacroPolicy::bottomLeftRelease(context);
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_LEFT, ButtonType::RELEASE)) {
+        return MacroPolicy::bottomLeftRelease(context);
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_LEFT, ButtonType::LONG_PRESS)) {
+        return MacroPolicy::bottomLeftLongPress(context);
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::PRESS)) {
+        const auto hold = MacroPolicy::bottomRightLongPress(context);
+        return hold != MacroAction::NONE
+            ? hold
+            : MacroPolicy::bottomRightRelease(context);
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE)) {
+        return MacroPolicy::bottomRightRelease(context);
+    }
+    if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::LONG_PRESS)) {
+        return MacroPolicy::bottomRightLongPress(context);
+    }
+    return MacroAction::NONE;
 }
 
 FLASHMEM void copyValueLabel(char (&out)[16], const char* value) {
@@ -427,6 +467,7 @@ FLASHMEM bool MacroValueUxSurface::captureSemanticUxContext(
         out.targetIndex = static_cast<int16_t>(index);
         out.property = "Automation";
         out.effect = "record_macro_automation_take_value";
+        out.intent = core::state::interaction::ControllerIntent::CAPTURE;
         copyValueLabel(out.valueLabel, macros_.slots[index].displayValue.get());
     } else {
         out.mode = "macro";
@@ -434,6 +475,7 @@ FLASHMEM bool MacroValueUxSurface::captureSemanticUxContext(
         out.targetIndex = static_cast<int16_t>(index);
         out.property = "Base";
         out.effect = "edit_macro_base";
+        out.intent = core::state::interaction::ControllerIntent::EDIT_VALUE;
         copyValueLabel(out.valueLabel, macros_.slots[index].displayValue.get());
     }
     const auto sourceAddress = core::state::macro::MacroAutomationSlotAddress{
@@ -511,14 +553,19 @@ FLASHMEM bool MacroPerformanceUxSurface::captureSemanticUxContext(
         out.effect = editPress
             ? "show_macro_edit_prompt"
             : "close_macro_edit_prompt";
+        out.intent = editPress
+            ? core::state::interaction::ControllerIntent::OPEN_ADVANCED
+            : core::state::interaction::ControllerIntent::CANCEL;
         copyValueLabel(out.valueLabel, editPress ? "Press Macro" : "Closed");
     } else {
         out.target = "automation_take";
         out.property = timing ? "Duration" : "Automation";
         if (takePress) {
             out.effect = "arm_macro_automation_take";
+            out.intent = core::state::interaction::ControllerIntent::CAPTURE;
         } else if (timing) {
             out.effect = "select_macro_automation_take_duration";
+            out.intent = core::state::interaction::ControllerIntent::MOVE_FOCUS;
         } else if (takeRelease) {
             const auto phase = macro_ui_.automationTake.phase;
             out.effect = phase ==
@@ -528,8 +575,10 @@ FLASHMEM bool MacroPerformanceUxSurface::captureSemanticUxContext(
                        core::state::macro::MacroAutomationTakePhase::ARMED
                     ? "discard_empty_macro_automation_take"
                     : "release_macro_automation_take");
+            out.intent = core::state::interaction::ControllerIntent::CAPTURE;
         } else {
             out.effect = "cancel_macro_performance_action";
+            out.intent = core::state::interaction::ControllerIntent::CANCEL;
         }
         copyValueLabel(
             out.valueLabel,
@@ -621,6 +670,20 @@ FLASHMEM bool MacroStructureUxSurface::captureSemanticUxContext(
     }
     out.targetIndex = static_cast<int16_t>(index);
     copyIndexLabel(out.valueLabel, index);
+
+    const auto interaction = core::state::macro::buildMacroInteractionContext({
+        .pages = pages_,
+        .macroUi = macro_ui_,
+        .trackNavigation = track_navigation_,
+        .structureClipboard = structure_clipboard_,
+        .navigationFocus = navigation_focus_.get(),
+        .enabledTrackMask = pages_.currentTrackEnabledMask(),
+        .blockingOverlay = false,
+        .slotPropertySelecting = false,
+    });
+    out.intent = core::state::macro::controllerIntentFor(
+        macroStructureActionForEvent(interaction, event)
+    );
 
     if (isButton(
         event,

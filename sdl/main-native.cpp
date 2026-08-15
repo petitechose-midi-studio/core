@@ -18,6 +18,7 @@
 #include "integration/UxScenarioRunner.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <array>
 #include <cstring>
 #include <filesystem>
@@ -193,6 +194,9 @@ int main(int argc, char** argv) {
         }
         semanticRecorder.configure({.sink = &semanticTrace, .enabled = true});
     }
+    core::validation::ux::setCurrentEncoderContractTraceRecorder(
+        &semanticRecorder
+    );
 
     // UX workflows must not inherit clock/transport traffic from the user's
     // live loopMIDI ports. They drive transport explicitly through scripted

@@ -2,6 +2,7 @@
 # Purpose: validates selector hold behavior, absence of redundant Sequencer
 # settings action, and Device Settings as a real top-level view.
 # Expect: capture_match:device_settings_open=device_settings_after_selector_release
+# Expect: semantic:device_settings_item:target_index=4, semantic:device_settings_open:view=device_settings, semantic:device_settings_open:mode=device_settings
 
 0 capture screen boot
 
@@ -14,20 +15,21 @@
 300 encoder NAV 1
 380 capture screen sequencer_item_without_settings
 450 tap BOTTOM_LEFT 60
-620 capture screen sequencer_settings_absent
+620 capture screen view_list_without_extra_entry
 
 # Device Settings is an explicit selector item and switches active view.
 740 encoder NAV 1
 840 encoder NAV 1
-940 capture screen device_settings_item
-1040 button LEFT_TOP up
-1220 capture screen device_settings_open
+940 encoder NAV 1
+1020 capture screen device_settings_item
+1120 button LEFT_TOP up
+1300 capture screen device_settings_open
 
 # LEFT_TOP hold from Device Settings reopens the same selector path as other views.
-1340 button LEFT_TOP down
-1420 tick
-1500 capture screen selector_from_device_settings
-2180 tick
-2260 capture screen selector_from_device_settings_scroll
-2360 button LEFT_TOP up
-2520 capture screen device_settings_after_selector_release
+1420 button LEFT_TOP down
+1500 tick
+1580 capture screen selector_from_device_settings
+2260 tick
+2340 capture screen selector_from_device_settings_scroll
+2440 button LEFT_TOP up
+2600 capture screen device_settings_after_selector_release

@@ -123,8 +123,26 @@ FLASHMEM bool ProjectSnapshotCapture::begin_(const core::state::CoreState& state
         .token = state.projectSessionSaveToken(),
         .authoredRevision = state.pages.control.authoredRevision,
         .projectTrackRevision = state.projectTracks.revision.get(),
+        .drumRevision = state.sequencerTracks.drumRevisionSignal().get(),
     };
     frozen_active_track_ = state.sequencerTracks.activeTrackIndex();
+    frozen_drum_track_mask_ = static_cast<uint16_t>(
+        state.sequencerTracks.drumTrackMask() &
+        state.sequencerTracks.currentEnabledMask());
+    if (frozen_drum_track_mask_ != 0U) {
+        if (!snapshot.drumTracks) {
+            snapshot.drumTracks = core::app::makeExtmemUnique<
+                core::state::sequencer::DrumTrackBankSnapshot>();
+            if (!snapshot.drumTracks) {
+                cancel();
+                return false;
+            }
+            for (auto& track : snapshot.drumTracks->tracks) track.reset();
+        }
+        snapshot.drumTracks->drumTrackMask = frozen_drum_track_mask_;
+    } else {
+        snapshot.drumTracks.reset();
+    }
     frozen_focused_step_ = state.sequencer.focusedStep.get();
     frozen_active_step_property_ = state.sequencer.activeStepProperty.get();
     if (!core::state::sequencer::reserveHistoryTrackBankSnapshotStorage(
@@ -136,6 +154,8 @@ FLASHMEM bool ProjectSnapshotCapture::begin_(const core::state::CoreState& state
         !state.projectSessionSaveTokenMatches(guard_.token) ||
         state.pages.control.authoredRevision != guard_.authoredRevision ||
         state.projectTracks.revision.get() != guard_.projectTrackRevision ||
+        state.sequencerTracks.drumRevisionSignal().get() !=
+            guard_.drumRevision ||
         state.sequencerTracks.activeTrackIndex() != frozen_active_track_) {
         cancel();
         return false;
@@ -246,6 +266,13 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
                     .workBytes = workBytes,
                 };
             }
+            if (snapshot_->drumTracks != nullptr &&
+                (frozen_drum_track_mask_ & static_cast<uint16_t>(
+                    1U << sequencer_track_)) != 0U) {
+                snapshot_->drumTracks->tracks[sequencer_track_] =
+                    state_->sequencerTracks.drumTrack(sequencer_track_);
+                workBytes += sizeof(core::state::sequencer::DrumTrackState);
+            }
             ++sequencer_track_;
             if (sequencer_track_ ==
                 core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
@@ -309,6 +336,7 @@ FLASHMEM void ProjectSnapshotCapture::cancel() {
     macro_track_ = 0U;
     sequencer_track_ = 0U;
     frozen_active_track_ = 0U;
+    frozen_drum_track_mask_ = 0U;
     frozen_focused_step_ = 0U;
     frozen_active_step_property_ = core::state::sequencer::StepProperty::NOTE;
 }
@@ -339,6 +367,8 @@ FLASHMEM bool ProjectSnapshotCapture::guardMatches_() const {
            state_->projectSessionSaveTokenMatches(guard_.token) &&
            state_->pages.control.authoredRevision == guard_.authoredRevision &&
            state_->projectTracks.revision.get() == guard_.projectTrackRevision &&
+           state_->sequencerTracks.drumRevisionSignal().get() ==
+               guard_.drumRevision &&
            state_->sequencerTracks.activeTrackIndex() == frozen_active_track_;
 }
 
@@ -391,6 +421,9 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     if (state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) ||
         state.projectTrackHistory.hasPendingGesture() ||
         !snapshot.projectControl ||
+        (snapshot.drumTracks != nullptr &&
+         (snapshot.drumTracks->drumTrackMask & static_cast<uint16_t>(
+             ~snapshot.sequencer.flat.enabledMask)) != 0U) ||
         !validProjectTrackSnapshot(snapshot.projectTracks) ||
         !core::state::modulation::validProjectModulationDomain(
             snapshot.projectControl->modulation,
@@ -408,6 +441,13 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
             snapshot.sequencer
         )) {
         return false;
+    }
+    if (snapshot.drumTracks != nullptr) {
+        if (!state.sequencerTracks.applyDrumTrackBank(*snapshot.drumTracks)) {
+            return false;
+        }
+    } else {
+        state.sequencerTracks.clearDrumTrackBank();
     }
 
     state.project = snapshot.project;

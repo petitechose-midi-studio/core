@@ -47,6 +47,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectSnapshotPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectStatePersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectTrackStatePersistenceCodec.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/DrumTrackPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerCcLanePersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerGraphAssetCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerGraphRecordCodec.cpp"
@@ -57,6 +58,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/StructureClipboardPastePlan.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/StructureClipboardState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/StructureNavigationState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/interaction/TextKeyboardLayout.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroAutomationDomain.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/macro/MacroHistoryAssignmentInternals.cpp"
@@ -121,6 +123,8 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerStructureHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerTrackBankOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerTrackBankState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/DrumPatternState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/DrumSequencerUiState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerUiState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/shared/StructureSlotOps.cpp")
 

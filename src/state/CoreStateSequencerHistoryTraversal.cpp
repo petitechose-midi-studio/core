@@ -56,6 +56,19 @@ FLASHMEM const char* historyActionLabel(sequencer::SequencerHistoryActionKind ki
         case sequencer::SequencerHistoryActionKind::TrackStructure: return "Track Structure";
         case sequencer::SequencerHistoryActionKind::FullBank: return "Sequencer Set";
         case sequencer::SequencerHistoryActionKind::PatternRandomize: return "Pattern Randomize";
+        case sequencer::SequencerHistoryActionKind::DrumStepToggle: return "Drum Step State";
+        case sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit:
+            return "Drum Step Property";
+        case sequencer::SequencerHistoryActionKind::DrumLaneEdit: return "Drum Lane";
+        case sequencer::SequencerHistoryActionKind::DrumLaneStructure:
+            return "Drum Lane Structure";
+        case sequencer::SequencerHistoryActionKind::DrumPatternSettings:
+            return "Drum Pattern";
+        case sequencer::SequencerHistoryActionKind::DrumTrackKind: return "Track Type";
+        case sequencer::SequencerHistoryActionKind::DrumAdvancedContent:
+            return "Drum Step Content";
+        case sequencer::SequencerHistoryActionKind::DrumLaneContent:
+            return "Drum Lane Content";
         case sequencer::SequencerHistoryActionKind::PatternEdit:
         default: return "Pattern Edit";
     }
@@ -138,10 +151,23 @@ FLASHMEM void showSequencerHistoryFeedback(sequencer::SequencerState& sequencerS
 
     if (actionOverride != nullptr) {
         std::snprintf(line2, sizeof(line2), "%s", actionOverride);
-    } else if (descriptor.kind == sequencer::SequencerHistoryActionKind::StepToggle &&
+    } else if ((descriptor.kind == sequencer::SequencerHistoryActionKind::StepToggle ||
+                descriptor.kind ==
+                    sequencer::SequencerHistoryActionKind::DrumStepToggle) &&
                descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
-        std::snprintf(line2, sizeof(line2), "Step %02u State",
-                      static_cast<unsigned>(descriptor.stepIndex + 1U));
+        if (descriptor.laneIndex !=
+            sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+            std::snprintf(
+                line2,
+                sizeof(line2),
+                "L%02u Step %02u",
+                static_cast<unsigned>(descriptor.laneIndex + 1U),
+                static_cast<unsigned>(descriptor.stepIndex + 1U)
+            );
+        } else {
+            std::snprintf(line2, sizeof(line2), "Step %02u State",
+                          static_cast<unsigned>(descriptor.stepIndex + 1U));
+        }
     } else if (descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
         std::snprintf(line2, sizeof(line2), "Step %02u %s",
                       static_cast<unsigned>(descriptor.stepIndex + 1U),
@@ -162,7 +188,9 @@ FLASHMEM void showSequencerHistoryFeedback(sequencer::SequencerState& sequencerS
                                     ? descriptor.beforeValue
                                     : descriptor.afterValue;
 
-        if (descriptor.kind == sequencer::SequencerHistoryActionKind::StepToggle) {
+        if (descriptor.kind == sequencer::SequencerHistoryActionKind::StepToggle ||
+            descriptor.kind ==
+                sequencer::SequencerHistoryActionKind::DrumStepToggle) {
             std::snprintf(line3, sizeof(line3), "%s -> %s", fromValue != 0 ? "On" : "Off",
                           toValue != 0 ? "On" : "Off");
         } else if (descriptor.kind == sequencer::SequencerHistoryActionKind::PageStructure ||

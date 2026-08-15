@@ -21,8 +21,12 @@ static_assert(
     "Global history must expose every payload retained by domain histories"
 );
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+// 92 lightweight references cover every bounded domain-history entry. The
+// coordinator owns no musical payload and is allocated in PSRAM; keep its ARM
+// metadata below one KiB so adding a domain cannot silently turn it into a
+// second history store.
 static_assert(
-    sizeof(ProjectHistoryCoordinator) <= 640U,
+    sizeof(ProjectHistoryCoordinator) <= 1024U,
     "Global history metadata must remain a compact PSRAM allocation"
 );
 #endif
@@ -136,6 +140,22 @@ FLASHMEM const char* sequencerActionLabel(uint8_t rawKind) {
             return "CC Lane Curve";
         case Kind::FullBank:
             return "Sequencer Set";
+        case Kind::PatternRandomize:
+            return "Pattern Randomize";
+        case Kind::DrumStepToggle:
+            return "Drum Step State";
+        case Kind::DrumStepPropertyEdit:
+            return "Drum Step Property";
+        case Kind::DrumLaneEdit:
+            return "Drum Lane";
+        case Kind::DrumLaneStructure:
+            return "Drum Lane Structure";
+        case Kind::DrumPatternSettings:
+            return "Drum Pattern";
+        case Kind::DrumTrackKind:
+            return "Track Type";
+        case Kind::DrumAdvancedContent:
+            return "Drum Step Content";
         case Kind::PatternEdit:
         default:
             return "Pattern Edit";

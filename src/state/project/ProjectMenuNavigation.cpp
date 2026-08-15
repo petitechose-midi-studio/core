@@ -80,9 +80,10 @@ FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
                 navigation.notifyContentChanged();
                 return true;
             }
-            if (rowIndex >= 4U &&
-                rowIndex < 4U + PROJECT_CC_LANE_DEFAULT_COUNT) {
-                const uint8_t lane = static_cast<uint8_t>(rowIndex - 4U);
+            return false;
+        case ProjectNodeId::MUSIC_CC_DEFAULTS:
+            if (rowIndex < PROJECT_CC_LANE_DEFAULT_COUNT) {
+                const uint8_t lane = rowIndex;
                 navigation.ccLaneDefaultControllers[lane] =
                     static_cast<uint8_t>(
                         (navigation.ccLaneDefaultControllers[lane] + 1U) %
@@ -418,7 +419,8 @@ FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
         );
         navigation.editingProjectSlug[navigation.editingProjectSlug.size() - 1U] = '\0';
     }
-    navigation.projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    navigation.projectNameKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
     navigation.projectNameOptRawPosition = 0.0f;
     navigation.projectNameOptRowAccumulator = 0.0f;
     navigation.projectNameShiftActive = false;
@@ -453,10 +455,11 @@ FLASHMEM void switchProjectTab(ProjectNavigationState& navigation, int delta) {
     // Its workspace never leaks into the internal Settings carousel.
     if (navigation.activeTab.get() == ProjectTab::MODULATORS) return;
 
-    const int count = static_cast<int>(ProjectTab::MODULATORS);
-    const int current = static_cast<int>(navigation.activeTab.get());
+    const int count = static_cast<int>(projectRootTabCount());
+    const int current = projectRootTabIndex(navigation.activeTab.get());
+    if (current < 0) return;
     const int next = wrapIndex(current + delta, count);
-    setNodeRoot(navigation, static_cast<ProjectTab>(next));
+    setNodeRoot(navigation, projectRootTabAt(static_cast<uint8_t>(next)));
 }
 
 FLASHMEM void openProjectRootTab(

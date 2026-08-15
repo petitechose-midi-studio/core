@@ -61,7 +61,7 @@ inline constexpr uint32_t color(Tone tone) {
         case Tone::CYCLE_STATE:
             return standalone::theme::color::STEP_CYCLE_STATE;
     }
-    return 0xB8C4D1;
+    return standalone::theme::color::TEXT_SECONDARY;
 }
 
 inline constexpr const char* label(Tone tone) {

@@ -4,43 +4,49 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "ui/sequencer/StepGridDataPalette.hpp"
 #include "ui/sequencer/StepVisualUtils.hpp"
 
 namespace core::ui::sequencer::grid {
 
 namespace {
 
-constexpr uint8_t CHROMATIC_NOTE_COUNT = 12;
-constexpr uint32_t CHROMATIC_NOTE_BASE_PALETTE_HEX[] = {
-    0xF4F1DE,
-    0xEAB69E,
-    0xE07A5F,
-    0xAA675E,
-    0x73535C,
-    0x3D405B,
-    0x5F797A,
-    0x81B29A,
-    0xBABF94,
-    0xF2CC8F,
-    0xF3D8A9,
-    0xF3E5C4,
-};
+constexpr uint8_t CHROMATIC_NOTE_COUNT =
+    static_cast<uint8_t>(palette::CHROMATIC_NOTES.size());
+constexpr uint8_t PITCH_VIEW_OCTAVE = 12U;
+constexpr uint8_t PITCH_VIEW_MAX_SPAN = 24U;
+constexpr lv_coord_t PITCH_VIEW_TOP_PAD = 14;
+// The two compact phase ribbons (Cycle then Micro) own the bottom of a tile.
+// Keep pitch rails above that band so musical pitch and temporal phase never
+// become visually ambiguous.
+constexpr lv_coord_t PITCH_VIEW_BOTTOM_PAD = 14;
+constexpr uint8_t EVENT_COLOR_FLOOR_MIX = 96U;
 
 FLASHMEM uint8_t chromaIndexForNote(uint8_t note) {
     return static_cast<uint8_t>(note % CHROMATIC_NOTE_COUNT);
 }
 
 FLASHMEM lv_color_t noteBaseColor(uint8_t note) {
-    return lv_color_hex(CHROMATIC_NOTE_BASE_PALETTE_HEX[chromaIndexForNote(note)]);
+    return lv_color_hex(palette::CHROMATIC_NOTES[chromaIndexForNote(note)]);
 }
 
-FLASHMEM lv_color_t velocityAccentColor(uint8_t note, uint8_t velocity) {
-    using namespace core::ui::sequencer::visual;
-
-    const lv_color_t fullColor = noteLabelColor(note);
-    const lv_color_t minColor = grayscaleColor(VELOCITY_ZERO_FILL_BRIGHTNESS);
-    const uint8_t mix = mapToRangeU8(velocity, VELOCITY_MAX, 0, LV_OPA_COVER);
-    return lv_color_mix(fullColor, minColor, mix);
+bool sameNoteEvents(const TileNoteEventProjection& lhs,
+                    const TileNoteEventProjection& rhs) {
+    if (lhs.count != rhs.count || lhs.dense != rhs.dense) {
+        return false;
+    }
+    for (uint8_t index = 0U; index < lhs.count; ++index) {
+        const auto& a = lhs.events[index];
+        const auto& b = rhs.events[index];
+        if (a.startQ8 != b.startQ8 ||
+            a.spanQ8 != b.spanQ8 ||
+            a.note != b.note ||
+            a.velocity != b.velocity ||
+            a.active != b.active) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
@@ -56,6 +62,115 @@ FLASHMEM lv_color_t probabilityInlineIconColor(uint8_t note, uint8_t probability
     const lv_color_t minColor = grayscaleColor(PROBABILITY_ICON_MIN_BRIGHTNESS);
     const uint8_t mix = mapToRangeU8(probability, 100, 0, LV_OPA_COVER);
     return lv_color_mix(fullColor, minColor, mix);
+}
+
+FLASHMEM lv_color_t drumLaneAccentColor(
+    uint32_t accentColor,
+    uint8_t velocity,
+    bool enabled
+) {
+    using namespace core::ui::sequencer::visual;
+
+    if (!enabled) {
+        return grayscaleColor(SHAPE_DISABLED_FILL_BRIGHTNESS);
+    }
+    const lv_color_t fullColor = lv_color_hex(accentColor);
+    const lv_color_t minColor = grayscaleColor(VELOCITY_ZERO_FILL_BRIGHTNESS);
+    const uint8_t mix = mapToRangeU8(velocity, VELOCITY_MAX, 0, LV_OPA_COVER);
+    return lv_color_mix(fullColor, minColor, mix);
+}
+
+FLASHMEM lv_color_t stepEventAccentColor(uint32_t accentColor, uint8_t velocity) {
+    using namespace core::ui::sequencer::visual;
+
+    const lv_color_t fullColor = lv_color_hex(accentColor);
+    const lv_color_t floorColor = grayscaleColor(VELOCITY_ZERO_FILL_BRIGHTNESS);
+    const uint8_t mix = static_cast<uint8_t>(
+        EVENT_COLOR_FLOOR_MIX +
+        (static_cast<uint16_t>(velocity) *
+         static_cast<uint16_t>(LV_OPA_COVER - EVENT_COLOR_FLOOR_MIX)) /
+            VELOCITY_MAX
+    );
+    return lv_color_mix(fullColor, floorColor, mix);
+}
+
+FLASHMEM StepPitchViewport buildStepPitchViewport(
+    const std::array<TileRenderState, 8>& tiles
+) {
+    bool found = false;
+    uint8_t minNote = 127U;
+    uint8_t maxNote = 0U;
+    // Anchor the page to authored root/child steps only. Representative child
+    // summaries and noteEvents can change with the active cycle and must never
+    // recenter the visual scale during playback.
+    for (const auto& tile : tiles) {
+        if (!tile.inPattern || !tile.enabled) continue;
+        minNote = std::min<uint8_t>(minNote, tile.note);
+        maxNote = std::max<uint8_t>(maxNote, tile.note);
+        found = true;
+    }
+    if (!found) return {};
+
+    uint8_t lowNote = static_cast<uint8_t>(
+        (minNote / PITCH_VIEW_OCTAVE) * PITCH_VIEW_OCTAVE
+    );
+    uint16_t span = StepPitchViewport::DEFAULT_SEMITONE_SPAN;
+    const uint16_t required = static_cast<uint16_t>(maxNote) - lowNote;
+    while (span < required && span < PITCH_VIEW_MAX_SPAN) {
+        span = static_cast<uint16_t>(span + PITCH_VIEW_OCTAVE);
+    }
+    span = std::min<uint16_t>(span, PITCH_VIEW_MAX_SPAN);
+    if (static_cast<uint16_t>(lowNote) + span > 127U) {
+        lowNote = static_cast<uint8_t>(127U - span);
+    }
+    return {
+        .lowNote = lowNote,
+        .semitoneSpan = static_cast<uint8_t>(span),
+    };
+}
+
+FLASHMEM StepPitchOverflow stepPitchOverflow(
+    uint8_t note,
+    const StepPitchViewport& viewport
+) {
+    if (note < viewport.lowNote) return StepPitchOverflow::BELOW;
+    const uint16_t high = static_cast<uint16_t>(viewport.lowNote) +
+        std::max<uint8_t>(1U, viewport.semitoneSpan);
+    return static_cast<uint16_t>(note) > high
+        ? StepPitchOverflow::ABOVE
+        : StepPitchOverflow::NONE;
+}
+
+FLASHMEM lv_coord_t stepPitchY(
+    uint8_t note,
+    const StepPitchViewport& viewport,
+    lv_coord_t buttonHeight
+) {
+    const lv_coord_t top = std::min<lv_coord_t>(
+        PITCH_VIEW_TOP_PAD,
+        std::max<lv_coord_t>(0, buttonHeight - 2)
+    );
+    const lv_coord_t bottom = std::max<lv_coord_t>(
+        top,
+        static_cast<lv_coord_t>(buttonHeight - PITCH_VIEW_BOTTOM_PAD - 1)
+    );
+    const lv_coord_t height = std::max<lv_coord_t>(1, bottom - top);
+    const uint8_t span = std::max<uint8_t>(1U, viewport.semitoneSpan);
+    const int relative = std::clamp<int>(
+        static_cast<int>(note) - static_cast<int>(viewport.lowNote),
+        0,
+        span
+    );
+    const lv_coord_t offset = static_cast<lv_coord_t>(
+        (static_cast<int32_t>(relative) * height + span / 2U) / span
+    );
+    return static_cast<lv_coord_t>(bottom - offset);
+}
+
+FLASHMEM uint8_t stepEventHeadHeight(uint8_t velocity) {
+    if (velocity < 43U) return 2U;
+    if (velocity < 86U) return 3U;
+    return 4U;
 }
 
 FLASHMEM int scaleDegreeIndexForNote(oc::note::sequencer::StepSequencerScaleSettings settings,
@@ -254,54 +369,16 @@ bool sameContentBadges(const TileContentBadgeState& lhs,
            lhs.cycleStates == rhs.cycleStates &&
            lhs.chord == rhs.chord &&
            lhs.expansionLimitReached == rhs.expansionLimitReached &&
+           lhs.microCursorVisible == rhs.microCursorVisible &&
+           lhs.cycleCursorVisible == rhs.cycleCursorVisible &&
            lhs.chordVoiceCount == rhs.chordVoiceCount &&
-           lhs.chordSource == rhs.chordSource;
-}
-
-FLASHMEM StepVisualStyle buildStepVisualStyle(uint8_t note,
-                                     uint8_t velocity,
-                                     uint16_t gate,
-                                     int8_t nudge,
-                                     bool enabled,
-                                     lv_coord_t railWidth,
-                                     lv_coord_t buttonHeight) {
-    using namespace core::ui::sequencer::visual;
-
-    StepVisualStyle style;
-    const lv_coord_t shapeMaxWidth = std::max<lv_coord_t>(STEP_SHAPE_MIN_WIDTH, railWidth);
-    const lv_coord_t shapeMaxHeight = std::max<lv_coord_t>(
-        STEP_SHAPE_MIN_HEIGHT,
-        buttonHeight - STEP_BAR_HEIGHT - STEP_SHAPE_PAD_Y
-    );
-    const uint32_t scaledWidth =
-        (static_cast<uint32_t>(gate) * static_cast<uint32_t>(shapeMaxWidth) + 50U) / 100U;
-    style.width = static_cast<lv_coord_t>(std::max<uint32_t>(STEP_SHAPE_MIN_WIDTH, scaledWidth));
-
-    const float velocityNorm =
-        std::clamp(static_cast<float>(velocity) / static_cast<float>(VELOCITY_MAX), 0.0f, 1.0f);
-    style.height = static_cast<lv_coord_t>(
-        STEP_SHAPE_MIN_HEIGHT +
-        static_cast<lv_coord_t>(
-            velocityNorm * static_cast<float>(shapeMaxHeight - STEP_SHAPE_MIN_HEIGHT)
-        )
-    );
-
-    const int clampedNudge = std::clamp<int>(nudge, -NUDGE_VISUAL_MAX, NUDGE_VISUAL_MAX);
-    const int availableOffset = shapeMaxWidth / 2;
-    style.x = static_cast<lv_coord_t>(
-        STEP_SHAPE_PAD_X + ((clampedNudge * availableOffset) / NUDGE_VISUAL_MAX)
-    );
-    style.y = static_cast<lv_coord_t>(buttonHeight - STEP_BAR_HEIGHT - STEP_SHAPE_PAD_Y - style.height);
-
-    if (enabled) {
-        style.strokeColor = velocityAccentColor(note, velocity);
-        style.strokeOpa = (velocity == 0) ? STEP_SHAPE_OPA_VELOCITY_ZERO : STEP_SHAPE_OPA_ENABLED;
-    } else {
-        style.strokeColor = grayscaleColor(SHAPE_DISABLED_FILL_BRIGHTNESS);
-        style.strokeOpa = STEP_SHAPE_OPA_DISABLED;
-    }
-
-    return style;
+           lhs.chordSource == rhs.chordSource &&
+           lhs.microLength == rhs.microLength &&
+           lhs.microCursor == rhs.microCursor &&
+           lhs.cycleLength == rhs.cycleLength &&
+           lhs.cycleCursor == rhs.cycleCursor &&
+           lhs.microActiveMask == rhs.microActiveMask &&
+           lhs.cycleActiveMask == rhs.cycleActiveMask;
 }
 
 TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRenderState& state) {
@@ -319,6 +396,8 @@ TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRende
         cache.stepPastePreview != state.stepPastePreview;
     diff.playheadVisibleChanged =
         !initialized || cache.playheadVisible != state.playheadVisible;
+    diff.playheadProgressChanged =
+        !initialized || cache.playheadProgress != state.playheadProgress;
     diff.noteChanged = !initialized || cache.note != state.note;
     diff.velocityChanged = !initialized || cache.velocity != state.velocity;
     diff.probabilityChanged = !initialized || cache.probability != state.probability;
@@ -338,6 +417,8 @@ TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRende
     diff.variationChanged = !initialized || !sameVariationState(cache.variation, state.variation);
     diff.contentBadgesChanged =
         !initialized || !sameContentBadges(cache.contentBadges, state.contentBadges);
+    diff.noteEventsChanged =
+        !initialized || !sameNoteEvents(cache.noteEvents, state.noteEvents);
     diff.probabilityMaskChanged =
         !initialized || (state.inPattern && diff.probabilityCycleActiveChanged);
 
@@ -348,10 +429,12 @@ TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRende
         (state.inPattern &&
          (diff.noteChanged || diff.velocityChanged || diff.probabilityChanged ||
           diff.gateChanged || diff.nudgeChanged || diff.variationChanged ||
-          diff.childContentChanged || diff.childPitchSummaryChanged));
-    diff.barChanged =
+          diff.childContentChanged || diff.childPitchSummaryChanged ||
+          diff.noteEventsChanged));
+    diff.playheadChanged =
         !initialized || diff.inPatternChanged || diff.playheadVisibleChanged ||
-        cache.playing != state.playing || diff.variationChanged;
+        diff.playheadProgressChanged || cache.playing != state.playing ||
+        diff.variationChanged;
     return diff;
 }
 

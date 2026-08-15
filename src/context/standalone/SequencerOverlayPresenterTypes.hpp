@@ -46,6 +46,12 @@ struct StepEditRenderData {
     static constexpr size_t CHORD_FIELD_COUNT =
         static_cast<size_t>(core::state::sequencer::SequencerChordEditField::COUNT);
 
+    StepEditRenderData() = default;
+    StepEditRenderData(const StepEditRenderData&) = delete;
+    StepEditRenderData& operator=(const StepEditRenderData&) = delete;
+    StepEditRenderData(StepEditRenderData&&) = delete;
+    StepEditRenderData& operator=(StepEditRenderData&&) = delete;
+
     std::array<std::array<char, 16>, ROW_COUNT> valueBuffers{};
     std::array<std::array<char, 12>, PROPERTY_COUNT> compactValueBuffers{};
     std::array<std::array<char, 16>, CHORD_FIELD_COUNT> chordValueBuffers{};
@@ -56,6 +62,8 @@ struct StepEditRenderData {
     std::array<StepEditKeyValueRow, ROW_COUNT> rows{};
     std::array<char, 8> stepBadge{};
     std::array<char, 24> summary{};
+    std::array<char, 12> headerContext{};
+    std::array<std::array<char, 8>, 2> headerMetricValues{};
     std::array<char, 24> chordFieldTitle{};
     std::array<char, 24> chordName{};
     std::array<char, 32> chordDetail{};

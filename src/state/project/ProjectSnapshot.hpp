@@ -28,6 +28,9 @@ struct ProjectSnapshot {
         core::state::modulation::ProjectControlDomainState
     > projectControl;
     core::state::sequencer::SequencerHistoryTrackBankSnapshot sequencer{};
+    core::app::ExtmemUniquePtr<
+        core::state::sequencer::DrumTrackBankSnapshot
+    > drumTracks;
 
     ProjectSnapshot();
     ~ProjectSnapshot();
@@ -120,6 +123,7 @@ private:
     uint8_t macro_track_ = 0U;
     uint8_t sequencer_track_ = 0U;
     uint8_t frozen_active_track_ = 0U;
+    uint16_t frozen_drum_track_mask_ = 0U;
     uint8_t frozen_focused_step_ = 0U;
     core::state::sequencer::StepProperty frozen_active_step_property_ =
         core::state::sequencer::StepProperty::NOTE;

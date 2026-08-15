@@ -20,7 +20,7 @@ EXPECTED_FILENAMES = frozenset(
     }
 )
 EXPECTED_PROFILE_ID = "midi-studio-core-teensy41"
-EXPECTED_PROFILE_VERSION = "release-2026.08"
+EXPECTED_PROFILE_VERSION = "release-2026.08.1"
 EXPECTED_MEMORY_VECTOR = "release-current"
 
 
@@ -56,6 +56,8 @@ def validate_artifacts(artifacts_dir: Path) -> None:
         raise ValueError("unexpected post-link report schema/interface version")
     if report.get("passed") is not True or report.get("violations") != []:
         raise ValueError("qualified firmware post-link report is not green")
+    if not isinstance(report.get("advisories"), list):
+        raise ValueError("qualified firmware post-link advisories are missing")
     if report.get("profileSha256") != profile_sha:
         raise ValueError("post-link report/profile digest mismatch")
 

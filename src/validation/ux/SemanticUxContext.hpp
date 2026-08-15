@@ -4,9 +4,13 @@
 
 #include <oc/core/input/InputBindingTrace.hpp>
 
+#include "state/interaction/ControllerInteractionContract.hpp"
+
 namespace core::validation::ux {
 
 struct SemanticUxContext {
+    core::state::interaction::ControllerIntent intent =
+        core::state::interaction::ControllerIntent::NONE;
     const char* mode = nullptr;
     const char* effect = nullptr;
     const char* outcome = nullptr;

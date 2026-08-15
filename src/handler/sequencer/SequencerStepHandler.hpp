@@ -34,6 +34,7 @@ namespace core::handler {
 class SequencerStepEditHandler;
 class SequencerPatternEditorHandler;
 class ProjectTrackEditorHandler;
+class DrumLaneEditorHandler;
 
 /**
  * Sequencer view bindings:
@@ -84,6 +85,7 @@ public:
     void attachStepEditHandler(SequencerStepEditHandler& handler);
     void attachPatternEditorHandler(SequencerPatternEditorHandler& handler);
     void attachTrackEditorHandler(ProjectTrackEditorHandler& handler);
+    void attachDrumLaneEditorHandler(DrumLaneEditorHandler& handler);
 private:
     void setupBindings();
 
@@ -104,6 +106,28 @@ private:
     void confirmStepContentDraftExitChoice();
     void continueStepContentDraft();
     void handleContextSelectorRelease();
+    void syncDrumSequencerToActiveTrack();
+    void confirmDrumSequencerType();
+    void handleDrumSequencerNavTurn(float delta);
+    void handleDrumSequencerNavPress();
+    void handleDrumSequencerNavRelease();
+    bool drumBackActionAvailable() const;
+    void handleDrumSequencerBack();
+    void editDrumSequencerOpt(float normalized);
+    void editDrumSequencerStepProperty(
+        uint8_t indexInPage,
+        float normalized
+    );
+    bool beginDrumHistory(
+        core::state::sequencer::SequencerHistoryDescriptor descriptor
+    );
+    bool sealDrumHistory(
+        bool changed,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor,
+        bool commit
+    );
+    void applyDrumSelector();
+    void cancelDrumSelector();
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
@@ -123,19 +147,24 @@ private:
     SequencerStepEditHandler* step_edit_handler_ = nullptr;
     SequencerPatternEditorHandler* pattern_editor_handler_ = nullptr;
     ProjectTrackEditorHandler* track_editor_handler_ = nullptr;
+    DrumLaneEditorHandler* drum_lane_editor_handler_ = nullptr;
 #if defined(MS_UX_RECORDER)
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif
 };
 
+inline constexpr std::size_t kSequencerStepHandlerArmDrumBytes = 4U;
+
 #if defined(MS_UX_RECORDER)
 static_assert(
-    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 260U,
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) ==
+        260U + kSequencerStepHandlerArmDrumBytes,
     "Sequencer Step handler exceeds its ARM UX-recorder PSRAM contract"
 );
 #else
 static_assert(
-    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 256U,
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) ==
+        256U + kSequencerStepHandlerArmDrumBytes,
     "Sequencer Step handler exceeds its ARM PSRAM contract"
 );
 #endif

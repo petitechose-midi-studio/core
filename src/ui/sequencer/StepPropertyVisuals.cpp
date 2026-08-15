@@ -1,10 +1,15 @@
 #include "StepPropertyVisuals.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/StepSemanticVisuals.hpp"
 
 namespace core::ui::sequencer::visual {
 
-const char* propertyIconGlyph(core::state::sequencer::StepProperty property) {
+FLASHMEM const char* propertyIconGlyph(
+    core::state::sequencer::StepProperty property
+) {
     using core::state::sequencer::StepProperty;
 
     switch (property) {
@@ -23,7 +28,7 @@ const char* propertyIconGlyph(core::state::sequencer::StepProperty property) {
     }
 }
 
-StepPropertyVisualSpec buildStepPropertyVisual(
+FLASHMEM StepPropertyVisualSpec buildStepPropertyVisual(
     core::state::sequencer::StepProperty property,
     bool inPattern
 ) {
@@ -60,6 +65,48 @@ StepPropertyVisualSpec buildStepPropertyVisual(
     }
 
     return spec;
+}
+
+FLASHMEM DrumPropertyVisualSpec buildDrumPropertyVisual(
+    core::state::sequencer::DrumSequencerProperty property
+) {
+    using DrumProperty = core::state::sequencer::DrumSequencerProperty;
+    using StepProperty = core::state::sequencer::StepProperty;
+
+    switch (property) {
+        case DrumProperty::STATE:
+            return {
+                standalone::icons::ACTION_VALIDATE,
+                "State",
+                semantic::color(semantic::Tone::STATE),
+            };
+        case DrumProperty::PROBABILITY:
+            return {
+                propertyIconGlyph(StepProperty::PROBABILITY),
+                "Chance",
+                semantic::colorForProperty(StepProperty::PROBABILITY),
+            };
+        case DrumProperty::GATE:
+            return {
+                propertyIconGlyph(StepProperty::GATE),
+                "Gate",
+                semantic::colorForProperty(StepProperty::GATE),
+            };
+        case DrumProperty::NUDGE:
+            return {
+                propertyIconGlyph(StepProperty::NUDGE),
+                "Nudge",
+                semantic::colorForProperty(StepProperty::NUDGE),
+            };
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default:
+            return {
+                propertyIconGlyph(StepProperty::VELOCITY),
+                "Velocity",
+                semantic::colorForProperty(StepProperty::VELOCITY),
+            };
+    }
 }
 
 }  // namespace core::ui::sequencer::visual

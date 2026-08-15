@@ -225,6 +225,7 @@ FLASHMEM bool CoreState::clearProjectHistory() {
         (void)project::ProjectTrackDomainServices::fromCoreState(*this).cancelGesture();
     }
     sequencerDomain_.coalescedPatternHistory.clear();
+    sequencerDomain_.coalescedDrumHistory.clear();
     macroHistory.clear();
     sequencerHistory.clear();
     projectTrackHistory.clear();

@@ -13,6 +13,7 @@
 #include "state/modulation/ProjectControlState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/DrumPatternState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 
 namespace core::state {
@@ -41,6 +42,7 @@ enum class StructureClipboardKind : uint8_t {
     PROJECT_MODULATOR_SOURCE = 14,
     MACRO_SLOT_SELECTION = 15,
     MACRO_PAGE_SELECTION = 16,
+    SEQUENCER_DRUM_LANE_SELECTION = 17,
 };
 
 enum class MacroClipboardPayloadKind : uint8_t {
@@ -102,6 +104,11 @@ struct SequencerStepsClipboard {
 
     bool valid = false;
     bool rootContext = true;
+    // Drum and melodic Steps share the same compact scalar payload, but their
+    // authored storage and advanced-content addressing are different. Keep
+    // that domain identity explicit so a clipboard can never be interpreted
+    // by the wrong paste pipeline.
+    bool drumContext = false;
     uint8_t count = 0;
     uint8_t span = 0;
     std::array<SequencerStepClipboardEntry, MAX_ENTRIES> entries{};
@@ -131,6 +138,11 @@ struct SequencerTrackSelectionClipboardEntry {
         oc::note::sequencer::StepSequencerGraph
     > graph;
     core::state::sequencer::SequencerCcLaneBankPtr ccLanes;
+    // Presence is the Track-kind discriminator. Instrument entries keep this
+    // null; Drum entries own a detached cold authored snapshot.
+    core::app::ExtmemUniquePtr<
+        core::state::sequencer::DrumTrackState
+    > drumTrack;
     /** Macro/Page content for the same global Track. */
     core::state::macro::MacroTrackData macroTrack{};
 };
@@ -287,6 +299,14 @@ struct StructureClipboardState {
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
     core::state::sequencer::SequencerCcLaneBankPtr sequencerCcLanes;
     core::app::ExtmemUniquePtr<
+        core::state::sequencer::DrumTrackState
+    > sequencerDrumTrack;
+    // Content-only Drum Lane projection. The existing cold Drum owner is
+    // reused to avoid another RAM1 pointer; descriptors in that owner remain
+    // reset and are never part of the clipboard contract.
+    uint16_t sequencerDrumLaneSelectionMask = 0U;
+    uint8_t sequencerDrumLaneSelectionCount = 0U;
+    core::app::ExtmemUniquePtr<
         core::state::SequencerTrackSelectionClipboard
     > sequencerTrackSelection;
     core::app::ExtmemUniquePtr<
@@ -371,7 +391,8 @@ struct StructureClipboardState {
         const core::state::sequencer::SequencerPatternSnapshot& track,
         const oc::note::sequencer::StepSequencerGraph* graph,
         uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
-        const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr
+        const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr,
+        const core::state::sequencer::DrumTrackState* drumTrack = nullptr
     );
 
     [[nodiscard]] bool storeSequencerStepContent(
@@ -387,6 +408,13 @@ struct StructureClipboardState {
 
     [[nodiscard]] bool storeSequencerPageSelection(
         const core::state::SequencerPageSelectionClipboard& pages,
+        const oc::note::sequencer::StepSequencerGraph* graph
+    );
+
+    /** Stores ordered Lane rhythm/expression/advanced content, never identity. */
+    [[nodiscard]] bool storeSequencerDrumLaneSelection(
+        const core::state::sequencer::DrumTrackState& source,
+        uint16_t selectedMask,
         const oc::note::sequencer::StepSequencerGraph* graph
     );
 
@@ -476,6 +504,13 @@ struct StructureClipboardState {
                    StructureClipboardKind::SEQUENCER_PAGE_SELECTION &&
                sequencerPageSelection.valid &&
                sequencerPageSelection.count > 0;
+    }
+    bool hasSequencerDrumLaneSelection() const {
+        return kind.get() ==
+                   StructureClipboardKind::SEQUENCER_DRUM_LANE_SELECTION &&
+               sequencerDrumTrack &&
+               sequencerDrumLaneSelectionMask != 0U &&
+               sequencerDrumLaneSelectionCount > 0U;
     }
     bool hasSequencerTrackSelection() const {
         return kind.get() ==

@@ -43,7 +43,7 @@ FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& cache
         plan.tileDirty[i] =
             plan.diffs[i].dataChanged ||
             plan.diffs[i].probabilityMaskChanged ||
-            plan.diffs[i].barChanged ||
+            plan.diffs[i].playheadChanged ||
             plan.diffs[i].contentBadgesChanged ||
             plan.propertyVisualChanged ||
             plan.feedbackChanged[i];

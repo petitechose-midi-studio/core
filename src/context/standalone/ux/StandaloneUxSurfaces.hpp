@@ -62,10 +62,12 @@ constexpr uint8_t SEQUENCER_PATTERN_EDIT = 22;
 constexpr uint8_t SEQUENCER_PRESET_LIBRARY = 23;
 constexpr uint8_t SEQUENCER_CC_LANE = 24;
 constexpr uint8_t SEQUENCER_STEP_EDIT = 25;
+constexpr uint8_t SEQUENCER_DRUM_LANE_EDIT = 26;
 constexpr uint8_t SEQUENCER_PROPERTY_SELECTOR = 30;
 constexpr uint8_t SEQUENCER_QUICK_CONTROLS = 35;
 constexpr uint8_t SEQUENCER_STRUCTURE = 40;
 constexpr uint8_t SEQUENCER_STEP_GRID = 50;
+constexpr uint8_t PROJECT_NAVIGATION = 51;
 constexpr uint8_t MACRO_STRUCTURE = 52;
 constexpr uint8_t PROJECT_MODULATORS = 53;
 constexpr uint8_t MACRO_PERFORMANCE = 54;
@@ -257,6 +259,36 @@ private:
     mutable const char* draft_trace_action_ = nullptr;
 };
 
+class DrumLaneEditorUxSurface final
+    : public core::validation::ux::SemanticUxSurface {
+public:
+    DrumLaneEditorUxSurface(
+        oc::state::Signal<core::ui::ViewType, 8>& activeView,
+        core::state::sequencer::SequencerState& sequencer
+    );
+
+    bool captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent& event,
+        core::validation::ux::SemanticUxContext& out
+    ) const override;
+
+private:
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    core::state::sequencer::SequencerState& sequencer_;
+    mutable bool editor_seen_ = false;
+    mutable bool observed_dirty_ = false;
+    mutable bool observed_text_editing_ = false;
+    mutable uint8_t observed_mode_ = 0U;
+    mutable uint8_t observed_source_lane_ = 0U;
+    mutable uint8_t observed_target_lane_ = 0U;
+    mutable uint8_t observed_lane_count_ = 0U;
+    mutable uint8_t observed_field_ = 0U;
+    mutable uint8_t observed_text_key_ = 0U;
+    mutable const char* terminal_effect_ = nullptr;
+    mutable core::state::interaction::ControllerIntent terminal_intent_ =
+        core::state::interaction::ControllerIntent::NONE;
+};
+
 class SequencerQuickControlsUxSurface final : public core::validation::ux::SemanticUxSurface {
 public:
     SequencerQuickControlsUxSurface(
@@ -313,6 +345,7 @@ private:
     core::state::project::ProjectTrackEditorState& editor_;
     core::state::project::ProjectTrackState& tracks_;
     mutable bool editor_state_seen_ = false;
+    mutable bool observed_kind_dirty_ = false;
     mutable uint8_t observed_track_ = 0U;
     mutable uint8_t observed_property_ = 0U;
 };
@@ -453,6 +486,24 @@ private:
     core::context::standalone::macro_overlay_presenter::StaticItems static_items_;
     mutable bool contextual_automation_record_seen_ = false;
     mutable bool contextual_recorded_shape_armed_ = false;
+};
+
+class ProjectNavigationUxSurface final
+    : public core::validation::ux::SemanticUxSurface {
+public:
+    ProjectNavigationUxSurface(
+        oc::state::Signal<core::ui::ViewType, 8>& activeView,
+        core::state::project::ProjectNavigationState& navigation
+    );
+
+    bool captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent& event,
+        core::validation::ux::SemanticUxContext& out
+    ) const override;
+
+private:
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    core::state::project::ProjectNavigationState& navigation_;
 };
 
 class ProjectModulatorsUxSurface final

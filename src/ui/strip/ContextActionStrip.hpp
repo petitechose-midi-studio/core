@@ -57,6 +57,7 @@ struct ContextActionStripSlotProps {
     const char* icon = nullptr;
     bool iconUsesStandaloneFont = true;
     standalone::icons::Size iconSize = standalone::icons::Size::M;
+    bool iconRotated180 = false;
     bool showLabel = false;
     const char* label = nullptr;
     std::array<char, 16> labelText{};

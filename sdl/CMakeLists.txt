@@ -287,7 +287,8 @@ target_compile_definitions(${APP_EXE_NAME} PRIVATE
 # Native Core workflows persist semantic facts beside real LVGL captures.
 # Firmware keeps the recorder opt-in through the dedicated PlatformIO target.
 if(BUILD_NATIVE AND APP_ID STREQUAL "core")
-    target_compile_definitions(${APP_EXE_NAME} PRIVATE MS_UX_RECORDER)
+    target_compile_definitions(${APP_EXE_NAME} PRIVATE
+        MS_UX_RECORDER)
 endif()
 target_link_libraries(${APP_EXE_NAME} PRIVATE lvgl libremidi)
 

@@ -135,10 +135,6 @@ FLASHMEM const char* overlayName(core::ui::OverlayType overlay) {
             return "seq_cc_lane";
         case core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR:
             return "device_settings_selector";
-        case core::ui::OverlayType::SEQUENCER_SETTINGS:
-            return "sequencer_settings";
-        case core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR:
-            return "sequencer_settings_selector";
         case core::ui::OverlayType::PATTERN_PITCH_SETTINGS:
             return "pattern_pitch_settings";
         case core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR:
@@ -147,9 +143,62 @@ FLASHMEM const char* overlayName(core::ui::OverlayType overlay) {
             return "seq_pattern_edit";
         case core::ui::OverlayType::SEQ_TRACK_EDIT:
             return "seq_track_edit";
+        case core::ui::OverlayType::SEQ_DRUM_LANE_EDIT:
+            return "seq_drum_lane_edit";
         default:
             return "unknown_overlay";
     }
+}
+
+FLASHMEM const char* controllerIntentName(
+    core::state::interaction::ControllerIntent intent
+) {
+    using core::state::interaction::ControllerIntent;
+    switch (intent) {
+        case ControllerIntent::MOVE_FOCUS:
+            return "move_focus";
+        case ControllerIntent::ACTIVATE:
+            return "activate";
+        case ControllerIntent::EDIT_VALUE:
+            return "edit_value";
+        case ControllerIntent::CHANGE_SCOPE:
+            return "change_scope";
+        case ControllerIntent::NAVIGATE_SECONDARY_AXIS:
+            return "navigate_secondary_axis";
+        case ControllerIntent::ENTER_SELECTION:
+            return "enter_selection";
+        case ControllerIntent::OPEN_ADVANCED:
+            return "open_advanced";
+        case ControllerIntent::BACK:
+            return "back";
+        case ControllerIntent::CANCEL:
+            return "cancel";
+        case ControllerIntent::APPLY:
+            return "apply";
+        case ControllerIntent::SOFT_ACTION:
+            return "soft_action";
+        case ControllerIntent::RESET:
+            return "reset";
+        case ControllerIntent::DELETE_STRUCTURE:
+            return "delete_structure";
+        case ControllerIntent::COPY:
+            return "copy";
+        case ControllerIntent::PASTE:
+            return "paste";
+        case ControllerIntent::TRANSPORT:
+            return "transport";
+        case ControllerIntent::UNDO:
+            return "undo";
+        case ControllerIntent::REDO:
+            return "redo";
+        case ControllerIntent::CAPTURE:
+            return "capture";
+        case ControllerIntent::TEXT_EDIT:
+            return "text_edit";
+        case ControllerIntent::NONE:
+            return nullptr;
+    }
+    return nullptr;
 }
 
 }  // namespace core::validation::ux

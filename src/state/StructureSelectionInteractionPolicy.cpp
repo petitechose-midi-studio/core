@@ -47,4 +47,28 @@ buildStructureSelectionInteractionPolicy(
     return policy;
 }
 
+FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
+    StructureSelectionInteractionAction action
+) {
+    using Intent = core::state::interaction::ControllerIntent;
+    switch (action) {
+        case StructureSelectionInteractionAction::NONE:
+            return Intent::NONE;
+        case StructureSelectionInteractionAction::ENTER_SELECTION:
+            return Intent::ENTER_SELECTION;
+        case StructureSelectionInteractionAction::MOVE_CURSOR:
+            return Intent::MOVE_FOCUS;
+        case StructureSelectionInteractionAction::TOGGLE_ITEM:
+            return Intent::ACTIVATE;
+        case StructureSelectionInteractionAction::CLEAR_CURRENT:
+        case StructureSelectionInteractionAction::EXIT_SELECTION:
+            return Intent::BACK;
+        case StructureSelectionInteractionAction::COPY_SELECTION:
+            return Intent::COPY;
+        case StructureSelectionInteractionAction::PASTE_SELECTION:
+            return Intent::PASTE;
+    }
+    return Intent::NONE;
+}
+
 }  // namespace core::state

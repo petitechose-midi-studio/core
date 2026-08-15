@@ -394,31 +394,27 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
     }
 
     const bool newProjectAction =
-        (node == ProjectNodeId::OVERVIEW_ROOT && row == 0) ||
-        (node == ProjectNodeId::STORAGE_ROOT && row == 3);
+        node == ProjectNodeId::STORAGE_ROOT && row == 3;
     if (newProjectAction) {
         core::state::project::openNewProjectConfirmation(navigation_);
         return true;
     }
 
     const bool loadProjectAction =
-        (node == ProjectNodeId::OVERVIEW_ROOT && row == 1) ||
-        (node == ProjectNodeId::STORAGE_ROOT && row == 4);
+        node == ProjectNodeId::STORAGE_ROOT && row == 4;
     if (loadProjectAction) {
         navigation_.clearLifecycleFeedback();
         return requestProjectLoadPicker();
     }
 
     const bool saveProjectAction =
-        (node == ProjectNodeId::OVERVIEW_ROOT && row == 2) ||
-        (node == ProjectNodeId::STORAGE_ROOT && row == 0);
+        node == ProjectNodeId::STORAGE_ROOT && row == 0;
     if (saveProjectAction) {
         return saveCurrentProjectWithFeedback();
     }
 
     const bool saveAsProjectAction =
-        (node == ProjectNodeId::OVERVIEW_ROOT && row == 3) ||
-        (node == ProjectNodeId::STORAGE_ROOT && row == 1);
+        node == ProjectNodeId::STORAGE_ROOT && row == 1;
     if (saveAsProjectAction) {
         navigation_.clearLifecycleFeedback();
         core::state::project::openProjectNameEditor(
@@ -430,8 +426,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
     }
 
     const bool renameProjectAction =
-        (node == ProjectNodeId::OVERVIEW_ROOT && row == 4) ||
-        (node == ProjectNodeId::STORAGE_ROOT && row == 2);
+        node == ProjectNodeId::STORAGE_ROOT && row == 2;
     if (renameProjectAction) {
         navigation_.clearLifecycleFeedback();
         core::state::project::openProjectNameEditor(

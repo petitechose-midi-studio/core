@@ -9,14 +9,8 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
-#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/DeviceSettingsState.hpp"
-#include "state/SequencerSettingsState.hpp"
-#include "state/ViewSelectorState.hpp"
 #include "state/MidiSyncState.hpp"
-#include "state/sequencer/SequencerState.hpp"
-#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 
@@ -25,25 +19,22 @@
 #endif
 
 namespace ms::ui {
-class VirtualListKeyValueOverlay;
 class VirtualListSelectorOverlay;
 }
 
 namespace core::context::standalone {
 class DeviceSettingsSelectorPresenter;
 class OverlayPresentationRegistry;
-class SequencerSettingsOverlayPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
 class DeviceSettingsHandler;
-class SequencerSettingsHandler;
 }  // namespace core::handler
 
 namespace core::context::standalone {
 
 /**
- * Owns settings overlays, presenters, and modal handlers.
+ * Owns the hardware settings selector and its modal handler.
  *
  * Applying setting changes and persistence actions is delegated to the domain
  * services supplied at construction.
@@ -52,17 +43,11 @@ class SettingsFeatureModule {
 public:
     struct StateRefs {
         core::state::DeviceSettingsState& deviceSettings;
-        core::state::SequencerSettingsState& sequencerSettings;
-        core::state::ViewSelectorState& viewSelector;
         core::state::MidiSyncState& midiSync;
-        core::state::sequencer::SequencerState& sequencer;
-        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
-        core::handler::SequencerHistoryDomainServices history;
     };
 
     SettingsFeatureModule(StateRefs stateRefs,
                           core::handler::DeviceSettingsDomainServices deviceSettingsServices,
-                          core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           OverlayPresentationRegistry& overlayPresentations,
                           oc::api::EncoderAPI& encoders,
@@ -88,16 +73,9 @@ private:
 
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         device_settings_selector_overlay_;
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> sequencer_settings_overlay_;
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
-        sequencer_settings_selector_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::DeviceSettingsSelectorPresenter>
         device_settings_presenter_;
-    core::app::ExtmemUniquePtr<core::context::standalone::SequencerSettingsOverlayPresenter>
-        sequencer_settings_presenter_;
     core::app::ExtmemUniquePtr<core::handler::DeviceSettingsHandler> device_settings_handler_;
-    core::app::ExtmemUniquePtr<core::handler::SequencerSettingsHandler>
-        sequencer_settings_handler_;
     bool valid_ = false;
 };
 

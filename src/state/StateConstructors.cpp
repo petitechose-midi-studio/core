@@ -31,7 +31,6 @@ FLASHMEM UiSystemState::UiSystemState()
       statusBar{},
       midiSync{},
       deviceSettings{},
-      sequencerSettings{},
       patternPitchSettings{},
       macroEdit{},
       macroUi{},

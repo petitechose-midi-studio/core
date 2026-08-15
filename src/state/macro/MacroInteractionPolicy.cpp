@@ -156,4 +156,37 @@ FLASHMEM MacroActionStripPolicy MacroInteractionPolicy::actionStrip(
     return policy;
 }
 
+FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
+    MacroInteractionAction action
+) {
+    using Intent = core::state::interaction::ControllerIntent;
+    switch (action) {
+        case MacroInteractionAction::NONE:
+            return Intent::NONE;
+        case MacroInteractionAction::MOVE_STRUCTURE:
+        case MacroInteractionAction::MOVE_SLOT_PROPERTY:
+            return Intent::MOVE_FOCUS;
+        case MacroInteractionAction::COMMIT_OR_CYCLE_STRUCTURE:
+        case MacroInteractionAction::CREATE_PREVIEWED_STRUCTURE:
+            return Intent::ACTIVATE;
+        case MacroInteractionAction::OPEN_SLOT_PROPERTIES:
+            return Intent::OPEN_ADVANCED;
+        case MacroInteractionAction::APPLY_SLOT_PROPERTIES:
+            return Intent::APPLY;
+        case MacroInteractionAction::CANCEL_SLOT_PROPERTIES:
+            return Intent::CANCEL;
+        case MacroInteractionAction::EDIT_SLOT_PROPERTY:
+            return Intent::EDIT_VALUE;
+        case MacroInteractionAction::CLEAR_STRUCTURE:
+            return Intent::RESET;
+        case MacroInteractionAction::REMOVE_STRUCTURE:
+            return Intent::DELETE_STRUCTURE;
+        case MacroInteractionAction::COPY_STRUCTURE:
+            return Intent::COPY;
+        case MacroInteractionAction::PASTE_STRUCTURE:
+            return Intent::PASTE;
+    }
+    return Intent::NONE;
+}
+
 }  // namespace core::state::macro

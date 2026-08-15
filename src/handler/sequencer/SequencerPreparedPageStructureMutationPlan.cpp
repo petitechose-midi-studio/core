@@ -1835,7 +1835,10 @@ FLASHMEM Preflight buildSequencerStepPasteMutationPlan(
         return out.outcome;
     }
     const auto& steps = clipboard.sequencerSteps;
-    if (steps.rootContext != rootContextOnly(out)) return out.outcome;
+    if (steps.drumContext ||
+        steps.rootContext != rootContextOnly(out)) {
+        return out.outcome;
+    }
     mode = project::sanitizeProjectStepPasteMode(mode);
     const uint8_t maxStep = rootContextOnly(out)
         ? static_cast<uint8_t>(seq::SequencerState::MAX_STEPS - 1U)

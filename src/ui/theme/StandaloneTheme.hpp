@@ -28,14 +28,23 @@ constexpr uint32_t MACRO_6 = base_theme::color::MACRO_6_BLUE;
 constexpr uint32_t MACRO_7 = base_theme::color::MACRO_7_PURPLE;
 constexpr uint32_t MACRO_8 = base_theme::color::MACRO_8_PINK;
 
-// Base colors
-constexpr uint32_t BACKGROUND = base_theme::color::BACKGROUND;
-constexpr uint32_t INACTIVE = base_theme::color::INACTIVE;
-constexpr uint32_t ACTIVE = base_theme::color::ACTIVE;
+// Controller neutrals. Keep these explicit instead of deriving surfaces from
+// text colors: the 320 x 240 display needs stable luminance steps more than
+// translucent decoration.
+constexpr uint32_t BACKGROUND = 0x000000;
+constexpr uint32_t SURFACE_IDLE = 0x12151A;
+constexpr uint32_t SURFACE_RAISED = 0x1B1F25;
+constexpr uint32_t BORDER_SUBTLE = 0x353A42;
+constexpr uint32_t BORDER_STRONG = 0x565B63;
+constexpr uint32_t INACTIVE = 0x33363C;
+constexpr uint32_t ACTIVE = 0xFFA51A;
 
-// Text
-constexpr uint32_t TEXT_PRIMARY = base_theme::color::TEXT_PRIMARY;
-constexpr uint32_t TEXT_SECONDARY = base_theme::color::TEXT_SECONDARY;
+// Text hierarchy. TEXT_SECONDARY must remain visibly distinct from primary;
+// the BaseTheme value is intentionally not reused here because it is almost
+// white and flattens compact editor layouts.
+constexpr uint32_t TEXT_PRIMARY = 0xF3F4F6;
+constexpr uint32_t TEXT_SECONDARY = 0xA1A5AB;
+constexpr uint32_t TEXT_DISABLED = 0x565A61;
 
 // Knob
 constexpr uint32_t KNOB_BACKGROUND = base_theme::color::KNOB_BACKGROUND;
@@ -48,7 +57,7 @@ constexpr uint32_t MIDI_IN_ACTIVE = 0xFFCC00;   // Yellow
 constexpr uint32_t MIDI_OUT_ACTIVE = 0xFF8800;  // Orange
 
 // Transport
-constexpr uint32_t PLAY_ACTIVE = MACRO_5;       // Cyan
+constexpr uint32_t PLAY_ACTIVE = 0x49E4B0;      // Live mint
 constexpr uint32_t PLAY_INACTIVE = INACTIVE;
 constexpr uint32_t BEAT_PULSE = 0x0088FF;       // Blue
 
@@ -89,10 +98,25 @@ constexpr uint32_t MACRO_SUSPENDED = 0xD1A35A;          // Suspended/waiting att
 constexpr uint32_t MACRO_CONFLICT = 0xD1A35A;           // Winner/loser warning
 constexpr lv_opa_t MACRO_PREFIX_OPA = LV_OPA_60; // Prefix opacity (dim)
 
+// Controller-wide interaction roles. Domain colors remain available for
+// musical identity and data encoding, but must not carry these meanings.
+constexpr uint32_t FOCUS_EDIT = ACTIVE;
+constexpr uint32_t LIVE_TIME = PLAY_ACTIVE;
+constexpr uint32_t CONTENT_ACTIVE = TEXT_PRIMARY;
+constexpr uint32_t POSITIVE = MACRO_4;
+constexpr uint32_t WARNING = MACRO_CONFLICT;
+constexpr uint32_t DESTRUCTIVE = MACRO_1;
+constexpr uint32_t SECONDARY = TEXT_SECONDARY;
+constexpr uint32_t DISABLED = TEXT_DISABLED;
+
 using base_theme::color::getMacroColor;
 
+// Musical identity palette. It follows the familiar Red -> Pink order used
+// by persisted color indices, but is tuned independently from macro feedback
+// colors so dense grids stay vivid without looking fluorescent.
 constexpr std::array<uint32_t, 8> TRACK_COLORS = {
-    MACRO_1, MACRO_2, MACRO_3, MACRO_4, MACRO_5, MACRO_6, MACRO_7, MACRO_8,
+    0xF51B4B, 0xF08A24, 0xD6CF35, 0x5BD21D,
+    0x28CDB4, 0x22A9E8, 0xA45CDD, 0xD936B4,
 };
 
 constexpr uint32_t trackColor(uint8_t index) {
@@ -122,6 +146,11 @@ constexpr int16_t PAD_SM = 4;
 constexpr int16_t PAD_MD = 6;
 constexpr int16_t GAP_SM = 4;
 constexpr int16_t GAP_MD = 6;
+
+// Stable geometry for compact interactive cards. Specialized panels, badges
+// and data markers keep their own geometry.
+constexpr int16_t INTERACTIVE_SURFACE_RADIUS = 3;
+constexpr int16_t INTERACTIVE_SURFACE_BORDER_WIDTH = 1;
 
 }  // namespace layout
 

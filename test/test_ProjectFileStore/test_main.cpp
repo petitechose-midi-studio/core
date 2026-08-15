@@ -16,6 +16,7 @@
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../../src/state/project/ProjectSlug.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/ProductFileTestMutation.hpp"
 
@@ -27,6 +28,7 @@ namespace {
 
 namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
+namespace sequencer = core::state::sequencer;
 
 std::filesystem::path testRoot() {
     return std::filesystem::temp_directory_path() / "midi-studio-core-project-file-store-test";
@@ -232,6 +234,119 @@ void test_save_load_project_snapshot_roundtrip() {
     assertLoadedProject(store, "ProjectFS", 1);
 
     std::cout << "[PASS] test_save_load_project_snapshot_roundtrip\n";
+}
+
+void test_save_load_nested_drum_content_roundtrip() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
+
+    test_support::CoreStorages sourceStorages;
+    auto source = makeCoreState(sourceStorages);
+    configureProject(source, "DrumGraph", 9U);
+    assert(source.sequencerTracks.setTrackKind(
+        0U,
+        sequencer::SequencerTrackKind::DRUM,
+        true,
+        sequencer::DrumKitPreset::GENERAL_MIDI
+    ));
+
+    auto& drum = source.sequencerTracks.drumTrack(0U);
+    assert(drum.pattern.setStepEnabled(1U, 3U, true));
+    assert(drum.pattern.setStepVelocity(1U, 3U, 111U));
+    assert(drum.pattern.setLaneTimingCustom(1U, 7U, 2U));
+
+    assert(source.sequencer.setStepDataAt(0U, 64U, 103U, 100U, 0, 100U));
+    const auto root = sequencer::rootStepNodeId(0U);
+    const auto micro = sequencer::createMicroSequence(
+        source.sequencer.pattern,
+        root,
+        3U
+    );
+    assert(micro.ok);
+    const auto* sourceGraph = sequencer::graphView(source.sequencer.pattern);
+    assert(sourceGraph != nullptr);
+    const auto* sourceMicro = sourceGraph->sequence(micro.id);
+    assert(sourceMicro != nullptr);
+    const auto microNode = static_cast<sequencer::SequencerGraphNodeId>(
+        sourceMicro->firstStepNode + 1U
+    );
+    assert(sequencer::setNodeVelocityOffset(
+        source.sequencer.pattern,
+        microNode,
+        -23
+    ));
+    const auto cycle = sequencer::createCycleStateSet(
+        source.sequencer.pattern,
+        microNode,
+        2U
+    );
+    assert(cycle.ok);
+    sourceGraph = sequencer::graphView(source.sequencer.pattern);
+    assert(sourceGraph != nullptr);
+    const auto* sourceCycle = sourceGraph->cycleSet(cycle.id);
+    assert(sourceCycle != nullptr);
+    const auto cycleNode = static_cast<sequencer::SequencerGraphNodeId>(
+        sourceCycle->firstStateNode + 1U
+    );
+    assert(sequencer::setNodeGateOffset(
+        source.sequencer.pattern,
+        cycleNode,
+        17
+    ));
+    assert(drum.bindAdvancedRootSlot(0U, 1U, 3U));
+    source.sequencerTracks.publishDrumMutation(0U);
+
+    assert(store.save(capture(source)));
+
+    project::ProjectSnapshot loaded;
+    project_file::LoadReport report{};
+    const auto loadedResult = store.load("p321", loaded, &report);
+    assert(loadedResult);
+    assert(report.ok());
+
+    test_support::CoreStorages restoredStorages;
+    auto restored = makeCoreState(restoredStorages);
+    assert(project::applyProjectSnapshot(restored, loaded));
+
+    assert(restored.sequencerTracks.trackKind(0U) ==
+           sequencer::SequencerTrackKind::DRUM);
+    const auto& restoredDrum = restored.sequencerTracks.drumTrack(0U);
+    assert(restoredDrum.pattern.stepEnabled(1U, 3U));
+    assert(restoredDrum.pattern.lanes[1U].velocity[3U] == 111U);
+    assert(restoredDrum.pattern.effectiveLength(1U) == 7U);
+    assert(restoredDrum.pattern.effectiveStepsPerBeat(1U) == 2U);
+    assert(restoredDrum.advancedRootSlot(1U, 3U) == 0);
+
+    const auto* graph = sequencer::graphView(restored.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* rootNode = graph->stepNode(root);
+    assert(rootNode != nullptr);
+    const auto* restoredMicro = graph->sequence(rootNode->childSequenceId);
+    assert(restoredMicro != nullptr);
+    assert(restoredMicro->length == 3U);
+    const auto* restoredMicroNode = graph->stepNode(
+        static_cast<sequencer::SequencerGraphNodeId>(
+            restoredMicro->firstStepNode + 1U
+        )
+    );
+    assert(restoredMicroNode != nullptr);
+    assert(restoredMicroNode->velocityOffset == -23);
+    const auto* restoredCycle = graph->cycleSet(restoredMicroNode->cycleSetId);
+    assert(restoredCycle != nullptr);
+    assert(restoredCycle->length == 2U);
+    const auto* restoredCycleNode = graph->stepNode(
+        static_cast<sequencer::SequencerGraphNodeId>(
+            restoredCycle->firstStateNode + 1U
+        )
+    );
+    assert(restoredCycleNode != nullptr);
+    assert(restoredCycleNode->gateOffset == 17);
+
+    std::cout << "[PASS] nested Drum Micro/Cycle survives product save/load\n";
 }
 
 void test_save_overwrites_existing_project_through_backup_commit() {
@@ -639,6 +754,7 @@ int main() {
     test_project_pool_prewarm_reports_resource_exhausted_without_fallback();
     test_file_and_session_stores_share_one_lease_checked_workspace();
     test_save_load_project_snapshot_roundtrip();
+    test_save_load_nested_drum_content_roundtrip();
     test_save_overwrites_existing_project_through_backup_commit();
     test_stale_tmp_is_replaced_on_save();
     test_load_recovers_interrupted_backup_commit();

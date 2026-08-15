@@ -12,6 +12,7 @@
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerCcLanePropertySelection.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler {
 using ButtonID = Config::ButtonID;
@@ -70,6 +71,16 @@ FLASHMEM uint8_t variationEditKey(StepProperty property) { return static_cast<ui
 
 FLASHMEM uint8_t stateEditKey(uint8_t step) { return static_cast<uint8_t>(STATE_KEY_FLAG | step); }
 
+FLASHMEM int nextPropertySelectionIndex(float delta, int current, int itemCount,
+                                        bool drumContent) {
+    int next = nav::nextWrappedIndex(delta, current, itemCount);
+    if (drumContent &&
+        next == core::state::sequencer::SEQUENCER_STEP_NOTE_SELECTION_INDEX) {
+        next = nav::nextWrappedIndex(delta, next, itemCount);
+    }
+    return next;
+}
+
 FLASHMEM core::state::sequencer::SequencerHistoryDescriptor makeVariationHistoryDescriptor(
     StepProperty property, int32_t beforeValue, int32_t afterValue) {
     return {
@@ -99,9 +110,10 @@ FLASHMEM SequencerPropertySelectorHandler::SequencerPropertySelectorHandler(
     StateRefs state, oc::api::EncoderAPI& encoders, oc::api::ButtonAPI& buttons,
     oc::type::ScopeID scopeId, NowProvider nowProvider, SequencerCcLaneWorkflow* ccLaneWorkflow,
     oc::context::OverlayManager<core::ui::OverlayType>* overlayManager)
-    : overlays_(state.overlays), sequencer_(state.sequencer), track_ui_(state.trackNavigation),
-      navigation_focus_(state.navigationFocus), history_(state.history), encoders_(encoders),
-      buttons_(buttons), scope_id_(scopeId), now_provider_(nowProvider),
+    : overlays_(state.overlays), sequencer_(state.sequencer), tracks_(state.tracks),
+      track_ui_(state.trackNavigation), navigation_focus_(state.navigationFocus),
+      history_(state.history), encoders_(encoders), buttons_(buttons), scope_id_(scopeId),
+      now_provider_(nowProvider),
       cc_lane_workflow_(ccLaneWorkflow), overlay_manager_(overlayManager) {
     setupBindings();
 }
@@ -157,17 +169,26 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
 }
 
 FLASHMEM void SequencerPropertySelectorHandler::open() {
-    const auto commitOutcome = history_.commitCoalescedPatternEditOutcome();
-    if (commitOutcome == core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        sequencer_.historyFeedback.showRejection(
-            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
-            now_provider_ ? now_provider_() : 0U);
-        return;
+    namespace seq = core::state::sequencer;
+    const bool drumContent = seq::isDrumContentView(sequencer_);
+    if (!(drumContent && sequencer_.stepContentDraft.active.get())) {
+        const auto commitOutcome = drumContent ? history_.commitCoalescedDrumEditOutcome()
+                                               : history_.commitCoalescedPatternEditOutcome();
+        if (commitOutcome == seq::SequencerPatternHistoryCommitOutcome::Failed) {
+            sequencer_.historyFeedback.showRejection(
+                seq::SequencerHistoryRejectionReason::HistoryUnavailable,
+                now_provider_ ? now_provider_() : 0U);
+            return;
+        }
     }
 
     auto& o = sequencer_.stepPropertyInlineSelector;
     o.reset();
     o.selecting.set(true);
+
+    if (drumContent && sequencer_.activeStepProperty.get() == StepProperty::NOTE) {
+        sequencer_.activeStepProperty.set(StepProperty::VELOCITY);
+    }
 
     const int active = sequencer_.stepStatePropertyActive.get()
                            ? core::state::sequencer::SEQUENCER_STEP_STATE_SELECTION_INDEX
@@ -194,7 +215,8 @@ FLASHMEM void SequencerPropertySelectorHandler::openCcLaneShortcut() {
         return;
     }
 
-    const auto* bank = core::state::sequencer::sequencerCcLaneView(sequencer_.pattern);
+    const auto* bank = core::state::sequencer::sequencerCcLaneView(
+        core::state::sequencer::authoringPattern(sequencer_));
     int selected = core::state::sequencer::sequencerPropertySelectionIndexForLane(
         bank, sequencer_.ccLaneUi.focusedLane);
     if (selected < 0) { selected = core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT; }
@@ -223,9 +245,12 @@ FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
     const int current = sequencer_.stepPropertyInlineSelector.selectedIndex.get();
-    const auto* bank = core::state::sequencer::sequencerCcLaneView(sequencer_.pattern);
+    const auto* bank = core::state::sequencer::sequencerCcLaneView(
+        core::state::sequencer::authoringPattern(sequencer_));
     const int itemCount = core::state::sequencer::sequencerPropertySelectionItemCount(bank);
-    const int next = nav::nextWrappedIndex(delta, current, itemCount);
+    const int next = nextPropertySelectionIndex(
+        delta, current, itemCount,
+        core::state::sequencer::isDrumContentView(sequencer_));
     sequencer_.stepPropertyInlineSelector.selectedIndex.set(next);
     if (next >= core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT) { return; }
     const bool stateItem = core::state::sequencer::sequencerPropertySelectionIsState(next);
@@ -276,6 +301,20 @@ FLASHMEM void SequencerPropertySelectorHandler::closeCancel() {
 }
 
 FLASHMEM bool SequencerPropertySelectorHandler::commitLiveEdits() {
+    if (core::state::sequencer::isDrumContentView(sequencer_)) {
+        if (!sequencer_.stepContentDraft.active.get() &&
+            history_.commitCoalescedDrumEditOutcome() ==
+                core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+            sequencer_.historyFeedback.showRejection(
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+                now_provider_ ? now_provider_() : 0U);
+            return false;
+        }
+        clearPreparedSegment();
+        sequencer_.stepPropertyInlineSelector.macroLocalVariationEditActive.set(false);
+        return true;
+    }
+
     const auto familyOutcome = history_.commitPreparedPatternEdit(PreparedOwner::PropertySelector);
     if (familyOutcome == PreparedCommitOutcome::Failed) {
         sequencer_.historyFeedback.showRejection(
@@ -303,6 +342,10 @@ FLASHMEM void SequencerPropertySelectorHandler::clearPreparedSegment() {
 
 FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float normalized) {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
+    if (core::state::sequencer::isDrumContentView(sequencer_)) {
+        setDrumOwnedActiveVariationRange(normalized);
+        return;
+    }
     if (core::state::sequencer::sequencerPropertySelectionIsState(
             sequencer_.stepPropertyInlineSelector.selectedIndex.get())) {
         const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
@@ -398,6 +441,78 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
     }
 }
 
+FLASHMEM void SequencerPropertySelectorHandler::setDrumOwnedActiveVariationRange(
+    float normalized
+) {
+    namespace seq = core::state::sequencer;
+    const auto& owner = sequencer_.contentView;
+    if (!owner.drumOwnerActive ||
+        owner.drumOwnerTrack >= seq::SequencerTrackBankState::TRACK_COUNT) {
+        return;
+    }
+
+    const bool stateProperty = seq::sequencerPropertySelectionIsState(
+        sequencer_.stepPropertyInlineSelector.selectedIndex.get());
+    if (!stateProperty &&
+        sequencer_.stepPropertyInlineSelector.selectedIndex.get() >=
+            seq::SEQUENCER_BASE_STEP_PROPERTY_COUNT) {
+        return;
+    }
+
+    auto property = sequencer_.activeStepProperty.get();
+    if (property == StepProperty::NOTE) {
+        property = StepProperty::VELOCITY;
+        sequencer_.activeStepProperty.set(property);
+    }
+    const uint8_t length = seq::activeContentLength(sequencer_);
+    if (length == 0U) return;
+    const uint8_t step = std::min<uint8_t>(
+        sequencer_.focusedStep.get(), static_cast<uint8_t>(length - 1U));
+
+    const bool draftOwned = sequencer_.stepContentDraft.active.get();
+    const auto descriptor = seq::SequencerHistoryDescriptor{
+        .kind = seq::SequencerHistoryActionKind::DrumAdvancedContent,
+        .trackIndex = owner.drumOwnerTrack,
+        .laneIndex = owner.drumOwnerLane,
+        .stepIndex = owner.drumOwnerStep,
+        .property = stateProperty ? StepProperty::NOTE : property,
+    };
+    if (!draftOwned) {
+        const auto begin = history_.beginCoalescedDrumEdit(
+            descriptor, now_provider_ ? now_provider_() : 0U);
+        if (!seq::sequencerHistoryOpenAccepted(begin)) {
+            sequencer_.historyFeedback.showRejection(
+                begin, now_provider_ ? now_provider_() : 0U);
+            return;
+        }
+    }
+
+    bool changed = false;
+    if (stateProperty) {
+        changed = seq::setActiveContentStepEnabled(
+            sequencer_, step, normalized >= 0.5f);
+    } else if (seq::stepPropertySupportsLocalVariation(property)) {
+        const uint8_t range = input_utils::normalizedToVariationRange(property, normalized);
+        auto& pattern = seq::authoringPattern(sequencer_);
+        changed = pattern.setVariationRangeForProperty(property, range);
+        if (changed) {
+            sequencer_.invalidateVariationTelemetry();
+            sequencer_.contentView.bump();
+            seq::notifyStepContentDraftMutation(sequencer_);
+        }
+    }
+
+    if (!draftOwned && !history_.sealCoalescedDrumEdit(changed, descriptor)) {
+        sequencer_.historyFeedback.showRejection(
+            seq::SequencerHistoryRejectionReason::HistoryUnavailable,
+            now_provider_ ? now_provider_() : 0U);
+        return;
+    }
+    if (!changed || draftOwned) return;
+    tracks_.publishDrumMutation(owner.drumOwnerTrack);
+    sequencer_.drumSequencer.bump();
+}
+
 FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty() {
     if (core::state::sequencer::sequencerPropertySelectionIsState(
             sequencer_.stepPropertyInlineSelector.selectedIndex.get())) {
@@ -420,19 +535,27 @@ FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty(
         core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT) {
         return;
     }
-    const auto property = sequencer_.activeStepProperty.get();
+    auto property = sequencer_.activeStepProperty.get();
+    if (core::state::sequencer::isDrumContentView(sequencer_) &&
+        property == StepProperty::NOTE) {
+        property = StepProperty::VELOCITY;
+        sequencer_.activeStepProperty.set(property);
+    }
     const auto config = input_utils::encoderConfigForVariationRange(property);
     encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
     encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
     encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
-    encoders_.setPosition(Config::EncoderID::OPT,
-                          input_utils::variationRangeToNormalized(
-                              property, sequencer_.variationRangeForProperty(property)));
+    const auto& pattern = core::state::sequencer::authoringPattern(sequencer_);
+    encoders_.setPosition(
+        Config::EncoderID::OPT,
+        input_utils::variationRangeToNormalized(
+            property, pattern.variationRangeForProperty(property)));
 }
 
 FLASHMEM void SequencerPropertySelectorHandler::applySelectedCcLaneProperty(int selectedIndex) {
     if (cc_lane_workflow_ == nullptr || overlay_manager_ == nullptr) return;
-    const auto* bank = core::state::sequencer::sequencerCcLaneView(sequencer_.pattern);
+    const auto* bank = core::state::sequencer::sequencerCcLaneView(
+        core::state::sequencer::authoringPattern(sequencer_));
     const int8_t lane =
         core::state::sequencer::sequencerPropertySelectionLaneAt(bank, selectedIndex);
     if (lane >= 0) {

@@ -269,7 +269,156 @@ FLASHMEM const char* feedbackOutcome(const char* feedback) {
     return nullptr;
 }
 
+constexpr const char* projectTabToken(
+    core::state::project::ProjectTab tab
+) {
+    using core::state::project::ProjectTab;
+    switch (tab) {
+        case ProjectTab::MUSIC: return "music";
+        case ProjectTab::TRANSPORT: return "transport";
+        case ProjectTab::STORAGE: return "storage";
+        case ProjectTab::ROUTING: return "routing";
+        case ProjectTab::MODULATORS: return "modulators";
+        case ProjectTab::OVERVIEW:
+        case ProjectTab::COUNT:
+        default: return "overview";
+    }
+}
+
+template <size_t N>
+constexpr const char* projectNodeTokenLiteral(const char (&token)[N]) {
+    static_assert(
+        N <= sizeof(core::validation::ux::SemanticUxContext{}.valueLabel),
+        "Project UX token exceeds SemanticUxContext::valueLabel"
+    );
+    return token;
+}
+
+constexpr const char* projectNodeToken(ProjectNodeId node) {
+    switch (node) {
+        case ProjectNodeId::OVERVIEW_ROOT:
+            return projectNodeTokenLiteral("overview_root");
+        case ProjectNodeId::MUSIC_ROOT:
+            return projectNodeTokenLiteral("music_root");
+        case ProjectNodeId::MUSIC_SCALE:
+            return projectNodeTokenLiteral("music_scale");
+        case ProjectNodeId::MUSIC_CC_DEFAULTS:
+            return projectNodeTokenLiteral("music_cc");
+        case ProjectNodeId::TRANSPORT_ROOT:
+            return projectNodeTokenLiteral("transport_root");
+        case ProjectNodeId::STORAGE_ROOT:
+            return projectNodeTokenLiteral("storage_root");
+        case ProjectNodeId::ROUTING_ROOT:
+            return projectNodeTokenLiteral("routing_root");
+        case ProjectNodeId::MODULATORS_ROOT:
+            return projectNodeTokenLiteral("modulators_root");
+        case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+            return projectNodeTokenLiteral("mod_source");
+        case ProjectNodeId::MODULATOR_DESTINATIONS:
+            return projectNodeTokenLiteral("mod_dests");
+        case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+            return projectNodeTokenLiteral("mod_dest_pick");
+        case ProjectNodeId::NEW_PROJECT_CONFIRM:
+            return projectNodeTokenLiteral("new_confirm");
+        case ProjectNodeId::LOAD_PROJECT:
+            return projectNodeTokenLiteral("load_project");
+        case ProjectNodeId::LOAD_PROJECT_CONFIRM:
+            return projectNodeTokenLiteral("load_confirm");
+        case ProjectNodeId::SAVE_AS_PROJECT_NAME:
+            return projectNodeTokenLiteral("save_as_name");
+        case ProjectNodeId::RENAME_PROJECT_NAME:
+            return projectNodeTokenLiteral("rename_name");
+        case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
+            return projectNodeTokenLiteral("mod_options");
+        case ProjectNodeId::MODULATOR_SOURCE_RENAME:
+            return projectNodeTokenLiteral("mod_rename");
+        case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
+            return projectNodeTokenLiteral("mod_kind_pick");
+        case ProjectNodeId::MODULATOR_TRIGGER:
+            return projectNodeTokenLiteral("mod_trigger");
+    }
+    return projectNodeTokenLiteral("unknown");
+}
+
 }  // namespace
+
+FLASHMEM ProjectNavigationUxSurface::ProjectNavigationUxSurface(
+    oc::state::Signal<core::ui::ViewType, 8>& activeView,
+    core::state::project::ProjectNavigationState& navigation
+)
+    : active_view_(activeView), navigation_(navigation) {}
+
+FLASHMEM bool ProjectNavigationUxSurface::captureSemanticUxContext(
+    const oc::core::input::InputBindingTraceEvent& event,
+    core::validation::ux::SemanticUxContext& out
+) const {
+    using core::state::interaction::ControllerIntent;
+
+    if (active_view_.get() != core::ui::ViewType::PROJECT) return false;
+
+    const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
+    const bool optTurn = isEncoder(event, Config::EncoderID::OPT);
+    const bool navRelease = isButton(
+        event,
+        Config::ButtonID::NAV,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    const bool tabPress = isButton(
+        event,
+        Config::ButtonID::LEFT_CENTER,
+        oc::core::input::ButtonBindingType::PRESS
+    );
+    const bool tabRelease = isButton(
+        event,
+        Config::ButtonID::LEFT_CENTER,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    const bool backRelease = isButton(
+        event,
+        Config::ButtonID::LEFT_TOP,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    if (!navTurn && !optTurn && !navRelease && !tabPress && !tabRelease &&
+        !backRelease) {
+        return false;
+    }
+
+    const bool tabNavigation = navigation_.physicalHoldActive.get();
+    out.mode = "project";
+    out.target = "project_navigation";
+    out.targetIndex = navigation_.focusedRow.get();
+    out.property = projectTabToken(navigation_.activeTab.get());
+    std::snprintf(
+        out.valueLabel,
+        sizeof(out.valueLabel),
+        "%s",
+        projectNodeToken(navigation_.currentNode.get())
+    );
+    out.operationStatus = tabNavigation ? "tab_navigation" : "content";
+
+    if (navTurn) {
+        out.intent = tabNavigation
+            ? ControllerIntent::NAVIGATE_SECONDARY_AXIS
+            : ControllerIntent::MOVE_FOCUS;
+        out.effect = tabNavigation
+            ? "switch_project_tab" : "focus_project_row";
+    } else if (optTurn) {
+        out.intent = ControllerIntent::EDIT_VALUE;
+        out.effect = "edit_project_value";
+    } else if (navRelease) {
+        out.intent = ControllerIntent::ACTIVATE;
+        out.effect = "activate_project_item";
+    } else if (tabPress) {
+        out.intent = ControllerIntent::OPEN_ADVANCED;
+        out.effect = "enter_project_tab_navigation";
+    } else if (tabRelease) {
+        out.effect = "leave_project_tab_navigation";
+    } else {
+        out.intent = ControllerIntent::BACK;
+        out.effect = "back_project_navigation";
+    }
+    return true;
+}
 
 FLASHMEM ProjectModulatorsUxSurface::ProjectModulatorsUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,

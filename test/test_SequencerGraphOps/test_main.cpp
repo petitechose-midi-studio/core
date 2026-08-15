@@ -1586,6 +1586,33 @@ void test_runtime_telemetry_sync_publishes_root_offset_for_expanded_substeps() {
     std::cout << "[PASS] test_runtime_telemetry_sync_publishes_root_offset_for_expanded_substeps\n";
 }
 
+void test_runtime_visual_phase_is_smooth_bounded_and_ui_only() {
+    using core::sequencer::projectPlaybackPhaseQ8;
+
+    assert(projectPlaybackPhaseQ8(0U, 24U, 1000U, 1000U, 1500U) == 5U);
+    assert(projectPlaybackPhaseQ8(12U, 24U, 1000U, 1000U, 1500U) == 133U);
+    assert(projectPlaybackPhaseQ8(23U, 24U, 1000U, 1000U, 2500U) == 255U);
+    assert(projectPlaybackPhaseQ8(12U, 24U, 0U, 0U, 0U) == 128U);
+
+    SequencerState target;
+    core::sequencer::SequencerRuntimeTelemetrySnapshot telemetry{};
+    telemetry.playheadStep = 0;
+    telemetry.playheadStepTicks = 24U;
+    telemetry.playheadStepTickOffset = 12U;
+    telemetry.playheadStepPhaseQ8 = 133U;
+    core::sequencer::publishRuntimeTelemetry(target, telemetry);
+    assert(target.playheadStepPhaseQ8.get() == 133U);
+    // The raw scheduler offset keeps its existing publication policy.
+    assert(target.playheadStepTickOffset.get() == 0U);
+
+    telemetry.playheadStep = -1;
+    telemetry.playheadStepPhaseQ8 = 200U;
+    core::sequencer::publishRuntimeTelemetry(target, telemetry);
+    assert(target.playheadStepPhaseQ8.get() == 0U);
+
+    std::cout << "[PASS] test_runtime_visual_phase_is_smooth_bounded_and_ui_only\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1622,6 +1649,7 @@ int main() {
     test_chord_state_is_explicit_and_resettable_per_node();
     test_runtime_telemetry_sync_copies_expanded_variation();
     test_runtime_telemetry_sync_publishes_root_offset_for_expanded_substeps();
+    test_runtime_visual_phase_is_smooth_bounded_and_ui_only();
 
     std::cout << "All SequencerGraphOps tests passed\n";
     return 0;

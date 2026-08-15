@@ -1,7 +1,5 @@
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 
-#include <cstdio>
-
 #include <config/PlatformCompat.hpp>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -11,6 +9,7 @@
 #include "context/standalone/OverlayPresentationRegistry.hpp"
 #include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
+#include "ui/interaction/SelectorPresentationPolicy.hpp"
 
 namespace core::context::standalone {
 
@@ -52,53 +51,20 @@ FLASHMEM oc::type::ScopeID StandaloneOverlayAssembly::viewSelectorScope() const 
 FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, bool visible) {
     if (!valid_ || !view_selector_) return;
     if (!visible) {
-        view_selector_->hide();
+        view_selector_->render({.visible = false});
         return;
     }
 
-    const auto* undoEntry = core_state_.projectHistory.peekUndo();
-    const auto* redoEntry = core_state_.projectHistory.peekRedo();
-    char undoLabel[48]{};
-    char redoLabel[48]{};
-    std::snprintf(
-        undoLabel,
-        sizeof(undoLabel),
-        "C  Undo %s",
-        undoEntry
-            ? core::state::project::ProjectHistoryCoordinator::actionLabel(*undoEntry)
-            : "-"
+    view_selector_->render(
+        core::ui::interaction::decisionSelectorProps(
+            "VIEWS",
+            "",
+            core::state::VIEW_SELECTOR_ITEM_LABELS.data(),
+            core::state::VIEW_SELECTOR_ITEM_COUNT,
+            selectedIndex,
+            1U
+        )
     );
-    std::snprintf(
-        redoLabel,
-        sizeof(redoLabel),
-        "B  Redo %s",
-        redoEntry
-            ? core::state::project::ProjectHistoryCoordinator::actionLabel(*redoEntry)
-            : "-"
-    );
-
-    const uint32_t historyRevision = core_state_.projectHistory.revision.get();
-    const bool wasVisible = !lv_obj_has_flag(
-        view_selector_->getElement(),
-        LV_OBJ_FLAG_HIDDEN
-    );
-    if (wasVisible && historyRevision != view_selector_history_revision_) {
-        // A history action only changes the header. Re-show once so LVGL
-        // redraws the complete transparent overlay instead of leaving the
-        // unchanged list outside a partial refresh region.
-        view_selector_->hide();
-    }
-    view_selector_->show();
-    view_selector_history_revision_ = historyRevision;
-    view_selector_->render({
-        .title = undoLabel,
-        .meta = redoLabel,
-        .rows = view_selector_rows_.data(),
-        .rowCount = core::state::VIEW_SELECTOR_ITEM_COUNT,
-        .selectedIndex = selectedIndex,
-        .dataRevision = 1,
-        .headerLayout = ms::ui::MenuListHeaderLayout::Stacked,
-    });
 }
 
 FLASHMEM bool StandaloneOverlayAssembly::createOverlayController(
@@ -119,23 +85,10 @@ FLASHMEM bool StandaloneOverlayAssembly::createOverlayController(
 }
 
 FLASHMEM bool StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* overlayRoot) {
-    view_selector_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(overlayRoot);
+    view_selector_ = core::app::makeExtmemUnique<
+        ms::ui::VirtualListSelectorOverlay>(overlayRoot);
     if (!view_selector_ || !view_selector_->getElement()) return false;
-    view_selector_->hide();
-    for (int i = 0;
-         i < core::state::VIEW_SELECTOR_ITEM_COUNT &&
-         i < static_cast<int>(view_selector_rows_.size());
-         ++i) {
-        const auto item = core::state::viewSelectorItemAt(i);
-        view_selector_rows_[static_cast<std::size_t>(i)] = ms::ui::MenuRow{
-            .label = core::state::viewSelectorItemLabel(item),
-            .value = core::state::viewSelectorItemDescription(item),
-            .kind = ms::ui::MenuRowKind::Folder,
-            .enabled = true,
-            .valueAutoScroll = true,
-            .valueRole = ms::ui::MenuRowValueRole::Description,
-        };
-    }
+    view_selector_->render({.visible = false});
     view_selector_scope_ = oc::ui::lvgl::scopeID(view_selector_->getElement());
     return registerOverlaySurface(
         *overlay_controller_,

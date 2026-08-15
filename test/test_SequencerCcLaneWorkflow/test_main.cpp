@@ -91,9 +91,10 @@ struct Harness {
     };
     core::handler::SequencerPropertySelectorHandler propertySelector{
         core::handler::SequencerPropertySelectorHandler::StateRefs{
-            state.overlays,
-            state.sequencer,
-            state.trackNavigation,
+             state.overlays,
+             state.sequencer,
+             state.sequencerTracks,
+             state.trackNavigation,
             navigationFocus,
             core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },

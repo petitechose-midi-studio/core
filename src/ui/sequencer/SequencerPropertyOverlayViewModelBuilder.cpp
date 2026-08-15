@@ -10,6 +10,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/DrumPatternState.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerCcLanePropertySelection.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -29,6 +30,191 @@ namespace core::ui::sequencer {
 namespace {
 
 using QuickItem = core::state::sequencer::PatternQuickControlItem;
+
+using DrumDimension =
+    core::state::sequencer::DrumSequencerDimension;
+using DrumProperty = core::state::sequencer::DrumSequencerProperty;
+using DrumPatternField = core::state::sequencer::DrumPatternDefaultField;
+
+FLASHMEM void formatDrumPropertyValue(
+    char* buffer,
+    size_t size,
+    const core::state::sequencer::DrumSequencerState& drumUi
+) {
+    if (!buffer || size == 0U || !drumUi.drumTrack) return;
+    const uint8_t step = std::min<uint8_t>(
+        drumUi.focusedStep,
+        static_cast<uint8_t>(drumUi.MAX_STEPS - 1U)
+    );
+    const auto& lane =
+        drumUi.drumTrack->pattern.lanes[drumUi.selectedLane];
+    switch (drumUi.property) {
+        case DrumProperty::STATE:
+            std::snprintf(
+                buffer,
+                size,
+                "%s",
+                drumUi.drumTrack->pattern.stepEnabled(
+                    drumUi.selectedLane,
+                    step
+                ) ? "On" : "Off"
+            );
+            return;
+        case DrumProperty::PROBABILITY:
+            std::snprintf(
+                buffer,
+                size,
+                "%u%%",
+                static_cast<unsigned>(lane.probability[step])
+            );
+            return;
+        case DrumProperty::GATE:
+            std::snprintf(
+                buffer,
+                size,
+                "%u%%",
+                static_cast<unsigned>(lane.gate[step])
+            );
+            return;
+        case DrumProperty::NUDGE:
+            std::snprintf(
+                buffer,
+                size,
+                "%+d%%",
+                static_cast<int>(lane.nudge[step])
+            );
+            return;
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default:
+            std::snprintf(
+                buffer,
+                size,
+                "%u",
+                static_cast<unsigned>(lane.velocity[step])
+            );
+            return;
+    }
+}
+
+FLASHMEM const char* drumDimensionIcon(DrumDimension dimension) {
+    switch (dimension) {
+        case DrumDimension::MODE: return standalone::icons::ROUTE_PIN;
+        case DrumDimension::DIVISION: return standalone::icons::DIVISION;
+        case DrumDimension::LENGTH:
+        case DrumDimension::COUNT:
+        default: return standalone::icons::LENGTH;
+    }
+}
+
+FLASHMEM const char* drumDimensionLabel(DrumDimension dimension) {
+    switch (dimension) {
+        case DrumDimension::MODE: return "Lane timing";
+        case DrumDimension::DIVISION: return "Division";
+        case DrumDimension::LENGTH:
+        case DrumDimension::COUNT:
+        default: return "Length";
+    }
+}
+
+FLASHMEM uint32_t drumDimensionColor(DrumDimension dimension) {
+    switch (dimension) {
+        case DrumDimension::MODE:
+            return standalone::theme::color::STEP_STATE;
+        case DrumDimension::DIVISION:
+            return standalone::theme::color::STEP_DIVISION;
+        case DrumDimension::LENGTH:
+        case DrumDimension::COUNT:
+        default: return standalone::theme::color::STEP_LENGTH;
+    }
+}
+
+FLASHMEM void formatDrumDimensionValue(
+    char* buffer,
+    size_t size,
+    const core::state::sequencer::DrumSequencerState& drumUi
+) {
+    if (!buffer || size == 0U || !drumUi.drumTrack) return;
+    const auto& pattern = drumUi.drumTrack->pattern;
+    switch (drumUi.dimension) {
+        case DrumDimension::MODE:
+            std::snprintf(
+                buffer,
+                size,
+                "%s",
+                pattern.lanes[drumUi.selectedLane].timing.mode ==
+                        core::state::sequencer::DrumLaneTimingMode::CUSTOM
+                    ? "Custom"
+                    : "Inherited"
+            );
+            return;
+        case DrumDimension::DIVISION:
+            std::snprintf(
+                buffer,
+                size,
+                "1/%u",
+                static_cast<unsigned>(
+                    pattern.effectiveStepsPerBeat(drumUi.selectedLane) * 4U
+                )
+            );
+            return;
+        case DrumDimension::LENGTH:
+        case DrumDimension::COUNT:
+        default:
+            std::snprintf(
+                buffer,
+                size,
+                "%u steps",
+                static_cast<unsigned>(
+                    pattern.effectiveLength(drumUi.selectedLane)
+                )
+            );
+            return;
+    }
+}
+
+FLASHMEM const char* drumPatternFieldIcon(DrumPatternField field) {
+    return field == DrumPatternField::DIVISION
+        ? standalone::icons::DIVISION
+        : standalone::icons::LENGTH;
+}
+
+FLASHMEM const char* drumPatternFieldLabel(DrumPatternField field) {
+    return field == DrumPatternField::DIVISION
+        ? "Default division"
+        : "Default length";
+}
+
+FLASHMEM uint32_t drumPatternFieldColor(DrumPatternField field) {
+    return field == DrumPatternField::DIVISION
+        ? standalone::theme::color::STEP_DIVISION
+        : standalone::theme::color::STEP_LENGTH;
+}
+
+FLASHMEM void formatDrumPatternFieldValue(
+    char* buffer,
+    size_t size,
+    const core::state::sequencer::DrumSequencerState& drumUi
+) {
+    if (!buffer || size == 0U || !drumUi.drumTrack) return;
+    if (drumUi.patternDefaultField == DrumPatternField::DIVISION) {
+        std::snprintf(
+            buffer,
+            size,
+            "1/%u",
+            static_cast<unsigned>(
+                drumUi.drumTrack->pattern.defaultStepsPerBeat * 4U
+            )
+        );
+    } else {
+        std::snprintf(
+            buffer,
+            size,
+            "%u steps",
+            static_cast<unsigned>(drumUi.drumTrack->pattern.defaultLength)
+        );
+    }
+}
 
 const char* sequencerContextLabel(core::state::StructureNavigationFocus focus) {
     switch (focus) {
@@ -291,6 +477,83 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
     const SequencerViewModelSource& source
 ) {
     const auto& sequencer = source.sequencer;
+
+    if (sequencer.drumSequencer.typePickerVisible()) {
+        const bool drum = sequencer.drumSequencer.selectedKind ==
+            core::state::sequencer::DrumSequencerKind::DRUM;
+        return {
+            .visible = true,
+            .customContent = true,
+            .icon = drum
+                ? standalone::icons::CYCLE_STATE
+                : standalone::icons::NOTE,
+            .label = drum ? "Track: Drum" : "Track: Instrument",
+            .value = "Turn NAV · press",
+            .color = drum
+                ? standalone::theme::color::STEP_VELOCITY
+                : standalone::theme::color::STEP_PITCH,
+        };
+    }
+    if (sequencer.drumSequencer.kitPickerVisible()) {
+        const auto preset =
+            sequencer.drumSequencer.selectedKitPreset;
+        return {
+            .visible = true,
+            .customContent = true,
+            .icon = preset == core::state::sequencer::DrumKitPreset::EMPTY
+                ? standalone::icons::ACTION_CLEAR
+                : standalone::icons::CYCLE_STATE,
+            .label = core::state::sequencer::drumKitPresetLabel(preset),
+            .value = "Turn NAV · press",
+            .color = standalone::theme::color::STEP_VELOCITY,
+        };
+    }
+    if (sequencer.drumSequencer.gridVisible() &&
+        sequencer.drumSequencer.selectorVisible()) {
+        const auto& drumUi = sequencer.drumSequencer;
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::LANE_EDITOR) {
+            return {};
+        }
+        StepPropertySelectionOverlayProps props{
+            .visible = true,
+            .customContent = true,
+            .useValueText = true,
+        };
+        if (drumUi.selector == core::state::sequencer::
+                DrumSequencerSelector::DIMENSION) {
+            props.icon = drumDimensionIcon(drumUi.dimension);
+            props.label = drumDimensionLabel(drumUi.dimension);
+            props.color = drumDimensionColor(drumUi.dimension);
+            formatDrumDimensionValue(
+                props.valueText.data(),
+                props.valueText.size(),
+                drumUi
+            );
+        } else if (drumUi.selector == core::state::sequencer::
+                       DrumSequencerSelector::PROPERTY) {
+            const auto propertyVisual =
+                visual::buildDrumPropertyVisual(drumUi.property);
+            props.icon = propertyVisual.icon;
+            props.label = propertyVisual.label;
+            props.color = propertyVisual.color;
+            formatDrumPropertyValue(
+                props.valueText.data(),
+                props.valueText.size(),
+                drumUi
+            );
+        } else {
+            props.icon = drumPatternFieldIcon(drumUi.patternDefaultField);
+            props.label = drumPatternFieldLabel(drumUi.patternDefaultField);
+            props.color = drumPatternFieldColor(drumUi.patternDefaultField);
+            formatDrumPatternFieldValue(
+                props.valueText.data(),
+                props.valueText.size(),
+                drumUi
+            );
+        }
+        return props;
+    }
 
     if (sequencer.stepContentDraft.exitPromptVisible.get()) {
         using Choice = core::state::sequencer::SequencerStepContentDraftExitChoice;

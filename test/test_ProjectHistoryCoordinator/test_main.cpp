@@ -350,18 +350,20 @@ void test_track_mutation_cuts_macro_and_sequencer_redo_branches() {
     std::cout << "[PASS] a Track command cuts every domain Redo branch\n";
 }
 
-void test_track_boundary_publishes_runtime_revisions() {
+void test_track_boundary_publishes_local_runtime_without_global_reset() {
     Harness h;
     auto tracks = project::ProjectTrackDomainServices::fromCoreState(h.state);
     const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
     const uint32_t macroRevisionBefore = h.state.configRevision.get();
     const uint32_t sequencerRevisionBefore =
         h.state.sequencerRuntimeProjectRevision.get();
+    const uint32_t trackRevisionBefore = h.state.projectTracks.revision.get();
 
     assert(tracks.setMidiChannel(0U, 12U));
     assert(h.state.projectTracks.authored.midiChannels[0] == 12U);
+    assert(h.state.projectTracks.revision.get() != trackRevisionBefore);
     assert(h.state.configRevision.get() != macroRevisionBefore);
-    assert(h.state.sequencerRuntimeProjectRevision.get() !=
+    assert(h.state.sequencerRuntimeProjectRevision.get() ==
            sequencerRevisionBefore);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);
 
@@ -372,7 +374,11 @@ void test_track_boundary_publishes_runtime_revisions() {
     assert(h.state.undoProjectHistory());
     assert(h.state.projectTracks.authored.midiChannels[0] == 0U);
 
-    std::cout << "[PASS] Track authority publishes runtime revisions at commit/Undo\n";
+    assert(h.state.sequencerRuntimeProjectRevision.get() ==
+           sequencerRevisionBefore);
+
+    std::cout
+        << "[PASS] Track authority publishes locally without a global runtime reset\n";
 }
 
 void test_pending_track_gesture_blocks_global_history_boundary() {
@@ -871,7 +877,7 @@ int main() {
     test_cross_domain_timeline_is_exact_and_semantic();
     test_track_is_a_third_exact_global_history_domain();
     test_track_mutation_cuts_macro_and_sequencer_redo_branches();
-    test_track_boundary_publishes_runtime_revisions();
+    test_track_boundary_publishes_local_runtime_without_global_reset();
     test_pending_track_gesture_blocks_global_history_boundary();
     test_track_structure_boundary_reports_and_commits_pattern_predecessor();
     test_track_structure_boundary_preserves_exclusive_transaction_owners();

@@ -1,7 +1,10 @@
-# UX workflow: cancel the New Project confirmation without resetting musical state.
+# UX workflow: cancel New Project from the authoritative Storage section.
 # Purpose: validates that the confirmation screen is navigable and that Cancel
 # returns to the previous Project context.
-# Expect: capture_changed:project_overview=new_project_confirm_default, capture_match:project_overview=project_overview_after_cancel
+# Expect: capture_changed:project_overview=new_project_confirm_default
+# Expect: semantic:storage_new_focused:property=storage, semantic:storage_new_focused:value_label=storage_root, semantic:storage_new_focused:target_index=3
+# Expect: semantic:new_project_confirm_default:property=storage, semantic:new_project_confirm_default:value_label=new_confirm
+# Expect: semantic:storage_after_cancel:property=storage, semantic:storage_after_cancel:value_label=storage_root, semantic:storage_after_cancel:target_index=3
 
 0 capture screen boot
 
@@ -15,10 +18,21 @@
 580 button LEFT_TOP up
 720 capture screen project_overview
 
+# Storage owns all project lifecycle commands.
+820 button LEFT_CENTER down
+1420 encoder NAV -0.01
+1560 capture screen project_storage_tab
+1640 button LEFT_CENTER up
+1740 encoder NAV 0.01
+1820 encoder NAV 0.01
+1900 encoder NAV 0.01
+2040 capture screen storage_new_focused
+
 # Open New Project confirmation, move to Cancel, and apply it.
-820 tap NAV 60
-1080 capture screen new_project_confirm_default
-1180 encoder NAV 1
-1320 capture screen new_project_confirm_cancel_focused
-1400 tap NAV 60
-1680 capture screen project_overview_after_cancel
+2120 tap NAV 60
+2380 capture screen new_project_confirm_default
+2480 encoder NAV 0.01
+2560 encoder NAV 0.01
+2700 capture screen new_project_confirm_cancel_focused
+2780 tap NAV 60
+3060 capture screen storage_after_cancel

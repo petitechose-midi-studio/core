@@ -93,8 +93,8 @@ FLASHMEM void MacroKnobWidget::createUI(lv_obj_t* parent) {
     add_label_ = lv_label_create(container_);
     if (!add_label_) return;
     lv_label_set_text(add_label_, "+");
-    if (fonts.inter_13_bold) {
-        lv_obj_set_style_text_font(add_label_, fonts.inter_13_bold, 0);
+    if (fonts.compact_selected()) {
+        lv_obj_set_style_text_font(add_label_, fonts.compact_selected(), 0);
     }
     lv_obj_set_style_text_color(add_label_, lv_color_hex(stheme::color::TEXT_SECONDARY), 0);
     lv_obj_set_style_text_opa(add_label_, LV_OPA_60, 0);
@@ -140,8 +140,8 @@ FLASHMEM void MacroKnobWidget::createConfigLabels() {
         .autoScroll(false)
         .ownsLvglObjects(false);
     style::apply(cc_prefix_->getElement()).textOpa(stheme::color::MACRO_PREFIX_OPA);
-    if (fonts.inter_12_medium) {
-        cc_prefix_->font(fonts.inter_12_medium);
+    if (fonts.meta_label()) {
+        cc_prefix_->font(fonts.meta_label());
     }
     cc_prefix_->setText("CC");
     lv_obj_set_grid_cell(
@@ -156,8 +156,8 @@ FLASHMEM void MacroKnobWidget::createConfigLabels() {
         .color(stheme::color::MACRO_CC_COLOR)
         .autoScroll(false)
         .ownsLvglObjects(false);
-    if (fonts.inter_13_bold) {
-        cc_value_->font(fonts.inter_13_bold);
+    if (fonts.compact_selected()) {
+        cc_value_->font(fonts.compact_selected());
     }
     cc_value_->setText("-");
     lv_obj_set_grid_cell(
@@ -357,9 +357,11 @@ void MacroKnobWidget::updateFocusFrame() {
             ? stheme::color::MACRO_CONFLICT
             : placement_free_
                 ? stheme::color::MACRO_CC_COLOR
-                : selected_
-                    ? stheme::color::MACRO_MODULATION
-                    : stheme::color::TEXT_PRIMARY;
+                : focused_
+                    ? stheme::color::FOCUS_EDIT
+                    : selected_
+                        ? stheme::color::CONTENT_ACTIVE
+                        : stheme::color::FOCUS_EDIT;
     lv_obj_set_style_border_width(
         container_,
         placement || selected_ ? 2 : (focused_ ? 1 : 0),

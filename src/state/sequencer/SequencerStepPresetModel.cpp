@@ -146,7 +146,12 @@ FLASHMEM uint32_t sequencerStepPresetTargetHash(
     hash = mixU16(hash, target.ownerNodeId);
     hash = mixU16(hash, target.sequenceId);
     hash = mixU16(hash, target.cycleSetId);
-    return mixU16(hash, target.targetNodeId);
+    hash = mixU16(hash, target.targetNodeId);
+    hash = mixByte(hash, target.destinationOwnsPitch ? 1U : 0U);
+    hash = mixByte(hash, target.destinationNote);
+    hash = mixByte(hash, target.drumLaneIndex);
+    hash = mixByte(hash, target.drumRootStepIndex);
+    return mixByte(hash, target.drumRootSlot);
 }
 
 FLASHMEM void sequencerStepPresetSemanticName(

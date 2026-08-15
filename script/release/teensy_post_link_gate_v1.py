@@ -127,6 +127,7 @@ class TeensyProductPolicy:
     flash_code_max: int
     flash_data_max: int
     flash_headers_max: int
+    flash_enforcement: str
     ram1_variables_max: int
     itcm_max: int
     itcm_slack_min: int
@@ -148,6 +149,7 @@ class TeensyPostLinkResult:
     copy_itcm_bytes: int | None
     itcm_banks: int | None
     violations: tuple[str, ...]
+    advisories: tuple[str, ...]
 
     @property
     def passed(self) -> bool:
@@ -269,6 +271,11 @@ def _policy_from_mapping(
     flash_headers_max = _required_int(
         flash, "headersMaxBytes", f"{vector_label}.flash"
     )
+    flash_enforcement = flash.get("enforcement", "blocking")
+    if flash_enforcement not in ("blocking", "advisory"):
+        raise ValueError(
+            f"{vector_label}.flash.enforcement must be 'blocking' or 'advisory'"
+        )
     if flash_code_max + flash_data_max + flash_headers_max > FLASH_SIZE:
         raise ValueError(f"{vector_label}.flash maxima exceed Teensy Flash capacity")
 
@@ -352,6 +359,7 @@ def _policy_from_mapping(
         flash_code_max=flash_code_max,
         flash_data_max=flash_data_max,
         flash_headers_max=flash_headers_max,
+        flash_enforcement=flash_enforcement,
         ram1_variables_max=ram1_variables_max,
         itcm_max=itcm_max,
         itcm_slack_min=itcm_slack_min,
@@ -605,11 +613,12 @@ def topology_summary(readelf_sections_output: str, nm_symbols_output: str) -> st
     )
 
 
-def _memory_violations(
+def _memory_findings(
     policy: TeensyProductPolicy, usage: TeensyMemoryUsage
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     prefix = f"{policy.profile_id}/{policy.vector_name}"
     violations: list[str] = []
+    advisories: list[str] = []
 
     if usage.flash_loaded + usage.flash_free != FLASH_SIZE:
         violations.append(
@@ -634,15 +643,26 @@ def _memory_violations(
             f"{usage.ram2_free}B does not equal {RAM2_SIZE}B"
         )
 
-    maximums = (
+    flash_maximums = (
         ("Flash code", usage.flash_code, policy.flash_code_max),
         ("Flash data", usage.flash_data, policy.flash_data_max),
         ("Flash headers", usage.flash_headers, policy.flash_headers_max),
+    )
+    flash_findings = (
+        advisories if policy.flash_enforcement == "advisory" else violations
+    )
+    for label, observed, maximum in flash_maximums:
+        if observed > maximum:
+            flash_findings.append(
+                f"{prefix} {label} {observed}B exceeds maximum {maximum}B"
+            )
+
+    blocking_maximums = (
         ("RAM1 variables", usage.ram1_variables, policy.ram1_variables_max),
         ("ITCM code", usage.ram1_code, policy.itcm_max),
         ("PSRAM static", usage.extram_variables, policy.psram_static_max),
     )
-    for label, observed, maximum in maximums:
+    for label, observed, maximum in blocking_maximums:
         if observed > maximum:
             violations.append(
                 f"{prefix} {label} {observed}B exceeds maximum {maximum}B"
@@ -694,7 +714,7 @@ def _memory_violations(
             f"{prefix} PSRAM static {usage.extram_variables}B exceeds installed "
             f"capacity {policy.psram_capacity}B"
         )
-    return tuple(violations)
+    return tuple(violations), tuple(advisories)
 
 
 def _allocated_section_violations(
@@ -779,6 +799,7 @@ def evaluate_post_link(
 ) -> TeensyPostLinkResult:
     prefix = f"{policy.profile_id}/{policy.vector_name}"
     violations: list[str] = []
+    advisories: list[str] = []
     usage: TeensyMemoryUsage | None = None
     sections: tuple[ElfSection, ...] | None = None
     physical_bytes: int | None = None
@@ -790,7 +811,9 @@ def evaluate_post_link(
     except ValueError as error:
         violations.append(f"{prefix} invalid teensy_size metadata: {error}")
     else:
-        violations.extend(_memory_violations(policy, usage))
+        memory_violations, memory_advisories = _memory_findings(policy, usage)
+        violations.extend(memory_violations)
+        advisories.extend(memory_advisories)
 
     topology_errors = topology_violations(
         readelf_sections_output, nm_symbols_output
@@ -836,6 +859,7 @@ def evaluate_post_link(
         copy_itcm_bytes=copy_bytes,
         itcm_banks=banks,
         violations=tuple(violations),
+        advisories=tuple(advisories),
     )
 
 
@@ -851,13 +875,18 @@ def format_summary(result: TeensyPostLinkResult) -> str:
         )
     usage = result.usage
     psram_free = result.policy.psram_capacity - usage.extram_variables
+    status = "WARN" if result.advisories else "PASS"
+    advisory_suffix = (
+        f", advisories={len(result.advisories)}" if result.advisories else ""
+    )
     return (
-        f"Teensy post-link gate v{POST_LINK_GATE_INTERFACE_VERSION} PASS: "
+        f"Teensy post-link gate v{POST_LINK_GATE_INTERFACE_VERSION} {status}: "
         f"profile={identity}, Flash={usage.flash_code}/{usage.flash_data}/"
         f"{usage.flash_headers}B, RAM1={usage.ram1_variables}B, "
         f"ITCM={result.physical_itcm_bytes}B/{result.itcm_banks} banks, "
         f"RAM1-free={usage.ram1_free}B, RAM2={usage.ram2_variables}/"
         f"{usage.ram2_free}B, PSRAM={usage.extram_variables}/{psram_free}B"
+        f"{advisory_suffix}"
     )
 
 
@@ -885,7 +914,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         for violation in result.violations:
             print(f"  - {violation}", file=sys.stderr)
         return 1
-    print(format_summary(result))
+    stream = sys.stderr if result.advisories else sys.stdout
+    print(format_summary(result), file=stream)
+    for advisory in result.advisories:
+        print(f"  ! {advisory}", file=stream)
     return 0
 
 

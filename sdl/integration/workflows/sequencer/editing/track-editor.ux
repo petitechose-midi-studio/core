@@ -10,51 +10,68 @@
 # Expect: semantic:track_soloed:effect=toggle_track_solo, semantic:track_soloed:property=solo, semantic:track_soloed:authored_value=1
 # Expect: semantic:track_1_hot_switch:effect=switch_track, semantic:track_1_hot_switch:target_track=0
 # Expect: semantic:track_2_values_restored:mode=sequencer.track_editor, semantic:track_2_values_restored:target_track=1, semantic:track_2_values_restored:property=delay, semantic:track_2_values_restored:value_label=+37 ms
+# Expect: semantic:type_draft:mode=sequencer.track_editor, semantic:type_draft:property=type, semantic:type_draft:effect=edit_track_property, semantic:type_draft:intent=edit_value, semantic:type_draft:draft_active=true, semantic:type_draft:dirty=true, semantic:type_draft:projection=draft
+# Expect: semantic:type_draft_retarget_blocked:effect=keep_track_type_draft_target, semantic:type_draft_retarget_blocked:intent=navigate_secondary_axis, semantic:type_draft_retarget_blocked:target_track=1, semantic:type_draft_retarget_blocked:reason=unsaved_draft, semantic:type_draft_retarget_blocked:dirty=true
+# Expect: semantic:type_applied:effect=apply_track_type_draft, semantic:type_applied:intent=apply, semantic:type_applied:draft_active=false, semantic:type_applied:dirty=false
 # Expect: capture_changed:track_2_editor=delay_edited, capture_changed:track_2_editor=track_1_hot_switch
 
 0 scenario sequencer
 
-# Create sparse Track 2 directly from the shared Track strip. Confirmation
-# keeps the musical Track context with Track 2 active.
+# Create sparse Track 2 directly from the shared Track strip. The first NAV
+# press opens the type prompt; the second confirms it. Wait for the transient
+# confirmation to clear before reopening the retained editor.
 100 button NAV down
 160 encoder NAV -1
 220 button NAV up
 300 tap LEFT_CENTER 60
 1450 encoder NAV 1
 1630 tap NAV 60
-1980 capture screen track_2_created
-
-# A short NAV tap in Track context opens the retained editor.
 2080 tap NAV 60
-2320 capture screen track_2_editor
+3000 capture screen track_2_created
+3200 tap NAV 60
+3480 capture screen track_2_editor
 
 # OUTPUT is focused by default. OPT changes only the canonical Track Channel.
-2900 encoder OPT 0.60
-3060 capture screen channel_edited
+3660 encoder OPT 0.60
+3820 capture screen channel_edited
 
 # NAV focuses Delay directly; OPT edits its signed millisecond value without
 # opening another screen or requiring a secondary modifier.
-3240 encoder NAV 1
-3320 capture screen delay_selected
-3500 encoder OPT 0.75
-3660 capture screen delay_edited
+4000 encoder NAV 1
+4080 capture screen delay_selected
+4260 encoder OPT 0.75
+4420 capture screen delay_edited
 
 # The visible action strip maps directly to Mute and Solo.
-3760 tap BOTTOM_LEFT 60
-3920 capture screen track_muted
-4020 tap BOTTOM_RIGHT 60
-4180 capture screen track_soloed
+4520 tap BOTTOM_LEFT 60
+4680 capture screen track_muted
+4780 tap BOTTOM_RIGHT 60
+4940 capture screen track_soloed
 
 # LEFT_CENTER+NAV wraps only through enabled Tracks and retargets in place.
-4280 button LEFT_CENTER down
-4360 encoder NAV -1
-4520 capture screen track_1_hot_switch
-4600 encoder NAV 1
-4760 capture screen track_2_hot_switch_back
-4820 button LEFT_CENTER up
+5040 button LEFT_CENTER down
+5120 encoder NAV -1
+5280 capture screen track_1_hot_switch
+5360 encoder NAV 1
+5520 capture screen track_2_hot_switch_back
+5580 button LEFT_CENTER up
 
 # Close directly. Reopening the editor proves the Track identity retained its
 # authored values without routing through a Structure workspace.
-4940 tap LEFT_TOP 60
-5520 tap NAV 60
-5760 capture screen track_2_values_restored
+5700 tap LEFT_TOP 60
+6280 tap NAV 60
+6520 capture screen track_2_values_restored
+
+# TYPE follows the retained Delay focus. Its destructive conversion remains a
+# draft until the visible Apply action. A secondary-axis gesture cannot
+# silently retarget that dirty draft to Track 1.
+6700 encoder NAV 1
+6940 encoder OPT 1
+7020 encoder OPT 1
+7100 capture screen type_draft
+7200 button LEFT_CENTER down
+7280 encoder NAV -1
+7440 capture screen type_draft_retarget_blocked
+7520 button LEFT_CENTER up
+7640 tap BOTTOM_RIGHT 60
+7880 capture screen type_applied

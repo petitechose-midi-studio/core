@@ -6,7 +6,7 @@
 #include <oc/state/Signal.hpp>
 #include <oc/state/SignalString.hpp>
 
-#include "state/project/ProjectNameKeyboard.hpp"
+#include "state/interaction/TextKeyboardLayout.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/macro/MacroAutomationAddress.hpp"
@@ -23,6 +23,17 @@ enum class ProjectTab : uint8_t {
     ROUTING,
     MODULATORS,
     COUNT,
+};
+
+// Visible Project sections have an explicit product order. MODULATORS keeps
+// using Project's retained workspace internally, but is a first-rank view and
+// therefore never belongs to this strip or carousel.
+inline constexpr std::array<ProjectTab, 5> PROJECT_ROOT_TABS = {
+    ProjectTab::OVERVIEW,
+    ProjectTab::MUSIC,
+    ProjectTab::TRANSPORT,
+    ProjectTab::ROUTING,
+    ProjectTab::STORAGE,
 };
 
 enum class ProjectNodeId : uint8_t {
@@ -45,6 +56,7 @@ enum class ProjectNodeId : uint8_t {
     MODULATOR_SOURCE_RENAME,
     MODULATOR_SOURCE_KIND_PICKER,
     MODULATOR_TRIGGER,
+    MUSIC_CC_DEFAULTS,
 };
 
 struct ProjectBrowserEntry {
@@ -145,7 +157,8 @@ struct ProjectNavigationState {
     uint8_t transportRunMode = 0;
     std::array<char, ProjectMetadata::ID_SIZE> pendingLoadProjectId{};
     std::array<char, ProjectMetadata::ID_SIZE> editingProjectSlug{};
-    uint8_t projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
+    uint8_t projectNameKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
     float projectNameOptRawPosition = 0.0f;
     float projectNameOptRowAccumulator = 0.0f;
     bool projectNameShiftActive = false;
@@ -170,8 +183,21 @@ struct ProjectNavigationState {
     void clearLifecycleFeedback();
 };
 
-constexpr uint8_t projectTabCount() {
-    return static_cast<uint8_t>(ProjectTab::COUNT);
+constexpr uint8_t projectRootTabCount() {
+    return static_cast<uint8_t>(PROJECT_ROOT_TABS.size());
+}
+
+constexpr ProjectTab projectRootTabAt(uint8_t index) {
+    return index < PROJECT_ROOT_TABS.size()
+        ? PROJECT_ROOT_TABS[index]
+        : ProjectTab::OVERVIEW;
+}
+
+constexpr int projectRootTabIndex(ProjectTab tab) {
+    for (uint8_t index = 0; index < PROJECT_ROOT_TABS.size(); ++index) {
+        if (PROJECT_ROOT_TABS[index] == tab) return index;
+    }
+    return -1;
 }
 
 ProjectNodeId rootNodeForTab(ProjectTab tab);

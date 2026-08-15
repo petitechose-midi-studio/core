@@ -28,6 +28,14 @@ FLASHMEM bool isChildContentView(const SequencerState& sequencer) {
     return sequencer.contentView.isChildContent();
 }
 
+FLASHMEM bool isDrumOverviewActive(const SequencerState& sequencer) {
+    return sequencer.drumSequencer.gridVisible() && isRootContentView(sequencer);
+}
+
+FLASHMEM bool isDrumContentView(const SequencerState& sequencer) {
+    return isChildContentView(sequencer) && sequencer.contentView.drumOwnerActive;
+}
+
 FLASHMEM bool isMicroSequenceContentView(const SequencerState& sequencer) {
     return sequencer.contentView.isMicroSequence();
 }
@@ -423,6 +431,13 @@ FLASHMEM bool leaveContentView(SequencerState& sequencer) {
         length > 0 ? std::min<uint8_t>(frame.focusSnapshot, static_cast<uint8_t>(length - 1U)) : 0;
     sequencer.focusedStep.set(focused);
     sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
+    if (view.stackDepth == 0U) {
+        view.drumOwnerActive = false;
+        view.drumOwnerTrack = 0U;
+        view.drumOwnerLane = 0U;
+        view.drumOwnerStep = 0U;
+        view.drumOwnerRootSlot = 0xFFU;
+    }
     view.bump();
     return true;
 }
@@ -439,6 +454,10 @@ FLASHMEM void refreshContentView(SequencerState& sequencer) {
         if (validateFrame(sequencer, frame)) break;
         view.frames[view.stackDepth - 1U] = {};
         --view.stackDepth;
+    }
+    if (view.stackDepth == 0U) {
+        view.drumOwnerActive = false;
+        view.drumOwnerRootSlot = 0xFFU;
     }
     syncPublicViewFields(view);
 

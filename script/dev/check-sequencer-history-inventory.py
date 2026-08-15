@@ -132,21 +132,20 @@ D_OOM_SURFACE_IDENTIFIER_COUNTS = {
     ("src/handler/sequencer/PatternPitchSettingsHandler.cpp", "showRejection"): 3,
     ("src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "ALLOCATION_UNAVAILABLE"): 12,
     ("src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "HISTORY_UNAVAILABLE"): 7,
-    ("src/handler/sequencer/SequencerMacroPropertyHandler.cpp", "showRejection"): 10,
+    ("src/handler/sequencer/SequencerMacroPropertyHandler.cpp", "showRejection"): 12,
     ("src/handler/sequencer/SequencerPatternEditorHandler.cpp", "showRejection"): 2,
     ("src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp", "showRejection"): 3,
     ("src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp", "showRejection"): 4,
-    ("src/handler/sequencer/SequencerPropertySelectorHandler.cpp", "showRejection"): 8,
+    ("src/handler/sequencer/SequencerPropertySelectorHandler.cpp", "showRejection"): 11,
     ("src/handler/sequencer/SequencerStepContentActions.cpp", "showRejection"): 2,
     ("src/handler/sequencer/SequencerStepContentDraftWorkflow.cpp", "showRejection"): 2,
-    ("src/handler/sequencer/SequencerStepEditHandler.cpp", "showRejection"): 3,
+    ("src/handler/sequencer/SequencerStepEditHandler.cpp", "showRejection"): 6,
     ("src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "showRejection"): 2,
-    ("src/handler/sequencer/SequencerStepHandler.cpp", "showRejection"): 4,
-    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "ALLOCATION_UNAVAILABLE"): 6,
-    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "HISTORY_UNAVAILABLE"): 1,
+    ("src/handler/sequencer/SequencerStepHandler.cpp", "showRejection"): 10,
+    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "ALLOCATION_UNAVAILABLE"): 8,
+    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "HISTORY_UNAVAILABLE"): 4,
     ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "ALLOCATION_UNAVAILABLE"): 2,
     ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "HISTORY_UNAVAILABLE"): 2,
-    ("src/handler/settings/SequencerSettingsHandler.cpp", "showRejection"): 1,
     ("src/state/sequencer/SequencerUiState.cpp", "showRejection"): 5,
 }
 D_OOM_STRING_LITERAL_COUNTS = {
@@ -154,11 +153,9 @@ D_OOM_STRING_LITERAL_COUNTS = {
      "Memory unavailable - unchanged"): 1,
     ("src/handler/project/ProjectHandlerValueEditing.cpp",
      "History unavailable - unchanged"): 1,
-    ("src/state/sequencer/SequencerUiState.cpp", "EDIT BLOCKED"): 1,
     ("src/state/sequencer/SequencerUiState.cpp", "Edit unavailable"): 1,
     ("src/state/sequencer/SequencerUiState.cpp", "Memory unavailable"): 1,
     ("src/state/sequencer/SequencerUiState.cpp", "History unavailable"): 1,
-    ("src/state/sequencer/SequencerUiState.cpp", "State unchanged"): 1,
 }
 D_OOM_FORBIDDEN_IDENTIFIERS = (
     "SequencerHistoryOpenOutcome::Failed",
@@ -246,7 +243,6 @@ PREPARED_FULL_BANK_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
 PREPARED_FULL_BANK_OWNER_ENUM = "SequencerPreparedFullBankEditOwner"
 PREPARED_FULL_BANK_OWNERS = (
     "ProjectScale",
-    "SequencerSettingsScale",
 )
 PREPARED_FULL_BANK_METHOD = "applyPreparedProjectScaleChoice"
 PREPARED_FULL_BANK_CENTRAL_PATH = "src/state/CoreStateSequencerHistoryRecording.cpp"
@@ -263,9 +259,8 @@ PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_CALL_TOTAL = 1
 PREPARED_FULL_BANK_TRUSTED_COMMIT_HANDLER_ROOT = "src/handler"
 PREPARED_FULL_BANK_SURFACE_FILES = (
     "src/handler/project/ProjectHandlerValueEditing.cpp",
-    "src/handler/settings/SequencerSettingsHandler.cpp",
 )
-PREPARED_FULL_BANK_SURFACE_COUNT = 3
+PREPARED_FULL_BANK_SURFACE_COUNT = 2
 PREPARED_FULL_BANK_FORBIDDEN_RAW_METHODS = (
     "captureSequencerFullBankHistoryBefore",
     "captureSequencerFullBankHistoryAfter",
@@ -1398,21 +1393,21 @@ def manifest_errors(manifest) -> list[str]:
                 errors.append(f"{path}: FullBank owner references must match typed calls")
 
         if full_bank.get("expectedSurfaceCount") != PREPARED_FULL_BANK_SURFACE_COUNT:
-            errors.append("prepared FullBank migrated surface count must remain 3")
+            errors.append("prepared FullBank migrated surface count must match the contract")
         if surface_total != full_bank.get("expectedSurfaceCount"):
             errors.append(
                 f"prepared FullBank surface total is {surface_total}, "
                 f"expected {full_bank.get('expectedSurfaceCount')}"
             )
         if full_bank.get("expectedSurfaceCallTotal") != PREPARED_FULL_BANK_SURFACE_COUNT:
-            errors.append("prepared FullBank surface call total must remain 3")
+            errors.append("prepared FullBank surface call total must match the contract")
         if call_total != full_bank.get("expectedSurfaceCallTotal"):
             errors.append(
                 f"prepared FullBank call total is {call_total}, "
                 f"expected {full_bank.get('expectedSurfaceCallTotal')}"
             )
         if manifest_owner_set != set(PREPARED_FULL_BANK_OWNERS):
-            errors.append("prepared FullBank surfaces must cover both owners")
+            errors.append("prepared FullBank surfaces must cover every declared owner")
 
         forbidden_methods = tuple(full_bank.get("forbiddenRawMethods", []))
         if forbidden_methods != PREPARED_FULL_BANK_FORBIDDEN_RAW_METHODS:
@@ -2924,7 +2919,7 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         owner_path = root / "Owner.hpp"
         owner_path.write_text(
             "enum class SequencerPreparedFullBankEditOwner : unsigned char {\n"
-            "  ProjectScale = 0, SequencerSettingsScale,\n"
+            "  ProjectScale = 0,\n"
             "};\n",
             encoding="utf-8",
         )
@@ -2941,15 +2936,6 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
             "}\n"
             "// captureSequencerFullBankHistoryBefore();\n"
             "const char* raw = \"recordFullBank(\";\n",
-            encoding="utf-8",
-        )
-        settings_path = root / "Settings.cpp"
-        settings_path.write_text(
-            "using FullBankOwner = ns::SequencerPreparedFullBankEditOwner;\n"
-            "void apply() {\n"
-            "  history.applyPreparedProjectScaleChoice(\n"
-            "      FullBankOwner::SequencerSettingsScale);\n"
-            "}\n",
             encoding="utf-8",
         )
         central_path = root / "Central.cpp"
@@ -2997,23 +2983,13 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
             return False
         if count_member_method(project_path, method) != 2:
             return False
-        if count_member_method(settings_path, method) != 1:
-            return False
         if count_prepared_owner_references(
             project_path,
             declaration["enum"],
             declaration["owners"],
         ) != Counter({"ProjectScale": 2}):
             return False
-        if count_prepared_owner_references(
-            settings_path,
-            declaration["enum"],
-            declaration["owners"],
-        ) != Counter({"SequencerSettingsScale": 1}):
-            return False
         if count_any_calls(project_path, lifecycle["forbiddenRawMethods"]):
-            return False
-        if count_any_calls(settings_path, lifecycle["forbiddenRawMethods"]):
             return False
         if count_qualified_calls(
             central_path,
@@ -3070,13 +3046,13 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         if regressed_global_invocations - trusted["declaration"]["expectedCount"] != 3:
             return False
 
-        settings_path.write_text(
-            settings_path.read_text(encoding="utf-8") +
+        project_path.write_text(
+            project_path.read_text(encoding="utf-8") +
             "void regression() { recordSequencerFullBankHistoryChange(); }\n",
             encoding="utf-8",
         )
         if count_any_calls(
-            settings_path,
+            project_path,
             lifecycle["forbiddenRawMethods"],
         ) != Counter({"recordSequencerFullBankHistoryChange": 1}):
             return False

@@ -9,6 +9,7 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/StandaloneFonts.hpp"
+#include "ui/interaction/InteractiveSurfaceVisual.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -19,14 +20,16 @@ namespace core::ui {
 
 namespace {
 
-constexpr lv_coord_t PANEL_PAD = theme::layout::PAD_MD;
-constexpr lv_coord_t PANEL_GAP = theme::layout::GAP_MD;
+constexpr lv_coord_t PANEL_PAD_H = 8;
+constexpr lv_coord_t PANEL_PAD_TOP = 4;
+constexpr lv_coord_t PANEL_PAD_BOTTOM = 10;
+constexpr lv_coord_t PANEL_GAP = 3;
+constexpr lv_coord_t HEADER_SUMMARY_MIN_WIDTH = 88;
 constexpr lv_coord_t CHIP_PAD = theme::layout::PAD_SM;
 constexpr lv_coord_t CHIP_GAP = theme::layout::GAP_SM;
 constexpr lv_coord_t ACTION_TEXT_GAP = 1;
 constexpr lv_coord_t TRIGGER_PAD_V = theme::layout::PAD_MD;
 constexpr lv_coord_t STEP_BADGE_PAD_V = theme::layout::PAD_SM / 2;
-constexpr lv_coord_t CHIP_RADIUS = 3;
 constexpr lv_coord_t CHORD_MAP_WIDTH = 196;
 constexpr lv_coord_t CHORD_MAP_HEIGHT = 44;
 constexpr lv_coord_t CHORD_MAP_RAIL_X = 5;
@@ -54,6 +57,7 @@ FLASHMEM lv_obj_t* createLabel(lv_obj_t* parent,
                                uint32_t color,
                                lv_opa_t opa = LV_OPA_COVER) {
     lv_obj_t* label = lv_label_create(parent);
+    lv_label_set_text_static(label, "");
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_style_text_opa(label, opa, 0);
     if (font) {
@@ -111,20 +115,19 @@ bool setCachedOpa(lv_obj_t* label, int16_t& cache, lv_opa_t opa) {
     return true;
 }
 
-void setChipState(lv_obj_t* box,
-                  bool selected,
-                  bool active,
-                  lv_opa_t idleBorderOpa = LV_OPA_30) {
-    lv_obj_set_style_bg_opa(
-        box,
-        selected ? LV_OPA_20 : (active ? LV_OPA_10 : LV_OPA_TRANSP),
-        0
-    );
-    lv_obj_set_style_border_opa(
-        box,
-        selected ? LV_OPA_80 : (active ? idleBorderOpa : LV_OPA_20),
-        0
-    );
+FLASHMEM void applyInteractiveSurfaceState(
+    lv_obj_t* box,
+    bool selected,
+    bool active
+) {
+    if (!box) return;
+    using core::ui::interaction::InteractiveSurfaceState;
+    const auto state = selected
+        ? InteractiveSurfaceState::FOCUSED
+        : (active
+               ? InteractiveSurfaceState::ACTIVE
+               : InteractiveSurfaceState::DISABLED);
+    core::ui::interaction::applyInteractiveSurfaceChrome(box, state);
 }
 
 lv_coord_t markerCoord(uint8_t normalized, lv_coord_t span, lv_coord_t size) {
@@ -169,31 +172,6 @@ bool selectedVisualSlot(const SequencerStepEditOverlayProps& props,
     return explicitVisualSlot(props) ? props.selectedVisualSlot == slot : fallback;
 }
 
-uint32_t focusColorForSelection(const SequencerStepEditOverlayProps& props) {
-    if (props.focusColor != 0) {
-        return props.focusColor;
-    }
-
-    using namespace core::state::sequencer::step_edit_rows;
-    if (props.selectedIndex == ACTIVATED) {
-        return sequencer::semantic::color(sequencer::semantic::Tone::STATE);
-    }
-    if (props.selectedIndex == MICRO_SEQUENCE) {
-        return sequencer::semantic::color(sequencer::semantic::Tone::MICRO_SEQUENCE);
-    }
-    if (props.selectedIndex == CYCLE_STATES) {
-        return sequencer::semantic::color(sequencer::semantic::Tone::CYCLE_STATE);
-    }
-    if (props.selectedIndex == CHORD) {
-        return sequencer::semantic::color(sequencer::semantic::Tone::CHORD);
-    }
-    const uint32_t property = selectedRowToPropertyIndex(props.selectedIndex);
-    if (property < props.properties.size()) {
-        return props.properties[property].color;
-    }
-    return TEXT_PRIMARY;
-}
-
 }  // namespace
 
 FLASHMEM SequencerStepEditOverlay::SequencerStepEditOverlay(lv_obj_t* parent) {
@@ -204,6 +182,15 @@ FLASHMEM SequencerStepEditOverlay::~SequencerStepEditOverlay() {
     if (overlay_) {
         lv_obj_delete(overlay_);
         overlay_ = nullptr;
+    }
+}
+
+void SequencerStepEditOverlay::setContentVisible(bool visible) {
+    if (!panel_) return;
+    if (visible) {
+        lv_obj_clear_flag(panel_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(panel_, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -228,15 +215,15 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
         LV_FLEX_ALIGN_CENTER,
         LV_FLEX_ALIGN_CENTER
     );
-    lv_obj_set_style_pad_left(panel_, PANEL_PAD, 0);
-    lv_obj_set_style_pad_right(panel_, PANEL_PAD, 0);
-    lv_obj_set_style_pad_top(panel_, PANEL_PAD, 0);
+    lv_obj_set_style_pad_left(panel_, PANEL_PAD_H, 0);
+    lv_obj_set_style_pad_right(panel_, PANEL_PAD_H, 0);
+    lv_obj_set_style_pad_top(panel_, PANEL_PAD_TOP, 0);
     lv_obj_set_style_pad_bottom(
         panel_,
         static_cast<lv_coord_t>(
             theme::layout::TRANSPORT_BAR_HEIGHT +
             theme::layout::CONTEXT_ACTION_STRIP_HEIGHT +
-            PANEL_PAD
+            PANEL_PAD_BOTTOM
         ),
         0
     );
@@ -273,34 +260,48 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(step_badge_, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(step_badge_, 3, 0);
     lv_obj_clear_flag(step_badge_, LV_OBJ_FLAG_SCROLLABLE);
-    auto* stepLabel = createLabel(step_badge_, fonts.inter_12_medium, BG_COLOR);
+    auto* stepLabel = createLabel(step_badge_, fonts.meta_label(), BG_COLOR);
     lv_obj_center(stepLabel);
 
     summary_column_ = lv_obj_create(header_row_);
     lv_obj_remove_style_all(summary_column_);
     lv_obj_set_width(summary_column_, 0);
+    lv_obj_set_style_min_width(summary_column_, HEADER_SUMMARY_MIN_WIDTH, 0);
     lv_obj_set_height(summary_column_, LV_SIZE_CONTENT);
     lv_obj_set_flex_grow(summary_column_, 1);
     lv_obj_set_layout(summary_column_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(summary_column_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_flow(summary_column_, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(
         summary_column_,
         LV_FLEX_ALIGN_START,
         LV_FLEX_ALIGN_START,
-        LV_FLEX_ALIGN_START
+        LV_FLEX_ALIGN_CENTER
     );
-    lv_obj_set_style_pad_row(summary_column_, ACTION_TEXT_GAP, 0);
+    lv_obj_set_style_pad_column(summary_column_, 3, 0);
     lv_obj_clear_flag(summary_column_, LV_OBJ_FLAG_SCROLLABLE);
 
-    title_ = createLabel(summary_column_, fonts.inter_14_semibold, TEXT_PRIMARY);
-    lv_obj_set_width(title_, LV_PCT(100));
-    lv_obj_set_height(title_, LV_SIZE_CONTENT);
+    title_ = createLabel(summary_column_, fonts.context_title(), TEXT_PRIMARY);
+    lv_obj_set_size(title_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
-    meta_ = createLabel(header_row_, fonts.inter_12_medium, TEXT_SECONDARY, LV_OPA_80);
+    title_separator_ = createLabel(
+        summary_column_, fonts.compact_label(), TEXT_SECONDARY, LV_OPA_50
+    );
+    lv_label_set_text_static(title_separator_, "|");
+    lv_obj_add_flag(title_separator_, LV_OBJ_FLAG_HIDDEN);
+
+    context_ = createLabel(
+        summary_column_, fonts.compact_label(), TEXT_SECONDARY, LV_OPA_COVER
+    );
+    lv_obj_set_size(context_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_add_flag(context_, LV_OBJ_FLAG_HIDDEN);
+
+    if (!header_metric_row_.create(header_row_)) return;
+
+    meta_ = createLabel(header_row_, fonts.meta_label(), TEXT_SECONDARY, LV_OPA_80);
     lv_obj_set_size(meta_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(meta_, LV_TEXT_ALIGN_RIGHT, 0);
 
-    focus_label_ = createLabel(panel_, fonts.inter_13_bold, TEXT_PRIMARY, LV_OPA_COVER);
+    focus_label_ = createLabel(panel_, fonts.compact_selected(), TEXT_PRIMARY, LV_OPA_COVER);
     lv_obj_set_width(focus_label_, LV_PCT(100));
     lv_obj_set_height(focus_label_, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(focus_label_, LV_TEXT_ALIGN_CENTER, 0);
@@ -324,11 +325,19 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     chord_preview_map_ = lv_obj_create(chord_preview_);
     lv_obj_remove_style_all(chord_preview_map_);
     lv_obj_set_size(chord_preview_map_, CHORD_MAP_WIDTH, CHORD_MAP_HEIGHT);
-    lv_obj_set_style_bg_color(chord_preview_map_, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_bg_opa(chord_preview_map_, LV_OPA_10, 0);
+    lv_obj_set_style_bg_color(
+        chord_preview_map_,
+        lv_color_hex(theme::color::SURFACE_IDLE),
+        0
+    );
+    lv_obj_set_style_bg_opa(chord_preview_map_, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(chord_preview_map_, 1, 0);
-    lv_obj_set_style_border_color(chord_preview_map_, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_border_opa(chord_preview_map_, LV_OPA_20, 0);
+    lv_obj_set_style_border_color(
+        chord_preview_map_,
+        lv_color_hex(theme::color::BORDER_SUBTLE),
+        0
+    );
+    lv_obj_set_style_border_opa(chord_preview_map_, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(chord_preview_map_, 4, 0);
     lv_obj_clear_flag(chord_preview_map_, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -337,7 +346,11 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_pos(chord_preview_timing_rail_, CHORD_MAP_RAIL_X, CHORD_MAP_RAIL_Y);
     lv_obj_set_size(chord_preview_timing_rail_, CHORD_MAP_RAIL_WIDTH, CHORD_MAP_RAIL_HEIGHT);
     lv_obj_set_style_radius(chord_preview_timing_rail_, CHORD_MAP_RAIL_HEIGHT, 0);
-    lv_obj_set_style_bg_color(chord_preview_timing_rail_, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_bg_color(
+        chord_preview_timing_rail_,
+        lv_color_hex(theme::color::BORDER_STRONG),
+        0
+    );
     lv_obj_set_style_bg_opa(chord_preview_timing_rail_, LV_OPA_30, 0);
     lv_obj_add_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(chord_preview_timing_rail_, LV_OBJ_FLAG_SCROLLABLE);
@@ -361,13 +374,13 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     }
 
     chord_preview_name_ =
-        createLabel(chord_preview_, fonts.inter_13_bold, TEXT_PRIMARY, LV_OPA_COVER);
+        createLabel(chord_preview_, fonts.compact_selected(), TEXT_PRIMARY, LV_OPA_COVER);
     lv_obj_set_width(chord_preview_name_, LV_PCT(100));
     lv_obj_set_height(chord_preview_name_, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(chord_preview_name_, LV_TEXT_ALIGN_CENTER, 0);
 
     chord_preview_detail_ =
-        createLabel(chord_preview_, fonts.inter_12_medium, TEXT_SECONDARY, LV_OPA_80);
+        createLabel(chord_preview_, fonts.meta_label(), TEXT_SECONDARY, LV_OPA_80);
     lv_obj_set_width(chord_preview_detail_, LV_PCT(100));
     lv_obj_set_height(chord_preview_detail_, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(chord_preview_detail_, LV_TEXT_ALIGN_CENTER, 0);
@@ -402,8 +415,22 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             LV_FLEX_ALIGN_CENTER,
             LV_FLEX_ALIGN_CENTER
         );
-        lv_obj_set_style_radius(widgets.box, CHIP_RADIUS, 0);
-        lv_obj_set_style_border_width(widgets.box, 1, 0);
+        lv_obj_set_style_radius(
+            widgets.box, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+        );
+        lv_obj_set_style_border_width(
+            widgets.box,
+            theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
+            0
+        );
+        lv_obj_set_style_bg_color(
+            widgets.box, lv_color_hex(theme::color::SURFACE_IDLE), 0
+        );
+        lv_obj_set_style_bg_opa(widgets.box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(
+            widgets.box, lv_color_hex(theme::color::BORDER_STRONG), 0
+        );
+        lv_obj_set_style_border_opa(widgets.box, LV_OPA_COVER, 0);
         lv_obj_set_style_pad_left(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_right(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_top(widgets.box, TRIGGER_PAD_V, 0);
@@ -414,7 +441,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
         widgets.icon = createLabel(widgets.box, standalone_fonts.icons_16, TEXT_SECONDARY);
         lv_obj_set_size(widgets.icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
-        widgets.value = createLabel(widgets.box, fonts.inter_14_semibold, TEXT_PRIMARY);
+        widgets.value = createLabel(widgets.box, fonts.primary_value(), TEXT_PRIMARY);
         lv_obj_set_width(widgets.value, LV_PCT(100));
         lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
         lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
@@ -450,8 +477,22 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             LV_FLEX_ALIGN_CENTER,
             LV_FLEX_ALIGN_CENTER
         );
-        lv_obj_set_style_radius(widgets.box, CHIP_RADIUS, 0);
-        lv_obj_set_style_border_width(widgets.box, 1, 0);
+        lv_obj_set_style_radius(
+            widgets.box, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+        );
+        lv_obj_set_style_border_width(
+            widgets.box,
+            theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
+            0
+        );
+        lv_obj_set_style_bg_color(
+            widgets.box, lv_color_hex(theme::color::SURFACE_IDLE), 0
+        );
+        lv_obj_set_style_bg_opa(widgets.box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(
+            widgets.box, lv_color_hex(theme::color::BORDER_STRONG), 0
+        );
+        lv_obj_set_style_border_opa(widgets.box, LV_OPA_COVER, 0);
         lv_obj_set_style_pad_all(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
         lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
@@ -459,7 +500,9 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
         widgets.icon = createLabel(widgets.box, standalone_fonts.icons_14, TEXT_SECONDARY);
         lv_obj_set_size(widgets.icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
-        widgets.value = createLabel(widgets.box, fonts.inter_13_medium, TEXT_PRIMARY);
+        widgets.value = createLabel(
+            widgets.box, fonts.compact_label(), TEXT_PRIMARY
+        );
         lv_obj_set_width(widgets.value, LV_PCT(100));
         lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
         lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
@@ -504,8 +547,22 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             LV_FLEX_ALIGN_CENTER,
             LV_FLEX_ALIGN_CENTER
         );
-        lv_obj_set_style_radius(widgets.box, CHIP_RADIUS, 0);
-        lv_obj_set_style_border_width(widgets.box, 1, 0);
+        lv_obj_set_style_radius(
+            widgets.box, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+        );
+        lv_obj_set_style_border_width(
+            widgets.box,
+            theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
+            0
+        );
+        lv_obj_set_style_bg_color(
+            widgets.box, lv_color_hex(theme::color::SURFACE_IDLE), 0
+        );
+        lv_obj_set_style_bg_opa(widgets.box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(
+            widgets.box, lv_color_hex(theme::color::BORDER_STRONG), 0
+        );
+        lv_obj_set_style_border_opa(widgets.box, LV_OPA_COVER, 0);
         lv_obj_set_style_pad_all(widgets.box, CHIP_PAD, 0);
         lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
         lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
@@ -513,7 +570,9 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
         widgets.icon = createLabel(widgets.box, standalone_fonts.icons_14, TEXT_PRIMARY);
         lv_obj_set_size(widgets.icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
-        widgets.value = createLabel(widgets.box, fonts.inter_13_medium, TEXT_PRIMARY);
+        widgets.value = createLabel(
+            widgets.box, fonts.compact_label(), TEXT_PRIMARY
+        );
         lv_obj_set_width(widgets.value, LV_PCT(100));
         lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
         lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
@@ -545,21 +604,31 @@ FLASHMEM void SequencerStepEditOverlay::renderChip(
     }
     lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
 
-    const uint32_t color = chip.color == 0 ? TEXT_SECONDARY : chip.color;
+    const uint32_t semanticColor =
+        chip.color == 0 ? TEXT_SECONDARY : chip.color;
+    const uint32_t color =
+        selected ? theme::color::FOCUS_EDIT : semanticColor;
     const lv_opa_t iconOpa = selected ? LV_OPA_COVER : (active ? LV_OPA_70 : LV_OPA_30);
-    const uint32_t valueColor = selected ? TEXT_PRIMARY : TEXT_SECONDARY;
+    const uint32_t valueColor = chip.valueColor == 0
+        ? TEXT_PRIMARY
+        : chip.valueColor;
     const lv_opa_t valueOpa = selected ? LV_OPA_COVER : (active ? LV_OPA_80 : LV_OPA_40);
     const bool colorChanged = !cache.valid || cache.color != color;
     const bool stateChanged =
         !cache.valid || cache.selected != selected || cache.active != active;
 
     if (colorChanged) {
-        lv_obj_set_style_bg_color(widgets.box, lv_color_hex(color), 0);
-        lv_obj_set_style_border_color(widgets.box, lv_color_hex(color), 0);
         lv_obj_set_style_text_color(widgets.icon, lv_color_hex(color), 0);
     }
     if (stateChanged) {
-        setChipState(widgets.box, selected, active);
+        applyInteractiveSurfaceState(widgets.box, selected, active);
+        if (iconSize != standalone::icons::Size::L) {
+            lv_obj_set_style_text_font(
+                widgets.value,
+                selected ? fonts.compact_selected() : fonts.compact_label(),
+                0
+            );
+        }
     }
     setCachedIcon(widgets.icon, cache.icon, cache.iconSize, icon, iconSize, cache.valid);
     if (cache.iconOpa != static_cast<int16_t>(iconOpa)) {
@@ -599,34 +668,48 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
                         value[0] != '\0' ||
                         icon[0] != '\0';
     if (!active) {
-        lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
-        cache.valid = false;
+        lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+        setCachedText(widgets.icon, cache.icon, "");
+        setCachedText(widgets.value, cache.value, "");
+        lv_obj_set_style_bg_opa(widgets.box, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_opa(widgets.box, LV_OPA_TRANSP, 0);
+        cache.selected = false;
+        cache.active = false;
+        cache.valid = true;
         return;
     }
     lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
 
-    const uint32_t color = chip.color == 0 ? TEXT_SECONDARY : chip.color;
+    const uint32_t semanticColor =
+        chip.color == 0 ? TEXT_SECONDARY : chip.color;
+    const uint32_t color =
+        selected ? theme::color::FOCUS_EDIT : semanticColor;
     const lv_opa_t iconOpa = selected ? LV_OPA_COVER : LV_OPA_70;
-    const uint32_t valueColor = selected ? TEXT_PRIMARY : TEXT_SECONDARY;
+    const uint32_t valueColor = chip.valueColor == 0
+        ? TEXT_PRIMARY
+        : chip.valueColor;
     const lv_opa_t valueOpa = selected ? LV_OPA_COVER : LV_OPA_70;
     const bool colorChanged = !cache.valid || cache.color != color;
     const bool stateChanged =
         !cache.valid || cache.selected != selected || cache.active != active;
 
     if (colorChanged) {
-        lv_obj_set_style_bg_color(widgets.box, lv_color_hex(color), 0);
-        lv_obj_set_style_border_color(widgets.box, lv_color_hex(color), 0);
         lv_obj_set_style_text_color(widgets.icon, lv_color_hex(color), 0);
     }
     if (stateChanged) {
-        setChipState(widgets.box, selected, true, LV_OPA_30);
+        applyInteractiveSurfaceState(widgets.box, selected, true);
+        lv_obj_set_style_text_font(
+            widgets.value,
+            selected ? fonts.compact_selected() : fonts.compact_label(),
+            0
+        );
     }
     setCachedIcon(
         widgets.icon,
         cache.icon,
         cache.iconSize,
         icon,
-        standalone::icons::Size::M,
+        standalone::icons::Size::L,
         cache.valid
     );
     if (cache.iconOpa != static_cast<int16_t>(iconOpa)) {
@@ -644,7 +727,7 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
 
     cache.color = color;
     cache.iconOpa = static_cast<int16_t>(iconOpa);
-    cache.iconSize = standalone::icons::Size::M;
+    cache.iconSize = standalone::icons::Size::L;
     cache.selected = selected;
     cache.active = active;
     cache.valid = true;
@@ -687,14 +770,34 @@ FLASHMEM void SequencerStepEditOverlay::render(
         actions_visible_cache_ == actionRowVisible &&
         title_centered_cache_ == props.titleCentered &&
         focus_label_visible_cache_ == props.focusLabelVisible &&
+        primary_row_layout_cache_ == props.primaryRowLayout &&
         chord_detail_layout_cache_ == props.chordDetailLayout &&
         chord_formula_layout_cache_ == props.chordFormulaLayout &&
         chord_source_layout_cache_ == props.chordSourceLayout &&
         selected_visual_slot_cache_ == props.selectedVisualSlot &&
-        focus_color_cache_ == props.focusColor &&
+        step_badge_color_cache_ ==
+            (props.stepBadgeColor == 0 ? STEP_BADGE_COLOR : props.stepBadgeColor) &&
         title_cache_.color == (props.titleColor == 0 ? TEXT_PRIMARY : props.titleColor) &&
         meta_cache_.color == (props.metaColor == 0 ? TEXT_SECONDARY : props.metaColor)) {
         return;
+    }
+
+    if (primary_row_layout_cache_ != props.primaryRowLayout) {
+        const bool primaryWide = props.primaryRowLayout ==
+            SequencerStepEditPrimaryRowLayout::PRIMARY_WIDE;
+        if (trigger_widgets_[TRIGGER_STATE_INDEX].box) {
+            lv_obj_set_flex_grow(
+                trigger_widgets_[TRIGGER_STATE_INDEX].box,
+                primaryWide ? 5 : 1
+            );
+        }
+        if (trigger_widgets_[TRIGGER_CHANCE_INDEX].box) {
+            lv_obj_set_flex_grow(
+                trigger_widgets_[TRIGGER_CHANCE_INDEX].box,
+                primaryWide ? 3 : 1
+            );
+        }
+        primary_row_layout_cache_ = props.primaryRowLayout;
     }
 
     if (chord_detail_layout_cache_ != props.chordDetailLayout) {
@@ -741,6 +844,12 @@ FLASHMEM void SequencerStepEditOverlay::render(
     }
 
     lv_obj_t* stepLabel = step_badge_ ? lv_obj_get_child(step_badge_, 0) : nullptr;
+    const uint32_t stepBadgeColor =
+        props.stepBadgeColor == 0 ? STEP_BADGE_COLOR : props.stepBadgeColor;
+    if (step_badge_ && step_badge_color_cache_ != stepBadgeColor) {
+        lv_obj_set_style_bg_color(step_badge_, lv_color_hex(stepBadgeColor), 0);
+        step_badge_color_cache_ = stepBadgeColor;
+    }
     if (stepLabel) {
         setCachedText(stepLabel, step_badge_cache_.text, props.stepBadge);
     }
@@ -752,16 +861,48 @@ FLASHMEM void SequencerStepEditOverlay::render(
         );
         setCachedText(title_, title_cache_.text, props.title);
         setCachedOpa(title_, title_cache_.opa, props.enabled ? LV_OPA_COVER : LV_OPA_60);
-        if (title_centered_cache_ != props.titleCentered) {
-            lv_obj_set_style_text_align(
-                title_,
-                props.titleCentered ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT,
-                0
+        if (title_centered_cache_ != props.titleCentered && summary_column_) {
+            lv_obj_set_flex_align(
+                summary_column_,
+                props.titleCentered
+                    ? LV_FLEX_ALIGN_CENTER
+                    : LV_FLEX_ALIGN_START,
+                LV_FLEX_ALIGN_CENTER,
+                LV_FLEX_ALIGN_CENTER
             );
             title_centered_cache_ = props.titleCentered;
         }
     }
+    const bool contextVisible = props.context && props.context[0] != '\0';
+    if (contextVisible != context_visible_cache_) {
+        if (title_separator_ && context_) {
+            if (contextVisible) {
+                lv_obj_clear_flag(title_separator_, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(context_, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(title_separator_, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(context_, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        context_visible_cache_ = contextVisible;
+    }
+    if (context_) {
+        setCachedText(context_, context_cache_.text, props.context);
+    }
+
+    const bool headerMetricsVisible =
+        header_metric_row_.render(props.headerMetrics);
     if (meta_) {
+        const bool metaVisible = !headerMetricsVisible &&
+            props.meta && props.meta[0] != '\0';
+        if (metaVisible != meta_visible_cache_) {
+            if (metaVisible) {
+                lv_obj_clear_flag(meta_, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(meta_, LV_OBJ_FLAG_HIDDEN);
+            }
+            meta_visible_cache_ = metaVisible;
+        }
         setCachedText(meta_, meta_cache_.text, props.meta);
         setCachedColor(
             meta_,
@@ -779,7 +920,7 @@ FLASHMEM void SequencerStepEditOverlay::render(
             focus_label_visible_cache_ = props.focusLabelVisible;
         }
         setCachedText(focus_label_, focus_label_cache_.text, props.focusLabel);
-        setCachedColor(focus_label_, focus_label_cache_.color, focusColorForSelection(props));
+        setCachedColor(focus_label_, focus_label_cache_.color, theme::color::FOCUS_EDIT);
     }
     if (chord_preview_) {
         if (chord_preview_visible_cache_ != props.chordPreview.visible) {
@@ -793,8 +934,9 @@ FLASHMEM void SequencerStepEditOverlay::render(
         if (props.chordPreview.visible) {
             const uint32_t previewColor =
                 props.chordPreview.color == 0 ? TEXT_PRIMARY : props.chordPreview.color;
-            const bool previewColorChanged =
-                setCachedColor(chord_preview_name_, chord_preview_color_cache_, previewColor);
+            setCachedColor(
+                chord_preview_name_, chord_preview_color_cache_, previewColor
+            );
             setCachedText(
                 chord_preview_name_,
                 chord_preview_name_cache_.text,
@@ -818,10 +960,6 @@ FLASHMEM void SequencerStepEditOverlay::render(
                 }
             }
             if (chord_preview_map_) {
-                if (previewColorChanged) {
-                    lv_obj_set_style_bg_color(chord_preview_map_, lv_color_hex(previewColor), 0);
-                    lv_obj_set_style_border_color(chord_preview_map_, lv_color_hex(previewColor), 0);
-                }
                 if (chord_preview_map_visible_cache_ != props.chordPreview.mapVisible) {
                     if (props.chordPreview.mapVisible) {
                         lv_obj_clear_flag(chord_preview_map_, LV_OBJ_FLAG_HIDDEN);
@@ -1022,17 +1160,32 @@ FLASHMEM void SequencerStepEditOverlay::render(
                     .value = chip.value,
                     .icon = chip.icon,
                     .color = chip.color,
+                    .valueColor = chip.valueColor,
                 },
                 selectedVisualSlot(props, chordPerformanceSlots[i], false)
             );
         }
     } else if (props.actionsVisible) {
         const uint32_t selectedAction = selectedRowToActionIndex(props.selectedIndex);
+        size_t displayIndex = 0;
         for (size_t i = 0; i < ACTION_COUNT; ++i) {
+            const auto& action = props.actions[i];
+            const bool active =
+                (action.key && action.key[0] != '\0') ||
+                (action.value && action.value[0] != '\0') ||
+                (action.icon && action.icon[0] != '\0');
+            if (!active) continue;
             const auto slot = static_cast<SequencerStepEditVisualSlot>(
                 static_cast<uint8_t>(SequencerStepEditVisualSlot::ACTION_0) + i
             );
-            renderAction(i, props.actions[i], selectedVisualSlot(props, slot, selectedAction == i));
+            renderAction(
+                displayIndex++,
+                action,
+                selectedVisualSlot(props, slot, selectedAction == i)
+            );
+        }
+        while (displayIndex < ACTION_COUNT) {
+            renderAction(displayIndex++, {}, false);
         }
     }
 
@@ -1044,11 +1197,11 @@ FLASHMEM void SequencerStepEditOverlay::render(
     actions_visible_cache_ = actionRowVisible;
     title_centered_cache_ = props.titleCentered;
     focus_label_visible_cache_ = props.focusLabelVisible;
+    primary_row_layout_cache_ = props.primaryRowLayout;
     chord_detail_layout_cache_ = props.chordDetailLayout;
     chord_formula_layout_cache_ = props.chordFormulaLayout;
     chord_source_layout_cache_ = props.chordSourceLayout;
     selected_visual_slot_cache_ = props.selectedVisualSlot;
-    focus_color_cache_ = props.focusColor;
 }
 
 }  // namespace core::ui

@@ -44,6 +44,8 @@ struct SequencerState {
     Signal<uint32_t> variationTelemetryRevision{0};
     Signal<int16_t> playheadStep{-1};
     Signal<uint16_t> playheadStepTickOffset{0};
+    /// Smooth UI-only position inside the root step; never drives scheduling.
+    Signal<uint8_t, 4> playheadStepPhaseQ8{0};
     uint16_t playheadStepTicks = 1;
     Signal<uint32_t> probabilityCycleRevision{0};
     oc::note::sequencer::StepBitMask128 probabilityCycleMask{};
@@ -77,6 +79,7 @@ struct SequencerState {
     // Published Pattern data remains untouched until explicit Apply/Save.
     SequencerStepContentDraftSession stepContentDraft;
     SequencerStructureUiState structureUi;
+    DrumSequencerState drumSequencer;
 
     SequencerState();
     ~SequencerState();

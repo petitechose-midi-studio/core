@@ -13,6 +13,11 @@
 
 namespace core::ui::sequencer::grid {
 
+enum class StepGridPresentation : uint8_t {
+    MELODIC = 0,
+    DRUM_LANE,
+};
+
 struct TileVariationRenderState {
     bool visible = false;
     bool rangeVisible = false;
@@ -23,6 +28,31 @@ struct TileVariationRenderState {
 };
 
 using TileContentBadgeState = StepContentBadgeProjection;
+
+struct StepPitchViewport {
+    static constexpr uint8_t DEFAULT_LOW_NOTE = 48U;
+    static constexpr uint8_t DEFAULT_SEMITONE_SPAN = 12U;
+
+    uint8_t lowNote = DEFAULT_LOW_NOTE;
+    uint8_t semitoneSpan = DEFAULT_SEMITONE_SPAN;
+};
+
+struct TileNoteEventRenderState {
+    // Q8 positions are relative to the owning root step: 256 == one step.
+    int16_t startQ8 = 0;
+    uint16_t spanQ8 = 256U;
+    uint8_t note = 0U;
+    uint8_t velocity = 0U;
+    uint8_t active = 0U;
+};
+
+struct TileNoteEventProjection {
+    static constexpr uint8_t MAX_DETAILED_EVENTS = 8U;
+
+    std::array<TileNoteEventRenderState, MAX_DETAILED_EVENTS> events{};
+    uint8_t count = 0U;
+    bool dense = false;
+};
 
 /**
  * Data exchanged between step-grid projection, planning, and rendering.
@@ -53,8 +83,10 @@ struct TileRenderState {
     bool childContentNoteOffsetUsesScaleDegrees = false;
     bool childPitchSummaryVisible = false;
     uint8_t childPitchSummaryNote = 0;
+    uint8_t playheadProgress = 0U;
     TileVariationRenderState variation{};
     TileContentBadgeState contentBadges{};
+    TileNoteEventProjection noteEvents{};
 };
 
 struct TileRenderDiff {
@@ -63,6 +95,7 @@ struct TileRenderDiff {
     bool enabledChanged = false;
     bool stepSelectionChanged = false;
     bool playheadVisibleChanged = false;
+    bool playheadProgressChanged = false;
     bool noteChanged = false;
     bool velocityChanged = false;
     bool probabilityChanged = false;
@@ -73,9 +106,10 @@ struct TileRenderDiff {
     bool childPitchSummaryChanged = false;
     bool variationChanged = false;
     bool contentBadgesChanged = false;
+    bool noteEventsChanged = false;
     bool probabilityMaskChanged = false;
     bool dataChanged = false;
-    bool barChanged = false;
+    bool playheadChanged = false;
 };
 
 struct TileRenderCache {
@@ -102,8 +136,10 @@ struct TileRenderCache {
     bool childContentNoteOffsetUsesScaleDegrees = false;
     bool childPitchSummaryVisible = false;
     uint8_t childPitchSummaryNote = 0;
+    uint8_t playheadProgress = 0U;
     TileVariationRenderState variation{};
     TileContentBadgeState contentBadges{};
+    TileNoteEventProjection noteEvents{};
     lv_coord_t noteLabelHeight = 0;
     bool noteLabelVisible = false;
     bool originalNoteLabelVisible = false;
@@ -122,20 +158,18 @@ struct TileRenderCache {
     lv_coord_t inlineIconY = 0;
     char noteLabelText[16] = {0};
     char originalNoteLabelText[12] = {0};
-    bool shapeVisible = false;
-    lv_coord_t shapeX = 0;
-    lv_coord_t shapeY = 0;
-    lv_coord_t shapeWidth = 0;
-    lv_coord_t shapeHeight = 0;
-    uint32_t shapeStrokeColor = 0;
-    lv_opa_t shapeStrokeOpa = LV_OPA_TRANSP;
-    bool indicatorVisible = false;
-    uint32_t indicatorColorFull = 0;
-    lv_opa_t indicatorOpa = LV_OPA_TRANSP;
+    bool playheadLineVisible = false;
+    uint32_t playheadLineColorFull = 0;
+    lv_opa_t playheadLineOpa = LV_OPA_TRANSP;
     char stepIndexText[4] = {0};
 };
 
 struct StepGridFrameState {
+    StepGridPresentation presentation = StepGridPresentation::MELODIC;
+    uint32_t accentColor = 0;
+    StepPitchViewport pitchViewport{};
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings{};
+    bool chromaticPitchEditing = false;
     core::state::sequencer::StepProperty activeProperty =
         core::state::sequencer::StepProperty::NOTE;
     bool feedbackVisible = false;
@@ -143,15 +177,6 @@ struct StepGridFrameState {
     core::state::sequencer::StepProperty feedbackProperty =
         core::state::sequencer::StepProperty::NOTE;
     std::array<TileRenderState, 8> tiles{};
-};
-
-struct StepVisualStyle {
-    lv_coord_t width = 6;
-    lv_coord_t height = 18;
-    lv_coord_t x = 0;
-    lv_coord_t y = 56 - 2 - 1 - 18;
-    lv_color_t strokeColor = lv_color_hex(0);
-    lv_opa_t strokeOpa = LV_OPA_COVER;
 };
 
 }  // namespace core::ui::sequencer::grid

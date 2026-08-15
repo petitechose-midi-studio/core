@@ -30,7 +30,7 @@ constexpr float PROJECT_OPT_TEMPO_STEPS_PER_TURN = 24.0f;
 constexpr float PROJECT_OPT_PERCENT_STEPS_PER_TURN = 18.0f;
 constexpr float PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW =
     (600.0f * 4.0f) /
-    static_cast<float>(core::state::project::PROJECT_NAME_KEYBOARD_ROW_COUNT);
+    static_cast<float>(core::state::interaction::TEXT_KEYBOARD_ROW_COUNT);
 inline constexpr std::array<uint32_t, 13> PROJECT_MODULATOR_FREE_PERIODS_MS{{
     8U, 16U, 32U, 64U, 125U, 250U, 500U,
     1000U, 2000U, 4000U, 8000U, 16000U, 32000U,
@@ -46,15 +46,7 @@ FLASHMEM float clampNormalized(float value);
 FLASHMEM int normalizedToIndex(float normalized, int count);
 FLASHMEM float indexToNormalized(int index, int count);
 FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node);
-FLASHMEM char selectedProjectNameKey(
-    const core::state::project::ProjectNavigationState& navigation
-);
-FLASHMEM bool appendProjectNameChar(
-    core::state::project::ProjectNavigationState& navigation,
-    char character
-);
 FLASHMEM bool appendProjectNameKey(core::state::project::ProjectNavigationState& navigation);
-FLASHMEM bool appendProjectNameSpace(core::state::project::ProjectNavigationState& navigation);
 FLASHMEM bool backspaceProjectName(core::state::project::ProjectNavigationState& navigation);
 FLASHMEM bool clearProjectName(core::state::project::ProjectNavigationState& navigation);
 FLASHMEM int tempoFromNormalized(float normalized);

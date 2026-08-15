@@ -419,6 +419,16 @@ prepareSequencerTrackStructureTransaction(
         return prepared;
     }
 
+    if (operations->prepareSequencerAfter != nullptr &&
+        !operations->prepareSequencerAfter(
+            execution.context_,
+            prepared.plan_,
+            *prepared.change_
+        )) {
+        prepared.status_ = Status::AllocationUnavailable;
+        return prepared;
+    }
+
     if (isMacroAction(action)) {
         if (state.macroPages == nullptr ||
             !core::state::sequencer::captureMacroTrackStructureHistoryBefore(
@@ -653,6 +663,10 @@ FLASHMEM Result commitPreparedSequencerTrackStructureTransaction(
             *macroPayload
         );
     }
+    core::state::sequencer::commitHistoryStructureDrumSnapshot(
+        *prepared.tracks_,
+        prepared.change_->after
+    );
     prepared.sharedTracks_.publishPreparedSequencerState(
         prepared.plan_.afterEnabledMask,
         prepared.plan_.afterActiveTrack

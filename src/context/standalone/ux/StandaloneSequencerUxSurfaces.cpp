@@ -21,6 +21,7 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
+#include "state/project/ProjectTrackEditorOps.hpp"
 #include "state/project/ProjectTrackEditorState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
@@ -259,6 +260,10 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "edit_step_local_random";
         case SequencerAction::EDIT_STEP_EDITOR_ROW:
             return "edit_step_editor_row";
+        case SequencerAction::RETARGET_STEP_EDITOR:
+            return "retarget_step_editor";
+        case SequencerAction::RETARGET_STEP_EDITOR_LANE:
+            return "retarget_step_editor_lane";
         case SequencerAction::OPEN_STEP_EDITOR:
             return "open_step_editor";
         case SequencerAction::TOGGLE_VISIBLE_STEP:
@@ -744,6 +749,21 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     const bool navRelease = isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE);
     const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
     const bool contextSelectorEvent = navPress || navHold || navRelease || navTurn;
+    const bool drumPatternStructure =
+        core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+        !sequencer_.drumSequencer.selectorVisible() &&
+        navigation_focus_.get() ==
+            core::state::StructureNavigationFocus::PAGE;
+    if (drumPatternStructure && contextSelectorEvent) {
+        // Drum Pattern owns NAV as Lane/+ structure navigation. Retire any
+        // cached melodic context-selector gesture so the lower Structure
+        // surface records the actual Drum target rather than stale context.
+        context_selector_seen_ = false;
+        context_selector_release_cached_ = false;
+        context_selector_rotated_ = false;
+        context_selector_held_ = false;
+        return false;
+    }
     const bool mainContextAvailable =
         !sequencer_.structureUi.stepSelection.active.get() &&
         !sequencer_.stepEdit.visible.get() &&
@@ -793,6 +813,18 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     }
     if (context_selector_release_cached_) {
         context_selector_release_cached_ = false;
+        context_selector_rotated_ = false;
+        context_selector_held_ = false;
+    }
+
+    // A higher-priority editor can consume the selector's NAV release and
+    // replace the surface before this recorder observes the post-dispatch
+    // state. Retire that cached gesture on the first later input once the real
+    // selector is no longer visible; otherwise child navigation is mislabeled
+    // as a context preview even though the product binding is correct.
+    if (context_selector_seen_ && !sequencer_.contextSelector.visible &&
+        !navRelease) {
+        context_selector_seen_ = false;
         context_selector_rotated_ = false;
         context_selector_held_ = false;
     }
@@ -1471,17 +1503,22 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
     if (active_view_.get() != core::ui::ViewType::SEQUENCER ||
         !editor_.active) {
         editor_state_seen_ = false;
+        observed_kind_dirty_ = false;
         return false;
     }
 
     const uint8_t track = editor_.trackIndex;
     const uint8_t property = static_cast<uint8_t>(editor_.selectedProperty);
+    const bool kindDirty =
+        core::state::project::projectTrackEditorKindDraftDirty(editor_);
+    const bool wasKindDirty = observed_kind_dirty_;
     const bool opening = !editor_state_seen_;
     const bool trackChanged = editor_state_seen_ && track != observed_track_;
     const bool propertyChanged =
         editor_state_seen_ && property != observed_property_;
-    const auto syncObservedState = [this, track, property]() {
+    const auto syncObservedState = [this, track, property, kindDirty]() {
         editor_state_seen_ = true;
+        observed_kind_dirty_ = kindDirty;
         observed_track_ = track;
         observed_property_ = property;
     };
@@ -1491,12 +1528,6 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
     );
     const bool trackRelease = isButton(
         event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE
-    );
-    const bool propertyPress = isButton(
-        event, Config::ButtonID::LEFT_BOTTOM, ButtonType::PRESS
-    );
-    const bool propertyRelease = isButton(
-        event, Config::ButtonID::LEFT_BOTTOM, ButtonType::RELEASE
     );
     const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
     const bool navRelease = isButton(
@@ -1514,7 +1545,7 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
     );
     const bool projection = isSemanticStateProjection(event);
 
-    if (!trackPress && !trackRelease && !propertyPress && !propertyRelease &&
+    if (!trackPress && !trackRelease &&
         !navTurn && !navRelease && !optTurn && !mute && !solo &&
         !back && !projection) {
         syncObservedState();
@@ -1525,12 +1556,38 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
     out.target = "track";
     out.targetIndex = track;
     out.targetTrack = track;
-    out.projection = "applied";
-    out.property = editor_.selectedProperty ==
-            core::state::project::ProjectTrackEditorProperty::DELAY
-        ? "delay"
-        : "channel";
+    out.projection = kindDirty ? "draft" : "applied";
+    out.draftKind = "track_type";
+    out.hasDraftActive = true;
+    out.draftActive = kindDirty;
+    out.hasDraftDirty = true;
+    out.draftDirty = kindDirty;
+    switch (editor_.selectedProperty) {
+        case core::state::project::ProjectTrackEditorProperty::TYPE:
+            out.property = "type";
+            break;
+        case core::state::project::ProjectTrackEditorProperty::DELAY:
+            out.property = "delay";
+            break;
+        case core::state::project::ProjectTrackEditorProperty::CHANNEL:
+        default:
+            out.property = "channel";
+            break;
+    }
     if (editor_.selectedProperty ==
+        core::state::project::ProjectTrackEditorProperty::TYPE) {
+        out.hasAuthoredValue = true;
+        out.authoredValue = editor_.draftKind ==
+                core::state::project::ProjectTrackEditorKind::DRUM
+            ? 1
+            : 0;
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "%s",
+            out.authoredValue != 0 ? "DRUM" : "INSTRUMENT"
+        );
+    } else if (editor_.selectedProperty ==
         core::state::project::ProjectTrackEditorProperty::DELAY) {
         std::snprintf(
             out.valueLabel,
@@ -1556,15 +1613,17 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
     }
 
     if (trackPress) {
-        out.effect = "open_track_selector";
-        out.projection = "preview";
-    } else if (propertyPress) {
-        out.effect = "open_track_property_selector";
-        out.projection = "preview";
+        out.effect = "arm_track_axis";
     } else if (navTurn && trackChanged) {
         out.effect = "switch_track";
+        out.intent = core::state::interaction::ControllerIntent::NAVIGATE_SECONDARY_AXIS;
+    } else if (navTurn && kindDirty && !trackChanged && !propertyChanged) {
+        out.effect = "keep_track_type_draft_target";
+        out.reason = "unsaved_draft";
+        out.intent = core::state::interaction::ControllerIntent::NAVIGATE_SECONDARY_AXIS;
     } else if (navTurn && propertyChanged) {
         out.effect = "select_track_property";
+        out.intent = core::state::interaction::ControllerIntent::MOVE_FOCUS;
     } else if (navTurn) {
         // Dispatch tracing captures this surface once before the handler and
         // once after it. Leave the pre-effect empty so the post-state delta
@@ -1572,13 +1631,13 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
         out.effect = nullptr;
     } else if (optTurn) {
         out.effect = "edit_track_property";
+        out.intent = core::state::interaction::ControllerIntent::EDIT_VALUE;
     } else if (trackRelease) {
-        out.effect = "apply_track";
-    } else if (propertyRelease) {
-        out.effect = "apply_track_property";
+        out.effect = "release_track_axis";
     } else if (mute) {
         out.property = "mute";
         out.effect = "toggle_track_mute";
+        out.intent = core::state::interaction::ControllerIntent::SOFT_ACTION;
         out.hasAuthoredValue = true;
         out.authoredValue = core::state::project::projectTrackMuted(
             tracks_, track
@@ -1588,20 +1647,33 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
             out.authoredValue != 0U ? "ON" : "OFF"
         );
     } else if (solo) {
-        out.property = "solo";
-        out.effect = "toggle_track_solo";
-        out.hasAuthoredValue = true;
-        out.authoredValue = core::state::project::projectTrackSoloed(
-            tracks_, track
-        ) ? 1U : 0U;
-        std::snprintf(
-            out.valueLabel, sizeof(out.valueLabel), "%s",
-            out.authoredValue != 0U ? "ON" : "OFF"
-        );
+        if (kindDirty || wasKindDirty) {
+            out.property = "type";
+            out.effect = "apply_track_type_draft";
+            out.intent = core::state::interaction::ControllerIntent::APPLY;
+            out.action = "apply";
+        } else {
+            out.property = "solo";
+            out.effect = "toggle_track_solo";
+            out.intent = core::state::interaction::ControllerIntent::SOFT_ACTION;
+            out.hasAuthoredValue = true;
+            out.authoredValue = core::state::project::projectTrackSoloed(
+                tracks_, track
+            ) ? 1U : 0U;
+            std::snprintf(
+                out.valueLabel, sizeof(out.valueLabel), "%s",
+                out.authoredValue != 0U ? "ON" : "OFF"
+            );
+        }
     } else if (back) {
         out.effect = "close_track_editor";
+        out.intent = kindDirty || wasKindDirty
+            ? core::state::interaction::ControllerIntent::CANCEL
+            : core::state::interaction::ControllerIntent::BACK;
+        if (kindDirty || wasKindDirty) out.action = "discard";
     } else if (navRelease && opening) {
         out.effect = "open_track_editor";
+        out.intent = core::state::interaction::ControllerIntent::ACTIVATE;
     } else {
         out.effect = "inspect_track";
     }
@@ -1667,6 +1739,86 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         return false;
     }
 
+    const auto& drumUi = sequencer_.drumSequencer;
+    if (core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+        !drumUi.selectorVisible() &&
+        navigation_focus_.get() ==
+            core::state::StructureNavigationFocus::PAGE) {
+        const uint8_t laneCount = std::min<uint8_t>(
+            drumUi.drumTrack->kit.laneCount,
+            core::state::sequencer::DRUM_MAX_LANES
+        );
+        if (drumUi.laneSelection.active) {
+            const auto policy = interaction_policy::build(
+                sequencer_,
+                track_navigation_,
+                navigation_focus_.get()
+            );
+            const auto action = structureActionForEvent(policy, event);
+            const auto& selection = drumUi.laneSelection;
+            out.mode = "sequencer.drum_lane_selection";
+            out.target = "drum_lane_content";
+            out.targetIndex = static_cast<int16_t>(selection.cursorLane);
+            out.targetCount = laneCount;
+            out.targetMask = selection.placementActive()
+                ? selection.destinationMask
+                : selection.selectedMask;
+            out.property = selection.placementActive()
+                ? (selection.pasteBlocked ? "blocked" : "placement")
+                : selection.selected(selection.cursorLane)
+                    ? "selected"
+                    : "cursor";
+            if (laneCount > 0U && selection.cursorLane < laneCount) {
+                copyValueLabel(
+                    out.valueLabel,
+                    core::state::sequencer::drumLaneDisplayName(
+                        drumUi.drumTrack->kit.lanes[selection.cursorLane]
+                    )
+                );
+            }
+            out.intent = core::state::sequencer::controllerIntentFor(action);
+            out.effect = stateProjection
+                ? "inspect_drum_lane_selection"
+                : isButton(
+                      event,
+                      Config::ButtonID::BOTTOM_RIGHT,
+                      oc::core::input::ButtonBindingType::PRESS
+                  )
+                    ? armActionName(action)
+                    : actionName(action);
+            return true;
+        }
+        const bool addSlot = drumUi.laneAddSlotFocused();
+        out.mode = "sequencer.drum_pattern";
+        out.target = "drum_lane";
+        out.targetIndex = static_cast<int16_t>(
+            addSlot ? laneCount : drumUi.selectedLane
+        );
+        out.targetCount = laneCount;
+        out.property = addSlot ? "add_slot" : "existing";
+        if (addSlot) {
+            copyValueLabel(out.valueLabel, "Add lane");
+        } else if (laneCount > 0U) {
+            copyValueLabel(
+                out.valueLabel,
+                core::state::sequencer::drumLaneDisplayName(
+                    drumUi.drumTrack->kit.lanes[drumUi.selectedLane]
+                )
+            );
+        }
+        if (stateProjection) {
+            out.effect = "inspect_drum_lane_slot";
+        } else if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_drum_lane_slot";
+            out.intent = core::state::interaction::ControllerIntent::MOVE_FOCUS;
+        } else {
+            out.effect = addSlot
+                ? "open_drum_lane_create"
+                : "open_drum_lane_edit";
+        }
+        return true;
+    }
+
     const auto policy = interaction_policy::build(
         sequencer_,
         track_navigation_,
@@ -1677,6 +1829,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         !trackPasteDetailsEvent) {
         return false;
     }
+    out.intent = core::state::sequencer::controllerIntentFor(action);
 
     const bool selectionActive = isSelectionScope(policy.scope);
     out.mode = modeForScope(policy.scope);
@@ -1945,6 +2098,7 @@ FLASHMEM bool SequencerStepGridUxSurface::captureSemanticUxContext(
         action != SequencerAction::TOGGLE_SELECTION) {
         return false;
     }
+    out.intent = core::state::sequencer::controllerIntentFor(action);
 
     uint8_t step = 0;
     if (focusedEncoder) {
@@ -1986,6 +2140,171 @@ FLASHMEM bool SequencerStepGridUxSurface::captureSemanticUxContext(
         );
     }
     fillActiveStepContentDraftFacts(sequencer_, out);
+    return true;
+}
+
+namespace {
+
+FLASHMEM const char* drumLaneEditorFieldName(
+    core::state::sequencer::DrumLaneEditorField field
+) {
+    using Field = core::state::sequencer::DrumLaneEditorField;
+    switch (field) {
+        case Field::ROLE: return "role";
+        case Field::NAME: return "name";
+        case Field::ICON: return "icon";
+        case Field::COLOR: return "color";
+        case Field::NOTE: return "midi_note";
+        case Field::POSITION: return "position";
+        case Field::COUNT:
+        default: return "lane";
+    }
+}
+
+}  // namespace
+
+FLASHMEM DrumLaneEditorUxSurface::DrumLaneEditorUxSurface(
+    oc::state::Signal<core::ui::ViewType, 8>& activeView,
+    core::state::sequencer::SequencerState& sequencer
+) : active_view_(activeView), sequencer_(sequencer) {}
+
+FLASHMEM bool DrumLaneEditorUxSurface::captureSemanticUxContext(
+    const oc::core::input::InputBindingTraceEvent& event,
+    core::validation::ux::SemanticUxContext& out
+) const {
+    namespace seq = core::state::sequencer;
+    using ButtonType = oc::core::input::ButtonBindingType;
+    using Intent = core::state::interaction::ControllerIntent;
+
+    if (active_view_.get() != core::ui::ViewType::SEQUENCER) return false;
+
+    const auto& drumUi = sequencer_.drumSequencer;
+    const auto& editor = drumUi.laneEditor;
+    const bool active = editor.active &&
+        drumUi.selector == seq::DrumSequencerSelector::LANE_EDITOR;
+    const bool applyEvent = !editor.textEditing && isButton(
+        event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE);
+    const bool cancelEvent = !editor.textEditing && isButton(
+        event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE);
+    const bool deleteEvent = isButton(
+        event, Config::ButtonID::BOTTOM_LEFT, ButtonType::LONG_PRESS);
+    const bool terminalEvent = applyEvent || cancelEvent || deleteEvent;
+
+    const bool laneChanged = active && editor_seen_ &&
+        observed_source_lane_ != editor.sourceLane;
+    const bool fieldChanged = active && editor_seen_ &&
+        observed_field_ != static_cast<uint8_t>(editor.field);
+    const bool keyChanged = active && editor_seen_ &&
+        observed_text_key_ != editor.textKeyIndex;
+    const bool textModeChanged = active && editor_seen_ &&
+        observed_text_editing_ != editor.textEditing;
+
+    if (active) {
+        editor_seen_ = true;
+        observed_dirty_ = editor.dirty;
+        observed_text_editing_ = editor.textEditing;
+        observed_mode_ = static_cast<uint8_t>(editor.mode);
+        observed_source_lane_ = editor.sourceLane;
+        observed_target_lane_ = editor.targetLane;
+        observed_lane_count_ = drumUi.drumTrack != nullptr
+            ? drumUi.drumTrack->kit.laneCount
+            : 0U;
+        observed_field_ = static_cast<uint8_t>(editor.field);
+        observed_text_key_ = editor.textKeyIndex;
+        if (!terminalEvent) {
+            terminal_effect_ = nullptr;
+            terminal_intent_ = Intent::NONE;
+        }
+    } else if (!editor_seen_) {
+        return false;
+    } else if (!terminalEvent && !isSemanticStateProjection(event)) {
+        editor_seen_ = false;
+        terminal_effect_ = nullptr;
+        terminal_intent_ = Intent::NONE;
+        return false;
+    }
+
+    if (applyEvent) {
+        terminal_effect_ = "apply_drum_lane_draft";
+        terminal_intent_ = Intent::APPLY;
+    } else if (cancelEvent) {
+        terminal_effect_ = "cancel_drum_lane_draft";
+        terminal_intent_ = Intent::CANCEL;
+    } else if (deleteEvent) {
+        terminal_effect_ = "delete_drum_lane";
+        terminal_intent_ = Intent::DELETE_STRUCTURE;
+    }
+
+    out.mode = "sequencer.drum_lane_edit";
+    out.target = "drum_lane";
+    out.targetIndex = observed_target_lane_;
+    out.targetCount = observed_lane_count_;
+    out.property = drumLaneEditorFieldName(
+        static_cast<seq::DrumLaneEditorField>(observed_field_)
+    );
+    if (observed_field_ == static_cast<uint8_t>(
+            seq::DrumLaneEditorField::POSITION
+        )) {
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "L%u > L%u",
+            static_cast<unsigned>(observed_source_lane_ + 1U),
+            static_cast<unsigned>(observed_target_lane_ + 1U)
+        );
+    }
+    out.draftKind = observed_mode_ ==
+            static_cast<uint8_t>(seq::DrumLaneEditorMode::CREATE)
+        ? "drum_lane_create"
+        : "drum_lane_edit";
+    out.hasDraftActive = true;
+    out.draftActive = active;
+    out.hasDraftDirty = true;
+    out.draftDirty = observed_dirty_;
+    out.action = active ? "apply" : terminal_effect_;
+
+    if (!active) {
+        const bool published = terminal_intent_ == Intent::APPLY ||
+            terminal_intent_ == Intent::DELETE_STRUCTURE;
+        out.hasPublished = terminal_intent_ != Intent::NONE;
+        out.published = published;
+        out.effect = terminal_effect_;
+        out.intent = terminal_intent_;
+        out.outcome = published ? "applied" : "cancelled";
+        out.projection = published ? "published" : "unchanged";
+        return terminal_effect_ != nullptr;
+    }
+
+    out.projection = "draft";
+    if (isEncoder(event, Config::EncoderID::NAV)) {
+        if (laneChanged) {
+            out.effect = "retarget_drum_lane_draft";
+            out.intent = Intent::NAVIGATE_SECONDARY_AXIS;
+        } else if (keyChanged || editor.textEditing) {
+            out.effect = "move_drum_lane_name_key";
+            out.intent = Intent::NAVIGATE_SECONDARY_AXIS;
+        } else if (!fieldChanged && editor.dirty) {
+            out.effect = "keep_drum_lane_draft_target";
+            out.outcome = "blocked";
+            out.reason = "unsaved_draft";
+        } else {
+            out.effect = "focus_drum_lane_field";
+            out.intent = Intent::MOVE_FOCUS;
+        }
+    } else if (isEncoder(event, Config::EncoderID::OPT)) {
+        out.effect = "edit_drum_lane_draft";
+        out.intent = editor.textEditing ? Intent::TEXT_EDIT : Intent::EDIT_VALUE;
+    } else if (isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE) &&
+               (editor.field == seq::DrumLaneEditorField::NAME ||
+                textModeChanged)) {
+        out.effect = editor.textEditing
+            ? "enter_drum_lane_text_edit"
+            : "leave_drum_lane_text_edit";
+        out.intent = Intent::TEXT_EDIT;
+    } else if (terminalEvent) {
+        out.effect = terminal_effect_;
+        out.intent = terminal_intent_;
+    }
     return true;
 }
 
@@ -2136,20 +2455,27 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
         if (draft.exitPromptVisible.get() &&
             isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "select_draft_exit_choice";
+            out.intent = core::state::interaction::ControllerIntent::MOVE_FOCUS;
             out.projection = "preview";
             out.outcome = "preview";
         } else if (draft.exitPromptVisible.get() && navRelease) {
             out.effect = "resolve_draft_exit";
+            out.intent = core::state::interaction::ControllerIntent::APPLY;
         } else if (leftTopRelease) {
             out.effect = draftActive && draft_trace_dirty_
                 ? "request_draft_exit"
                 : "discard_step_content_draft";
+            out.intent = core::state::interaction::ControllerIntent::CANCEL;
         } else if (bottomRightRelease) {
             out.effect = "apply_step_content_draft";
+            out.intent = core::state::interaction::ControllerIntent::APPLY;
         } else if (navRelease) {
             out.effect = draftActive
                 ? "edit_step_content_draft"
                 : "resolve_draft_exit";
+            out.intent = draftActive
+                ? core::state::interaction::ControllerIntent::ACTIVATE
+                : core::state::interaction::ControllerIntent::APPLY;
         } else {
             return false;
         }
@@ -2201,6 +2527,9 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
             core::state::sequencer::activeContentPageForStep(step)
         );
         out.effect = actionName(policy.macroLongPress);
+        out.intent = core::state::sequencer::controllerIntentFor(
+            policy.macroLongPress
+        );
         fillResolvedStepUxContext(
             sequencer_,
             tracks_,
@@ -2213,10 +2542,14 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
         return true;
     }
 
-    auto data = core::context::standalone::sequencer_overlay_presenter::buildStepEditRenderData({
-        sequencer_,
-        tracks_,
-    });
+    core::context::standalone::sequencer_overlay_presenter::StepEditRenderData data{};
+    core::context::standalone::sequencer_overlay_presenter::buildStepEditRenderData(
+        {
+            sequencer_,
+            tracks_,
+        },
+        data
+    );
     if (!data.visible) {
         return false;
     }
@@ -2288,12 +2621,15 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
     } else if (draft.exitPromptVisible.get() &&
                isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_draft_exit_choice";
+        out.intent = core::state::interaction::ControllerIntent::MOVE_FOCUS;
         out.projection = "preview";
         out.outcome = "preview";
     } else if (draft.exitPromptVisible.get() && navRelease) {
         out.effect = "resolve_draft_exit";
+        out.intent = core::state::interaction::ControllerIntent::APPLY;
     } else if (draft_trace_seen_ && bottomRightRelease) {
         out.effect = "apply_step_content_draft";
+        out.intent = core::state::interaction::ControllerIntent::APPLY;
         out.projection = draftActive ? "draft" : "published";
         if (!draftActive) out.outcome = "applied";
         if (draftActive && draft.failure !=
@@ -2305,10 +2641,12 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
         out.effect = draftActive && draft_trace_dirty_
             ? "request_draft_exit"
             : "discard_step_content_draft";
+        out.intent = core::state::interaction::ControllerIntent::CANCEL;
         out.projection = draftActive ? "draft" : "published";
         if (!draftActive) out.outcome = "discarded";
     } else if (draft_trace_seen_ && navRelease && !draftActive) {
         out.effect = "resolve_draft_exit";
+        out.intent = core::state::interaction::ControllerIntent::APPLY;
         out.projection = "published";
         out.outcome = out.action != nullptr &&
                           std::strcmp(out.action, "save") == 0
@@ -2318,6 +2656,9 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
         out.effect = step_retarget_seen_
             ? "retarget_step"
             : actionName(policy.navTurn);
+        out.intent = step_retarget_seen_
+            ? core::state::interaction::ControllerIntent::NAVIGATE_SECONDARY_AXIS
+            : core::state::sequencer::controllerIntentFor(policy.navTurn);
         if (step_retarget_seen_) {
             out.projection = "applied";
             out.outcome = "applied";
@@ -2329,32 +2670,46 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
         out.outcome = "applied";
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
         out.effect = actionName(policy.optTurn);
+        out.intent = core::state::sequencer::controllerIntentFor(policy.optTurn);
     } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
                macroClose) {
         out.effect = actionName(policy.navTap);
+        out.intent = core::state::sequencer::controllerIntentFor(policy.navTap);
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = actionName(policy.leftTopTap);
+        out.intent = core::state::sequencer::controllerIntentFor(policy.leftTopTap);
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
         const auto action = policy.bottomLeftHold != SequencerAction::NONE
             ? policy.bottomLeftHold
             : policy.bottomLeftTap;
         if (action == SequencerAction::NONE) return false;
         out.effect = armActionName(action);
+        out.intent = core::state::sequencer::controllerIntentFor(action);
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
         if (policy.bottomLeftTap == SequencerAction::NONE) return false;
         out.effect = actionName(policy.bottomLeftTap);
+        out.intent = core::state::sequencer::controllerIntentFor(
+            policy.bottomLeftTap
+        );
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
         if (policy.bottomLeftHold == SequencerAction::NONE) return false;
         out.effect = actionName(policy.bottomLeftHold);
+        out.intent = core::state::sequencer::controllerIntentFor(
+            policy.bottomLeftHold
+        );
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
         const auto action = policy.bottomRightHold != SequencerAction::NONE
             ? policy.bottomRightHold
             : policy.bottomRightTap;
         if (action == SequencerAction::NONE) return false;
         out.effect = armActionName(action);
+        out.intent = core::state::sequencer::controllerIntentFor(action);
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
         if (policy.bottomRightTap == SequencerAction::NONE) return false;
         out.effect = actionName(policy.bottomRightTap);
+        out.intent = core::state::sequencer::controllerIntentFor(
+            policy.bottomRightTap
+        );
         if (policy.bottomRightTap ==
             SequencerAction::COPY_STEP_EDITOR_CONTEXT) {
             out.action = "copy";
@@ -2362,6 +2717,9 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
     } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS)) {
         if (policy.bottomRightHold == SequencerAction::NONE) return false;
         out.effect = actionName(policy.bottomRightHold);
+        out.intent = core::state::sequencer::controllerIntentFor(
+            policy.bottomRightHold
+        );
     }
     return true;
 }

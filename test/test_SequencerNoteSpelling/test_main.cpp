@@ -46,11 +46,31 @@ void test_harmonic_minor_preserves_required_sharp_leading_tone() {
         << "[PASS] test_harmonic_minor_preserves_required_sharp_leading_tone\n";
 }
 
+void test_compact_tonal_focus_label_exposes_degree_context() {
+    oc::note::sequencer::StepSequencerScaleSettings cMajor{
+        .root = 0U,
+        .type = oc::note::sequencer::StepSequencerScaleType::Major,
+        .mode =
+            oc::note::sequencer::StepSequencerScaleConstraintMode::ConstrainNearest,
+    };
+    char label[16] = {};
+    spelling::formatTonalNoteLabel(label, sizeof(label), 66U, cMajor);
+    assert(std::strcmp(label, "F#4 #IV") == 0);
+
+    cMajor.type = oc::note::sequencer::StepSequencerScaleType::Chromatic;
+    spelling::formatTonalNoteLabel(label, sizeof(label), 66U, cMajor);
+    assert(std::strcmp(label, "F#4") == 0);
+
+    std::cout
+        << "[PASS] test_compact_tonal_focus_label_exposes_degree_context\n";
+}
+
 }  // namespace
 
 int main() {
     test_f_harmonic_minor_uses_expected_flat_spelling();
     test_harmonic_minor_preserves_required_sharp_leading_tone();
+    test_compact_tonal_focus_label_exposes_degree_context();
     std::cout << "\nAll SequencerNoteSpelling tests passed.\n";
     return 0;
 }

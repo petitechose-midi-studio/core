@@ -360,6 +360,7 @@ FLASHMEM void SequencerState::reset() {
     focusedStep.set(0);
     playheadStep.set(-1);
     playheadStepTickOffset.set(0);
+    playheadStepPhaseQ8.set(0);
     playheadStepTicks = 1;
     probabilityCycleRevision.set(0);
     probabilityCycleMask = {};
@@ -386,6 +387,7 @@ FLASHMEM void SequencerState::reset() {
     contentView.reset();
     stepContentDraft.resetSession();
     structureUi.reset();
+    drumSequencer.reset();
 }
 
 }  // namespace core::state::sequencer

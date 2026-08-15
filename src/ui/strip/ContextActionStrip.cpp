@@ -20,7 +20,7 @@ namespace core::ui {
 namespace {
 
 constexpr lv_coord_t HORIZONTAL_STRIP_HEIGHT = theme::layout::CONTEXT_ACTION_STRIP_HEIGHT;
-constexpr lv_coord_t VERTICAL_STRIP_WIDTH = 20;
+constexpr lv_coord_t VERTICAL_STRIP_WIDTH = 14;
 constexpr lv_coord_t SLOT_RADIUS = 0;
 constexpr lv_coord_t SLOT_PAD = 0;
 constexpr lv_coord_t INDICATOR_LONG = 8;
@@ -36,16 +36,16 @@ constexpr uint32_t HOLD_TIMER_PERIOD_MS = 33;
 FLASHMEM uint32_t toneColor(ContextActionStripTone tone) {
     switch (tone) {
         case ContextActionStripTone::CONSTRUCTIVE:
-            return theme::color::MACRO_5;
+            return theme::color::CONTENT_ACTIVE;
         case ContextActionStripTone::DESTRUCTIVE:
-            return theme::color::MACRO_1;
+            return theme::color::DESTRUCTIVE;
         case ContextActionStripTone::WARNING:
-            return theme::color::MACRO_2;
+            return theme::color::WARNING;
         case ContextActionStripTone::POSITIVE:
-            return theme::color::MACRO_4;
+            return theme::color::POSITIVE;
         case ContextActionStripTone::NEUTRAL:
         default:
-            return theme::color::TEXT_PRIMARY;
+            return theme::color::CONTENT_ACTIVE;
     }
 }
 
@@ -122,6 +122,7 @@ FLASHMEM bool sameSlotProps(const ContextActionStripSlotProps& lhs, const Contex
            sameText(lhs.icon, rhs.icon) &&
            lhs.iconUsesStandaloneFont == rhs.iconUsesStandaloneFont &&
            lhs.iconSize == rhs.iconSize &&
+           lhs.iconRotated180 == rhs.iconRotated180 &&
            lhs.showLabel == rhs.showLabel &&
            sameText(lhs.label, rhs.label) &&
            lhs.labelText == rhs.labelText &&
@@ -158,6 +159,10 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
 
     if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
         lv_obj_set_size(container_, LV_PCT(100), HORIZONTAL_STRIP_HEIGHT);
+        lv_obj_set_style_bg_color(
+            container_, lv_color_hex(theme::color::BACKGROUND), 0
+        );
+        lv_obj_set_style_bg_opa(container_, LV_OPA_30, 0);
         lv_obj_set_layout(container_, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(container_, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -178,7 +183,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
             LV_FLEX_ALIGN_CENTER
         );
         lv_obj_set_style_pad_left(container_, 0, 0);
-        lv_obj_set_style_pad_right(container_, 2, 0);
+        lv_obj_set_style_pad_right(container_, 1, 0);
         lv_obj_set_style_pad_top(
             container_,
             spread ? VERTICAL_SPREAD_OUTER_PAD : VERTICAL_OUTER_PAD,
@@ -257,12 +262,12 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
         lv_obj_add_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
 
         slot.label = lv_label_create(slot.content);
-        lv_obj_set_style_text_font(slot.label, fonts.inter_13_medium, 0);
+        lv_obj_set_style_text_font(slot.label, fonts.compact_label(), 0);
         lv_obj_set_style_text_color(slot.label, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
         lv_label_set_long_mode(slot.label, LV_LABEL_LONG_CLIP);
         lv_obj_set_width(slot.label, LV_SIZE_CONTENT);
         lv_obj_add_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
-        slot.label_font = fonts.inter_13_medium;
+        slot.label_font = fonts.compact_label();
         slot.label_color = theme::color::TEXT_PRIMARY;
         slot.label_opa = LV_OPA_COVER;
     }
@@ -343,6 +348,11 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
         }
         lv_obj_set_style_text_color(slot.icon, color, 0);
         lv_obj_set_style_text_opa(slot.icon, textOpa, 0);
+        lv_obj_set_style_transform_rotation(
+            slot.icon,
+            props.iconRotated180 ? 1800 : 0,
+            0
+        );
         lv_obj_clear_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
@@ -354,8 +364,8 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
             (props.visualState == ContextActionStripVisualState::ACTIVE ||
              props.visualState == ContextActionStripVisualState::PRESSED ||
              props.visualState == ContextActionStripVisualState::ARMED)
-                ? fonts.inter_13_bold
-                : fonts.inter_13_medium;
+                ? fonts.compact_selected()
+                : fonts.compact_label();
         if (slot.label_font != labelFont) {
             lv_obj_set_style_text_font(slot.label, labelFont, 0);
             slot.label_font = labelFont;
@@ -433,9 +443,9 @@ FLASHMEM void ContextActionStrip::refreshHoldIndicators() {
             setCachedText(slot.label, slot.hold_text, timerText);
             slot.hold_tenths = remainingTenths;
         }
-        if (slot.label_font != fonts.inter_13_bold) {
-            lv_obj_set_style_text_font(slot.label, fonts.inter_13_bold, 0);
-            slot.label_font = fonts.inter_13_bold;
+        if (slot.label_font != fonts.compact_selected()) {
+            lv_obj_set_style_text_font(slot.label, fonts.compact_selected(), 0);
+            slot.label_font = fonts.compact_selected();
         }
         const uint32_t holdColor = toneColor(props.tone);
         if (slot.label_color != holdColor) {

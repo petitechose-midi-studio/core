@@ -20,7 +20,7 @@ const char FEEDBACK_PREVIEW_PENDING[] PROGMEM = "Preview - Apply or Back";
 
 FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
                                         DeviceSettingsDomainServices deviceSettings,
-                                        SequencerSettingsDomainServices sequencerSettings,
+                                        ProjectScaleSettingsDomainServices scaleSettings,
                                         MacroEditDomainServices macroEditServices,
                                         oc::api::EncoderAPI& encoders,
                                         oc::api::ButtonAPI& buttons,
@@ -58,7 +58,7 @@ FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
     , clipboard_(state.clipboard)
     , history_(state.history)
     , lifecycle_(state.lifecycle)
-    , sequencer_settings_(sequencerSettings)
+    , scale_settings_(scaleSettings)
     , macro_edit_services_(macroEditServices)
     , encoders_(encoders)
     , buttons_(buttons)

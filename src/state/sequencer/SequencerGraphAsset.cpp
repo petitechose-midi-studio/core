@@ -16,7 +16,10 @@ namespace core::state::sequencer {
 namespace {
 
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
+using oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
+using oc::note::sequencer::STEP_NODE_CHORD_MODE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
+using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 using oc::note::sequencer::StepSequencerGraph;
 using oc::note::sequencer::StepSequencerGraphLimits;
 using oc::note::sequencer::StepSequencerStepNode;
@@ -243,6 +246,76 @@ FLASHMEM bool buildAssetGraphFromSourceNode(
     );
 }
 
+FLASHMEM bool captureRootPresetFromSource(
+    const SequencerPatternState& pattern,
+    const StepSequencerGraph* sourceGraph,
+    SequencerGraphNodeId sourceNodeId,
+    const SequencerStepGraphRootValues& rootValues,
+    oc::note::sequencer::StepSequencerScaleSettings sourceScale,
+    SequencerStepGraphPreset& out,
+    SequencerGraphAssetReport* report
+) {
+    if (!scaleSettingsCanonical(sourceScale) ||
+        !rootValuesCanonical(
+            true,
+            true,
+            rootValues.enabled,
+            rootValues.note,
+            rootValues.velocity,
+            rootValues.gate,
+            rootValues.nudge,
+            rootValues.probability
+        )) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
+        return false;
+    }
+    if (!buildAssetGraphFromSourceNode(sourceGraph, sourceNodeId, out.graph)) {
+        setReportStatus(report, SequencerGraphAssetStatus::GRAPH_LIMIT_REACHED);
+        return false;
+    }
+
+    out.valid = true;
+    out.rootContext = true;
+    out.rootValuesValid = true;
+    const auto scalePolicy = pitchContextUsesScaleDegrees(
+        pattern.pitchEditMode,
+        sourceScale
+    )
+        ? SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
+        : SequencerStepGraphPreset::ScalePolicy::CHROMATIC;
+    const auto persistedSourceScale =
+        scalePolicy == SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
+            ? sourceScale
+            : oc::note::sequencer::StepSequencerScaleSettings{};
+    if (!setStepGraphPresetMetadata(
+            out,
+            "unsaved",
+            "Untitled",
+            scalePolicy,
+            persistedSourceScale
+        )) {
+        out.reset();
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
+        return false;
+    }
+
+    out.enabled = rootValues.enabled;
+    out.note = rootValues.note;
+    out.velocity = rootValues.velocity;
+    out.gate = rootValues.gate;
+    out.nudge = rootValues.nudge;
+    out.probability = rootValues.probability;
+    if (report != nullptr) {
+        report->flags = static_cast<uint16_t>(
+            report->flags |
+            SEQUENCER_GRAPH_ASSET_REPORT_ROOT_VALUES |
+            SEQUENCER_GRAPH_ASSET_REPORT_GRAPH_PAYLOAD
+        );
+        fillReportCounts(report, out.graph);
+    }
+    return true;
+}
+
 }  // namespace
 
 FLASHMEM void SequencerGraphAssetReport::reset() {
@@ -409,6 +482,34 @@ FLASHMEM bool captureStepGraphPreset(
     return true;
 }
 
+FLASHMEM bool captureRootStepGraphPreset(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId sourceNodeId,
+    const SequencerStepGraphRootValues& rootValues,
+    oc::note::sequencer::StepSequencerScaleSettings sourceScale,
+    SequencerStepGraphPreset& out,
+    SequencerGraphAssetReport* report
+) {
+    if (report != nullptr) report->reset();
+    out.reset();
+    const auto* graph = sourceNodeId == StepSequencerGraphLimits::INVALID_ID
+        ? nullptr
+        : graphView(pattern);
+    if (graph != nullptr && graph->stepNode(sourceNodeId) == nullptr) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
+        return false;
+    }
+    return captureRootPresetFromSource(
+        pattern,
+        graph,
+        sourceNodeId,
+        rootValues,
+        sourceScale,
+        out,
+        report
+    );
+}
+
 FLASHMEM bool applyStepGraphPreset(
     SequencerState& sequencer,
     uint8_t step,
@@ -504,6 +605,87 @@ FLASHMEM bool applyStepGraphPreset(
         fillReportCounts(report, preset.graph);
     }
     return true;
+}
+
+FLASHMEM bool applyStepGraphPresetGraphToNode(
+    SequencerPatternState& pattern,
+    SequencerGraphNodeId targetNodeId,
+    const SequencerStepGraphPreset& preset,
+    SequencerGraphAssetReport* report
+) {
+    if (report != nullptr) report->reset();
+    if (!preset.valid ||
+        !stepGraphPresetMetadataIsCanonical(preset) ||
+        !stepGraphPresetGraphIsCanonical(preset.graph) ||
+        preset.graph.stepNode(kAssetRootNodeId) == nullptr ||
+        targetNodeId == StepSequencerGraphLimits::INVALID_ID) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
+        return false;
+    }
+    if (!copyStepNodePayloadFromGraph(
+            pattern,
+            targetNodeId,
+            preset.graph,
+            kAssetRootNodeId
+        )) {
+        setReportStatus(report, SequencerGraphAssetStatus::GRAPH_LIMIT_REACHED);
+        return false;
+    }
+    (void)compactGraph(pattern);
+    if (report != nullptr) {
+        report->flags = SEQUENCER_GRAPH_ASSET_REPORT_GRAPH_PAYLOAD;
+        fillReportCounts(report, preset.graph);
+    }
+    return true;
+}
+
+FLASHMEM bool projectStepGraphPresetToDestinationPitch(
+    SequencerStepGraphPreset& preset,
+    uint8_t destinationNote,
+    bool* changed
+) {
+    if (changed != nullptr) *changed = false;
+    if (destinationNote > 127U || !preset.valid ||
+        !stepGraphPresetMetadataIsCanonical(preset) ||
+        !stepGraphPresetGraphIsCanonical(preset.graph)) {
+        return false;
+    }
+
+    bool adapted = preset.rootValuesValid && preset.note != destinationNote;
+    if (preset.rootValuesValid) preset.note = destinationNote;
+    for (uint16_t index = 0; index < preset.graph.stepNodeCount; ++index) {
+        auto& node = preset.graph.stepNodes[index];
+        const bool nodePitch =
+            node.has(STEP_NODE_NOTE_OFFSET) ||
+            node.has(STEP_NODE_CHORD_MODE) ||
+            node.has(STEP_NODE_CHORD_LOCAL) ||
+            node.noteOffset != 0 ||
+            node.localVariation.pitchSemitones != 0;
+        adapted = adapted || nodePitch;
+        node.flags = static_cast<decltype(node.flags)>(
+            node.flags &
+            ~(STEP_NODE_NOTE_OFFSET | STEP_NODE_CHORD_MODE |
+              STEP_NODE_CHORD_LOCAL)
+        );
+        const StepSequencerStepNode defaults{};
+        node.noteOffset = defaults.noteOffset;
+        node.chordMode = defaults.chordMode;
+        node.chordSpec = defaults.chordSpec;
+        node.localVariation.pitchSemitones = 0;
+    }
+
+    // Once every authored pitch relation has been removed, the payload is
+    // scale-independent. Canonicalizing it to Chromatic prevents a Drum-saved
+    // rhythm from being needlessly blocked by another destination scale.
+    if (preset.scalePolicy != SequencerStepGraphPreset::ScalePolicy::CHROMATIC ||
+        preset.sourceScale.isConstrained()) {
+        adapted = true;
+        preset.scalePolicy = SequencerStepGraphPreset::ScalePolicy::CHROMATIC;
+        preset.sourceScale = {};
+    }
+    if (changed != nullptr) *changed = adapted;
+    return stepGraphPresetMetadataIsCanonical(preset) &&
+        stepGraphPresetGraphIsCanonical(preset.graph);
 }
 
 FLASHMEM bool validStepGraphPresetTechnicalId(const char* technicalId) {

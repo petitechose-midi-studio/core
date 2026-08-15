@@ -56,7 +56,13 @@ public:
     void update();
     void cancel();
 
-    [[nodiscard]] bool active() const { return gesture_.active(); }
+    // Visibility describes the selector surface. Input dispatch separately
+    // keeps ownership of a paired physical gesture after a synchronous reset,
+    // so it can be consumed without leaking into the replacement surface.
+    [[nodiscard]] bool active() const {
+        return gesture_.active() && state_.visible;
+    }
+    [[nodiscard]] bool ownsGesture() const { return gesture_.active(); }
 
 private:
     static core::state::StructureNavigationFocus adjacent(

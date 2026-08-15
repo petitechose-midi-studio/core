@@ -44,7 +44,14 @@ private:
     struct Entry {
         lv_obj_t* root = nullptr;
         lv_obj_t* activeParent = nullptr;
+        bool presented = false;
     };
+
+    [[nodiscard]] lv_obj_t* activeParentFor(lv_obj_t* root) const;
+    [[nodiscard]] bool rootPresentedElsewhere(
+        lv_obj_t* root,
+        core::ui::OverlayType except
+    ) const;
 
     static constexpr size_t ENTRY_COUNT =
         static_cast<size_t>(core::ui::OverlayType::COUNT);
@@ -61,7 +68,8 @@ private:
     OverlayPresentationRegistry& presentations,
     core::ui::OverlayType type,
     lv_obj_t* root,
-    oc::type::ButtonID latchButton = 0
+    oc::type::ButtonID latchButton = 0,
+    oc::type::ScopeID authorityScope = 0
 );
 
 }  // namespace core::context::standalone

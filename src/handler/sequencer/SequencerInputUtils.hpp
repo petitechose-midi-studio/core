@@ -109,10 +109,7 @@ inline int8_t normalizedToSwingOffset(float normalized) {
     return static_cast<int8_t>(SWING_OFFSET_MIN + index);
 }
 
-inline float nudgeToNormalized(int8_t nudge) {
-    const int clamped = std::clamp<int>(nudge, NUDGE_MIN, NUDGE_MAX);
-    return indexToNormalized(clamped - NUDGE_MIN, (NUDGE_MAX - NUDGE_MIN) + 1);
-}
+float nudgeToNormalized(int8_t nudge);
 
 inline float swingOffsetToNormalized(int8_t offset) {
     const int clamped = std::clamp<int>(offset, SWING_OFFSET_MIN, SWING_OFFSET_MAX);
@@ -122,31 +119,34 @@ inline float swingOffsetToNormalized(int8_t offset) {
     );
 }
 
-inline StepPropertyEncoderConfig encoderConfigForProperty(StepProperty property) {
-    StepPropertyEncoderConfig config;
+StepPropertyEncoderConfig encoderConfigForProperty(StepProperty property);
 
-    if (property == StepProperty::GATE) {
-        config.discreteSteps = 0;
-        config.normalizedTurns = GATE_NORMALIZED_TURNS;
-        return config;
-    }
+StepProperty drumStepProperty(
+    core::state::sequencer::DrumSequencerProperty property
+);
 
-    if (property == StepProperty::NUDGE) {
-        config.discreteSteps = static_cast<uint8_t>((NUDGE_MAX - NUDGE_MIN) + 1);
-        return config;
-    }
+core::state::sequencer::DrumSequencerProperty drumPropertyForStepProperty(
+    StepProperty property
+);
 
-    if (property == StepProperty::PROBABILITY) {
-        config.discreteSteps = static_cast<uint8_t>(PROBABILITY_MAX + 1);
-        return config;
-    }
+StepPropertyEncoderConfig encoderConfigForDrumProperty(
+    core::state::sequencer::DrumSequencerProperty property
+);
 
-    if (property == StepProperty::NOTE) {
-        config.normalizedTurns = NOTE_NORMALIZED_TURNS;
-    }
+float drumStepPropertyToNormalized(
+    const core::state::sequencer::DrumSequencerState& drumUi,
+    uint8_t lane,
+    uint8_t step,
+    core::state::sequencer::DrumSequencerProperty property
+);
 
-    return config;
-}
+bool applyNormalizedToDrumStep(
+    core::state::sequencer::DrumSequencerState& drumUi,
+    uint8_t lane,
+    uint8_t step,
+    core::state::sequencer::DrumSequencerProperty property,
+    float normalized
+);
 
 inline bool usesScaleDegreePitchEdit(
     StepProperty property,

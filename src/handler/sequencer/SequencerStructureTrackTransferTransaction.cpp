@@ -33,6 +33,7 @@ struct SourcePayload {
     const PatternSnapshot* snapshot = nullptr;
     const Graph* graph = nullptr;
     const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr;
+    const core::state::sequencer::DrumTrackState* drumTrack = nullptr;
 };
 
 FLASHMEM SourcePayload sourcePayload(
@@ -48,6 +49,7 @@ FLASHMEM SourcePayload sourcePayload(
             &clipboard.sequencerTrack,
             clipboard.sequencerGraph.get(),
             clipboard.sequencerCcLanes.get(),
+            clipboard.sequencerDrumTrack.get(),
         };
     }
 
@@ -69,6 +71,7 @@ FLASHMEM SourcePayload sourcePayload(
         &source.snapshot,
         source.graph.get(),
         source.ccLanes.get(),
+        source.drumTrack.get(),
     };
 }
 
@@ -156,6 +159,11 @@ FLASHMEM uint64_t clipboardPayloadFingerprint(
             hash,
             source.ccLanes,
             source.ccLanes == nullptr ? 0U : sizeof(*source.ccLanes)
+        );
+        hash = appendFingerprint(
+            hash,
+            source.drumTrack,
+            source.drumTrack == nullptr ? 0U : sizeof(*source.drumTrack)
         );
         const auto* macroTrack = sourceMacroTrack(clipboard, entry);
         hash = appendFingerprint(
@@ -473,6 +481,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     after.enabledMask = prepared.nextEnabledMask;
     after.activeTrack = prepared.plan.firstTarget;
     after.capturedTrackMask = prepared.history->before.capturedTrackMask;
+    after.drumTrackMask = prepared.history->before.drumTrackMask;
 
     const SourcePayload firstSource =
         sourcePayload(clipboard, prepared.plan.entries[0]);
@@ -517,6 +526,27 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
             prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
             return prepared;
         }
+        if ((prepared.history->before.drumTrackMask & previousActiveBit) != 0U) {
+            const auto& beforeDrum = prepared.history->before.drumTracks[
+                prepared.previousActiveTrack
+            ];
+            if (!beforeDrum) {
+                prepared.status = SequencerTrackTransferStatus::STALE;
+                return prepared;
+            }
+            after.drumTracks[prepared.previousActiveTrack] =
+                core::app::makeExtmemUnique<
+                    core::state::sequencer::DrumTrackState
+                >(*beforeDrum);
+            if (!after.drumTracks[prepared.previousActiveTrack]) {
+                prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
+                prepared.plan.availability =
+                    core::state::ClipboardTransferAvailability::DISABLED;
+                prepared.plan.reason =
+                    core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
+                return prepared;
+            }
+        }
     }
 
     for (uint8_t index = 0; index < prepared.plan.count; ++index) {
@@ -529,6 +559,32 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         }
 
         auto& afterTrack = after.tracks[destination.targetTrack];
+        const uint16_t destinationBit = sequencerStructureHistoryTrackBit(
+            destination.targetTrack
+        );
+        if (source.drumTrack != nullptr) {
+            after.drumTrackMask = static_cast<uint16_t>(
+                after.drumTrackMask | destinationBit
+            );
+            after.drumTracks[destination.targetTrack] =
+                core::app::makeExtmemUnique<
+                    core::state::sequencer::DrumTrackState
+                >(*source.drumTrack);
+            if (!after.drumTracks[destination.targetTrack]) {
+                prepared.status =
+                    SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
+                prepared.plan.availability =
+                    core::state::ClipboardTransferAvailability::DISABLED;
+                prepared.plan.reason =
+                    core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
+                return prepared;
+            }
+        } else {
+            after.drumTrackMask = static_cast<uint16_t>(
+                after.drumTrackMask & static_cast<uint16_t>(~destinationBit)
+            );
+            after.drumTracks[destination.targetTrack].reset();
+        }
         const auto* destinationCcLanes = prepared.history->before
             .tracks[destination.targetTrack].ccLanes.get();
         afterTrack.flat = *source.snapshot;
@@ -787,6 +843,11 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     core::state::sequencer::resetTransientTrackState(sequencer);
     sequencer.focusedStep.set(prepared.history->after.focusedStep);
     sequencer.page.set(prepared.history->after.page);
+
+    core::state::sequencer::commitHistoryStructureDrumSnapshot(
+        tracks,
+        prepared.history->after
+    );
 
     sharedTracks.publishPreparedSequencerState(
         prepared.nextEnabledMask,

@@ -11,7 +11,7 @@
 #include "handler/project/ProjectHandler.hpp"
 #include "handler/project/ProjectLifecycleDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "handler/settings/SequencerSettingsDomainServices.hpp"
+#include "handler/project/ProjectScaleSettingsDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
@@ -50,7 +50,7 @@ public:
 
     ProjectFeatureModule(StateRefs stateRefs,
                          core::handler::DeviceSettingsDomainServices deviceSettings,
-                         core::handler::SequencerSettingsDomainServices sequencerSettings,
+                         core::handler::ProjectScaleSettingsDomainServices scaleSettings,
                          core::handler::MacroEditDomainServices macroEditServices,
                          oc::api::EncoderAPI& encoders,
                          oc::api::ButtonAPI& buttons,
@@ -71,6 +71,8 @@ public:
 
 private:
 #if defined(MS_UX_RECORDER)
+    core::context::standalone::ux::ProjectNavigationUxSurface
+        navigation_ux_surface_;
     core::context::standalone::ux::ProjectModulatorsUxSurface
         modulators_ux_surface_;
 #endif

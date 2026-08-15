@@ -21,7 +21,7 @@
 #include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
-#include "handler/settings/SequencerSettingsDomainServices.hpp"
+#include "handler/project/ProjectScaleSettingsDomainServices.hpp"
 #include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "state/CoreState.hpp"
@@ -128,6 +128,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         overlayPresentations,
         encoders,
         buttons,
+        midi,
         overlayRoot,
         sequencerViewElement
 #if defined(MS_UX_RECORDER)
@@ -175,8 +176,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 ),
             },
             deviceSettingsServices,
-            core::handler::SequencerSettingsDomainServices{
-                core::handler::SequencerSettingsDomainServices::StateRefs{
+            core::handler::ProjectScaleSettingsDomainServices{
+                core::handler::ProjectScaleSettingsDomainServices::StateRefs{
                     state.sequencerTracks,
                 }
             },
@@ -196,19 +197,9 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     settings_feature_ = core::app::makeExtmemUnique<core::context::standalone::SettingsFeatureModule>(
         core::context::standalone::SettingsFeatureModule::StateRefs{
             state.deviceSettings,
-            state.sequencerSettings,
-            state.viewSelector,
             state.midiSync,
-            state.sequencer,
-            state.sequencerTracks,
-            core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },
         deviceSettingsServices,
-        core::handler::SequencerSettingsDomainServices{
-            core::handler::SequencerSettingsDomainServices::StateRefs{
-                state.sequencerTracks,
-            }
-        },
         overlays,
         overlayPresentations,
         encoders,

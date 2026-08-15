@@ -51,7 +51,7 @@ struct Harness {
                   randomize,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
-              overlays, encoders, buttons, VIEW_SCOPE, OVERLAY_SCOPE) {
+              overlays, encoders, buttons, OVERLAY_SCOPE) {
         g_now_ms = 0;
         overlays.setActiveViewProvider([]() { return VIEW_SCOPE; });
         overlays.registerCleanup(core::ui::OverlayType::SEQ_PATTERN_EDIT, OVERLAY_SCOPE);
@@ -93,9 +93,9 @@ void assertHistoryRejection(const Harness& h, const char* expectedDetail,
     const auto& feedback = h.state.sequencer.historyFeedback;
     assert(feedback.visible.get());
     assert(feedback.revision.get() == expectedRevision);
-    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
     assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
-    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+    assert(std::strcmp(feedback.line3.data(), "") == 0);
 }
 
 void test_retained_navigation_uses_modifier_grammar_without_history() {

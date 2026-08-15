@@ -404,12 +404,12 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
     }
 
     if (node == ProjectNodeId::MUSIC_SCALE && row <= 2) {
-        const int count = sequencer_settings_.choiceCount(row);
+        const int count = scale_settings_.choiceCount(row);
         if (count > 0) {
             configureOptDiscrete(
                 encoders_,
                 count,
-                indexToNormalized(sequencer_settings_.currentChoiceIndex(row), count)
+                indexToNormalized(scale_settings_.currentChoiceIndex(row), count)
             );
         }
         return;
@@ -427,19 +427,20 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             );
             return;
         }
-        if (row >= 4U &&
-            row < 4U + project::PROJECT_CC_LANE_DEFAULT_COUNT) {
-            const uint8_t lane = static_cast<uint8_t>(row - 4U);
-            configureOptDiscrete(
-                encoders_,
-                project::PROJECT_MIDI_CC_COUNT,
-                indexToNormalized(
-                    navigation_.ccLaneDefaultControllers[lane],
-                    project::PROJECT_MIDI_CC_COUNT
-                )
-            );
-            return;
-        }
+    }
+
+    if (node == ProjectNodeId::MUSIC_CC_DEFAULTS &&
+        row < project::PROJECT_CC_LANE_DEFAULT_COUNT) {
+        const uint8_t lane = row;
+        configureOptDiscrete(
+            encoders_,
+            project::PROJECT_MIDI_CC_COUNT,
+            indexToNormalized(
+                navigation_.ccLaneDefaultControllers[lane],
+                project::PROJECT_MIDI_CC_COUNT
+            )
+        );
+        return;
     }
 
     if (node == ProjectNodeId::TRANSPORT_ROOT) {

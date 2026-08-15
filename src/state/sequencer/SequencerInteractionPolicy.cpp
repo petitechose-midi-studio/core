@@ -173,6 +173,22 @@ SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContex
                 core::state::StructureSelectionInteractionAction::PASTE_SELECTION
             ? Action::PASTE_STRUCTURE_SELECTION
             : Action::NONE;
+    } else if (context.drumLaneSelectionActive) {
+        policy.scope = Scope::PATTERN_SELECTION;
+        policy.bottomLeftTap = Action::CLEAR_SELECTION;
+        // Lane identity/ordering remains exclusively owned by the Lane
+        // editor. Selection can clear musical content but never delete Lanes.
+        policy.bottomLeftHold = Action::NONE;
+        policy.bottomRightTap =
+            shared.bottomRightRelease ==
+                core::state::StructureSelectionInteractionAction::COPY_SELECTION
+            ? Action::COPY_STRUCTURE_SELECTION
+            : Action::NONE;
+        policy.bottomRightHold =
+            shared.bottomRightLongPress ==
+                core::state::StructureSelectionInteractionAction::PASTE_SELECTION
+            ? Action::PASTE_STRUCTURE_SELECTION
+            : Action::NONE;
     } else {
         policy.scope = Scope::PATTERN_SELECTION;
         policy.bottomLeftTap = Action::CLEAR_SELECTION;
@@ -238,7 +254,9 @@ SequencerInteractionPolicy buildStepEditorPolicy(const SequencerInteractionConte
     policy.leftCenterPress = canRetargetStep
         ? Action::RETARGET_STEP_EDITOR
         : Action::NONE;
-    policy.leftBottomPress = Action::EDIT_STEP_LOCAL_RANDOM;
+    policy.leftBottomPress = context.stepEditorDrumRoot
+        ? Action::RETARGET_STEP_EDITOR_LANE
+        : Action::EDIT_STEP_LOCAL_RANDOM;
     policy.macroTap = Action::NONE;
     policy.macroLongPress = Action::NONE;
     policy.macroTurn = Action::EDIT_STEP_EDITOR_ROW;
@@ -264,7 +282,9 @@ SequencerInteractionPolicy buildStepEditorPolicy(const SequencerInteractionConte
     policy.leftCenterVisibility = canRetargetStep
         ? Visibility::ACTIVE
         : Visibility::HIDDEN;
-    policy.leftBottomVisibility = Visibility::ACTIVE;
+    policy.leftBottomVisibility = context.stepEditorDrumRoot
+        ? visibleIf(context.stepEditorLaneRetargetAvailable)
+        : Visibility::ACTIVE;
     return policy;
 }
 
@@ -301,6 +321,10 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
             policy.leftBottomPress = Action::NONE;
             policy.leftBottomVisibility = Visibility::HIDDEN;
             applyStructureBottomActions(policy, context);
+            // Track tap is a reversible performance action, not a structural
+            // clear. The handler has always toggled Mute here; keep policy,
+            // iconography and controller intent truthful to that behavior.
+            policy.bottomLeftTap = Action::MUTE_CURRENT_TRACK;
             break;
 
         case Focus::PAGE:
@@ -340,7 +364,8 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
 FLASHMEM bool sequencerInteractionSelectionActive(const SequencerInteractionContext& context) {
     return context.trackSelectionActive ||
            context.pageSelectionActive ||
-           context.stepSelectionActive;
+           context.stepSelectionActive ||
+           context.drumLaneSelectionActive;
 }
 
 FLASHMEM bool sequencerInteractionTransientActive(const SequencerInteractionContext& context) {
@@ -372,6 +397,85 @@ FLASHMEM SequencerInteractionPolicy buildSequencerInteractionPolicy(
         return buildSelectionPolicy(context);
     }
     return buildMainSurfacePolicy(context);
+}
+
+FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
+    SequencerInteractionAction action
+) {
+    using Intent = core::state::interaction::ControllerIntent;
+    switch (action) {
+        case SequencerInteractionAction::NONE:
+            return Intent::NONE;
+        case SequencerInteractionAction::MOVE_TRACK:
+        case SequencerInteractionAction::MOVE_PATTERN:
+        case SequencerInteractionAction::MOVE_STEP:
+        case SequencerInteractionAction::MOVE_SELECTION_CURSOR:
+        case SequencerInteractionAction::SELECT_PATTERN_DIMENSION:
+        case SequencerInteractionAction::SELECT_MUSICAL_PROPERTY:
+        case SequencerInteractionAction::SELECT_STEP_EDITOR_ROW:
+        case SequencerInteractionAction::SELECT_STEP_CONTENT_ACTION:
+            return Intent::MOVE_FOCUS;
+        case SequencerInteractionAction::ENTER_SELECTION:
+            return Intent::ENTER_SELECTION;
+        case SequencerInteractionAction::TOGGLE_SELECTION:
+        case SequencerInteractionAction::APPLY_STEP_EDITOR:
+        case SequencerInteractionAction::OPEN_TRACK_EDITOR:
+        case SequencerInteractionAction::OPEN_PATTERN_EDITOR:
+        case SequencerInteractionAction::OPEN_STEP_EDITOR:
+        case SequencerInteractionAction::TOGGLE_VISIBLE_STEP:
+            return Intent::ACTIVATE;
+        case SequencerInteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR:
+        case SequencerInteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
+        case SequencerInteractionAction::OPEN_STEP_CONTENT_SELECTOR:
+            return Intent::OPEN_ADVANCED;
+        case SequencerInteractionAction::APPLY_PATTERN_DIMENSION_SELECTOR:
+        case SequencerInteractionAction::APPLY_MUSICAL_PROPERTY_SELECTOR:
+        case SequencerInteractionAction::APPLY_STEP_CONTENT_SELECTOR:
+            return Intent::APPLY;
+        case SequencerInteractionAction::CANCEL_TRANSIENT_CONTEXT:
+            return Intent::CANCEL;
+        case SequencerInteractionAction::EDIT_PATTERN_DIMENSION:
+        case SequencerInteractionAction::EDIT_MUSICAL_PROPERTY_VARIATION:
+        case SequencerInteractionAction::EDIT_STEP_PROPERTY:
+        case SequencerInteractionAction::EDIT_STEP_LOCAL_RANDOM:
+        case SequencerInteractionAction::EDIT_STEP_EDITOR_ROW:
+        case SequencerInteractionAction::EDIT_VISIBLE_STEP_PROPERTY:
+            return Intent::EDIT_VALUE;
+        case SequencerInteractionAction::RETARGET_STEP_EDITOR:
+        case SequencerInteractionAction::RETARGET_STEP_EDITOR_LANE:
+            return Intent::NAVIGATE_SECONDARY_AXIS;
+        case SequencerInteractionAction::MUTE_CURRENT_TRACK:
+        case SequencerInteractionAction::MUTE_TRACK_SELECTION:
+            return Intent::SOFT_ACTION;
+        case SequencerInteractionAction::CLEAR_CURRENT_STRUCTURE:
+        case SequencerInteractionAction::RESET_CURRENT_STEP_SHALLOW:
+        case SequencerInteractionAction::RESET_CURRENT_STEP_DEEP:
+        case SequencerInteractionAction::CLEAR_STEP_CONTENT:
+        case SequencerInteractionAction::RESET_STEP_EDITOR_ROW:
+        case SequencerInteractionAction::CLEAR_SELECTION:
+        case SequencerInteractionAction::RESET_STEP_SELECTION_SHALLOW:
+        case SequencerInteractionAction::RESET_STEP_SELECTION_DEEP:
+            return Intent::RESET;
+        case SequencerInteractionAction::REMOVE_CURRENT_STRUCTURE:
+        case SequencerInteractionAction::REMOVE_STEP_EDITOR_CONTEXT:
+        case SequencerInteractionAction::DELETE_SELECTION:
+            return Intent::DELETE_STRUCTURE;
+        case SequencerInteractionAction::COPY_CURRENT_STEP:
+        case SequencerInteractionAction::COPY_CURRENT_STRUCTURE:
+        case SequencerInteractionAction::COPY_STRUCTURE_SELECTION:
+        case SequencerInteractionAction::COPY_STEP_CONTENT:
+        case SequencerInteractionAction::COPY_STEP_EDITOR_CONTEXT:
+        case SequencerInteractionAction::COPY_STEP_SELECTION:
+            return Intent::COPY;
+        case SequencerInteractionAction::PASTE_CURRENT_STEP:
+        case SequencerInteractionAction::PASTE_CURRENT_STRUCTURE:
+        case SequencerInteractionAction::PASTE_STRUCTURE_SELECTION:
+        case SequencerInteractionAction::PASTE_STEP_CONTENT:
+        case SequencerInteractionAction::PASTE_STEP_EDITOR_CONTEXT:
+        case SequencerInteractionAction::PASTE_STEP_SELECTION:
+            return Intent::PASTE;
+    }
+    return Intent::NONE;
 }
 
 }  // namespace core::state::sequencer

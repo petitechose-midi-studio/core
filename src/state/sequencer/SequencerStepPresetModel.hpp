@@ -39,6 +39,7 @@ enum class SequencerStepPresetScalePolicy : uint8_t {
 enum class SequencerStepPresetAdaptation : uint8_t {
     PRESERVED = 0,
     DESTINATION_SCALE,
+    DESTINATION_PITCH,
 };
 
 enum class SequencerStepPresetFootprint : uint8_t {
@@ -76,6 +77,14 @@ struct SequencerStepPresetTarget {
     uint16_t sequenceId = GraphLimits::INVALID_ID;
     uint16_t cycleSetId = GraphLimits::INVALID_ID;
     uint16_t targetNodeId = GraphLimits::INVALID_ID;
+    // A Drum lane owns pitch independently from its Step payload. These
+    // compact fields freeze that identity across asynchronous inspection and
+    // apply without creating a second preset model.
+    bool destinationOwnsPitch = false;
+    uint8_t destinationNote = 0;
+    uint8_t drumLaneIndex = 0;
+    uint8_t drumRootStepIndex = 0;
+    uint8_t drumRootSlot = 0xFFU;
     uint32_t projectRevision = 0;
     char contextLabel[32] = {};
 };

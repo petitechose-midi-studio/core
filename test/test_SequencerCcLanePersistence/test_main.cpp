@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 
 #include "persistence/SequencerCcLanePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
@@ -192,8 +193,8 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         loaded.pattern
     ));
 
-    bytes.bytes[4] = static_cast<uint8_t>(codec::ENVELOPE_VERSION - 1U);
-    assert(!codec::applyPatternEnvelope(
+    bytes.bytes[4] = codec::LEGACY_ENVELOPE_VERSION;
+    assert(codec::applyPatternEnvelope(
         bytes.bytes.data(),
         encoded.size,
         loaded.pattern
@@ -205,7 +206,7 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         loaded.pattern
     ));
 
-    std::cout << "[PASS] current Pattern envelope round-trips and rejects other versions\n";
+    std::cout << "[PASS] Pattern envelope accepts v11 migration and rejects future versions\n";
 }
 
 void authorTrackRegions(
@@ -253,6 +254,7 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     source.reset();
     bank.reset();
     assert(seq::initializeTrackBankFromActive(bank, source));
+    bank.syncSharedTrackState(0x0007U, 0U);
     authorTwoLanes(source.pattern);
     authorTrackRegions(bank, source);
 
@@ -266,11 +268,18 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     draft.destination.pinnedChannel = 12U;
     assert(seq::createSequencerCcLane(*track1, 3U, draft).changed());
     assert(seq::setSequencerCcLaneEvent(*track1, 3U, 64U, 42U).changed());
+    assert(bank.setTrackKind(2U, seq::SequencerTrackKind::DRUM, true));
+    assert(bank.drumTrack(2U).pattern.setStepEnabled(1U, 3U, true));
+    assert(bank.drumTrack(2U).pattern.setStepVelocity(1U, 3U, 109U));
 
     seq::SequencerTrackBankSnapshot flat{};
     seq::captureTrackBankSnapshot(bank, source, flat);
+    auto drums = std::make_unique<seq::DrumTrackBankSnapshot>();
+    assert(drums);
+    bank.captureDrumTrackBank(*drums);
     codec::ProjectSequencerSnapshotEncodeSource projectSource{};
     projectSource.flat = &flat;
+    projectSource.drums = drums.get();
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -299,6 +308,9 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     ));
     assertTwoLanes(projectLoaded.pattern);
     assert(seq::sequencerCcLaneView(projectBank.track(1U))->lanes[3].values[64] == 42U);
+    assert(projectBank.isDrumTrack(2U));
+    assert(projectBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
+    assert(projectBank.drumTrack(2U).pattern.lanes[1U].velocity[3U] == 109U);
     assertTrackRegions(projectBank, projectLoaded);
 
     codec::EnvelopeBuffer setBytes{};
@@ -321,9 +333,76 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     ));
     assertTwoLanes(setLoaded.pattern);
     assert(seq::sequencerCcLaneView(setBank.track(1U))->lanes[3].values[64] == 42U);
+    assert(setBank.isDrumTrack(2U));
+    assert(setBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
+    assert(setBank.drumTrack(2U).pattern.lanes[1U].velocity[3U] == 109U);
     assertTrackRegions(setBank, setLoaded);
 
     std::cout << "[PASS] Project and Set retain every Track-local lane owner\n";
+}
+
+void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
+    seq::SequencerState source{};
+    seq::SequencerTrackBankState bank{};
+    source.reset();
+    bank.reset();
+    assert(seq::initializeTrackBankFromActive(bank, source));
+
+    seq::SequencerTrackBankSnapshot flat{};
+    seq::captureTrackBankSnapshot(bank, source, flat);
+    codec::ProjectSequencerSnapshotEncodeSource projectSource{};
+    projectSource.flat = &flat;
+
+    codec::EnvelopeBuffer projectBytes{};
+    const auto projectEncoded = codec::fillProjectSequencerEnvelope(
+        projectSource,
+        projectBytes.bytes.data(),
+        static_cast<uint32_t>(projectBytes.bytes.size())
+    );
+    assert(projectEncoded.ok);
+
+    seq::SequencerState loaded{};
+    seq::SequencerTrackBankState loadedBank{};
+    loaded.reset();
+    loadedBank.reset();
+    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
+    assert(loadedBank.drumTrackMask() != 0U);
+    assert(codec::applyProjectSequencerEnvelope(
+        projectBytes.bytes.data(),
+        projectEncoded.size,
+        loadedBank,
+        loaded
+    ));
+    assert(loadedBank.drumTrackMask() == 0U);
+
+    codec::EnvelopeBuffer setBytes{};
+    const auto setEncoded = codec::fillSetEnvelope(
+        bank,
+        source,
+        setBytes.bytes.data(),
+        static_cast<uint32_t>(setBytes.bytes.size())
+    );
+    assert(setEncoded.ok);
+    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
+    assert(codec::applySetEnvelope(
+        setBytes.bytes.data(),
+        setEncoded.size,
+        loadedBank,
+        loaded
+    ));
+    assert(loadedBank.drumTrackMask() == 0U);
+
+    setBytes.bytes[4] = codec::LEGACY_ENVELOPE_VERSION;
+    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
+    assert(codec::applySetEnvelope(
+        setBytes.bytes.data(),
+        setEncoded.size,
+        loadedBank,
+        loaded
+    ));
+    assert(loadedBank.drumTrackMask() == 0U);
+
+    std::cout << "[PASS] Drum state is replaced by Drum-free current and v11 envelopes\n";
 }
 
 }  // namespace
@@ -332,6 +411,7 @@ int main() {
     testCurrentRecordRoundTripAndStrictVersioning();
     testPatternEnvelopeRoundTripAndStrictVersioning();
     testProjectAndSetRoundTripEveryTrackOwner();
+    testEnvelopeWithoutDrumsClearsExistingDrumBank();
     std::cout << "All SequencerCcLanePersistence tests passed\n";
     return 0;
 }

@@ -66,15 +66,17 @@ FLASHMEM void ProjectHandler::endProjectSettingsGesture() {
 
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
-    const bool applied = applyFocusedMusicRootStep(steps) || applyFocusedMusicScaleStep(steps) ||
+    const bool applied = applyFocusedMusicSettingsStep(steps) || applyFocusedMusicScaleStep(steps) ||
                          applyFocusedTransportStep(steps) || applyFocusedRoutingStep(steps) ||
                          applyFocusedNameEditorStep(steps);
     if (applied) { navigation_.clearLifecycleFeedback(); }
     return applied;
 }
 
-FLASHMEM bool ProjectHandler::applyFocusedMusicRootStep(int steps) {
-    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::MUSIC_ROOT) {
+FLASHMEM bool ProjectHandler::applyFocusedMusicSettingsStep(int steps) {
+    const auto node = navigation_.currentNode.get();
+    if (node != core::state::project::ProjectNodeId::MUSIC_ROOT &&
+        node != core::state::project::ProjectNodeId::MUSIC_CC_DEFAULTS) {
         return false;
     }
 
@@ -85,14 +87,15 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicRootStep(int steps) {
         status_bar_, navigation_);
     auto kind = core::state::project::ProjectSettingsHistoryActionKind::StepPasteMode;
     uint8_t subject = 0U;
-    if (row == 3U) {
+    if (node == core::state::project::ProjectNodeId::MUSIC_ROOT && row == 3U) {
         const int current = static_cast<int>(navigation_.stepPasteMode);
         const int next = wrapIndex(current + steps, project::PROJECT_STEP_PASTE_MODE_COUNT);
         if (next == current) return true;
         navigation_.stepPasteMode =
             project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
-    } else if (row >= 4U && row < 4U + project::PROJECT_CC_LANE_DEFAULT_COUNT) {
-        const uint8_t lane = static_cast<uint8_t>(row - 4U);
+    } else if (node == core::state::project::ProjectNodeId::MUSIC_CC_DEFAULTS &&
+               row < project::PROJECT_CC_LANE_DEFAULT_COUNT) {
+        const uint8_t lane = row;
         kind = core::state::project::ProjectSettingsHistoryActionKind::CcLaneDefault;
         subject = lane;
         const int current = navigation_.ccLaneDefaultControllers[lane];
@@ -129,10 +132,10 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
     }
     if (row > 2U) return false;
 
-    const int count = sequencer_settings_.choiceCount(row);
+            const int count = scale_settings_.choiceCount(row);
     if (count <= 0) return false;
 
-    const int current = sequencer_settings_.currentChoiceIndex(row);
+            const int current = scale_settings_.currentChoiceIndex(row);
     const int next = wrapIndex(current + steps, count);
     if (next == current) return true;
 
@@ -206,7 +209,10 @@ FLASHMEM bool ProjectHandler::applyFocusedNameEditorStep(int steps) {
     if (!isProjectNameEditorNode(navigation_.currentNode.get()) || steps == 0) { return false; }
 
     navigation_.projectNameKeyIndex =
-        core::state::project::projectNameKeyboardMoveColumn(navigation_.projectNameKeyIndex, steps);
+        core::state::interaction::textKeyboardMoveColumn(
+            navigation_.projectNameKeyIndex,
+            steps
+        );
     navigation_.notifyContentChanged();
     return true;
 }
@@ -232,7 +238,7 @@ FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
 }
 
 FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
-    return setFocusedMusicRootValue(normalized) || setFocusedMusicScaleValue(normalized) ||
+    return setFocusedMusicSettingsValue(normalized) || setFocusedMusicScaleValue(normalized) ||
            setFocusedTransportValue(normalized) || setFocusedRoutingValue(normalized) ||
            setFocusedModulatorValue(normalized) ||
            setFocusedNameEditorValue(normalized);
@@ -256,7 +262,10 @@ FLASHMEM bool ProjectHandler::setFocusedNameEditorValue(float normalized) {
 
     const int rowDelta = increasing ? -steps : steps;
     const auto next =
-        core::state::project::projectNameKeyboardMoveRow(navigation_.projectNameKeyIndex, rowDelta);
+        core::state::interaction::textKeyboardMoveRow(
+            navigation_.projectNameKeyIndex,
+            rowDelta
+        );
     if (next == navigation_.projectNameKeyIndex) return true;
 
     navigation_.projectNameKeyIndex = next;
@@ -264,8 +273,10 @@ FLASHMEM bool ProjectHandler::setFocusedNameEditorValue(float normalized) {
     return true;
 }
 
-FLASHMEM bool ProjectHandler::setFocusedMusicRootValue(float normalized) {
-    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::MUSIC_ROOT) {
+FLASHMEM bool ProjectHandler::setFocusedMusicSettingsValue(float normalized) {
+    const auto node = navigation_.currentNode.get();
+    if (node != core::state::project::ProjectNodeId::MUSIC_ROOT &&
+        node != core::state::project::ProjectNodeId::MUSIC_CC_DEFAULTS) {
         return false;
     }
 
@@ -274,14 +285,15 @@ FLASHMEM bool ProjectHandler::setFocusedMusicRootValue(float normalized) {
         status_bar_, navigation_);
     auto kind = core::state::project::ProjectSettingsHistoryActionKind::StepPasteMode;
     uint8_t subject = 0U;
-    if (row == 3U) {
+    if (node == core::state::project::ProjectNodeId::MUSIC_ROOT && row == 3U) {
         const int current = static_cast<int>(navigation_.stepPasteMode);
         const int next = normalizedToIndex(normalized, project::PROJECT_STEP_PASTE_MODE_COUNT);
         if (next == current) return true;
         navigation_.stepPasteMode =
             project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
-    } else if (row >= 4U && row < 4U + project::PROJECT_CC_LANE_DEFAULT_COUNT) {
-        const uint8_t lane = static_cast<uint8_t>(row - 4U);
+    } else if (node == core::state::project::ProjectNodeId::MUSIC_CC_DEFAULTS &&
+               row < project::PROJECT_CC_LANE_DEFAULT_COUNT) {
+        const uint8_t lane = row;
         kind = core::state::project::ProjectSettingsHistoryActionKind::CcLaneDefault;
         subject = lane;
         const int current = navigation_.ccLaneDefaultControllers[lane];
@@ -303,10 +315,10 @@ FLASHMEM bool ProjectHandler::setFocusedMusicScaleValue(float normalized) {
     const uint8_t row = navigation_.focusedRow.get();
     if (row > 2) return false;
 
-    const int count = sequencer_settings_.choiceCount(row);
+    const int count = scale_settings_.choiceCount(row);
     if (count <= 0) return false;
 
-    const int current = sequencer_settings_.currentChoiceIndex(row);
+    const int current = scale_settings_.currentChoiceIndex(row);
     const int next = normalizedToIndex(normalized, count);
     if (next == current) return true;
 

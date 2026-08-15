@@ -9,7 +9,13 @@ namespace core::state::project {
 enum class ProjectTrackEditorProperty : uint8_t {
     CHANNEL = 0,
     DELAY,
+    TYPE,
     COUNT,
+};
+
+enum class ProjectTrackEditorKind : uint8_t {
+    INSTRUMENT = 0,
+    DRUM,
 };
 
 /**
@@ -25,6 +31,8 @@ struct ProjectTrackEditorState {
     uint8_t trackIndex = 0U;
     ProjectTrackEditorProperty selectedProperty =
         ProjectTrackEditorProperty::CHANNEL;
+    ProjectTrackEditorKind currentKind = ProjectTrackEditorKind::INSTRUMENT;
+    ProjectTrackEditorKind draftKind = ProjectTrackEditorKind::INSTRUMENT;
     bool active = false;
 
     /**
@@ -52,11 +60,13 @@ struct ProjectTrackEditorState {
         return lhs.revision == rhs.revision &&
                lhs.trackIndex == rhs.trackIndex &&
                lhs.selectedProperty == rhs.selectedProperty &&
+               lhs.currentKind == rhs.currentKind &&
+               lhs.draftKind == rhs.draftKind &&
                lhs.active == rhs.active;
     }
 };
 
-static_assert(sizeof(ProjectTrackEditorState) == 8U);
+static_assert(sizeof(ProjectTrackEditorState) <= 12U);
 static_assert(std::is_trivially_copyable_v<ProjectTrackEditorState>);
 
 }  // namespace core::state::project

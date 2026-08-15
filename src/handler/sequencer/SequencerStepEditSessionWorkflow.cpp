@@ -45,6 +45,11 @@ FLASHMEM bool openForStep(core::state::sequencer::SequencerState& sequencer,
 
 FLASHMEM bool commitHistory(core::state::sequencer::SequencerState& sequencer,
                             SequencerHistoryDomainServices& history) {
+    // A content draft is the sole transactional owner. Its edits are confined
+    // to PSRAM scratch and are committed atomically by the draft workflow;
+    // trying to flush a prepared Drum owner here would reject an otherwise
+    // valid navigation into a child Step Editor.
+    if (sequencer.stepContentDraft.active.get()) return true;
     const auto familyOutcome = history.commitPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner::StepEditSession);
     if (familyOutcome ==

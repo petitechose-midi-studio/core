@@ -43,6 +43,19 @@ inline constexpr std::array<uint8_t, COUNT> NAVIGATION_ORDER = {
     CYCLE_STATES,
 };
 
+// Drum lanes share the Step Editor surface and the melodic navigation order,
+// while intentionally omitting pitch and chord. Hierarchical rhythm content
+// remains available through the same MicroSequence/Cycle States rows.
+inline constexpr std::array<uint8_t, 7> DRUM_NAVIGATION_ORDER = {
+    ACTIVATED,
+    static_cast<uint8_t>(PROPERTY_OFFSET + 4U),
+    static_cast<uint8_t>(PROPERTY_OFFSET + 1U),
+    static_cast<uint8_t>(PROPERTY_OFFSET + 2U),
+    static_cast<uint8_t>(PROPERTY_OFFSET + 3U),
+    MICRO_SEQUENCE,
+    CYCLE_STATES,
+};
+
 inline bool isActivated(uint8_t row) {
     return row == ACTIVATED;
 }
@@ -80,6 +93,19 @@ inline uint8_t rowForNavigationIndex(int index) {
     const int count = static_cast<int>(NAVIGATION_ORDER.size());
     const int wrapped = ((index % count) + count) % count;
     return NAVIGATION_ORDER[static_cast<size_t>(wrapped)];
+}
+
+inline int drumNavigationIndexForRow(uint8_t row) {
+    for (size_t i = 0; i < DRUM_NAVIGATION_ORDER.size(); ++i) {
+        if (DRUM_NAVIGATION_ORDER[i] == row) return static_cast<int>(i);
+    }
+    return 0;
+}
+
+inline uint8_t drumRowForNavigationIndex(int index) {
+    const int count = static_cast<int>(DRUM_NAVIGATION_ORDER.size());
+    const int wrapped = ((index % count) + count) % count;
+    return DRUM_NAVIGATION_ORDER[static_cast<size_t>(wrapped)];
 }
 
 }  // namespace core::state::sequencer::step_edit_rows

@@ -16,6 +16,7 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
+#include "state/sequencer/DrumPatternState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -1534,6 +1535,27 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     return true;
 }
 
+bool prepareDrumSequencerScenario(core::state::CoreState& state) {
+    using namespace core::state;
+
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.overlays.hideAll();
+    state.statusBar.playing.set(false);
+    state.sequencerTrackActivations.reset();
+    state.structureClipboard.clear();
+    (void)state.clearSequencerHistory();
+    state.sequencer.reset();
+    state.sequencerTracks.reset();
+    state.trackNavigation.reset();
+    // A fresh fixture already owns T1; this synchronization can be a no-op.
+    (void)state.setSharedTrackState(0x0001, 0);
+    state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
+    // A Track payload is bound only after the picker atomically creates it.
+    // The workflow itself authors lane-local timing later, so this fixture
+    // intentionally leaves the editor unbound.
+    return true;
+}
+
 bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     using namespace core::state;
     using namespace core::state::sequencer;
@@ -1745,6 +1767,10 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
+    if (std::strcmp(scenario, "drum-sequencer") == 0) {
+        return prepareDrumSequencerScenario(state);
+    }
+
     if (std::strcmp(scenario, "seq-track-paste-single") == 0) {
         return prepareSequencerTrackPasteCaptureScenario(state);
     }
@@ -1878,6 +1904,20 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
+    if (std::strcmp(
+            scenario,
+            "seq-history-unavailable-feedback"
+        ) == 0) {
+        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.overlays.hideAll();
+        state.sequencer.historyFeedback.showRejection(
+            core::state::sequencer::
+                SequencerHistoryRejectionReason::HistoryUnavailable,
+            SDL_GetTicks()
+        );
+        return true;
+    }
+
     if (std::strcmp(scenario, "seq-step-preset-browse") == 0) {
         prepareStepPresetCaptureBase(state);
         return true;
@@ -1890,7 +1930,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         picker.setEntry(1, "mono-drift", "Mono Drift", true);
         picker.setEntry(2, "odd-pulse", "Odd Pulse", true);
         picker.setEntry(3, "rain-grid", "Rain Grid", true);
-        picker.setEntry(4, "soft-ratchet", "Soft Ratchet", true);
+        picker.setEntry(4, "soft-micro", "Soft Micro", true);
         picker.setEntry(5, "wide-cycle", "Wide Cycle", true);
         picker.hasPreviousPage.set(true);
         picker.hasNextPage.set(false);
@@ -1910,7 +1950,10 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
-    if (std::strcmp(scenario, "seq-step-preset-detail-mixed") == 0) {
+    if (std::strcmp(
+            scenario,
+            "seq-step-preset-detail-scale-relative"
+        ) == 0) {
         prepareStepPresetCaptureBase(state);
         state.sequencer.presetLibrary.detailVisible.set(true);
         state.sequencer.presetLibrary.detailFocus.set(3);

@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "state/StructureNavigationState.hpp"
+#include "state/interaction/ControllerInteractionContract.hpp"
 
 namespace core::state::macro {
 
@@ -62,5 +63,9 @@ public:
     static MacroInteractionAction bottomRightLongPress(const MacroInteractionContext& context);
     static MacroActionStripPolicy actionStrip(const MacroInteractionContext& context);
 };
+
+core::state::interaction::ControllerIntent controllerIntentFor(
+    MacroInteractionAction action
+);
 
 }  // namespace core::state::macro

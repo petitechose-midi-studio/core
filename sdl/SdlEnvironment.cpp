@@ -170,9 +170,8 @@ void SdlEnvironment::displayFlushStartCb(lv_event_t* event) {
     auto* self = static_cast<SdlEnvironment*>(lv_event_get_user_data(event));
     if (!self || !self->bridge_ || !self->bridge_->getDisplay()) return;
 
-    // FLUSH_START is sent synchronously before LVGL rotates a double buffer,
-    // so buf_active is the complete frame being presented, not the next draw
-    // buffer. Drawing and capture both run on this thread.
+    // FLUSH_START is sent synchronously before the single SDL framebuffer is
+    // presented. Drawing and capture both run on this thread.
     self->lastFlushedBuffer_ =
         lv_display_get_buf_active(self->bridge_->getDisplay());
 }

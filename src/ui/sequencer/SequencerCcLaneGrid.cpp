@@ -119,7 +119,7 @@ FLASHMEM void drawLabel(
     lv_draw_label_dsc_t dsc;
     lv_draw_label_dsc_init(&dsc);
     dsc.text = text;
-    dsc.font = fonts.inter_12_medium ? fonts.inter_12_medium : LV_FONT_DEFAULT;
+    dsc.font = fonts.meta_label() ? fonts.meta_label() : LV_FONT_DEFAULT;
     dsc.color = lv_color_hex(color);
     dsc.opa = opacity;
     dsc.align = alignment;
@@ -190,7 +190,7 @@ FLASHMEM void SequencerCcLaneGrid::createUi(lv_obj_t* parent) {
 
     title_ = createLabel(
         root_,
-        fonts.inter_14_semibold,
+        fonts.context_title(),
         theme::color::TEXT_PRIMARY,
         LV_TEXT_ALIGN_LEFT
     );
@@ -199,7 +199,7 @@ FLASHMEM void SequencerCcLaneGrid::createUi(lv_obj_t* parent) {
 
     meta_ = createLabel(
         root_,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY,
         LV_TEXT_ALIGN_RIGHT
     );
@@ -226,7 +226,7 @@ FLASHMEM void SequencerCcLaneGrid::createUi(lv_obj_t* parent) {
 
     hint_ = createLabel(
         root_,
-        fonts.inter_12_medium,
+        fonts.meta_label(),
         theme::color::TEXT_SECONDARY,
         LV_TEXT_ALIGN_CENTER
     );
@@ -281,7 +281,15 @@ FLASHMEM void SequencerCcLaneGrid::drawTransitionChoice(
 ) {
     using Transition = core::state::sequencer::SequencerCcLaneTransition;
     if (selected) {
-        drawRect(layer, area, accentColor_, LV_OPA_10, 1, LV_OPA_COVER, 2);
+        drawRect(
+            layer,
+            area,
+            theme::color::FOCUS_EDIT,
+            LV_OPA_10,
+            1,
+            LV_OPA_COVER,
+            2
+        );
     }
 
     constexpr lv_coord_t curveWidth = 46;
@@ -506,7 +514,7 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
             drawRect(
                 layer,
                 cellArea,
-                accentColor_,
+                theme::color::FOCUS_EDIT,
                 LV_OPA_10,
                 1,
                 LV_OPA_COVER,
@@ -523,7 +531,7 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
             drawRect(
                 layer,
                 playheadArea,
-                theme::color::PLAY_ACTIVE,
+                theme::color::LIVE_TIME,
                 LV_OPA_COVER
             );
         }
@@ -632,24 +640,54 @@ FLASHMEM void SequencerCcLaneGrid::render(
         lv_label_set_text_static(meta_, metaText_.data());
     }
 
+    const SequencerCcLaneGridCell* focusedCell = nullptr;
+    for (const auto& cell : props.cells) {
+        if (cell.visible && cell.focused) {
+            focusedCell = &cell;
+            break;
+        }
+    }
+
     char contextualHint[64] = {};
     const char* hint = props.hint;
     if (props.contextualHint) {
+        const uint8_t value = focusedCell ? focusedCell->value : 0U;
         if (props.hintSourceStep == props.hintTargetStep) {
             std::snprintf(
                 contextualHint,
                 sizeof(contextualHint),
-                "Step %u · add another point for a curve",
-                static_cast<unsigned>(props.hintSourceStep) + 1U
+                "S%u · %u · Add curve point",
+                static_cast<unsigned>(props.hintSourceStep) + 1U,
+                static_cast<unsigned>(value)
             );
         } else {
             std::snprintf(
                 contextualHint,
                 sizeof(contextualHint),
-                "Step %u · %s to Step %u",
+                "S%u · %u · %s > S%u",
                 static_cast<unsigned>(props.hintSourceStep) + 1U,
+                static_cast<unsigned>(value),
                 transitionName(props.hintTransition),
                 static_cast<unsigned>(props.hintTargetStep) + 1U
+            );
+        }
+        hint = contextualHint;
+    } else if ((!hint || hint[0] == '\0') && focusedCell) {
+        if (focusedCell->authored) {
+            std::snprintf(
+                contextualHint,
+                sizeof(contextualHint),
+                "S%u · %u · %s",
+                static_cast<unsigned>(focusedCell->step) + 1U,
+                static_cast<unsigned>(focusedCell->value),
+                transitionName(focusedCell->transition)
+            );
+        } else {
+            std::snprintf(
+                contextualHint,
+                sizeof(contextualHint),
+                "S%u · Empty",
+                static_cast<unsigned>(focusedCell->step) + 1U
             );
         }
         hint = contextualHint;

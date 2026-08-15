@@ -152,6 +152,12 @@ FLASHMEM core::app::ExtmemUniquePtr<
             )) {
             return nullptr;
         }
+        if (tracks.isDrumTrack(track)) {
+            entry.drumTrack = core::app::makeExtmemUnique<
+                core::state::sequencer::DrumTrackState
+            >(tracks.drumTrack(track));
+            if (!entry.drumTrack) return nullptr;
+        }
     }
 
     return clipboard->count == 0U

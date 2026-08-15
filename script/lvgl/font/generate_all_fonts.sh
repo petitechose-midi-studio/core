@@ -24,7 +24,7 @@ PROJECT_ROOT="$(find_project_root)"
 FONT_SOURCE_DIR="$PROJECT_ROOT/asset/font"
 FONT_OUTPUT_DIR="$PROJECT_ROOT/../ui/src/ms/ui/font/data"
 
-CHAR_RANGE="0x20-0x7F,0x80-0xFF"  # ASCII + Latin1
+CHAR_RANGE="0x20-0x7F,0x80-0xFF,0x2026"  # ASCII + Latin1 + typographic ellipsis
 BPP=4
 
 # Platform compatibility header (for cross-platform builds)
@@ -52,7 +52,7 @@ FONTS=(
 
 # --- Main ---
 echo -e "\n${BLUE}═══ Batch Font Generator ═══${NC}"
-echo -e "${DIM}Range: ASCII + Latin1 | BPP: $BPP${NC}\n"
+echo -e "${DIM}Range: ASCII + Latin1 + ellipsis | BPP: $BPP${NC}\n"
 
 # Check dependencies
 command -v lv_font_conv &>/dev/null || { echo "Error: lv_font_conv not found. Run: npm i -g lv_font_conv"; exit 1; }

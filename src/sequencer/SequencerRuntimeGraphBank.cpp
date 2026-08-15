@@ -10,7 +10,9 @@
 
 namespace core::sequencer {
 
-bool SequencerRuntimeGraphBank::prepare(
+// Graph preparation allocates/copies a future generation from the main loop.
+// Realtime playback only dereferences the already-published graph pointers.
+FLASHMEM bool SequencerRuntimeGraphBank::prepare(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::sequencer::SequencerTrackBankState& trackBank
 ) {
@@ -107,7 +109,7 @@ FLASHMEM void SequencerRuntimeGraphBank::finishPublication_() {
     prepared_mask_ = 0;
 }
 
-void SequencerRuntimeGraphBank::discardPrepared_() {
+FLASHMEM void SequencerRuntimeGraphBank::discardPrepared_() {
     if (prepared_mask_ == 0) return;
     for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
         const uint16_t trackBit = static_cast<uint16_t>(1U << track);

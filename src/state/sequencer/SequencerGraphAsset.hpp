@@ -91,9 +91,35 @@ struct SequencerStepGraphPreset {
     void reset();
 };
 
+/**
+ * Flat values owned by a root Step outside SequencerPatternState.
+ *
+ * Drum lanes keep their note identity and per-hit values in DrumPatternState,
+ * while their optional Micro/Cycle graph still lives in the shared Pattern
+ * graph. This value object lets the one Step-preset format capture that split
+ * ownership without staging fake Pattern data or introducing a Drum format.
+ */
+struct SequencerStepGraphRootValues {
+    bool enabled = false;
+    uint8_t note = SequencerState::DEFAULT_NOTE;
+    uint8_t velocity = SequencerState::DEFAULT_VELOCITY;
+    uint16_t gate = SequencerState::DEFAULT_GATE_PERCENT;
+    int8_t nudge = 0;
+    uint8_t probability = SequencerState::DEFAULT_PROBABILITY;
+};
+
 bool captureStepGraphPreset(
     const SequencerState& sequencer,
     uint8_t step,
+    oc::note::sequencer::StepSequencerScaleSettings sourceScale,
+    SequencerStepGraphPreset& out,
+    SequencerGraphAssetReport* report = nullptr
+);
+
+bool captureRootStepGraphPreset(
+    const SequencerPatternState& pattern,
+    SequencerGraphNodeId sourceNodeId,
+    const SequencerStepGraphRootValues& rootValues,
     oc::note::sequencer::StepSequencerScaleSettings sourceScale,
     SequencerStepGraphPreset& out,
     SequencerGraphAssetReport* report = nullptr
@@ -104,6 +130,25 @@ bool applyStepGraphPreset(
     uint8_t step,
     const SequencerStepGraphPreset& preset,
     SequencerGraphAssetReport* report = nullptr
+);
+
+/** Copy only the graph payload of a preset into an explicit shared node. */
+bool applyStepGraphPresetGraphToNode(
+    SequencerPatternState& pattern,
+    SequencerGraphNodeId targetNodeId,
+    const SequencerStepGraphPreset& preset,
+    SequencerGraphAssetReport* report = nullptr
+);
+
+/**
+ * Project a shared Step preset onto a destination whose pitch is externally
+ * owned (a Drum lane). All pitch/chord semantics are removed recursively;
+ * timing, expression, MicroSequence and Cycle content are retained.
+ */
+bool projectStepGraphPresetToDestinationPitch(
+    SequencerStepGraphPreset& preset,
+    uint8_t destinationNote,
+    bool* changed = nullptr
 );
 
 bool validStepGraphPresetTechnicalId(const char* technicalId);

@@ -54,6 +54,18 @@ FLASHMEM uint8_t rowForAction(
     }
 }
 
+FLASHMEM bool drumStepContext(
+    const core::state::sequencer::SequencerState& sequencer
+) {
+    return sequencer.drumSequencer.active();
+}
+
+FLASHMEM Action drumContentAction(Action action) {
+    return action == Action::CYCLE_STATES
+        ? Action::CYCLE_STATES
+        : Action::MICRO_SEQUENCE;
+}
+
 }  // namespace
 
 FLASHMEM SequencerStepContentHandler::SequencerStepContentHandler(
@@ -102,6 +114,13 @@ FLASHMEM void SequencerStepContentHandler::setupBindings() {
 }
 
 FLASHMEM void SequencerStepContentHandler::open() {
+    if (drumStepContext(sequencer_)) {
+        sequencer_.stepContentSelector.focusedAction.set(
+            drumContentAction(
+                sequencer_.stepContentSelector.focusedAction.get()
+            )
+        );
+    }
     sequencer_.stepContentSelector.selecting.set(true);
 }
 
@@ -111,6 +130,14 @@ FLASHMEM void SequencerStepContentHandler::cancel() {
 
 FLASHMEM void SequencerStepContentHandler::navigate(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
+    if (drumStepContext(sequencer_)) {
+        const bool cycle = sequencer_.stepContentSelector.focusedAction.get() ==
+            Action::CYCLE_STATES;
+        sequencer_.stepContentSelector.focusedAction.set(
+            cycle ? Action::MICRO_SEQUENCE : Action::CYCLE_STATES
+        );
+        return;
+    }
     const int current = static_cast<int>(
         sequencer_.stepContentSelector.focusedAction.get()
     );
@@ -123,7 +150,11 @@ FLASHMEM void SequencerStepContentHandler::navigate(float delta) {
 }
 
 FLASHMEM void SequencerStepContentHandler::apply() {
-    const auto action = sequencer_.stepContentSelector.focusedAction.get();
+    const auto action = drumStepContext(sequencer_)
+        ? drumContentAction(
+              sequencer_.stepContentSelector.focusedAction.get()
+          )
+        : sequencer_.stepContentSelector.focusedAction.get();
     sequencer_.stepContentSelector.selecting.set(false);
     if (!step_edit_handler_.openFocusedStepContentAtRow(
             rowForAction(action)

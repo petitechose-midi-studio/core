@@ -82,7 +82,6 @@ struct ViewSwitcherHarness {
                    },
                   VIEW_SELECTOR_SCOPE) {
         overlays.registerCleanup(core::ui::OverlayType::VIEW_SELECTOR, VIEW_SELECTOR_SCOPE);
-        overlays.registerCleanup(core::ui::OverlayType::SEQUENCER_SETTINGS, VIEW_SELECTOR_SCOPE);
         overlays.setActiveViewProvider([this]() {
             switch (state.activeView.get()) {
                 case core::ui::ViewType::SEQUENCER:

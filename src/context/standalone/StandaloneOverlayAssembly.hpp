@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <functional>
 #include <memory>
 
@@ -8,10 +7,9 @@
 #include <lvgl.h>
 
 #include <oc/type/Ids.hpp>
-#include <ms/ui/widget/MenuListView.hpp>
+#include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
 #include "app/OverlayTypes.hpp"
-#include "state/ViewSelectorItems.hpp"
 
 namespace core::state {
 struct CoreState;
@@ -65,9 +63,7 @@ private:
     // Must outlive the controller callback and every registered overlay root.
     core::app::ExtmemUniquePtr<OverlayPresentationRegistry> presentation_registry_;
     core::app::ExtmemUniquePtr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
-    core::app::ExtmemUniquePtr<ms::ui::MenuListView> view_selector_;
-    std::array<ms::ui::MenuRow, core::state::VIEW_SELECTOR_ITEM_COUNT> view_selector_rows_{};
-    uint32_t view_selector_history_revision_ = 0;
+    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> view_selector_;
     oc::type::ScopeID view_selector_scope_ = 0;
     bool valid_ = false;
 };

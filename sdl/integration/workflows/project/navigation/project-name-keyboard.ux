@@ -15,50 +15,52 @@
 580 button LEFT_TOP up
 720 capture screen project_overview
 
-# Open Overview > Save As.
-820 encoder NAV 1
-900 encoder NAV 1
-980 encoder NAV 1
-1120 capture screen save_as_focused
-1220 tap NAV 60
-1460 capture screen keyboard_initial
+# Open Storage > Save As.
+820 button LEFT_CENTER down
+1420 encoder NAV -0.01
+1560 capture screen project_storage_tab
+1640 button LEFT_CENTER up
+1740 encoder NAV 0.01
+1880 capture screen save_as_focused
+1980 tap NAV 60
+2220 capture screen keyboard_initial
 
 # Hold LEFT_CENTER as Shift and insert an uppercase default key. Space is a
 # normal SPC grid cell; physical BOTTOM_CENTER remains transport in every view.
-1560 button LEFT_CENTER down
-1700 capture screen keyboard_shift_active
-1800 tap NAV 60
-2020 capture screen keyboard_uppercase_q_inserted
-2120 button LEFT_CENTER up
-2220 encoder NAV -11
-2260 tap NAV 60
-2480 capture screen keyboard_space_inserted
+2320 button LEFT_CENTER down
+2460 capture screen keyboard_shift_active
+2560 tap NAV 60
+2780 capture screen keyboard_uppercase_q_inserted
+2880 button LEFT_CENTER up
+2980 encoder NAV -0.11
+3020 tap NAV 60
+3240 capture screen keyboard_space_inserted
 
 # Return to q, then move horizontally across the letter row.
-2580 encoder NAV 11
-2660 encoder NAV 1
-2740 encoder NAV 1
-2820 encoder NAV 1
-2900 encoder NAV 1
-3040 capture screen keyboard_letter_focus
+3340 encoder NAV 0.11
+3420 encoder NAV 0.01
+3500 encoder NAV 0.01
+3580 encoder NAV 0.01
+3660 encoder NAV 0.01
+3800 capture screen keyboard_letter_focus
 
 # The action keys are physical: bottom-left backspaces, left-bottom clears,
 # left-top cancels, bottom-right validates.
-3140 tap BOTTOM_LEFT 60
-3380 capture screen keyboard_backspace_action
-3480 tap NAV 60
-3720 capture screen keyboard_q_reinserted
-3820 tap LEFT_BOTTOM 60
-4060 capture screen keyboard_clear_action
-4160 tap NAV 60
-4400 capture screen keyboard_q_before_cancel
-4500 tap LEFT_TOP 60
-4860 capture screen keyboard_cancelled
+3900 tap BOTTOM_LEFT 60
+4140 capture screen keyboard_backspace_action
+4240 tap NAV 60
+4480 capture screen keyboard_q_reinserted
+4580 tap LEFT_BOTTOM 60
+4820 capture screen keyboard_clear_action
+4920 tap NAV 60
+5160 capture screen keyboard_q_before_cancel
+5260 tap LEFT_TOP 60
+5620 capture screen keyboard_cancelled
 
 # Re-open Save As and validate through the bottom-right action.
-4960 tap NAV 60
-5200 capture screen keyboard_reopened
-5300 tap NAV 60
-5540 capture screen keyboard_q_before_validate
-5640 tap BOTTOM_RIGHT 60
-6080 capture screen keyboard_validated
+5720 tap NAV 60
+5960 capture screen keyboard_reopened
+6060 tap NAV 60
+6300 capture screen keyboard_q_before_validate
+6400 tap BOTTOM_RIGHT 60
+6840 capture screen keyboard_validated

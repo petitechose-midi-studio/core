@@ -8,6 +8,8 @@
 
 #include "state/ViewSelectorItems.hpp"
 #include "state/sequencer/SequencerScaleCatalog.hpp"
+#include "ui/interaction/SelectorPresentationPolicy.hpp"
+#include "ui/theme/StandaloneListVisuals.hpp"
 
 namespace core::context::standalone {
 
@@ -117,6 +119,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
         .dataRevision = 1U |
             (static_cast<uint32_t>(state_refs_.sequencer.pattern.patternScaleRevision.get()) << 8) |
             (static_cast<uint32_t>(state_refs_.trackBank.projectScaleRevisionSignal().get()) << 16),
+        .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,
     });
 }
 
@@ -155,16 +158,16 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderSelector() {
             break;
     }
 
-    selector_overlay_.render({
-        .title = title,
-        .meta = meta,
-        .items = items,
-        .itemCount = itemCount,
-        .selectedIndex = state_refs_.settings.selector.selectedIndex.get(),
-        .showIndexColumn = false,
-        .visible = true,
-        .dataRevision = 1U | (static_cast<uint32_t>(row) << 24),
-    });
+    selector_overlay_.render(
+        core::ui::interaction::decisionSelectorProps(
+            title,
+            meta,
+            items,
+            itemCount,
+            state_refs_.settings.selector.selectedIndex.get(),
+            1U | (static_cast<uint32_t>(row) << 24)
+        )
+    );
 }
 
 }  // namespace core::context::standalone

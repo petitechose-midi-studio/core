@@ -4,6 +4,7 @@
 
 #include "state/StructureNavigationState.hpp"
 #include "state/StructureSelectionInteractionPolicy.hpp"
+#include "state/interaction/ControllerInteractionContract.hpp"
 
 namespace core::state::sequencer {
 
@@ -47,6 +48,7 @@ enum class SequencerInteractionAction : uint8_t {
     EDIT_STEP_LOCAL_RANDOM,
     EDIT_STEP_EDITOR_ROW,
     RETARGET_STEP_EDITOR,
+    RETARGET_STEP_EDITOR_LANE,
     OPEN_TRACK_EDITOR,
     OPEN_PATTERN_EDITOR,
     OPEN_STEP_EDITOR,
@@ -93,12 +95,15 @@ struct SequencerInteractionContext {
     bool trackSelectionActive = false;
     bool pageSelectionActive = false;
     bool stepSelectionActive = false;
+    bool drumLaneSelectionActive = false;
     bool selectionPlacementActive = false;
     bool selectionPasteAvailable = false;
     bool patternQuickControlsActive = false;
     bool propertySelectorActive = false;
     bool stepContentSelectorActive = false;
     bool stepEditorVisible = false;
+    bool stepEditorDrumRoot = false;
+    bool stepEditorLaneRetargetAvailable = false;
     bool compatibleClipboardAvailable = false;
     bool currentStructureCanClear = true;
     bool currentStructureCanRemove = true;
@@ -137,5 +142,9 @@ bool sequencerInteractionTransientActive(const SequencerInteractionContext& cont
 bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractionContext& context);
 
 SequencerInteractionPolicy buildSequencerInteractionPolicy(const SequencerInteractionContext& context);
+
+core::state::interaction::ControllerIntent controllerIntentFor(
+    SequencerInteractionAction action
+);
 
 }  // namespace core::state::sequencer

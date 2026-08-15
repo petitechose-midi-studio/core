@@ -7,7 +7,7 @@ namespace core::context::standalone {
 
 FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
                                                     core::handler::DeviceSettingsDomainServices deviceSettings,
-                                                    core::handler::SequencerSettingsDomainServices sequencerSettings,
+                                                    core::handler::ProjectScaleSettingsDomainServices scaleSettings,
                                                     core::handler::MacroEditDomainServices macroEditServices,
                                                     oc::api::EncoderAPI& encoders,
                                                     oc::api::ButtonAPI& buttons,
@@ -18,7 +18,11 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
 #endif
 )
 #if defined(MS_UX_RECORDER)
-    : modulators_ux_surface_(
+    : navigation_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.navigation
+      )
+    , modulators_ux_surface_(
           stateRefs.activeView,
           stateRefs.navigation,
           stateRefs.pages,
@@ -29,11 +33,18 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
 #endif
 {
 #if defined(MS_UX_RECORDER)
-    if (uxRegistry &&
-        !uxRegistry->add(
-            modulators_ux_surface_,
-            core::context::standalone::ux::priority::PROJECT_MODULATORS
-        )) return;
+    if (uxRegistry) {
+        if (!uxRegistry->add(
+                navigation_ux_surface_,
+                core::context::standalone::ux::priority::PROJECT_NAVIGATION
+            ) ||
+            !uxRegistry->add(
+                modulators_ux_surface_,
+                core::context::standalone::ux::priority::PROJECT_MODULATORS
+            )) {
+            return;
+        }
+    }
 #endif
     if (!projectViewElement) return;
     const auto viewScope = oc::ui::lvgl::scopeID(projectViewElement);
@@ -58,7 +69,7 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
             stateRefs.lifecycle,
         },
         deviceSettings,
-        sequencerSettings,
+        scaleSettings,
         macroEditServices,
         encoders,
         buttons,

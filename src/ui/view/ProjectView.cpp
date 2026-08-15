@@ -6,6 +6,7 @@
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/theme/StandaloneListVisuals.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
 
@@ -17,8 +18,7 @@ namespace style = oc::ui::lvgl::style;
 namespace theme = standalone::theme;
 
 constexpr lv_coord_t TAB_STRIP_HEIGHT = 24;
-constexpr lv_coord_t TAB_ACTIVE_WIDTH = 92;
-constexpr lv_coord_t TAB_INACTIVE_WIDTH = 30;
+constexpr lv_coord_t TAB_WIDTH = 34;
 constexpr uint32_t RENDER_TIMER_PERIOD_MS =
     (Config::Timing::RETAINED_VIEW_HZ > 1000)
         ? 1
@@ -41,8 +41,24 @@ FLASHMEM ms::ui::MenuRowKind toMenuRowKind(core::state::project::ProjectMenuRowK
     }
 }
 
+FLASHMEM ms::ui::MenuRowTone toMenuRowTone(
+    core::state::project::ProjectMenuRowTone tone
+) {
+    switch (tone) {
+        case core::state::project::ProjectMenuRowTone::Positive:
+            return ms::ui::MenuRowTone::Positive;
+        case core::state::project::ProjectMenuRowTone::Warning:
+            return ms::ui::MenuRowTone::Warning;
+        case core::state::project::ProjectMenuRowTone::Destructive:
+            return ms::ui::MenuRowTone::Destructive;
+        case core::state::project::ProjectMenuRowTone::Neutral:
+        default:
+            return ms::ui::MenuRowTone::Neutral;
+    }
+}
+
 FLASHMEM core::state::project::ProjectTab tabAt(uint8_t index) {
-    return static_cast<core::state::project::ProjectTab>(index);
+    return core::state::project::projectRootTabAt(index);
 }
 
 FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) {
@@ -61,29 +77,9 @@ FLASHMEM const char* tabIcon(core::state::project::ProjectTab tab) {
             return standalone::icons::STORAGE;
         case core::state::project::ProjectTab::ROUTING:
             return standalone::icons::ROUTING;
-        case core::state::project::ProjectTab::MODULATORS:
-            return standalone::icons::MACRO_MODULATION;
         case core::state::project::ProjectTab::OVERVIEW:
         default:
             return standalone::icons::HOME;
-    }
-}
-
-FLASHMEM uint32_t tabAccentColor(core::state::project::ProjectTab tab) {
-    switch (tab) {
-        case core::state::project::ProjectTab::MUSIC:
-            return theme::color::MACRO_5;
-        case core::state::project::ProjectTab::TRANSPORT:
-            return theme::color::MACRO_4;
-        case core::state::project::ProjectTab::STORAGE:
-            return theme::color::MACRO_2;
-        case core::state::project::ProjectTab::ROUTING:
-            return theme::color::MACRO_6;
-        case core::state::project::ProjectTab::MODULATORS:
-            return theme::color::MACRO_MODULATION;
-        case core::state::project::ProjectTab::OVERVIEW:
-        default:
-            return theme::color::TEXT_SECONDARY;
     }
 }
 
@@ -177,6 +173,7 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
         if (!tab) return;
         tab_widgets_[i].container = tab;
         style::apply(tab).transparent().noBorder().pad(0).noScroll();
+        lv_obj_set_width(tab, TAB_WIDTH);
         lv_obj_set_height(tab, 18);
         lv_obj_set_style_radius(tab, 2, 0);
         lv_obj_set_layout(tab, LV_LAYOUT_FLEX);
@@ -194,13 +191,6 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
         standalone::icons::set(icon, tabIcon(tabAt(i)), standalone::icons::Size::M);
         lv_label_set_long_mode(icon, LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(icon, LV_TEXT_ALIGN_CENTER, 0);
-
-        auto* label = lv_label_create(tab);
-        if (!label) return;
-        tab_widgets_[i].label = label;
-        lv_obj_set_style_text_font(label, fonts.inter_12_medium, 0);
-        lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     }
 
     frame_->createInteractionRow();
@@ -284,9 +274,10 @@ void ProjectView::requestModulatorCaptureRender() {
 void ProjectView::render() {
     if (!menu_ || !RetainedViewRenderPolicy::visible(container_)) return;
 
-    renderTabs();
-
     const auto node = state_refs_.navigation.currentNode.get();
+    const bool keyboardActive = isProjectNameEditorNode(node);
+    renderTabs(!keyboardActive);
+
     const bool modulatorPage =
         node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
@@ -311,7 +302,6 @@ void ProjectView::render() {
         modulator_workspace_->render({.visible = false});
     }
 
-    const bool keyboardActive = isProjectNameEditorNode(state_refs_.navigation.currentNode.get());
     renderKeyboardActionStrips(keyboardActive);
 
     if (keyboardActive) {
@@ -377,6 +367,7 @@ void ProjectView::render() {
             .label = source.label,
             .value = source.displayValue(),
             .kind = toMenuRowKind(source.kind),
+            .tone = toMenuRowTone(source.tone),
             .enabled = source.enabled,
         };
     }
@@ -390,6 +381,7 @@ void ProjectView::render() {
         .rowCount = page.rowCount,
         .selectedIndex = page.selectedIndex,
         .dataRevision = page.dataRevision,
+        .visualTokens = &theme::CONTROLLER_LIST_VISUALS,
     });
 }
 
@@ -398,7 +390,7 @@ void ProjectView::render() {
 void ProjectView::renderKeyboardActionStrips(bool visible) {
     if (left_action_strip_) {
         left_action_strip_->render(
-            core::ui::project::ProjectNameKeyboardView::
+            core::ui::interaction::TextKeyboardView::
                 leftActionStripProps(
                     visible,
                     state_refs_.navigation.projectNameShiftActive
@@ -407,7 +399,7 @@ void ProjectView::renderKeyboardActionStrips(bool visible) {
     }
     if (bottom_action_strip_) {
         bottom_action_strip_->render(
-            core::ui::project::ProjectNameKeyboardView::
+            core::ui::interaction::TextKeyboardView::
                 bottomActionStripProps(
                     visible,
                     state_refs_.statusBar.playing.get()
@@ -416,26 +408,35 @@ void ProjectView::renderKeyboardActionStrips(bool visible) {
     }
 }
 
-void ProjectView::renderTabs() {
+void ProjectView::renderTabs(bool visible) {
     const auto activeTab = state_refs_.navigation.activeTab.get();
     const bool holdActive = state_refs_.navigation.physicalHoldActive.get();
+    if (!visible ||
+        activeTab == core::state::project::ProjectTab::MODULATORS) {
+        lv_obj_add_flag(tab_strip_, LV_OBJ_FLAG_HIDDEN);
+        // A following editor close must repaint even when the active tab and
+        // hold state did not change while the root chrome was hidden.
+        tabs_rendered_ = false;
+        return;
+    }
+
     if (tabs_rendered_ &&
         rendered_active_tab_ == activeTab &&
         rendered_hold_active_ == holdActive) {
         return;
     }
 
+    lv_obj_clear_flag(tab_strip_, LV_OBJ_FLAG_HIDDEN);
+
     for (uint8_t i = 0; i < tab_widgets_.size(); ++i) {
         auto& widgets = tab_widgets_[i];
-        if (!widgets.container || !widgets.icon || !widgets.label) continue;
+        if (!widgets.container || !widgets.icon) continue;
 
         const auto tab = tabAt(i);
         const bool active = tab == activeTab;
-        const uint32_t accent = tabAccentColor(tab);
 
         if (!widgets.contentInitialized) {
             standalone::icons::set(widgets.icon, tabIcon(tab), standalone::icons::Size::M);
-            lv_label_set_text(widgets.label, core::state::project::projectTabLabel(tab));
             widgets.contentInitialized = true;
         }
 
@@ -445,32 +446,42 @@ void ProjectView::renderTabs() {
             continue;
         }
 
-        lv_obj_set_width(widgets.container, active ? TAB_ACTIVE_WIDTH : TAB_INACTIVE_WIDTH);
-        if (!widgets.styleInitialized || widgets.active != active) {
-            lv_obj_set_style_bg_color(widgets.container, lv_color_hex(accent), 0);
-        }
+        const bool tabFocused = active && holdActive;
+        const uint32_t activeColor = tabFocused
+            ? theme::color::FOCUS_EDIT
+            : theme::color::CONTENT_ACTIVE;
+        lv_obj_set_style_bg_color(
+            widgets.container,
+            lv_color_hex(theme::color::FOCUS_EDIT),
+            0
+        );
         lv_obj_set_style_bg_opa(
             widgets.container,
-            active ? (holdActive ? LV_OPA_30 : static_cast<lv_opa_t>(38)) : LV_OPA_TRANSP,
+            tabFocused ? LV_OPA_20 : LV_OPA_TRANSP,
+            0
+        );
+        lv_obj_set_style_border_width(widgets.container, active ? 1 : 0, 0);
+        lv_obj_set_style_border_side(widgets.container, LV_BORDER_SIDE_BOTTOM, 0);
+        lv_obj_set_style_border_color(
+            widgets.container,
+            lv_color_hex(activeColor),
+            0
+        );
+        lv_obj_set_style_border_opa(
+            widgets.container,
+            active ? LV_OPA_COVER : LV_OPA_TRANSP,
             0
         );
         lv_obj_set_style_text_color(
             widgets.icon,
-            lv_color_hex(active ? theme::color::TEXT_PRIMARY : accent),
+            lv_color_hex(active ? activeColor : theme::color::SECONDARY),
             0
         );
-        lv_obj_set_style_text_opa(widgets.icon, active ? LV_OPA_COVER : (holdActive ? LV_OPA_70 : LV_OPA_40), 0);
-        lv_obj_set_style_text_color(
-            widgets.label,
-            lv_color_hex(active ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE),
+        lv_obj_set_style_text_opa(
+            widgets.icon,
+            active ? LV_OPA_COVER : LV_OPA_60,
             0
         );
-        lv_obj_set_style_text_opa(widgets.label, active ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        if (active) {
-            lv_obj_clear_flag(widgets.label, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(widgets.label, LV_OBJ_FLAG_HIDDEN);
-        }
         widgets.active = active;
         widgets.holdActive = holdActive;
         widgets.styleInitialized = true;

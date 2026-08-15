@@ -46,10 +46,15 @@ FLASHMEM ProjectTrackEditorViewModel buildProjectTrackEditorViewModel(
         track::PROJECT_TRACK_DELAY_MIN_MS,
         track::PROJECT_TRACK_DELAY_MAX_MS
     ));
+    out.drum = editor.currentKind ==
+        track::ProjectTrackEditorKind::DRUM;
+    out.draftDrum = editor.draftKind ==
+        track::ProjectTrackEditorKind::DRUM;
+    out.typeChangePending = editor.currentKind != editor.draftKind;
     std::snprintf(
         out.title.data(),
         out.title.size(),
-        "TRACK %u",
+        "Track %u",
         static_cast<unsigned>(out.trackNumber)
     );
     return out;

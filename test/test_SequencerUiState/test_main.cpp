@@ -110,6 +110,24 @@ void test_context_selector_state_is_bounded_and_resettable() {
     assert(state.previewFocus == core::state::StructureNavigationFocus::PAGE);
 }
 
+void test_drum_unbind_releases_track_creation_input_scope() {
+    using State = core::state::sequencer::DrumSequencerState;
+    State state;
+
+    state.openTypePicker(1U);
+    assert(state.active());
+    assert(state.typePickerVisible());
+    assert(state.targetTrack == 1U);
+
+    state.unbindTrack();
+
+    assert(!state.active());
+    assert(!state.pickerVisible());
+    assert(state.targetTrack == State::INVALID_TRACK);
+    assert(state.drumTrack == nullptr);
+    assert(state.drumTrackBank == nullptr);
+}
+
 void test_chord_sub_editor_has_one_atomic_observation_surface() {
     using Editor =
         core::state::sequencer::SequencerChordEditorState;
@@ -164,9 +182,9 @@ void assertHistoryRejection(const core::state::sequencer::SequencerHistoryFeedba
                             uint32_t expectedHideAtMs) {
     assert(state.visible.get());
     assert(state.revision.get() == expectedRevision);
-    assert(std::strcmp(state.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(state.line1.data(), "NO CHANGE") == 0);
     assert(std::strcmp(state.line2.data(), expectedDetail) == 0);
-    assert(std::strcmp(state.line3.data(), "State unchanged") == 0);
+    assert(std::strcmp(state.line3.data(), "") == 0);
     assert(state.hideAtMs == expectedHideAtMs);
 }
 
@@ -337,6 +355,7 @@ int main() {
     test_pattern_quick_controls_reset_clears_transient_state();
     test_pattern_quick_controls_feedback_shows_and_expires();
     test_context_selector_state_is_bounded_and_resettable();
+    test_drum_unbind_releases_track_creation_input_scope();
     test_chord_sub_editor_has_one_atomic_observation_surface();
     test_history_feedback_shows_and_expires();
     test_history_rejection_feedback_is_typed_exact_and_expires();

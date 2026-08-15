@@ -20,7 +20,6 @@ namespace icons = ::standalone::icons;
 using Field = seq::SequencerPatternEditorField;
 using Layer = seq::SequencerPatternEditorLayer;
 using Mode = seq::SequencerPatternEditorNavigationMode;
-using RandomizeField = seq::SequencerPatternRandomizeField;
 using RandomizeProperty = seq::SequencerPatternRandomizeProperty;
 
 constexpr std::array<const char*, 7> FIELD_ICONS = {
@@ -35,12 +34,19 @@ constexpr std::array<const char*, 7> FIELD_ICONS = {
 
 constexpr std::array<uint32_t, 7> FIELD_COLORS = {
     theme::color::STEP_LENGTH,
-    theme::color::STEP_OFFSET,
+    theme::color::STEP_DIVISION,
     theme::color::STEP_SWING,
     theme::color::STEP_PATTERN_NUDGE,
     theme::color::STEP_NUDGE,
-    theme::color::PLAY_ACTIVE,
-    theme::color::PLAY_ACTIVE,
+    theme::color::STEP_LENGTH,
+    theme::color::STEP_LENGTH,
+};
+
+constexpr std::array<uint32_t, 4> CC_LAYER_COLORS = {
+    theme::color::MACRO_5,
+    theme::color::MACRO_6,
+    theme::color::MACRO_7,
+    theme::color::MACRO_8,
 };
 
 const char* fieldName(Field field) {
@@ -107,24 +113,24 @@ void formatFieldValue(
 
 const char* randomizePropertyName(RandomizeProperty property) {
     switch (property) {
-        case RandomizeProperty::NOTE: return "NOTE";
-        case RandomizeProperty::VELOCITY: return "VELOCITY";
-        case RandomizeProperty::GATE: return "GATE";
-        case RandomizeProperty::NUDGE: return "NUDGE";
-        case RandomizeProperty::PROBABILITY: return "CHANCE";
+        case RandomizeProperty::NOTE: return "Note";
+        case RandomizeProperty::VELOCITY: return "Velocity";
+        case RandomizeProperty::GATE: return "Gate";
+        case RandomizeProperty::NUDGE: return "Nudge";
+        case RandomizeProperty::PROBABILITY: return "Chance";
     }
-    return "NOTE";
+    return "Note";
 }
 
-const char* randomizeFieldName(RandomizeField field) {
-    switch (field) {
-        case RandomizeField::PROPERTY: return "Property";
-        case RandomizeField::AMOUNT: return "Amount";
-        case RandomizeField::RANGE: return "Range";
-        case RandomizeField::SCOPE: return "Scope";
-        case RandomizeField::COUNT:
-        default: return "Randomize";
+uint32_t randomizePropertyColor(RandomizeProperty property) {
+    switch (property) {
+        case RandomizeProperty::NOTE: return theme::color::STEP_PITCH;
+        case RandomizeProperty::VELOCITY: return theme::color::STEP_VELOCITY;
+        case RandomizeProperty::GATE: return theme::color::STEP_GATE;
+        case RandomizeProperty::NUDGE: return theme::color::STEP_NUDGE;
+        case RandomizeProperty::PROBABILITY: return theme::color::STEP_CHANCE;
     }
+    return theme::color::CONTENT_ACTIVE;
 }
 
 oc::note::sequencer::StepBitMask128 randomizeChangedMask(
@@ -183,7 +189,7 @@ FLASHMEM bool SequencerPatternEditorPresenter::bind() {
     );
     bound = playhead_watcher_.watchAll(
         state_.sequencer.playheadStep,
-        state_.sequencer.playheadStepTickOffset
+        state_.sequencer.playheadStepPhaseQ8
     ) && bound;
     return bound;
 }
@@ -252,16 +258,8 @@ SequencerPatternEditorPresenter::projectPlayhead() const {
         !state_.sequencer.patternEditor.active.get()) {
         return result;
     }
-    const uint16_t ticks = std::max<uint16_t>(
-        state_.sequencer.playheadStepTicks, 1U
-    );
-    const uint16_t offset = std::min<uint16_t>(
-        state_.sequencer.playheadStepTickOffset.get(),
-        static_cast<uint16_t>(ticks - 1U)
-    );
-    const uint16_t fraction = static_cast<uint16_t>(
-        (static_cast<uint32_t>(offset) * 65535U) / ticks
-    );
+    const uint8_t phaseQ8 = state_.sequencer.playheadStepPhaseQ8.get();
+    const uint16_t fraction = static_cast<uint16_t>(phaseQ8) * 257U;
     (void)timeline::projectSequencerPatternTimelinePlayheadLocalStep(
         *geometry_, state_.sequencer.playheadStep.get(), fraction, result
     );
@@ -285,28 +283,33 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         length
     ));
     std::snprintf(
-        title_.data(), title_.size(), "TRACK %u · PATTERN",
+        title_.data(), title_.size(), "T%u · Pattern",
         static_cast<unsigned>(editor.ownerTrack + 1U)
     );
     std::snprintf(
-        meta_.data(), meta_.size(), "STEPS %u–%u/%u",
-        static_cast<unsigned>(editor.windowStart + 1U),
-        static_cast<unsigned>(windowEnd),
-        static_cast<unsigned>(length)
+        meta_.data(), meta_.size(), "%u steps \xC2\xB7 1/%u",
+        static_cast<unsigned>(length),
+        static_cast<unsigned>(
+            4U * state_.sequencer.pattern.stepsPerBeat.get()
+        )
     );
 
     const auto* bank = state_.sequencer.pattern.ccLanes.get();
+    uint32_t layerColor = theme::color::CONTENT_ACTIVE;
     if (state_.randomize.active) {
         std::snprintf(
-            layer_.data(), layer_.size(), "RANDOMIZE · %s",
+            layer_.data(), layer_.size(), "Preview \xC2\xB7 %s",
             randomizePropertyName(state_.randomize.draft.property)
         );
+        layerColor = randomizePropertyColor(state_.randomize.draft.property);
     } else switch (editor.focusedLayer) {
         case Layer::NOTES:
             std::snprintf(layer_.data(), layer_.size(), "NOTES");
+            layerColor = theme::color::STEP_PITCH;
             break;
         case Layer::REGION:
-            std::snprintf(layer_.data(), layer_.size(), "PLAYBACK REGION");
+            std::snprintf(layer_.data(), layer_.size(), "REGION");
+            layerColor = theme::color::STEP_LENGTH;
             break;
         case Layer::CC1:
         case Layer::CC2:
@@ -316,12 +319,14 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
                 static_cast<uint8_t>(Layer::CC1);
             if (bank && bank->lanes[lane].occupied) {
                 std::snprintf(
-                    layer_.data(), layer_.size(), "CC %u · CC%u",
+                    layer_.data(), layer_.size(), "CC %u \xC2\xB7 CC%u",
                     static_cast<unsigned>(lane + 1U),
                     static_cast<unsigned>(bank->lanes[lane].destination.controller)
                 );
+                layerColor = CC_LAYER_COLORS[lane];
             } else {
                 std::snprintf(layer_.data(), layer_.size(), "+ CC LANE");
+                layerColor = theme::color::SECONDARY;
             }
             break;
         }
@@ -332,46 +337,16 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
     }
 
     if (state_.randomize.active) {
-        const auto field = state_.randomize.focusedField;
-        switch (field) {
-            case RandomizeField::PROPERTY:
-                std::snprintf(
-                    hint_.data(), hint_.size(), "%s · %s · %u/%u changed",
-                    randomizeFieldName(field),
-                    randomizePropertyName(state_.randomize.draft.property),
-                    static_cast<unsigned>(state_.randomize.summary.changedCount),
-                    static_cast<unsigned>(state_.randomize.summary.eligibleCount)
-                );
-                break;
-            case RandomizeField::AMOUNT:
-                std::snprintf(
-                    hint_.data(), hint_.size(), "Amount · %u%% · %u/%u changed",
-                    static_cast<unsigned>(state_.randomize.draft.amount),
-                    static_cast<unsigned>(state_.randomize.summary.changedCount),
-                    static_cast<unsigned>(state_.randomize.summary.eligibleCount)
-                );
-                break;
-            case RandomizeField::RANGE:
-                std::snprintf(
-                    hint_.data(), hint_.size(), "Range · ±%u · %u/%u changed",
-                    static_cast<unsigned>(state_.randomize.draft.range),
-                    static_cast<unsigned>(state_.randomize.summary.changedCount),
-                    static_cast<unsigned>(state_.randomize.summary.eligibleCount)
-                );
-                break;
-            case RandomizeField::SCOPE:
-                std::snprintf(
-                    hint_.data(), hint_.size(), "Scope · %s · %u/%u changed",
-                    state_.randomize.draft.activeOnly ? "ACTIVE" : "ALL",
-                    static_cast<unsigned>(state_.randomize.summary.changedCount),
-                    static_cast<unsigned>(state_.randomize.summary.eligibleCount)
-                );
-                break;
-            case RandomizeField::COUNT:
-            default:
-                std::snprintf(hint_.data(), hint_.size(), "Randomize preview");
-                break;
-        }
+        // The selected field row already names the edited parameter and
+        // shows its value. The helper line is reserved for the musical
+        // outcome, avoiding three repetitions of the same information.
+        std::snprintf(
+            hint_.data(),
+            hint_.size(),
+            "%u/%u steps changed",
+            static_cast<unsigned>(state_.randomize.summary.changedCount),
+            static_cast<unsigned>(state_.randomize.summary.eligibleCount)
+        );
     } else if (editor.navigationMode == Mode::WINDOWS) {
         std::snprintf(
             hint_.data(), hint_.size(), "WINDOW · STEPS %u–%u",
@@ -409,10 +384,12 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
     props.meta = meta_.data();
     props.layer = layer_.data();
     props.transientHint = hint_.data();
+    props.layerColor = layerColor;
     props.geometry = geometry_.get();
     props.geometryRevision = geometry_revision_;
     props.playhead = projectPlayhead();
     props.focusedLayer = editor.focusedLayer;
+    props.navigationMode = editor.navigationMode;
     props.randomizePreview = state_.randomize.active;
     props.randomizeProperty = state_.randomize.draft.property;
     props.randomizeChangedSteps = randomizeChangedMask(state_.randomize);
@@ -489,19 +466,19 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
                 : core::ui::ContextActionStripVisualState::DISABLED,
             core::ui::ContextActionStripTone::CONSTRUCTIVE
         );
-        actions.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            icons::ACTION_PLACE_TARGET,
-            state_.sequencer.pattern.length.get() < seq::SequencerState::MAX_STEPS
-                ? core::ui::ContextActionStripVisualState::AVAILABLE
-                : core::ui::ContextActionStripVisualState::DISABLED,
-            core::ui::ContextActionStripTone::CONSTRUCTIVE
-        );
         action_strip_.render(actions);
     } else {
         core::ui::ContextActionStripProps actions{.visible = true};
         actions.slots[0] = core::ui::makeStandaloneIconStripSlot(
             icons::NOTE_PROP_RANDOM,
             core::ui::ContextActionStripVisualState::AVAILABLE
+        );
+        actions.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            icons::ACTION_PLACE_TARGET,
+            state_.sequencer.pattern.length.get() < seq::SequencerState::MAX_STEPS
+                ? core::ui::ContextActionStripVisualState::AVAILABLE
+                : core::ui::ContextActionStripVisualState::DISABLED,
+            core::ui::ContextActionStripTone::CONSTRUCTIVE
         );
         action_strip_.render(actions);
     }

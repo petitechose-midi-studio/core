@@ -30,6 +30,9 @@ struct ProjectTrackEditorViewModel {
     bool muted = false;
     bool soloed = false;
     bool portEditable = false;
+    bool drum = false;
+    bool draftDrum = false;
+    bool typeChangePending = false;
 
     friend bool operator==(
         const ProjectTrackEditorViewModel& lhs,
@@ -45,11 +48,13 @@ struct ProjectTrackEditorViewModel {
                lhs.trackEnabled == rhs.trackEnabled &&
                lhs.canSwitchTrack == rhs.canSwitchTrack &&
                lhs.muted == rhs.muted && lhs.soloed == rhs.soloed &&
-               lhs.portEditable == rhs.portEditable;
+               lhs.portEditable == rhs.portEditable &&
+               lhs.drum == rhs.drum && lhs.draftDrum == rhs.draftDrum &&
+               lhs.typeChangePending == rhs.typeChangePending;
     }
 };
 
-static_assert(sizeof(ProjectTrackEditorViewModel) <= 32U);
+static_assert(sizeof(ProjectTrackEditorViewModel) <= 40U);
 static_assert(std::is_trivially_copyable_v<ProjectTrackEditorViewModel>);
 
 ProjectTrackEditorViewModel buildProjectTrackEditorViewModel(

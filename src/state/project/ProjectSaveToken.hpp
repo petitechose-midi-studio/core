@@ -43,11 +43,13 @@ struct ProjectCaptureGuard {
     ProjectSaveToken token{};
     uint32_t authoredRevision = 0U;
     uint32_t projectTrackRevision = 0U;
+    uint32_t drumRevision = 0U;
 
     constexpr bool operator==(const ProjectCaptureGuard& other) const {
         return token == other.token &&
                authoredRevision == other.authoredRevision &&
-               projectTrackRevision == other.projectTrackRevision;
+               projectTrackRevision == other.projectTrackRevision &&
+               drumRevision == other.drumRevision;
     }
 
     constexpr bool operator!=(const ProjectCaptureGuard& other) const {
@@ -69,7 +71,7 @@ static_assert(sizeof(ProjectSessionIdentity) == 8U,
               "Project session identity layout changed");
 static_assert(sizeof(ProjectSaveToken) == 20U,
               "Project save token layout changed");
-static_assert(sizeof(ProjectCaptureGuard) == 28U,
+static_assert(sizeof(ProjectCaptureGuard) == 32U,
               "Project capture guard layout changed");
 static_assert(sizeof(ProjectSessionControlState) == 24U,
               "Project session control layout changed");

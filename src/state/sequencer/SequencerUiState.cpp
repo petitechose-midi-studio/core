@@ -36,6 +36,11 @@ FLASHMEM void SequencerContentViewState::reset() {
     rootPageSnapshot = 0;
     rootFocusSnapshot = 0;
     stackDepth = 0;
+    drumOwnerActive = false;
+    drumOwnerTrack = 0;
+    drumOwnerLane = 0;
+    drumOwnerStep = 0;
+    drumOwnerRootSlot = 0xFFU;
     frames = {};
     bump();
 }
@@ -51,6 +56,10 @@ FLASHMEM void SequencerStepEditOverlayState::reset() {
     stepIndex.set(0);
     focusedRow.set(0);
     localVariationEditActive.set(false);
+    drumContext = false;
+    drumLane = 0;
+    drumStep = 0;
+    drumRootSlot = 0xFFU;
     chordEditor.reset();
     contextHold.clear();
 }
@@ -348,7 +357,7 @@ FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryRejec
             break;
         case SequencerHistoryRejectionReason::Blocked: break;
     }
-    show("EDIT BLOCKED", detail, "State unchanged", nowMs);
+    show("NO CHANGE", detail, "", nowMs);
 }
 
 FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryOpenOutcome outcome,

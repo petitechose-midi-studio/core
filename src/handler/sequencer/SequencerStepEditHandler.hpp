@@ -75,12 +75,48 @@ private:
     void setupBindings();
 
     void openForMacroInPage(uint8_t indexInPage);
+    [[nodiscard]] bool drumStepEditActive() const;
+    [[nodiscard]] bool drumChildEditActive() const;
+    bool openDrumStepEditor(uint8_t lane, uint8_t step, uint8_t row);
+    void closeDrumStepEditor();
+    /** Resolve the Drum lane owner, then enter the shared Micro/Cycle graph. */
+    bool openDrumOwnedSharedContentChild();
+    [[nodiscard]] bool drumEditedStepInRange(uint8_t& step) const;
+    [[nodiscard]] bool resolveDrumRootNodeId(
+        core::state::sequencer::SequencerGraphNodeId& nodeId
+    ) const;
+    bool ensureDrumRootNodeId(
+        core::state::sequencer::SequencerGraphNodeId& nodeId,
+        bool& mappingChanged
+    );
+    void publishDrumAdvancedMutation(bool drumMappingChanged);
+    [[nodiscard]] bool drumFocusedContextHasChild() const;
+    [[nodiscard]] bool drumCanPasteFocusedContext() const;
+    [[nodiscard]] core::state::sequencer::SequencerHistoryDescriptor
+    drumStepHistoryDescriptor(
+        core::state::sequencer::SequencerHistoryActionKind kind
+    ) const;
+    [[nodiscard]] int32_t drumStepHistoryValue() const;
+    bool beginDrumStepHistory(
+        core::state::sequencer::SequencerHistoryDescriptor descriptor
+    );
+    bool sealDrumStepHistory(
+        bool changed,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor,
+        bool commit
+    );
+    bool commitDrumStepHistory();
+    void syncDrumPropertyForFocusedRow();
+    void setDrumFocusedValue(float normalized);
+    void configureDrumOpt();
+    void resetDrumFocusedValue();
     void backFromStepEdit();
     bool commitStepEditHistory();
     void closeStepEdit();
 
     void moveFocus(float delta);
     void retargetEditedStep(float delta);
+    void retargetEditedDrumLane(float delta);
     void activateFocusedRowOrClose();
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
@@ -101,6 +137,7 @@ private:
     bool focusedRowIsValueRow() const;
     bool focusedRowIsContextRow() const;
     bool focusedRowSupportsLocalVariation() const;
+    bool canRetargetEditedDrumLane() const;
     bool focusedContextHasChild() const;
     bool canPasteFocusedStepContent() const;
     void resetFocusedValueRowToDefault();
@@ -156,6 +193,7 @@ private:
     bool preset_library_action_press_active_ = false;
     bool preset_library_auto_close_pending_ = false;
     bool step_retarget_active_ = false;
+    bool lane_retarget_active_ = false;
     bool pitch_context_settings_open_ = false;
     uint32_t preset_library_auto_close_at_ms_ = 0;
 };

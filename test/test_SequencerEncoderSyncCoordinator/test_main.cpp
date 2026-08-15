@@ -179,6 +179,55 @@ void expects_overlay_release_to_reapply_the_main_opt_contract() {
     std::cout << "[PASS] expects_overlay_release_to_reapply_the_main_opt_contract\n";
 }
 
+void expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid() {
+    SequencerEncoderSyncHarness h;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    assert(h.state.sequencerTracks.setTrackKind(
+        0U,
+        core::state::sequencer::SequencerTrackKind::DRUM,
+        true,
+        core::state::sequencer::DrumKitPreset::GENERAL_MIDI
+    ));
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    drumUi.bindTrack(
+        0U,
+        h.state.sequencerTracks.drumTrack(0U),
+        h.state.sequencerTracks
+    );
+    drumUi.enterGrid();
+    drumUi.dimension = core::state::sequencer::DrumSequencerDimension::LENGTH;
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) ==
+           core::state::sequencer::DRUM_MAX_STEPS);
+
+    assert(drumUi.openLaneEditor(false));
+    h.state.overlays.show(core::ui::OverlayType::SEQ_DRUM_LANE_EDIT);
+
+    // Simulate the Lane Editor's ICON field contract. A synchronizer pass while
+    // the overlay is visible must leave the overlay-owned configuration intact.
+    h.encoderHw.setMode(OPT_ENCODER_ID, oc::interface::EncoderMode::NORMALIZED);
+    h.encoderHw.setBounds(OPT_ENCODER_ID, 0.0f, 1.0f);
+    h.encoderHw.setDiscreteSteps(
+        OPT_ENCODER_ID,
+        static_cast<uint8_t>(core::state::sequencer::DrumLaneIcon::COUNT)
+    );
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) ==
+           static_cast<uint8_t>(core::state::sequencer::DrumLaneIcon::COUNT));
+
+    drumUi.cancelLaneEditor();
+    h.state.overlays.hide();
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) ==
+           core::state::sequencer::DRUM_MAX_STEPS);
+
+    std::cout <<
+        "[PASS] expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid\n";
+}
+
 }  // namespace
 
 int main() {
@@ -186,6 +235,7 @@ int main() {
     expects_step_focus_syncs_opt_to_focused_step_property();
     expects_pattern_focus_to_replace_the_two_state_opt_contract();
     expects_overlay_release_to_reapply_the_main_opt_contract();
+    expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid();
 
     std::cout << "SequencerEncoderSyncCoordinator tests passed\n";
     return 0;

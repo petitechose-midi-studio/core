@@ -11,6 +11,9 @@
 #include "ui/sequencer/SequencerTrackPasteProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::ui {
 
@@ -33,7 +36,9 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     if (!property_selection_overlay_ || !property_selection_overlay_->getElement()) return;
     createGrid();
     if (!step_grid_ || !step_grid_->getElement() ||
-        !cc_lane_grid_ || !cc_lane_grid_->getElement()) return;
+        !cc_lane_grid_ || !cc_lane_grid_->getElement()
+        || !drum_overview_surface_ || !drum_overview_surface_->getElement()
+    ) return;
     createTrackPastePreflightCard();
     if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
     ensureRenderScheduler();
@@ -45,6 +50,7 @@ FLASHMEM SequencerView::~SequencerView() {
     render_scheduler_.reset();
 
     track_paste_preflight_card_.reset();
+    drum_overview_surface_.reset();
     cc_lane_grid_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
@@ -98,6 +104,10 @@ FLASHMEM void SequencerView::createGrid() {
         center_column_,
         SequencerCcLaneGridLayout::EMBEDDED
     );
+    drum_overview_surface_ =
+        core::app::makeExtmemUnique<core::ui::sequencer::DrumOverviewSurface>(
+            center_column_
+        );
 }
 
 FLASHMEM void SequencerView::createPropertySelectionOverlay() {
@@ -116,12 +126,16 @@ FLASHMEM void SequencerView::createHistoryToast() {
     lv_obj_add_flag(history_toast_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(history_toast_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(history_toast_, 150, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(history_toast_, lv_color_hex(theme::color::BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(history_toast_, LV_OPA_90, 0);
+    lv_obj_set_style_bg_color(
+        history_toast_, lv_color_hex(theme::color::SURFACE_RAISED), 0
+    );
+    lv_obj_set_style_bg_opa(history_toast_, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(history_toast_, 1, 0);
-    lv_obj_set_style_border_color(history_toast_, lv_color_hex(theme::color::TEXT_SECONDARY), 0);
-    lv_obj_set_style_border_opa(history_toast_, LV_OPA_50, 0);
-    lv_obj_set_style_radius(history_toast_, 5, 0);
+    lv_obj_set_style_border_color(
+        history_toast_, lv_color_hex(theme::color::BORDER_SUBTLE), 0
+    );
+    lv_obj_set_style_border_opa(history_toast_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(history_toast_, 3, 0);
     lv_obj_set_style_pad_left(history_toast_, 8, 0);
     lv_obj_set_style_pad_right(history_toast_, 8, 0);
     lv_obj_set_style_pad_top(history_toast_, 5, 0);
@@ -149,11 +163,11 @@ FLASHMEM void SequencerView::createHistoryToast() {
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     }
 
-    lv_obj_set_style_text_font(history_toast_line1_, fonts.inter_13_bold, 0);
+    lv_obj_set_style_text_font(history_toast_line1_, fonts.compact_selected(), 0);
     lv_obj_set_style_text_color(history_toast_line1_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(history_toast_line2_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_font(history_toast_line2_, fonts.compact_label(), 0);
     lv_obj_set_style_text_color(history_toast_line2_, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(history_toast_line3_, fonts.inter_13_medium, 0);
+    lv_obj_set_style_text_font(history_toast_line3_, fonts.compact_label(), 0);
     lv_obj_set_style_text_color(history_toast_line3_, lv_color_hex(theme::color::TEXT_SECONDARY), 0);
 }
 
@@ -248,7 +262,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.contentView.revision,
         state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.patternQuickControls.previewRevision
+        state_refs_.sequencer.patternQuickControls.previewRevision,
+        state_refs_.sequencer.drumSequencer.revision
     );
 }
 
@@ -336,11 +351,20 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.patternQuickControls.previewRevision
     );
+    grid_watcher_.watch(
+        state_refs_.tracks.drumRevisionSignal()
+    );
+    grid_watcher_.watch(
+        state_refs_.sequencer.drumSequencer.revision
+    );
+    grid_watcher_.watch(
+        state_refs_.sequencer.drumSequencer.playbackRevision
+    );
     grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
         *this, 11, "SequencerView.gridTick"
     );
     grid_tick_watcher_.watch(
-        state_refs_.sequencer.playheadStepTickOffset
+        state_refs_.sequencer.playheadStepPhaseQ8
     );
 }
 
@@ -375,6 +399,9 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.patternQuickControls.previewRevision
     );
+    selector_overlay_watcher_.watch(
+        state_refs_.sequencer.drumSequencer.revision
+    );
 }
 
 FLASHMEM void SequencerView::bindOverlayVisibilityState() {
@@ -386,9 +413,7 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
         state_refs_.sequencer.stepEdit.visible,
         state_refs_.sequencer.patternEditor.active,
         state_refs_.deviceSettings.visible,
-        state_refs_.deviceSettings.selector.visible,
-        state_refs_.sequencerSettings.visible,
-        state_refs_.sequencerSettings.selector.visible
+        state_refs_.deviceSettings.selector.visible
     );
 }
 
@@ -407,6 +432,9 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.ccLaneUi.revision
+    );
+    left_action_strip_watcher_.watch(
+        state_refs_.sequencer.drumSequencer.revision
     );
 }
 
@@ -438,6 +466,9 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.ccLaneUi.actionGuard,
         state_refs_.sequencer.ccLaneUi.operationFeedback
+    );
+    bottom_action_strip_watcher_.watch(
+        state_refs_.sequencer.drumSequencer.revision
     );
 }
 
@@ -513,9 +544,7 @@ bool SequencerView::hasBlockingOverlay() const {
            state_refs_.sequencer.stepEdit.visible.get() ||
            state_refs_.sequencer.patternEditor.active.get() ||
            state_refs_.deviceSettings.visible.get() ||
-           state_refs_.deviceSettings.selector.visible.get() ||
-           state_refs_.sequencerSettings.visible.get() ||
-           state_refs_.sequencerSettings.selector.visible.get();
+           state_refs_.deviceSettings.selector.visible.get();
 }
 
 void SequencerView::handleOverlayVisibilityChanged() {
@@ -549,7 +578,11 @@ void SequencerView::requestHeaderStripRender() {
 }
 
 void SequencerView::requestHeaderAndLeftRender() {
-    requestRender(RENDER_HEADER_TOP | RENDER_LEFT_ACTION_STRIP);
+    requestRender(
+        RENDER_HEADER_TOP |
+        RENDER_HEADER_STRIP |
+        RENDER_LEFT_ACTION_STRIP
+    );
 }
 
 void SequencerView::requestHeaderStripAndLeftRender() {
@@ -675,6 +708,29 @@ void SequencerView::render(uint32_t flags) {
     }
 
     if (needsGrid) {
+        const auto& drumProjection =
+            state_refs_.sequencer.drumSequencer;
+        if (core::state::sequencer::isDrumOverviewActive(
+                state_refs_.sequencer)) {
+            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-overview");
+            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            cc_lane_grid_->render({.visible = false});
+            drum_overview_surface_->render({
+                .visible = true,
+                .projection = &drumProjection,
+                .navigationFocus = state_refs_.structureNavigationFocus.get(),
+                .midiChannel = static_cast<uint8_t>(
+                    core::state::project::projectTrackMidiChannel(
+                        state_refs_.projectTracks,
+                        drumProjection.targetTrack
+                    ) + 1U
+                ),
+                .authoredRevision =
+                    state_refs_.tracks.drumRevisionSignal().get(),
+                .uiRevision = drumProjection.revision.get(),
+            });
+        } else {
+            drum_overview_surface_->render({.visible = false});
         const auto ccLaneProps = sequencer::buildSequencerCcLaneGridProps(source);
         if (ccLaneProps.visible) {
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
@@ -686,6 +742,7 @@ void SequencerView::render(uint32_t flags) {
             cc_lane_grid_->render({.visible = false});
             lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             step_grid_->render(stepGridProps);
+        }
         }
     }
 
@@ -724,9 +781,19 @@ void SequencerView::renderHistoryToast() {
         return;
     }
 
-    lv_label_set_text(history_toast_line1_, feedback.line1.data());
-    lv_label_set_text(history_toast_line2_, feedback.line2.data());
-    lv_label_set_text(history_toast_line3_, feedback.line3.data());
+    const auto renderLine = [](lv_obj_t* label, const char* text) {
+        if (!label) return;
+        const bool hasText = text != nullptr && text[0] != '\0';
+        lv_label_set_text(label, hasText ? text : "");
+        if (hasText) {
+            lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        }
+    };
+    renderLine(history_toast_line1_, feedback.line1.data());
+    renderLine(history_toast_line2_, feedback.line2.data());
+    renderLine(history_toast_line3_, feedback.line3.data());
     lv_obj_align(history_toast_, LV_ALIGN_TOP_MID, 0, 34);
     // Outcome feedback has priority over any contextual paste card occupying
     // the same temporary-information zone.

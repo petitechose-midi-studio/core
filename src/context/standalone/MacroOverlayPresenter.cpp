@@ -5,7 +5,9 @@
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
+#include "ui/interaction/SelectorPresentationPolicy.hpp"
 #include "ui/macro/MacroEditorOverlay.hpp"
+#include "ui/theme/StandaloneListVisuals.hpp"
 
 namespace core::context::standalone {
 
@@ -172,6 +174,7 @@ FLASHMEM void MacroOverlayPresenter::renderAutomation() {
         .dimUnselected = false,
         .visible = true,
         .dataRevision = data.dataRevision,
+        .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,
     });
     macro_automation_action_strip_.render(actionProps);
 }
@@ -195,16 +198,16 @@ FLASHMEM void MacroOverlayPresenter::renderEditSelector() {
     }
 
     OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.selector");
-    macro_edit_selector_overlay_.render({
-        .title = data.title,
-        .meta = data.meta,
-        .items = data.items,
-        .itemCount = data.itemCount,
-        .selectedIndex = data.selectedIndex,
-        .showIndexColumn = false,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
+    macro_edit_selector_overlay_.render(
+        core::ui::interaction::decisionSelectorProps(
+            data.title,
+            data.meta,
+            data.items,
+            data.itemCount,
+            data.selectedIndex,
+            data.dataRevision
+        )
+    );
 }
 
 FLASHMEM void MacroOverlayPresenter::initializeStaticItems_() {

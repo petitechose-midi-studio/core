@@ -6,7 +6,6 @@
 
 #include "config/PlatformCompat.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/sequencer/StepGridRenderLogic.hpp"
 
 namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
@@ -15,16 +14,12 @@ namespace core::ui::sequencer::grid::widgets {
 
 namespace {
 
-constexpr lv_coord_t STEP_SHAPE_RADIUS = 0;
-constexpr lv_coord_t STEP_SHAPE_STROKE_WIDTH = 2;
-constexpr lv_coord_t STEP_SHAPE_MIN_WIDTH = grid::STEP_SHAPE_MIN_WIDTH;
-constexpr lv_coord_t STEP_SHAPE_MIN_HEIGHT = grid::STEP_SHAPE_MIN_HEIGHT;
 constexpr uint32_t STEP_INLINE_NOTE_COLOR = theme::color::TEXT_PRIMARY;
 constexpr lv_opa_t STEP_INLINE_NOTE_OPA = LV_OPA_COVER;
 constexpr lv_coord_t HORIZONTAL_INSET = 2;
 constexpr lv_coord_t OVERLAY_SAFE_TOP = 2;
 constexpr lv_coord_t OVERLAY_SAFE_BOTTOM = 2;
-constexpr lv_coord_t GRID_INTERNAL_PAD = 2;
+constexpr lv_coord_t GRID_ROW_PAD = 2;
 
 }  // namespace
 
@@ -53,8 +48,8 @@ FLASHMEM void createRoot(lv_obj_t* parent,
     lv_obj_set_style_pad_bottom(grid, OVERLAY_SAFE_BOTTOM, 0);
     lv_obj_set_style_pad_left(grid, HORIZONTAL_INSET, 0);
     lv_obj_set_style_pad_right(grid, HORIZONTAL_INSET, 0);
-    lv_obj_set_style_pad_column(grid, GRID_INTERNAL_PAD, 0);
-    lv_obj_set_style_pad_row(grid, GRID_INTERNAL_PAD, 0);
+    lv_obj_set_style_pad_column(grid, 0, 0);
+    lv_obj_set_style_pad_row(grid, GRID_ROW_PAD, 0);
     lv_obj_add_flag(grid, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_add_event_cb(grid, geometryEvent, LV_EVENT_SIZE_CHANGED, geometryUserData);
     lv_obj_add_event_cb(grid, geometryEvent, LV_EVENT_LAYOUT_CHANGED, geometryUserData);
@@ -69,7 +64,9 @@ FLASHMEM void createRoot(lv_obj_t* parent,
 }
 
 FLASHMEM lv_coord_t noteLabelHeight() {
-    return static_cast<lv_coord_t>(lv_font_get_line_height(fonts.inter_13_bold));
+    return static_cast<lv_coord_t>(
+        lv_font_get_line_height(fonts.compact_selected())
+    );
 }
 
 FLASHMEM void createTile(uint8_t tileIndex,
@@ -80,7 +77,6 @@ FLASHMEM void createTile(uint8_t tileIndex,
                          lv_obj_t*& originalNoteLabel,
                          lv_obj_t*& stepInlineIcon,
                          lv_obj_t*& stepButton,
-                         lv_obj_t*& stepShape,
                          lv_coord_t& inlineIconWidth,
                          lv_coord_t& inlineIconHeight,
                          lv_event_cb_t geometryEvent,
@@ -127,30 +123,12 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_set_style_pad_all(stepButton, 0, 0);
     lv_obj_add_event_cb(stepButton, geometryEvent, LV_EVENT_SIZE_CHANGED, geometryUserData);
 
-    stepShape = lv_obj_create(noteLayer);
-    lv_obj_remove_style_all(stepShape);
-    lv_obj_add_flag(stepShape, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_clear_flag(stepShape, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(stepShape, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-    lv_obj_set_size(stepShape, STEP_SHAPE_MIN_WIDTH, STEP_SHAPE_MIN_HEIGHT);
-    lv_obj_set_style_radius(stepShape, STEP_SHAPE_RADIUS, 0);
-    lv_obj_set_style_border_width(stepShape, STEP_SHAPE_STROKE_WIDTH, 0);
-    lv_obj_set_style_border_side(
-        stepShape,
-        static_cast<lv_border_side_t>(LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_BOTTOM),
-        0
-    );
-    lv_obj_set_style_border_color(stepShape, lv_color_hex(theme::color::INACTIVE_LIGHTER), 0);
-    lv_obj_set_style_border_opa(stepShape, grid::STEP_SHAPE_OPA_ENABLED, 0);
-    lv_obj_set_style_bg_opa(stepShape, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(stepShape, LV_OBJ_FLAG_HIDDEN);
-
     noteLabel = lv_label_create(noteLayer);
     lv_label_set_text(noteLabel, "");
     lv_obj_add_flag(noteLabel, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_set_width(noteLabel, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(noteLabel, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_text_font(noteLabel, fonts.inter_13_bold, 0);
+    lv_obj_set_style_text_font(noteLabel, fonts.compact_selected(), 0);
     lv_obj_set_style_text_color(noteLabel, lv_color_hex(STEP_INLINE_NOTE_COLOR), 0);
     lv_obj_set_style_text_opa(noteLabel, STEP_INLINE_NOTE_OPA, 0);
     lv_obj_set_style_pad_all(noteLabel, 0, 0);
@@ -161,7 +139,7 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_add_flag(originalNoteLabel, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_set_width(originalNoteLabel, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(originalNoteLabel, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_text_font(originalNoteLabel, fonts.inter_13_bold, 0);
+    lv_obj_set_style_text_font(originalNoteLabel, fonts.compact_selected(), 0);
     lv_obj_set_style_text_color(originalNoteLabel, lv_color_hex(theme::color::INACTIVE_LIGHTER), 0);
     lv_obj_set_style_text_opa(originalNoteLabel, LV_OPA_50, 0);
     lv_obj_set_style_pad_all(originalNoteLabel, 0, 0);

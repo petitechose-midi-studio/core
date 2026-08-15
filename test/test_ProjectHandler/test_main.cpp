@@ -19,7 +19,7 @@
 #include "../../src/handler/common/ModulatorNavigationWorkflow.hpp"
 #include "../../src/handler/project/ProjectHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
+#include "../../src/handler/project/ProjectScaleSettingsDomainServices.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProjectFileContainer.hpp"
 #include "../../src/persistence/ProjectFileStore.hpp"
@@ -31,7 +31,7 @@
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectMenuModel.hpp"
 #include "../../src/state/project/ProjectModulatorMenuModel.hpp"
-#include "../../src/state/project/ProjectNameKeyboard.hpp"
+#include "../../src/state/interaction/TextKeyboardLayout.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
@@ -62,7 +62,7 @@ using test_support::TestEncoderHardware;
 
 constexpr float PROJECT_NAME_TEST_OPT_TICKS_PER_ROW =
     (600.0f * 4.0f) /
-    static_cast<float>(core::state::project::PROJECT_NAME_KEYBOARD_ROW_COUNT);
+    static_cast<float>(core::state::interaction::TEXT_KEYBOARD_ROW_COUNT);
 
 struct ProjectHandlerHarness {
     static constexpr oc::type::ScopeID PROJECT_SCOPE = 901;
@@ -83,7 +83,7 @@ struct ProjectHandlerHarness {
     oc::api::EncoderAPI encoders;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::handler::DeviceSettingsDomainServices deviceSettings;
-    core::handler::SequencerSettingsDomainServices sequencerSettings;
+    core::handler::ProjectScaleSettingsDomainServices scaleSettings;
     core::handler::ProjectHandler handler;
 
     ProjectHandlerHarness()
@@ -103,7 +103,7 @@ struct ProjectHandlerHarness {
               state.midiSync,
               state.deviceSettingsStore,
           })
-        , sequencerSettings(core::handler::SequencerSettingsDomainServices::StateRefs{
+        , scaleSettings(core::handler::ProjectScaleSettingsDomainServices::StateRefs{
               state.sequencerTracks,
           })
         , handler(core::handler::ProjectHandler::StateRefs{
@@ -131,7 +131,7 @@ struct ProjectHandlerHarness {
                       ),
                   },
                   deviceSettings,
-                  sequencerSettings,
+                  scaleSettings,
                   core::handler::MacroEditDomainServices::fromCoreState(state),
                   encoders,
                   buttons,
@@ -294,13 +294,6 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
     assert(core::test::flushProductFileFixture(h.productFiles, path));
 }
 
-void moveProjectNameKeyboardRows(ProjectHandlerHarness& h, int rowsDown) {
-    const float raw =
-        h.state.projectNavigation.projectNameOptRawPosition -
-        static_cast<float>(rowsDown) * PROJECT_NAME_TEST_OPT_TICKS_PER_ROW;
-    h.turn(Config::EncoderID::OPT, raw);
-}
-
 void clearProjectNameEditor(ProjectHandlerHarness& h) {
     h.tap(Config::ButtonID::LEFT_BOTTOM);
 }
@@ -309,7 +302,15 @@ void validateProjectNameEditor(ProjectHandlerHarness& h) {
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
 }
 
-void test_nav_turn_on_overview_actions() {
+void focusStorageAction(ProjectHandlerHarness& h, uint8_t row) {
+    core::state::project::openProjectRootTab(
+        h.state.projectNavigation,
+        ProjectTab::STORAGE
+    );
+    h.state.projectNavigation.focusedRow.set(row);
+}
+
+void test_nav_turn_on_overview_summary() {
     ProjectHandlerHarness h;
 
     h.turn(Config::EncoderID::NAV, 1.0f);
@@ -319,14 +320,11 @@ void test_nav_turn_on_overview_actions() {
     assert(h.state.projectNavigation.focusedRow.get() == 0);
 
     h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.activeTab.get() == ProjectTab::OVERVIEW);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM);
+    assert(h.state.projectNavigation.activeTab.get() == ProjectTab::MUSIC);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::MUSIC_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
 
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
-
-    std::cout << "[PASS] test_nav_turn_on_overview_actions\n";
+    std::cout << "[PASS] Overview focus opens the summarized section\n";
 }
 
 void test_left_top_backs_out_of_nested_project_folder() {
@@ -352,9 +350,7 @@ void test_left_top_does_not_back_at_project_tab_root() {
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.advance(600);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, -1.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
     assert(h.state.projectNavigation.depth.get() == 0);
@@ -371,9 +367,7 @@ void test_storage_project_identity_is_inert_and_navigation_wraps() {
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.advance(600);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, -1.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
@@ -502,6 +496,10 @@ void test_project_cc_lane_defaults_are_direct_editable_values() {
 
     h.turn(Config::EncoderID::NAV, 4.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 4U);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MUSIC_CC_DEFAULTS);
+    assert(h.state.projectNavigation.focusedRow.get() == 0U);
     assert(h.encoderHw.getDiscreteSteps(OPT_ID) == 128);
     assert(near(h.encoderHw.getPosition(OPT_ID), 1.0f / 127.0f));
 
@@ -509,12 +507,12 @@ void test_project_cc_lane_defaults_are_direct_editable_values() {
     assert(h.state.projectNavigation.ccLaneDefaultControllers[0] == 0U);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 5U);
+    assert(h.state.projectNavigation.focusedRow.get() == 1U);
     assert(h.state.projectNavigation.ccLaneDefaultControllers[1] == 11U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.ccLaneDefaultControllers[1] == 12U);
 
-    std::cout << "[PASS] Project exposes four direct CC-lane default values\n";
+    std::cout << "[PASS] Project groups four direct CC-lane default values\n";
 }
 
 void test_left_center_hold_switches_tabs() {
@@ -704,7 +702,7 @@ void test_storage_project_identity_ignores_opt() {
     ProjectHandlerHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
-    h.turn(Config::EncoderID::NAV, 3.0f);
+    h.turn(Config::EncoderID::NAV, -1.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
@@ -727,7 +725,7 @@ void test_storage_project_identity_ignores_opt() {
 void test_project_name_editor_uses_physical_action_buttons() {
     ProjectHandlerHarness h;
 
-    h.turn(Config::EncoderID::NAV, 3.0f);
+    focusStorageAction(h, 1U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
 
@@ -755,26 +753,26 @@ void test_project_name_editor_uses_physical_action_buttons() {
     assert(h.state.projectNavigation.editingProjectSlug[0] == '\0');
 
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
     h.tap(Config::ButtonID::NAV);
     h.tap(Config::ButtonID::NAV);  // q
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
     assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
 
     std::cout << "[PASS] test_project_name_editor_uses_physical_action_buttons\n";
 }
 
-void test_overview_save_as_name_editor_persists_named_project() {
+void test_storage_save_as_name_editor_persists_named_project() {
     ProjectHandlerHarness h;
 
     h.state.statusBar.tempo.set(151.0f);
     h.state.statusBar.tempoDisplay.set(151.0f);
     h.state.markProjectMutated();
 
-    h.turn(Config::EncoderID::NAV, 3.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 3);
+    focusStorageAction(h, 1U);
+    assert(h.state.projectNavigation.focusedRow.get() == 1U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
     assert(h.state.projectNavigation.focusedRow.get() == 1);
@@ -790,7 +788,7 @@ void test_overview_save_as_name_editor_persists_named_project() {
 
     validateProjectNameEditor(h);
 
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved Q q") == 0);
     assert(std::strcmp(h.state.project.metadata.id.data(), "Q q") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "Q q") == 0);
@@ -803,14 +801,14 @@ void test_overview_save_as_name_editor_persists_named_project() {
     RestoredProjectHarness restored{saved};
     assert(restored.state.statusBar.tempo.get() == 151.0f);
 
-    std::cout << "[PASS] test_overview_save_as_name_editor_persists_named_project\n";
+    std::cout << "[PASS] Storage Save As persists a named project\n";
 }
 
-void test_overview_save_as_name_editor_rejects_duplicate_project() {
+void test_storage_save_as_name_editor_rejects_duplicate_project() {
     ProjectHandlerHarness h;
     saveCurrentProjectSnapshot(h, "q");
 
-    h.turn(Config::EncoderID::NAV, 3.0f);
+    focusStorageAction(h, 1U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
 
@@ -821,17 +819,17 @@ void test_overview_save_as_name_editor_rejects_duplicate_project() {
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Name exists q") == 0);
     assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
 
-    std::cout << "[PASS] test_overview_save_as_name_editor_rejects_duplicate_project\n";
+    std::cout << "[PASS] Storage Save As rejects duplicate projects\n";
 }
 
 void test_project_name_editor_opt_requires_full_row_threshold() {
     ProjectHandlerHarness h;
 
-    h.turn(Config::EncoderID::NAV, 3.0f);
+    focusStorageAction(h, 1U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::SAVE_AS_PROJECT_NAME);
     assert(std::strcmp(
-               core::state::project::projectNameKeyboardCellAt(
+               core::state::interaction::textKeyboardCellAt(
                    h.state.projectNavigation.projectNameKeyIndex
                ).label,
                "q"
@@ -839,7 +837,7 @@ void test_project_name_editor_opt_requires_full_row_threshold() {
 
     h.turn(Config::EncoderID::OPT, -PROJECT_NAME_TEST_OPT_TICKS_PER_ROW * 0.5f);
     assert(std::strcmp(
-               core::state::project::projectNameKeyboardCellAt(
+               core::state::interaction::textKeyboardCellAt(
                    h.state.projectNavigation.projectNameKeyIndex
                ).label,
                "q"
@@ -847,7 +845,7 @@ void test_project_name_editor_opt_requires_full_row_threshold() {
 
     h.turn(Config::EncoderID::OPT, -PROJECT_NAME_TEST_OPT_TICKS_PER_ROW);
     assert(std::strcmp(
-               core::state::project::projectNameKeyboardCellAt(
+               core::state::interaction::textKeyboardCellAt(
                    h.state.projectNavigation.projectNameKeyIndex
                ).label,
                "a"
@@ -856,12 +854,12 @@ void test_project_name_editor_opt_requires_full_row_threshold() {
     std::cout << "[PASS] test_project_name_editor_opt_requires_full_row_threshold\n";
 }
 
-void test_overview_rename_name_editor_moves_project_file() {
+void test_storage_rename_name_editor_moves_project_file() {
     ProjectHandlerHarness h;
     saveCurrentProjectSnapshot(h, "p002");
 
-    h.turn(Config::EncoderID::NAV, 4.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 4);
+    focusStorageAction(h, 2U);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::RENAME_PROJECT_NAME);
     assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "p002") == 0);
@@ -872,7 +870,7 @@ void test_overview_rename_name_editor_moves_project_file() {
     h.tap(Config::ButtonID::NAV);  // q
     validateProjectNameEditor(h);
 
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Renamed q") == 0);
     assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "q") == 0);
@@ -882,7 +880,7 @@ void test_overview_rename_name_editor_moves_project_file() {
     assert(store.load("q", snapshot));
     assert(!store.load("p002", snapshot));
 
-    std::cout << "[PASS] test_overview_rename_name_editor_moves_project_file\n";
+    std::cout << "[PASS] Storage Rename moves the project file\n";
 }
 
 void test_new_project_resets_musical_project_state() {
@@ -905,6 +903,7 @@ void test_new_project_resets_musical_project_state() {
     h.state.sequencerTracks.setProjectScaleSettings(settings);
     assert(h.state.sequencerTracks.projectScaleSettings().root == 6);
 
+    focusStorageAction(h, 3U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
@@ -914,7 +913,7 @@ void test_new_project_resets_musical_project_state() {
     h.tap(Config::ButtonID::NAV);
 
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
-    assert(h.state.projectNavigation.focusedRow.get() == 0);
+    assert(h.state.projectNavigation.focusedRow.get() == 0U);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
     assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
@@ -940,6 +939,7 @@ void test_new_project_confirmation_cancel_preserves_state() {
     h.state.macros.slots[0].value.set(0.77f);
     h.state.statusBar.tempo.set(132.0f);
 
+    focusStorageAction(h, 3U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
@@ -948,8 +948,8 @@ void test_new_project_confirmation_cancel_preserves_state() {
     assert(h.state.projectNavigation.focusedRow.get() == 2);
     h.tap(Config::ButtonID::NAV);
 
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
-    assert(h.state.projectNavigation.focusedRow.get() == 0);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
+    assert(h.state.projectNavigation.focusedRow.get() == 3U);
     assert(h.state.sequencer.pattern.length.get() == 24);
     assert(near(h.state.macros.slots[0].value.get(), 0.77f));
     assert(h.state.statusBar.tempo.get() == 132.0f);
@@ -964,6 +964,7 @@ void test_new_project_reset_failure_is_visible_and_keeps_confirmation() {
     h.state.statusBar.tempo.set(149.0f);
     assert(h.state.sequencer.setStepNoteAt(0U, 73U));
 
+    focusStorageAction(h, 3U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::NEW_PROJECT_CONFIRM);
@@ -1010,6 +1011,7 @@ void test_new_project_save_as_new_persists_then_resets() {
     h.state.markProjectMutated();
     assert(!h.state.project.metadata.hasSavedIdentity);
 
+    focusStorageAction(h, 3U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
@@ -1065,6 +1067,7 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
+    focusStorageAction(h, 3U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::NEW_PROJECT_CONFIRM);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
@@ -1104,7 +1107,7 @@ void test_routing_output_channels_are_editable() {
         h.state.sequencerRuntimeProjectRevision.get();
 
     h.press(Config::ButtonID::LEFT_CENTER);
-    h.turn(Config::EncoderID::NAV, 4.0f);
+    h.turn(Config::EncoderID::NAV, 3.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::ROUTING_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
@@ -1155,7 +1158,7 @@ void test_routing_output_channels_are_editable() {
            core::state::project::ProjectTrackHistoryActionKind::MidiChannel);
     assert(h.state.project.metadata.modifiedCounter > modifiedBefore);
     assert(h.state.configRevision.get() != configRevisionBefore);
-    assert(h.state.sequencerRuntimeProjectRevision.get() !=
+    assert(h.state.sequencerRuntimeProjectRevision.get() ==
            runtimeRevisionBefore);
 
     assert(h.state.undoProjectHistory());
@@ -1172,7 +1175,7 @@ void test_routing_output_channels_are_editable() {
     std::cout << "[PASS] test_routing_output_channels_are_editable\n";
 }
 
-void test_overview_save_and_load_roundtrip_project_file() {
+void test_storage_save_and_load_roundtrip_project_file() {
     ProjectHandlerHarness h;
 
     std::strncpy(
@@ -1190,8 +1193,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     h.state.pages.activePageData().values[0] = 0.63f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
 
-    h.turn(Config::EncoderID::NAV, 2.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 2);
+    focusStorageAction(h, 0U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.project.metadata.hasSavedIdentity);
     assert(!h.state.project.metadata.dirty);
@@ -1209,8 +1211,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     h.state.pages.activePageData().values[0] = 0.01f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
 
-    h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    focusStorageAction(h, 4U);
     assert(h.state.projectNavigation.lifecycleFeedback.empty());
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
@@ -1233,15 +1234,14 @@ void test_overview_save_and_load_roundtrip_project_file() {
     assert(near(h.state.macros.slots[0].value.get(), 0.63f));
     assert(h.state.projectSessionSaveToken().session != beforeLoadToken.session);
 
-    std::cout << "[PASS] test_overview_save_and_load_roundtrip_project_file\n";
+    std::cout << "[PASS] Storage save/load roundtrip preserves the project\n";
 }
 
-void test_overview_load_missing_project_reports_failure() {
+void test_storage_load_missing_project_reports_failure() {
     ProjectHandlerHarness h;
     h.state.statusBar.tempo.set(133.0f);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    focusStorageAction(h, 4U);
     h.tap(Config::ButtonID::NAV);
 
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
@@ -1251,7 +1251,7 @@ void test_overview_load_missing_project_reports_failure() {
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "No projects") == 0);
     assert(h.state.statusBar.tempo.get() == 133.0f);
 
-    std::cout << "[PASS] test_overview_load_missing_project_reports_failure\n";
+    std::cout << "[PASS] Storage reports an empty project catalogue\n";
 }
 
 void test_load_picker_opens_immediately_and_waits_for_playback_stop() {
@@ -1259,7 +1259,7 @@ void test_load_picker_opens_immediately_and_waits_for_playback_stop() {
     saveCurrentProjectSnapshot(h, "p001");
     h.state.statusBar.playing.set(true);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    focusStorageAction(h, 4U);
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
 
@@ -1314,7 +1314,7 @@ void test_load_picker_opens_immediately_and_waits_for_playback_stop() {
 void test_pending_load_picker_can_be_cancelled_during_playback() {
     ProjectHandlerHarness h;
     h.state.statusBar.playing.set(true);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    focusStorageAction(h, 4U);
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
     assert(h.productCatalog->pending());
@@ -1324,7 +1324,7 @@ void test_pending_load_picker_can_be_cancelled_during_playback() {
     h.press(Config::ButtonID::LEFT_TOP);
     h.release(Config::ButtonID::LEFT_TOP);
     assert(h.state.projectNavigation.currentNode.get() ==
-           ProjectNodeId::OVERVIEW_ROOT);
+           ProjectNodeId::STORAGE_ROOT);
     assert(h.state.projectNavigation.depth.get() == 0U);
     h.handler.update(g_now_ms);
 
@@ -1335,21 +1335,19 @@ void test_pending_save_does_not_block_load_picker_during_playback() {
     ProjectHandlerHarness h;
     h.state.statusBar.playing.set(true);
 
-    h.turn(Config::EncoderID::NAV, 2.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+    focusStorageAction(h, 0U);
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
 
     assert(h.productCatalog->pending());
     assert(h.state.projectNavigation.currentNode.get() ==
-           ProjectNodeId::OVERVIEW_ROOT);
+           ProjectNodeId::STORAGE_ROOT);
     assert(std::strcmp(
                h.state.projectNavigation.lifecycleFeedback.get(),
                "Stop playback to save"
            ) == 0);
 
-    h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 1U);
+    focusStorageAction(h, 4U);
     h.handler.update(++g_now_ms);
 
     h.press(Config::ButtonID::NAV);
@@ -1380,7 +1378,7 @@ void test_load_project_picker_selects_detected_project() {
     h.state.statusBar.tempo.set(66.0f);
     h.state.statusBar.tempoDisplay.set(66.0f);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    focusStorageAction(h, 4U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
     assert(h.state.projectNavigation.loadProjects.count == 2);
@@ -1404,7 +1402,7 @@ void test_future_project_load_is_rejected_atomically() {
     writeFutureSequencerProjectFile(h, "future-project");
     const float tempoBefore = h.state.statusBar.tempo.get();
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    focusStorageAction(h, 4U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
     assert(h.state.projectNavigation.loadProjects.count == 1);
@@ -1444,8 +1442,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     h.state.sequencer.setStepDataAt(4, 60, 90, 70);
     h.state.sequencer.pattern.toggle(4);
 
-    h.turn(Config::EncoderID::NAV, 2.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 2);
+    focusStorageAction(h, 0U);
     h.tap(Config::ButtonID::NAV);
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Saved p001") == 0);
     assert(h.state.project.metadata.hasSavedIdentity);
@@ -1458,8 +1455,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
-    h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    focusStorageAction(h, 4U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
     assert(h.state.projectNavigation.loadProjects.count == 1);
@@ -1510,8 +1506,7 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 1);
+    focusStorageAction(h, 4U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
     assert(h.state.projectNavigation.loadProjects.count == 1);
@@ -3011,7 +3006,7 @@ void test_project_recorded_shape_hold_turn_commit_noop_cancel_and_length() {
 }  // namespace
 
 int main() {
-    test_nav_turn_on_overview_actions();
+    test_nav_turn_on_overview_summary();
     test_left_top_backs_out_of_nested_project_folder();
     test_left_top_does_not_back_at_project_tab_root();
     test_storage_project_identity_is_inert_and_navigation_wraps();
@@ -3026,18 +3021,18 @@ int main() {
     test_project_setting_values_coalesce_and_use_global_history();
     test_storage_project_identity_ignores_opt();
     test_project_name_editor_uses_physical_action_buttons();
-    test_overview_save_as_name_editor_persists_named_project();
-    test_overview_save_as_name_editor_rejects_duplicate_project();
+    test_storage_save_as_name_editor_persists_named_project();
+    test_storage_save_as_name_editor_rejects_duplicate_project();
     test_project_name_editor_opt_requires_full_row_threshold();
-    test_overview_rename_name_editor_moves_project_file();
+    test_storage_rename_name_editor_moves_project_file();
     test_new_project_resets_musical_project_state();
     test_new_project_confirmation_cancel_preserves_state();
     test_new_project_reset_failure_is_visible_and_keeps_confirmation();
     test_new_project_save_as_new_persists_then_resets();
     test_new_project_save_current_persists_saved_identity_then_resets();
     test_routing_output_channels_are_editable();
-    test_overview_save_and_load_roundtrip_project_file();
-    test_overview_load_missing_project_reports_failure();
+    test_storage_save_and_load_roundtrip_project_file();
+    test_storage_load_missing_project_reports_failure();
     test_load_picker_opens_immediately_and_waits_for_playback_stop();
     test_pending_load_picker_can_be_cancelled_during_playback();
     test_pending_save_does_not_block_load_picker_during_playback();

@@ -4,6 +4,7 @@
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
 #include "state/settings/DeviceSettingsMenuModel.hpp"
+#include "ui/interaction/SelectorPresentationPolicy.hpp"
 
 namespace core::context::standalone {
 namespace {
@@ -125,16 +126,16 @@ FLASHMEM void DeviceSettingsSelectorPresenter::renderSelector() {
         return;
     }
 
-    selector_overlay_.render({
-        .title = data.title,
-        .meta = "Device Settings",
-        .items = data.items,
-        .itemCount = data.itemCount,
-        .selectedIndex = data.selectedIndex,
-        .showIndexColumn = false,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
+    selector_overlay_.render(
+        core::ui::interaction::decisionSelectorProps(
+            data.title,
+            "Device Settings",
+            data.items,
+            data.itemCount,
+            data.selectedIndex,
+            data.dataRevision
+        )
+    );
 }
 
 }  // namespace core::context::standalone

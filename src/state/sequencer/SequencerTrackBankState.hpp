@@ -5,11 +5,22 @@
 
 #include <oc/state/Signal.hpp>
 
+#include "state/sequencer/DrumPatternState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 
 namespace core::state::sequencer {
 
 using oc::state::Signal;
+
+enum class SequencerTrackKind : uint8_t {
+    INSTRUMENT = 0,
+    DRUM,
+};
+
+struct DrumTrackBankSnapshot {
+    uint16_t drumTrackMask = 0U;
+    std::array<DrumTrackState, 16> tracks{};
+};
 
 /**
  * Owns persistent sequencer state for all shared tracks.
@@ -40,6 +51,42 @@ struct SequencerTrackBankState {
         return tracks_[clampTrackIndex(index)];
     }
 
+    [[nodiscard]] SequencerTrackKind trackKind(uint8_t index) const {
+        const uint16_t bit = static_cast<uint16_t>(1U << clampTrackIndex(index));
+        return (drum_track_mask_ & bit) != 0U
+            ? SequencerTrackKind::DRUM
+            : SequencerTrackKind::INSTRUMENT;
+    }
+
+    [[nodiscard]] bool isDrumTrack(uint8_t index) const {
+        return trackKind(index) == SequencerTrackKind::DRUM;
+    }
+
+    [[nodiscard]] uint16_t drumTrackMask() const { return drum_track_mask_; }
+
+    DrumTrackState& drumTrack(uint8_t index) {
+        return drum_tracks_[clampTrackIndex(index)];
+    }
+
+    const DrumTrackState& drumTrack(uint8_t index) const {
+        return drum_tracks_[clampTrackIndex(index)];
+    }
+
+    bool setTrackKind(
+        uint8_t index,
+        SequencerTrackKind kind,
+        bool resetPayload = false,
+        DrumKitPreset drumPreset = DrumKitPreset::GENERAL_MIDI
+    );
+    void restoreDrumTrack(
+        uint8_t index,
+        SequencerTrackKind kind,
+        const DrumTrackState& state
+    );
+    void captureDrumTrackBank(DrumTrackBankSnapshot& out) const;
+    bool applyDrumTrackBank(const DrumTrackBankSnapshot& snapshot);
+    void clearDrumTrackBank();
+
     void captureSharedTrackState(uint16_t& enabledMaskOut, uint8_t& activeTrackOut) const {
         enabledMaskOut = enabled_mask_.get();
         activeTrackOut = active_track_.get();
@@ -54,6 +101,12 @@ struct SequencerTrackBankState {
     const Signal<uint16_t, 16>& enabledMaskSignal() const { return enabled_mask_; }
     Signal<uint32_t, 8>& projectScaleRevisionSignal() { return project_scale_revision_; }
     const Signal<uint32_t, 8>& projectScaleRevisionSignal() const { return project_scale_revision_; }
+    Signal<uint32_t, 8>& drumRevisionSignal() { return drum_revision_; }
+    const Signal<uint32_t, 8>& drumRevisionSignal() const { return drum_revision_; }
+    [[nodiscard]] uint32_t drumTrackRevision(uint8_t index) const {
+        return drum_track_revisions_[clampTrackIndex(index)];
+    }
+    void publishDrumMutation(uint8_t index);
 
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings() const {
         auto settings = project_scale_settings_;
@@ -74,8 +127,12 @@ private:
     Signal<uint8_t, 8> active_track_{0};
     Signal<uint16_t, 16> enabled_mask_{0x0001};
     Signal<uint32_t, 8> project_scale_revision_{0};
+    Signal<uint32_t, 8> drum_revision_{0};
     oc::note::sequencer::StepSequencerScaleSettings project_scale_settings_{};
+    uint16_t drum_track_mask_ = 0U;
+    std::array<uint32_t, TRACK_COUNT> drum_track_revisions_{};
     std::array<SequencerPatternState, TRACK_COUNT> tracks_{};
+    std::array<DrumTrackState, TRACK_COUNT> drum_tracks_{};
 };
 
 }  // namespace core::state::sequencer

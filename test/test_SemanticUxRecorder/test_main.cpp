@@ -27,6 +27,7 @@ public:
         core::validation::ux::SemanticUxContext& out
     ) const override {
         ++calls;
+        out.intent = core::state::interaction::ControllerIntent::EDIT_VALUE;
         out.mode = "sequencer.step_grid";
         out.effect = "edit_step_property";
         out.outcome = calls == 1 ? "noop" : nullptr;
@@ -122,6 +123,9 @@ public:
     ) const override {
         ++calls;
         const bool causalRead = calls == 1;
+        out.intent = causalRead
+            ? core::state::interaction::ControllerIntent::OPEN_ADVANCED
+            : core::state::interaction::ControllerIntent::ENTER_SELECTION;
         out.mode = causalRead ? "macro.structure" : "macro.structure.tracks";
         out.effect = causalRead
             ? "open_structure_workspace"
@@ -274,6 +278,45 @@ void test_writes_normalized_encoder_value_without_delta_semantics() {
     std::cout << "[PASS] test_writes_normalized_encoder_value_without_delta_semantics\n";
 }
 
+void test_buffers_encoder_contract_ownership_for_async_export() {
+    CapturingSink sink;
+    core::validation::ux::SemanticUxRecorder recorder{
+        {.sink = &sink, .enabled = true}
+    };
+    core::validation::ux::setCurrentEncoderContractTraceRecorder(&recorder);
+
+    core::validation::ux::recordEncoderContractTrace(
+        core::validation::ux::EncoderContractOwner::DrumLaneEditor,
+        core::validation::ux::EncoderContractMode::Normalized,
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT),
+        0.0f,
+        1.0f,
+        8U,
+        4U,
+        1.5f,
+        3.0f / 7.0f
+    );
+    core::validation::ux::clearCurrentEncoderContractTraceRecorder(&recorder);
+
+    assert(recorder.pendingCount() == 1U);
+    assert(sink.lines.empty());
+    recorder.flush(2050U, sequencerSnapshot());
+
+    assert(sink.lines.size() == 1U);
+    assert(contains(sink.lines[0], "\"kind\":\"encoder_contract\""));
+    assert(contains(sink.lines[0], "\"owner\":\"drum_lane_editor\""));
+    assert(contains(sink.lines[0], "\"encoder\":\"OPT\""));
+    assert(contains(sink.lines[0], "\"mode\":\"normalized\""));
+    assert(contains(sink.lines[0], "\"minimum_milli\":0"));
+    assert(contains(sink.lines[0], "\"maximum_milli\":1000"));
+    assert(contains(sink.lines[0], "\"position_milli\":429"));
+    assert(contains(sink.lines[0], "\"discrete_steps\":8"));
+    assert(contains(sink.lines[0], "\"ticks_per_step\":4"));
+    assert(contains(sink.lines[0], "\"normalized_turns_milli\":1500"));
+    assert(contains(sink.lines[0], "\"overlay\":\"seq_step_edit\""));
+    std::cout << "[PASS] encoder contracts are buffered before export\n";
+}
+
 void test_non_finite_and_oversized_encoder_values_are_serialized_safely() {
     CapturingSink sink;
     core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
@@ -306,6 +349,7 @@ void test_writes_native_context_provider_fields() {
     core::validation::ux::clearCurrentSemanticUxContextProvider(&provider);
 
     assert(sink.lines.size() == 1);
+    assert(contains(sink.lines[0], "\"intent\":\"edit_value\""));
     assert(contains(sink.lines[0], "\"mode\":\"sequencer.step_grid\""));
     assert(contains(sink.lines[0], "\"effect\":\"edit_step_property\""));
     assert(contains(sink.lines[0], "\"outcome\":\"noop\""));
@@ -412,11 +456,13 @@ void test_capture_keeps_causal_effect_with_live_surface_state() {
     assert(contains(event, "\"outcome\":\"applied\""));
     assert(contains(capture, "\"surface_context\":true"));
     assert(contains(capture, "\"source_seq\":1"));
+    assert(contains(capture, "\"intent\":\"open_advanced\""));
     assert(contains(capture, "\"mode\":\"macro.structure.tracks\""));
     assert(contains(capture, "\"effect\":\"open_structure_workspace\""));
     assert(contains(capture, "\"outcome\":\"applied\""));
     assert(contains(capture, "\"property\":\"live\""));
     assert(!contains(capture, "\"effect\":\"enter_selection\""));
+    assert(!contains(capture, "\"intent\":\"enter_selection\""));
     assert(provider.calls == 3);
     std::cout << "[PASS] test_capture_keeps_causal_effect_with_live_surface_state\n";
 }
@@ -536,6 +582,7 @@ int main() {
     test_writes_button_semantics_with_snapshot();
     test_writes_relative_encoder_delta_without_float_formatting();
     test_writes_normalized_encoder_value_without_delta_semantics();
+    test_buffers_encoder_contract_ownership_for_async_export();
     test_non_finite_and_oversized_encoder_values_are_serialized_safely();
     test_writes_native_context_provider_fields();
     test_associates_capture_with_live_surface_context();

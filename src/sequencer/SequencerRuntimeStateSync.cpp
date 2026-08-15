@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
 namespace core::sequencer {
@@ -77,7 +78,32 @@ void recordNewRuntimeDiagnostics(
 
 }  // namespace
 
-SequencerRuntimeStateSignature captureRuntimeStateSignature(
+FLASHMEM uint8_t projectPlaybackPhaseQ8(
+    uint16_t tickOffset,
+    uint16_t ticksPerStep,
+    uint32_t tickAnchorUs,
+    uint32_t tickPeriodUs,
+    uint32_t nowUs
+) {
+    const uint32_t ticks = std::max<uint16_t>(1U, ticksPerStep);
+    const uint32_t offset = std::min<uint32_t>(tickOffset, ticks - 1U);
+    uint32_t subTickQ8 = 0U;
+    if (tickPeriodUs != 0U) {
+        const uint32_t elapsedUs = nowUs - tickAnchorUs;
+        subTickQ8 = std::min<uint32_t>(
+            255U,
+            static_cast<uint32_t>(
+                (static_cast<uint64_t>(elapsedUs) * 256U) / tickPeriodUs
+            )
+        );
+    }
+    return static_cast<uint8_t>(std::min<uint32_t>(
+        255U,
+        (offset * 256U + subTickQ8) / ticks
+    ));
+}
+
+FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerState& source,
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
     ProjectTimingContext projectTiming
@@ -85,7 +111,9 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
     return captureRuntimeStateSignature(source.pattern, projectScaleSettings, projectTiming);
 }
 
-SequencerRuntimeStateSignature captureRuntimeStateSignature(
+// Mutable authoring-state inspection is control-plane work. Keep the snapshot
+// overload below in ITCM because playback uses that one from the timer lane.
+FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternState& source,
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
     ProjectTimingContext projectTiming
@@ -180,13 +208,22 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
     std::copy(source.probability.begin(), source.probability.end(), target.probability.begin());
 }
 
-SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
+// Telemetry capture/publication feeds UI state from the main loop after the
+// timer-lane copy. It is deliberately outside the realtime musical path.
+FLASHMEM SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
     const oc::note::sequencer::StepSequencerRuntimeState& runtimeState
 ) {
     return {
         .playheadStep = runtimeState.playheadStep,
         .playheadStepTickOffset = runtimeState.playheadStepTickOffset,
         .playheadStepTicks = runtimeState.playheadStepTicks,
+        .playheadStepPhaseQ8 = projectPlaybackPhaseQ8(
+            runtimeState.playheadStepTickOffset,
+            runtimeState.playheadStepTicks,
+            0U,
+            0U,
+            0U
+        ),
         .probabilityCycleIndex = runtimeState.probabilityCycleIndex,
         .probabilityCycleMask = runtimeState.probabilityCycleMask,
         .variationTelemetryRevision = runtimeState.variationTelemetryRevision,
@@ -197,8 +234,10 @@ SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
     };
 }
 
-void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
-                             const SequencerRuntimeTelemetrySnapshot& telemetry) {
+FLASHMEM void publishRuntimeTelemetry(
+    core::state::sequencer::SequencerState& target,
+    const SequencerRuntimeTelemetrySnapshot& telemetry
+) {
     const auto previousDiagnostics = target.runtimeDiagnostics;
     target.expandedVariationTelemetry = telemetry.expandedVariationTelemetry;
     target.runtimeDiagnostics = telemetry.runtimeDiagnostics;
@@ -206,6 +245,9 @@ void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
 
     target.playheadStep.set(telemetry.playheadStep);
     target.playheadStepTicks = telemetry.playheadStepTicks == 0 ? 1 : telemetry.playheadStepTicks;
+    target.playheadStepPhaseQ8.set(
+        telemetry.playheadStep < 0 ? 0U : telemetry.playheadStepPhaseQ8
+    );
 
     const bool needsIntraStepOffset =
         target.contentView.isChildContent() ||
@@ -240,8 +282,10 @@ void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
     }
 }
 
-void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
-                             const oc::note::sequencer::StepSequencerRuntimeState& runtimeState) {
+FLASHMEM void publishRuntimeTelemetry(
+    core::state::sequencer::SequencerState& target,
+    const oc::note::sequencer::StepSequencerRuntimeState& runtimeState
+) {
     publishRuntimeTelemetry(target, captureRuntimeTelemetry(runtimeState));
 }
 

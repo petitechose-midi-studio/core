@@ -8,9 +8,11 @@
 
 #include "app/OverlayTypes.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackEditorState.hpp"
 #include "state/project/ProjectTrackState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
 
@@ -18,7 +20,8 @@ namespace core::handler {
  * Allocation-free input owner for the retained Track Editor.
  *
  * LEFT_CENTER + NAV switches enabled Tracks, NAV selects the scalar property,
- * OPT edits it, and the bottom actions expose Mute/Solo. All authored writes
+ * OPT edits it. The bottom actions expose Mute/Solo for direct fields and
+ * Cancel/Apply for the destructive Track-type draft. All authored writes
  * cross ProjectTrackDomainServices.
  */
 class ProjectTrackEditorHandler {
@@ -28,8 +31,10 @@ public:
     struct StateRefs {
         core::state::project::ProjectTrackEditorState& editor;
         core::state::project::ProjectTrackState& tracks;
+        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         SharedTrackDomainServices sharedTracks;
         core::state::project::ProjectTrackDomainServices trackDomain;
+        SequencerHistoryDomainServices history;
     };
 
     ProjectTrackEditorHandler(
@@ -37,7 +42,6 @@ public:
         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
-        oc::type::ScopeID sequencerViewScope,
         oc::type::ScopeID overlayScope
     );
 
@@ -55,6 +59,9 @@ private:
     void setFocusedValue(float normalized);
     void toggleMute();
     void toggleSolo();
+    void cancelTrackKindDraft();
+    void applyTrackKind();
+    void syncKindDraft();
     void configureOpt();
     void commitPendingGesture();
     void cancelPendingGesture();
@@ -62,12 +69,13 @@ private:
 
     core::state::project::ProjectTrackEditorState& editor_;
     core::state::project::ProjectTrackState& tracks_;
+    core::state::sequencer::SequencerTrackBankState& sequencer_tracks_;
     SharedTrackDomainServices shared_tracks_;
     core::state::project::ProjectTrackDomainServices track_domain_;
+    SequencerHistoryDomainServices history_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID overlay_scope_ = 0;
     uint32_t gesture_commit_deadline_ms_ = 0U;
 };

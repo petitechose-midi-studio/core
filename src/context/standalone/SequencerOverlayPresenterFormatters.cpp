@@ -9,6 +9,7 @@
 #include <oc/type/TextFormat.hpp>
 
 #include "context/standalone/SequencerChordOverlayFormatters.hpp"
+#include "midi/MidiUtils.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerChordUiOps.hpp"
@@ -21,6 +22,7 @@
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
+#include "state/sequencer/DrumPatternState.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
@@ -42,6 +44,33 @@ constexpr uint32_t CYCLE_STATE_COLOR =
 using StripProps = core::ui::ContextActionStripProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
+
+struct DrumScalarRow {
+    core::state::sequencer::StepProperty property;
+    size_t propertyIndex;
+    uint8_t row;
+};
+
+// The retained overlay is a cold presentation path. Keep its descriptors and
+// format strings in flash so enabling Drum UX does not consume scarce RAM1.
+constexpr DrumScalarRow DRUM_SCALAR_ROWS[] PROGMEM = {
+    {core::state::sequencer::StepProperty::VELOCITY, 1U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 1U)},
+    {core::state::sequencer::StepProperty::GATE, 2U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 2U)},
+    {core::state::sequencer::StepProperty::NUDGE, 3U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 3U)},
+    {core::state::sequencer::StepProperty::PROBABILITY, 4U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 4U)},
+};
+const char kDrumLaneBadgeFormat[] PROGMEM = "L%u";
+const char kDrumChildMetaFormat[] PROGMEM = "S%u · %u/%u";
+const char kDrumStateKey[] PROGMEM = "State";
+const char kDrumLaneKey[] PROGMEM = "Lane";
+const char kDrumOnValue[] PROGMEM = "On";
+const char kDrumOffValue[] PROGMEM = "Off";
+const char kDrumCustomTimingSuffix[] PROGMEM = "*";
+const char kDrumEmptySuffix[] PROGMEM = "";
 
 FLASHMEM const char* availabilityLabel(
     const core::state::sequencer::StepContentCreationAvailability& availability
@@ -352,21 +381,337 @@ FLASHMEM const char* focusLabelForSelectedRow(int selectedIndex) {
     return "Step";
 }
 
+FLASHMEM void buildDrumStepEditRenderData(
+    const Source& source,
+    StepEditRenderData& data
+) {
+    auto& sequencer = source.sequencer;
+    auto& edit = sequencer.stepEdit;
+    auto& drumUi = sequencer.drumSequencer;
+    data.visible = edit.visible.get() && edit.drumContext;
+    if (!data.visible) return;
+
+    const uint8_t lane = edit.drumLane;
+    const uint8_t drumStep = edit.drumStep;
+    const bool childContext =
+        core::state::sequencer::isChildContentView(sequencer);
+    const uint8_t editedStep = edit.stepIndex.get();
+    if (!drumUi.stepInRange(lane, drumStep) ||
+        (childContext &&
+         editedStep >= core::state::sequencer::activeContentLength(sequencer))) {
+        data.visible = false;
+        return;
+    }
+
+    const auto& descriptor = drumUi.drumTrack->kit.lanes[lane];
+    const auto& lanePattern = drumUi.drumTrack->pattern.lanes[lane];
+    const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(lane);
+    const uint8_t stepsPerBeat =
+        drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane);
+    const auto displayContext =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            source.tracks.projectScaleSettings(),
+            core::state::sequencer::StepProperty::VELOCITY
+        );
+    core::state::sequencer::SequencerContentStepProjection projection{};
+    if (childContext) {
+        projection = core::state::sequencer::resolveActiveContentStepProjection(
+            sequencer,
+            editedStep,
+            displayContext.scaleSettings
+        );
+        if (!projection.valid) {
+            data.visible = false;
+            return;
+        }
+    }
+    const bool enabled = childContext
+        ? projection.enabled
+        : drumUi.drumTrack->pattern.stepEnabled(lane, drumStep);
+
+    data.rowCount = static_cast<int>(StepEditRenderData::ROW_COUNT);
+    data.stepIndex = editedStep;
+    data.selectedIndex = edit.focusedRow.get();
+    std::snprintf(
+        data.stepBadge.data(),
+        data.stepBadge.size(),
+        kDrumLaneBadgeFormat,
+        static_cast<unsigned>(lane) + 1U
+    );
+    std::array<char, 8> laneNoteName{};
+    core::midi::formatNoteName(
+        laneNoteName.data(), laneNoteName.size(), descriptor.midiNote
+    );
+    const uint32_t laneColor = ::standalone::theme::color::trackColor(
+        core::state::sequencer::drumLaneDisplayColorIndex(descriptor)
+    );
+    if (childContext) {
+        const char* childKind = core::state::sequencer::
+                isMicroSequenceContentView(sequencer)
+            ? "M"
+            : "C";
+        std::snprintf(
+            data.summary.data(),
+            data.summary.size(),
+            "%s",
+            core::state::sequencer::drumLaneDisplayName(descriptor)
+        );
+        std::snprintf(
+            data.headerContext.data(),
+            data.headerContext.size(),
+            "%s%u",
+            childKind,
+            static_cast<unsigned>(editedStep) + 1U
+        );
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            kDrumChildMetaFormat,
+            static_cast<unsigned>(drumStep) + 1U,
+            static_cast<unsigned>(editedStep) + 1U,
+            static_cast<unsigned>(
+                core::state::sequencer::activeContentLength(sequencer)
+            )
+        );
+    } else {
+        std::snprintf(
+            data.summary.data(),
+            data.summary.size(),
+            "%s",
+            core::state::sequencer::drumLaneDisplayName(descriptor)
+        );
+        std::snprintf(
+            data.headerContext.data(),
+            data.headerContext.size(),
+            "S%u",
+            static_cast<unsigned>(drumStep) + 1U
+        );
+        std::snprintf(
+            data.headerMetricValues[0].data(),
+            data.headerMetricValues[0].size(),
+            "%u",
+            static_cast<unsigned>(length)
+        );
+        std::snprintf(
+            data.headerMetricValues[1].data(),
+            data.headerMetricValues[1].size(),
+            "1/%u%s",
+            static_cast<unsigned>(stepsPerBeat * 4U),
+            lanePattern.timing.mode ==
+                    core::state::sequencer::DrumLaneTimingMode::CUSTOM
+                ? kDrumCustomTimingSuffix
+                : kDrumEmptySuffix
+        );
+    }
+    copyText(
+        data.focusLabel.data(),
+        data.focusLabel.size(),
+        focusLabelForSelectedRow(data.selectedIndex)
+    );
+
+    std::snprintf(
+        data.valueBuffers[step_edit_rows::ACTIVATED].data(),
+        data.valueBuffers[step_edit_rows::ACTIVATED].size(),
+        "%s",
+        enabled ? kDrumOnValue : kDrumOffValue
+    );
+    data.overlayProps.state = core::ui::SequencerStepEditPropertyChip{
+        .key = kDrumStateKey,
+        .value = data.valueBuffers[step_edit_rows::ACTIVATED].data(),
+        .icon = ::standalone::icons::ACTION_VALIDATE,
+        .color = ACTIVATED_ICON_COLOR,
+    };
+
+    copyText(
+        data.compactValueBuffers[0].data(),
+        data.compactValueBuffers[0].size(),
+        laneNoteName.data()
+    );
+    data.overlayProps.properties[0] = core::ui::SequencerStepEditPropertyChip{
+        .key = kDrumLaneKey,
+        .value = data.compactValueBuffers[0].data(),
+        .icon = ::standalone::icons::NOTE,
+        .color = laneColor,
+        .valueColor = laneColor,
+        .active = true,
+    };
+    for (const auto& scalar : DRUM_SCALAR_ROWS) {
+        const bool localVariationMode = childContext &&
+            edit.localVariationEditActive.get() &&
+            data.selectedIndex == scalar.row;
+        const auto* graph = core::state::sequencer::graphView(
+            core::state::sequencer::authoringPattern(sequencer)
+        );
+        const auto nodeId = childContext
+            ? core::state::sequencer::activeContentStepNodeId(
+                  sequencer, editedStep
+              )
+            : oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+        const auto* node = graph == nullptr ? nullptr : graph->stepNode(nodeId);
+        if (localVariationMode) {
+            const uint8_t range = node == nullptr
+                ? 0U
+                : core::state::sequencer::nodeLocalVariationRange(
+                      *node, scalar.property
+                  );
+            formatLocalVariationRange(
+                data.valueBuffers[scalar.row].data(),
+                data.valueBuffers[scalar.row].size(),
+                scalar.property,
+                range,
+                false
+            );
+            copyText(
+                data.compactValueBuffers[scalar.propertyIndex].data(),
+                data.compactValueBuffers[scalar.propertyIndex].size(),
+                data.valueBuffers[scalar.row].data()
+            );
+        } else if (childContext) {
+            core::state::sequencer::formatStepPropertyResolvedOffsetValue(
+                data.valueBuffers[scalar.row].data(),
+                data.valueBuffers[scalar.row].size(),
+                scalar.property,
+                projection.note,
+                projection.velocity,
+                projection.gate,
+                projection.nudge,
+                projection.probability,
+                core::state::sequencer::stepContentProjectionOffsetForProperty(
+                    projection, scalar.property
+                ),
+                false
+            );
+            formatCompactOffset(
+                data.compactValueBuffers[scalar.propertyIndex].data(),
+                data.compactValueBuffers[scalar.propertyIndex].size(),
+                scalar.property,
+                core::state::sequencer::stepContentProjectionOffsetForProperty(
+                    projection, scalar.property
+                ),
+                false
+            );
+        } else {
+            core::state::sequencer::formatStepPropertyValue(
+                data.valueBuffers[scalar.row].data(),
+                data.valueBuffers[scalar.row].size(),
+                scalar.property,
+                descriptor.midiNote,
+                lanePattern.velocity[drumStep],
+                lanePattern.gate[drumStep],
+                lanePattern.nudge[drumStep],
+                lanePattern.probability[drumStep]
+            );
+            copyText(
+                data.compactValueBuffers[scalar.propertyIndex].data(),
+                data.compactValueBuffers[scalar.propertyIndex].size(),
+                data.valueBuffers[scalar.row].data()
+            );
+        }
+        data.overlayProps.properties[scalar.propertyIndex] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = core::ui::sequencer::semantic::labelForProperty(
+                    scalar.property
+                ),
+                .value = data.compactValueBuffers[scalar.propertyIndex].data(),
+                .icon = core::ui::sequencer::visual::propertyIconGlyph(
+                    scalar.property
+                ),
+                .color = core::ui::sequencer::semantic::colorForProperty(
+                    scalar.property
+                ),
+            };
+    }
+
+    core::state::sequencer::SequencerGraphNodeId nodeId =
+        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    if (childContext) {
+        nodeId = core::state::sequencer::activeContentStepNodeId(
+            sequencer, editedStep
+        );
+    } else {
+        const int16_t slot = drumUi.drumTrack->advancedRootSlot(lane, drumStep);
+        if (slot >= 0) {
+            nodeId = core::state::sequencer::rootStepNodeId(
+                static_cast<uint8_t>(slot)
+            );
+        }
+    }
+    const auto& pattern = core::state::sequencer::authoringPattern(sequencer);
+    const bool hasMicro = nodeId !=
+            oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID &&
+        core::state::sequencer::stepNodeHasMicroSequence(pattern, nodeId);
+    const bool hasCycle = nodeId !=
+            oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID &&
+        core::state::sequencer::stepNodeHasCycleStateSet(pattern, nodeId);
+    uint32_t revision = mixRevision(2166136261U, drumUi.revision.get());
+    revision = mixRevision(revision, lane);
+    revision = mixRevision(revision, drumStep);
+    revision = mixRevision(revision, editedStep);
+    revision = mixRevision(revision, edit.focusedRow.get());
+    revision = mixRevision(revision, pattern.graphRevision.get());
+    revision = mixRevision(revision, sequencer.contentView.revision.get());
+    data.dataRevision = revision;
+    data.overlayProps.visible = true;
+    data.overlayProps.stepBadge = data.stepBadge.data();
+    data.overlayProps.title = data.summary.data();
+    data.overlayProps.context = data.headerContext.data();
+    data.overlayProps.meta = data.meta.data();
+    if (!childContext) {
+        data.overlayProps.headerMetrics[0] = {
+            .icon = ::standalone::icons::LENGTH,
+            .value = data.headerMetricValues[0].data(),
+        };
+        data.overlayProps.headerMetrics[1] = {
+            .icon = ::standalone::icons::DIVISION,
+            .value = data.headerMetricValues[1].data(),
+        };
+    }
+    data.overlayProps.focusLabel = data.focusLabel.data();
+    data.overlayProps.enabled = enabled;
+    data.overlayProps.actionsVisible = true;
+    data.overlayProps.stepBadgeColor = laneColor;
+    data.overlayProps.actions[0] = {};
+    data.overlayProps.actions[1] = core::ui::SequencerStepEditActionChip{
+        .key = "Micro",
+        .value = "Micro",
+        .icon = ::standalone::icons::MICRO_SEQUENCE,
+        .color = MICRO_SEQUENCE_COLOR,
+        .valueColor = hasMicro ? MICRO_SEQUENCE_COLOR : 0U,
+    };
+    data.overlayProps.actions[2] = core::ui::SequencerStepEditActionChip{
+        .key = "Cycle",
+        .value = "Cycle",
+        .icon = ::standalone::icons::CYCLE_STATE,
+        .color = CYCLE_STATE_COLOR,
+        .valueColor = hasCycle ? CYCLE_STATE_COLOR : 0U,
+    };
+    data.overlayProps.selectedIndex = data.selectedIndex;
+    data.overlayProps.dataRevision = revision;
+    return;
+}
+
 }  // namespace
 
-FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
-    StepEditRenderData data{};
+FLASHMEM void buildStepEditRenderData(
+    const Source& source,
+    StepEditRenderData& data
+) {
     auto& sequencer = source.sequencer;
     data.visible = sequencer.stepEdit.visible.get();
     if (!data.visible) {
-        return data;
+        return;
+    }
+    if (sequencer.stepEdit.drumContext) {
+        buildDrumStepEditRenderData(source, data);
+        return;
     }
 
     const uint8_t step = sequencer.stepEdit.stepIndex.get();
     const uint8_t len = core::state::sequencer::activeContentLength(sequencer);
     if (step >= len) {
         data.visible = false;
-        return data;
+        return;
     }
 
     data.rowCount = static_cast<int>(StepEditRenderData::ROW_COUNT);
@@ -379,7 +724,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     if (sequencer.stepContentDraft.exitPromptVisible.get()) {
         const auto choice = sequencer.stepContentDraft.exitChoice.get();
         copyText(data.stepBadge.data(), data.stepBadge.size(), "BACK");
-        copyText(data.summary.data(), data.summary.size(), "UNSAVED DRAFT");
+        copyText(data.summary.data(), data.summary.size(), "EDITED DRAFT");
         copyText(
             data.meta.data(),
             data.meta.size(),
@@ -424,7 +769,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
             .color = MICRO_SEQUENCE_COLOR,
         };
         data.dataRevision = data.overlayProps.dataRevision;
-        return data;
+        return;
     }
 
     size_t titlePos = oc::type::text::appendString(data.title.data(), data.title.size(), 0, "STEP ");
@@ -457,7 +802,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     );
     if (!resolved.valid) {
         data.visible = false;
-        return data;
+        return;
     }
 
     const auto effectiveScaleSettings = displayContext.scaleSettings;
@@ -468,18 +813,13 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     );
     if (!projection.valid) {
         data.visible = false;
-        return data;
+        return;
     }
 
-    const bool stepPresetLibraryAvailable =
-        core::state::sequencer::preset_library_entry_policy::
-            canOpenStepPresets(sequencer);
     std::snprintf(
         data.meta.data(),
         data.meta.size(),
-        stepPresetLibraryAvailable
-            ? "P%u S%u/%u %s · NAV hold: Presets"
-            : "P%u S%u/%u %s",
+        "P%u · S%u/%u · %s",
         static_cast<unsigned>(
             core::state::sequencer::activeContentPageForStep(step)
         ) + 1U,
@@ -530,9 +870,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
             chordSubEditor.focusedFormulaItem,
             chordSubEditor.sourceSelectorActive,
             chordSubEditor.focusedSourceChoice,
-            projection.enabled,
-            core::state::sequencer::preset_library_entry_policy::
-                canOpenChordPresets(sequencer)
+            projection.enabled
         );
         const auto expansionBudget =
             core::state::sequencer::projectSequencerExpansionBudget(
@@ -563,7 +901,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         );
         data.dataRevision = revision;
         data.overlayProps.dataRevision = revision;
-        return data;
+        return;
     }
 
     core::state::sequencer::SequencerChildContentSummary childSummary{};
@@ -756,27 +1094,27 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     data.overlayProps.meta = data.meta.data();
     data.overlayProps.focusLabel = data.focusLabel.data();
     data.overlayProps.enabled = resolved.enabled;
-    data.overlayProps.microSequence = projection.hasMicroSequence;
-    data.overlayProps.cycleStates = projection.hasCycleStates;
-    data.overlayProps.probabilityActive = resolved.probability < 100;
     data.overlayProps.selectedIndex = data.selectedIndex;
     data.overlayProps.actions[0] = core::ui::SequencerStepEditActionChip{
         .key = "Chord",
-        .value = data.valueBuffers[step_edit_rows::CHORD].data(),
+        .value = "Chord",
         .icon = ::standalone::icons::CHORD,
         .color = chordColor(),
+        .valueColor = hasChord ? chordColor() : 0U,
     };
     data.overlayProps.actions[1] = core::ui::SequencerStepEditActionChip{
         .key = "Micro sequence",
-        .value = data.valueBuffers[step_edit_rows::MICRO_SEQUENCE].data(),
+        .value = "Micro",
         .icon = ::standalone::icons::MICRO_SEQUENCE,
         .color = MICRO_SEQUENCE_COLOR,
+        .valueColor = projection.hasMicroSequence ? MICRO_SEQUENCE_COLOR : 0U,
     };
     data.overlayProps.actions[2] = core::ui::SequencerStepEditActionChip{
         .key = "Cycle state",
-        .value = data.valueBuffers[step_edit_rows::CYCLE_STATES].data(),
+        .value = "Cycle",
         .icon = ::standalone::icons::CYCLE_STATE,
         .color = CYCLE_STATE_COLOR,
+        .valueColor = projection.hasCycleStates ? CYCLE_STATE_COLOR : 0U,
     };
 
     const uint32_t revision = buildStepEditDataRevision(
@@ -789,7 +1127,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     );
     data.dataRevision = revision;
     data.overlayProps.dataRevision = revision;
-    return data;
+    return;
 }
 
 FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const ActionSource& source) {
@@ -799,6 +1137,99 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     auto& sequencer = source.sequencer;
     if (!sequencer.stepEdit.visible.get()) {
         props.visible = false;
+        return props;
+    }
+
+    if (sequencer.stepEdit.drumContext) {
+        const uint8_t lane = sequencer.stepEdit.drumLane;
+        const uint8_t drumStep = sequencer.stepEdit.drumStep;
+        if (!sequencer.drumSequencer.stepInRange(lane, drumStep)) {
+            props.visible = false;
+            return props;
+        }
+        props.visible = true;
+        if (focusedRowIsValueRow(sequencer)) {
+            constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                core::ui::sequencer::interactionActionIcon(resetAction),
+                Visual::ACTIVE,
+                Tone::WARNING
+            );
+            props.slots[1].visualState = Visual::HIDDEN;
+            props.slots[2].visualState = Visual::HIDDEN;
+            return props;
+        }
+        if (!focusedRowIsContextRow(sequencer)) {
+            props.slots[0].visualState = Visual::HIDDEN;
+            props.slots[1].visualState = Visual::HIDDEN;
+            props.slots[2].visualState = Visual::HIDDEN;
+            return props;
+        }
+
+        core::state::sequencer::SequencerGraphNodeId nodeId =
+            oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+        if (core::state::sequencer::isChildContentView(sequencer)) {
+            nodeId = core::state::sequencer::activeContentStepNodeId(
+                sequencer,
+                sequencer.stepEdit.stepIndex.get()
+            );
+        } else if (sequencer.drumSequencer.drumTrack != nullptr) {
+            const int16_t slot = sequencer.drumSequencer.drumTrack
+                ->advancedRootSlot(lane, drumStep);
+            if (slot >= 0) {
+                nodeId = core::state::sequencer::rootStepNodeId(
+                    static_cast<uint8_t>(slot)
+                );
+            }
+        }
+        const bool hasChild = nodeId !=
+                oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID &&
+            focusedContextHasChild(sequencer, nodeId);
+        const bool canPaste = source.structureClipboard.hasSequencerStepContent(
+                clipboardKindForFocusedContextRow(sequencer)
+            ) &&
+            core::state::sequencer::activeContentDepth(sequencer) <
+                oc::note::sequencer::StepSequencerGraphLimits::MAX_DEPTH - 1U;
+        const auto row = static_cast<size_t>(sequencer.stepEdit.focusedRow.get());
+        const Tone contextTone = row == step_edit_rows::MICRO_SEQUENCE
+            ? Tone::CONSTRUCTIVE
+            : Tone::WARNING;
+        const auto holdAction = sequencer.stepEdit.contextHold.action.get();
+        const uint32_t holdStartedAtMs =
+            sequencer.stepEdit.contextHold.startedAtMs.get();
+        const bool removeHoldActive =
+            holdAction == core::state::StructureHoldAction::REMOVE;
+        const bool pasteHoldActive =
+            holdAction == core::state::StructureHoldAction::PASTE;
+        constexpr auto removeAction = Action::REMOVE_STEP_EDITOR_CONTEXT;
+        const auto rightAction = canPaste
+            ? Action::PASTE_STEP_EDITOR_CONTEXT
+            : Action::COPY_STEP_EDITOR_CONTEXT;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            core::ui::sequencer::interactionActionIcon(removeAction),
+            removeHoldActive
+                ? Visual::ARMED
+                : (hasChild ? Visual::ACTIVE : Visual::DISABLED),
+            removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            core::ui::sequencer::interactionActionIcon(rightAction),
+            pasteHoldActive && canPaste
+                ? Visual::ARMED
+                : ((hasChild || canPaste) ? Visual::ACTIVE : Visual::DISABLED),
+            pasteHoldActive && canPaste
+                ? Tone::POSITIVE
+                : (canPaste ? Tone::POSITIVE : contextTone)
+        );
+        props.slots[0].holdActive = removeHoldActive;
+        props.slots[0].holdStartedAtMs = holdStartedAtMs;
+        props.slots[0].holdDurationMs =
+            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        props.slots[2].holdActive = pasteHoldActive && canPaste;
+        props.slots[2].holdStartedAtMs = holdStartedAtMs;
+        props.slots[2].holdDurationMs =
+            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
         return props;
     }
 
@@ -867,6 +1298,8 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         ? Tone::CONSTRUCTIVE
         : Tone::WARNING;
     const auto holdAction = sequencer.stepEdit.contextHold.action.get();
+    const uint32_t holdStartedAtMs =
+        sequencer.stepEdit.contextHold.startedAtMs.get();
     const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
     const bool pasteHoldActive = holdAction == core::state::StructureHoldAction::PASTE;
     constexpr auto removeAction = Action::REMOVE_STEP_EDITOR_CONTEXT;
@@ -888,10 +1321,10 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         pasteHoldActive && canPaste ? Tone::POSITIVE : (canPaste ? Tone::POSITIVE : contextTone)
     );
     props.slots[0].holdActive = removeHoldActive;
-    props.slots[0].holdStartedAtMs = sequencer.stepEdit.contextHold.startedAtMs.get();
+    props.slots[0].holdStartedAtMs = holdStartedAtMs;
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     props.slots[2].holdActive = pasteHoldActive && canPaste;
-    props.slots[2].holdStartedAtMs = sequencer.stepEdit.contextHold.startedAtMs.get();
+    props.slots[2].holdStartedAtMs = holdStartedAtMs;
     props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     return props;
 }

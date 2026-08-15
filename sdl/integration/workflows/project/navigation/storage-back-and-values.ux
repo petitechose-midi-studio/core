@@ -1,8 +1,9 @@
-# UX workflow: navigate Project Storage placeholder values and back out.
-# Purpose: validates the hardware feedback path reported on Teensy: disabled rows
-# must show focus, enabled placeholder values must update, and LEFT_TOP must open
-# the global view selector again when Project is at a tab root.
-# Expect: capture_changed:storage_slot_focused=storage_slot_changed, capture_changed:storage_autosave_focused=storage_autosave_off, capture_changed:storage_autosave_off=selector_from_storage_root
+# UX workflow: inspect Project Storage actions and back out without mutation.
+# Purpose: validates the current lifecycle authority, focus on the disabled
+# project identity row, and LEFT_TOP at a tab root. No save/load action is fired.
+# Expect: capture_changed:storage_save_focused=storage_identity_focused, capture_changed:storage_identity_focused=selector_from_storage_root
+# Expect: semantic:storage_save_focused:property=storage, semantic:storage_save_focused:value_label=storage_root, semantic:storage_save_focused:target_index=0
+# Expect: semantic:storage_identity_focused:target_index=5, semantic:selector_from_storage_root:overlay=view_selector
 
 0 capture screen boot
 
@@ -18,31 +19,23 @@
 
 # Move to Storage using the first-level tab shortcut.
 820 button LEFT_CENTER down
-1420 encoder NAV 1
-1500 encoder NAV 1
-1580 encoder NAV 1
+1420 encoder NAV 0.01
+1500 encoder NAV 0.01
+1580 encoder NAV 0.01
+1660 encoder NAV 0.01
 1760 capture screen storage_tab
 1840 button LEFT_CENTER up
-2040 capture screen storage_save_disabled_focused
+2040 capture screen storage_save_focused
 
-# Disabled rows still show cursor feedback while remaining inert. New Project is
-# enabled now, so this workflow only focuses it and does not trigger it.
-2140 encoder NAV 1
-2260 capture screen storage_new_enabled_focused
-2340 encoder NAV 1
-2460 capture screen storage_load_disabled_focused
-
-# Enabled placeholder values are activable for UX validation.
-2540 encoder NAV 1
-2660 capture screen storage_slot_focused
-2740 tap NAV 60
-2960 capture screen storage_slot_changed
-3040 encoder NAV 1
-3160 capture screen storage_autosave_focused
-3240 tap NAV 60
-3460 capture screen storage_autosave_off
+# Move through the five lifecycle actions to the read-only project identity.
+2140 encoder NAV 0.01
+2220 encoder NAV 0.01
+2300 encoder NAV 0.01
+2380 encoder NAV 0.01
+2460 encoder NAV 0.01
+2620 capture screen storage_identity_focused
 
 # From a tab root, LEFT_TOP opens the global selector.
-3560 button LEFT_TOP down
-3740 capture screen selector_from_storage_root
-3820 button LEFT_TOP up
+2720 button LEFT_TOP down
+2900 capture screen selector_from_storage_root
+2980 button LEFT_TOP up

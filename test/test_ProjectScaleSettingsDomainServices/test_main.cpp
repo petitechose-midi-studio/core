@@ -1,25 +1,10 @@
 #include <cassert>
-#include <cstring>
 #include <iostream>
 
-#include <oc/api/ButtonAPI.hpp>
-#include <oc/api/EncoderAPI.hpp>
-#include <oc/context/OverlayManager.hpp>
-#include <oc/core/event/EventBus.hpp>
-#include <oc/core/event/Events.hpp>
-#include <oc/core/input/InputBinding.hpp>
-
-#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
-#include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
-#include "../../src/handler/settings/SequencerSettingsHandler.hpp"
-#include "../../src/state/CoreState.hpp"
+#include "../../src/handler/project/ProjectScaleSettingsDomainServices.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerProjectScaleOps.hpp"
-#include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
-#include "../support/CoreStorages.hpp"
-#include "../support/InputTestHardware.hpp"
 
 namespace {
 
@@ -31,15 +16,6 @@ using ChordHarmony =
     oc::note::sequencer::StepSequencerChordHarmony;
 using ChordSpec =
     oc::note::sequencer::StepSequencerChordSpec;
-using test_support::TestButtonHardware;
-using test_support::TestEncoderHardware;
-
-uint32_t g_now_ms = 0;
-
-uint32_t mockTimeMs() {
-    return g_now_ms;
-}
-
 ChordSpec customChord(uint8_t second, uint8_t third) {
     auto spec = ChordSpec::semantic(
         ChordHarmony::Custom,
@@ -106,85 +82,11 @@ applyProjectScaleChoice(
     );
 }
 
-struct SequencerSettingsHandlerHarness {
-    static constexpr oc::type::ScopeID SETTINGS_SCOPE = 811;
-    static constexpr oc::type::ScopeID SELECTOR_SCOPE = 812;
-
-    test_support::CoreStorages storages;
-    core::state::CoreState state;
-    core::handler::SequencerSettingsDomainServices services;
-
-    oc::core::event::EventBus eventBus;
-    oc::core::input::InputBinding inputBinding;
-    TestButtonHardware buttonHw;
-    TestEncoderHardware encoderHw;
-    oc::api::ButtonAPI buttons;
-    oc::api::EncoderAPI encoders;
-    oc::context::OverlayManager<core::ui::OverlayType> overlays;
-    core::handler::SequencerSettingsHandler handler;
-
-    SequencerSettingsHandlerHarness()
-        : state(storages.settings)
-        , services(core::handler::SequencerSettingsDomainServices::StateRefs{
-              state.sequencerTracks,
-          })
-        , inputBinding(eventBus, mockTimeMs)
-        , buttons(inputBinding, buttonHw)
-        , encoders(inputBinding, encoderHw)
-        , overlays(state.overlays, buttons)
-        , handler(core::handler::SequencerSettingsHandler::StateRefs{
-                      state.sequencerSettings,
-                      state.viewSelector,
-                      state.sequencer,
-                      core::handler::SequencerHistoryDomainServices::fromCoreState(state),
-                  },
-                  services,
-                  overlays,
-                  encoders,
-                  buttons,
-                  SETTINGS_SCOPE,
-                  SELECTOR_SCOPE) {
-        overlays.setActiveViewProvider([]() { return SETTINGS_SCOPE; });
-        overlays.registerCleanup(core::ui::OverlayType::SEQUENCER_SETTINGS, SETTINGS_SCOPE);
-        overlays.registerCleanup(core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR, SELECTOR_SCOPE);
-        g_now_ms = 0;
-    }
-
-    void openSettings() {
-        state.sequencerSettings.openOverlay();
-        overlays.show(core::ui::OverlayType::SEQUENCER_SETTINGS, false);
-        assert(state.sequencerSettings.visible.get());
-    }
-
-    void press(Config::ButtonID id) {
-        const auto buttonId = static_cast<oc::type::ButtonID>(id);
-        buttonHw.setPressed(buttonId, true);
-        eventBus.emit(oc::core::event::ButtonPressEvent(buttonId, true));
-    }
-
-    void release(Config::ButtonID id) {
-        const auto buttonId = static_cast<oc::type::ButtonID>(id);
-        buttonHw.setPressed(buttonId, false);
-        eventBus.emit(oc::core::event::ButtonReleaseEvent(buttonId));
-    }
-
-    void tap(Config::ButtonID id) {
-        press(id);
-        release(id);
-    }
-
-    void turn(Config::EncoderID id, float delta) {
-        const auto encoderId = static_cast<oc::type::EncoderID>(id);
-        encoderHw.setPosition(encoderId, delta);
-        eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, delta));
-    }
-};
-
 void test_project_scale_choices_update_track_bank() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::handler::SequencerSettingsDomainServices services{
-        core::handler::SequencerSettingsDomainServices::StateRefs{
+    core::handler::ProjectScaleSettingsDomainServices services{
+        core::handler::ProjectScaleSettingsDomainServices::StateRefs{
             trackBank,
         }
     };
@@ -490,188 +392,6 @@ void test_pattern_pitch_context_projects_formula_at_the_mode_boundary() {
         << "[PASS] Pattern Pitch Context projects formulas at its boundary\n";
 }
 
-void test_project_scale_settings_are_undoable_through_handler() {
-    SequencerSettingsHandlerHarness h;
-    h.openSettings();
-
-    h.tap(Config::ButtonID::NAV);
-    assert(h.state.sequencerSettings.flowPhase.get() ==
-           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
-
-    for (uint8_t i = 0; i < 5; ++i) {
-        h.turn(Config::EncoderID::NAV, 1.0f);
-    }
-    h.tap(Config::ButtonID::NAV);
-
-    assert(h.state.sequencerTracks.projectScaleSettings().root == 10);
-    assert(h.state.sequencerHistory.undoCount(core::state::sequencer::SequencerHistoryScope::FullBank) == 1);
-
-    h.tap(Config::ButtonID::LEFT_TOP);
-
-    assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
-    assert(h.state.sequencerHistory.redoCount(core::state::sequencer::SequencerHistoryScope::FullBank) == 1);
-
-    assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencerTracks.projectScaleSettings().root == 10);
-
-    std::cout << "[PASS] test_project_scale_settings_are_undoable_through_handler\n";
-}
-
-void test_settings_no_change_closes_without_feedback_or_full_bank_allocation() {
-    SequencerSettingsHandlerHarness h;
-    h.openSettings();
-    h.tap(Config::ButtonID::NAV);
-    assert(h.state.sequencerSettings.flowPhase.get() ==
-           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
-    const uint32_t feedbackRevision = h.state.sequencer.historyFeedback.revision.get();
-
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        h.tap(Config::ButtonID::NAV);
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-    }
-
-    assert(h.state.sequencerSettings.flowPhase.get() !=
-           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
-    assert(!h.state.sequencerSettings.selector.visible.get());
-    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
-    assert(h.state.sequencerHistory.undoCount(
-               core::state::sequencer::SequencerHistoryScope::FullBank) == 0U);
-
-    std::cout << "[PASS] Settings no-op closes without feedback or FullBank allocation\n";
-}
-
-void test_settings_failure_keeps_selector_open_with_memory_feedback() {
-    SequencerSettingsHandlerHarness h;
-    h.openSettings();
-    h.tap(Config::ButtonID::NAV);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    const auto scaleBefore = h.state.sequencerTracks.projectScaleSettings();
-    const uint32_t feedbackRevision = h.state.sequencer.historyFeedback.revision.get();
-
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        h.tap(Config::ButtonID::NAV);
-        assert(core::app::testing::extmemAllocationAttempt == 1U);
-    }
-
-    assert(h.state.sequencerSettings.flowPhase.get() ==
-           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
-    assert(h.state.sequencerSettings.selector.visible.get());
-    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision + 1U);
-    assert(h.state.sequencer.historyFeedback.visible.get());
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
-    assert(h.state.sequencerTracks.projectScaleSettings().root == scaleBefore.root);
-    assert(h.state.sequencerHistory.undoCount(
-               core::state::sequencer::SequencerHistoryScope::FullBank) == 0U);
-
-    std::cout << "[PASS] Settings allocation failure stays open with memory feedback\n";
-}
-
-void test_settings_no_change_with_active_draft_rejects_before_allocation() {
-    SequencerSettingsHandlerHarness h;
-    h.openSettings();
-    h.tap(Config::ButtonID::NAV);
-    assert(core::state::sequencer::beginStepContentDraft(
-        h.state.sequencer,
-        core::state::sequencer::SequencerStepContentDraftKind::CHORD,
-        0U,
-        core::state::sequencer::rootStepNodeId(0U)
-    ));
-    const uint32_t feedbackRevision = h.state.sequencer.historyFeedback.revision.get();
-
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        h.tap(Config::ButtonID::NAV);
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-    }
-
-    assert(h.state.sequencerSettings.flowPhase.get() ==
-           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
-    assert(h.state.sequencerSettings.selector.visible.get());
-    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision + 1U);
-    assert(h.state.sequencer.historyFeedback.visible.get());
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Edit unavailable") == 0);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
-    assert(h.state.sequencer.stepContentDraft.failure ==
-           core::state::sequencer::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
-    assert(h.state.sequencer.stepContentDraft.blockedTransition ==
-           core::state::sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD);
-    assert(h.state.sequencerHistory.undoCount(
-               core::state::sequencer::SequencerHistoryScope::FullBank) == 0U);
-
-    std::cout << "[PASS] Settings no-op draft rejection stays open before allocation\n";
-}
-
-void test_project_chord_projection_is_one_undoable_transaction() {
-    SequencerSettingsHandlerHarness h;
-    assert(applyProjectScaleChoice(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        2,
-        0
-    ).changed);
-    authorScalePolicyChord(
-        h.state.sequencer.pattern,
-        customChord(4, 7)
-    );
-    const auto before = rootChord(h.state.sequencer.pattern);
-    assert(
-        before.intervalBasis() ==
-        ChordBasis::ChromaticSemitones
-    );
-
-    h.openSettings();
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.tap(Config::ButtonID::NAV);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.tap(Config::ButtonID::NAV);
-
-    assert(
-        h.state.sequencerTracks.projectScaleSettings().mode ==
-        StepSequencerScaleConstraintMode::ConstrainNearest
-    );
-    assert(
-        rootChord(h.state.sequencer.pattern).intervalBasis() ==
-        ChordBasis::ScaleDegrees
-    );
-    assert(h.state.sequencer.historyFeedback.visible.get());
-    assert(
-        h.state.sequencerHistory.undoCount(
-            core::state::sequencer::
-                SequencerHistoryScope::FullBank
-        ) == 1
-    );
-
-    assert(h.state.undoSequencerHistory());
-    assert(
-        h.state.sequencerTracks.projectScaleSettings().mode ==
-        StepSequencerScaleConstraintMode::Free
-    );
-    assert(
-        rootChord(h.state.sequencer.pattern).intervalBasis() ==
-        ChordBasis::ChromaticSemitones
-    );
-
-    assert(h.state.redoSequencerHistory());
-    assert(
-        h.state.sequencerTracks.projectScaleSettings().mode ==
-        StepSequencerScaleConstraintMode::ConstrainNearest
-    );
-    assert(
-        rootChord(h.state.sequencer.pattern).intervalBasis() ==
-        ChordBasis::ScaleDegrees
-    );
-
-    std::cout
-        << "[PASS] Project chord projection is one undo transaction\n";
-}
-
 }  // namespace
 
 int main() {
@@ -684,11 +404,6 @@ int main() {
     test_pattern_pitch_settings_override_copies_project_before_local_edits();
     test_pattern_return_to_project_projects_local_chords();
     test_pattern_pitch_context_projects_formula_at_the_mode_boundary();
-    test_project_scale_settings_are_undoable_through_handler();
-    test_settings_no_change_closes_without_feedback_or_full_bank_allocation();
-    test_settings_failure_keeps_selector_open_with_memory_feedback();
-    test_settings_no_change_with_active_draft_rejects_before_allocation();
-    test_project_chord_projection_is_one_undoable_transaction();
-    std::cout << "All SequencerSettingsDomainServices tests passed\n";
+    std::cout << "All ProjectScaleSettingsDomainServices tests passed\n";
     return 0;
 }

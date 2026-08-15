@@ -283,7 +283,7 @@ public:
         SequencerTrackActivationHistoryTransition& out
     );
 
-    /** Legacy prepare-and-arm compatibility API for unmigrated callers. */
+    /** Atomic plan-and-arm convenience used by History traversal. */
     bool prepareHistoryTransition(
         const SequencerTrackActivationHistoryRef& reference,
         SequencerTrackActivationTarget desiredTarget,

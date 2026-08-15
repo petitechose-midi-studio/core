@@ -12,7 +12,7 @@
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
-#include "handler/settings/SequencerSettingsDomainServices.hpp"
+#include "handler/project/ProjectScaleSettingsDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
@@ -52,7 +52,7 @@ public:
 
     ProjectHandler(StateRefs state,
                    DeviceSettingsDomainServices deviceSettings,
-                   SequencerSettingsDomainServices sequencerSettings,
+                   ProjectScaleSettingsDomainServices scaleSettings,
                    MacroEditDomainServices macroEditServices,
                    oc::api::EncoderAPI& encoders,
                    oc::api::ButtonAPI& buttons,
@@ -88,7 +88,7 @@ private:
     void enterFocused();
     void setFocusedValue(float normalized);
     bool applyFocusedProjectStep(int steps);
-    bool applyFocusedMusicRootStep(int steps);
+    bool applyFocusedMusicSettingsStep(int steps);
     bool applyFocusedMusicScaleStep(int steps);
     bool applyFocusedTransportStep(int steps);
     bool applyFocusedRoutingStep(int steps);
@@ -101,7 +101,7 @@ private:
     );
     void endProjectSettingsGesture();
     bool setFocusedProjectValue(float normalized);
-    bool setFocusedMusicRootValue(float normalized);
+    bool setFocusedMusicSettingsValue(float normalized);
     bool setFocusedMusicScaleValue(float normalized);
     bool setFocusedTransportValue(float normalized);
     bool setFocusedRoutingValue(float normalized);
@@ -188,7 +188,7 @@ private:
     core::state::StructureClipboardState& clipboard_;
     SequencerHistoryDomainServices history_;
     ProjectLifecycleDomainServices lifecycle_;
-    SequencerSettingsDomainServices sequencer_settings_;
+    ProjectScaleSettingsDomainServices scale_settings_;
     MacroEditDomainServices macro_edit_services_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

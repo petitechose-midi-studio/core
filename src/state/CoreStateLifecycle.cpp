@@ -87,7 +87,6 @@ FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
 FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.viewSelector.reset();
     state.deviceSettings.reset();
-    state.sequencerSettings.reset();
     state.patternPitchSettings.reset();
     // Factory reset already cleared Project-scoped Macro runtime in
     // resetMacroDomain_. This second pass owns UI/session state only.
@@ -154,7 +153,6 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.projectNavigation.resetTransient();
     state.projectTrackEditor.reset();
     state.deviceSettings.reset();
-    state.sequencerSettings.reset();
 }
 
 FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
@@ -194,7 +192,6 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
     state.deviceSettings.reset();
-    state.sequencerSettings.reset();
     state.patternPitchSettings.reset();
     state.projectNavigation.reset();
     state.projectTrackEditor.reset();
@@ -209,6 +206,7 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
             "[CoreState] Invalid Modulator audition discarded by Project reset"
         );
         state.sequencerDomain_.coalescedPatternHistory.clear();
+        state.sequencerDomain_.coalescedDrumHistory.clear();
         state.macroHistory.clear();
         state.sequencerHistory.clear();
         state.projectTrackHistory.clear();
@@ -243,6 +241,7 @@ FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
             "[CoreState] Invalid Modulator audition discarded by factory reset"
         );
         state.sequencerDomain_.coalescedPatternHistory.clear();
+        state.sequencerDomain_.coalescedDrumHistory.clear();
         state.macroHistory.clear();
         state.sequencerHistory.clear();
         state.projectTrackHistory.clear();

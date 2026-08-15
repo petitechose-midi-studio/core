@@ -284,6 +284,7 @@ void SequencerRuntimeService::update() {
             true,
             snapshot_bank_.laneSnapshot(snapshotIndex),
             !clockDomain.transport.usingExternalSource
+            , snapshot_bank_.drumSnapshot(snapshotIndex)
         );
         track_activations_.publishRealtimeTelemetry();
         drainRealtimeMidiQueue_(core::time_compat::micros());
@@ -364,7 +365,11 @@ SequencerRuntimeService::updateClockDomainOwnership_(
 #endif
 }
 
-void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(uint32_t nowMs) {
+// The timer lane has already produced a bounded snapshot under lock. Mapping
+// that snapshot into observable UI signals is main-loop control-plane work.
+FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
+    uint32_t nowMs
+) {
 #ifdef ARDUINO
     SequencerPlaybackService::UiProjectionSnapshot uiProjection;
     SequencerRuntimeTelemetrySnapshot runtimeTelemetry;
@@ -389,12 +394,14 @@ void SequencerRuntimeService::drainRealtimeMidiQueue_(uint32_t nowUs) {
     midi_.serviceOutput(RealtimeMidiQueue::MAX_DRAIN_BUDGET_US);
 }
 
-void SequencerRuntimeService::drainRealtimeMidiQueueFully_(uint32_t nowUs) {
+FLASHMEM void SequencerRuntimeService::drainRealtimeMidiQueueFully_(
+    uint32_t nowUs
+) {
     realtime_lane_->midiQueue.drainDue(midi_, nowUs, UINT32_MAX);
     midi_.serviceOutput(UINT32_MAX);
 }
 
-void SequencerRuntimeService::stopPlayback_() {
+FLASHMEM void SequencerRuntimeService::stopPlayback_() {
     // Future events no longer belong to the stopped generation. Drop them,
     // then drain each track's immediate panic note-offs before the next track
     // can fill the bounded realtime queue.

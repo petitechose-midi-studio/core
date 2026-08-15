@@ -19,7 +19,10 @@ FLASHMEM SequencerRuntimeSnapshotBank::SequencerRuntimeSnapshotBank(
     , track_bank_(trackBank)
     , project_navigation_(projectNavigation) {}
 
-uint8_t SequencerRuntimeSnapshotBank::refresh() {
+// Snapshot construction belongs to the main-loop control plane. The timer ISR
+// only consumes the committed bank through the small accessors below, so keep
+// this comparatively large scan/copy path out of scarce ITCM.
+FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
     last_refresh_succeeded_ = false;
     const uint8_t currentIndex = active_index_;
     const uint8_t writeIndex = static_cast<uint8_t>(currentIndex ^ 0x1U);
@@ -81,6 +84,11 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
 
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
+    if (!refreshDrumTracks_(writeIndex)) {
+        // Do not publish a flat generation without its Track-kind payload.
+        // Allocation is retried from this non-realtime path on the next pass.
+        return currentIndex;
+    }
     runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
     runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
     runtimeSnapshot.projectSwingPercent =
@@ -133,6 +141,51 @@ const SequencerRuntimeSnapshotBank::Snapshot& SequencerRuntimeSnapshotBank::snap
 const SequencerCcLaneRuntimeProjectSnapshot*
 SequencerRuntimeSnapshotBank::laneSnapshot(uint8_t snapshotIndex) const {
     return lane_snapshots_[snapshotIndex & 0x1U].get();
+}
+
+FLASHMEM bool SequencerRuntimeSnapshotBank::refreshDrumTracks_(
+    uint8_t writeIndex
+) {
+    const uint8_t slotIndex = static_cast<uint8_t>(writeIndex & 0x1U);
+    const uint16_t presentMask = static_cast<uint16_t>(
+        track_bank_.drumTrackMask() & track_bank_.currentEnabledMask());
+    auto& slot = drum_snapshots_[slotIndex];
+    if (presentMask == 0U && !slot) return true;
+
+    if (!slot) {
+        slot = core::app::makeExtmemUnique<
+            SequencerDrumRuntimeProjectSnapshot>();
+        if (!slot) return false;
+    }
+
+    slot->presentMask = presentMask;
+    for (uint8_t track = 0U; track < slot->tracks.size(); ++track) {
+        const uint16_t trackBit = static_cast<uint16_t>(1U << track);
+        if ((presentMask & trackBit) == 0U) continue;
+
+        const auto& source = track_bank_.drumTrack(track);
+        const uint32_t sourceRevision =
+            track_bank_.drumTrackRevision(track);
+        if (slot->sourceRevisions[track] == sourceRevision) {
+            continue;
+        }
+        core::state::sequencer::captureDrumRuntimeSnapshot(
+            source,
+            slot->tracks[track]
+        );
+        // Runtime lifecycle generations do not collide across Project loads,
+        // unlike persisted authored counters that commonly restart at one.
+        slot->tracks[track].revision = sourceRevision;
+        slot->sourceRevisions[track] = sourceRevision;
+    }
+    return true;
+}
+
+const SequencerDrumRuntimeProjectSnapshot*
+SequencerRuntimeSnapshotBank::drumSnapshot(
+    uint8_t snapshotIndex
+) const {
+    return drum_snapshots_[snapshotIndex & 0x1U].get();
 }
 
 const SequencerRuntimeSnapshotBank::Snapshot& SequencerRuntimeSnapshotBank::activeSnapshot() const {

@@ -4,6 +4,7 @@
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
+#include "ui/interaction/SelectorPresentationPolicy.hpp"
 #include "ui/sequencer/SequencerChordVoiceRail.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
 
@@ -51,6 +52,12 @@ FLASHMEM bool SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.pattern.graphRevision,
         state_refs_.sequencer.contentView.revision,
         state_refs_.tracks.projectScaleRevisionSignal()
+    ) && bound;
+    bound = step_edit_watcher_.watch(
+        state_refs_.tracks.drumRevisionSignal()
+    ) && bound;
+    bound = step_edit_watcher_.watch(
+        state_refs_.sequencer.drumSequencer.revision
     ) && bound;
     step_edit_action_watcher_.bind<&SequencerOverlayPresenter::requestStepEditActionsRender>(
         *this, 1, "SequencerOverlay.stepEditActions"
@@ -125,10 +132,15 @@ FLASHMEM void SequencerOverlayPresenter::renderPending(uint32_t flags) {
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
-    auto data = core::context::standalone::sequencer_overlay_presenter::buildStepEditRenderData({
-        state_refs_.sequencer,
-        state_refs_.tracks,
-    });
+    if (state_refs_.sequencer.drumSequencer.laneEditor.active) return;
+    core::context::standalone::sequencer_overlay_presenter::StepEditRenderData data{};
+    core::context::standalone::sequencer_overlay_presenter::buildStepEditRenderData(
+        {
+            state_refs_.sequencer,
+            state_refs_.tracks,
+        },
+        data
+    );
     if (!data.visible || state_refs_.sequencer.presetLibrary.visible.get()) {
         step_edit_overlay_.render({.visible = false});
     } else {
@@ -137,6 +149,7 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepEditActionStrip() {
+    if (state_refs_.sequencer.drumSequencer.laneEditor.active) return;
     if (!state_refs_.sequencer.stepEdit.visible.get()) {
         step_edit_action_strip_.render({.visible = false});
     } else {
@@ -163,17 +176,16 @@ FLASHMEM void SequencerOverlayPresenter::renderPresetLibrary() {
         return;
     }
 
-    preset_library_overlay_.render({
-        .title = data.title.data(),
-        .meta = data.meta.data(),
-        .items = data.items.data(),
-        .itemCount = data.itemCount,
-        .selectedIndex = data.selectedIndex,
-        .showIndexColumn = false,
-        .dimUnselected = false,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
+    preset_library_overlay_.render(
+        core::ui::interaction::decisionSelectorProps(
+            data.title.data(),
+            data.meta.data(),
+            data.items.data(),
+            data.itemCount,
+            data.selectedIndex,
+            data.dataRevision
+        )
+    );
     preset_library_chord_voice_rail_.render(data.chordVoiceRail);
 }
 

@@ -23,8 +23,8 @@ constexpr lv_coord_t PANEL_PAD_TOP = theme::layout::PAD_MD;
 constexpr lv_coord_t PANEL_PAD_BOTTOM = theme::layout::PAD_SM;
 constexpr lv_coord_t CONTENT_GAP = theme::layout::GAP_MD;
 constexpr lv_coord_t TEXT_GAP = 1;
-constexpr uint32_t BG_COLOR = theme::color::BACKGROUND;
-constexpr uint32_t BORDER_COLOR = 0x2E3A45;
+constexpr uint32_t BG_COLOR = theme::color::SURFACE_RAISED;
+constexpr uint32_t BORDER_COLOR = theme::color::FOCUS_EDIT;
 constexpr uint32_t TEXT_PRIMARY = theme::color::TEXT_PRIMARY;
 constexpr uint32_t TEXT_SECONDARY = theme::color::TEXT_SECONDARY;
 
@@ -83,11 +83,11 @@ FLASHMEM void StepPropertySelectionOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_style_pad_top(container_, PANEL_PAD_TOP, 0);
     lv_obj_set_style_pad_bottom(container_, PANEL_PAD_BOTTOM, 0);
     lv_obj_set_style_bg_color(container_, lv_color_hex(BG_COLOR), 0);
-    lv_obj_set_style_bg_opa(container_, LV_OPA_80, 0);
+    lv_obj_set_style_bg_opa(container_, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(container_, 1, 0);
     lv_obj_set_style_border_color(container_, lv_color_hex(BORDER_COLOR), 0);
-    lv_obj_set_style_border_opa(container_, LV_OPA_70, 0);
-    lv_obj_set_style_radius(container_, 4, 0);
+    lv_obj_set_style_border_opa(container_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(container_, 3, 0);
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
 
     content_row_ = lv_obj_create(container_);
@@ -124,13 +124,13 @@ FLASHMEM void StepPropertySelectionOverlay::createUI(lv_obj_t* parent) {
 
     label_ = lv_label_create(text_column_);
     lv_obj_set_size(label_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_font(label_, fonts.inter_14_semibold, 0);
+    lv_obj_set_style_text_font(label_, fonts.context_title(), 0);
     lv_obj_set_style_text_color(label_, lv_color_hex(TEXT_PRIMARY), 0);
     lv_label_set_long_mode(label_, LV_LABEL_LONG_CLIP);
 
     value_ = lv_label_create(text_column_);
     lv_obj_set_size(value_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_font(value_, fonts.inter_12_medium, 0);
+    lv_obj_set_style_text_font(value_, fonts.meta_label(), 0);
     lv_obj_set_style_text_color(value_, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_opa(value_, LV_OPA_80, 0);
     lv_label_set_long_mode(value_, LV_LABEL_LONG_CLIP);

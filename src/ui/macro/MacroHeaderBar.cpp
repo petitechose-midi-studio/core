@@ -152,7 +152,7 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
         props.focusingPage || props.slotSelectionActive ||
         props.pageSelectionActive;
     rowProps.cursorIndex = displayPage;
-    rowProps.cursorColor = rowProps.accentColor;
+    rowProps.cursorColor = theme::color::FOCUS_EDIT;
     rowProps.cursorOpa = LV_OPA_COVER;
 
     for (uint8_t i = 0; i < rowProps.itemCount; ++i) {

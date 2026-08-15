@@ -15,6 +15,7 @@ using core::state::sequencer::createMicroSequence;
 using core::state::sequencer::enterCycleStatesContentView;
 using core::state::sequencer::enterMicroSequenceContentView;
 using core::state::sequencer::rootStepNodeId;
+using core::state::sequencer::setCycleStateSetOffset;
 using core::state::sequencer::setNodeEnabledOverride;
 using core::state::sequencer::setNodeChordSpec;
 using core::state::sequencer::setNodeNoteOffset;
@@ -22,12 +23,24 @@ using core::state::sequencer::setNodeLocalVariationRange;
 using core::state::sequencer::StepProperty;
 using core::ui::sequencer::grid::buildStepContentBadgeProjection;
 using core::ui::sequencer::grid::buildStepContentBadgeProjectionForNode;
+using core::ui::sequencer::grid::applyCycleStatePlaybackProjection;
+using core::ui::sequencer::grid::applyMicroSequencePlaybackProjection;
 using core::ui::sequencer::grid::mergeExpandedTelemetryChordBadgeForNode;
 
 void test_projects_root_step_content_badges() {
     core::state::sequencer::SequencerPatternState pattern;
 
-    assert(createMicroSequence(pattern, rootStepNodeId(1), 2).ok);
+    const auto micro = createMicroSequence(pattern, rootStepNodeId(1), 2);
+    assert(micro.ok);
+    const auto* graph = core::state::sequencer::graphView(pattern);
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    assert(setNodeEnabledOverride(
+        pattern,
+        static_cast<uint16_t>(sequence->firstStepNode + 1U),
+        false
+    ));
     assert(createCycleStateSet(pattern, rootStepNodeId(2), 4).ok);
     assert(createMicroSequence(pattern, rootStepNodeId(3), 2).ok);
     assert(createCycleStateSet(pattern, rootStepNodeId(3), 4).ok);
@@ -41,6 +54,8 @@ void test_projects_root_step_content_badges() {
     assert(badges.microSequence);
     assert(!badges.cycleStates);
     assert(!badges.chord);
+    assert(badges.microLength == 2U);
+    assert(badges.microActiveMask == 0x1U);
 
     badges = buildStepContentBadgeProjection(pattern, 2);
     assert(!badges.microSequence);
@@ -51,8 +66,103 @@ void test_projects_root_step_content_badges() {
     assert(badges.microSequence);
     assert(badges.cycleStates);
     assert(!badges.chord);
+    assert(badges.microLength == 2U);
+    assert(badges.microActiveMask == 0x3U);
 
     std::cout << "[PASS] test_projects_root_step_content_badges\n";
+}
+
+void test_root_grid_projects_micro_rail_and_current_substep() {
+    SequencerState sequencer;
+    sequencer.pattern.setContentLength(8U);
+    sequencer.pattern.setEnabled(0U, true);
+    sequencer.playheadStep.set(0);
+    sequencer.playheadStepTickOffset.set(2U);
+
+    const auto micro = createMicroSequence(
+        sequencer.pattern,
+        rootStepNodeId(0U),
+        4U
+    );
+    assert(micro.ok);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    assert(setNodeEnabledOverride(
+        sequencer.pattern,
+        static_cast<uint16_t>(sequence->firstStepNode + 1U),
+        false
+    ));
+
+    auto rail = buildStepContentBadgeProjection(sequencer.pattern, 0U);
+    applyMicroSequencePlaybackProjection(
+        rail,
+        sequencer.pattern.gate[0U],
+        sequencer.pattern.stepsPerBeat.get(),
+        sequencer.playheadStepTickOffset.get(),
+        sequencer.expandedVariationTelemetry,
+        0U
+    );
+    assert(rail.microSequence);
+    assert(rail.microLength == 4U);
+    assert(rail.microActiveMask == 0xDU);
+    assert(rail.microCursorVisible);
+    assert(rail.microCursor == 1U);
+
+    sequencer.expandedVariationTelemetry.valid = true;
+    sequencer.expandedVariationTelemetry.rootStepIndex = 0U;
+    sequencer.expandedVariationTelemetry.count = 2U;
+    sequencer.expandedVariationTelemetry.localTick[0U] = 0U;
+    sequencer.expandedVariationTelemetry.localTick[1U] = 5U;
+    applyMicroSequencePlaybackProjection(
+        rail,
+        sequencer.pattern.gate[0U],
+        sequencer.pattern.stepsPerBeat.get(),
+        sequencer.playheadStepTickOffset.get(),
+        sequencer.expandedVariationTelemetry,
+        0U
+    );
+    assert(rail.microActiveMask == 0x9U);
+
+    std::cout
+        << "[PASS] test_root_grid_projects_micro_rail_and_current_substep\n";
+}
+
+void test_root_grid_projects_rotated_cycle_phase() {
+    SequencerState sequencer;
+    const auto cycle = createCycleStateSet(
+        sequencer.pattern,
+        rootStepNodeId(0U),
+        4U
+    );
+    assert(cycle.ok);
+    auto* graph = sequencer.pattern.graph.get();
+    assert(graph != nullptr);
+    const auto* set = graph->cycleSet(cycle.id);
+    assert(set != nullptr);
+    assert(setNodeEnabledOverride(
+        sequencer.pattern,
+        static_cast<uint16_t>(set->firstStateNode + 1U),
+        false
+    ));
+    assert(setCycleStateSetOffset(sequencer.pattern, cycle.id, 1));
+
+    auto phase = buildStepContentBadgeProjection(sequencer.pattern, 0U);
+    applyCycleStatePlaybackProjection(
+        phase,
+        sequencer.pattern,
+        rootStepNodeId(0U),
+        6U
+    );
+    assert(phase.cycleStates);
+    assert(phase.cycleLength == 4U);
+    // Offset +1 maps the disabled second source state onto logical phase 2.
+    assert(phase.cycleActiveMask == 0xBU);
+    assert(phase.cycleCursorVisible);
+    assert(phase.cycleCursor == 2U);
+
+    std::cout << "[PASS] test_root_grid_projects_rotated_cycle_phase\n";
 }
 
 void test_invalid_or_missing_graph_has_no_badges() {
@@ -699,7 +809,58 @@ void test_nested_child_playhead_follows_active_owner_path() {
     assert(playback.active);
     assert(playback.step == 1);
 
+    sequencer.playheadStepTickOffset.set(12U);
+    playback = core::state::sequencer::resolveActiveContentPlaybackProjection(
+        sequencer,
+        {}
+    );
+    assert(playback.progress == 127U);
+
     std::cout << "[PASS] test_nested_child_playhead_follows_active_owner_path\n";
+}
+
+void test_micro_child_playhead_reports_local_continuous_progress() {
+    SequencerState sequencer;
+    sequencer.pattern.setContentLength(8U);
+    sequencer.pattern.setEnabled(0U, true);
+    sequencer.probabilityCycleMask.setBit(0U, true);
+    sequencer.playheadStep.set(0);
+    sequencer.playheadStepTicks = 24U;
+
+    const auto micro = createMicroSequence(
+        sequencer.pattern,
+        rootStepNodeId(0U),
+        2U
+    );
+    assert(micro.ok);
+    sequencer.focusedStep.set(0U);
+    assert(enterMicroSequenceContentView(
+        sequencer,
+        rootStepNodeId(0U),
+        micro.id
+    ));
+
+    sequencer.playheadStepTickOffset.set(6U);
+    auto playback =
+        core::state::sequencer::resolveActiveContentPlaybackProjection(
+            sequencer,
+            {}
+        );
+    assert(playback.visible);
+    assert(playback.active);
+    assert(playback.step == 0U);
+    assert(playback.progress == 127U);
+
+    sequencer.playheadStepTickOffset.set(18U);
+    playback = core::state::sequencer::resolveActiveContentPlaybackProjection(
+        sequencer,
+        {}
+    );
+    assert(playback.step == 1U);
+    assert(playback.progress == 127U);
+
+    std::cout
+        << "[PASS] test_micro_child_playhead_reports_local_continuous_progress\n";
 }
 
 void test_child_disabled_state_is_reported_to_parent_summary() {
@@ -1104,6 +1265,8 @@ void test_ui_allows_three_child_content_levels_when_engine_depth_is_four() {
 
 int main() {
     test_projects_root_step_content_badges();
+    test_root_grid_projects_micro_rail_and_current_substep();
+    test_root_grid_projects_rotated_cycle_phase();
     test_invalid_or_missing_graph_has_no_badges();
     test_projects_child_context_resolved_values_and_badges();
     test_child_note_offsets_follow_pattern_pitch_context();
@@ -1116,6 +1279,7 @@ int main() {
     test_child_summary_reports_representative_local_variation();
     test_intermediate_cycle_summary_uses_owner_activation_count();
     test_nested_child_playhead_follows_active_owner_path();
+    test_micro_child_playhead_reports_local_continuous_progress();
     test_child_disabled_state_is_reported_to_parent_summary();
     test_child_playhead_remains_visible_when_selected_state_is_disabled();
     test_parent_summary_uses_current_micro_substep_runtime_note();

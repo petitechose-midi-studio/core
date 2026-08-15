@@ -17,7 +17,13 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
     SequencerInteractionContext context{};
     context.navigationFocus = navigationFocus;
     context.childContentView = isChildContentView(sequencer);
+    const bool drumTransientVisible =
+        sequencer.drumSequencer.active() &&
+        (!sequencer.drumSequencer.gridVisible() ||
+         sequencer.drumSequencer.selectorVisible());
     context.overlayVisible = overlayVisible || sequencer.ccLaneUi.visible() ||
+                             sequencer.contextSelector.visible ||
+                             drumTransientVisible ||
                              sequencer.stepContentDraft.exitPromptVisible.get() ||
                              sequencer.patternEditor.active.get();
     context.previewingAddSlot =
@@ -27,6 +33,8 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
     context.trackSelectionActive = trackUi.selection.active.get();
     context.pageSelectionActive = sequencer.structureUi.pageSelection.active.get();
     context.stepSelectionActive = sequencer.structureUi.stepSelection.active.get();
+    context.drumLaneSelectionActive =
+        sequencer.drumSequencer.laneSelection.active;
     if (context.trackSelectionActive) {
         context.selectionPlacementActive =
             trackUi.selection.placementActive();
@@ -42,12 +50,29 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
             sequencer.structureUi.stepSelection.placementActive();
         context.selectedItemsAvailable =
             sequencer.structureUi.stepSelection.anySelected();
+    } else if (context.drumLaneSelectionActive) {
+        context.selectionPlacementActive =
+            sequencer.drumSequencer.laneSelection.placementActive();
+        context.selectedItemsAvailable =
+            sequencer.drumSequencer.laneSelection.anySelected();
     }
     context.patternQuickControlsActive = sequencer.patternQuickControls.selecting.get();
     context.propertySelectorActive = sequencer.stepPropertyInlineSelector.selecting.get();
     context.stepContentSelectorActive = sequencer.stepContentSelector.selecting.get();
     context.stepEditorVisible = sequencer.stepEdit.visible.get();
     if (context.stepEditorVisible) {
+        context.stepEditorDrumRoot = sequencer.stepEdit.drumContext &&
+            isRootContentView(sequencer);
+        if (context.stepEditorDrumRoot) {
+            uint8_t adjacentLane = 0U;
+            context.stepEditorLaneRetargetAvailable =
+                sequencer.drumSequencer.adjacentLaneForStep(
+                    sequencer.stepEdit.drumLane,
+                    sequencer.stepEdit.drumStep,
+                    1,
+                    adjacentLane
+                );
+        }
         const uint8_t row = sequencer.stepEdit.focusedRow.get();
         context.stepEditorValueRowFocused =
             step_edit_rows::isActivated(row) ||

@@ -23,6 +23,10 @@ enum class BackResult : uint8_t {
 [[nodiscard]] BackResult requestBack(
     core::state::sequencer::SequencerState& sequencer
 );
+[[nodiscard]] BackResult requestBack(
+    core::state::sequencer::SequencerState& sequencer,
+    const core::handler::SequencerHistoryDomainServices& history
+);
 
 void moveExitChoice(
     core::state::sequencer::SequencerState& sequencer,

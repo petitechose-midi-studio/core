@@ -49,17 +49,17 @@ FLASHMEM ProjectTrackEditorHandler::ProjectTrackEditorHandler(
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
-    oc::type::ScopeID sequencerViewScope,
     oc::type::ScopeID overlayScope
 )
     : editor_(state.editor)
     , tracks_(state.tracks)
+    , sequencer_tracks_(state.sequencerTracks)
     , shared_tracks_(state.sharedTracks)
     , track_domain_(state.trackDomain)
+    , history_(state.history)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
-    , sequencer_view_scope_(sequencerViewScope)
     , overlay_scope_(overlayScope) {
     setupBindings();
 }
@@ -68,20 +68,14 @@ FLASHMEM void ProjectTrackEditorHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(overlay_scope_)
-        .when([this]() {
-            return editor_.active &&
-                buttons_.isPressed(Config::ButtonID::LEFT_CENTER);
-        })
-        .then([this](float delta) { moveTrack(delta); });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(overlay_scope_)
-        .when([this]() {
-            return editor_.active &&
-                !buttons_.isPressed(Config::ButtonID::LEFT_CENTER);
-        })
-        .then([this](float delta) { moveProperty(delta); });
+        .when([this]() { return editor_.active; })
+        .then([this](float delta) {
+            if (buttons_.isPressed(Config::ButtonID::LEFT_CENTER)) {
+                moveTrack(delta);
+            } else {
+                moveProperty(delta);
+            }
+        });
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
@@ -99,13 +93,26 @@ FLASHMEM void ProjectTrackEditorHandler::setupBindings() {
         .release()
         .scope(overlay_scope_)
         .when([this]() { return editor_.active && ownsActiveTrack(); })
-        .then([this]() { toggleMute(); });
+        .then([this]() {
+            if (core::state::project::projectTrackEditorKindDraftDirty(editor_)) {
+                cancelTrackKindDraft();
+            } else {
+                toggleMute();
+            }
+        });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(overlay_scope_)
         .when([this]() { return editor_.active && ownsActiveTrack(); })
-        .then([this]() { toggleSolo(); });
+        .then([this]() {
+            if (editor_.selectedProperty == EditorProperty::TYPE &&
+                editor_.draftKind != editor_.currentKind) {
+                applyTrackKind();
+            } else {
+                toggleSolo();
+            }
+        });
 
 }
 
@@ -122,6 +129,7 @@ FLASHMEM bool ProjectTrackEditorHandler::openActiveTrack() {
         result.status != core::state::project::ProjectTrackEditorMutationStatus::NO_CHANGE) {
         return false;
     }
+    syncKindDraft();
     overlays_.show(core::ui::OverlayType::SEQ_TRACK_EDIT);
     configureOpt();
     return true;
@@ -129,6 +137,7 @@ FLASHMEM bool ProjectTrackEditorHandler::openActiveTrack() {
 
 FLASHMEM void ProjectTrackEditorHandler::close() {
     commitPendingGesture();
+    cancelTrackKindDraft();
     if (overlays_.isCurrent(core::ui::OverlayType::SEQ_TRACK_EDIT)) {
         overlays_.hide();
     }
@@ -142,20 +151,44 @@ void ProjectTrackEditorHandler::update(uint32_t nowMs) {
     }
     if (!editor_.active) return;
 
-    const uint16_t enabled = shared_tracks_.enabledMask();
     const uint8_t active = shared_tracks_.activeTrack();
-    if (!core::state::project::projectTrackEditorTrackEnabled(enabled, active)) {
+    const uint16_t enabled = shared_tracks_.enabledMask();
+    if (!core::state::project::projectTrackEditorTrackEnabled(
+            enabled,
+            editor_.trackIndex
+        )) {
         close();
         return;
     }
     if (editor_.trackIndex != active) {
         commitPendingGesture();
-        (void)core::state::project::retargetProjectTrackEditor(
+        if (core::state::project::projectTrackEditorKindDraftDirty(editor_)) {
+            // The retained editor owns its opening target while its destructive
+            // type draft is dirty. Restore any non-authoritative cursor drift
+            // instead of silently moving or discarding the draft.
+            (void)shared_tracks_.setState(enabled, editor_.trackIndex);
+            return;
+        }
+        const auto retargeted = core::state::project::retargetProjectTrackEditor(
             editor_,
             active,
             enabled
         );
-        configureOpt();
+        if (retargeted.changed()) {
+            syncKindDraft();
+            configureOpt();
+        }
+    } else {
+        const auto currentKind = sequencer_tracks_.isDrumTrack(active)
+            ? core::state::project::ProjectTrackEditorKind::DRUM
+            : core::state::project::ProjectTrackEditorKind::INSTRUMENT;
+        if (editor_.currentKind != currentKind) {
+            (void)core::state::project::syncProjectTrackEditorKind(
+                editor_,
+                currentKind
+            );
+            configureOpt();
+        }
     }
 }
 
@@ -163,6 +196,9 @@ FLASHMEM void ProjectTrackEditorHandler::moveTrack(float delta) {
     const int move = direction(delta);
     if (move == 0) return;
     commitPendingGesture();
+    if (core::state::project::projectTrackEditorKindDraftDirty(editor_)) {
+        return;
+    }
     const uint16_t enabled = shared_tracks_.enabledMask();
     const uint8_t target = core::state::project::nextEnabledProjectTrack(
         enabled,
@@ -175,6 +211,7 @@ FLASHMEM void ProjectTrackEditorHandler::moveTrack(float delta) {
         return;
     }
     (void)core::state::project::retargetProjectTrackEditor(editor_, target, enabled);
+    syncKindDraft();
     configureOpt();
 }
 
@@ -190,6 +227,15 @@ FLASHMEM void ProjectTrackEditorHandler::moveProperty(float delta) {
 
 FLASHMEM void ProjectTrackEditorHandler::setFocusedValue(float normalized) {
     const auto property = editor_.selectedProperty;
+    if (property == EditorProperty::TYPE) {
+        (void)core::state::project::selectProjectTrackEditorDraftKind(
+            editor_,
+            normalized >= 0.5f
+                ? core::state::project::ProjectTrackEditorKind::DRUM
+                : core::state::project::ProjectTrackEditorKind::INSTRUMENT
+        );
+        return;
+    }
     const auto kind = historyKind(property);
     const bool began = !track_domain_.hasActiveGesture();
     if (began && !track_domain_.beginGesture(kind, editor_.trackIndex)) return;
@@ -234,6 +280,66 @@ FLASHMEM void ProjectTrackEditorHandler::toggleSolo() {
     (void)track_domain_.setSoloed(editor_.trackIndex, !soloed);
 }
 
+FLASHMEM void ProjectTrackEditorHandler::cancelTrackKindDraft() {
+    if (!core::state::project::projectTrackEditorKindDraftDirty(editor_)) return;
+    (void)core::state::project::selectProjectTrackEditorDraftKind(
+        editor_, editor_.currentKind
+    );
+    configureOpt();
+}
+
+FLASHMEM void ProjectTrackEditorHandler::applyTrackKind() {
+    commitPendingGesture();
+    if (!ownsActiveTrack() || editor_.draftKind == editor_.currentKind) return;
+    const bool drum = editor_.draftKind ==
+        core::state::project::ProjectTrackEditorKind::DRUM;
+    core::state::sequencer::SequencerHistoryDescriptor descriptor{
+        .kind = core::state::sequencer::SequencerHistoryActionKind::DrumTrackKind,
+        .trackIndex = editor_.trackIndex,
+        .hasValue = true,
+        .beforeValue = editor_.currentKind ==
+                core::state::project::ProjectTrackEditorKind::DRUM
+            ? 1
+            : 0,
+        .afterValue = drum ? 1 : 0,
+    };
+    const auto opened = history_.beginCoalescedDrumEdit(
+        descriptor,
+        oc::time::millis()
+    );
+    if (!core::state::sequencer::sequencerHistoryOpenAccepted(opened)) return;
+    const bool changed = sequencer_tracks_.setTrackKind(
+        editor_.trackIndex,
+        drum
+            ? core::state::sequencer::SequencerTrackKind::DRUM
+            : core::state::sequencer::SequencerTrackKind::INSTRUMENT,
+        true,
+        core::state::sequencer::DrumKitPreset::EMPTY
+    );
+    if (!history_.sealCoalescedDrumEdit(changed, descriptor) ||
+        history_.commitCoalescedDrumEditOutcome() ==
+            core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return;
+    }
+    if (!changed) return;
+    (void)core::state::project::syncProjectTrackEditorKind(
+        editor_,
+        drum
+            ? core::state::project::ProjectTrackEditorKind::DRUM
+            : core::state::project::ProjectTrackEditorKind::INSTRUMENT
+    );
+    configureOpt();
+}
+
+FLASHMEM void ProjectTrackEditorHandler::syncKindDraft() {
+    (void)core::state::project::syncProjectTrackEditorKind(
+        editor_,
+        sequencer_tracks_.isDrumTrack(editor_.trackIndex)
+            ? core::state::project::ProjectTrackEditorKind::DRUM
+            : core::state::project::ProjectTrackEditorKind::INSTRUMENT
+    );
+}
+
 FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
     encoders_.setDiscreteTicksPerStep(
         Config::EncoderID::OPT,
@@ -255,6 +361,17 @@ FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
                 ),
                 16
             )
+        );
+        return;
+    }
+
+    if (editor_.selectedProperty == EditorProperty::TYPE) {
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 2U);
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            editor_.draftKind == core::state::project::ProjectTrackEditorKind::DRUM
+                ? 1.0f
+                : 0.0f
         );
         return;
     }

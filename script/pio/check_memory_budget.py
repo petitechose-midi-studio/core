@@ -1,4 +1,4 @@
-"""Reject Teensy firmware images that exceed the configured memory budgets."""
+"""Report Teensy memory trends and reject unsafe placement or capacity failures."""
 
 # pyright: reportUndefinedVariable=false
 
@@ -173,6 +173,7 @@ def write_post_link_evidence(
         "itcmBanks": result.itcm_banks,
         "passed": result.passed,
         "violations": list(result.violations),
+        "advisories": list(result.advisories),
     }
     (evidence_dir / "report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -228,6 +229,8 @@ def check_memory_budget(target, source, env) -> None:
             post_link_result,
         )
         print(format_post_link_summary(post_link_result))
+        for advisory in post_link_result.advisories:
+            print(f"  ! {advisory}")
         violations += post_link_result.violations
         map_path = elf_path.with_suffix(".map")
         if not map_path.is_file():

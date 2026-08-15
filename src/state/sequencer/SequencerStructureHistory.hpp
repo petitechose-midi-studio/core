@@ -38,6 +38,15 @@ struct SequencerHistoryTrackStructureSnapshot {
     uint8_t page = 0;
     uint16_t capturedTrackMask = 0x0001;
     std::array<SequencerHistoryPatternSnapshot, SequencerTrackBankState::TRACK_COUNT> tracks{};
+    // Sparse cold sidecar. A pointer is retained only for captured Drum
+    // Tracks; Instrument Tracks are represented by the corresponding clear
+    // bit. This keeps ordinary Structure history compact while making Track
+    // kind and Drum content part of the same atomic transaction.
+    uint16_t drumTrackMask = 0U;
+    std::array<
+        core::app::ExtmemUniquePtr<DrumTrackState>,
+        SequencerTrackBankState::TRACK_COUNT
+    > drumTracks{};
 
     SequencerHistoryTrackStructureSnapshot();
     ~SequencerHistoryTrackStructureSnapshot();
@@ -130,7 +139,7 @@ struct SequencerPreparedStructureHistoryReplay {
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 static_assert(
-    sizeof(SequencerHistoryTrackStructureSnapshot) == 13576U,
+    sizeof(SequencerHistoryTrackStructureSnapshot) == 13648U,
     "LOCK-P: ARM Structure snapshot ABI changed"
 );
 static_assert(
@@ -138,7 +147,7 @@ static_assert(
     "LOCK-P: ARM Macro Structure payload ABI changed"
 );
 static_assert(
-    sizeof(SequencerHistoryTrackStructureChange) == 27192U,
+    sizeof(SequencerHistoryTrackStructureChange) == 27336U,
     "LOCK-P: ARM Structure History transaction ABI changed"
 );
 static_assert(
@@ -227,6 +236,13 @@ void commitPreparedHistoryStructureReplayState(
     SequencerTrackBankState& bank,
     SequencerState& active,
     SequencerPreparedStructureHistoryReplay& replay
+) noexcept;
+
+// Applies the sparse Drum kind/content sidecar without allocating. This is
+// shared by newly admitted Structure transactions and Undo/Redo replay.
+void commitHistoryStructureDrumSnapshot(
+    SequencerTrackBankState& bank,
+    const SequencerHistoryTrackStructureSnapshot& snapshot
 ) noexcept;
 
 bool sameMusicalHistoryStructureSnapshot(

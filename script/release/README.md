@@ -34,8 +34,10 @@ artifact contains exactly the expected HEX, ELF, map, green report and matching
 profile.
 
 The active Flash ceilings are rounded operational budgets, not byte-exact
-snapshots: 1100 KiB code, 280 KiB data and 10 KiB headers. Against the
-`ff5b1c8` release image this retains roughly 42 KiB, 9.5 KiB and 1.7 KiB of
-headroom respectively. RAM1, ITCM, RAM2 and PSRAM retain their stricter existing
-limits, including exactly nine ITCM banks. A threshold change requires an
+snapshots: 1180 KiB code, 296 KiB data and 10 KiB headers. Against the
+`d040292` Drum-sequencer release image this retains roughly 51.5 KiB, 17.6 KiB
+and 1.9 KiB of headroom respectively. Flash budget overruns are advisory: every
+release reports and archives the exact drift without blocking publication.
+Physical Flash capacity, RAM1, ITCM, RAM2, PSRAM and ELF placement remain strict
+safety gates, including exactly nine ITCM banks. A threshold change requires an
 explicit profile-version and baseline update.

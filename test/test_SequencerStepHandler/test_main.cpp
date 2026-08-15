@@ -20,9 +20,11 @@
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/common/SharedTrackDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
+#include "../../src/handler/sequencer/DrumLaneEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
+#include "../../src/handler/sequencer/SequencerStepContentHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
@@ -34,6 +36,7 @@
 #include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
+#include "../../src/state/sequencer/SequencerStepEditRows.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -297,11 +300,65 @@ constexpr HistoryServices::Operations kDirectTrackChronologyCounterOperations{
         &DirectTrackChronologyCounter::boundary,
 };
 
+struct DrumAuditionProbe {
+    struct Edge {
+        bool noteOn = false;
+        uint8_t channel = 0U;
+        uint8_t note = 0U;
+        uint8_t velocity = 0U;
+    };
+
+    static constexpr size_t EDGE_CAPACITY = 64U;
+    std::array<Edge, EDGE_CAPACITY> edges{};
+    size_t edgeCount = 0U;
+    uint8_t panicCount = 0U;
+    bool acceptNoteOn = true;
+    bool acceptNoteOff = true;
+
+    static bool sendNoteOn(
+        void* context,
+        uint8_t channel,
+        uint8_t note,
+        uint8_t velocity
+    ) {
+        auto& self = *static_cast<DrumAuditionProbe*>(context);
+        if (!self.acceptNoteOn) return false;
+        assert(self.edgeCount < self.edges.size());
+        self.edges[self.edgeCount++] = {true, channel, note, velocity};
+        return true;
+    }
+
+    static bool sendNoteOff(
+        void* context,
+        uint8_t channel,
+        uint8_t note,
+        uint8_t velocity
+    ) {
+        auto& self = *static_cast<DrumAuditionProbe*>(context);
+        if (!self.acceptNoteOff) return false;
+        assert(self.edgeCount < self.edges.size());
+        self.edges[self.edgeCount++] = {false, channel, note, velocity};
+        return true;
+    }
+
+    static void allNotesOff(void* context) {
+        ++static_cast<DrumAuditionProbe*>(context)->panicCount;
+    }
+};
+
+constexpr core::handler::DrumLaneAuditionServices::Operations
+    kDrumAuditionOperations{
+        .noteOn = &DrumAuditionProbe::sendNoteOn,
+        .noteOff = &DrumAuditionProbe::sendNoteOff,
+        .allNotesOff = &DrumAuditionProbe::allNotesOff,
+    };
+
 struct SequencerStepHarness {
     static constexpr oc::type::ScopeID SEQUENCER_SCOPE = 501;
     static constexpr oc::type::ScopeID PATTERN_EDITOR_SCOPE = 502;
     static constexpr oc::type::ScopeID STEP_EDITOR_SCOPE = 503;
     static constexpr oc::type::ScopeID PRESET_LIBRARY_SCOPE = 504;
+    static constexpr oc::type::ScopeID DRUM_LANE_EDITOR_SCOPE = 505;
 
     test_support::CoreStorages storages;
     core::state::CoreState state;
@@ -319,11 +376,14 @@ struct SequencerStepHarness {
     core::state::sequencer::SequencerPatternRandomizeSession patternRandomize;
     core::handler::SequencerPatternEditorHandler patternEditorHandler;
     core::handler::SequencerStepHandler handler;
+    DrumAuditionProbe drumAudition;
+    core::handler::DrumLaneEditorHandler drumLaneEditorHandler;
     core::handler::TransportHandler transportHandler;
     core::handler::SequencerPatternQuickControlsHandler quickControlsHandler;
     // Construct last so this integration probe cannot consume binding slots
     // ahead of the handler under test.
     core::handler::SequencerStepEditHandler stepEditHandler;
+    core::handler::SequencerStepContentHandler stepContentHandler;
 
     SequencerStepHarness()
         : state(storages.settings), navigationFocus(core::state::StructureNavigationFocus::PAGE),
@@ -337,7 +397,7 @@ struct SequencerStepHarness {
                   patternRandomize,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
-              overlays, encoders, buttons, SEQUENCER_SCOPE, PATTERN_EDITOR_SCOPE),
+              overlays, encoders, buttons, PATTERN_EDITOR_SCOPE),
           handler(
               core::handler::SequencerStepHandler::StateRefs{
                   state.sequencer,
@@ -355,6 +415,20 @@ struct SequencerStepHarness {
                   &state.statusBar,
               },
               encoders, buttons, SEQUENCER_SCOPE),
+          drumLaneEditorHandler(
+              state.sequencer,
+              core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+              overlays,
+              encoders,
+              buttons,
+              DRUM_LANE_EDITOR_SCOPE,
+              core::handler::DrumLaneAuditionServices::
+                  fromStaticOperations<kDrumAuditionOperations>(
+                      &drumAudition,
+                      state.projectTracks,
+                      state.statusBar
+                  )
+          ),
           transportHandler(core::handler::TransportHandler::StateRefs{state.statusBar}, buttons),
           quickControlsHandler(
               core::handler::SequencerPatternQuickControlsHandler::StateRefs{
@@ -384,7 +458,19 @@ struct SequencerStepHarness {
               SEQUENCER_SCOPE,
               STEP_EDITOR_SCOPE,
               PRESET_LIBRARY_SCOPE,
-              mockTimeMs) {
+              mockTimeMs),
+          stepContentHandler(
+              core::handler::SequencerStepContentHandler::StateRefs{
+                  state.overlays,
+                  state.sequencer,
+                  state.trackNavigation,
+                  navigationFocus,
+              },
+              stepEditHandler,
+              encoders,
+              buttons,
+              SEQUENCER_SCOPE
+          ) {
         g_now_ms = 0;
         oc::time::setProvider(mockTimeMs);
         overlays.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
@@ -394,8 +480,13 @@ struct SequencerStepHarness {
             core::ui::OverlayType::PRESET_LIBRARY,
             PRESET_LIBRARY_SCOPE
         );
+        overlays.registerCleanup(
+            core::ui::OverlayType::SEQ_DRUM_LANE_EDIT,
+            DRUM_LANE_EDITOR_SCOPE
+        );
         handler.attachPatternEditorHandler(patternEditorHandler);
         handler.attachStepEditHandler(stepEditHandler);
+        handler.attachDrumLaneEditorHandler(drumLaneEditorHandler);
         handler.update(g_now_ms);
     }
 
@@ -405,6 +496,7 @@ struct SequencerStepHarness {
         handler.update(g_now_ms);
         patternEditorHandler.update(g_now_ms);
         stepEditHandler.update(g_now_ms);
+        drumLaneEditorHandler.update(g_now_ms);
     }
 
     void press(Config::ButtonID id) {
@@ -430,6 +522,7 @@ struct SequencerStepHarness {
         handler.update(g_now_ms);
         patternEditorHandler.update(g_now_ms);
         stepEditHandler.update(g_now_ms);
+        drumLaneEditorHandler.update(g_now_ms);
     }
 
     void turn(Config::EncoderID id, float value) {
@@ -906,9 +999,9 @@ void assertPreparedActionRejectionInvariant(const SequencerStepHarness& h,
     }
     assert(feedback.visible.get());
     assert(feedback.revision.get() == expected.product.historyFeedbackRevision + 1U);
-    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
     assert(std::strcmp(feedback.line2.data(), detail) == 0);
-    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+    assert(std::strcmp(feedback.line3.data(), "") == 0);
     assert(feedback.hideAtMs == g_now_ms + seq::SequencerHistoryFeedbackState::DISPLAY_HOLD_MS);
 
     const auto product = capturePreparedProductInvariant(h);
@@ -2809,7 +2902,7 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     std::cout << "[PASS] sparse Pattern selection previews collisions and fills page gaps\n";
 }
 
-void test_track_context_nav_crosses_sparse_slots_and_creates_without_structure() {
+void test_track_context_nav_crosses_sparse_slots_and_creates_instrument_via_picker() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0005U, 0);
@@ -2828,6 +2921,10 @@ void test_track_context_nav_crosses_sparse_slots_and_creates_without_structure()
     assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
     assert(h.state.trackNavigation.previewAddSlot.get());
     h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencer.drumSequencer.typePickerVisible());
+    assert(h.state.sequencer.drumSequencer.selectedKind ==
+           seq::DrumSequencerKind::INSTRUMENT);
+    h.tap(Config::ButtonID::NAV);
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
@@ -2836,7 +2933,7 @@ void test_track_context_nav_crosses_sparse_slots_and_creates_without_structure()
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     std::cout
-        << "[PASS] test_track_context_nav_crosses_sparse_slots_and_creates_without_structure\n";
+        << "[PASS] sparse Track navigation creates Instrument through type picker\n";
 }
 
 void test_step_toggle_undo_redo_workflow() {
@@ -4066,6 +4163,8 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
+    assert(h.state.sequencer.drumSequencer.typePickerVisible());
+    h.tap(Config::ButtonID::NAV);
 
     assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencerTracks.isTrackEnabled(1));
@@ -6164,7 +6263,7 @@ void test_track_remove_hold_latches_target_and_rejects_external_drift() {
         << "[PASS] Track Remove hold latches target and rejects external drift\n";
 }
 
-void test_track_remove_hold_does_not_block_acquired_nav_release() {
+void test_context_selector_owns_inputs_before_track_remove_hold() {
     SequencerStepHarness h;
     configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
     seq::resetTransientTrackState(h.state.sequencer);
@@ -6174,7 +6273,7 @@ void test_track_remove_hold_does_not_block_acquired_nav_release() {
     assert(h.state.sequencer.contextSelector.visible);
     h.press(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.trackNavigation.hold.action.get() ==
-           core::state::StructureHoldAction::REMOVE);
+           core::state::StructureHoldAction::NONE);
     h.release(Config::ButtonID::NAV);
     assert(!h.state.sequencer.contextSelector.visible);
     h.release(Config::ButtonID::BOTTOM_LEFT);
@@ -6182,7 +6281,7 @@ void test_track_remove_hold_does_not_block_acquired_nav_release() {
            core::state::StructureHoldAction::NONE);
 
     std::cout
-        << "[PASS] Track Remove hold preserves acquired NAV release\n";
+        << "[PASS] Context selector owns inputs before Track Remove hold\n";
 }
 
 void test_track_remove_hold_rejects_new_nav_press_without_hiding_action() {
@@ -6889,6 +6988,8 @@ void test_created_track_is_undoable_and_redoable() {
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
+    assert(h.state.sequencer.drumSequencer.typePickerVisible());
+    h.tap(Config::ButtonID::NAV);
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
@@ -8277,6 +8378,1093 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
     std::cout << "[PASS] failed Step/Page commits restore music, UI and clipboard\n";
 }
 
+void createDrumTrackFromAddSlot(
+    SequencerStepHarness& h,
+    uint8_t target,
+    seq::DrumKitPreset preset
+) {
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.trackNavigation.syncPreviewTrack(target);
+    h.state.trackNavigation.previewAddSlot.set(true);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.typePickerVisible());
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.selectedKind == seq::DrumSequencerKind::DRUM);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.kitPickerVisible());
+    if (preset == seq::DrumKitPreset::GENERAL_MIDI) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(drumUi.selectedKitPreset == preset);
+    h.tap(Config::ButtonID::NAV);
+
+    assert(h.state.sequencerTracks.isDrumTrack(target));
+    assert(h.state.sequencerTracks.activeTrackIndex() == target);
+    assert(drumUi.gridVisible());
+    assert(drumUi.targetTrack == target);
+    assert(drumUi.drumTrack == &h.state.sequencerTracks.drumTrack(target));
+}
+
+void test_drum_track_creation_navigation_and_owners_are_independent() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::EMPTY);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    auto& first = h.state.sequencerTracks.drumTrack(1U);
+    assert(first.kit.laneCount == 0U);
+
+    // A short NAV press at Pattern is the Lane editor entry point. Empty kits
+    // create their first lane; no alternate Drum-only navigation is required.
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.selector == seq::DrumSequencerSelector::LANE_EDITOR);
+    assert(drumUi.laneEditor.mode == seq::DrumLaneEditorMode::CREATE);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(first.kit.laneCount == 1U);
+    assert(drumUi.selector == seq::DrumSequencerSelector::NONE);
+
+    assert(drumUi.setStepEnabled(0U, 0U, true));
+    assert(drumUi.setStepVelocity(0U, 0U, 91U));
+
+    createDrumTrackFromAddSlot(h, 2U, seq::DrumKitPreset::EMPTY);
+    auto& second = h.state.sequencerTracks.drumTrack(2U);
+    assert(second.kit.laneCount == 0U);
+
+    // Track focus changes the active owner. Returning to Track 2 must bind the
+    // original payload, never reuse the newly created Track's transient view.
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.tick(g_now_ms + 1U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
+    assert(drumUi.targetTrack == 1U);
+    assert(drumUi.drumTrack == &first);
+    assert(first.kit.laneCount == 1U);
+    assert(first.pattern.stepEnabled(0U, 0U));
+    assert(first.pattern.lanes[0U].velocity[0U] == 91U);
+    assert(second.kit.laneCount == 0U);
+
+    std::cout
+        << "[PASS] Drum creation, Track navigation and owners are independent\n";
+}
+
+void test_drum_lane_add_slot_is_direct_and_reorder_is_transactional() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::EMPTY);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+
+    assert(track.kit.laneCount == 0U);
+    assert(drumUi.laneAddSlotVisible());
+    assert(drumUi.laneAddSlotFocused());
+
+    // The visible add slot is a structural target. Performance buttons never
+    // leak through to a non-existent or previously selected Lane.
+    const uint8_t historyBeforeCreate = h.state.sequencerHistory.undoCount();
+    h.tap(Config::MACRO_BUTTONS[0U]);
+    assert(track.kit.laneCount == 0U);
+    assert(h.state.sequencerHistory.undoCount() == historyBeforeCreate);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneEditor.active);
+    assert(drumUi.laneEditor.mode == seq::DrumLaneEditorMode::CREATE);
+    assert(drumUi.laneEditor.targetLane == 0U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(track.kit.laneCount == 1U);
+    assert(track.kit.lanes[0U].midiNote == 36U);
+    assert(!drumUi.laneAddSlotFocused());
+
+    // The common navigation grammar is explicit: short press edits this Lane;
+    // long press enters Pattern selection and consumes the release so the
+    // editor can never open behind the selection surface.
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(!drumUi.laneEditor.active);
+    assert(drumUi.laneSelection.active);
+    h.release(Config::ButtonID::NAV);
+    assert(!drumUi.laneEditor.active);
+    assert(drumUi.laneSelection.selectedMask == 0U);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!drumUi.laneSelection.active);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneEditor.active);
+    assert(drumUi.laneEditor.mode == seq::DrumLaneEditorMode::EDIT);
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneAddSlotFocused());
+    assert(drumUi.selectedLane == 0U);
+    const uint32_t patternRevisionAtAdd = track.pattern.revision;
+    h.tap(Config::MACRO_BUTTONS[0U]);
+    assert(track.pattern.revision == patternRevisionAtAdd);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneEditor.mode == seq::DrumLaneEditorMode::CREATE);
+    assert(drumUi.laneEditor.targetLane == 1U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(track.kit.laneCount == 2U);
+    assert(track.kit.lanes[0U].midiNote == 36U);
+    assert(track.kit.lanes[1U].midiNote == 37U);
+    assert(drumUi.selectedLane == 1U);
+
+    // Position is a draft preview. Apply moves descriptor, rhythm and advanced
+    // mappings through the existing single History transaction.
+    h.tap(Config::ButtonID::NAV);
+    for (uint8_t field = 0U; field < 4U; ++field) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::POSITION);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(drumUi.laneEditor.sourceLane == 1U);
+    assert(drumUi.laneEditor.targetLane == 0U);
+    assert(drumUi.laneEditor.dirty);
+    const uint8_t undoBeforeMove = h.state.sequencerHistory.undoCount();
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(track.kit.lanes[0U].midiNote == 37U);
+    assert(track.kit.lanes[1U].midiNote == 36U);
+    assert(drumUi.selectedLane == 0U);
+    assert(h.state.sequencerHistory.undoCount() == undoBeforeMove + 1U);
+    assert(h.state.undoSequencerHistory());
+    assert(track.kit.lanes[0U].midiNote == 36U);
+    assert(track.kit.lanes[1U].midiNote == 37U);
+    assert(h.state.redoSequencerHistory());
+    assert(track.kit.lanes[0U].midiNote == 37U);
+    assert(track.kit.lanes[1U].midiNote == 36U);
+
+    std::cout
+        << "[PASS] Drum Lane add slot and reorder are direct and transactional\n";
+}
+
+void test_drum_lane_editor_draft_retarget_cancel_and_history() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_DRUM_LANE_EDIT);
+    assert(drumUi.laneEditor.active);
+    assert(!drumUi.laneEditor.dirty);
+
+    // LEFT_CENTER + NAV changes the edited Lane only while the draft is clean.
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(drumUi.selectedLane == 1U);
+    assert(drumUi.laneEditor.sourceLane == 1U);
+    const uint8_t originalNote = track.kit.lanes[1U].midiNote;
+    assert(drumUi.laneEditor.draft.midiNote == originalNote);
+
+    // Draft edits are isolated from authored state and block an accidental
+    // Lane retarget until the musician applies or cancels them.
+    for (uint8_t field = 0U; field < 1U; ++field) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NOTE);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(drumUi.laneEditor.dirty);
+    assert(drumUi.laneEditor.draft.midiNote == 64U);
+    assert(track.kit.lanes[1U].midiNote == originalNote);
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(drumUi.laneEditor.sourceLane == 1U);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!drumUi.laneEditor.active);
+    assert(drumUi.selector == seq::DrumSequencerSelector::NONE);
+    assert(track.kit.lanes[1U].midiNote == originalNote);
+
+    // Apply is one authored/history transaction; undo and redo remain exact.
+    h.tap(Config::ButtonID::NAV);
+    for (uint8_t field = 0U; field < 1U; ++field) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(track.kit.lanes[1U].midiNote == 64U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    assert(h.state.undoSequencerHistory());
+    assert(track.kit.lanes[1U].midiNote == originalNote);
+    assert(h.state.redoSequencerHistory());
+    assert(track.kit.lanes[1U].midiNote == 64U);
+
+    std::cout
+        << "[PASS] Drum Lane editor isolates drafts and records one transaction\n";
+}
+
+void test_drum_lane_name_keyboard_restores_opt_normalized_contract() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    const auto optId = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneEditor.active);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NAME);
+    assert(
+        h.encoderHw.getMode(optId) ==
+        oc::interface::EncoderMode::NORMALIZED
+    );
+
+    // The shared text keyboard temporarily owns OPT in RAW mode. Both cancel
+    // and accept must return the encoder to the complete normalized contract.
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneEditor.textEditing);
+    assert(
+        h.encoderHw.getMode(optId) ==
+        oc::interface::EncoderMode::RAW
+    );
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(drumUi.laneEditor.active);
+    assert(!drumUi.laneEditor.textEditing);
+    assert(
+        h.encoderHw.getMode(optId) ==
+        oc::interface::EncoderMode::NORMALIZED
+    );
+    assert(h.encoderHw.getBoundsMin(optId) == 0.0f);
+    assert(h.encoderHw.getBoundsMax(optId) == 1.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NOTE);
+    assert(h.encoderHw.getDiscreteSteps(optId) == 128U);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(drumUi.laneEditor.draft.midiNote == 64U);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NAME);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneEditor.textEditing);
+    assert(
+        h.encoderHw.getMode(optId) ==
+        oc::interface::EncoderMode::RAW
+    );
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!drumUi.laneEditor.textEditing);
+    assert(
+        h.encoderHw.getMode(optId) ==
+        oc::interface::EncoderMode::NORMALIZED
+    );
+
+    std::cout
+        << "[PASS] Drum Lane keyboard restores normalized OPT and intermediate values\n";
+}
+
+void test_drum_lane_note_audition_is_bounded_latest_wins_and_stops() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    h.state.projectTracks.authored.midiChannels[1U] = 9U;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NOTE);
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.drumAudition.edgeCount == 1U);
+    assert(h.drumAudition.edges[0U].noteOn);
+    assert(h.drumAudition.edges[0U].channel == 9U);
+    assert(h.drumAudition.edges[0U].note == 64U);
+
+    // Fast scrubbing stops the owned note immediately but rate-limits the
+    // replacement. Intermediate samples collapse to the latest draft note.
+    h.turn(Config::EncoderID::OPT, 0.6f);
+    assert(h.drumAudition.edgeCount == 2U);
+    assert(!h.drumAudition.edges[1U].noteOn);
+    assert(h.drumAudition.edges[1U].note == 64U);
+    h.turn(Config::EncoderID::OPT, 0.7f);
+    h.advance(31U);
+    assert(h.drumAudition.edgeCount == 2U);
+    h.advance(1U);
+    assert(h.drumAudition.edgeCount == 3U);
+    assert(h.drumAudition.edges[2U].noteOn);
+    assert(h.drumAudition.edges[2U].note == 89U);
+
+    // Note Off owns the exact channel captured by Note On even if Track
+    // routing changes while the short preview is sounding.
+    h.state.projectTracks.authored.midiChannels[1U] = 3U;
+    h.advance(120U);
+    assert(h.drumAudition.edgeCount == 4U);
+    assert(!h.drumAudition.edges[3U].noteOn);
+    assert(h.drumAudition.edges[3U].channel == 9U);
+    assert(h.drumAudition.edges[3U].note == 89U);
+
+    // Preview never competes with running playback.
+    h.state.statusBar.playing.set(true);
+    h.turn(Config::EncoderID::OPT, 0.8f);
+    assert(h.drumAudition.edgeCount == 4U);
+    h.state.statusBar.playing.set(false);
+
+    // A rejected Note Off remains owned by the handler. Retries are bounded,
+    // then the stopped-transport panic guarantees no editor note can stick.
+    h.turn(Config::EncoderID::OPT, 0.9f);
+    assert(h.drumAudition.edgeCount == 5U);
+    assert(h.drumAudition.edges[4U].noteOn);
+    assert(h.drumAudition.edges[4U].channel == 3U);
+    h.drumAudition.acceptNoteOff = false;
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!drumUi.laneEditor.active);
+    for (uint8_t retry = 0U; retry < 7U; ++retry) h.advance(8U);
+    assert(h.drumAudition.panicCount == 1U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+
+    std::cout
+        << "[PASS] Drum Lane note audition is bounded, latest-wins, and safe\n";
+}
+
+void test_drum_lane_rhythm_is_live_coalesced_and_cancelable() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    assert(track.pattern.effectiveLength(0U) == 8U);
+    assert(
+        track.pattern.lanes[0U].timing.mode ==
+        seq::DrumLaneTimingMode::INHERIT_PATTERN
+    );
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(drumUi.selector == seq::DrumSequencerSelector::DIMENSION);
+    assert(drumUi.dimension == seq::DrumSequencerDimension::LENGTH);
+    h.turn(Config::EncoderID::OPT, 15.0f / 127.0f);
+    assert(track.pattern.effectiveLength(0U) == 16U);
+    assert(
+        track.pattern.lanes[0U].timing.mode ==
+        seq::DrumLaneTimingMode::CUSTOM
+    );
+    assert(!h.state.sequencer.historyFeedback.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+
+    h.advance(Config::Input::CONFIG.latchThresholdMs + 1U);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(drumUi.selector == seq::DrumSequencerSelector::NONE);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    assert(h.state.undoSequencerHistory());
+    assert(track.pattern.effectiveLength(0U) == 8U);
+    assert(
+        track.pattern.lanes[0U].timing.mode ==
+        seq::DrumLaneTimingMode::INHERIT_PATTERN
+    );
+    assert(h.state.redoSequencerHistory());
+    assert(track.pattern.effectiveLength(0U) == 16U);
+
+    // Cancel restores the live preview and aborts the open history gesture.
+    const uint8_t undoBeforeCancel = h.state.sequencerHistory.undoCount();
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.dimension == seq::DrumSequencerDimension::DIVISION);
+    h.turn(Config::EncoderID::OPT, 4.0f / 5.0f);
+    assert(track.pattern.effectiveStepsPerBeat(0U) == 6U);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(drumUi.selector == seq::DrumSequencerSelector::NONE);
+    assert(track.pattern.effectiveStepsPerBeat(0U) == 4U);
+    assert(h.state.sequencerHistory.undoCount() == undoBeforeCancel);
+    h.advance(Config::Input::CONFIG.latchThresholdMs + 1U);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    // Identity editing leaves the independently-authored lane rhythm intact.
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneEditor.active);
+    static_assert(static_cast<uint8_t>(seq::DrumLaneEditorField::COUNT) == 6U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NOTE);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(track.pattern.effectiveLength(0U) == 16U);
+    assert(track.pattern.effectiveStepsPerBeat(0U) == 4U);
+
+    std::cout
+        << "[PASS] Drum Lane rhythm is live, coalesced, cancelable, and outside identity\n";
+}
+
+void test_drum_short_nav_uses_shared_step_editor_and_coalesces_opt() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    assert(drumUi.focusStep(0U, 0U));
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencer.stepEdit.drumContext);
+    assert(h.state.sequencer.stepEdit.drumLane == 0U);
+    assert(h.state.sequencer.stepEdit.stepIndex.get() == 0U);
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+
+    // The shared Step Preset entry gesture is available in Drum as well. The
+    // opener release is consumed, so it cannot immediately enter a detail or
+    // close the underlying Step editor.
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.overlays.current() == core::ui::OverlayType::PRESET_LIBRARY);
+    h.release(Config::ButtonID::NAV);
+    assert(h.overlays.current() == core::ui::OverlayType::PRESET_LIBRARY);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+    assert(h.state.sequencer.stepEdit.drumContext);
+
+    // Chance is the next row in the shared Drum Step editor. Multiple OPT
+    // samples in one gesture/session remain one history record.
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() ==
+           seq::step_edit_rows::PROPERTY_OFFSET + 4U);
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.turn(Config::EncoderID::OPT, 0.75f);
+    h.turn(Config::EncoderID::OPT, 0.35f);
+    assert(track.pattern.lanes[0U].probability[0U] == 35U);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    assert(h.state.undoSequencerHistory());
+    assert(track.pattern.lanes[0U].probability[0U] ==
+           seq::DRUM_DEFAULT_PROBABILITY);
+    assert(h.state.redoSequencerHistory());
+    assert(track.pattern.lanes[0U].probability[0U] == 35U);
+
+    std::cout
+        << "[PASS] Drum short NAV uses shared Step editor and coalesces OPT\n";
+}
+
+void test_drum_step_editor_keeps_distinct_step_and_lane_axes() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    assert(track.pattern.setLaneTimingCustom(1U, 4U, 4U));
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    assert(drumUi.focusStep(0U, 7U));
+    h.tap(Config::ButtonID::NAV);
+    assert(sequencer.stepEdit.visible.get());
+
+    const uint8_t focusedRow = sequencer.stepEdit.focusedRow.get();
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    // Lane 1 only has four Steps, so the vertical axis preserves Step 8 and
+    // skips directly to the next compatible authored Lane.
+    assert(sequencer.stepEdit.drumLane == 2U);
+    assert(sequencer.stepEdit.drumStep == 7U);
+    assert(sequencer.stepEdit.stepIndex.get() == 7U);
+    assert(sequencer.stepEdit.focusedRow.get() == focusedRow);
+    assert(drumUi.selectedLane == 2U);
+    assert(drumUi.focusedStep == 7U);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(sequencer.stepEdit.drumLane == 0U);
+    assert(sequencer.stepEdit.drumStep == 7U);
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    // Ordinary NAV remains row navigation once the Lane modifier is released.
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(sequencer.stepEdit.drumLane == 0U);
+    assert(sequencer.stepEdit.drumStep == 7U);
+    assert(sequencer.stepEdit.focusedRow.get() != focusedRow);
+
+    const uint8_t rowAfterMove = sequencer.stepEdit.focusedRow.get();
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(sequencer.stepEdit.drumLane == 0U);
+    assert(sequencer.stepEdit.drumStep == 6U);
+    assert(sequencer.stepEdit.focusedRow.get() == rowAfterMove);
+
+    std::cout
+        << "[PASS] Drum Step editor keeps distinct Step and Lane axes\n";
+}
+
+void test_drum_step_scope_reaches_micro_cycle_without_chord_detour() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    assert(drumUi.focusStep(0U, 0U));
+    assert(drumUi.setStepEnabled(0U, 0U, true));
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(sequencer.stepContentSelector.selecting.get());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!sequencer.stepContentSelector.selecting.get());
+    assert(h.navigationFocus.get() ==
+           core::state::StructureNavigationFocus::STEP);
+    h.advance(Config::Input::CONFIG.latchThresholdMs + 1U);
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(sequencer.stepContentSelector.selecting.get());
+    assert(
+        sequencer.stepContentSelector.focusedAction.get() ==
+        seq::SequencerStepContentAction::MICRO_SEQUENCE
+    );
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        sequencer.stepContentSelector.focusedAction.get() ==
+        seq::SequencerStepContentAction::CYCLE_STATES
+    );
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(
+        sequencer.stepContentSelector.focusedAction.get() ==
+        seq::SequencerStepContentAction::MICRO_SEQUENCE
+    );
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.advance(Config::Input::CONFIG.latchThresholdMs + 1U);
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+    assert(!sequencer.stepContentSelector.selecting.get());
+    assert(!sequencer.stepEdit.visible.get());
+    assert(seq::isMicroSequenceContentView(sequencer));
+    assert(seq::isDrumContentView(sequencer));
+    assert(sequencer.stepContentDraft.active.get());
+    assert(track.advancedRootSlot(0U, 0U) >= 0);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!sequencer.stepContentDraft.active.get());
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+
+    std::cout
+        << "[PASS] Drum Step scope reaches Micro/Cycle without a Chord detour\n";
+}
+
+void test_drum_step_editor_authors_advanced_rhythm_content_and_replays() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    assert(drumUi.focusStep(0U, 0U));
+    assert(drumUi.setStepEnabled(0U, 0U, true));
+
+    h.tap(Config::ButtonID::NAV);
+    for (uint8_t i = 0U; i < 5U; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(sequencer.stepEdit.focusedRow.get() ==
+           seq::step_edit_rows::MICRO_SEQUENCE);
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.tap(Config::ButtonID::NAV);
+
+    assert(!sequencer.stepEdit.visible.get());
+    assert(seq::isMicroSequenceContentView(sequencer));
+    assert(seq::isDrumContentView(sequencer));
+    assert(sequencer.stepContentDraft.active.get());
+    const int16_t rootSlot = track.advancedRootSlot(0U, 0U);
+    assert(rootSlot >= 0);
+    assert(seq::stepNodeHasMicroSequence(
+        seq::authoringPattern(sequencer),
+        seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
+    ));
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+
+    // A Drum-owned draft deliberately keeps one unsealed Drum history entry
+    // open until Apply. Pure child navigation must not try to commit that
+    // transaction: it remains UI-only and must not emit a false rejection.
+    sequencer.historyFeedback.reset();
+    assert(sequencer.focusedStep.get() == 0U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(sequencer.focusedStep.get() == 1U);
+    assert(!sequencer.historyFeedback.visible.get());
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(sequencer.focusedStep.get() == 0U);
+    assert(!sequencer.historyFeedback.visible.get());
+
+    // The child is the common grid. Holding its first pad opens the same Step
+    // Editor while retaining Drum pitch ownership and omitting Pitch/Chord.
+    h.press(Config::MACRO_BUTTONS[0U]);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(sequencer.stepEdit.visible.get());
+    assert(sequencer.stepEdit.drumContext);
+    h.release(Config::MACRO_BUTTONS[0U]);
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Chance
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Velocity
+    assert(sequencer.stepEdit.focusedRow.get() ==
+           seq::step_edit_rows::PROPERTY_OFFSET + 1U);
+    h.turn(Config::EncoderID::OPT, 0.85f);
+    const auto projection = seq::resolveActiveContentStepProjection(
+        sequencer,
+        0U,
+        h.state.sequencerTracks.projectScaleSettings()
+    );
+    assert(projection.valid);
+    assert(projection.enabled);
+    assert(projection.note == track.kit.lanes[0U].midiNote);
+    assert(projection.velocity != track.pattern.lanes[0U].velocity[0U]);
+    const auto* graph = seq::graphView(seq::authoringPattern(sequencer));
+    assert(graph != nullptr);
+    const auto* childNode = graph->stepNode(seq::activeContentStepNodeId(sequencer, 0U));
+    assert(childNode != nullptr);
+    assert(!childNode->has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(seq::isMicroSequenceContentView(sequencer));
+    assert(!sequencer.stepEdit.visible.get());
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!sequencer.stepContentDraft.active.get());
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(seq::isRootContentView(sequencer));
+    assert(!sequencer.stepEdit.visible.get());
+
+    // Creation and every edit made inside its draft are one exact Drum entry.
+    assert(h.state.undoSequencerHistory());
+    assert(track.advancedRootSlot(0U, 0U) < 0);
+    assert(!seq::stepNodeHasMicroSequence(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
+    ));
+    assert(h.state.redoSequencerHistory());
+    assert(track.advancedRootSlot(0U, 0U) == rootSlot);
+    assert(seq::stepNodeHasMicroSequence(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
+    ));
+
+    std::cout
+        << "[PASS] Drum Step editor authors bounded Micro content and replays exactly\n";
+}
+
+void test_drum_step_editor_authors_cycle_states_and_replays() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    assert(drumUi.focusStep(1U, 3U));
+    assert(drumUi.setStepEnabled(1U, 3U, true));
+
+    h.tap(Config::ButtonID::NAV);
+    for (uint8_t i = 0U; i < 6U; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(sequencer.stepEdit.focusedRow.get() ==
+           seq::step_edit_rows::CYCLE_STATES);
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.tap(Config::ButtonID::NAV);
+
+    assert(!sequencer.stepEdit.visible.get());
+    assert(seq::isCycleStatesContentView(sequencer));
+    assert(seq::isDrumContentView(sequencer));
+    assert(sequencer.stepContentDraft.active.get());
+    const int16_t rootSlot = track.advancedRootSlot(1U, 3U);
+    assert(rootSlot >= 0);
+    assert(seq::stepNodeHasCycleStateSet(
+        seq::authoringPattern(sequencer),
+        seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
+    ));
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!sequencer.stepContentDraft.active.get());
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(seq::isRootContentView(sequencer));
+
+    assert(h.state.undoSequencerHistory());
+    assert(track.advancedRootSlot(1U, 3U) < 0);
+    assert(!seq::stepNodeHasCycleStateSet(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
+    ));
+    assert(h.state.redoSequencerHistory());
+    assert(track.advancedRootSlot(1U, 3U) == rootSlot);
+    assert(seq::stepNodeHasCycleStateSet(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
+    ));
+
+    std::cout
+        << "[PASS] Drum Step editor authors Cycle States and replays exactly\n";
+}
+
+void test_drum_track_pattern_step_bottom_actions_share_one_contract() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+
+    // Track uses the common performance action: tap toggles mute.
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert((h.state.projectTracks.authored.mutedMask & 0x0002U) != 0U);
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert((h.state.projectTracks.authored.mutedMask & 0x0002U) == 0U);
+
+    // Pattern is the only deliberate Drum exception: the bottom pair pages
+    // through the complete polymetric overview instead of mutating content.
+    // A short selected Lane must not hide later pages owned by longer Lanes.
+    assert(track.pattern.setLaneTimingCustom(0U, 24U, 4U));
+    assert(track.pattern.setLaneTimingCustom(1U, 4U, 4U));
+    drumUi.moveLane(1.0f);
+    assert(drumUi.selectedLane == 1U);
+    assert(drumUi.overviewPageCount() == 3U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    assert(drumUi.page == 0U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(drumUi.page == 1U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(drumUi.page == 2U);
+    assert(!drumUi.focusAuthoredLane());
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(drumUi.page == 1U);
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(drumUi.page == 0U);
+
+    // Step reuses the common short/deep reset and copy/paste gestures while
+    // carrying an explicit Drum clipboard domain and its advanced Graph.
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    assert(drumUi.focusStep(0U, 0U));
+    assert(track.pattern.setStepEnabled(0U, 0U, true));
+    assert(track.pattern.setStepVelocity(0U, 0U, 111U));
+    assert(track.pattern.setStepGate(0U, 0U, 175U));
+    assert(track.pattern.setStepNudge(0U, 0U, -7));
+    assert(track.pattern.setStepProbability(0U, 0U, 63U));
+
+    h.tap(Config::ButtonID::NAV);
+    for (uint8_t i = 0U; i < 5U; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    h.tap(Config::ButtonID::NAV);
+    assert(seq::isMicroSequenceContentView(sequencer));
+    assert(sequencer.stepContentDraft.active.get());
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!sequencer.stepEdit.visible.get());
+    const int16_t sourceSlot = track.advancedRootSlot(0U, 0U);
+    assert(sourceSlot >= 0);
+
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerSteps());
+    assert(h.state.structureClipboard.sequencerSteps.drumContext);
+    assert(h.state.structureClipboard.sequencerSteps.count == 1U);
+
+    assert(drumUi.focusStep(0U, 1U));
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    const int16_t pastedSlot = track.advancedRootSlot(0U, 1U);
+    assert(pastedSlot >= 0);
+    assert(pastedSlot != sourceSlot);
+    assert(track.pattern.stepEnabled(0U, 1U));
+    assert(track.pattern.lanes[0U].velocity[1U] == 111U);
+    assert(track.pattern.lanes[0U].gate[1U] == 175U);
+    assert(track.pattern.lanes[0U].nudge[1U] == -7);
+    assert(track.pattern.lanes[0U].probability[1U] == 63U);
+    assert(seq::stepNodeHasMicroSequence(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(pastedSlot))
+    ));
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(!track.pattern.stepEnabled(0U, 1U));
+    assert(track.pattern.lanes[0U].velocity[1U] ==
+           seq::DRUM_DEFAULT_VELOCITY);
+    assert(track.advancedRootSlot(0U, 1U) == pastedSlot);
+    assert(h.state.undoSequencerHistory());
+    assert(track.pattern.stepEnabled(0U, 1U));
+    assert(track.pattern.lanes[0U].velocity[1U] == 111U);
+    assert(track.advancedRootSlot(0U, 1U) == pastedSlot);
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(!track.pattern.stepEnabled(0U, 1U));
+    assert(track.advancedRootSlot(0U, 1U) < 0);
+    assert(h.state.undoSequencerHistory());
+    assert(track.pattern.stepEnabled(0U, 1U));
+    assert(track.advancedRootSlot(0U, 1U) == pastedSlot);
+    assert(seq::stepNodeHasMicroSequence(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(pastedSlot))
+    ));
+
+    std::cout
+        << "[PASS] Drum Track/Pattern/Step bottom actions share one contract\n";
+}
+
+void test_drum_pattern_lane_content_selection_preserves_lane_identity() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    auto sameDescriptor = [](const seq::DrumLaneDescriptor& lhs,
+                             const seq::DrumLaneDescriptor& rhs) {
+        return lhs.midiNote == rhs.midiNote && lhs.role == rhs.role &&
+            lhs.icon == rhs.icon && lhs.colorIndex == rhs.colorIndex &&
+            std::strcmp(lhs.name.data(), rhs.name.data()) == 0;
+    };
+
+    // A sparse Lane-content selection owns rhythm/expression/advanced Graph
+    // payload only. Destination Lane identity must remain independently
+    // authored by the kit.
+    assert(track.pattern.setLaneTimingCustom(1U, 16U, 4U));
+    assert(track.pattern.setStepEnabled(1U, 0U, true));
+    assert(track.pattern.setStepVelocity(1U, 0U, 117U));
+    assert(track.pattern.setStepGate(1U, 0U, 225U));
+    assert(track.pattern.setStepNudge(1U, 0U, -9));
+    assert(track.pattern.setStepProbability(1U, 0U, 61U));
+
+    assert(track.pattern.setLaneTimingCustom(3U, 7U, 8U));
+    assert(track.pattern.setStepEnabled(3U, 2U, true));
+    assert(track.pattern.setStepVelocity(3U, 2U, 93U));
+    assert(track.pattern.setStepGate(3U, 2U, 75U));
+    assert(track.pattern.setStepNudge(3U, 2U, 11));
+    assert(track.pattern.setStepProbability(3U, 2U, 84U));
+
+    assert(track.pattern.setLaneTimingCustom(4U, 12U, 2U));
+    assert(track.pattern.setStepEnabled(4U, 1U, true));
+    assert(track.pattern.setStepVelocity(4U, 1U, 42U));
+    assert(track.pattern.setLaneTimingCustom(5U, 5U, 4U));
+    assert(track.pattern.setStepEnabled(5U, 4U, true));
+
+    bool mappingChanged = false;
+    const int16_t sourceSlot = seq::ensureDrumAdvancedRootSlot(
+        track, sequencer.pattern, 1U, 0U, mappingChanged);
+    assert(sourceSlot >= 0 && mappingChanged);
+    assert(seq::createMicroSequence(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(sourceSlot)),
+        3U
+    ).ok);
+
+    mappingChanged = false;
+    const int16_t oldDestinationSlot = seq::ensureDrumAdvancedRootSlot(
+        track, sequencer.pattern, 4U, 1U, mappingChanged);
+    assert(oldDestinationSlot >= 0 && mappingChanged);
+    assert(seq::createCycleStateSet(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(oldDestinationSlot)),
+        2U
+    ).ok);
+
+    const auto sourceLane1 = track.pattern.lanes[1U];
+    const auto sourceLane3 = track.pattern.lanes[3U];
+    const auto destinationLane4Before = track.pattern.lanes[4U];
+    const auto destinationLane5Before = track.pattern.lanes[5U];
+    const auto destinationDescriptor4 = track.kit.lanes[4U];
+    const auto destinationDescriptor5 = track.kit.lanes[5U];
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.selectedLane == 1U);
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(drumUi.laneSelection.active);
+    h.release(Config::ButtonID::NAV);
+    assert(drumUi.laneSelection.selectedMask == 0U);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneSelection.selectedMask == 0x0002U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneSelection.cursorLane == 3U);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneSelection.selectedMask == 0x000AU);
+
+    const uint8_t undoBeforePaste = h.state.sequencerHistory.undoCount();
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerDrumLaneSelection());
+    assert(drumUi.laneSelection.placementActive());
+    assert(drumUi.laneSelection.clipboardCount == 2U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.advance(0U);
+    assert(drumUi.laneSelection.cursorLane == 4U);
+    assert(drumUi.laneSelection.destinationMask == 0x0030U);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencerHistory.undoCount() == undoBeforePaste + 1U);
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[4U], sourceLane1));
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[5U], sourceLane3));
+    assert(sameDescriptor(track.kit.lanes[4U], destinationDescriptor4));
+    assert(sameDescriptor(track.kit.lanes[5U], destinationDescriptor5));
+    assert(track.advancedRootSlot(4U, 1U) < 0);
+    const int16_t pastedSlot = track.advancedRootSlot(4U, 0U);
+    assert(pastedSlot >= 0);
+    assert(seq::stepNodeHasMicroSequence(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(pastedSlot))
+    ));
+
+    assert(h.state.undoSequencerHistory());
+    assert(seq::sameDrumLanePattern(
+        track.pattern.lanes[4U], destinationLane4Before));
+    assert(seq::sameDrumLanePattern(
+        track.pattern.lanes[5U], destinationLane5Before));
+    assert(sameDescriptor(track.kit.lanes[4U], destinationDescriptor4));
+    assert(sameDescriptor(track.kit.lanes[5U], destinationDescriptor5));
+    assert(track.advancedRootSlot(4U, 0U) < 0);
+    const int16_t restoredDestinationSlot = track.advancedRootSlot(4U, 1U);
+    assert(restoredDestinationSlot >= 0);
+    assert(seq::stepNodeHasCycleStateSet(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(restoredDestinationSlot))
+    ));
+
+    assert(h.state.redoSequencerHistory());
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[4U], sourceLane1));
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[5U], sourceLane3));
+    assert(sameDescriptor(track.kit.lanes[4U], destinationDescriptor4));
+    assert(sameDescriptor(track.kit.lanes[5U], destinationDescriptor5));
+
+    // Back leaves placement but keeps the source selection. A short clear is
+    // one reversible content edit and still cannot mutate Lane descriptors.
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(drumUi.laneSelection.active);
+    assert(!drumUi.laneSelection.placing);
+    assert(drumUi.laneSelection.selectedMask == 0x000AU);
+    const auto sourceDescriptor1 = track.kit.lanes[1U];
+    const auto sourceDescriptor3 = track.kit.lanes[3U];
+    const uint8_t undoBeforeClear = h.state.sequencerHistory.undoCount();
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    seq::DrumLanePattern empty{};
+    empty.reset();
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[1U], empty));
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[3U], empty));
+    assert(track.advancedRootSlot(1U, 0U) < 0);
+    assert(sameDescriptor(track.kit.lanes[1U], sourceDescriptor1));
+    assert(sameDescriptor(track.kit.lanes[3U], sourceDescriptor3));
+    assert(h.state.sequencerHistory.undoCount() == undoBeforeClear + 1U);
+    assert(h.state.undoSequencerHistory());
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[1U], sourceLane1));
+    assert(seq::sameDrumLanePattern(track.pattern.lanes[3U], sourceLane3));
+    assert(track.advancedRootSlot(1U, 0U) >= 0);
+    assert(sameDescriptor(track.kit.lanes[1U], sourceDescriptor1));
+    assert(sameDescriptor(track.kit.lanes[3U], sourceDescriptor3));
+
+    std::cout
+        << "[PASS] Drum Pattern Lane selection copies content and preserves identity\n";
+}
+
+void test_drum_pattern_lane_move_is_direct_cancelable_and_undoable() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    assert(track.pattern.setStepEnabled(1U, 3U, true));
+    assert(track.pattern.setStepVelocity(1U, 3U, 117U));
+    bool mappingChanged = false;
+    const int16_t sourceSlot = seq::ensureDrumAdvancedRootSlot(
+        track, sequencer.pattern, 1U, 3U, mappingChanged);
+    assert(sourceSlot >= 0 && mappingChanged);
+    assert(seq::createMicroSequence(
+        sequencer.pattern,
+        seq::rootStepNodeId(static_cast<uint8_t>(sourceSlot)),
+        3U
+    ).ok);
+    const auto movedDescriptor = track.kit.lanes[1U];
+    const auto displacedDescriptor = track.kit.lanes[3U];
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    drumUi.moveLane(1.0f);
+    assert(drumUi.selectedLane == 1U);
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    assert(drumUi.laneSelection.active);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.laneSelection.selectedMask == 0x0002U);
+
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(drumUi.laneSelection.moveActive());
+    assert(drumUi.laneSelection.destinationMask == 0x0002U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneSelection.cursorLane == 3U);
+    assert(drumUi.laneSelection.destinationMask == 0x0008U);
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!drumUi.laneSelection.moveActive());
+    assert(drumUi.laneSelection.selectedMask == 0x0008U);
+    assert(drumUi.selectedLane == 3U);
+    assert(track.kit.lanes[3U].midiNote == movedDescriptor.midiNote);
+    assert(track.kit.lanes[2U].midiNote == displacedDescriptor.midiNote);
+    assert(track.pattern.stepEnabled(3U, 3U));
+    assert(track.pattern.lanes[3U].velocity[3U] == 117U);
+    assert(track.advancedRootSlot(3U, 3U) == sourceSlot);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+
+    // Back from destination preview is a pure cancel and keeps the source
+    // selected, ready for another musical gesture.
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(drumUi.laneSelection.moveActive());
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!drumUi.laneSelection.moveActive());
+    assert(drumUi.laneSelection.selectedMask == 0x0008U);
+    assert(drumUi.laneSelection.cursorLane == 3U);
+    assert(track.kit.lanes[3U].midiNote == movedDescriptor.midiNote);
+
+    assert(h.state.undoSequencerHistory());
+    assert(track.kit.lanes[1U].midiNote == movedDescriptor.midiNote);
+    assert(track.kit.lanes[3U].midiNote == displacedDescriptor.midiNote);
+    assert(track.pattern.stepEnabled(1U, 3U));
+    assert(track.advancedRootSlot(1U, 3U) == sourceSlot);
+    assert(h.state.redoSequencerHistory());
+    assert(track.kit.lanes[3U].midiNote == movedDescriptor.midiNote);
+    assert(track.advancedRootSlot(3U, 3U) == sourceSlot);
+
+    std::cout
+        << "[PASS] Drum Pattern Lane move is direct, cancelable, and undoable\n";
+}
+
+void test_drum_advanced_creation_oom_restores_mapping_and_graph() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+    auto& sequencer = h.state.sequencer;
+    auto& drumUi = sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    assert(drumUi.focusStep(0U, 0U));
+    h.tap(Config::ButtonID::NAV);
+    for (uint8_t i = 0U; i < 5U; ++i) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    {
+        // Change owner + reserved after-Graph consume the first two cold
+        // allocations. Failing Graph creation exercises post-mapping rollback.
+        core::app::testing::ScopedExtmemAllocationFailure failure(3U);
+        h.tap(Config::ButtonID::NAV);
+    }
+    assert(track.advancedRootSlot(0U, 0U) < 0);
+    assert(seq::graphView(sequencer.pattern) == nullptr);
+    assert(seq::isRootContentView(sequencer));
+    assert(sequencer.stepEdit.visible.get());
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+
+    std::cout
+        << "[PASS] Drum advanced-content OOM rolls back mapping and Graph\n";
+}
+
 }  // namespace
 
 int main() {
@@ -8294,7 +9482,7 @@ int main() {
     test_track_selection_copy_is_global_from_sequencer_view();
     test_page_selection_clear_and_delete_are_undoable();
     test_pattern_selection_paste_previews_collisions_and_creates_intermediate_pages();
-    test_track_context_nav_crosses_sparse_slots_and_creates_without_structure();
+    test_track_context_nav_crosses_sparse_slots_and_creates_instrument_via_picker();
     test_step_toggle_undo_redo_workflow();
     test_child_step_toggle_undo_redo_workflow();
     test_step_toggle_preflight_failure_is_atomic();
@@ -8339,7 +9527,7 @@ int main() {
     test_direct_track_obvious_invalid_topology_skips_chronology();
     test_direct_track_missing_presentation_capability_is_preflight_atomic();
     test_track_remove_hold_latches_target_and_rejects_external_drift();
-    test_track_remove_hold_does_not_block_acquired_nav_release();
+    test_context_selector_owns_inputs_before_track_remove_hold();
     test_track_remove_hold_rejects_new_nav_press_without_hiding_action();
     test_track_hold_boundary_drift_cannot_retarget_mutation();
     test_track_remove_hold_provenance_cannot_cross_context_or_selection();
@@ -8363,6 +9551,21 @@ int main() {
     test_prepared_step_page_nochange_paths_are_allocation_free();
     test_prepared_step_page_oom_failures_restore_exact_state();
     test_prepared_step_page_failed_commits_restore_exact_state();
+    test_drum_track_creation_navigation_and_owners_are_independent();
+    test_drum_lane_add_slot_is_direct_and_reorder_is_transactional();
+    test_drum_lane_editor_draft_retarget_cancel_and_history();
+    test_drum_lane_name_keyboard_restores_opt_normalized_contract();
+    test_drum_lane_note_audition_is_bounded_latest_wins_and_stops();
+    test_drum_lane_rhythm_is_live_coalesced_and_cancelable();
+    test_drum_short_nav_uses_shared_step_editor_and_coalesces_opt();
+    test_drum_step_editor_keeps_distinct_step_and_lane_axes();
+    test_drum_step_scope_reaches_micro_cycle_without_chord_detour();
+    test_drum_step_editor_authors_advanced_rhythm_content_and_replays();
+    test_drum_step_editor_authors_cycle_states_and_replays();
+    test_drum_track_pattern_step_bottom_actions_share_one_contract();
+    test_drum_pattern_lane_content_selection_preserves_lane_identity();
+    test_drum_pattern_lane_move_is_direct_cancelable_and_undoable();
+    test_drum_advanced_creation_oom_restores_mapping_and_graph();
 
     std::cout << "\nAll SequencerStepHandler tests passed.\n";
     return 0;

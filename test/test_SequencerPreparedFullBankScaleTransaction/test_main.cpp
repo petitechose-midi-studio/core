@@ -623,7 +623,7 @@ void test_state_operation_rows_revisions_overrides_and_scratch() {
     std::cout << "[PASS] state scale operation locks rows, revisions, overrides and scratch\n";
 }
 
-void test_owner_specific_no_change_chronology() {
+void test_project_no_change_bypasses_history_and_allocation() {
     {
         Harness h;
         initializeTopology(h, PayloadKind::None, false);
@@ -647,62 +647,12 @@ void test_owner_specific_no_change_chronology() {
     }
     tx::assertFailureInjectionReset();
 
-    {
-        Harness h;
-        initializeTopology(h, PayloadKind::None, false);
-        preparePendingPatternEdit(h);
-        const auto scale = h.state.sequencerTracks.projectScaleSettings();
-        const auto result = h.state.applyPreparedProjectScaleChoice(
-            Owner::SequencerSettingsScale,
-            1U,
-            currentChoice(1U, scale)
-        );
-        assert(result.outcome == Outcome::NoChange);
-        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-        assert(h.state.sequencerHistory.undoCount() == 1U);
-        assert(h.state.sequencerHistory.undoCount(
-                   seq::SequencerHistoryScope::PatternOnly) == 1U);
-        assert(h.state.projectHistory.undoCount() == 1U);
-        assert(h.state.sequencer.pattern.note[kStep] == 73U);
-        assert(h.state.sequencerTracks.track(kActiveTrack).note[kStep] == 73U);
-        assert(sameScale(h.state.sequencerTracks.projectScaleSettings(), scale));
-    }
-
-    {
-        Harness h;
-        initializeTopology(h, PayloadKind::Graph, false);
-        preparePendingPatternEdit(h);
-        beginModifiedChordDraft(h);
-        const auto scale = h.state.sequencerTracks.projectScaleSettings();
-        const uint32_t draftRevision = h.state.sequencer.stepContentDraft.revision.get();
-        const auto result = h.state.applyPreparedProjectScaleChoice(
-            Owner::SequencerSettingsScale,
-            2U,
-            currentChoice(2U, scale)
-        );
-        assert(result.outcome == Outcome::Blocked);
-        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-        assert(h.state.sequencerHistory.undoCount() == 1U);
-        assert(h.state.sequencer.stepContentDraft.active.get());
-        assert(h.state.sequencer.stepContentDraft.modified());
-        assert(
-            h.state.sequencer.stepContentDraft.failure ==
-            seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED
-        );
-        assert(
-            h.state.sequencer.stepContentDraft.blockedTransition ==
-            seq::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
-        );
-        assert(h.state.sequencer.stepContentDraft.revision.get() == draftRevision + 1U);
-        assert(sameScale(h.state.sequencerTracks.projectScaleSettings(), scale));
-    }
-
-    std::cout << "[PASS] Project and Settings no-change chronology remains owner-specific\n";
+    std::cout << "[PASS] Project no-change bypasses history and allocation\n";
 }
 
-void test_active_draft_rejects_changed_choices_for_both_owners() {
-    constexpr std::array owners{Owner::ProjectScale, Owner::SequencerSettingsScale};
-    for (const auto owner : owners) {
+void test_active_draft_rejects_changed_project_choice() {
+    constexpr auto owner = Owner::ProjectScale;
+    {
         Harness h;
         initializeTopology(h, PayloadKind::GraphAndCc, false);
         beginModifiedChordDraft(h);
@@ -736,7 +686,7 @@ void test_active_draft_rejects_changed_choices_for_both_owners() {
         assert(h.state.sequencer.stepContentDraft.revision.get() == draftRevision + 1U);
     }
 
-    std::cout << "[PASS] changed scale choices reject active drafts before allocation\n";
+    std::cout << "[PASS] changed Project choice rejects active draft before allocation\n";
 }
 
 void runSuccessfulCase(
@@ -843,7 +793,7 @@ void runSuccessfulCase(
     assertScratchEmpty(h);
 }
 
-void test_two_owners_three_rows_and_payload_topologies_commit_exactly() {
+void test_project_owner_rows_and_payload_topologies_commit_exactly() {
     struct Case {
         Owner owner;
         uint8_t row;
@@ -853,15 +803,13 @@ void test_two_owners_three_rows_and_payload_topologies_commit_exactly() {
         Case{Owner::ProjectScale, 0U, PayloadKind::None},
         Case{Owner::ProjectScale, 1U, PayloadKind::Graph},
         Case{Owner::ProjectScale, 2U, PayloadKind::Cc},
-        Case{Owner::SequencerSettingsScale, 0U, PayloadKind::GraphAndCc},
-        Case{Owner::SequencerSettingsScale, 1U, PayloadKind::None},
-        Case{Owner::SequencerSettingsScale, 2U, PayloadKind::GraphAndCc},
+        Case{Owner::ProjectScale, 0U, PayloadKind::GraphAndCc},
     };
     for (const auto& item : cases) {
         runSuccessfulCase(item.owner, item.row, item.kind);
     }
 
-    std::cout << "[PASS] two owners, rows 0/1/2 and all payload topologies commit exactly\n";
+    std::cout << "[PASS] Project owner rows and all payload topologies commit exactly\n";
 }
 
 void test_near_budget_scale_commit_prunes_before_publishing() {
@@ -883,7 +831,7 @@ void test_near_budget_scale_commit_prunes_before_publishing() {
     const auto scaleAfterFirst = h.state.sequencerTracks.projectScaleSettings();
     const int secondChoice = changedChoice(0U, scaleAfterFirst);
     const auto second = h.state.applyPreparedProjectScaleChoice(
-        Owner::SequencerSettingsScale, 0U, secondChoice);
+        Owner::ProjectScale, 0U, secondChoice);
     assert(second.outcome == Outcome::Committed);
     assert(h.state.sequencerHistory.retainedBytes() <=
            seq::SequencerHistoryService::RETAINED_BYTE_BUDGET);
@@ -909,27 +857,21 @@ void test_maximum_topology_fail_nth_is_exact_and_atomic() {
     const auto current = h.state.sequencerTracks.projectScaleSettings();
     const int choice = changedChoice(0U, current);
 
-    constexpr std::array owners{
-        Owner::ProjectScale,
-        Owner::SequencerSettingsScale,
-    };
-    for (const Owner owner : owners) {
-        for (std::size_t ordinal = 1U;
-             ordinal <= kMaximumAllocationAttempts;
-             ++ordinal) {
-            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
-            const auto result = h.state.applyPreparedProjectScaleChoice(
-                owner,
-                0U,
-                choice
-            );
-            assert(result.outcome == Outcome::ResourceUnavailable);
-            assert(result.projection.patternsVisited == 0U);
-            tx::assertFailureConsumed(ordinal);
-            assertExactLiveProof(h, before);
-            assert(h.state.sequencerTracks.track(kActiveTrack).graph != nullptr);
-            assert(h.state.sequencerTracks.track(kActiveTrack).ccLanes != nullptr);
-        }
+    for (std::size_t ordinal = 1U;
+         ordinal <= kMaximumAllocationAttempts;
+         ++ordinal) {
+        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+        const auto result = h.state.applyPreparedProjectScaleChoice(
+            Owner::ProjectScale,
+            0U,
+            choice
+        );
+        assert(result.outcome == Outcome::ResourceUnavailable);
+        assert(result.projection.patternsVisited == 0U);
+        tx::assertFailureConsumed(ordinal);
+        assertExactLiveProof(h, before);
+        assert(h.state.sequencerTracks.track(kActiveTrack).graph != nullptr);
+        assert(h.state.sequencerTracks.track(kActiveTrack).ccLanes != nullptr);
     }
     tx::assertFailureInjectionReset();
 
@@ -997,36 +939,16 @@ void test_maximum_topology_fail_nth_is_exact_and_atomic() {
     assert(h.state.projectHistory.undoCount() == stateBefore.projectUndoCount + 1U);
     assertProjectScaleDescriptor(h);
 
-    Harness settings;
-    initializeTopology(settings, PayloadKind::GraphAndCc, true);
-    const auto settingsBefore = tx::captureStateInvariant(settings.state);
-    const int settingsChoice = changedChoice(
-        0U, settings.state.sequencerTracks.projectScaleSettings());
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(
-            kMaximumAllocationAttempts + 1U);
-        const auto result = settings.state.applyPreparedProjectScaleChoice(
-            Owner::SequencerSettingsScale, 0U, settingsChoice);
-        assert(result.outcome == Outcome::Committed);
-        tx::assertMaxPlusOneStillArmed(kMaximumAllocationAttempts);
-    }
-    tx::assertFailureInjectionReset();
-    assertScratchEmpty(settings);
-    assert(settings.state.sequencerHistory.undoCount() ==
-           settingsBefore.sequencerUndoCount + 1U);
-    assert(settings.state.projectHistory.undoCount() ==
-           settingsBefore.projectUndoCount + 1U);
-
-    std::cout << "[PASS] both owners are atomic for fail-1..99 and pass armed at 100\n";
+    std::cout << "[PASS] Project owner is atomic for fail-1..99 and pass armed at 100\n";
 }
 
 }  // namespace
 
 int main() {
     test_state_operation_rows_revisions_overrides_and_scratch();
-    test_owner_specific_no_change_chronology();
-    test_active_draft_rejects_changed_choices_for_both_owners();
-    test_two_owners_three_rows_and_payload_topologies_commit_exactly();
+    test_project_no_change_bypasses_history_and_allocation();
+    test_active_draft_rejects_changed_project_choice();
+    test_project_owner_rows_and_payload_topologies_commit_exactly();
     test_near_budget_scale_commit_prunes_before_publishing();
     test_maximum_topology_fail_nth_is_exact_and_atomic();
     std::cout << "All SequencerPreparedFullBankScaleTransaction tests passed.\n";

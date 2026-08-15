@@ -1,0 +1,62 @@
+# Drum lane structure acceptance path: a visible Pattern-level add target,
+# direct creation and an explicit, transactional reorder preview.
+# Expect: capture_changed:kit_empty=empty_pattern_add_lane, capture_changed:empty_pattern_add_lane=lane_create_first
+# Expect: capture_changed:lane_create_first=first_lane, capture_changed:first_lane=add_lane_focused
+# Expect: capture_changed:add_lane_focused=lane_create_second, capture_changed:lane_create_second=two_lanes
+# Expect: capture_changed:two_lanes=reorder_preview, capture_changed:reorder_preview=reordered_overview
+# Expect: semantic:empty_pattern_add_lane:mode=sequencer.drum_pattern, semantic:empty_pattern_add_lane:target=drum_lane, semantic:empty_pattern_add_lane:target_index=0, semantic:empty_pattern_add_lane:target_count=0, semantic:empty_pattern_add_lane:property=add_slot
+# Expect: semantic:lane_create_first:mode=sequencer.drum_lane_edit, semantic:lane_create_first:draft_kind=drum_lane_create, semantic:lane_create_first:target_index=0, semantic:lane_create_first:draft_active=true
+# Expect: semantic:first_lane:effect=apply_drum_lane_draft, semantic:first_lane:intent=apply, semantic:first_lane:published=true
+# Expect: semantic:add_lane_focused:mode=sequencer.drum_pattern, semantic:add_lane_focused:target_index=1, semantic:add_lane_focused:target_count=1, semantic:add_lane_focused:property=add_slot
+# Expect: semantic:lane_create_second:draft_kind=drum_lane_create, semantic:lane_create_second:target_index=1, semantic:lane_create_second:draft_active=true
+# Expect: semantic:reorder_preview:mode=sequencer.drum_lane_edit, semantic:reorder_preview:property=position, semantic:reorder_preview:target_index=0, semantic:reorder_preview:dirty=true
+# Expect: semantic:reordered_overview:effect=apply_drum_lane_draft, semantic:reordered_overview:intent=apply, semantic:reordered_overview:published=true
+
+0 scenario drum-sequencer
+80 capture screen instrument_grid_before_create
+
+# Open Structure > Tracks and create a blank Drum Track.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1280 capture screen structure_tracks_open
+1530 encoder NAV 1
+1730 capture screen track_2_add_preview
+1830 tap NAV 60
+2150 capture screen type_instrument
+2300 encoder NAV 1
+2500 capture screen type_drum
+2650 tap NAV 60
+2950 capture screen kit_empty
+3100 tap NAV 60
+3500 encoder NAV 1
+3900 capture screen empty_pattern_add_lane
+
+# The visible plus is the only creation affordance. Short NAV opens Create and
+# Apply publishes the first Lane without a hidden long-press gesture.
+4100 tap NAV 60
+4550 capture screen lane_create_first
+4750 tap BOTTOM_RIGHT 60
+5400 capture screen first_lane
+
+# NAV traverses authored Lanes and the virtual plus as peers.
+5600 encoder NAV 1
+6000 capture screen add_lane_focused
+6200 tap NAV 60
+6650 capture screen lane_create_second
+6850 tap BOTTOM_RIGHT 60
+7500 capture screen two_lanes
+
+# Position remains a draft until Apply. The editor names both source and
+# destination so a reordering operation cannot be mistaken for Lane editing.
+7700 tap NAV 60
+7900 encoder NAV 1
+8050 encoder NAV 1
+8200 encoder NAV 1
+8350 encoder NAV 1
+9000 encoder OPT -1.0
+9120 encoder OPT -1.0
+9600 capture screen reorder_preview
+9800 tap BOTTOM_RIGHT 60
+10500 capture screen reordered_overview

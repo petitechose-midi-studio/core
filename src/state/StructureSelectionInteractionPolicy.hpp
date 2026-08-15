@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "state/interaction/ControllerInteractionContract.hpp"
+
 namespace core::state {
 
 enum class StructureSelectionPhase : uint8_t {
@@ -67,6 +69,10 @@ struct StructureSelectionInteractionPolicy {
  */
 StructureSelectionInteractionPolicy buildStructureSelectionInteractionPolicy(
     const StructureSelectionInteractionContext& context
+);
+
+core::state::interaction::ControllerIntent controllerIntentFor(
+    StructureSelectionInteractionAction action
 );
 
 }  // namespace core::state

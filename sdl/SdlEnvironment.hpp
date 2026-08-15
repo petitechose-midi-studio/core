@@ -127,8 +127,7 @@ private:
 
     SDL_Renderer* renderer_ = nullptr;
     // SDL's renderer backbuffer is undefined after SDL_RenderPresent(). Keep
-    // the full LVGL buffer that was actually handed to the display driver so
-    // deterministic captures never read a recycled swapchain image.
+    // the single synchronous LVGL framebuffer actually handed to the driver.
     lv_draw_buf_t* lastFlushedBuffer_ = nullptr;
     bool running_ = false;
 };

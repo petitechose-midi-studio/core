@@ -73,10 +73,10 @@ FLASHMEM float randomizeValueToNormalized(
 FLASHMEM SequencerPatternEditorHandler::SequencerPatternEditorHandler(
     StateRefs state, oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders, oc::api::ButtonAPI& buttons,
-    oc::type::ScopeID sequencerViewScope, oc::type::ScopeID overlayScope)
+    oc::type::ScopeID overlayScope)
     : sequencer_(state.sequencer), tracks_(state.tracks), randomize_(state.randomize),
       history_(state.history), overlays_(overlays), encoders_(encoders), buttons_(buttons),
-      sequencer_view_scope_(sequencerViewScope), overlay_scope_(overlayScope) {
+      overlay_scope_(overlayScope) {
     setupBindings();
 }
 

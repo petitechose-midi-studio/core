@@ -11,7 +11,11 @@
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerNoteSpelling.hpp"
+#include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
+#include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace core::ui::sequencer {
 
@@ -27,6 +31,8 @@ const char* clipboardBadge(const core::state::StructureClipboardState& clipboard
             return "Step";
         case core::state::StructureClipboardKind::SEQUENCER_STEPS:
             return "Steps";
+        case core::state::StructureClipboardKind::SEQUENCER_DRUM_LANE_SELECTION:
+            return "Lanes";
         default:
             return "";
     }
@@ -43,6 +49,11 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const SequencerViewModelSource& source
 ) {
     const auto& sequencer = source.sequencer;
+    const auto& drumUi = sequencer.drumSequencer;
+    const bool drumGrid =
+        core::state::sequencer::isDrumOverviewActive(sequencer);
+    const bool drumChild =
+        core::state::sequencer::isDrumContentView(sequencer);
     const uint8_t activeTrack = source.sharedTrackActive.get();
     const bool selectingTrack =
         source.trackNavigation.selection.active.get() &&
@@ -53,11 +64,16 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         sequencer.structureUi.pageSelection.scope.get() ==
             core::state::StructureSelectionScope::PAGE;
     const bool selectingStep = sequencer.structureUi.stepSelection.active.get();
+    const bool selectingDrumLanes =
+        drumGrid && drumUi.laneSelection.active;
     const bool anySelection =
-        selectingTrack || selectingPage || selectingStep;
+        selectingTrack || selectingPage || selectingStep ||
+        selectingDrumLanes;
     const bool focusingTrack =
         !anySelection &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
+    const bool drumLaneContext =
+        drumGrid && !selectingTrack && !focusingTrack;
     const bool focusingStep =
         !anySelection &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP;
@@ -82,8 +98,14 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
          addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT)
             ? addTrackIndex
             : activeTrack);
-    const uint8_t viewedPage =
-        selectingStep
+    const uint8_t viewedPage = drumLaneContext
+        ? std::min<uint8_t>(
+              drumUi.page,
+              static_cast<uint8_t>(
+                  core::state::sequencer::SequencerState::PAGE_COUNT - 1U
+              )
+          )
+        : selectingStep
             ? std::min<uint8_t>(
                   sequencer.page.get(),
                   static_cast<uint8_t>(
@@ -105,6 +127,11 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const uint16_t pageClipboardSourceMask = pageClipboardPreview
         ? pageBit(source.structureClipboard.sequencerPage.sourcePage)
         : 0U;
+    const bool pageStripVisible =
+        selectingPage || pageClipboardPreview ||
+        (!anySelection &&
+         source.navigationFocus.get() ==
+             core::state::StructureNavigationFocus::PAGE);
     const uint16_t pageClipboardDestinationMask = pageClipboardPreview
         ? pageBit(viewedPage)
         : 0U;
@@ -133,19 +160,134 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const bool cycleContext = core::state::sequencer::isCycleStatesContentView(sequencer);
     const bool ccLaneGrid = sequencer.ccLaneUi.mode ==
         core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID;
-    const char* leftText = ccLaneGrid
-        ? "CC lane"
-        : microContext
-        ? "Micro"
-        : (cycleContext
-               ? "Cycle"
-               : ((selectingStep || focusingStep)
-                      ? "Step"
-                       : ((selectingTrack || focusingTrack)
-                              ? "Track"
-                              : "Pattern")));
-    std::array<char, 12> badgeText{};
-    if (ccLaneGrid) {
+    const char* leftText = drumGrid
+        ? (selectingDrumLanes
+               ? "Lanes"
+               : (selectingStep || focusingStep)
+               ? "Step"
+               : ((selectingTrack || focusingTrack) ? "Track" : "Pattern"))
+        : ccLaneGrid
+            ? "CC lane"
+            : microContext
+                ? "Micro"
+                : (cycleContext
+                       ? "Cycle"
+                       : ((selectingStep || focusingStep)
+                              ? "Step"
+                              : ((selectingTrack || focusingTrack)
+                                     ? "Track"
+                                     : "Pattern")));
+    std::array<char, 20> badgeText{};
+    std::array<core::ui::SequencerHeaderMetricProps, 2> metrics{};
+    const char* contextIcon = "";
+    uint32_t contextIconColor = 0U;
+    std::array<char, 8> pageText{};
+    uint8_t headerLength =
+        core::state::sequencer::activeContentLength(sequencer);
+    uint8_t headerActivePage =
+        core::state::sequencer::activeContentPageForStep(
+            sequencer.focusedStep.get()
+        );
+    if (drumLaneContext && drumUi.drumTrack != nullptr) {
+        const uint8_t laneCount = std::min<uint8_t>(
+            drumUi.drumTrack->kit.laneCount,
+            core::state::sequencer::DRUM_MAX_LANES
+        );
+        if (laneCount > 0U) {
+            const uint8_t lane = std::min<uint8_t>(
+                drumUi.selectedLane,
+                static_cast<uint8_t>(laneCount - 1U)
+            );
+            const auto& lanePattern = drumUi.drumTrack->pattern.lanes[lane];
+            headerLength = drumUi.drumTrack->pattern.effectiveLength(lane);
+            const uint8_t stepsPerBeat =
+                drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane);
+            // Length/division describe the focused Lane; pagination describes
+            // the complete polymetric Pattern shared by every Lane row.
+            const uint8_t pageCount = drumUi.overviewPageCount();
+            headerActivePage = std::min<uint8_t>(
+                drumUi.page,
+                static_cast<uint8_t>(pageCount - 1U)
+            );
+            if (!drumUi.laneAddSlotFocused()) {
+                std::snprintf(
+                    metrics[0].value.data(),
+                    metrics[0].value.size(),
+                    "%u",
+                    static_cast<unsigned>(headerLength)
+                );
+                metrics[0].icon = standalone::icons::LENGTH;
+                std::snprintf(
+                    metrics[1].value.data(),
+                    metrics[1].value.size(),
+                    "1/%u%s",
+                    static_cast<unsigned>(stepsPerBeat * 4U),
+                    lanePattern.timing.mode == core::state::sequencer::
+                            DrumLaneTimingMode::CUSTOM
+                        ? "*"
+                        : ""
+                );
+                metrics[1].icon = standalone::icons::DIVISION;
+                const auto propertyVisual =
+                    visual::buildDrumPropertyVisual(drumUi.property);
+                contextIcon = propertyVisual.icon;
+                contextIconColor = propertyVisual.color;
+                std::snprintf(
+                    pageText.data(),
+                    pageText.size(),
+                    "%u/%u",
+                    static_cast<unsigned>(headerActivePage + 1U),
+                    static_cast<unsigned>(pageCount)
+                );
+            }
+        }
+        if (selectingDrumLanes) {
+            const uint16_t mask = drumUi.laneSelection.selectedMask;
+            uint8_t count = 0U;
+            for (uint8_t lane = 0U;
+                 lane < core::state::sequencer::DRUM_MAX_LANES;
+                 ++lane) {
+                if ((mask & static_cast<uint16_t>(1U << lane)) != 0U) {
+                    ++count;
+                }
+            }
+            std::snprintf(
+                badgeText.data(),
+                badgeText.size(),
+                drumUi.laneSelection.moveActive()
+                    ? "Move %u"
+                    : drumUi.laneSelection.placementActive()
+                        ? "Place %u"
+                        : "%u selected",
+                static_cast<unsigned>(count)
+            );
+            contextIcon = "";
+            contextIconColor = 0U;
+            pageText.fill('\0');
+        } else if (drumUi.laneAddSlotFocused()) {
+            std::snprintf(
+                badgeText.data(), badgeText.size(), "%s", "Add lane"
+            );
+        } else if (laneCount == 0U) {
+            std::snprintf(
+                badgeText.data(), badgeText.size(), "%s", "No lanes"
+            );
+        }
+    } else if (drumChild && drumUi.drumTrack != nullptr &&
+               sequencer.contentView.drumOwnerLane <
+                   drumUi.drumTrack->kit.laneCount &&
+               sequencer.contentView.drumOwnerLane <
+                   core::state::sequencer::DRUM_MAX_LANES) {
+        std::snprintf(
+            badgeText.data(),
+            badgeText.size(),
+            "%s",
+            core::state::sequencer::drumLaneDisplayName(
+                drumUi.drumTrack->kit.lanes[
+                    sequencer.contentView.drumOwnerLane]
+            )
+        );
+    } else if (ccLaneGrid) {
         const auto* bank =
             core::state::sequencer::sequencerCcLaneView(
                 core::state::sequencer::authoringPattern(sequencer)
@@ -160,6 +302,32 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                     bank->lanes[sequencer.ccLaneUi.focusedLane]
                         .destination.controller
                 )
+            );
+        }
+    } else if (focusingStep) {
+        const auto displayContext =
+            core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+                sequencer,
+                source.tracks.projectScaleSettings(),
+                sequencer.activeStepProperty.get()
+            );
+        const auto focused =
+            core::state::sequencer::buildSequencerResolvedStepDisplayState(
+                displayContext,
+                sequencer.focusedStep.get(),
+                false
+            );
+        if (focused.valid) {
+            uint8_t note = focused.note;
+            if (focused.variation.visible &&
+                focused.variation.deltaVisible) {
+                note = focused.variation.resolved.resolved.note;
+            }
+            core::state::sequencer::note_spelling::formatTonalNoteLabel(
+                badgeText.data(),
+                badgeText.size(),
+                note,
+                displayContext.scaleSettings
             );
         }
     } else if (trackPasteDetailsAvailable) {
@@ -182,10 +350,26 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         );
     }
 
+    if (pageText[0] == '\0' && !pageStripVisible) {
+        const uint8_t pageCount = std::max<uint8_t>(
+            1U,
+            core::state::sequencer::activeContentPageCount(sequencer)
+        );
+        std::snprintf(
+            pageText.data(),
+            pageText.size(),
+            "%u/%u",
+            static_cast<unsigned>(std::min<uint8_t>(
+                headerActivePage,
+                static_cast<uint8_t>(pageCount - 1U)
+            ) + 1U),
+            static_cast<unsigned>(pageCount)
+        );
+    }
+
     return {
-        .length = core::state::sequencer::activeContentLength(sequencer),
-        .activePage =
-            core::state::sequencer::activeContentPageForStep(sequencer.focusedStep.get()),
+        .length = headerLength,
+        .activePage = headerActivePage,
         .viewedPage = viewedPage,
         .previewTrack = previewTrack,
         .enabledMask = source.sharedTrackEnabledMask.get(),
@@ -207,8 +391,13 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             ? pageSelectionOverwriteMask
             : pageClipboardOverwriteMask,
         .pageDestinationBlockedMask = pageSelectionBlockedMask,
+        .pageStripVisible = pageStripVisible,
         .leftText = leftText,
         .badgeText = badgeText,
+        .metrics = metrics,
+        .contextIcon = contextIcon,
+        .contextIconColor = contextIconColor,
+        .pageText = pageText,
     };
 }
 

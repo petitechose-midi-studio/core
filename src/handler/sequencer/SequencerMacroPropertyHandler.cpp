@@ -10,6 +10,7 @@
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler {
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -62,7 +63,9 @@ FLASHMEM uint8_t currentNodeLocalVariationRange(
     core::state::sequencer::StepProperty property
 ) {
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(
+        core::state::sequencer::authoringPattern(sequencer)
+    );
     if (graph == nullptr) {
         return 0;
     }
@@ -134,6 +137,11 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
     }
     const auto property = sequencer_.activeStepProperty.get();
     const uint32_t now = now_provider_ ? now_provider_() : 0;
+
+    if (core::state::sequencer::isDrumContentView(sequencer_)) {
+        handleDrumOwnedStepTurn(abs, normalized, now);
+        return;
+    }
 
     const bool propertySelectorLocalVariationLayer =
         sequencer_.stepPropertyInlineSelector.selecting.get() &&
@@ -255,6 +263,11 @@ FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normali
     const auto property = sequencer_.activeStepProperty.get();
     const uint32_t now = now_provider_ ? now_provider_() : 0;
 
+    if (core::state::sequencer::isDrumContentView(sequencer_)) {
+        handleDrumOwnedStepTurn(abs, normalized, now);
+        return;
+    }
+
     if (sequencer_.stepStatePropertyActive.get()) {
         const auto beginOutcome =
             history_.beginCoalescedPatternEdit(
@@ -310,6 +323,112 @@ FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normali
         return;
 }
 
+}
+
+FLASHMEM void SequencerMacroPropertyHandler::handleDrumOwnedStepTurn(
+    uint8_t step,
+    float normalized,
+    uint32_t nowMs
+) {
+    namespace seq = core::state::sequencer;
+
+    auto property = sequencer_.activeStepProperty.get();
+    if (property == seq::StepProperty::NOTE) {
+        property = seq::StepProperty::VELOCITY;
+        sequencer_.activeStepProperty.set(property);
+    }
+
+    const bool localVariationLayer =
+        sequencer_.stepPropertyInlineSelector.selecting.get() &&
+        buttons_.isPressed(Config::ButtonID::LEFT_BOTTOM);
+    if (sequencer_.stepPropertyInlineSelector.selecting.get() &&
+        !localVariationLayer) {
+        return;
+    }
+    if (localVariationLayer &&
+        !seq::stepPropertySupportsLocalVariation(property)) {
+        return;
+    }
+
+    const auto& owner = sequencer_.contentView;
+    if (!owner.drumOwnerActive ||
+        owner.drumOwnerTrack >= seq::SequencerTrackBankState::TRACK_COUNT) {
+        return;
+    }
+
+    const bool stateProperty = sequencer_.stepStatePropertyActive.get();
+    auto descriptor = seq::SequencerHistoryDescriptor{
+        .kind = seq::SequencerHistoryActionKind::DrumAdvancedContent,
+        .trackIndex = owner.drumOwnerTrack,
+        .laneIndex = owner.drumOwnerLane,
+        .stepIndex = owner.drumOwnerStep,
+        .property = stateProperty ? seq::StepProperty::NOTE : property,
+    };
+    const bool draftOwned = sequencer_.stepContentDraft.pattern() != nullptr;
+    if (!draftOwned) {
+        const auto begin = history_.beginCoalescedDrumEdit(
+            descriptor,
+            nowMs
+        );
+        if (!seq::sequencerHistoryOpenAccepted(begin)) {
+            sequencer_.historyFeedback.showRejection(begin, nowMs);
+            return;
+        }
+    }
+
+    sequencer_.stepInlineFeedback.show(step, property, nowMs);
+    bool changed = false;
+    if (localVariationLayer) {
+        const auto nodeId = seq::activeContentStepNodeId(sequencer_, step);
+        const uint8_t range = input_utils::normalizedToVariationRange(
+            property,
+            normalized
+        );
+        changed = seq::setNodeLocalVariationRange(
+            seq::authoringPattern(sequencer_),
+            nodeId,
+            property,
+            range
+        );
+        if (changed) {
+            auto& selector = sequencer_.stepPropertyInlineSelector;
+            selector.macroLocalVariationEditActive.set(true);
+            selector.localVariationStepIndex = step;
+            sequencer_.invalidateVariationTelemetry();
+        }
+    } else if (stateProperty) {
+        changed = seq::setActiveContentStepEnabled(
+            sequencer_,
+            step,
+            normalized >= 0.5f
+        );
+    } else {
+        changed = seq::setActiveContentStepFromNormalized(
+            sequencer_,
+            step,
+            property,
+            normalized,
+            sequencer_.pattern.pitchEditMode,
+            seq::resolveEffectiveScaleSettings(
+                track_bank_.projectScaleSettings(),
+                sequencer_.pattern.scalePolicy,
+                sequencer_.pattern.scaleOverride
+            )
+        );
+    }
+
+    if (!draftOwned &&
+        !history_.sealCoalescedDrumEdit(changed, descriptor)) {
+        sequencer_.historyFeedback.showRejection(
+            seq::SequencerHistoryRejectionReason::HistoryUnavailable,
+            nowMs
+        );
+        return;
+    }
+    if (!changed || draftOwned) return;
+
+    track_bank_.publishDrumMutation(owner.drumOwnerTrack);
+    sequencer_.drumSequencer.bump();
 }
 
 }  // namespace core::handler
