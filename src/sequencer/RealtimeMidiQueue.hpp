@@ -90,15 +90,19 @@ struct RealtimeMidiQueueDiagnostics {
  */
 class RealtimeMidiQueue {
 public:
-    // Current transitional queue composition, not the producer maximum. Note
-    // can emit 16 same-deadline notes per Track, hence 256 events in either
-    // note phase across 16 Tracks. The executable producer-envelope fixture
-    // records that 832-event raw frame while capacity policy remains separate.
-    static constexpr size_t NOTE_EVENT_PHASE_CAPACITY = 128U;
+    // One Track can emit 16 same-deadline notes. Across 16 Tracks this is 256
+    // events in either note phase. The queue admits the complete producer
+    // envelope plus one additional note phase so a still-pending phase cannot
+    // make the next supported frame fail at the admission boundary.
+    static constexpr size_t NOTE_EVENT_PHASE_CAPACITY = 16U * 16U;
     static constexpr size_t MAX_RESOLVED_CC_EVENTS_PER_FRAME = 320U;
-    static constexpr size_t MAX_QUEUE_DEPTH =
+    static constexpr size_t PRODUCER_ENVELOPE_CAPACITY =
         2U * NOTE_EVENT_PHASE_CAPACITY +
         MAX_RESOLVED_CC_EVENTS_PER_FRAME;
+    static constexpr size_t SAFETY_RESERVE_CAPACITY =
+        NOTE_EVENT_PHASE_CAPACITY;
+    static constexpr size_t MAX_QUEUE_DEPTH =
+        PRODUCER_ENVELOPE_CAPACITY + SAFETY_RESERVE_CAPACITY;
     static constexpr uint32_t LATE_SEND_THRESHOLD_US = 2000;
     static constexpr uint32_t DROP_THRESHOLD_US = 20000;
     static constexpr uint32_t MAX_DRAIN_BUDGET_US = 500;

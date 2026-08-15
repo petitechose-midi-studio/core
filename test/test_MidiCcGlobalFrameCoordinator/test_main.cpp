@@ -733,7 +733,10 @@ void test_exact_320_candidate_envelope_and_measurements() {
 
     constexpr size_t queueEventStorageBytes =
         RealtimeMidiQueue::MAX_QUEUE_DEPTH * sizeof(RealtimeMidiEvent);
-    static_assert(queueEventStorageBytes == 4608U);
+    // Keep the deliberate RAM2 cost of the producer envelope plus its safety
+    // phase visible. Any future capacity or event-layout change must update
+    // this contract explicitly.
+    static_assert(queueEventStorageBytes == 8704U);
     std::cout << "[MEASURE] sizeof RealtimeMidiEvent="
               << sizeof(RealtimeMidiEvent)
               << ", queue event storage=" << queueEventStorageBytes

@@ -32,8 +32,13 @@ constexpr uint32_t DEADLINE_US = 1'000'000U;
 static_assert(NOTE_EVENTS_PER_PHASE == 256U);
 static_assert(CC_EVENTS_PER_FRAME == 320U);
 static_assert(PRODUCER_ENVELOPE_COUNT == 832U);
-static_assert(RealtimeMidiQueue::NOTE_EVENT_PHASE_CAPACITY == 128U);
-static_assert(RealtimeMidiQueue::MAX_QUEUE_DEPTH == 576U);
+static_assert(
+    PRODUCER_ENVELOPE_COUNT ==
+    RealtimeMidiQueue::PRODUCER_ENVELOPE_CAPACITY
+);
+static_assert(RealtimeMidiQueue::NOTE_EVENT_PHASE_CAPACITY == 256U);
+static_assert(RealtimeMidiQueue::SAFETY_RESERVE_CAPACITY == 256U);
+static_assert(RealtimeMidiQueue::MAX_QUEUE_DEPTH == 1088U);
 
 note::StepSequencerRuntimeState baseState() {
     note::StepSequencerRuntimeState state{};
@@ -209,16 +214,72 @@ void assertAcceptedBoundary(const ProducerEnvelope& envelope, size_t count) {
     assert(queue.diagnostics().rejectedBatchCount == 0U);
 }
 
-void assertRejectedAtomically(const ProducerEnvelope& envelope, size_t count) {
+void assertEnvelopeAndSafetyReserve(const ProducerEnvelope& envelope) {
     RealtimeMidiQueue queue;
-    assert(queue.push(envelope.front()));
+    for (size_t index = 0U;
+         index < RealtimeMidiQueue::SAFETY_RESERVE_CAPACITY;
+         ++index) {
+        assert(queue.push(noteEvent(
+            RealtimeMidiEventType::NoteOn,
+            static_cast<uint8_t>(index % TRACK_COUNT),
+            static_cast<uint8_t>(index % 16U),
+            static_cast<uint8_t>(index % 128U),
+            100U
+        )));
+    }
+
+    const auto accepted = queue.pushBatch(envelope.data(), envelope.size());
+    assert(accepted.ok());
+    assert(accepted.displacedNoteOnCount == 0U);
+    assert(accepted.displacedControlChangeCount == 0U);
+    assert(queue.size() == RealtimeMidiQueue::MAX_QUEUE_DEPTH);
+    assert(queue.diagnostics().highWaterMark ==
+           RealtimeMidiQueue::MAX_QUEUE_DEPTH);
+
+    const auto rejectedEvent = noteEvent(
+        RealtimeMidiEventType::NoteOn,
+        0U,
+        0U,
+        60U,
+        100U
+    );
     const size_t sizeBefore = queue.size();
-    const auto result = queue.pushBatch(envelope.data(), count);
-    assert(result.status == RealtimeMidiQueueBatchStatus::CAPACITY_EXCEEDED);
-    assert(result.requestedCount == count);
+    assert(!queue.push(rejectedEvent));
     assert(queue.size() == sizeBefore);
     assert(queue.diagnostics().rejectedBatchCount == 1U);
-    assert(queue.diagnostics().rejectedEventCount == count);
+    assert(queue.diagnostics().rejectedEventCount == 1U);
+}
+
+void assertOversizedBatchRejectedAtomically() {
+    std::array<
+        RealtimeMidiEvent,
+        RealtimeMidiQueue::MAX_QUEUE_DEPTH + 1U
+    > oversized{};
+    for (size_t index = 0U; index < oversized.size(); ++index) {
+        oversized[index] = noteEvent(
+            RealtimeMidiEventType::NoteOn,
+            static_cast<uint8_t>(index % TRACK_COUNT),
+            static_cast<uint8_t>(index % 16U),
+            static_cast<uint8_t>(index % 128U),
+            100U
+        );
+    }
+
+    RealtimeMidiQueue queue;
+    assert(queue.push(noteEvent(
+        RealtimeMidiEventType::NoteOff,
+        0U,
+        0U,
+        60U,
+        0U
+    )));
+    const size_t sizeBefore = queue.size();
+    const auto result = queue.pushBatch(oversized.data(), oversized.size());
+    assert(result.status == RealtimeMidiQueueBatchStatus::CAPACITY_EXCEEDED);
+    assert(result.requestedCount == oversized.size());
+    assert(queue.size() == sizeBefore);
+    assert(queue.diagnostics().rejectedBatchCount == 1U);
+    assert(queue.diagnostics().rejectedEventCount == oversized.size());
 }
 
 }  // namespace
@@ -226,13 +287,13 @@ void assertRejectedAtomically(const ProducerEnvelope& envelope, size_t count) {
 int main() {
     const auto envelope = buildProducerEnvelope();
     assertExactClassesAndTracks(envelope);
-    assertAcceptedBoundary(envelope, 575U);
-    assertAcceptedBoundary(envelope, 576U);
-    assertRejectedAtomically(envelope, 577U);
-    assertRejectedAtomically(envelope, PRODUCER_ENVELOPE_COUNT);
+    assertAcceptedBoundary(envelope, PRODUCER_ENVELOPE_COUNT - 1U);
+    assertAcceptedBoundary(envelope, PRODUCER_ENVELOPE_COUNT);
+    assertEnvelopeAndSafetyReserve(envelope);
+    assertOversizedBatchRejectedAtomically();
 
     std::cout
         << "[PASS] 16 notes/Track => 256 Off + 320 CC + 256 On = 832; "
-           "575/576 accepted, 577/832 rejected atomically\n";
+           "full envelope + 256 reserve accepted within 1088 slots\n";
     return 0;
 }

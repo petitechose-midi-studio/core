@@ -327,26 +327,24 @@ void test_wrap_aware_deadline_keeps_cc_before_note_on() {
            core::sequencer::RealtimeMidiEventType::NoteOn);
 }
 
-void test_current_capacity_retains_full_cc_batch_between_note_phases() {
+void test_capacity_retains_full_envelope_and_one_safety_phase() {
     core::sequencer::RealtimeMidiQueue queue;
-    static_assert(core::sequencer::RealtimeMidiQueue::MAX_QUEUE_DEPTH == 576U);
+    static_assert(core::sequencer::RealtimeMidiQueue::MAX_QUEUE_DEPTH == 1088U);
     constexpr size_t notePhaseCapacity =
         core::sequencer::RealtimeMidiQueue::NOTE_EVENT_PHASE_CAPACITY;
-    static_assert(notePhaseCapacity == 128U);
+    constexpr size_t safetyReserve =
+        core::sequencer::RealtimeMidiQueue::SAFETY_RESERVE_CAPACITY;
+    static_assert(notePhaseCapacity == 256U);
+    static_assert(safetyReserve == 256U);
     std::array<
         core::sequencer::RealtimeMidiEvent,
         core::sequencer::RealtimeMidiQueue::MAX_RESOLVED_CC_EVENTS_PER_FRAME
     > ccBatch{};
-    for (uint8_t i = 0; i < notePhaseCapacity; ++i) {
+    for (size_t i = 0U; i < notePhaseCapacity; ++i) {
         assert(queue.push(event(
             core::sequencer::RealtimeMidiEventType::NoteOff,
             1000,
-            i
-        )));
-        assert(queue.push(event(
-            core::sequencer::RealtimeMidiEventType::NoteOn,
-            1000,
-            i
+            static_cast<uint8_t>(i % 128U)
         )));
     }
     for (size_t i = 0; i < ccBatch.size(); ++i) {
@@ -359,6 +357,13 @@ void test_current_capacity_retains_full_cc_batch_between_note_phases() {
     }
     const auto accepted = queue.pushBatch(ccBatch.data(), ccBatch.size());
     assert(accepted.ok());
+    for (size_t i = 0U; i < notePhaseCapacity + safetyReserve; ++i) {
+        assert(queue.push(event(
+            core::sequencer::RealtimeMidiEventType::NoteOn,
+            1000,
+            static_cast<uint8_t>(i % 128U)
+        )));
+    }
     assert(queue.size() == queue.capacity());
     assert(queue.diagnostics().highWaterMark == queue.capacity());
 
@@ -389,7 +394,7 @@ void test_current_capacity_retains_full_cc_batch_between_note_phases() {
     }
 
     std::cout
-        << "[PASS] current 128 Off + 320 CC + 128 On capacity composition\n";
+        << "[PASS] 256 Off + 320 CC + 256 On + 256 safety capacity\n";
 }
 
 void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
@@ -401,7 +406,9 @@ void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
             i
         )));
     }
-    constexpr size_t lowerPriorityCount = 224U;
+    constexpr size_t lowerPriorityCount =
+        (core::sequencer::RealtimeMidiQueue::MAX_QUEUE_DEPTH - 128U) / 2U;
+    static_assert(lowerPriorityCount == 480U);
     for (size_t i = 0; i < lowerPriorityCount; ++i) {
         assert(queue.push(ccEvent(
             5000,
@@ -421,12 +428,17 @@ void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
         event(core::sequencer::RealtimeMidiEventType::NoteOff, 4000, 100),
         event(core::sequencer::RealtimeMidiEventType::NoteOff, 4000, 101),
     };
+    constexpr size_t panicCount = 2U;
+    static_assert(panic.size() == panicCount);
     const auto first = queue.pushBatch(panic.data(), panic.size());
     assert(first.ok());
     assert(first.displacedNoteOnCount == 2);
     assert(first.displacedControlChangeCount == 0);
 
-    std::array<core::sequencer::RealtimeMidiEvent, 222> morePanic{};
+    std::array<
+        core::sequencer::RealtimeMidiEvent,
+        lowerPriorityCount - panicCount
+    > morePanic{};
     for (size_t i = 0; i < morePanic.size(); ++i) {
         morePanic[i] = event(
             core::sequencer::RealtimeMidiEventType::NoteOff,
@@ -445,7 +457,10 @@ void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
 
     // Fill the remaining lower-priority slots with NoteOffs. Once only
     // NoteOffs remain, another panic cannot sacrifice any of them.
-    std::array<core::sequencer::RealtimeMidiEvent, 222> finalPanic{};
+    std::array<
+        core::sequencer::RealtimeMidiEvent,
+        lowerPriorityCount - panicCount
+    > finalPanic{};
     for (size_t i = 0; i < finalPanic.size(); ++i) {
         finalPanic[i] = event(
             core::sequencer::RealtimeMidiEventType::NoteOff,
@@ -791,7 +806,7 @@ int main() {
     test_packed_event_preserves_invalid_metadata_for_validation();
     test_late_cc_is_never_dropped();
     test_wrap_aware_deadline_keeps_cc_before_note_on();
-    test_current_capacity_retains_full_cc_batch_between_note_phases();
+    test_capacity_retains_full_envelope_and_one_safety_phase();
     test_note_off_batch_displaces_note_on_then_cc_never_note_off();
     test_note_off_replacement_is_atomic_on_failure();
     test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal();

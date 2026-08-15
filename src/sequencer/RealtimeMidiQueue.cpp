@@ -14,7 +14,10 @@ static_assert(
     RealtimeMidiQueue::MAX_RESOLVED_CC_EVENTS_PER_FRAME ==
     core::state::shared::MidiCcResolutionTelemetry::MAX_DESTINATIONS
 );
-static_assert(RealtimeMidiQueue::MAX_QUEUE_DEPTH == 576U);
+static_assert(RealtimeMidiQueue::NOTE_EVENT_PHASE_CAPACITY == 256U);
+static_assert(RealtimeMidiQueue::PRODUCER_ENVELOPE_CAPACITY == 832U);
+static_assert(RealtimeMidiQueue::SAFETY_RESERVE_CAPACITY == 256U);
+static_assert(RealtimeMidiQueue::MAX_QUEUE_DEPTH == 1088U);
 
 bool RealtimeMidiQueue::push(const RealtimeMidiEvent& event) {
     return pushBatch(&event, 1).ok();
