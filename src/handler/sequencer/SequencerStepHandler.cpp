@@ -723,7 +723,7 @@ FLASHMEM void SequencerStepHandler::enterSelectionModeForCurrentFocus() {
     navigation_workflow_.enterSelectionModeForCurrentFocus();
 }
 
-FLASHMEM void SequencerStepHandler::setupBindings() {
+FLASHMEM void SequencerStepHandler::setupDrumBindings() {
     // Drum owns its lane navigation and momentary property surfaces. Track and
     // Step structure actions deliberately fall through to the common workflow
     // registered below; only Pattern paging remains a prioritized exception.
@@ -1015,6 +1015,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 editDrumSequencerStepProperty(i, normalized);
             });
     }
+}
+
+FLASHMEM void SequencerStepHandler::setupBindings() {
+    setupDrumBindings();
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()

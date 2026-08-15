@@ -88,6 +88,7 @@ public:
     void attachDrumLaneEditorHandler(DrumLaneEditorHandler& handler);
 private:
     void setupBindings();
+    void setupDrumBindings();
 
     void toggleStep(uint8_t indexInPage);
     bool selectionHasItems() const;
