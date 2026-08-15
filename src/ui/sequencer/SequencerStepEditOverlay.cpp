@@ -67,6 +67,24 @@ FLASHMEM lv_obj_t* createLabel(lv_obj_t* parent,
     return label;
 }
 
+FLASHMEM lv_obj_t* createChipRow(lv_obj_t* parent) {
+    lv_obj_t* row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_width(row, LV_PCT(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(
+        row,
+        LV_FLEX_ALIGN_SPACE_BETWEEN,
+        LV_FLEX_ALIGN_CENTER,
+        LV_FLEX_ALIGN_CENTER
+    );
+    lv_obj_set_style_pad_column(row, CHIP_GAP, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    return row;
+}
+
 template <size_t N>
 bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
     if (!label) return false;
@@ -192,6 +210,59 @@ void SequencerStepEditOverlay::setContentVisible(bool visible) {
     } else {
         lv_obj_add_flag(panel_, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+FLASHMEM void SequencerStepEditOverlay::createChipWidgets(
+    ChipWidgets& widgets,
+    lv_obj_t* parent,
+    lv_coord_t verticalPadding,
+    const lv_font_t* iconFont,
+    uint32_t iconColor,
+    const lv_font_t* valueFont
+) {
+    widgets.box = lv_obj_create(parent);
+    lv_obj_remove_style_all(widgets.box);
+    lv_obj_set_width(widgets.box, 0);
+    lv_obj_set_height(widgets.box, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(widgets.box, 1);
+    lv_obj_set_layout(widgets.box, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(widgets.box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(
+        widgets.box,
+        LV_FLEX_ALIGN_CENTER,
+        LV_FLEX_ALIGN_CENTER,
+        LV_FLEX_ALIGN_CENTER
+    );
+    lv_obj_set_style_radius(
+        widgets.box, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+    );
+    lv_obj_set_style_border_width(
+        widgets.box,
+        theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
+        0
+    );
+    lv_obj_set_style_bg_color(
+        widgets.box, lv_color_hex(theme::color::SURFACE_IDLE), 0
+    );
+    lv_obj_set_style_bg_opa(widgets.box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        widgets.box, lv_color_hex(theme::color::BORDER_STRONG), 0
+    );
+    lv_obj_set_style_border_opa(widgets.box, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_left(widgets.box, CHIP_PAD, 0);
+    lv_obj_set_style_pad_right(widgets.box, CHIP_PAD, 0);
+    lv_obj_set_style_pad_top(widgets.box, verticalPadding, 0);
+    lv_obj_set_style_pad_bottom(widgets.box, verticalPadding, 0);
+    lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
+    lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
+
+    widgets.icon = createLabel(widgets.box, iconFont, iconColor);
+    lv_obj_set_size(widgets.icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+
+    widgets.value = createLabel(widgets.box, valueFont, TEXT_PRIMARY);
+    lv_obj_set_width(widgets.value, LV_PCT(100));
+    lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
+    lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
 }
 
 FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
@@ -385,127 +456,28 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_height(chord_preview_detail_, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(chord_preview_detail_, LV_TEXT_ALIGN_CENTER, 0);
 
-    trigger_row_ = lv_obj_create(panel_);
-    lv_obj_remove_style_all(trigger_row_);
-    lv_obj_set_width(trigger_row_, LV_PCT(100));
-    lv_obj_set_height(trigger_row_, LV_SIZE_CONTENT);
-    lv_obj_set_layout(trigger_row_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(trigger_row_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(
-        trigger_row_,
-        LV_FLEX_ALIGN_SPACE_BETWEEN,
-        LV_FLEX_ALIGN_CENTER,
-        LV_FLEX_ALIGN_CENTER
-    );
-    lv_obj_set_style_pad_column(trigger_row_, CHIP_GAP, 0);
-    lv_obj_clear_flag(trigger_row_, LV_OBJ_FLAG_SCROLLABLE);
-
-    for (size_t i = 0; i < TRIGGER_COUNT; ++i) {
-        auto& widgets = trigger_widgets_[i];
-        widgets.box = lv_obj_create(trigger_row_);
-        lv_obj_remove_style_all(widgets.box);
-        lv_obj_set_width(widgets.box, 0);
-        lv_obj_set_height(widgets.box, LV_SIZE_CONTENT);
-        lv_obj_set_flex_grow(widgets.box, 1);
-        lv_obj_set_layout(widgets.box, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(widgets.box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(
-            widgets.box,
-            LV_FLEX_ALIGN_CENTER,
-            LV_FLEX_ALIGN_CENTER,
-            LV_FLEX_ALIGN_CENTER
+    trigger_row_ = createChipRow(panel_);
+    for (auto& widgets : trigger_widgets_) {
+        createChipWidgets(
+            widgets,
+            trigger_row_,
+            TRIGGER_PAD_V,
+            standalone_fonts.icons_16,
+            TEXT_SECONDARY,
+            fonts.primary_value()
         );
-        lv_obj_set_style_radius(
-            widgets.box, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
-        );
-        lv_obj_set_style_border_width(
-            widgets.box,
-            theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
-            0
-        );
-        lv_obj_set_style_bg_color(
-            widgets.box, lv_color_hex(theme::color::SURFACE_IDLE), 0
-        );
-        lv_obj_set_style_bg_opa(widgets.box, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_color(
-            widgets.box, lv_color_hex(theme::color::BORDER_STRONG), 0
-        );
-        lv_obj_set_style_border_opa(widgets.box, LV_OPA_COVER, 0);
-        lv_obj_set_style_pad_left(widgets.box, CHIP_PAD, 0);
-        lv_obj_set_style_pad_right(widgets.box, CHIP_PAD, 0);
-        lv_obj_set_style_pad_top(widgets.box, TRIGGER_PAD_V, 0);
-        lv_obj_set_style_pad_bottom(widgets.box, TRIGGER_PAD_V, 0);
-        lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
-        lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
-
-        widgets.icon = createLabel(widgets.box, standalone_fonts.icons_16, TEXT_SECONDARY);
-        lv_obj_set_size(widgets.icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-
-        widgets.value = createLabel(widgets.box, fonts.primary_value(), TEXT_PRIMARY);
-        lv_obj_set_width(widgets.value, LV_PCT(100));
-        lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
-        lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
     }
 
-    property_row_ = lv_obj_create(panel_);
-    lv_obj_remove_style_all(property_row_);
-    lv_obj_set_width(property_row_, LV_PCT(100));
-    lv_obj_set_height(property_row_, LV_SIZE_CONTENT);
-    lv_obj_set_layout(property_row_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(property_row_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(
-        property_row_,
-        LV_FLEX_ALIGN_SPACE_BETWEEN,
-        LV_FLEX_ALIGN_CENTER,
-        LV_FLEX_ALIGN_CENTER
-    );
-    lv_obj_set_style_pad_column(property_row_, CHIP_GAP, 0);
-    lv_obj_clear_flag(property_row_, LV_OBJ_FLAG_SCROLLABLE);
-
-    for (size_t i = 0; i < MUSICAL_PROPERTY_COUNT; ++i) {
-        auto& widgets = property_widgets_[i];
-        widgets.box = lv_obj_create(property_row_);
-        lv_obj_remove_style_all(widgets.box);
-        lv_obj_set_width(widgets.box, 0);
-        lv_obj_set_height(widgets.box, LV_SIZE_CONTENT);
-        lv_obj_set_flex_grow(widgets.box, 1);
-        lv_obj_set_layout(widgets.box, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(widgets.box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(
-            widgets.box,
-            LV_FLEX_ALIGN_CENTER,
-            LV_FLEX_ALIGN_CENTER,
-            LV_FLEX_ALIGN_CENTER
+    property_row_ = createChipRow(panel_);
+    for (auto& widgets : property_widgets_) {
+        createChipWidgets(
+            widgets,
+            property_row_,
+            CHIP_PAD,
+            standalone_fonts.icons_14,
+            TEXT_SECONDARY,
+            fonts.compact_label()
         );
-        lv_obj_set_style_radius(
-            widgets.box, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
-        );
-        lv_obj_set_style_border_width(
-            widgets.box,
-            theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
-            0
-        );
-        lv_obj_set_style_bg_color(
-            widgets.box, lv_color_hex(theme::color::SURFACE_IDLE), 0
-        );
-        lv_obj_set_style_bg_opa(widgets.box, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_color(
-            widgets.box, lv_color_hex(theme::color::BORDER_STRONG), 0
-        );
-        lv_obj_set_style_border_opa(widgets.box, LV_OPA_COVER, 0);
-        lv_obj_set_style_pad_all(widgets.box, CHIP_PAD, 0);
-        lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
-        lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
-
-        widgets.icon = createLabel(widgets.box, standalone_fonts.icons_14, TEXT_SECONDARY);
-        lv_obj_set_size(widgets.icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-
-        widgets.value = createLabel(
-            widgets.box, fonts.compact_label(), TEXT_PRIMARY
-        );
-        lv_obj_set_width(widgets.value, LV_PCT(100));
-        lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
-        lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
     }
 
     chord_voice_rail_.create(property_row_);
@@ -517,65 +489,18 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_flex_grow(spacer_, 1);
     lv_obj_clear_flag(spacer_, LV_OBJ_FLAG_SCROLLABLE);
 
-    action_row_ = lv_obj_create(panel_);
-    lv_obj_remove_style_all(action_row_);
-    lv_obj_set_width(action_row_, LV_PCT(100));
-    lv_obj_set_height(action_row_, LV_SIZE_CONTENT);
-    lv_obj_set_layout(action_row_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(action_row_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(
-        action_row_,
-        LV_FLEX_ALIGN_SPACE_BETWEEN,
-        LV_FLEX_ALIGN_CENTER,
-        LV_FLEX_ALIGN_CENTER
-    );
-    lv_obj_set_style_pad_column(action_row_, CHIP_GAP, 0);
-    lv_obj_clear_flag(action_row_, LV_OBJ_FLAG_SCROLLABLE);
+    action_row_ = createChipRow(panel_);
 
     for (size_t i = 0; i < ACTION_WIDGET_COUNT; ++i) {
         auto& widgets = action_widgets_[i];
-        widgets.box = lv_obj_create(action_row_);
-        lv_obj_remove_style_all(widgets.box);
-        lv_obj_set_width(widgets.box, 0);
-        lv_obj_set_height(widgets.box, LV_SIZE_CONTENT);
-        lv_obj_set_flex_grow(widgets.box, 1);
-        lv_obj_set_layout(widgets.box, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(widgets.box, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(
-            widgets.box,
-            LV_FLEX_ALIGN_CENTER,
-            LV_FLEX_ALIGN_CENTER,
-            LV_FLEX_ALIGN_CENTER
+        createChipWidgets(
+            widgets,
+            action_row_,
+            CHIP_PAD,
+            standalone_fonts.icons_14,
+            TEXT_PRIMARY,
+            fonts.compact_label()
         );
-        lv_obj_set_style_radius(
-            widgets.box, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
-        );
-        lv_obj_set_style_border_width(
-            widgets.box,
-            theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH,
-            0
-        );
-        lv_obj_set_style_bg_color(
-            widgets.box, lv_color_hex(theme::color::SURFACE_IDLE), 0
-        );
-        lv_obj_set_style_bg_opa(widgets.box, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_color(
-            widgets.box, lv_color_hex(theme::color::BORDER_STRONG), 0
-        );
-        lv_obj_set_style_border_opa(widgets.box, LV_OPA_COVER, 0);
-        lv_obj_set_style_pad_all(widgets.box, CHIP_PAD, 0);
-        lv_obj_set_style_pad_row(widgets.box, ACTION_TEXT_GAP, 0);
-        lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_SCROLLABLE);
-
-        widgets.icon = createLabel(widgets.box, standalone_fonts.icons_14, TEXT_PRIMARY);
-        lv_obj_set_size(widgets.icon, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-
-        widgets.value = createLabel(
-            widgets.box, fonts.compact_label(), TEXT_PRIMARY
-        );
-        lv_obj_set_width(widgets.value, LV_PCT(100));
-        lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
-        lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
         if (i >= ACTION_COUNT) {
             lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
         }

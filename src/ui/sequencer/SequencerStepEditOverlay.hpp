@@ -157,15 +157,15 @@ private:
         lv_obj_t* value = nullptr;
     };
 
-    struct ActionWidgets {
-        lv_obj_t* box = nullptr;
-        lv_obj_t* icon = nullptr;
-        lv_obj_t* value = nullptr;
-    };
-
     struct ChipRenderCache;
 
     void createUI(lv_obj_t* parent);
+    static void createChipWidgets(ChipWidgets& widgets,
+                                  lv_obj_t* parent,
+                                  lv_coord_t verticalPadding,
+                                  const lv_font_t* iconFont,
+                                  uint32_t iconColor,
+                                  const lv_font_t* valueFont);
     void renderChip(ChipWidgets& widgets,
                     ChipRenderCache& cache,
                     const SequencerStepEditPropertyChip& chip,
@@ -199,7 +199,7 @@ private:
     SequencerChordVoiceRail chord_voice_rail_{};
     std::array<ChipWidgets, TRIGGER_COUNT> trigger_widgets_{};
     std::array<ChipWidgets, MUSICAL_PROPERTY_COUNT> property_widgets_{};
-    std::array<ActionWidgets, ACTION_WIDGET_COUNT> action_widgets_{};
+    std::array<ChipWidgets, ACTION_WIDGET_COUNT> action_widgets_{};
 
     struct LabelRenderCache {
         std::array<char, 32> text{};
