@@ -75,6 +75,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/project/ProjectHandlerNavigation.cpp
     src/handler/project/ProjectHandlerValueEditing.cpp
     src/handler/project/ProjectLifecycleDomainServices.cpp
+    src/handler/project/ProjectScaleSettingsDomainServices.cpp
     src/handler/sequencer/DrumLaneEditorHandler.cpp
     src/handler/sequencer/PatternPitchSettingsDomainServices.cpp
     src/handler/sequencer/PatternPitchSettingsHandler.cpp
@@ -129,7 +130,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp
     src/handler/settings/DeviceSettingsDomainServices.cpp
     src/handler/settings/DeviceSettingsHandler.cpp
-    src/handler/project/ProjectScaleSettingsDomainServices.cpp
     src/handler/transport/TransportHandler.cpp
     src/handler/view/ViewSwitcherHandler.cpp
     src/persistence/AtomicProductFile.cpp
@@ -225,6 +225,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/TrackNavigationState.cpp
     src/state/contextual/GuardedActionState.cpp
     src/state/contextual/OperationFeedbackState.cpp
+    src/state/interaction/TextKeyboardLayout.cpp
     src/state/macro/MacroAutomationDomain.cpp
     src/state/macro/MacroAutomationTake.cpp
     src/state/macro/MacroEditMenuModel.cpp
@@ -276,7 +277,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/project/ProjectMenuModel.cpp
     src/state/project/ProjectMenuNavigation.cpp
     src/state/project/ProjectModulatorMenuModel.cpp
-    src/state/interaction/TextKeyboardLayout.cpp
     src/state/project/ProjectNavigationState.cpp
     src/state/project/ProjectSettingsHistory.cpp
     src/state/project/ProjectSlug.cpp
@@ -346,6 +346,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/common/TrackHeaderRow.cpp
     src/ui/common/TrackNavigationStrip.cpp
     src/ui/font/StandaloneFonts.cpp
+    src/ui/interaction/TextKeyboardView.cpp
     src/ui/macro/MacroEditorOverlay.cpp
     src/ui/macro/MacroEditorPreviewModel.cpp
     src/ui/macro/MacroHeaderBar.cpp
@@ -353,11 +354,10 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/modulation/ModulatorSparklineModel.cpp
     src/ui/project/ProjectModulatorUiModel.cpp
     src/ui/project/ProjectModulatorWorkspace.cpp
-    src/ui/interaction/TextKeyboardView.cpp
     src/ui/project/ProjectTrackEditorOverlay.cpp
     src/ui/project/ProjectTrackEditorViewModel.cpp
-    src/ui/sequencer/SequencerBottomActionStripViewModelBuilder.cpp
     src/ui/sequencer/DrumOverviewSurface.cpp
+    src/ui/sequencer/SequencerBottomActionStripViewModelBuilder.cpp
     src/ui/sequencer/SequencerCcLaneGrid.cpp
     src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.cpp
     src/ui/sequencer/SequencerChordPresetPresentation.cpp
