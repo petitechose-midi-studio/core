@@ -253,6 +253,28 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         test_TimingCadenceContracts
         test_UxReplayTimeline)
 
+    # Each listed contract needs only the same-named implementation below.
+    set(MS_CORE_ISOLATED_TEST_SOURCES
+        src/persistence/StorageRecoveryMachine.cpp
+        src/sequencer/ClockSourceSelector.cpp
+        src/sequencer/ExternalClockEstimator.cpp
+        src/sequencer/MidiCcResolutionTelemetryExchange.cpp
+        src/sequencer/ProjectModulationTriggerQueue.cpp
+        src/state/StructureSelectionInteractionPolicy.cpp
+        src/state/interaction/TextKeyboardLayout.cpp
+        src/state/macro/MacroAutomationDomain.cpp
+        src/state/macro/MacroEditMenuModel.cpp
+        src/state/macro/MacroInteractionPolicy.cpp
+        src/state/project/ProjectSlug.cpp
+        src/state/sequencer/SequencerNoteSpelling.cpp
+        src/state/shared/MidiCcDestinationResolver.cpp
+        src/state/shared/StructureSlotOps.cpp)
+    foreach(isolated_test_source IN LISTS MS_CORE_ISOLATED_TEST_SOURCES)
+        get_filename_component(isolated_test_name "${isolated_test_source}" NAME_WE)
+        set("MS_CORE_ISOLATED_TEST_SOURCE_test_${isolated_test_name}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/${isolated_test_source}")
+    endforeach()
+
     add_test(
         NAME test_CoreFileToolInputLimits
         COMMAND "${Python3_EXECUTABLE}"
@@ -328,7 +350,9 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         list(APPEND MS_CORE_NATIVE_TEST_TARGETS "${test_name}")
 
         add_executable("${test_name}" "${test_source}")
-        if(test_name IN_LIST MS_CORE_STANDALONE_TESTS)
+        set(isolated_test_source
+            "${MS_CORE_ISOLATED_TEST_SOURCE_${test_name}}")
+        if(test_name IN_LIST MS_CORE_STANDALONE_TESTS OR isolated_test_source)
             target_include_directories("${test_name}"
                 PRIVATE
                     "${MS_DEVICE_SUPPORT_DIR}/src"
@@ -336,6 +360,10 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
                     "${MS_CORE_OC_NOTE_DIR}/src")
         else()
             target_link_libraries("${test_name}" PRIVATE midi_studio_core_native)
+        endif()
+        if(isolated_test_source)
+            target_sources("${test_name}" PRIVATE "${isolated_test_source}")
+            target_link_libraries("${test_name}" PRIVATE ms_core_compile_warnings)
         endif()
         target_include_directories("${test_name}"
             PRIVATE
