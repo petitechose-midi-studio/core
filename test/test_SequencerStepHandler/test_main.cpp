@@ -6,6 +6,7 @@
 #include <array>
 
 #include <config/App.hpp>
+#include <config/InputIDs.hpp>
 #include <config/Timing.hpp>
 #include <iostream>
 #include <oc/api/ButtonAPI.hpp>

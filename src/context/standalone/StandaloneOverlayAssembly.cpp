@@ -5,6 +5,7 @@
 #include <oc/context/OverlayManager.hpp>
 
 #include <config/App.hpp>
+#include <config/InputIDs.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
 #include "context/standalone/OverlayPresentationRegistry.hpp"
 #include "state/CoreState.hpp"

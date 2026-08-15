@@ -1,6 +1,7 @@
 #include "context/standalone/StandaloneUiAssembly.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Screen.hpp>

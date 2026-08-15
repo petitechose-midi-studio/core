@@ -1,6 +1,7 @@
 #include "SequencerStepHandler.hpp"
 
 #include <config/App.hpp>
+#include <config/Timing.hpp>
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>

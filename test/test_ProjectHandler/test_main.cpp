@@ -15,6 +15,7 @@
 #include <oc/core/input/InputBinding.hpp>
 #include <oc/impl/HostFileSystem.hpp>
 
+#include "../../src/config/Timing.hpp"
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/common/ModulatorNavigationWorkflow.hpp"
 #include "../../src/handler/project/ProjectHandler.hpp"

@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "../../src/config/Timing.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroAutomationAddress.hpp"
 #include "../../src/state/macro/MacroAutomationDomain.hpp"

@@ -11,8 +11,6 @@
 #include <oc/time/Time.hpp>
 #include <oc/state/Signal.hpp>
 
-#include "config/Timing.hpp"
-
 namespace core::state {
 
 using oc::state::Signal;
@@ -28,6 +26,8 @@ struct StatusBarState {
     static constexpr uint8_t TRANSIENT_CC_OUT = 1U << 3;
     static constexpr uint8_t TRANSIENT_SYNC_INPUT = 1U << 4;
     static constexpr uint8_t TRANSIENT_BEAT = 1U << 5;
+    static constexpr uint32_t MIDI_PULSE_MS = 80U;
+    static constexpr uint32_t BEAT_PULSE_MS = 100U;
 
     // TransportBar - MIDI Note indicators
     Signal<bool> noteInActive{false};
@@ -63,7 +63,7 @@ struct StatusBarState {
         pulseTransientAt(
             noteInActive,
             note_in_until_ms_,
-            Config::Timing::STATUS_MIDI_PULSE_MS,
+            MIDI_PULSE_MS,
             nowMs,
             active_transient_mask_,
             TRANSIENT_NOTE_IN
@@ -78,7 +78,7 @@ struct StatusBarState {
         pulseTransientAt(
             noteOutActive,
             note_out_until_ms_,
-            Config::Timing::STATUS_MIDI_PULSE_MS,
+            MIDI_PULSE_MS,
             nowMs,
             active_transient_mask_,
             TRANSIENT_NOTE_OUT
@@ -93,7 +93,7 @@ struct StatusBarState {
         pulseTransientAt(
             ccInActive,
             cc_in_until_ms_,
-            Config::Timing::STATUS_MIDI_PULSE_MS,
+            MIDI_PULSE_MS,
             nowMs,
             active_transient_mask_,
             TRANSIENT_CC_IN
@@ -108,7 +108,7 @@ struct StatusBarState {
         pulseTransientAt(
             ccOutActive,
             cc_out_until_ms_,
-            Config::Timing::STATUS_MIDI_PULSE_MS,
+            MIDI_PULSE_MS,
             nowMs,
             active_transient_mask_,
             TRANSIENT_CC_OUT
@@ -123,7 +123,7 @@ struct StatusBarState {
         pulseTransientAt(
             syncInputPulse,
             sync_input_until_ms_,
-            Config::Timing::STATUS_MIDI_PULSE_MS,
+            MIDI_PULSE_MS,
             nowMs,
             active_transient_mask_,
             TRANSIENT_SYNC_INPUT
@@ -138,7 +138,7 @@ struct StatusBarState {
         pulseTransientAt(
             beatPulse,
             beat_until_ms_,
-            Config::Timing::STATUS_BEAT_PULSE_MS,
+            BEAT_PULSE_MS,
             nowMs,
             active_transient_mask_,
             TRANSIENT_BEAT
@@ -151,7 +151,7 @@ struct StatusBarState {
 
     void pulseTrackNote(uint8_t track, uint8_t velocity, uint32_t nowMs) {
         if (track >= TRACK_COUNT) return;
-        track_note_until_ms_[track] = nowMs + Config::Timing::STATUS_MIDI_PULSE_MS;
+        track_note_until_ms_[track] = nowMs + MIDI_PULSE_MS;
         active_track_note_mask_ |= static_cast<uint16_t>(1U << track);
         trackNoteActivity[track].set(velocity);
     }

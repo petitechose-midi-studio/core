@@ -9,6 +9,7 @@
 #include <oc/log/Log.hpp>
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #include "state/macro/MacroWorkflow.hpp"
 #include "ui/view/MacroViewModelBuilder.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"

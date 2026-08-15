@@ -7,6 +7,7 @@
 #include <oc/ui/lvgl/FontLoader.hpp>
 
 #include <config/App.hpp>
+#include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 #include "context/standalone/ActiveViewLifecyclePlan.hpp"
 #include "context/standalone/MacroViewActivationContract.hpp"

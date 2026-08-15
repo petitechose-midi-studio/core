@@ -4,7 +4,9 @@
 #include <cmath>
 
 #include <config/App.hpp>
+#include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/macro/MacroAutomationTakeInputWorkflow.hpp"
