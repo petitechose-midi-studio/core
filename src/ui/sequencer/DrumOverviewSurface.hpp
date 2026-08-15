@@ -80,22 +80,29 @@ private:
         const PlaybackSnapshot& previous,
         const PlaybackSnapshot& next
     );
-    void invalidatePlayheadMarker(
+    void includePlayheadDamage(
+        const PlaybackSnapshot& previous,
+        const PlaybackSnapshot& next,
+        uint8_t lane,
+        lv_coord_t rowY,
+        const lv_area_t& surface,
+        lv_area_t& damage,
+        bool& hasDamage
+    );
+    void includeChanceCellDamage(
         const PlaybackSnapshot& snapshot,
         uint8_t lane,
         lv_coord_t rowY,
-        const lv_area_t& surface
+        const lv_area_t& surface,
+        lv_area_t& damage,
+        bool& hasDamage
     );
-    void invalidateChanceCell(
-        const PlaybackSnapshot& snapshot,
-        uint8_t lane,
-        lv_coord_t rowY,
-        const lv_area_t& surface
-    );
-    void invalidateResolvedCell(
+    void includeResolvedCellDamage(
         uint8_t row,
         uint8_t column,
-        const lv_area_t& surface
+        const lv_area_t& surface,
+        lv_area_t& damage,
+        bool& hasDamage
     );
 
     lv_obj_t* root_ = nullptr;
