@@ -54,7 +54,7 @@ void expectPlacementStrip(
     assert(std::strcmp(props.slots[2].labelText.data(), "PST \xC2\xB7 1 OVR") == 0);
 }
 
-void test_pattern_and_drum_placement_share_visual_grammar() {
+void test_selection_strip_projection_contract() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
 
@@ -83,6 +83,20 @@ void test_pattern_and_drum_placement_share_visual_grammar() {
 
     pageSelection.reset();
     state.sequencer.structureUi.pageHold.clear();
+
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    auto& stepSelection = state.sequencer.structureUi.stepSelection;
+    stepSelection.active.set(true);
+    stepSelection.placing.set(true);
+    stepSelection.setSelected(0U, true);
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(sourceFor(state));
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(std::strcmp(props.slots[1].labelText.data(), "1 selected") == 0);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::DISABLED);
+    assert(props.slots[2].tone == ContextActionStripTone::DESTRUCTIVE);
+    assert(std::strcmp(props.slots[2].labelText.data(), "PST BLOCK") == 0);
+    stepSelection.reset();
+
     assert(state.sequencerTracks.setTrackKind(
         0U,
         core::state::sequencer::SequencerTrackKind::DRUM,
@@ -118,13 +132,13 @@ void test_pattern_and_drum_placement_share_visual_grammar() {
     assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
 
-    std::cout << "[PASS] Pattern and Drum placement share visual grammar\n";
+    std::cout << "[PASS] Selection strip projection contract\n";
 }
 
 }  // namespace
 
 int main() {
-    test_pattern_and_drum_placement_share_visual_grammar();
+    test_selection_strip_projection_contract();
     std::cout << "\nAll Sequencer bottom-action-strip tests passed.\n";
     return 0;
 }
