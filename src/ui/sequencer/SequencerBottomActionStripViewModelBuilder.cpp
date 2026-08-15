@@ -129,6 +129,35 @@ FLASHMEM SlotProps makeSelectionCountSlot(uint8_t selectedCount) {
     return slot;
 }
 
+FLASHMEM void applyPastePlacementSlots(
+    StripProps& props,
+    uint8_t selectedCount,
+    uint8_t overwriteCount,
+    bool blocked,
+    Visual pasteVisual
+) {
+    props.slots[0].visualState = Visual::HIDDEN;
+    props.slots[1] = makeSelectionCountSlot(selectedCount);
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+        standalone::icons::ACTION_PASTE,
+        pasteVisual,
+        blocked
+            ? Tone::DESTRUCTIVE
+            : overwriteCount > 0U
+                ? Tone::WARNING
+                : Tone::POSITIVE
+    );
+    if (overwriteCount == 0U) return;
+
+    props.slots[2].showLabel = true;
+    std::snprintf(
+        props.slots[2].labelText.data(),
+        props.slots[2].labelText.size(),
+        "PST \xC2\xB7 %u OVR",
+        static_cast<unsigned>(overwriteCount)
+    );
+}
+
 FLASHMEM void applyHoldProgress(SlotProps& slot,
                        const core::state::StructureHoldState& holdState,
                        bool active) {
@@ -430,30 +459,15 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 const bool holdActive = canPaste &&
                     hold.action.get() ==
                         core::state::StructureHoldAction::PASTE;
-                props.slots[0].visualState = Visual::HIDDEN;
-                props.slots[1] = makeSelectionCountSlot(selectedCount);
-                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                    standalone::icons::ACTION_PASTE,
+                applyPastePlacementSlots(
+                    props,
+                    selectedCount,
+                    overwriteCount,
+                    selection.pasteBlocked,
                     holdActive
                         ? Visual::ARMED
-                        : interactionVisual(
-                              interaction.bottomRightVisibility
-                          ),
-                    selection.pasteBlocked
-                        ? Tone::DESTRUCTIVE
-                        : overwriteCount > 0U
-                            ? Tone::WARNING
-                            : Tone::POSITIVE
+                        : interactionVisual(interaction.bottomRightVisibility)
                 );
-                if (overwriteCount > 0U) {
-                    props.slots[2].showLabel = true;
-                    std::snprintf(
-                        props.slots[2].labelText.data(),
-                        props.slots[2].labelText.size(),
-                        "PST \xC2\xB7 %u OVR",
-                        static_cast<unsigned>(overwriteCount)
-                    );
-                }
                 applyHoldProgress(props.slots[2], hold, holdActive);
                 return props;
             }
@@ -680,30 +694,15 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 trackPaste.guard.phase !=
                     core::state::contextual::GuardedActionPhase::CANCELLED;
 
-            props.slots[0].visualState = Visual::HIDDEN;
-            props.slots[1] = makeSelectionCountSlot(selectedCount);
-            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                standalone::icons::ACTION_PASTE,
+            applyPastePlacementSlots(
+                props,
+                selectedCount,
+                overwriteCount,
+                blocked,
                 (trackHoldActive || pageHoldActive)
                     ? Visual::ARMED
-                    : interactionVisual(
-                          interaction.bottomRightVisibility
-                      ),
-                blocked
-                    ? Tone::DESTRUCTIVE
-                    : (overwriteCount > 0U
-                        ? Tone::WARNING
-                        : Tone::POSITIVE)
+                    : interactionVisual(interaction.bottomRightVisibility)
             );
-            if (overwriteCount > 0U) {
-                props.slots[2].showLabel = true;
-                std::snprintf(
-                    props.slots[2].labelText.data(),
-                    props.slots[2].labelText.size(),
-                    "PST \xC2\xB7 %u OVR",
-                    static_cast<unsigned>(overwriteCount)
-                );
-            }
             if (selectingTrack) {
                 applyTrackPasteProgress(
                     props.slots[2],
@@ -778,20 +777,14 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 holdState.action.get() ==
                     core::state::StructureHoldAction::PASTE;
 
-            props.slots[0].visualState = Visual::HIDDEN;
-            props.slots[1] = makeSelectionCountSlot(selectedCount);
-            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                standalone::icons::ACTION_PASTE,
+            applyPastePlacementSlots(
+                props,
+                selectedCount,
+                overwriteCount,
+                blocked,
                 pasteHoldActive
                     ? Visual::ARMED
-                    : interactionVisual(
-                          interaction.bottomRightVisibility
-                      ),
-                blocked
-                    ? Tone::DESTRUCTIVE
-                    : (overwriteCount > 0U
-                        ? Tone::WARNING
-                        : Tone::POSITIVE)
+                    : interactionVisual(interaction.bottomRightVisibility)
             );
             if (blocked) {
                 props.slots[2].showLabel = true;
@@ -799,14 +792,6 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                     props.slots[2].labelText.data(),
                     props.slots[2].labelText.size(),
                     "PST BLOCK"
-                );
-            } else if (overwriteCount > 0U) {
-                props.slots[2].showLabel = true;
-                std::snprintf(
-                    props.slots[2].labelText.data(),
-                    props.slots[2].labelText.size(),
-                    "PST \xC2\xB7 %u OVR",
-                    static_cast<unsigned>(overwriteCount)
                 );
             }
             applyHoldProgress(
