@@ -229,6 +229,18 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_*/test_main.cpp")
 
     set(MS_CORE_NATIVE_TEST_TARGETS)
+    set(MS_CORE_STANDALONE_TESTS
+        test_ActiveViewLifecycle
+        test_ForegroundCadence
+        test_MacroKnobVisualPolicy
+        test_ModulatorEnvelopeParameterMapping
+        test_ModulatorEnvelopeTiming
+        test_ModulatorLfoParameterMapping
+        test_PsramSpanTracker
+        test_StandaloneSequencerRuntimeGate
+        test_StorageQualificationProbe
+        test_TimingCadenceContracts
+        test_UxReplayTimeline)
 
     add_test(
         NAME test_CoreFileToolInputLimits
@@ -305,7 +317,15 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         list(APPEND MS_CORE_NATIVE_TEST_TARGETS "${test_name}")
 
         add_executable("${test_name}" "${test_source}")
-        target_link_libraries("${test_name}" PRIVATE midi_studio_core_native)
+        if(test_name IN_LIST MS_CORE_STANDALONE_TESTS)
+            target_include_directories("${test_name}"
+                PRIVATE
+                    "${MS_DEVICE_SUPPORT_DIR}/src"
+                    "${MS_CORE_OC_FRAMEWORK_DIR}/src"
+                    "${MS_CORE_OC_NOTE_DIR}/src")
+        else()
+            target_link_libraries("${test_name}" PRIVATE midi_studio_core_native)
+        endif()
         target_include_directories("${test_name}"
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
