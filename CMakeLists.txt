@@ -4,6 +4,8 @@ project(petitechose_midi_studio_core LANGUAGES CXX)
 
 include(CTest)
 
+# Firmware and its native contract suite deliberately share GNU C++17.
+# Host-only targets opt into portable C++20 where their graph requires it.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
@@ -17,6 +19,13 @@ option(
     MS_CORE_ENABLE_FUZZING
     "Build the opt-in libFuzzer boundary harnesses"
     OFF)
+
+add_library(ms_core_compile_warnings INTERFACE)
+if(MSVC)
+    target_compile_options(ms_core_compile_warnings INTERFACE /W4)
+else()
+    target_compile_options(ms_core_compile_warnings INTERFACE -Wall -Wextra)
+endif()
 
 if(MS_CORE_ENABLE_FUZZING AND NOT MS_CORE_ENABLE_SANITIZERS)
     message(FATAL_ERROR
@@ -107,7 +116,9 @@ target_include_directories(midi_studio_core_native
         # sources. Their font/icon headers include LVGL types, supplied by the
         # same deterministic stub used by the individual test executables.
         "${CMAKE_CURRENT_SOURCE_DIR}/test")
-target_link_libraries(midi_studio_core_native PUBLIC oc_note_native oc_framework_native)
+target_link_libraries(midi_studio_core_native
+    PUBLIC oc_note_native oc_framework_native
+    PRIVATE ms_core_compile_warnings)
 
 if(MS_CORE_ENABLE_SANITIZERS)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")

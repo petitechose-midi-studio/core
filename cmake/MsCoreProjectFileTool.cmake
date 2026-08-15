@@ -23,12 +23,21 @@ function(ms_core_add_project_file_tool)
             "${MS_DEVICE_SUPPORT_DIR}/src")
     target_link_libraries(ms_core_project_file_native
         PUBLIC
-            ms_core_project_file_open_control_native)
+            ms_core_project_file_open_control_native
+        PRIVATE
+            ms_core_compile_warnings)
 
     add_executable(ms-core-file-tool
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/ms_core_file_tool/main.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/ms_core_file_tool/StepGraphPresetTool.cpp")
-    target_link_libraries(ms-core-file-tool PRIVATE ms_core_project_file_native)
+    set_target_properties(
+        ms_core_project_file_open_control_native
+        ms_core_project_file_native
+        ms-core-file-tool
+        PROPERTIES CXX_EXTENSIONS OFF)
+    target_link_libraries(ms-core-file-tool PRIVATE
+        ms_core_project_file_native
+        ms_core_compile_warnings)
     target_include_directories(ms-core-file-tool
         PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
