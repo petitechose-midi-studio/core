@@ -9,6 +9,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+option(
+    MS_CORE_ENABLE_SANITIZERS
+    "Instrument native Core boundary tests with AddressSanitizer and UBSan"
+    OFF)
+
 set(MS_CORE_OPEN_CONTROL_ROOT
     "${CMAKE_CURRENT_SOURCE_DIR}/../../open-control"
     CACHE PATH "Path to the local open-control workspace")
@@ -94,6 +99,35 @@ target_include_directories(midi_studio_core_native
         # same deterministic stub used by the individual test executables.
         "${CMAKE_CURRENT_SOURCE_DIR}/test")
 target_link_libraries(midi_studio_core_native PUBLIC oc_note_native oc_framework_native)
+
+if(MS_CORE_ENABLE_SANITIZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR
+            "MS_CORE_ENABLE_SANITIZERS requires a Clang or GCC compiler")
+    endif()
+    if(WIN32 AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR
+            "MS_CORE_ENABLE_SANITIZERS requires Clang on Windows")
+    endif()
+
+    add_library(ms_core_sanitizers INTERFACE)
+    target_compile_options(ms_core_sanitizers INTERFACE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer)
+    target_link_options(ms_core_sanitizers INTERFACE
+        -fsanitize=address,undefined)
+    if(WIN32)
+        # Core boundary fixtures retain large product aggregates on the host
+        # stack. ASan redzones need more than Windows' 1 MiB executable default;
+        # this is test capacity, not a firmware stack-budget relaxation.
+        target_link_options(ms_core_sanitizers INTERFACE
+            -Xlinker /STACK:16777216)
+    endif()
+
+    target_link_libraries(oc_framework_native PUBLIC ms_core_sanitizers)
+    target_link_libraries(oc_note_native PUBLIC ms_core_sanitizers)
+    target_link_libraries(midi_studio_core_native PUBLIC ms_core_sanitizers)
+endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreProjectFileTool.cmake")
 ms_core_add_project_file_tool()
@@ -222,6 +256,11 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         test_SequencerStepEditHandler
         test_StepPresetFileStore)
 
+    set(MS_CORE_SANITIZER_BOUNDARY_TESTS
+        test_AtomicProductFile
+        test_FileSystemRpc
+        test_SequencerCcLanePersistence)
+
     foreach(test_source IN LISTS MS_CORE_NATIVE_TESTS)
         get_filename_component(test_dir "${test_source}" DIRECTORY)
         get_filename_component(test_name "${test_dir}" NAME)
@@ -260,6 +299,46 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             set_tests_properties("${test_name}" PROPERTIES RUN_SERIAL TRUE)
         endif()
     endforeach()
+
+    if(MS_CORE_ENABLE_SANITIZERS)
+        if(WIN32)
+            if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+                message(FATAL_ERROR
+                    "MS_CORE_ENABLE_SANITIZERS supports 64-bit Windows only")
+            endif()
+            execute_process(
+                COMMAND "${CMAKE_CXX_COMPILER}"
+                        "--print-file-name=clang_rt.asan_dynamic-x86_64.dll"
+                OUTPUT_VARIABLE MS_CORE_SANITIZER_RUNTIME
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                COMMAND_ERROR_IS_FATAL ANY)
+            if(NOT EXISTS "${MS_CORE_SANITIZER_RUNTIME}")
+                message(FATAL_ERROR
+                    "Clang AddressSanitizer runtime not found: "
+                    "${MS_CORE_SANITIZER_RUNTIME}")
+            endif()
+            configure_file("${MS_CORE_SANITIZER_RUNTIME}"
+                "${CMAKE_BINARY_DIR}/clang_rt.asan_dynamic-x86_64.dll"
+                COPYONLY)
+        endif()
+
+        set_tests_properties(${MS_CORE_SANITIZER_BOUNDARY_TESTS} PROPERTIES
+            ENVIRONMENT
+                "ASAN_OPTIONS=halt_on_error=1:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+
+        if(PROJECT_IS_TOP_LEVEL)
+            list(JOIN MS_CORE_SANITIZER_BOUNDARY_TESTS "|"
+                MS_CORE_SANITIZER_BOUNDARY_REGEX)
+            add_custom_target(test-sanitized-boundaries
+                COMMAND "${CMAKE_CTEST_COMMAND}"
+                        --test-dir "${CMAKE_BINARY_DIR}"
+                        --tests-regex "^(${MS_CORE_SANITIZER_BOUNDARY_REGEX})$"
+                        --output-on-failure
+                DEPENDS ${MS_CORE_SANITIZER_BOUNDARY_TESTS}
+                USES_TERMINAL
+                VERBATIM)
+        endif()
+    endif()
 
     if(PROJECT_IS_TOP_LEVEL)
         add_custom_target(test-native

@@ -10,6 +10,17 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_TESTING": "ON"
       }
+    },
+    {
+      "name": "native-sanitized",
+      "displayName": "Sanitized native boundary tests",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native-sanitized",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "BUILD_TESTING": "ON",
+        "MS_CORE_ENABLE_SANITIZERS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -18,6 +29,13 @@
       "configurePreset": "native-tests",
       "targets": [
         "test-native"
+      ]
+    },
+    {
+      "name": "native-sanitized",
+      "configurePreset": "native-sanitized",
+      "targets": [
+        "test-sanitized-boundaries"
       ]
     }
   ]

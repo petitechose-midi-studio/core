@@ -69,6 +69,17 @@ PlatformIO remains the firmware build/upload path; unit tests are run through CM
 local and CI execution use the same native test backend, workspace-pinned tools, and pinned
 test dependencies.
 
+The opt-in sanitizer preset builds and runs only the persistence/RPC boundary
+set under ASan and UBSan:
+
+```powershell
+cmake --preset native-sanitized -DCMAKE_CXX_COMPILER=clang++
+cmake --build --preset native-sanitized
+```
+
+Windows requires 64-bit Clang; keep its `bin` directory in `PATH` so CMake can
+also find `llvm-rc`. The normal test and firmware profiles are unaffected.
+
 ## Validation Checklist
 
 For sequencer, state, UI, persistence, or `open-control` integration changes,
