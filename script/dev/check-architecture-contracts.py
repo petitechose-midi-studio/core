@@ -3647,10 +3647,9 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "FLASHMEM PlanOutcome buildPlan",
         r"action\s*==\s*Action::SequencerRemoveSelection.*?"
         r"const\s+uint8_t\s+incomingLength\s*=\s*"
-        r"mutation\.nextActive\s*==\s*beforeActive\s*\?\s*"
-        r"context\.state\.sequencer\.pattern\.length\.get\s*\(\s*\)\s*:\s*"
-        r"context\.state\.tracks\.track\s*\(\s*mutation\.nextActive\s*\)"
-        r"\.length\.get\s*\(\s*\)\s*;.*?"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*canonicalTrackPattern\s*\(\s*"
+        r"context\.state\.tracks\s*,\s*context\.state\.sequencer\s*,\s*"
+        r"mutation\.nextActive\s*\)\.length\.get\s*\(\s*\)\s*;.*?"
         r"fillActiveChangeFocus\s*\(\s*context\s*,\s*incomingLength\s*,\s*plan\s*\)",
         "SelectionRemove focus must use the active editor when the active Track survives",
     )
@@ -4427,7 +4426,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupStructureActionBindings",
         r"\bbeginSelectionHoldAction\s*\(\s*"
         r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureHoldAction::REMOVE\s*\)",
         "Selection press must arm SelectionRemove rather than CurrentRemove",
@@ -4442,7 +4441,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupStructureActionBindings",
         r"bottom_action_release_latch_\.isArmed\s*\(\s*"
         r"Config::ButtonID::BOTTOM_LEFT\s*\)",
         "both BottomLeft release routes must stay eligible to consume an armed latch",
@@ -4450,7 +4449,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"\.button\s*\(\s*Config::ButtonID::NAV\s*\)\s*"
         r"\.press\s*\(\s*\).*?"
         r"!\s*edit_workflow_\.trackPasteNavigationBlocked\s*\(\s*\)\s*&&\s*"
@@ -4460,7 +4459,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"\btrackRemoveNavigationBlocked\s*\(\s*\)",
         "Track Remove must block one NAV press and the three NAV turn routes",
         count=4,
@@ -4559,7 +4558,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"const\s+bool\s+previewAddSlot\s*=\s*"
         r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*&&\s*"
         r"track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*;",
@@ -4568,7 +4567,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"const\s+uint8_t\s+previewTarget\s*=\s*"
         r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*"
         r"\?\s*track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*"
@@ -4793,8 +4792,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_across_files(
         r"\bsequencer\.stepEdit\.contextHold\.startedAtMs\b",
-        "Context hold progress topology must remain one observer, one diagnostic label and two projection reads",
-        4,
+        "Context hold progress topology must remain one observer, one diagnostic label and one projection read",
+        3,
     )
     for retired_selection_cancel_owner in (
         MACRO_STRUCTURE_WORKFLOW,
