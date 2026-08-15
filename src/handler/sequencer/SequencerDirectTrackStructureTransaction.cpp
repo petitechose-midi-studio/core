@@ -459,7 +459,11 @@ FLASHMEM PlanOutcome buildPlan(
             SequencerActiveTrackIncomingOwnerPolicy::Preserve;
         if (!fillActiveChangeFocus(
                 context,
-                context.state.tracks.track(mutation.nextActive).length.get(),
+                core::state::sequencer::canonicalTrackPattern(
+                    context.state.tracks,
+                    context.state.sequencer,
+                    mutation.nextActive
+                ).length.get(),
                 plan
             )) {
             return PlanOutcome::Invalid;
