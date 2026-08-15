@@ -3046,13 +3046,13 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         if regressed_global_invocations - trusted["declaration"]["expectedCount"] != 3:
             return False
 
-        settings_path.write_text(
-            settings_path.read_text(encoding="utf-8") +
+        project_path.write_text(
+            project_path.read_text(encoding="utf-8") +
             "void regression() { recordSequencerFullBankHistoryChange(); }\n",
             encoding="utf-8",
         )
         if count_any_calls(
-            settings_path,
+            project_path,
             lifecycle["forbiddenRawMethods"],
         ) != Counter({"recordSequencerFullBankHistoryChange": 1}):
             return False
