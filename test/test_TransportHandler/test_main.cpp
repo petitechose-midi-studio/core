@@ -7,6 +7,7 @@
 #include <oc/core/input/InputBinding.hpp>
 
 #include "../../src/config/App.hpp"
+#include "../../src/config/InputIDs.hpp"
 #include "../../src/handler/transport/TransportHandler.hpp"
 #include "../support/InputTestHardware.hpp"
 

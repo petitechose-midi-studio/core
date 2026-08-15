@@ -15,6 +15,7 @@
 #include <oc/core/input/InputBinding.hpp>
 #include <oc/impl/HostFileSystem.hpp>
 
+#include "../../src/config/Timing.hpp"
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/common/ModulatorNavigationWorkflow.hpp"
 #include "../../src/handler/project/ProjectHandler.hpp"
@@ -101,6 +102,7 @@ struct ProjectHandlerHarness {
         , overlays(state.overlays, buttons)
         , deviceSettings(core::handler::DeviceSettingsDomainServices::StateRefs{
               state.midiSync,
+              state.midiNoteDisplay,
               state.deviceSettingsStore,
           })
         , scaleSettings(core::handler::ProjectScaleSettingsDomainServices::StateRefs{
@@ -608,13 +610,14 @@ void test_transport_sync_is_device_persisted_and_project_neutral() {
     assert(h.storages.settings.commitCount == commitsBefore + 1);
 
     core::state::MidiSyncState restored{};
-    assert(h.state.deviceSettingsStore.load(restored));
+    core::state::MidiNoteDisplayState restoredNoteDisplay;
+    assert(h.state.deviceSettingsStore.load(restored, restoredNoteDisplay));
     assert(restored.mode.get() == core::state::MidiSyncMode::MASTER);
 
     h.turn(Config::EncoderID::OPT, 0.5f);
     assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
     assert(h.storages.settings.commitCount == commitsBefore + 2);
-    assert(h.state.deviceSettingsStore.load(restored));
+    assert(h.state.deviceSettingsStore.load(restored, restoredNoteDisplay));
     assert(restored.mode.get() == core::state::MidiSyncMode::SLAVE);
 
     assert(h.state.projectHistory.undoCount() == historyBefore);

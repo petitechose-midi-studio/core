@@ -45,7 +45,6 @@ public:
     ) const;
 
 private:
-    const core::state::sequencer::SequencerPatternState& pattern_(uint8_t track) const;
     bool conflictsWithActiveMacro_(
         const core::state::shared::MidiCcDestination& destination
     ) const;

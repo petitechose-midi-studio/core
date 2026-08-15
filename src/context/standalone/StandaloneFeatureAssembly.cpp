@@ -146,6 +146,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     const core::handler::DeviceSettingsDomainServices deviceSettingsServices{
         core::handler::DeviceSettingsDomainServices::StateRefs{
             state.midiSync,
+            state.midiNoteDisplay,
             state.deviceSettingsStore,
         }
     };
@@ -198,6 +199,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::context::standalone::SettingsFeatureModule::StateRefs{
             state.deviceSettings,
             state.midiSync,
+            state.midiNoteDisplay,
         },
         deviceSettingsServices,
         overlays,

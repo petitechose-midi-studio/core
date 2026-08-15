@@ -49,7 +49,8 @@ handler initially called it.
 - `ProjectTrackState` owns durable Track channel, mute, solo, and delay state.
 - `ProjectControlDomainState` owns durable Macro Automation, Modulation, and
   Recorded Shape content.
-- `MidiSyncState` owns the current controller MIDI-sync values.
+- `MidiSyncState` owns the current controller MIDI-sync values, while
+  `MidiNoteDisplayState` owns the device-wide note-octave naming convention.
   `persistence/DeviceSettingsStore` is their single durable byte-store owner;
   `DeviceSettingsState` owns only navigation state for the settings UI.
 - `SequencerGraphAsset` owns reusable Step Graph Preset musical content and

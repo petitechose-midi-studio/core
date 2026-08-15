@@ -3,12 +3,14 @@
 #include <cstdint>
 
 #include "persistence/DeviceSettingsStore.hpp"
+#include "state/MidiNoteDisplayState.hpp"
 #include "state/MidiSyncState.hpp"
 
 namespace core::handler {
 
 /**
- * Applies device settings choices to MidiSyncState and DeviceSettingsStore.
+ * Applies controller settings choices to their runtime states and durable
+ * DeviceSettingsStore record.
  *
  * The service owns row-to-choice mapping and persistence commits; UI handlers
  * only navigate/select rows.
@@ -38,6 +40,7 @@ public:
 
     struct StateRefs {
         core::state::MidiSyncState& midiSync;
+        core::state::MidiNoteDisplayState& midiNoteDisplay;
         core::persistence::DeviceSettingsStore& store;
     };
 
@@ -52,6 +55,7 @@ public:
 
 private:
     core::state::MidiSyncState* midi_sync_ = nullptr;
+    core::state::MidiNoteDisplayState* midi_note_display_ = nullptr;
     core::persistence::DeviceSettingsStore* store_ = nullptr;
 };
 

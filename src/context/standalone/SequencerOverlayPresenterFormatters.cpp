@@ -1140,34 +1140,61 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         return props;
     }
 
-    if (sequencer.stepEdit.drumContext) {
+    const bool drumContext = sequencer.stepEdit.drumContext;
+    if (drumContext) {
         const uint8_t lane = sequencer.stepEdit.drumLane;
         const uint8_t drumStep = sequencer.stepEdit.drumStep;
         if (!sequencer.drumSequencer.stepInRange(lane, drumStep)) {
             props.visible = false;
             return props;
         }
-        props.visible = true;
-        if (focusedRowIsValueRow(sequencer)) {
-            constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
-            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                core::ui::sequencer::interactionActionIcon(resetAction),
-                Visual::ACTIVE,
-                Tone::WARNING
-            );
-            props.slots[1].visualState = Visual::HIDDEN;
-            props.slots[2].visualState = Visual::HIDDEN;
+    } else {
+        const uint8_t step = sequencer.stepEdit.stepIndex.get();
+        if (step >= core::state::sequencer::activeContentLength(sequencer)) {
+            props.visible = false;
             return props;
         }
-        if (!focusedRowIsContextRow(sequencer)) {
-            props.slots[0].visualState = Visual::HIDDEN;
-            props.slots[1].visualState = Visual::HIDDEN;
-            props.slots[2].visualState = Visual::HIDDEN;
-            return props;
-        }
+    }
 
-        core::state::sequencer::SequencerGraphNodeId nodeId =
-            oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    props.visible = true;
+    for (auto& slot : props.slots) {
+        slot.visualState = Visual::HIDDEN;
+    }
+
+    if (!drumContext && sequencer.stepContentDraft.exitPromptVisible.get()) {
+        return props;
+    }
+
+    const bool valueRowFocused = focusedRowIsValueRow(sequencer);
+    if (valueRowFocused) {
+        constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            core::ui::sequencer::interactionActionIcon(resetAction),
+            Visual::ACTIVE,
+            Tone::WARNING
+        );
+    }
+
+    const bool draftActive =
+        !drumContext && sequencer.stepContentDraft.active.get();
+    if (draftActive) {
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::ACTION_VALIDATE,
+            Visual::ACTIVE,
+            Tone::POSITIVE
+        );
+        return props;
+    }
+
+    if (valueRowFocused || !focusedRowIsContextRow(sequencer)) {
+        return props;
+    }
+
+    auto nodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    bool canPaste = false;
+    if (drumContext) {
+        const uint8_t lane = sequencer.stepEdit.drumLane;
+        const uint8_t drumStep = sequencer.stepEdit.drumStep;
         if (core::state::sequencer::isChildContentView(sequencer)) {
             nodeId = core::state::sequencer::activeContentStepNodeId(
                 sequencer,
@@ -1182,117 +1209,22 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
                 );
             }
         }
-        const bool hasChild = nodeId !=
-                oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID &&
-            focusedContextHasChild(sequencer, nodeId);
-        const bool canPaste = source.structureClipboard.hasSequencerStepContent(
+        canPaste = source.structureClipboard.hasSequencerStepContent(
                 clipboardKindForFocusedContextRow(sequencer)
             ) &&
             core::state::sequencer::activeContentDepth(sequencer) <
                 oc::note::sequencer::StepSequencerGraphLimits::MAX_DEPTH - 1U;
-        const auto row = static_cast<size_t>(sequencer.stepEdit.focusedRow.get());
-        const Tone contextTone = row == step_edit_rows::MICRO_SEQUENCE
-            ? Tone::CONSTRUCTIVE
-            : Tone::WARNING;
-        const auto holdAction = sequencer.stepEdit.contextHold.action.get();
-        const uint32_t holdStartedAtMs =
-            sequencer.stepEdit.contextHold.startedAtMs.get();
-        const bool removeHoldActive =
-            holdAction == core::state::StructureHoldAction::REMOVE;
-        const bool pasteHoldActive =
-            holdAction == core::state::StructureHoldAction::PASTE;
-        constexpr auto removeAction = Action::REMOVE_STEP_EDITOR_CONTEXT;
-        const auto rightAction = canPaste
-            ? Action::PASTE_STEP_EDITOR_CONTEXT
-            : Action::COPY_STEP_EDITOR_CONTEXT;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            core::ui::sequencer::interactionActionIcon(removeAction),
-            removeHoldActive
-                ? Visual::ARMED
-                : (hasChild ? Visual::ACTIVE : Visual::DISABLED),
-            removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
+    } else {
+        nodeId = core::state::sequencer::activeContentStepNodeId(
+            sequencer,
+            sequencer.stepEdit.stepIndex.get()
         );
-        props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            core::ui::sequencer::interactionActionIcon(rightAction),
-            pasteHoldActive && canPaste
-                ? Visual::ARMED
-                : ((hasChild || canPaste) ? Visual::ACTIVE : Visual::DISABLED),
-            pasteHoldActive && canPaste
-                ? Tone::POSITIVE
-                : (canPaste ? Tone::POSITIVE : contextTone)
-        );
-        props.slots[0].holdActive = removeHoldActive;
-        props.slots[0].holdStartedAtMs = holdStartedAtMs;
-        props.slots[0].holdDurationMs =
-            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
-        props.slots[2].holdActive = pasteHoldActive && canPaste;
-        props.slots[2].holdStartedAtMs = holdStartedAtMs;
-        props.slots[2].holdDurationMs =
-            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
-        return props;
+        canPaste = canPasteStepContent(source);
     }
 
-    const uint8_t step = sequencer.stepEdit.stepIndex.get();
-    const uint8_t len = core::state::sequencer::activeContentLength(sequencer);
-    if (step >= len) {
-        props.visible = false;
-        return props;
-    }
-
-    if (sequencer.stepContentDraft.exitPromptVisible.get()) {
-        props.visible = true;
-        props.slots[0].visualState = Visual::HIDDEN;
-        props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2].visualState = Visual::HIDDEN;
-        return props;
-    }
-
-    if (sequencer.stepContentDraft.active.get()) {
-        props.visible = true;
-        if (focusedRowIsValueRow(sequencer)) {
-            constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
-            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                core::ui::sequencer::interactionActionIcon(resetAction),
-                Visual::ACTIVE,
-                Tone::WARNING
-            );
-        } else {
-            props.slots[0].visualState = Visual::HIDDEN;
-        }
-        props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            ::standalone::icons::ACTION_VALIDATE,
-            Visual::ACTIVE,
-            Tone::POSITIVE
-        );
-        return props;
-    }
-
-    if (focusedRowIsValueRow(sequencer)) {
-        constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
-        props.visible = true;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            core::ui::sequencer::interactionActionIcon(resetAction),
-            Visual::ACTIVE,
-            Tone::WARNING
-        );
-        props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2].visualState = Visual::HIDDEN;
-        return props;
-    }
-
-    if (!focusedRowIsContextRow(sequencer)) {
-        props.visible = true;
-        props.slots[0].visualState = Visual::HIDDEN;
-        props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2].visualState = Visual::HIDDEN;
-        return props;
-    }
-
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
-    const bool hasChild = focusedContextHasChild(sequencer, nodeId);
-    const bool canPaste = canPasteStepContent(source);
+    const bool hasChild = nodeId !=
+            oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID &&
+        focusedContextHasChild(sequencer, nodeId);
     const auto row = static_cast<size_t>(sequencer.stepEdit.focusedRow.get());
     const Tone contextTone = row == step_edit_rows::MICRO_SEQUENCE
         ? Tone::CONSTRUCTIVE

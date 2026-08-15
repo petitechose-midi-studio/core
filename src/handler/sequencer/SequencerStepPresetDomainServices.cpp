@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "app/ExtmemAllocator.hpp"
+#include "midi/MidiUtils.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "persistence/SequencerGraphAssetCodec.hpp"
 #include "state/CoreState.hpp"
@@ -113,11 +114,12 @@ FLASHMEM void formatScale(oc::note::sequencer::StepSequencerScaleSettings scale,
 }
 
 FLASHMEM void formatNoteName(int note, char* out, size_t outSize) {
-    static constexpr const char* NAMES[12] = {
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-    };
     const int clamped = std::clamp(note, 0, 127);
-    std::snprintf(out, outSize, "%s%d", NAMES[clamped % 12], clamped / 12 - 1);
+    core::midi::formatNoteName(
+        out,
+        outSize,
+        static_cast<uint8_t>(clamped)
+    );
 }
 
 FLASHMEM core::app::ExtmemUniquePtr<StepPresetBuffer> makeStepPresetBuffer() {

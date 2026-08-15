@@ -13,7 +13,10 @@ namespace StorageLayout = device_settings::layout;
 FLASHMEM DeviceSettingsStore::DeviceSettingsStore(oc::interface::IStorage& backend)
     : backend_(backend) {}
 
-FLASHMEM bool DeviceSettingsStore::load(state::MidiSyncState& midiSync) {
+FLASHMEM bool DeviceSettingsStore::load(
+    state::MidiSyncState& midiSync,
+    state::MidiNoteDisplayState& noteDisplay
+) {
     uint32_t magic = 0;
     if (!device_settings::readMagic(backend_, magic)) {
         OC_LOG_WARN("[DeviceSettingsStore] Failed to read settings header");
@@ -22,7 +25,8 @@ FLASHMEM bool DeviceSettingsStore::load(state::MidiSyncState& midiSync) {
 
     if (magic == UINT32_MAX) {
         state::MidiSyncState defaults;
-        const auto status = saveAllStatus(defaults);
+        state::MidiNoteDisplayState defaultNoteDisplay;
+        const auto status = saveAllStatus(defaults, defaultNoteDisplay);
         if (status != PersistenceWriteStatus::OK) {
             OC_LOG_WARN("[DeviceSettingsStore] Failed to initialize blank storage: {}",
                         persistenceWriteStatusLabel(status));
@@ -32,6 +36,9 @@ FLASHMEM bool DeviceSettingsStore::load(state::MidiSyncState& midiSync) {
         midiSync.followTransport.set(defaults.followTransport.get());
         midiSync.autoFallbackMs.set(defaults.autoFallbackMs.get());
         midiSync.autoLockClockCount.set(defaults.autoLockClockCount.get());
+        noteDisplay.setOctaveConvention(
+            defaultNoteDisplay.octaveConvention.get()
+        );
         return true;
     }
 
@@ -53,43 +60,49 @@ FLASHMEM bool DeviceSettingsStore::load(state::MidiSyncState& midiSync) {
         return false;
     }
 
-    if (!loadMidiSync_(midiSync)) {
+    if (!device_settings::load(backend_, midiSync, noteDisplay)) {
         OC_LOG_WARN("[DeviceSettingsStore] Invalid current settings payload");
         return false;
     }
 
+    noteDisplay.syncFormatter();
     return true;
 }
 
-FLASHMEM bool DeviceSettingsStore::saveAll(const state::MidiSyncState& midiSync) {
-    return saveAllStatus(midiSync) == PersistenceWriteStatus::OK;
-}
-
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveAllStatus(
-    const state::MidiSyncState& midiSync
+    const state::MidiSyncState& midiSync,
+    const state::MidiNoteDisplayState& noteDisplay
 ) {
-    const auto status = device_settings::saveAll(backend_, midiSync);
+    const auto status = device_settings::saveAll(
+        backend_,
+        midiSync,
+        noteDisplay
+    );
     if (status != PersistenceWriteStatus::OK) return status;
     OC_LOG_DEBUG("[DeviceSettingsStore] Saved all");
     return PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::reconcileAllStatus(
-    const state::MidiSyncState& midiSync
+    const state::MidiSyncState& midiSync,
+    const state::MidiNoteDisplayState& noteDisplay
 ) {
     const auto formatStatus = currentFormatStatus_();
     if (formatStatus == PersistenceWriteStatus::OK) {
         state::MidiSyncState durable;
-        if (!loadMidiSync_(durable)) {
+        state::MidiNoteDisplayState durableNoteDisplay;
+        if (!device_settings::load(backend_, durable, durableNoteDisplay)) {
             // The durable payload is not a usable exact-current snapshot.
             // Recovery is RAM-authoritative, so replace it once rather than
             // preserving a malformed current-format header indefinitely.
-            return saveAllStatus(midiSync);
+            return saveAllStatus(midiSync, noteDisplay);
         }
         if (durable.mode.get() == midiSync.mode.get() &&
             durable.followTransport.get() == midiSync.followTransport.get() &&
             durable.autoFallbackMs.get() == midiSync.autoFallbackMs.get() &&
             durable.autoLockClockCount.get() == midiSync.autoLockClockCount.get() &&
+            durableNoteDisplay.octaveConvention.get() ==
+                noteDisplay.octaveConvention.get() &&
             !backend_.isDirty()) {
             return PersistenceWriteStatus::OK;
         }
@@ -97,11 +110,7 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::reconcileAllStatus(
         return formatStatus;
     }
 
-    return saveAllStatus(midiSync);
-}
-
-FLASHMEM bool DeviceSettingsStore::saveMidiSyncMode(state::MidiSyncMode mode) {
-    return saveMidiSyncModeStatus(mode) == PersistenceWriteStatus::OK;
+    return saveAllStatus(midiSync, noteDisplay);
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiSyncModeStatus(
@@ -115,10 +124,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiSyncModeStatus(
     return device_settings::stageMidiSyncMode(backend_, mode);
 }
 
-FLASHMEM bool DeviceSettingsStore::saveMidiFollowTransport(bool followTransport) {
-    return saveMidiFollowTransportStatus(followTransport) == PersistenceWriteStatus::OK;
-}
-
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiFollowTransportStatus(
     bool followTransport
 ) {
@@ -128,10 +133,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiFollowTransportStat
         backend_,
         followTransport
     );
-}
-
-FLASHMEM bool DeviceSettingsStore::saveMidiAutoFallbackMs(uint16_t fallbackMs) {
-    return saveMidiAutoFallbackMsStatus(fallbackMs) == PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoFallbackMsStatus(
@@ -145,10 +146,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoFallbackMsStatu
     return device_settings::stageMidiAutoFallbackMs(backend_, fallbackMs);
 }
 
-FLASHMEM bool DeviceSettingsStore::saveMidiAutoLockClockCount(uint8_t lockCount) {
-    return saveMidiAutoLockClockCountStatus(lockCount) == PersistenceWriteStatus::OK;
-}
-
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoLockClockCountStatus(
     uint8_t lockCount
 ) {
@@ -160,17 +157,21 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveMidiAutoLockClockCountS
     return device_settings::stageMidiAutoLockClockCount(backend_, lockCount);
 }
 
-FLASHMEM bool DeviceSettingsStore::commit() {
-    return commitStatus() == PersistenceWriteStatus::OK;
+FLASHMEM PersistenceWriteStatus
+DeviceSettingsStore::saveNoteOctaveConventionStatus(
+    core::midi::NoteOctaveConvention convention
+) {
+    if (!core::midi::validNoteOctaveConvention(convention)) {
+        return PersistenceWriteStatus::INVALID_CONFIG;
+    }
+    const auto formatStatus = currentFormatStatus_();
+    if (formatStatus != PersistenceWriteStatus::OK) return formatStatus;
+    return device_settings::stageNoteOctaveConvention(backend_, convention);
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::commitStatus() {
     if (!backend_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
     return backend_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
-}
-
-FLASHMEM bool DeviceSettingsStore::factoryReset() {
-    return factoryResetStatus() == PersistenceWriteStatus::OK;
 }
 
 FLASHMEM PersistenceWriteStatus DeviceSettingsStore::factoryResetStatus() {
@@ -196,10 +197,6 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::currentFormatStatus_() {
     return magic == StorageLayout::MAGIC && version == StorageLayout::VERSION
         ? PersistenceWriteStatus::OK
         : PersistenceWriteStatus::INVALID_CONFIG;
-}
-
-FLASHMEM bool DeviceSettingsStore::loadMidiSync_(state::MidiSyncState& midiSync) {
-    return device_settings::loadMidiSync(backend_, midiSync);
 }
 
 }  // namespace core::persistence

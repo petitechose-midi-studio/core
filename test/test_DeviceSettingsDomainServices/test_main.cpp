@@ -105,11 +105,13 @@ int main() {
     storage.init();
 
     core::state::MidiSyncState sync;
+    core::state::MidiNoteDisplayState noteDisplay;
     core::persistence::DeviceSettingsStore store(storage);
-    assert(store.load(sync));
+    assert(store.load(sync, noteDisplay));
     core::handler::DeviceSettingsDomainServices services(
         core::handler::DeviceSettingsDomainServices::StateRefs{
             sync,
+            noteDisplay,
             store,
         }
     );
@@ -118,10 +120,12 @@ int main() {
     assert(services.choiceCount(1) == 2);
     assert(services.choiceCount(2) == 7);
     assert(services.choiceCount(3) == 8);
+    assert(services.choiceCount(4) == 3);
     assert(services.currentChoiceIndex(0) == 2);
     assert(services.currentChoiceIndex(1) == 1);
     assert(services.currentChoiceIndex(2) == 2);
     assert(services.currentChoiceIndex(3) == 4);
+    assert(services.currentChoiceIndex(4) == 1);
 
     const auto modeResult = services.applyChoice(0, 1);
     assert(modeResult.success());
@@ -146,6 +150,14 @@ int main() {
     assert(sync.autoLockClockCount.get() == 24);
     assert(!storage.isDirty());
 
+    const auto octaveResult = services.applyChoice(4, 0);
+    assert(octaveResult.success() && octaveResult.changed());
+    assert(noteDisplay.octaveConvention.get() ==
+           core::midi::NoteOctaveConvention::C3);
+    assert(core::midi::activeNoteOctaveConvention() ==
+           core::midi::NoteOctaveConvention::C3);
+    assert(!storage.isDirty());
+
     const int commitsBeforeNoChange = storage.commitCount;
     const auto noChange = services.applyMidiSyncMode(
         core::state::MidiSyncMode::SLAVE
@@ -166,11 +178,13 @@ int main() {
     BufferedSettingsStorage bufferedStorage;
     assert(bufferedStorage.init());
     core::state::MidiSyncState bufferedSync;
+    core::state::MidiNoteDisplayState bufferedNoteDisplay;
     core::persistence::DeviceSettingsStore bufferedStore(bufferedStorage);
-    assert(bufferedStore.load(bufferedSync));
+    assert(bufferedStore.load(bufferedSync, bufferedNoteDisplay));
     core::handler::DeviceSettingsDomainServices bufferedServices(
         core::handler::DeviceSettingsDomainServices::StateRefs{
             bufferedSync,
+            bufferedNoteDisplay,
             bufferedStore,
         }
     );
@@ -182,7 +196,11 @@ int main() {
     assert(bufferedSync.mode.get() == core::state::MidiSyncMode::SLAVE);
     bufferedStorage.reboot();
     core::state::MidiSyncState rebootedAfterSuccess;
-    assert(bufferedStore.load(rebootedAfterSuccess));
+    core::state::MidiNoteDisplayState rebootedNoteDisplayAfterSuccess;
+    assert(bufferedStore.load(
+        rebootedAfterSuccess,
+        rebootedNoteDisplayAfterSuccess
+    ));
     assert(rebootedAfterSuccess.mode.get() == core::state::MidiSyncMode::SLAVE);
 
     bufferedStorage.setFaultMode(BufferedSettingsStorage::FaultMode::SHORT_WRITE);
@@ -196,7 +214,11 @@ int main() {
     assert(bufferedSync.mode.get() == core::state::MidiSyncMode::SLAVE);
     bufferedStorage.reboot();
     core::state::MidiSyncState rebootedAfterStageFailure;
-    assert(bufferedStore.load(rebootedAfterStageFailure));
+    core::state::MidiNoteDisplayState rebootedNoteDisplayAfterStageFailure;
+    assert(bufferedStore.load(
+        rebootedAfterStageFailure,
+        rebootedNoteDisplayAfterStageFailure
+    ));
     assert(rebootedAfterStageFailure.mode.get() ==
            core::state::MidiSyncMode::SLAVE);
 
@@ -209,11 +231,25 @@ int main() {
     assert(commitFailure.persistenceStatus ==
            core::persistence::PersistenceWriteStatus::COMMIT_FAILED);
     assert(bufferedSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+
+    // The failed AUTO value remains only in backend staging. A later change
+    // must first restore the RAM-authoritative SLAVE value so its successful
+    // commit cannot publish that stale byte as a side effect.
+    bufferedStorage.setFaultMode(BufferedSettingsStorage::FaultMode::NONE);
+    const auto followAfterFailure = bufferedServices.applyChoice(1U, 0);
+    assert(followAfterFailure.success() && followAfterFailure.changed());
+    assert(bufferedSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    assert(!bufferedSync.followTransport.get());
     bufferedStorage.reboot();
     core::state::MidiSyncState rebootedAfterCommitFailure;
-    assert(bufferedStore.load(rebootedAfterCommitFailure));
+    core::state::MidiNoteDisplayState rebootedNoteDisplayAfterCommitFailure;
+    assert(bufferedStore.load(
+        rebootedAfterCommitFailure,
+        rebootedNoteDisplayAfterCommitFailure
+    ));
     assert(rebootedAfterCommitFailure.mode.get() ==
            core::state::MidiSyncMode::SLAVE);
+    assert(!rebootedAfterCommitFailure.followTransport.get());
 
     return 0;
 }

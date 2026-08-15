@@ -1,5 +1,7 @@
 #include "protocol/filesystem/FileSystemRpcInternal.hpp"
 
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::protocol::filesystem {
@@ -10,8 +12,20 @@ using internal::ByteReader;
 using internal::ByteWriter;
 using internal::writeFrameHeader;
 
+namespace {
+
+FLASHMEM bool validStatus(uint8_t raw) {
+    return raw <= static_cast<uint8_t>(FileSystemRpcStatus::PRECONDITION_FAILED);
+}
+
+FLASHMEM bool validFileType(uint8_t raw) {
+    return raw <= static_cast<uint8_t>(FileSystemRpcFileType::OTHER);
+}
+
+}  // namespace
+
 FLASHMEM bool FileSystemRpcCodec::isFileSystemMessageId(uint8_t messageId) {
-    return messageId >= FILESYSTEM_RPC_ID_MIN && messageId <= FILESYSTEM_RPC_ID_MAX;
+    return messageName(static_cast<FileSystemRpcMessageId>(messageId)) != nullptr;
 }
 
 FLASHMEM bool FileSystemRpcCodec::isFileSystemRequestId(uint8_t messageId) {
@@ -90,8 +104,9 @@ FLASHMEM const char* FileSystemRpcCodec::messageName(FileSystemRpcMessageId mess
         case FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE:
             return "FsConditionalDeleteResponse";
         case FileSystemRpcMessageId::ERROR_RESPONSE:
-        default:
             return "FsErrorResponse";
+        default:
+            return nullptr;
     }
 }
 
@@ -108,6 +123,8 @@ FLASHMEM Result<FileSystemRpcFrame> FileSystemRpcCodec::decodeFrame(
     if (!reader.readU8(rawMessageId) || !isFileSystemMessageId(rawMessageId)) {
         return Result<FileSystemRpcFrame>::err({ErrorCode::INVALID_ARGUMENT, "unknown rpc id"});
     }
+    const auto messageId = static_cast<FileSystemRpcMessageId>(rawMessageId);
+    const char* expectedName = messageName(messageId);
 
     uint8_t nameLength = 0;
     if (!reader.readU8(nameLength)) {
@@ -117,6 +134,11 @@ FLASHMEM Result<FileSystemRpcFrame> FileSystemRpcCodec::decodeFrame(
     if (!reader.readBytes(nameBytes, nameLength)) {
         return Result<FileSystemRpcFrame>::err({ErrorCode::INVALID_ARGUMENT, "truncated rpc name"});
     }
+    const size_t expectedNameLength = std::strlen(expectedName);
+    if (nameLength != expectedNameLength ||
+        std::memcmp(nameBytes, expectedName, expectedNameLength) != 0) {
+        return Result<FileSystemRpcFrame>::err({ErrorCode::INVALID_ARGUMENT, "wrong rpc name"});
+    }
 
     uint8_t schema = 0;
     uint16_t requestId = 0;
@@ -125,7 +147,7 @@ FLASHMEM Result<FileSystemRpcFrame> FileSystemRpcCodec::decodeFrame(
     }
 
     return Result<FileSystemRpcFrame>::ok(FileSystemRpcFrame{
-        static_cast<FileSystemRpcMessageId>(rawMessageId),
+        messageId,
         schema,
         requestId,
         reader.current(),
@@ -356,7 +378,8 @@ FLASHMEM Result<FileSystemRpcStatResponse> FileSystemRpcCodec::decodeStatRespons
     size_t size
 ) {
     auto frame = decodeFrame(data, size);
-    if (!frame || frame.value().messageId != FileSystemRpcMessageId::STAT_RESPONSE) {
+    if (!frame || frame.value().schema != FILESYSTEM_RPC_SCHEMA ||
+        frame.value().messageId != FileSystemRpcMessageId::STAT_RESPONSE) {
         return Result<FileSystemRpcStatResponse>::err({ErrorCode::INVALID_ARGUMENT, "not stat response"});
     }
 
@@ -364,13 +387,16 @@ FLASHMEM Result<FileSystemRpcStatResponse> FileSystemRpcCodec::decodeStatRespons
     uint8_t rawStatus = 0;
     uint8_t rawType = 0;
     uint32_t sizeBytes = 0;
-    if (!reader.readU8(rawStatus)) {
+    if (!reader.readU8(rawStatus) || !validStatus(rawStatus)) {
         return Result<FileSystemRpcStatResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad stat response"});
     }
     if (rawStatus == static_cast<uint8_t>(FileSystemRpcStatus::OK)) {
-        if (!reader.readU8(rawType) || !reader.readU32(sizeBytes)) {
+        if (!reader.readU8(rawType) || !validFileType(rawType) || !reader.readU32(sizeBytes)) {
             return Result<FileSystemRpcStatResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad stat payload"});
         }
+    }
+    if (reader.remaining() != 0U) {
+        return Result<FileSystemRpcStatResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad stat payload"});
     }
     return Result<FileSystemRpcStatResponse>::ok(FileSystemRpcStatResponse{
         frame.value().requestId,
@@ -385,7 +411,8 @@ FLASHMEM Result<FileSystemRpcListResponse> FileSystemRpcCodec::decodeListRespons
     size_t size
 ) {
     auto frame = decodeFrame(data, size);
-    if (!frame || frame.value().messageId != FileSystemRpcMessageId::LIST_RESPONSE) {
+    if (!frame || frame.value().schema != FILESYSTEM_RPC_SCHEMA ||
+        frame.value().messageId != FileSystemRpcMessageId::LIST_RESPONSE) {
         return Result<FileSystemRpcListResponse>::err({ErrorCode::INVALID_ARGUMENT, "not list response"});
     }
 
@@ -393,22 +420,25 @@ FLASHMEM Result<FileSystemRpcListResponse> FileSystemRpcCodec::decodeListRespons
     uint8_t rawStatus = 0;
     FileSystemRpcListResponse response{};
     response.requestId = frame.value().requestId;
-    if (!reader.readU8(rawStatus)) {
+    if (!reader.readU8(rawStatus) || !validStatus(rawStatus)) {
         return Result<FileSystemRpcListResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad list response"});
     }
     response.status = static_cast<FileSystemRpcStatus>(rawStatus);
     if (response.status != FileSystemRpcStatus::OK) {
+        if (reader.remaining() != 0U) {
+            return Result<FileSystemRpcListResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad list payload"});
+        }
         return Result<FileSystemRpcListResponse>::ok(response);
     }
 
-    uint8_t hasMore = 0;
+    bool hasMore = false;
     if (!reader.readU16(response.startIndex) ||
         !reader.readU8(response.entryCount) ||
-        !reader.readU8(hasMore) ||
+        !reader.readBool(hasMore) ||
         response.entryCount > FILESYSTEM_RPC_MAX_LIST_ENTRIES) {
         return Result<FileSystemRpcListResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad list payload"});
     }
-    response.hasMore = hasMore != 0;
+    response.hasMore = hasMore;
 
     for (uint8_t i = 0; i < response.entryCount; ++i) {
         uint8_t rawType = 0;
@@ -419,12 +449,17 @@ FLASHMEM Result<FileSystemRpcListResponse> FileSystemRpcCodec::decodeListRespons
                 oc::interface::FILESYSTEM_MAX_NAME_LENGTH
             ) ||
             !reader.readU8(rawType) ||
+            !validFileType(rawType) ||
             !reader.readU32(response.entries[i].sizeBytes) ||
             !reader.readBool(truncated)) {
             return Result<FileSystemRpcListResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad list entry"});
         }
         response.entries[i].type = static_cast<FileSystemRpcFileType>(rawType);
         response.entries[i].nameTruncated = truncated;
+    }
+
+    if (reader.remaining() != 0U) {
+        return Result<FileSystemRpcListResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad list payload"});
     }
 
     return Result<FileSystemRpcListResponse>::ok(response);
@@ -435,7 +470,8 @@ FLASHMEM Result<FileSystemRpcReadResponse> FileSystemRpcCodec::decodeReadRespons
     size_t size
 ) {
     auto frame = decodeFrame(data, size);
-    if (!frame || frame.value().messageId != FileSystemRpcMessageId::READ_RESPONSE) {
+    if (!frame || frame.value().schema != FILESYSTEM_RPC_SCHEMA ||
+        frame.value().messageId != FileSystemRpcMessageId::READ_RESPONSE) {
         return Result<FileSystemRpcReadResponse>::err({ErrorCode::INVALID_ARGUMENT, "not read response"});
     }
 
@@ -443,19 +479,23 @@ FLASHMEM Result<FileSystemRpcReadResponse> FileSystemRpcCodec::decodeReadRespons
     uint8_t rawStatus = 0;
     FileSystemRpcReadResponse response{};
     response.requestId = frame.value().requestId;
-    if (!reader.readU8(rawStatus)) {
+    if (!reader.readU8(rawStatus) || !validStatus(rawStatus)) {
         return Result<FileSystemRpcReadResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad read response"});
     }
     response.status = static_cast<FileSystemRpcStatus>(rawStatus);
     if (response.status != FileSystemRpcStatus::OK) {
+        if (reader.remaining() != 0U) {
+            return Result<FileSystemRpcReadResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad read payload"});
+        }
         return Result<FileSystemRpcReadResponse>::ok(response);
     }
 
-    if (!reader.readU32(response.offset) || !reader.readU16(response.bytesRead)) {
+    if (!reader.readU32(response.offset) || !reader.readU16(response.bytesRead) ||
+        response.bytesRead > FILESYSTEM_RPC_MAX_CHUNK_SIZE) {
         return Result<FileSystemRpcReadResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad read payload"});
     }
     const uint8_t* bytes = nullptr;
-    if (!reader.readBytes(bytes, response.bytesRead)) {
+    if (!reader.readBytes(bytes, response.bytesRead) || reader.remaining() != 0U) {
         return Result<FileSystemRpcReadResponse>::err({ErrorCode::INVALID_ARGUMENT, "truncated read payload"});
     }
     response.data = bytes;
@@ -469,6 +509,9 @@ FLASHMEM Result<FileSystemRpcWriteResponse> FileSystemRpcCodec::decodeWriteRespo
     auto frame = decodeFrame(data, size);
     if (!frame) {
         return Result<FileSystemRpcWriteResponse>::err(frame.error());
+    }
+    if (frame.value().schema != FILESYSTEM_RPC_SCHEMA) {
+        return Result<FileSystemRpcWriteResponse>::err({ErrorCode::INVALID_ARGUMENT, "not write response"});
     }
     switch (frame.value().messageId) {
         case FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE:
@@ -484,9 +527,9 @@ FLASHMEM Result<FileSystemRpcWriteResponse> FileSystemRpcCodec::decodeWriteRespo
     uint8_t rawStatus = 0;
     FileSystemRpcWriteResponse response{};
     response.requestId = frame.value().requestId;
-    if (!reader.readU8(rawStatus) ||
+    if (!reader.readU8(rawStatus) || !validStatus(rawStatus) ||
         !reader.readU16(response.sessionId) ||
-        !reader.readU16(response.bytesWritten)) {
+        !reader.readU16(response.bytesWritten) || reader.remaining() != 0U) {
         return Result<FileSystemRpcWriteResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad write response"});
     }
     response.status = static_cast<FileSystemRpcStatus>(rawStatus);
@@ -501,6 +544,9 @@ FLASHMEM Result<FileSystemRpcStatusResponse> FileSystemRpcCodec::decodeStatusRes
     if (!frame) {
         return Result<FileSystemRpcStatusResponse>::err(frame.error());
     }
+    if (frame.value().schema != FILESYSTEM_RPC_SCHEMA) {
+        return Result<FileSystemRpcStatusResponse>::err({ErrorCode::INVALID_ARGUMENT, "not status response"});
+    }
     switch (frame.value().messageId) {
         case FileSystemRpcMessageId::MKDIR_RESPONSE:
         case FileSystemRpcMessageId::DELETE_RESPONSE:
@@ -513,7 +559,7 @@ FLASHMEM Result<FileSystemRpcStatusResponse> FileSystemRpcCodec::decodeStatusRes
 
     ByteReader reader(frame.value().payload, frame.value().payloadSize);
     uint8_t rawStatus = 0;
-    if (!reader.readU8(rawStatus) || reader.remaining() != 0) {
+    if (!reader.readU8(rawStatus) || !validStatus(rawStatus) || reader.remaining() != 0U) {
         return Result<FileSystemRpcStatusResponse>::err({ErrorCode::INVALID_ARGUMENT, "bad status response"});
     }
     return Result<FileSystemRpcStatusResponse>::ok(FileSystemRpcStatusResponse{
@@ -528,7 +574,8 @@ FLASHMEM Result<FileSystemRpcCapabilitiesResponse> FileSystemRpcCodec::decodeCap
     size_t size
 ) {
     auto frame = decodeFrame(data, size);
-    if (!frame || frame.value().messageId != FileSystemRpcMessageId::CAPABILITIES_RESPONSE) {
+    if (!frame || frame.value().schema != FILESYSTEM_RPC_SCHEMA ||
+        frame.value().messageId != FileSystemRpcMessageId::CAPABILITIES_RESPONSE) {
         return Result<FileSystemRpcCapabilitiesResponse>::err(
             {ErrorCode::INVALID_ARGUMENT, "not capabilities response"}
         );
@@ -538,13 +585,18 @@ FLASHMEM Result<FileSystemRpcCapabilitiesResponse> FileSystemRpcCodec::decodeCap
     uint8_t rawStatus = 0;
     FileSystemRpcCapabilitiesResponse response{};
     response.requestId = frame.value().requestId;
-    if (!reader.readU8(rawStatus)) {
+    if (!reader.readU8(rawStatus) || !validStatus(rawStatus)) {
         return Result<FileSystemRpcCapabilitiesResponse>::err(
             {ErrorCode::INVALID_ARGUMENT, "bad capabilities response"}
         );
     }
     response.status = static_cast<FileSystemRpcStatus>(rawStatus);
     if (response.status != FileSystemRpcStatus::OK) {
+        if (reader.remaining() != 0U) {
+            return Result<FileSystemRpcCapabilitiesResponse>::err(
+                {ErrorCode::INVALID_ARGUMENT, "bad capabilities payload"}
+            );
+        }
         return Result<FileSystemRpcCapabilitiesResponse>::ok(response);
     }
 

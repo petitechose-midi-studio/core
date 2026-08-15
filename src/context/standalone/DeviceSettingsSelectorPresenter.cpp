@@ -21,6 +21,7 @@ constexpr const char* const FALLBACK_ITEMS[] PROGMEM = {
     "2000 ms"
 };
 constexpr const char* const LOCK_ITEMS[] PROGMEM = {"1", "2", "3", "4", "6", "8", "12", "24"};
+constexpr const char* const NOTE_OCTAVE_ITEMS[] PROGMEM = {"C3", "C4", "C5"};
 
 struct SelectorRenderData {
     const char* title = "";
@@ -33,7 +34,8 @@ struct SelectorRenderData {
 
 FLASHMEM SelectorRenderData buildSelectorRenderData(
     const core::state::DeviceSettingsState& settings,
-    const core::state::MidiSyncState& midiSync
+    const core::state::MidiSyncState& midiSync,
+    const core::state::MidiNoteDisplayState& midiNoteDisplay
 ) {
     SelectorRenderData data{};
     if (settings.flowPhase.get() != core::state::DeviceSettingsFlowPhase::VALUE_SELECTOR ||
@@ -62,6 +64,10 @@ FLASHMEM SelectorRenderData buildSelectorRenderData(
             data.items = LOCK_ITEMS;
             data.itemCount = 8;
             break;
+        case 4:
+            data.items = NOTE_OCTAVE_ITEMS;
+            data.itemCount = 3;
+            break;
         default:
             data.items = MODE_ITEMS;
             data.itemCount = 3;
@@ -69,11 +75,17 @@ FLASHMEM SelectorRenderData buildSelectorRenderData(
     }
 
     data.selectedIndex = settings.selector.selectedIndex.get();
-    data.dataRevision =
-        (static_cast<uint32_t>(row) << 24) |
-        (static_cast<uint32_t>(midiSync.mode.get()) << 16) |
-        (static_cast<uint32_t>(midiSync.followTransport.get() ? 1 : 0) << 12) |
-        (static_cast<uint32_t>(midiSync.autoFallbackMs.get()) & 0x0FFF);
+    data.dataRevision = static_cast<uint32_t>(row);
+    data.dataRevision = data.dataRevision * 31U +
+        static_cast<uint32_t>(midiNoteDisplay.octaveConvention.get());
+    data.dataRevision = data.dataRevision * 31U +
+        static_cast<uint32_t>(midiSync.mode.get());
+    data.dataRevision = data.dataRevision * 31U +
+        static_cast<uint32_t>(midiSync.followTransport.get());
+    data.dataRevision = data.dataRevision * 31U +
+        static_cast<uint32_t>(midiSync.autoFallbackMs.get());
+    data.dataRevision = data.dataRevision * 31U +
+        static_cast<uint32_t>(midiSync.autoLockClockCount.get());
 
     return data;
 }
@@ -105,7 +117,8 @@ FLASHMEM bool DeviceSettingsSelectorPresenter::bind() {
         state_refs_.midiSync.mode,
         state_refs_.midiSync.followTransport,
         state_refs_.midiSync.autoFallbackMs,
-        state_refs_.midiSync.autoLockClockCount
+        state_refs_.midiSync.autoLockClockCount,
+        state_refs_.midiNoteDisplay.octaveConvention
     );
 }
 
@@ -120,7 +133,11 @@ FLASHMEM void DeviceSettingsSelectorPresenter::drainRenderQueue(void* context, u
 }
 
 FLASHMEM void DeviceSettingsSelectorPresenter::renderSelector() {
-    const auto data = buildSelectorRenderData(state_refs_.settings, state_refs_.midiSync);
+    const auto data = buildSelectorRenderData(
+        state_refs_.settings,
+        state_refs_.midiSync,
+        state_refs_.midiNoteDisplay
+    );
     if (!data.visible) {
         selector_overlay_.render({.visible = false});
         return;

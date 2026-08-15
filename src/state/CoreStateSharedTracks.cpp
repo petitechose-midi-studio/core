@@ -84,7 +84,7 @@ bool CoreState::refreshSharedTrackStateFromSequencer() {
 }
 
 FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverSettingsFromRamAfterStorageReopen() {
-    return deviceSettingsStore.reconcileAllStatus(midiSync);
+    return deviceSettingsStore.reconcileAllStatus(midiSync, midiNoteDisplay);
 }
 
 FLASHMEM project::ProjectSaveToken CoreState::requestProjectSessionSave_() {

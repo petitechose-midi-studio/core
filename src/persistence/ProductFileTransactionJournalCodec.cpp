@@ -14,18 +14,18 @@ using oc::type::ErrorCode;
 
 constexpr uint8_t JOURNAL_MAGIC[] PROGMEM = {'P', 'F', 'T', 'X'};
 constexpr uint8_t FLAG_HAD_CURRENT = 0x01U;
-constexpr size_t JOURNAL_V1_HEADER_SIZE = 20U;
-constexpr size_t JOURNAL_V2_HEADER_SIZE = 24U;
+constexpr size_t JOURNAL_PREFIX_SIZE = sizeof(JOURNAL_MAGIC) + 1U;
+constexpr size_t JOURNAL_HEADER_SIZE = 24U;
 constexpr size_t JOURNAL_CHECKSUM_SIZE = sizeof(uint32_t);
 constexpr size_t JOURNAL_MIN_RECORD_SIZE =
-    JOURNAL_V1_HEADER_SIZE + 3U * 2U + JOURNAL_CHECKSUM_SIZE;
+    JOURNAL_HEADER_SIZE + 3U * 2U + JOURNAL_CHECKSUM_SIZE;
 constexpr char RESOLVED_JOURNAL_SLOT_A[] =
     "/midi-studio/tmp/rpc-product-file-a.journal";
 constexpr char RESOLVED_JOURNAL_SLOT_B[] =
     "/midi-studio/tmp/rpc-product-file-b.journal";
 
 static_assert(PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE ==
-              JOURNAL_V2_HEADER_SIZE +
+              JOURNAL_HEADER_SIZE +
                   3U * (1U + oc::interface::FILESYSTEM_MAX_PATH_LENGTH) +
                   JOURNAL_CHECKSUM_SIZE);
 
@@ -152,7 +152,7 @@ FLASHMEM oc::type::Result<JournalSlotObservation> readSlot_(
         return oc::type::Result<JournalSlotObservation>::err(info.error());
     }
     if (info.value().type != oc::interface::FileType::FILE ||
-        info.value().sizeBytes < JOURNAL_MIN_RECORD_SIZE ||
+        info.value().sizeBytes < JOURNAL_PREFIX_SIZE ||
         info.value().sizeBytes > PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE) {
         return oc::type::Result<JournalSlotObservation>::ok(
             {JournalSlotState::CORRUPT, 0}
@@ -180,17 +180,12 @@ FLASHMEM oc::type::Result<JournalSlotObservation> readSlot_(
         );
     }
     const uint8_t version = encoded[4];
-    if (version != PRODUCT_FILE_JOURNAL_LEGACY_VERSION &&
-        version != PRODUCT_FILE_JOURNAL_VERSION) {
+    if (version != PRODUCT_FILE_JOURNAL_VERSION) {
         return oc::type::Result<JournalSlotObservation>::ok(
             {JournalSlotState::UNSUPPORTED, 0}
         );
     }
-    const size_t headerSize = version == PRODUCT_FILE_JOURNAL_VERSION
-        ? JOURNAL_V2_HEADER_SIZE
-        : JOURNAL_V1_HEADER_SIZE;
-    if (info.value().sizeBytes <
-        headerSize + 3U * 2U + JOURNAL_CHECKSUM_SIZE) {
+    if (info.value().sizeBytes < JOURNAL_MIN_RECORD_SIZE) {
         return oc::type::Result<JournalSlotObservation>::ok(
             {JournalSlotState::CORRUPT, 0}
         );
@@ -217,9 +212,7 @@ FLASHMEM oc::type::Result<JournalSlotObservation> readSlot_(
     }
     const uint64_t sequence = readU64LE(encoded + 8U);
     const uint32_t expectedSize = readU32LE(encoded + 16U);
-    const uint32_t expectedCrc32 = version == PRODUCT_FILE_JOURNAL_VERSION
-        ? readU32LE(encoded + 20U)
-        : 0U;
+    const uint32_t expectedCrc32 = readU32LE(encoded + 20U);
     if (sequence == 0U) {
         return oc::type::Result<JournalSlotObservation>::ok(
             {JournalSlotState::CORRUPT, 0}
@@ -228,7 +221,7 @@ FLASHMEM oc::type::Result<JournalSlotObservation> readSlot_(
 
     size_t offsets[PATH_COUNT] = {};
     uint8_t lengths[PATH_COUNT] = {};
-    size_t cursor = headerSize;
+    size_t cursor = JOURNAL_HEADER_SIZE;
     const size_t payloadEnd = info.value().sizeBytes - JOURNAL_CHECKSUM_SIZE;
     for (uint8_t index = 0; index < PATH_COUNT; ++index) {
         if (cursor >= payloadEnd) {
@@ -266,7 +259,6 @@ FLASHMEM oc::type::Result<JournalSlotObservation> readSlot_(
     workspace.sequence = sequence;
     workspace.expectedSize = expectedSize;
     workspace.expectedCrc32 = expectedCrc32;
-    workspace.hasExpectedCrc32 = version == PRODUCT_FILE_JOURNAL_VERSION;
     workspace.activeSlot = slot;
 
     auto validPaths = validateStoredPaths(files, workspace);
@@ -317,14 +309,8 @@ FLASHMEM oc::type::Result<void> persistPhase(
         );
     }
 
-    const uint8_t version = workspace.hasExpectedCrc32
-        ? PRODUCT_FILE_JOURNAL_VERSION
-        : PRODUCT_FILE_JOURNAL_LEGACY_VERSION;
-    const size_t headerSize = workspace.hasExpectedCrc32
-        ? JOURNAL_V2_HEADER_SIZE
-        : JOURNAL_V1_HEADER_SIZE;
     uint8_t pathLengths[PATH_COUNT] = {};
-    size_t recordSize = headerSize + JOURNAL_CHECKSUM_SIZE;
+    size_t recordSize = JOURNAL_HEADER_SIZE + JOURNAL_CHECKSUM_SIZE;
     for (uint8_t index = 0; index < PATH_COUNT; ++index) {
         const size_t length = std::strlen(workspace.storage.paths[index]);
         if (length == 0U || length > oc::interface::FILESYSTEM_MAX_PATH_LENGTH) {
@@ -347,16 +333,14 @@ FLASHMEM oc::type::Result<void> persistPhase(
         : inactiveSlot(workspace.activeSlot);
     uint8_t record[PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE] = {};
     std::memcpy(record, JOURNAL_MAGIC, sizeof(JOURNAL_MAGIC));
-    record[4] = version;
+    record[4] = PRODUCT_FILE_JOURNAL_VERSION;
     record[5] = static_cast<uint8_t>(phase);
     record[6] = workspace.hadCurrent ? FLAG_HAD_CURRENT : 0U;
     writeU64LE(record + 8U, nextSequence);
     writeU32LE(record + 16U, workspace.expectedSize);
-    if (workspace.hasExpectedCrc32) {
-        writeU32LE(record + 20U, workspace.expectedCrc32);
-    }
+    writeU32LE(record + 20U, workspace.expectedCrc32);
 
-    size_t cursor = headerSize;
+    size_t cursor = JOURNAL_HEADER_SIZE;
     for (uint8_t index = 0; index < PATH_COUNT; ++index) {
         const uint8_t length = pathLengths[index];
         record[cursor++] = length;
@@ -512,56 +496,6 @@ FLASHMEM RecoveryAction decideRecovery(
     bool tmpValid,
     FileState backup
 ) {
-    if (!workspace.hasExpectedCrc32) {
-        if (workspace.phase == ProductFileTransactionPhase::ROLLED_BACK) {
-            if (workspace.hadCurrent) {
-                if (backup.exists) {
-                    return final.exists
-                        ? RecoveryAction::REMOVE_CURRENT_AND_RESTORE_BACKUP
-                        : RecoveryAction::RESTORE_BACKUP;
-                }
-                return final.exists ? RecoveryAction::FINISH_ROLLED_BACK
-                                    : RecoveryAction::FAIL_CORRUPT;
-            }
-            return final.exists
-                ? RecoveryAction::REMOVE_CURRENT_AND_ROLL_BACK
-                : RecoveryAction::FINISH_ROLLED_BACK;
-        }
-        if (workspace.phase == ProductFileTransactionPhase::COMMITTED) {
-            if (final.exists && final.size == workspace.expectedSize) {
-                return RecoveryAction::FINISH_COMMITTED;
-            }
-            if (workspace.hadCurrent && backup.exists) {
-                return final.exists
-                    ? RecoveryAction::REMOVE_CURRENT_AND_RESTORE_BACKUP
-                    : RecoveryAction::RESTORE_BACKUP;
-            }
-            if (!workspace.hadCurrent) {
-                return final.exists
-                    ? RecoveryAction::REMOVE_CURRENT_AND_ROLL_BACK
-                    : RecoveryAction::FINISH_ROLLED_BACK;
-            }
-            return RecoveryAction::FAIL_CORRUPT;
-        }
-
-        // V1 has no content predicate. Preserve atomicity by selecting the old
-        // state; an unverified temporary is never promoted by newer firmware.
-        if (!workspace.hadCurrent) {
-            return final.exists ? RecoveryAction::REMOVE_CURRENT_AND_ROLL_BACK
-                                : RecoveryAction::FINISH_ROLLED_BACK;
-        }
-        if (backup.exists) {
-            return final.exists
-                ? RecoveryAction::REMOVE_CURRENT_AND_RESTORE_BACKUP
-                : RecoveryAction::RESTORE_BACKUP;
-        }
-        if (workspace.phase == ProductFileTransactionPhase::PREPARED &&
-            final.exists) {
-            return RecoveryAction::FINISH_ROLLED_BACK;
-        }
-        return RecoveryAction::FAIL_CORRUPT;
-    }
-
     if (workspace.phase == ProductFileTransactionPhase::ROLLED_BACK) {
         if (workspace.hadCurrent) {
             if (backup.exists) {

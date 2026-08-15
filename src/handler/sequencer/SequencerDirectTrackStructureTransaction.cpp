@@ -7,6 +7,7 @@
 
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureSelectionOps.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::handler {
@@ -458,7 +459,11 @@ FLASHMEM PlanOutcome buildPlan(
             SequencerActiveTrackIncomingOwnerPolicy::Preserve;
         if (!fillActiveChangeFocus(
                 context,
-                context.state.tracks.track(mutation.nextActive).length.get(),
+                core::state::sequencer::canonicalTrackPattern(
+                    context.state.tracks,
+                    context.state.sequencer,
+                    mutation.nextActive
+                ).length.get(),
                 plan
             )) {
             return PlanOutcome::Invalid;
@@ -485,9 +490,11 @@ FLASHMEM PlanOutcome buildPlan(
         );
         plan.incomingOwnerPolicy = core::state::sequencer::
             SequencerActiveTrackIncomingOwnerPolicy::Preserve;
-        const uint8_t incomingLength = mutation.nextActive == beforeActive
-            ? context.state.sequencer.pattern.length.get()
-            : context.state.tracks.track(mutation.nextActive).length.get();
+        const uint8_t incomingLength = core::state::sequencer::canonicalTrackPattern(
+            context.state.tracks,
+            context.state.sequencer,
+            mutation.nextActive
+        ).length.get();
         if (!fillActiveChangeFocus(
                 context,
                 incomingLength,

@@ -17,6 +17,7 @@
 
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #if !defined(MS_PROJECT_STORE_SMOKE)
 #include <ms/device_support/v1/Buffers.hpp>
 #include <ms/device_support/v1/Display.hpp>

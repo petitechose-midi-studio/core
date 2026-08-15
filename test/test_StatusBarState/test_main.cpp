@@ -5,7 +5,6 @@
 
 #include <oc/time/Time.hpp>
 
-#include "../../src/config/Timing.hpp"
 #include "../../src/state/StatusBarState.hpp"
 
 namespace {
@@ -23,10 +22,10 @@ void test_sync_input_explicit_time_expires_cleanly_across_wraparound() {
     state.pulseSyncInput(start);
     assert(state.syncInputPulse.get());
 
-    state.updateTransient(start + Config::Timing::STATUS_MIDI_PULSE_MS - 1);
+    state.updateTransient(start + core::state::StatusBarState::MIDI_PULSE_MS - 1U);
     assert(state.syncInputPulse.get());
 
-    state.updateTransient(start + Config::Timing::STATUS_MIDI_PULSE_MS);
+    state.updateTransient(start + core::state::StatusBarState::MIDI_PULSE_MS);
     assert(!state.syncInputPulse.get());
 
     std::cout << "[PASS] test_sync_input_explicit_time_expires_cleanly_across_wraparound\n";
@@ -44,10 +43,10 @@ void test_track_note_pulse_targets_only_requested_track() {
         assert(state.trackNoteActivity[i].get() == expected);
     }
 
-    state.updateTransient(nowMs + Config::Timing::STATUS_MIDI_PULSE_MS - 1);
+    state.updateTransient(nowMs + core::state::StatusBarState::MIDI_PULSE_MS - 1U);
     assert(state.trackNoteActivity[2].get() == 96);
 
-    state.updateTransient(nowMs + Config::Timing::STATUS_MIDI_PULSE_MS);
+    state.updateTransient(nowMs + core::state::StatusBarState::MIDI_PULSE_MS);
     assert(state.trackNoteActivity[2].get() == 0);
 
     std::cout << "[PASS] test_track_note_pulse_targets_only_requested_track\n";
@@ -63,18 +62,18 @@ void test_explicit_note_out_and_beat_pulses_do_not_depend_on_global_clock() {
     assert(state.noteOutActive.get());
     assert(state.beatPulse.get());
 
-    state.updateTransient(nowMs + Config::Timing::STATUS_MIDI_PULSE_MS - 1);
+    state.updateTransient(nowMs + core::state::StatusBarState::MIDI_PULSE_MS - 1U);
     assert(state.noteOutActive.get());
     assert(state.beatPulse.get());
 
-    state.updateTransient(nowMs + Config::Timing::STATUS_MIDI_PULSE_MS);
+    state.updateTransient(nowMs + core::state::StatusBarState::MIDI_PULSE_MS);
     assert(!state.noteOutActive.get());
     assert(state.beatPulse.get());
 
-    state.updateTransient(nowMs + Config::Timing::STATUS_BEAT_PULSE_MS - 1);
+    state.updateTransient(nowMs + core::state::StatusBarState::BEAT_PULSE_MS - 1U);
     assert(state.beatPulse.get());
 
-    state.updateTransient(nowMs + Config::Timing::STATUS_BEAT_PULSE_MS);
+    state.updateTransient(nowMs + core::state::StatusBarState::BEAT_PULSE_MS);
     assert(!state.beatPulse.get());
 
     std::cout << "[PASS] test_explicit_note_out_and_beat_pulses_do_not_depend_on_global_clock\n";

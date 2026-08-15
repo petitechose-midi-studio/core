@@ -12,6 +12,8 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 #include <config/App.hpp>
+#include <config/InputIDs.hpp>
+#include <config/Timing.hpp>
 #include "../../src/handler/macro/MacroEditDomainServices.hpp"
 #include "../../src/handler/macro/MacroEditHandler.hpp"
 #include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"

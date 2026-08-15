@@ -8,7 +8,6 @@
 #include "app/OverlayTypes.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
-#include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 
 namespace core::handler {
@@ -23,7 +22,6 @@ class MacroPerformanceModeWorkflow {
 public:
     struct StateRefs {
         core::state::macro::MacroUiState& macroUi;
-        core::state::macro::MacroPagesState& pages;
         core::state::TrackNavigationState& trackNavigation;
     };
 
@@ -48,7 +46,6 @@ private:
     void configureNormalizedEncoder(Config::EncoderID id);
 
     core::state::macro::MacroUiState& macro_ui_;
-    core::state::macro::MacroPagesState& pages_;
     core::state::TrackNavigationState& track_ui_;
     MacroPerformanceDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;

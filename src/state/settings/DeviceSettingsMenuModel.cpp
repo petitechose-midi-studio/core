@@ -6,7 +6,9 @@
 namespace core::state::settings {
 namespace {
 
-constexpr const char* const ROW_LABELS[] PROGMEM = {"Mode", "Follow", "Timeout", "Lock"};
+constexpr const char* const ROW_LABELS[] PROGMEM = {
+    "Mode", "Follow", "Timeout", "Lock", "Middle C"
+};
 
 FLASHMEM const char* modeLabel(core::state::MidiSyncMode mode) {
     switch (mode) {
@@ -71,13 +73,20 @@ FLASHMEM DeviceSettingsMenuPage buildDeviceSettingsMenuPage(
         {.label = ROW_LABELS[1], .value = context.followTransport ? "ON" : "OFF"},
         {.label = ROW_LABELS[2], .value = page.valueBuffers[0].data()},
         {.label = ROW_LABELS[3], .value = page.valueBuffers[1].data()},
+        {
+            .label = ROW_LABELS[4],
+            .value = core::midi::noteOctaveConventionLabel(
+                context.noteOctaveConvention
+            )
+        },
     }};
 
     page.dataRevision =
-        (static_cast<uint32_t>(context.mode) << 24) |
-        (static_cast<uint32_t>(context.followTransport ? 1 : 0) << 20) |
-        (static_cast<uint32_t>(context.autoFallbackMs) << 4) |
-        (static_cast<uint32_t>(context.autoLockClockCount) & 0x0F);
+        (static_cast<uint32_t>(context.mode) << 29) |
+        (static_cast<uint32_t>(context.followTransport ? 1 : 0) << 28) |
+        (static_cast<uint32_t>(context.noteOctaveConvention) << 26) |
+        (static_cast<uint32_t>(context.autoFallbackMs) << 5) |
+        (static_cast<uint32_t>(context.autoLockClockCount) & 0x1F);
 
     return page;
 }

@@ -27,6 +27,8 @@ struct DeviceSettingsValueSelectorState {
 };
 
 struct DeviceSettingsState {
+    static constexpr uint8_t ROW_COUNT = 5;
+
     oc::state::Signal<bool> visible{false};
     oc::state::Signal<uint8_t> focusedRow{0};
     oc::state::Signal<DeviceSettingsFlowPhase, 4> flowPhase{

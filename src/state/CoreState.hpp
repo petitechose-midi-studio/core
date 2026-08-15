@@ -18,6 +18,7 @@
 #include "DeviceSettingsState.hpp"
 #include "MacroEditState.hpp"
 #include "MacroState.hpp"
+#include "MidiNoteDisplayState.hpp"
 #include "MidiSyncState.hpp"
 #include "PatternPitchSettingsState.hpp"
 #include "StatusBarState.hpp"
@@ -272,6 +273,7 @@ struct UiSystemState {
     ViewSelectorState viewSelector;
     StatusBarState statusBar;
     MidiSyncState midiSync;
+    MidiNoteDisplayState midiNoteDisplay;
     DeviceSettingsState deviceSettings;
     PatternPitchSettingsState patternPitchSettings;
     MacroEditState macroEdit;
@@ -346,6 +348,7 @@ public:
     ViewSelectorState& viewSelector;
     StatusBarState& statusBar;
     MidiSyncState& midiSync;
+    MidiNoteDisplayState& midiNoteDisplay;
     DeviceSettingsState& deviceSettings;
     PatternPitchSettingsState& patternPitchSettings;
     MacroEditState& macroEdit;
@@ -355,7 +358,7 @@ public:
 
     /**
      * @brief Construct with storage backend
-     * @param deviceSettingsStorage Durable device-settings storage (MIDI sync)
+     * @param deviceSettingsStorage Durable controller-settings storage
      */
     explicit CoreState(oc::interface::IStorage& deviceSettingsStorage);
     ~CoreState();

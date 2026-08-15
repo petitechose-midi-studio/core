@@ -9,6 +9,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/DeviceSettingsState.hpp"
+#include "state/MidiNoteDisplayState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/settings/DeviceSettingsMenuModel.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
@@ -21,6 +22,7 @@ public:
     struct StateRefs {
         const core::state::DeviceSettingsState& settings;
         const core::state::MidiSyncState& midiSync;
+        const core::state::MidiNoteDisplayState& midiNoteDisplay;
     };
 
     DeviceSettingsView(lv_obj_t* parent, StateRefs stateRefs);
@@ -41,7 +43,7 @@ private:
     static void drainRender(void* context, uint32_t flags);
 
     StateRefs state_refs_;
-    oc::state::StaticWatchGroup<8> watcher_;
+    oc::state::StaticWatchGroup<9> watcher_;
     core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
         render_scheduler_;
 

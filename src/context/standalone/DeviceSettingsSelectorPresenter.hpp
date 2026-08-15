@@ -3,6 +3,7 @@
 #include <oc/state/StaticSignalWatcher.hpp>
 
 #include "state/DeviceSettingsState.hpp"
+#include "state/MidiNoteDisplayState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
 
@@ -17,6 +18,7 @@ public:
     struct StateRefs {
         core::state::DeviceSettingsState& settings;
         core::state::MidiSyncState& midiSync;
+        core::state::MidiNoteDisplayState& midiNoteDisplay;
     };
 
     DeviceSettingsSelectorPresenter(StateRefs stateRefs,
@@ -35,7 +37,7 @@ private:
     StateRefs state_refs_;
     ms::ui::VirtualListSelectorOverlay& selector_overlay_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
-    oc::state::StaticWatchGroup<7> selector_watcher_;
+    oc::state::StaticWatchGroup<8> selector_watcher_;
 };
 
 }  // namespace core::context::standalone

@@ -18,7 +18,6 @@
 #include "ui/sequencer/StepGridRenderPlanner.hpp"
 #include "ui/sequencer/StepGridWidgets.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
-#include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -911,7 +910,7 @@ FLASHMEM void StepGrid::createTiles() {
             note_layer_,
             tiles_[i],
             note_labels_[i],
-            original_note_labels_[i],
+            secondary_labels_[i],
             step_inline_icons_[i],
             step_buttons_[i],
             geometry_.inlineIconWidth[i],
@@ -1174,32 +1173,26 @@ void StepGrid::renderTile(
     renderTileIndex(tileIndex, state, diff);
 
     if (noteLabelNeedsRender) {
-        const auto propertyVisual = sequencer::visual::buildStepPropertyVisual(
-            frameState.activeProperty,
-            state.inPattern
-        );
-
         grid::label_renderer::renderTileNoteLabel(
-            tileIndex,
             render_cache_.tiles[tileIndex],
-            note_labels_[tileIndex],
-            original_note_labels_[tileIndex],
-            step_inline_icons_[tileIndex],
+            {
+                .primary = note_labels_[tileIndex],
+                .secondary = secondary_labels_[tileIndex],
+                .inlineIcon = step_inline_icons_[tileIndex],
+            },
             state,
             diff,
             propertyVisualChanged,
             tileFeedbackChanged,
             geometryChanged,
-            frameState.activeProperty,
-            frameState.presentation,
-            frameState.accentColor,
-            render_cache_.feedback,
-            propertyVisual,
-            geometry_.noteBaseX[tileIndex],
-            noteLabelY,
-            geometry_.noteLabelHeight,
-            geometry_.inlineIconWidth[tileIndex],
-            geometry_.inlineIconHeight[tileIndex]
+            frameState,
+            {
+                .baseX = geometry_.noteBaseX[tileIndex],
+                .baselineY = noteLabelY,
+                .labelHeight = geometry_.noteLabelHeight,
+                .iconWidth = geometry_.inlineIconWidth[tileIndex],
+                .iconHeight = geometry_.inlineIconHeight[tileIndex],
+            }
         );
     }
 
@@ -1211,33 +1204,7 @@ void StepGrid::renderTile(
         );
     }
 
-    cache.initialized = true;
-    cache.absoluteStep = state.absoluteStep;
-    cache.inPattern = state.inPattern;
-    cache.enabled = state.enabled;
-    cache.stepSelectionActive = state.stepSelectionActive;
-    cache.stepSelectionCursor = state.stepSelectionCursor;
-    cache.stepSelectionSelected = state.stepSelectionSelected;
-    cache.stepPastePreviewActive = state.stepPastePreviewActive;
-    cache.stepPastePreview = state.stepPastePreview;
-    cache.playheadVisible = state.playheadVisible;
-    cache.playheadProgress = state.playheadProgress;
-    cache.playing = state.playing;
-    cache.probabilityCycleActive = state.probabilityCycleActive;
-    cache.note = state.note;
-    cache.velocity = state.velocity;
-    cache.probability = state.probability;
-    cache.gate = state.gate;
-    cache.nudge = state.nudge;
-    cache.childContentContext = state.childContentContext;
-    cache.childContentOffset = state.childContentOffset;
-    cache.childContentNoteOffsetUsesScaleDegrees = state.childContentNoteOffsetUsesScaleDegrees;
-    cache.childPitchSummaryVisible = state.childPitchSummaryVisible;
-    cache.childPitchSummaryNote = state.childPitchSummaryNote;
-    cache.variation = state.variation;
-    cache.contentBadges = state.contentBadges;
-    cache.noteEvents = state.noteEvents;
-
+    cache.commitRenderedState(state);
 }
 
 void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {

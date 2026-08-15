@@ -7,8 +7,9 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "state/sequencer/SequencerStepContentDraftSession.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftSession.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::handler {
 namespace {
@@ -177,9 +178,11 @@ FLASHMEM bool PreparedSequencerTrackStructureTransaction::
         const uint16_t bit = trackBit(track);
         if ((capturedMask & bit) == 0U) continue;
         if (outCount >= out.size()) return false;
-        const auto& live = track == tracks.activeTrackIndex()
-            ? sequencer.pattern
-            : tracks.track(track);
+        const auto& live = core::state::sequencer::canonicalTrackPattern(
+            tracks,
+            sequencer,
+            track
+        );
         out[outCount++] = {
             live.graph.get(),
             live.ccLanes.get(),
@@ -200,9 +203,11 @@ FLASHMEM bool PreparedSequencerTrackStructureTransaction::
     for (uint8_t index = 0U; index < count; ++index) {
         const auto& identity = expected[index];
         if (identity.track >= TrackBank::TRACK_COUNT) return false;
-        const auto& live = identity.track == tracks.activeTrackIndex()
-            ? sequencer.pattern
-            : tracks.track(identity.track);
+        const auto& live = core::state::sequencer::canonicalTrackPattern(
+            tracks,
+            sequencer,
+            identity.track
+        );
         if (live.graph.get() != identity.graph ||
             live.ccLanes.get() != identity.ccLanes) {
             return false;

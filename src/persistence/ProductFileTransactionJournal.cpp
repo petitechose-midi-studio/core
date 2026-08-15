@@ -24,7 +24,7 @@ using product_file_transaction::TMP_PATH;
 
 namespace {
 
-// Synchronous asset and legacy boot recovery share the global mutation lease,
+// Synchronous asset and boot recovery share the global mutation lease,
 // so one cold PSRAM scratch is sufficient and avoids a 512-byte RAM1 stack
 // spike. Cooperative Project/RPC/recovery paths retain and supply their own
 // PSRAM scratch instead.
@@ -191,23 +191,21 @@ FLASHMEM oc::type::Result<void> promoteTemporary(
             flushed.error()
         );
     }
-    if (workspace.hasExpectedCrc32) {
-        auto valid = payloadMatches(
-            files,
-            lease,
-            workspace.path(FINAL_PATH),
-            workspace.expectedSize,
-            workspace.expectedCrc32
-        );
-        if (!valid) return oc::type::Result<void>::err(valid.error());
-        if (!valid.value()) {
-            if (workspace.hadCurrent) {
-                return restoreBackup(files, lease, workspace, true);
-            }
-            auto removed = files.remove(lease, workspace.path(FINAL_PATH));
-            if (!removed) return removed;
-            return finishRolledBack(files, lease, workspace);
+    auto valid = payloadMatches(
+        files,
+        lease,
+        workspace.path(FINAL_PATH),
+        workspace.expectedSize,
+        workspace.expectedCrc32
+    );
+    if (!valid) return oc::type::Result<void>::err(valid.error());
+    if (!valid.value()) {
+        if (workspace.hadCurrent) {
+            return restoreBackup(files, lease, workspace, true);
         }
+        auto removed = files.remove(lease, workspace.path(FINAL_PATH));
+        if (!removed) return removed;
+        return finishRolledBack(files, lease, workspace);
     }
     auto phase = persistPhase(
         files,
@@ -245,8 +243,7 @@ FLASHMEM oc::type::Result<void> recoverSelected(
     const FileState backup = backupResult.value();
     bool finalValid = false;
     bool tmpValid = false;
-    if (workspace.hasExpectedCrc32 && final.exists &&
-        final.size == workspace.expectedSize) {
+    if (final.exists && final.size == workspace.expectedSize) {
         auto valid = payloadMatches(
             files,
             lease,
@@ -257,8 +254,7 @@ FLASHMEM oc::type::Result<void> recoverSelected(
         if (!valid) return oc::type::Result<void>::err(valid.error());
         finalValid = valid.value();
     }
-    if (workspace.hasExpectedCrc32 && tmp.exists &&
-        tmp.size == workspace.expectedSize) {
+    if (tmp.exists && tmp.size == workspace.expectedSize) {
         auto valid = payloadMatches(
             files,
             lease,
@@ -459,7 +455,6 @@ static FLASHMEM oc::type::Result<void> commitWithWorkspace(
     if (!normalized) return normalized;
     workspace.expectedSize = expectedSize;
     workspace.expectedCrc32 = expectedCrc32;
-    workspace.hasExpectedCrc32 = true;
 
     auto tmpInfo = inspectFile(files, lease, workspace.path(TMP_PATH));
     if (!tmpInfo) return oc::type::Result<void>::err(tmpInfo.error());

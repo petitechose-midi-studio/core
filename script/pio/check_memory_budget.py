@@ -18,21 +18,11 @@ sys.path.insert(0, str(DEV_SCRIPT_DIR))
 RELEASE_SCRIPT_DIR = Path(pio_env["PROJECT_DIR"]) / "script" / "release"
 sys.path.insert(0, str(RELEASE_SCRIPT_DIR))
 
-from teensy_memory_budget import (  # noqa: E402
-    TeensyMemoryBudget,
-    budget_violations,
-    parse_teensy_size,
-    summary,
-)
 from teensy_diagnostics_placement import (  # noqa: E402
     diagnostics_placement_violations,
     normal_build_diagnostics_violations,
 )
 from teensy_product_placement import product_placement_violations  # noqa: E402
-from teensy_elf_topology import (  # noqa: E402
-    topology_summary,
-    topology_violations,
-)
 from teensy_post_link_gate_v1 import (  # noqa: E402
     POST_LINK_GATE_INTERFACE_VERSION,
     TeensyPostLinkResult,
@@ -40,10 +30,6 @@ from teensy_post_link_gate_v1 import (  # noqa: E402
     format_summary as format_post_link_summary,
     load_product_policy,
 )
-
-
-def project_option(action_env, name: str, default: int) -> int:
-    return int(action_env.GetProjectOption(name, str(default)))
 
 
 def project_flag(action_env, name: str, default: bool = False) -> bool:
@@ -193,48 +179,34 @@ def check_memory_budget(target, source, env) -> None:
     if result.returncode != 0:
         raise RuntimeError(f"teensy_size failed for {elf_path}:\n{output}")
 
-    usage = parse_teensy_size(output)
-    budget = TeensyMemoryBudget(
-        ram1_min_free=project_option(env, "custom_ram1_min_free", 114688),
-        ram1_code_max=project_option(env, "custom_ram1_code_max", 294912),
-        ram2_min_free=project_option(env, "custom_ram2_min_free", 196608),
-        extram_capacity=project_option(env, "custom_extram_capacity", 8388608),
-        extram_min_free=project_option(env, "custom_extram_min_free", 2097152),
-    )
-    print(summary(usage, budget))
     section_metadata, symbol_metadata = elf_topology_metadata(env, elf_path)
-    topology_errors = topology_violations(section_metadata, symbol_metadata)
-    if not topology_errors:
-        print(topology_summary(section_metadata, symbol_metadata))
-    violations = budget_violations(usage, budget) + elf_placement_violations(
-        env,
-        elf_path,
-    ) + topology_errors
     profile_path = project_path(env, "custom_post_link_profile")
-    if profile_path is not None:
-        vector = project_text(env, "custom_post_link_vector") or None
-        policy = load_product_policy(profile_path, vector)
-        post_link_result = evaluate_post_link(
-            policy,
-            output,
-            section_metadata,
-            symbol_metadata,
-        )
-        write_post_link_evidence(
-            elf_path,
-            profile_path,
-            output,
-            section_metadata,
-            symbol_metadata,
-            post_link_result,
-        )
-        print(format_post_link_summary(post_link_result))
-        for advisory in post_link_result.advisories:
-            print(f"  ! {advisory}")
-        violations += post_link_result.violations
-        map_path = elf_path.with_suffix(".map")
-        if not map_path.is_file():
-            violations += (f"release link map was not produced: {map_path}",)
+    if profile_path is None:
+        raise RuntimeError("custom_post_link_profile is required")
+    vector = project_text(env, "custom_post_link_vector") or None
+    policy = load_product_policy(profile_path, vector)
+    post_link_result = evaluate_post_link(
+        policy,
+        output,
+        section_metadata,
+        symbol_metadata,
+    )
+    write_post_link_evidence(
+        elf_path,
+        profile_path,
+        output,
+        section_metadata,
+        symbol_metadata,
+        post_link_result,
+    )
+    print(format_post_link_summary(post_link_result))
+    for advisory in post_link_result.advisories:
+        print(f"  ! {advisory}")
+    violations = elf_placement_violations(env, elf_path)
+    violations += post_link_result.violations
+    map_path = elf_path.with_suffix(".map")
+    if not map_path.is_file():
+        violations += (f"post-link map was not produced: {map_path}",)
     if violations:
         details = "\n".join(f"  - {item}" for item in violations)
         raise RuntimeError(
@@ -243,9 +215,10 @@ def check_memory_budget(target, source, env) -> None:
 
 
 configured_profile = project_path(pio_env, "custom_post_link_profile")
-if configured_profile is not None:
-    map_path = Path(pio_env.subst("$BUILD_DIR/${PROGNAME}.map")).resolve()
-    pio_env.Append(LINKFLAGS=[f"-Wl,-Map={map_path}"])
+if configured_profile is None:
+    raise RuntimeError("custom_post_link_profile is required")
+map_path = Path(pio_env.subst("$BUILD_DIR/${PROGNAME}.map")).resolve()
+pio_env.Append(LINKFLAGS=[f"-Wl,-Map={map_path}"])
 
 
 pio_env.AddPostAction(

@@ -210,13 +210,6 @@ FLASHMEM const char* scaleDegreeLabel(int degree) {
         : "";
 }
 
-FLASHMEM int scaleDegreeIndex(const TileRenderState& state) {
-    return scaleDegreeIndexForNote(
-        state.variation.resolved.scaleSettings,
-        state.variation.resolved.resolved.note
-    );
-}
-
 FLASHMEM bool hasRuntimePitchFeedback(const TileRenderState& state) {
     return state.variation.visible &&
            state.variation.deltaVisible &&
@@ -271,32 +264,6 @@ FLASHMEM bool hasRuntimePropertyFeedback(
     return false;
 }
 
-FLASHMEM bool hasOutOfScaleFeedback(const TileRenderState& state) {
-    return state.variation.visible &&
-           state.variation.deltaVisible &&
-           !state.variation.resolved.scale.inputInScale &&
-           !state.variation.resolved.scale.constrained;
-}
-
-FLASHMEM bool hasScaleDegreeFeedback(const TileRenderState& state) {
-    if (!state.variation.visible || !state.variation.deltaVisible) return false;
-    auto settings = state.variation.resolved.scaleSettings;
-    settings.clamp();
-    return settings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic &&
-           oc::note::sequencer::scaleContainsNote(
-               settings,
-               state.variation.resolved.resolved.note
-           ) &&
-           scaleDegreeIndex(state) >= 0;
-}
-
-FLASHMEM bool hasConstrainedScaleDegreeFeedback(const TileRenderState& state) {
-    if (!hasScaleDegreeFeedback(state)) return false;
-    auto settings = state.variation.resolved.scaleSettings;
-    settings.clamp();
-    return settings.isConstrained();
-}
-
 FLASHMEM uint8_t runtimePitchDisplayNote(const TileRenderState& state) {
     return hasRuntimePitchFeedback(state)
         ? state.variation.resolved.resolved.note
@@ -319,11 +286,6 @@ FLASHMEM int8_t runtimeNudgeDisplayValue(const TileRenderState& state) {
     return hasRuntimeNudgeFeedback(state)
         ? state.variation.resolved.resolved.nudge
         : state.nudge;
-}
-
-FLASHMEM const char* runtimeScaleDegreeLabel(const TileRenderState& state) {
-    const int degree = scaleDegreeIndex(state);
-    return scaleDegreeLabel(degree);
 }
 
 bool sameVariationState(const TileVariationRenderState& lhs,

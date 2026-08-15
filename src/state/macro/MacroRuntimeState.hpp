@@ -32,12 +32,6 @@ struct MacroManualOverrideState {
         float value = 0.0f;
     };
 
-    struct Snapshot {
-        uint32_t revision = 0;
-        uint8_t entryCount = 0;
-        std::array<Entry, CAPACITY> entries{};
-    };
-
     uint8_t entryCount = 0;
     std::array<Entry, CAPACITY> entries{};
     uint32_t revision = 0;
@@ -48,8 +42,6 @@ struct MacroManualOverrideState {
     [[nodiscard]] bool activeFor(const MacroAutomationSlotAddress& address) const;
     [[nodiscard]] bool valueFor(const MacroAutomationSlotAddress& address,
                                 float& outValue) const;
-    [[nodiscard]] bool captureSnapshot(Snapshot& out) const;
-
     ActivateStatus activate(const MacroAutomationSlotAddress& address, float value);
     bool resume(const MacroAutomationSlotAddress& address);
     bool clearAddress(const MacroAutomationSlotAddress& address);
@@ -68,8 +60,6 @@ private:
 };
 
 static_assert(std::is_trivially_copyable_v<MacroManualOverrideState::Entry>);
-static_assert(std::is_trivially_copyable_v<MacroManualOverrideState::Snapshot>);
 static_assert(sizeof(MacroManualOverrideState) <= 1024U);
-static_assert(sizeof(MacroManualOverrideState::Snapshot) <= 1024U);
 
 }  // namespace core::state::macro

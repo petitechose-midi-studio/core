@@ -60,6 +60,28 @@ static_assert(
     "active-Track rotation must remain a bounded native plan"
 );
 
+/**
+ * Resolves the canonical Pattern for a Track.
+ *
+ * The retained editor owns the active Track; its matching bank slot is only
+ * rotation scratch. Inactive Tracks remain canonical in the bank.
+ */
+[[nodiscard]] const SequencerPatternState& canonicalTrackPattern(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex
+) noexcept;
+
+/**
+ * Mutable canonical Pattern selection for an already-admitted transaction.
+ * Revision publication and active-editor synchronization remain caller-owned.
+ */
+[[nodiscard]] SequencerPatternState& mutableCanonicalTrackPattern(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex
+) noexcept;
+
 /** Exact allocation-free comparison of persisted flat bytes and revisions. */
 [[nodiscard]] bool sequencerPatternMatchesFlatSnapshot(
     const SequencerPatternState& pattern,

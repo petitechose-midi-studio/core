@@ -3,7 +3,9 @@
 import argparse
 from collections import Counter
 import copy
+import functools
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -385,6 +387,7 @@ PREPARED_TRACK_STRUCTURE_FORBIDDEN_RAW_METHODS = (
 )
 
 
+@functools.lru_cache(maxsize=None)
 def sanitize_cpp(source: str) -> str:
     """Remove comments and literals while preserving offsets and newlines."""
     result = list(source)
@@ -2513,14 +2516,15 @@ def count_prepared_full_bank_provider_anchors(path: Path, providers) -> Counter:
 
 def build_configuration_files(root: Path):
     ignored_roots = {".cache", ".git", ".pio", ".venv", "build", "venv"}
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        rel_parts = path.relative_to(root).parts
-        if any(part in ignored_roots for part in rel_parts):
-            continue
-        if path.name == "CMakeLists.txt" or path.suffix.lower() in BUILD_SUFFIXES:
-            yield path
+    for directory, directories, names in os.walk(root):
+        directories[:] = sorted(
+            name for name in directories if name not in ignored_roots
+        )
+        base = Path(directory)
+        for name in sorted(names):
+            path = base / name
+            if name == "CMakeLists.txt" or path.suffix.lower() in BUILD_SUFFIXES:
+                yield path
 
 
 def seam_errors(root: Path, manifest) -> list[str]:

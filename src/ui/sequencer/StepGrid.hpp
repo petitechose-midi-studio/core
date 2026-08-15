@@ -100,7 +100,7 @@ private:
 
     std::array<lv_obj_t*, 8> tiles_{};
     std::array<lv_obj_t*, 8> note_labels_{};
-    std::array<lv_obj_t*, 8> original_note_labels_{};
+    std::array<lv_obj_t*, 8> secondary_labels_{};
     std::array<lv_obj_t*, 8> step_inline_icons_{};
     std::array<lv_obj_t*, 8> step_buttons_{};
     std::array<TileButtonDrawContext, 8> tile_button_draw_contexts_{};

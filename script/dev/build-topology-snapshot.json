@@ -78,16 +78,16 @@
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
     "core/.github/workflows/ci.yml": "d3926f1990c925c7f53ba68212e9d143defd1cf5a06d6ac636ebee13d86d1f6f",
-    "core/CMakeLists.txt": "acfa07b611e44f5a41377621ee2f2bee69000257633b95aff5961c417f433daa",
-    "core/cmake/MsCoreProductSources.cmake": "75c3864db3486fe598c19b93f1ee7b46beeaa5e1e4e4a7bccd957c1ea0fbc17b",
-    "core/cmake/MsCoreProjectFileTool.cmake": "c54fcccc2d26351a69c2f85aaf7c2378e6418ba03713e70c02f826a546c1159f",
+    "core/CMakeLists.txt": "69ea3e7be18d0dbdf59072d17a156d97fe0e3b6902f84a6868ee38d8a721c9c0",
+    "core/cmake/MsCoreProductSources.cmake": "54a6e39f77e45999c3f4c971f654e9b1078f16f6c697ebc2765bf1b4ad07c03a",
+    "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
     "core/cmake/MsCoreSources.cmake": "19abfcd9898d2977c4a2d1399906fafe822be492668fa972806a4790a6e8dfac",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
     "core/oc-native-sdk.ini": "a6bac84ee1b88be36469738916370c3103e2a992b3a0367c19616900ac06c6f5",
     "core/oc-sdk.ini": "2fa19185d68b75222682a955500f4a22e22a47205049dbb692cfdc6aa23cda34",
-    "core/platformio.ini": "891d84e11f94fb6f03f4d384d26f829d4ab2367652bd3a95e979c1e41fdf86ae",
-    "core/script/dev/check-build-topology.py": "9c47fd777849acc2d9c78fd0a6879253b7ddf693bec4d012d1e764d379b27a99",
-    "core/sdl/CMakeLists.txt": "2d2c933a28801f30b322ddcfabaacee5cd6f2db43c716c9228c22c2dcf525330",
+    "core/platformio.ini": "12b8245eab21998bce8dec610dacb10507346c220780b05f603ac8e11fd7077f",
+    "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
+    "core/sdl/CMakeLists.txt": "4de68f4569e434ad40521e9c40473c56c98d34446764a0ab9eb5022c31920112",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
@@ -151,6 +151,8 @@
       "pendingNotifications": 96,
       "platform": "platformio/teensy@5.2.0",
       "postLinkMemoryGate": "script/pio/check_memory_budget.py",
+      "postLinkProfile": "script/release/profiles/core-product-profile-v1.json",
+      "postLinkVector": "release-current",
       "psramCapacity": 8388608,
       "psramMinFree": 2097152,
       "ram1MinFree": 143360,
@@ -438,6 +440,9 @@
         "src/persistence/MacroTrackBankPersistenceCodec.cpp",
         "src/persistence/PersistenceChecksum.cpp",
         "src/persistence/ProductAssetFileStore.cpp",
+        "src/persistence/ProductConditionalMutationDigest.cpp",
+        "src/persistence/ProductConditionalMutationPlan.cpp",
+        "src/persistence/ProductConditionalMutationTransaction.cpp",
         "src/persistence/ProductDirectoryCatalog.cpp",
         "src/persistence/ProductFileCommitPlan.cpp",
         "src/persistence/ProductFilePath.cpp",
@@ -474,9 +479,6 @@
         "src/protocol/filesystem/FileSystemJobRpc.cpp",
         "src/protocol/filesystem/FileSystemRpcCodec.cpp",
         "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalPlan.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp",
-        "src/protocol/filesystem/FileSystemRpcDigest.cpp",
         "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
         "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
         "src/protocol/filesystem/FileSystemRpcHandler.cpp",
@@ -654,7 +656,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "1f967bf1d2635ed691759a10bfe84faf777bcad093c0d4d202ba15227b916133"
+      "sha256": "c4b48bc26330af5ee406c7451362a55696430358fd3c16e0f37a6c211ef34298"
     },
     "coreSdlWasmImplementations": {
       "count": 408,
@@ -798,6 +800,9 @@
         "src/persistence/MacroTrackBankPersistenceCodec.cpp",
         "src/persistence/PersistenceChecksum.cpp",
         "src/persistence/ProductAssetFileStore.cpp",
+        "src/persistence/ProductConditionalMutationDigest.cpp",
+        "src/persistence/ProductConditionalMutationPlan.cpp",
+        "src/persistence/ProductConditionalMutationTransaction.cpp",
         "src/persistence/ProductDirectoryCatalog.cpp",
         "src/persistence/ProductFileCommitPlan.cpp",
         "src/persistence/ProductFilePath.cpp",
@@ -834,9 +839,6 @@
         "src/protocol/filesystem/FileSystemJobRpc.cpp",
         "src/protocol/filesystem/FileSystemRpcCodec.cpp",
         "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalPlan.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp",
-        "src/protocol/filesystem/FileSystemRpcDigest.cpp",
         "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
         "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
         "src/protocol/filesystem/FileSystemRpcHandler.cpp",
@@ -1068,10 +1070,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "de8d7a2ef8669fb4c8f735d96d1f1c786a1427cf16849d6d67dc69b76ee1f6b7"
+      "sha256": "b5ba68d01d2d2b422889999184ac7b35c5eac1f634c1e9bd7be02a72b6334775"
     },
     "coreTeensyImplementations": {
-      "count": 407,
+      "count": 396,
       "paths": [
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
@@ -1102,11 +1104,6 @@
         "src/context/standalone/StandaloneGlobalHandlerAssembly.cpp",
         "src/context/standalone/StandaloneOverlayAssembly.cpp",
         "src/context/standalone/StandaloneUiAssembly.cpp",
-        "src/context/standalone/ux/StandaloneGlobalUxSurfaces.cpp",
-        "src/context/standalone/ux/StandaloneMacroUxSurfaces.cpp",
-        "src/context/standalone/ux/StandaloneProjectUxSurfaces.cpp",
-        "src/context/standalone/ux/StandaloneSequencerPresetLibraryUx.cpp",
-        "src/context/standalone/ux/StandaloneSequencerUxSurfaces.cpp",
         "src/diagnostics/MemoryFootprintReporter.cpp",
         "src/diagnostics/PerformanceReporter.cpp",
         "src/diagnostics/StorageQualificationProbe.cpp",
@@ -1212,6 +1209,9 @@
         "src/persistence/MacroTrackBankPersistenceCodec.cpp",
         "src/persistence/PersistenceChecksum.cpp",
         "src/persistence/ProductAssetFileStore.cpp",
+        "src/persistence/ProductConditionalMutationDigest.cpp",
+        "src/persistence/ProductConditionalMutationPlan.cpp",
+        "src/persistence/ProductConditionalMutationTransaction.cpp",
         "src/persistence/ProductDirectoryCatalog.cpp",
         "src/persistence/ProductFileCommitPlan.cpp",
         "src/persistence/ProductFilePath.cpp",
@@ -1248,9 +1248,6 @@
         "src/protocol/filesystem/FileSystemJobRpc.cpp",
         "src/protocol/filesystem/FileSystemRpcCodec.cpp",
         "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalPlan.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp",
-        "src/protocol/filesystem/FileSystemRpcDigest.cpp",
         "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
         "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
         "src/protocol/filesystem/FileSystemRpcHandler.cpp",
@@ -1473,18 +1470,12 @@
         "src/ui/view/ProjectViewModulators.cpp",
         "src/ui/view/RetainedViewRenderPolicy.cpp",
         "src/ui/view/SequencerView.cpp",
-        "src/ui/widget/MacroKnobWidget.cpp",
-        "src/validation/project/ProjectStoreSmoke.cpp",
-        "src/validation/ux/SemanticUxContext.cpp",
-        "src/validation/ux/SemanticUxNames.cpp",
-        "src/validation/ux/SemanticUxRecorder.cpp",
-        "src/validation/ux/SemanticUxSurface.cpp",
-        "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
+        "src/ui/widget/MacroKnobWidget.cpp"
       ],
-      "sha256": "dc834a2bb9ddef4698a7dbdcac98c707d9982526c16048c8bb9c6ee2ecc0822e"
+      "sha256": "305a43eee1ec11dabafb47eff17b546308fba3e33a94d916bb17136d7b6d263d"
     },
     "coreTotalHeaders": {
-      "count": 455,
+      "count": 457,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1618,6 +1609,7 @@
         "src/handler/settings/DeviceSettingsHandler.hpp",
         "src/handler/transport/TransportHandler.hpp",
         "src/handler/view/ViewSwitcherHandler.hpp",
+        "src/midi/MidiNoteNaming.hpp",
         "src/midi/MidiUtils.hpp",
         "src/persistence/AtomicProductFile.hpp",
         "src/persistence/ChordPresetFileStore.hpp",
@@ -1630,6 +1622,9 @@
         "src/persistence/PersistenceChecksum.hpp",
         "src/persistence/PersistenceStatus.hpp",
         "src/persistence/ProductAssetFileStore.hpp",
+        "src/persistence/ProductConditionalMutationDigest.hpp",
+        "src/persistence/ProductConditionalMutationPlan.hpp",
+        "src/persistence/ProductConditionalMutationTransaction.hpp",
         "src/persistence/ProductDirectoryCatalog.hpp",
         "src/persistence/ProductFileCommitPlan.hpp",
         "src/persistence/ProductFilePath.hpp",
@@ -1671,9 +1666,6 @@
         "src/persistence/StorageRecoveryMachine.hpp",
         "src/protocol/filesystem/FileSystemJobRpc.hpp",
         "src/protocol/filesystem/FileSystemRpc.hpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalPlan.hpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.hpp",
-        "src/protocol/filesystem/FileSystemRpcDigest.hpp",
         "src/protocol/filesystem/FileSystemRpcInternal.hpp",
         "src/sequencer/ClockSourceSelector.hpp",
         "src/sequencer/DrumPlaybackEngine.hpp",
@@ -1705,6 +1697,7 @@
         "src/state/DeviceSettingsState.hpp",
         "src/state/MacroEditState.hpp",
         "src/state/MacroState.hpp",
+        "src/state/MidiNoteDisplayState.hpp",
         "src/state/MidiSyncSettingsPolicy.hpp",
         "src/state/MidiSyncState.hpp",
         "src/state/PatternPitchSettingsState.hpp",
@@ -1942,7 +1935,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "6346d5f2aa27b3c98116f0262930529e7c6157f0eb1e587ac5d554d4a2872790"
+      "sha256": "e3cc89a6f44b203e5538d96d313195b13fa43a6d4daf27d36f03c5b1097103a3"
     },
     "coreTotalImplementations": {
       "count": 408,
@@ -2086,6 +2079,9 @@
         "src/persistence/MacroTrackBankPersistenceCodec.cpp",
         "src/persistence/PersistenceChecksum.cpp",
         "src/persistence/ProductAssetFileStore.cpp",
+        "src/persistence/ProductConditionalMutationDigest.cpp",
+        "src/persistence/ProductConditionalMutationPlan.cpp",
+        "src/persistence/ProductConditionalMutationTransaction.cpp",
         "src/persistence/ProductDirectoryCatalog.cpp",
         "src/persistence/ProductFileCommitPlan.cpp",
         "src/persistence/ProductFilePath.cpp",
@@ -2122,9 +2118,6 @@
         "src/protocol/filesystem/FileSystemJobRpc.cpp",
         "src/protocol/filesystem/FileSystemRpcCodec.cpp",
         "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalPlan.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp",
-        "src/protocol/filesystem/FileSystemRpcDigest.cpp",
         "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
         "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
         "src/protocol/filesystem/FileSystemRpcHandler.cpp",
@@ -2356,7 +2349,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "de8d7a2ef8669fb4c8f735d96d1f1c786a1427cf16849d6d67dc69b76ee1f6b7"
+      "sha256": "b5ba68d01d2d2b422889999184ac7b35c5eac1f634c1e9bd7be02a72b6334775"
     },
     "deviceSupportHeaders": {
       "count": 10,
@@ -2874,7 +2867,7 @@
       }
     }
   },
-  "toolVersion": 3,
+  "toolVersion": 4,
   "tooling": {
     "bitwigCandidate": {
       "platformio": "6.1.18",

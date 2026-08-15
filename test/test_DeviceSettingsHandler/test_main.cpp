@@ -13,7 +13,9 @@
 #include <config/InputIDs.hpp>
 #include "../../src/handler/settings/DeviceSettingsDomainServices.hpp"
 #include "../../src/handler/settings/DeviceSettingsHandler.hpp"
+#include "../../src/midi/MidiUtils.hpp"
 #include "../../src/state/DeviceSettingsState.hpp"
+#include "../../src/state/MidiNoteDisplayState.hpp"
 #include "../../src/state/MidiSyncState.hpp"
 #include "../../src/app/OverlayTypes.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -37,6 +39,7 @@ struct DeviceSettingsHarness {
 
     MemoryStorage storage;
     core::state::MidiSyncState midiSync;
+    core::state::MidiNoteDisplayState midiNoteDisplay;
     core::persistence::DeviceSettingsStore settingsStore;
     core::state::DeviceSettingsState deviceSettings;
     core::handler::DeviceSettingsDomainServices services;
@@ -55,6 +58,7 @@ struct DeviceSettingsHarness {
         : settingsStore(storage)
         , services(core::handler::DeviceSettingsDomainServices::StateRefs{
               midiSync,
+              midiNoteDisplay,
               settingsStore,
           })
         , inputBinding(eventBus, mockTimeMs)
@@ -71,7 +75,7 @@ struct DeviceSettingsHarness {
                   SETTINGS_SCOPE,
                   SELECTOR_SCOPE) {
         storage.init();
-        assert(settingsStore.load(midiSync));
+        assert(settingsStore.load(midiSync, midiNoteDisplay));
         overlayState.registerItem(
             core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
             deviceSettings.selector.visible
@@ -210,6 +214,29 @@ void test_selector_commit_failure_stays_open_and_retries() {
     std::cout << "[PASS] test_selector_commit_failure_stays_open_and_retries\n";
 }
 
+void test_middle_c_setting_applies_bitwig_naming_without_transposition() {
+    DeviceSettingsHarness h;
+    openSettings(h);
+
+    for (int row = 0; row < 4; ++row) {
+        h.turn(Config::EncoderID::NAV, 1.0f);
+    }
+    assert(h.deviceSettings.focusedRow.get() == 4U);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.deviceSettings.selector.selectedIndex.get() == 1);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.midiNoteDisplay.octaveConvention.get() ==
+           core::midi::NoteOctaveConvention::C3);
+
+    char note[8]{};
+    core::midi::formatNoteName(note, sizeof(note), 60U);
+    assert(std::strcmp(note, "C3") == 0);
+
+    std::cout << "[PASS] Middle C selects Bitwig C3 naming\n";
+}
+
 }  // namespace
 
 int main() {
@@ -217,6 +244,7 @@ int main() {
     test_selector_navigation_and_apply_follow_real_bindings();
     test_selector_cancel_restores_parent_overlay_without_applying();
     test_selector_commit_failure_stays_open_and_retries();
+    test_middle_c_setting_applies_bitwig_naming_without_transposition();
     std::cout << "\nAll DeviceSettingsHandler tests passed.\n";
     return 0;
 }

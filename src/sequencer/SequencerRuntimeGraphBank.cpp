@@ -7,6 +7,7 @@
 
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::sequencer {
 
@@ -28,11 +29,13 @@ FLASHMEM bool SequencerRuntimeGraphBank::prepare(
 
     for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
         const bool active = track == activeTrack;
-        const auto& sourceState = active
-            ? (quickControlsPattern != nullptr
-                ? *quickControlsPattern
-                : sequencer.pattern)
-            : trackBank.track(track);
+        const auto& sourceState = active && quickControlsPattern != nullptr
+            ? *quickControlsPattern
+            : core::state::sequencer::canonicalTrackPattern(
+                  trackBank,
+                  sequencer,
+                  track
+              );
         const auto* sourceGraph = core::state::sequencer::graphView(sourceState);
         const bool quickControlsPreview = active && quickControlsPattern != nullptr;
         const bool stepDraftProjection = active && !quickControlsPreview &&

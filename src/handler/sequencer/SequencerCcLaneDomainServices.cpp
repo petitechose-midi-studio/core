@@ -4,6 +4,7 @@
 
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::handler {
 
@@ -15,15 +16,6 @@ FLASHMEM SequencerCcLaneDomainServices::SequencerCcLaneDomainServices(StateRefs 
     , tracks_(state.tracks)
     , project_tracks_(state.projectTracks)
     , macro_pages_(state.macroPages) {}
-
-FLASHMEM const seq::SequencerPatternState& SequencerCcLaneDomainServices::pattern_(
-    uint8_t track
-) const {
-    const uint8_t clamped = seq::SequencerTrackBankState::clampTrackIndex(track);
-    return clamped == tracks_.activeTrackIndex()
-        ? editor_.pattern
-        : tracks_.track(clamped);
-}
 
 FLASHMEM seq::SequencerCcTrackRoute SequencerCcLaneDomainServices::trackRoute(
     uint8_t track
@@ -38,7 +30,7 @@ FLASHMEM seq::SequencerCcProjectRoutingView
 SequencerCcLaneDomainServices::routingView() const {
     seq::SequencerCcProjectRoutingView project{};
     for (uint8_t track = 0; track < project.size(); ++track) {
-        const auto& pattern = pattern_(track);
+        const auto& pattern = seq::canonicalTrackPattern(tracks_, editor_, track);
         project[track] = {
             .lanes = seq::sequencerCcLaneView(pattern),
             .trackRoute = trackRoute(track),

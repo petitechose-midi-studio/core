@@ -1,14 +1,19 @@
 #include "InternalTransportClock.hpp"
 
-#include <algorithm>
 #include <cmath>
+
+#ifdef ARDUINO
+#include <algorithm>
+#endif
 
 namespace core::sequencer {
 
+#ifdef ARDUINO
 namespace {
 constexpr float DEFAULT_BPM = 120.0f;
 constexpr uint32_t MIN_PERIOD_US = 1;
 }  // namespace
+#endif
 
 #ifdef ARDUINO
 
@@ -122,10 +127,6 @@ float InternalTransportClock::bpm() const {
 
 bool InternalTransportClock::isPlaying() const {
     return fallback_.isPlaying();
-}
-
-uint32_t InternalTransportClock::tickPeriodUs_() const {
-    return 0;
 }
 
 #endif

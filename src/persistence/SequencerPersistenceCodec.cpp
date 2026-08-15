@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/PersistenceBinaryCodec.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::persistence::sequencer_codec {
 
@@ -692,8 +693,7 @@ FLASHMEM bool fillSetPayload(const sequencer::SequencerTrackBankState& trackBank
     for (uint8_t track = 0U;
          track < sequencer::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
-        const auto& source =
-            track == activeTrack ? active.pattern : trackBank.track(track);
+        const auto& source = sequencer::canonicalTrackPattern(trackBank, active, track);
         if (!patternCanonical(patternEncodeView(source))) return false;
     }
 
@@ -711,7 +711,7 @@ FLASHMEM bool fillSetPayload(const sequencer::SequencerTrackBankState& trackBank
     }
 
     for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = (i == activeTrack) ? active.pattern : trackBank.track(i);
+        const auto& source = sequencer::canonicalTrackPattern(trackBank, active, i);
         if (!writePattern(writer, patternEncodeView(source))) return false;
     }
 

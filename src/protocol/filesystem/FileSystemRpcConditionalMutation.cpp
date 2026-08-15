@@ -5,8 +5,7 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
-#include "protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
+#include "persistence/ProductConditionalMutationPlan.hpp"
 
 namespace core::protocol::filesystem {
 
@@ -17,9 +16,102 @@ using internal::bufferTooSmall;
 using internal::readPath;
 using internal::writeFrameHeader;
 
-namespace mutation = conditional_mutation;
+namespace mutation = core::persistence::conditional_mutation;
 
 namespace {
+
+constexpr const char* RESOLVED_TMP_PREFIX = "/midi-studio/tmp/";
+constexpr const char* RESOLVED_PROTOCOL_TMP_PREFIX = "/midi-studio/tmp/rpc-";
+
+constexpr char asciiLower(char value) {
+    return value >= 'A' && value <= 'Z'
+        ? static_cast<char>(value + ('a' - 'A'))
+        : value;
+}
+
+FLASHMEM bool pathStartsWith(const char* path, const char* prefix) {
+    if (!path || !prefix) return false;
+    while (*prefix != '\0') {
+        if (*path == '\0' || asciiLower(*path) != asciiLower(*prefix)) {
+            return false;
+        }
+        ++path;
+        ++prefix;
+    }
+    return true;
+}
+
+FLASHMEM bool pathEquals(const char* lhs, const char* rhs) {
+    if (!lhs || !rhs) return false;
+    while (*lhs != '\0' && *rhs != '\0') {
+        if (asciiLower(*lhs) != asciiLower(*rhs)) return false;
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == '\0' && *rhs == '\0';
+}
+
+FLASHMEM bool isReservedPath(const char* normalized) {
+    return pathStartsWith(normalized, RESOLVED_PROTOCOL_TMP_PREFIX);
+}
+
+FLASHMEM bool isStagingPath(const char* normalized) {
+    return pathStartsWith(normalized, RESOLVED_TMP_PREFIX) &&
+           normalized[std::strlen(RESOLVED_TMP_PREFIX)] != '\0';
+}
+
+FLASHMEM bool containsFatShortNameAliasSyntax(const char* normalized) {
+    return normalized != nullptr && std::strchr(normalized, '~') != nullptr;
+}
+
+FLASHMEM FileSystemRpcStatus rpcStatus(mutation::Status status) {
+    switch (status) {
+        case mutation::Status::OK:
+            return FileSystemRpcStatus::OK;
+        case mutation::Status::INVALID_ARGUMENT:
+            return FileSystemRpcStatus::INVALID_ARGUMENT;
+        case mutation::Status::NOT_FOUND:
+            return FileSystemRpcStatus::NOT_FOUND;
+        case mutation::Status::BUSY:
+            return FileSystemRpcStatus::BUSY;
+        case mutation::Status::TOO_LARGE:
+            return FileSystemRpcStatus::TOO_LARGE;
+        case mutation::Status::STORAGE_ERROR:
+            return FileSystemRpcStatus::STORAGE_ERROR;
+        case mutation::Status::INVALID_STATE:
+            return FileSystemRpcStatus::INVALID_STATE;
+        case mutation::Status::UNSUPPORTED:
+            return FileSystemRpcStatus::UNSUPPORTED;
+        case mutation::Status::PRECONDITION_FAILED:
+            return FileSystemRpcStatus::PRECONDITION_FAILED;
+        default:
+            return FileSystemRpcStatus::INVALID_STATE;
+    }
+}
+
+FLASHMEM FileSystemRpcMutationOutcome rpcOutcome(mutation::Outcome outcome) {
+    switch (outcome) {
+        case mutation::Outcome::APPLIED:
+            return FileSystemRpcMutationOutcome::APPLIED;
+        case mutation::Outcome::ALREADY_APPLIED:
+            return FileSystemRpcMutationOutcome::ALREADY_APPLIED;
+        case mutation::Outcome::NONE:
+        default:
+            return FileSystemRpcMutationOutcome::NONE;
+    }
+}
+
+FLASHMEM FileSystemRpcMutationSubject rpcSubject(mutation::Subject subject) {
+    switch (subject) {
+        case mutation::Subject::SOURCE:
+            return FileSystemRpcMutationSubject::SOURCE;
+        case mutation::Subject::STAGING:
+            return FileSystemRpcMutationSubject::STAGING;
+        case mutation::Subject::NONE:
+        default:
+            return FileSystemRpcMutationSubject::NONE;
+    }
+}
 
 FLASHMEM FileSystemRpcStatus normalizeMutationPathInPlace(
     core::persistence::ProductFileService& files,
@@ -31,7 +123,8 @@ FLASHMEM FileSystemRpcStatus normalizeMutationPathInPlace(
         return FileSystemRpcStatus::INVALID_ARGUMENT;
     }
     std::memcpy(raw, path, pathSize);
-    return mutation::normalizeMutationPath(files, raw, path, pathSize);
+    auto normalized = files.resolvePath(raw, path, pathSize);
+    return normalized ? FileSystemRpcStatus::OK : internal::mapError(normalized.error());
 }
 
 FLASHMEM Result<size_t> encodeConditionalResponse(
@@ -61,8 +154,16 @@ FLASHMEM Result<size_t> encodeConditionalResponse(
     return Result<size_t>::ok(writer.position());
 }
 
-FileSystemRpcMessageId conditionalResponseId(FileSystemRpcMessageId requestId) {
+FLASHMEM FileSystemRpcMessageId conditionalResponseId(
+    FileSystemRpcMessageId requestId
+) {
     return requestId == FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST
+        ? FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE
+        : FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE;
+}
+
+FLASHMEM FileSystemRpcMessageId conditionalResponseId(mutation::Kind kind) {
+    return kind == mutation::Kind::DELETE
         ? FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE
         : FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE;
 }
@@ -99,12 +200,12 @@ FLASHMEM FileSystemRpcStatus prepareConditionalMutation(
         );
         if (currentStatus != FileSystemRpcStatus::OK ||
             stagingStatus != FileSystemRpcStatus::OK ||
-            mutation::pathEquals(journal.currentPath, journal.stagingPath) ||
-            mutation::isReservedPath(journal.currentPath) ||
-            mutation::isReservedPath(journal.stagingPath) ||
-            mutation::containsFatShortNameAliasSyntax(journal.currentPath) ||
-            mutation::containsFatShortNameAliasSyntax(journal.stagingPath) ||
-            !mutation::isStagingPath(journal.stagingPath)) {
+            pathEquals(journal.currentPath, journal.stagingPath) ||
+            isReservedPath(journal.currentPath) ||
+            isReservedPath(journal.stagingPath) ||
+            containsFatShortNameAliasSyntax(journal.currentPath) ||
+            containsFatShortNameAliasSyntax(journal.stagingPath) ||
+            !isStagingPath(journal.stagingPath)) {
             return FileSystemRpcStatus::INVALID_ARGUMENT;
         }
         return FileSystemRpcStatus::OK;
@@ -122,8 +223,8 @@ FLASHMEM FileSystemRpcStatus prepareConditionalMutation(
         files, journal.currentPath, sizeof(journal.currentPath)
     );
     if (currentStatus != FileSystemRpcStatus::OK ||
-        mutation::isReservedPath(journal.currentPath) ||
-        mutation::containsFatShortNameAliasSyntax(journal.currentPath)) {
+        isReservedPath(journal.currentPath) ||
+        containsFatShortNameAliasSyntax(journal.currentPath)) {
         return FileSystemRpcStatus::INVALID_ARGUMENT;
     }
     return FileSystemRpcStatus::OK;
@@ -137,7 +238,7 @@ FLASHMEM bool internal::isProtocolReservedPath(
 ) {
     char normalized[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
     auto resolved = files.resolvePath(productPath, normalized, sizeof(normalized));
-    return resolved && mutation::isReservedPath(normalized);
+    return resolved && isReservedPath(normalized);
 }
 
 FLASHMEM FileSystemRpcStatus FileSystemRpcHandler::recoverConditionalMutation_() {
@@ -171,14 +272,14 @@ FLASHMEM FileSystemRpcStatus FileSystemRpcHandler::recoverConditionalMutation_()
     }
 
     auto released = files_.releaseMutation(lease);
-    if (!released && status == FileSystemRpcStatus::OK) {
-        status = internal::mapError(released.error());
+    if (!released && status == mutation::Status::OK) {
+        status = mutation::statusFromError(released.error());
     }
-    if (status != FileSystemRpcStatus::OK &&
+    if (status != mutation::Status::OK &&
         files_.storageState() == core::persistence::ProductStorageState::READY) {
         (void)files_.requireRecovery(mutation::recoveryError(status));
     }
-    return status;
+    return rpcStatus(status);
 }
 
 bool FileSystemRpcHandler::conditionalRecoveryDue_(uint32_t nowMs) const {
@@ -284,7 +385,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::advanceCooperativeConditionalMutat
 
     if (!plan.terminal()) {
         return encodeConditionalResponse(
-            plan.responseMessageId(),
+            conditionalResponseId(plan.kind()),
             requestId,
             FileSystemRpcStatus::INVALID_STATE,
             FileSystemRpcMutationOutcome::NONE,
@@ -298,7 +399,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::advanceCooperativeConditionalMutat
 
     conditionalRecoveryIdentity_ = files_.storageIdentity();
     if (plan.recoveryRequired()) {
-        conditionalRecoveryStatus_ = plan.status();
+        conditionalRecoveryStatus_ = rpcStatus(plan.status());
         conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
         conditionalRecoveryRetryAtMs_ = nowMs + CONDITIONAL_RECOVERY_RETRY_MS;
     } else {
@@ -308,11 +409,11 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::advanceCooperativeConditionalMutat
     }
 
     return encodeConditionalResponse(
-        plan.responseMessageId(),
+        conditionalResponseId(plan.kind()),
         requestId,
-        plan.status(),
-        plan.outcome(),
-        plan.subject(),
+        rpcStatus(plan.status()),
+        rpcOutcome(plan.outcome()),
+        rpcSubject(plan.subject()),
         plan.operationId(),
         plan.observedDigest(),
         response,
@@ -326,7 +427,7 @@ FLASHMEM void FileSystemRpcHandler::cancelCooperativeConditionalMutation_(
     plan.cancel(files_);
     if (!plan.recoveryRequired()) return;
 
-    conditionalRecoveryStatus_ = plan.status();
+    conditionalRecoveryStatus_ = rpcStatus(plan.status());
     conditionalRecoveryIdentity_ = files_.storageIdentity();
     conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
     conditionalRecoveryRetryAtMs_ = 0U;

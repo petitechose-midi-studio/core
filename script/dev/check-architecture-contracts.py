@@ -471,7 +471,7 @@ def cold_placement_contract_errors(cold_placement: str) -> list[str]:
     return errors
 
 
-@functools.lru_cache(maxsize=512)
+@functools.lru_cache(maxsize=None)
 def cpp_code_mask(content: str) -> str:
     """Blank comments and quoted literals while preserving source offsets."""
     masked = list(content)
@@ -1382,19 +1382,20 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
         )
     else:
         choice_body = cpp_code_mask(choice_bodies[0])
+        reconcile = choice_body.find("reconcileAllStatus")
         no_change = choice_body.find("ApplyStatus::NO_CHANGE")
         stage = choice_body.find("saveMidiSyncModeStatus")
         commit = choice_body.find("commitStatus")
         publish = choice_body.find("midi_sync_->mode.set")
-        if not (0 <= no_change < stage < commit < publish):
+        if not (0 <= reconcile < no_change < stage < commit < publish):
             errors.append(
                 f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: mode command order must be "
-                "no-change, stage, commit, live publication"
+                "reconcile, no-change, stage, commit, live publication"
             )
-        if choice_body.count("ApplyStatus::PERSISTENCE_FAILED") != 2:
+        if choice_body.count("ApplyStatus::PERSISTENCE_FAILED") != 3:
             errors.append(
-                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: stage and commit failures "
-                "must both return structured persistence failure"
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: reconciliation, stage and "
+                "commit failures must return structured persistence failure"
             )
 
     handler_bodies = cpp_function_bodies(
@@ -1637,8 +1638,8 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     job_rpc_source = "src/protocol/filesystem/FileSystemJobRpc.cpp"
     rpc_endpoint = "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
     rpc_handler = "src/protocol/filesystem/FileSystemRpcHandler.cpp"
-    rpc_digest = "src/protocol/filesystem/FileSystemRpcDigest.cpp"
-    conditional_plan = "src/protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
+    conditional_digest = "src/persistence/ProductConditionalMutationDigest.cpp"
+    conditional_plan = "src/persistence/ProductConditionalMutationPlan.hpp"
     recovery_source = "src/persistence/ProductStorageRecoveryService.cpp"
     recovery_header = "src/persistence/ProductStorageRecoveryService.hpp"
     atomic_header = "src/persistence/AtomicProductFile.hpp"
@@ -1646,9 +1647,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     journal_codec = "src/persistence/ProductFileTransactionJournalCodec.cpp"
     journal_internal = "src/persistence/ProductFileTransactionJournalInternal.hpp"
     coordinator_source = "src/persistence/ProductPersistenceCoordinator.cpp"
-    conditional_source = (
-        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp"
-    )
+    conditional_source = "src/persistence/ProductConditionalMutationTransaction.cpp"
     rpc_internal = "src/protocol/filesystem/FileSystemRpcInternal.hpp"
     project_transactions = "src/persistence/ProjectFileTransactions.cpp"
     atomic_test = "test/test_AtomicProductFile/test_main.cpp"
@@ -1714,7 +1713,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (rpc_endpoint, r"pending\.size\s*!=\s*0U\s*&&\s*pending\.jobRecordIndex\s*==\s*JOB_RECORD_NONE", "legacy compatibility must retain exactly one frame"),
         (rpc_endpoint, r"record->jobId\s*=\s*upload_job_\.id\s*\(\s*\)", "write commit must reuse the upload coordinator identity"),
         (rpc_endpoint, r"deadlineAfterMs\s*=\s*0U", "provider deadlines must be enforced by the retained job record"),
-        (rpc_digest, r"bool\s+hashBytes\s*\([^)]*uint8_t\s+output\s*\[\s*FILESYSTEM_RPC_SHA256_SIZE\s*\]", "in-memory request identity must reuse allocation-free SHA-256"),
+        (conditional_digest, r"bool\s+hashBytes\s*\([^)]*uint8_t\s+output\s*\[\s*SHA256_SIZE\s*\]", "in-memory request identity must reuse allocation-free SHA-256"),
         (conditional_plan, r"return\s+journal_started_\s*\|\|\s*promotion_\.mapped\s*\(\s*\)", "conditional cancellation must expose its durable boundary"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
         (service_header, r"ProductPersistenceJobCoordinator\s+job_coordinator_\s*\{\s*\}", "file service must own exactly one job coordinator"),
@@ -1722,8 +1721,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (recovery_header, r"static\s+ProductStorageRecoveryResult\s+reconcile\s*\(", "recovery service must remain stateless"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_A\s*=.*?tmp/rpc-product-file-a\.journal", "ordinary journal slot A must remain fixed"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_B\s*=.*?tmp/rpc-product-file-b\.journal", "ordinary journal slot B must remain fixed"),
-        (atomic_header, r"PRODUCT_FILE_JOURNAL_LEGACY_VERSION\s*=\s*1U", "ordinary legacy journal version must remain explicit"),
-        (atomic_header, r"PRODUCT_FILE_JOURNAL_VERSION\s*=\s*2U", "ordinary current journal version must remain explicit"),
+        (atomic_header, r"PRODUCT_FILE_JOURNAL_VERSION\s*=\s*2U", "ordinary supported journal version must remain explicit"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*=\s*607U", "ordinary journal record must remain bounded"),
         (atomic_header, r"PRODUCT_FILE_INTEGRITY_CHUNK_SIZE\s*=\s*512U", "ordinary integrity reads must remain bounded to 512 B"),
         (atomic_header, r"commitProductFileTemp\s*\([^;]*uint32_t\s+expectedSize", "ordinary commit must bind the expected payload size"),
@@ -1731,7 +1729,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (journal_internal, r"union\s+JournalStorage\s*\{\s*uint8_t\s+encoded\s*\[\s*PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*\]\s*;\s*char\s+paths\s*\[\s*PATH_COUNT\s*\]\s*\[\s*PATH_CAPACITY\s*\]", "journal codec must reuse one bounded workspace"),
         (journal_codec, r"targetSlot\s*=\s*workspace\.activeSlot\s*==\s*NO_ACTIVE_SLOT.*?inactiveSlot\s*\(\s*workspace\.activeSlot\s*\)", "phase writes must alternate through the inactive slot"),
         (coordinator_source, r"ProductPersistenceCoordinator::requireRecovery\s*\(\s*const\s+ProductMutationLease&\s+lease", "mapped failure must transition through the exact lease"),
-        (project_transactions, r"shouldTryBackup\s*\([^)]*\)\s*\{\s*return\s+!result\s*&&\s*result\.error\(\)\.code\s*==\s*ErrorCode::RESOURCE_NOT_FOUND", "legacy backup fallback must require a missing current"),
+        (project_transactions, r"shouldTryBackup\s*\([^)]*\)\s*\{\s*return\s+!result\s*&&\s*result\.error\(\)\.code\s*==\s*ErrorCode::RESOURCE_NOT_FOUND", "unmapped backup recovery must require a missing current"),
         (rpc_internal, r"bool\s+isProtocolReservedPath\s*\(", "ordinary RPC must reserve the complete protocol namespace"),
         (cmake_source, r"MS_CORE_PERSISTENCE_IO_TESTS.*?test_AtomicProductFile", "fault campaign must share the persistence I/O lock"),
         (atomic_test, r"for\s*\(\s*CutMode\s+mode\s*:\s*\{\s*CutMode::BEFORE\s*,\s*CutMode::AFTER\s*\}\s*\)", "fault campaign must enumerate cuts before and after every boundary"),
@@ -1790,6 +1788,17 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             cpp_code_mask(files.get(rel, "")),
         ):
             errors.append(f"{rel}: duplicate retained Project workspace owner")
+
+    for rel, content in files.items():
+        if not rel.startswith("src/persistence/"):
+            continue
+        if re.search(r'#\s*include\s*[<\"]protocol/', content) or re.search(
+            r"\b(?:FileSystemRpc|protocol::filesystem)\b",
+            cpp_code_mask(content),
+        ):
+            errors.append(
+                f"{rel}: persistence must not depend on the RPC protocol layer"
+            )
 
     read_workspace_bodies = cpp_type_bodies(
         files.get(project_workspace, ""),
@@ -1921,7 +1930,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         job_rpc_source,
         rpc_header,
         rpc_endpoint,
-        rpc_digest,
+        conditional_digest,
         conditional_plan,
     )
     forbidden_runtime_owner = re.compile(
@@ -3639,10 +3648,9 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "FLASHMEM PlanOutcome buildPlan",
         r"action\s*==\s*Action::SequencerRemoveSelection.*?"
         r"const\s+uint8_t\s+incomingLength\s*=\s*"
-        r"mutation\.nextActive\s*==\s*beforeActive\s*\?\s*"
-        r"context\.state\.sequencer\.pattern\.length\.get\s*\(\s*\)\s*:\s*"
-        r"context\.state\.tracks\.track\s*\(\s*mutation\.nextActive\s*\)"
-        r"\.length\.get\s*\(\s*\)\s*;.*?"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*canonicalTrackPattern\s*\(\s*"
+        r"context\.state\.tracks\s*,\s*context\.state\.sequencer\s*,\s*"
+        r"mutation\.nextActive\s*\)\.length\.get\s*\(\s*\)\s*;.*?"
         r"fillActiveChangeFocus\s*\(\s*context\s*,\s*incomingLength\s*,\s*plan\s*\)",
         "SelectionRemove focus must use the active editor when the active Track survives",
     )
@@ -4419,7 +4427,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupStructureActionBindings",
         r"\bbeginSelectionHoldAction\s*\(\s*"
         r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureHoldAction::REMOVE\s*\)",
         "Selection press must arm SelectionRemove rather than CurrentRemove",
@@ -4434,7 +4442,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupStructureActionBindings",
         r"bottom_action_release_latch_\.isArmed\s*\(\s*"
         r"Config::ButtonID::BOTTOM_LEFT\s*\)",
         "both BottomLeft release routes must stay eligible to consume an armed latch",
@@ -4442,7 +4450,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"\.button\s*\(\s*Config::ButtonID::NAV\s*\)\s*"
         r"\.press\s*\(\s*\).*?"
         r"!\s*edit_workflow_\.trackPasteNavigationBlocked\s*\(\s*\)\s*&&\s*"
@@ -4452,7 +4460,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"\btrackRemoveNavigationBlocked\s*\(\s*\)",
         "Track Remove must block one NAV press and the three NAV turn routes",
         count=4,
@@ -4551,7 +4559,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"const\s+bool\s+previewAddSlot\s*=\s*"
         r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*&&\s*"
         r"track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*;",
@@ -4560,7 +4568,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupBindings",
+        "SequencerStepHandler::setupNavigationBindings",
         r"const\s+uint8_t\s+previewTarget\s*=\s*"
         r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*"
         r"\?\s*track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*"
@@ -4785,8 +4793,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_across_files(
         r"\bsequencer\.stepEdit\.contextHold\.startedAtMs\b",
-        "Context hold progress topology must remain one observer, one diagnostic label and two projection reads",
-        4,
+        "Context hold progress topology must remain one observer, one diagnostic label and one projection read",
+        3,
     )
     for retired_selection_cancel_owner in (
         MACRO_STRUCTURE_WORKFLOW,

@@ -3,10 +3,10 @@
 #include <array>
 #include <cstdint>
 
+#include "persistence/ProductConditionalMutationPlan.hpp"
 #include "persistence/ProductFileRecoveryPlan.hpp"
 #include "persistence/ProductStorageRecoveryService.hpp"
 #include "persistence/ProductTreeCleanupPlan.hpp"
-#include "protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
 
 namespace core::persistence {
 
@@ -81,11 +81,12 @@ private:
 
     ProductFileRecoveryPlan ordinary_{};
     ProductTreeCleanupPlan tree_cleanup_{};
-    protocol::filesystem::conditional_mutation::ConditionalMutationPlan
-        conditional_{};
-    protocol::filesystem::conditional_mutation::Journal conditional_journal_{};
-    std::array<uint8_t, protocol::filesystem::FILESYSTEM_RPC_MAX_CHUNK_SIZE>
-        scratch_{};
+    conditional_mutation::ConditionalMutationPlan conditional_{};
+    conditional_mutation::Journal conditional_journal_{};
+    std::array<
+        uint8_t,
+        PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO.maxBytes()
+    > scratch_{};
     ProductStorageRecoveryResult result_{};
     ProductMutationLease lease_{};
     ProductStorageRecoveryMode mode_ = ProductStorageRecoveryMode::HOT_SWAP;

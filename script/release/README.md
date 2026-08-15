@@ -20,15 +20,12 @@ python script/release/teensy_post_link_gate_v1.py \
   --nm-symbols-output symbols.txt
 ```
 
-The old `script/dev/teensy_memory_budget.py` and
-`script/dev/teensy_elf_topology.py` imports are exact forwarding façades under
-`CL-ELF-GATE`. They expire at `L-R11-02R`; no new consumer may use them.
-
-Core release builds select
-`profiles/core-product-profile-v1.json` through `platformio.ini`. The real
-PlatformIO post-link action applies the v1 gate and writes `teensy-size.txt`,
-`sections.txt`, `symbols.txt` and `report.json` beside the release ELF under
-`.pio/build/release/post-link`. It also requests `firmware.map` from the linker.
+Core firmware builds select a named memory vector from
+`profiles/core-product-profile-v1.json` through `platformio.ini`. The
+PlatformIO post-link action applies the v1 gate directly and writes
+`teensy-size.txt`, `sections.txt`, `symbols.txt` and `report.json` beside the
+ELF under `.pio/build/<environment>/post-link`. It also requests
+`firmware.map` from the linker.
 `validate_core_candidate_artifacts.py` then fails closed unless the promoted CI
 artifact contains exactly the expected HEX, ELF, map, green report and matching
 profile.

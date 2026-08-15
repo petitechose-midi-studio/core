@@ -12,12 +12,6 @@ namespace {
 
 namespace style = oc::ui::lvgl::style;
 
-constexpr uint32_t RENDER_TIMER_PERIOD_MS =
-    (Config::Timing::RETAINED_VIEW_HZ > 1000)
-        ? 1
-        : ((1000 + Config::Timing::RETAINED_VIEW_HZ - 1) /
-           Config::Timing::RETAINED_VIEW_HZ);
-
 }  // namespace
 
 FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stateRefs)
@@ -30,7 +24,7 @@ FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stat
             core::ui::renderSchedulerDebugLabel("DeviceSettingsView"),
             &DeviceSettingsView::drainRender,
             this,
-            RENDER_TIMER_PERIOD_MS,
+            Config::Timing::RETAINED_VIEW_PERIOD_MS,
             &DeviceSettingsView::canDrainRender
         );
     if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;
@@ -81,6 +75,7 @@ FLASHMEM bool DeviceSettingsView::bindToState() {
         state_refs_.midiSync.followTransport,
         state_refs_.midiSync.autoFallbackMs,
         state_refs_.midiSync.autoLockClockCount,
+        state_refs_.midiNoteDisplay.octaveConvention,
         state_refs_.midiSync.activeSource,
         state_refs_.midiSync.externalClockPresent
     );
@@ -100,6 +95,7 @@ void DeviceSettingsView::render() {
             state_refs_.midiSync.followTransport.get(),
             state_refs_.midiSync.autoFallbackMs.get(),
             state_refs_.midiSync.autoLockClockCount.get(),
+            state_refs_.midiNoteDisplay.octaveConvention.get(),
             state_refs_.midiSync.activeSource.get(),
             state_refs_.midiSync.externalClockPresent.get(),
         }

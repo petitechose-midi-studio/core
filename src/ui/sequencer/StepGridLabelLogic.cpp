@@ -1,8 +1,11 @@
 #include "ui/sequencer/StepGridLabelLogic.hpp"
 
 #include "ui/sequencer/StepGridRenderLogic.hpp"
+#include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace core::ui::sequencer::grid {
+
+namespace {
 
 core::state::sequencer::StepProperty displayPropertyForInlineLabelMode(
     visual::InlineLabelMode mode
@@ -25,6 +28,8 @@ core::state::sequencer::StepProperty displayPropertyForInlineLabelMode(
     }
 }
 
+}  // namespace
+
 InlineFeedbackSnapshot readInlineFeedbackSnapshot(
     bool visible,
     oc::note::sequencer::StepBitMask128 touchedMask,
@@ -39,12 +44,13 @@ InlineFeedbackSnapshot readInlineFeedbackSnapshot(
 
 NoteLabelPresentation buildNoteLabelPresentation(
     const TileRenderState& state,
-    const visual::StepPropertyVisualSpec& propertyVisual,
-    core::state::sequencer::StepProperty activeProperty,
-    const InlineFeedbackSnapshot& feedback,
-    StepGridPresentation presentationMode
+    const StepGridFrameState& frameState
 ) {
     NoteLabelPresentation presentation;
+    const auto propertyVisual = visual::buildStepPropertyVisual(
+        frameState.activeProperty,
+        state.inPattern
+    );
 
     if (!state.inPattern || !propertyVisual.showNoteLabel ||
         propertyVisual.inlineLabelMode == visual::InlineLabelMode::NONE) {
@@ -53,11 +59,15 @@ NoteLabelPresentation buildNoteLabelPresentation(
 
     const bool isNoteMode = propertyVisual.inlineLabelMode == visual::InlineLabelMode::NOTE;
     const bool isFeedbackStep =
-        feedback.visible &&
-        feedback.touchedMask.test(state.absoluteStep);
-    const bool isFeedbackProperty = feedback.property == activeProperty;
+        frameState.feedbackVisible &&
+        frameState.feedbackTouchedMask.test(state.absoluteStep);
+    const bool isFeedbackProperty =
+        frameState.feedbackProperty == frameState.activeProperty;
     const bool showRuntimePitch = hasRuntimePitchFeedback(state);
-    const bool showRuntimeActiveProperty = hasRuntimePropertyFeedback(state, activeProperty);
+    const bool showRuntimeActiveProperty = hasRuntimePropertyFeedback(
+        state,
+        frameState.activeProperty
+    );
 
     presentation.probabilityMasked = state.enabled && !state.probabilityCycleActive;
     presentation.showLabel =
@@ -74,23 +84,22 @@ NoteLabelPresentation buildNoteLabelPresentation(
         isFeedbackProperty;
     presentation.displayProperty =
         state.childContentContext
-            ? activeProperty
+            ? frameState.activeProperty
             : showRuntimeActiveProperty
-            ? activeProperty
+            ? frameState.activeProperty
             : showRuntimePitch
             ? core::state::sequencer::StepProperty::NOTE
             : displayPropertyForInlineLabelMode(propertyVisual.inlineLabelMode);
-    if (presentationMode == StepGridPresentation::MELODIC &&
+    if (frameState.presentation == StepGridPresentation::MELODIC &&
         presentation.displayProperty ==
             core::state::sequencer::StepProperty::NOTE) {
         // Pitch is already encoded by rail height. The exact note/degree lives
         // in the focused header, leaving the musical surface unobstructed.
         presentation.showLabel = false;
         presentation.showInlineIcon = false;
-        presentation.showNoteStyle = false;
         return presentation;
     }
-    if (presentationMode == StepGridPresentation::DRUM_LANE) {
+    if (frameState.presentation == StepGridPresentation::DRUM_LANE) {
         // Drum pitch is owned by the lane, so repeating it in every child tile
         // adds noise and suggests a value that cannot be edited here. Scalar
         // text is limited to the focused/touched tile; the retained geometry
@@ -102,12 +111,8 @@ NoteLabelPresentation buildNoteLabelPresentation(
              (isFeedbackStep && isFeedbackProperty));
         presentation.showInlineIcon =
             presentation.showLabel && propertyVisual.showInlineIcon;
-        presentation.showNoteStyle = false;
         return presentation;
     }
-    presentation.showNoteStyle =
-        presentation.displayProperty == core::state::sequencer::StepProperty::NOTE &&
-        (isNoteMode || showRuntimePitch);
     return presentation;
 }
 

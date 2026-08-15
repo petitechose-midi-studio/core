@@ -19,11 +19,6 @@ namespace theme = standalone::theme;
 
 constexpr lv_coord_t TAB_STRIP_HEIGHT = 24;
 constexpr lv_coord_t TAB_WIDTH = 34;
-constexpr uint32_t RENDER_TIMER_PERIOD_MS =
-    (Config::Timing::RETAINED_VIEW_HZ > 1000)
-        ? 1
-        : ((1000 + Config::Timing::RETAINED_VIEW_HZ - 1) /
-           Config::Timing::RETAINED_VIEW_HZ);
 
 FLASHMEM ms::ui::MenuRowKind toMenuRowKind(core::state::project::ProjectMenuRowKind kind) {
     switch (kind) {
@@ -103,7 +98,7 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
             core::ui::renderSchedulerDebugLabel("ProjectView"),
             &ProjectView::drainRender,
             this,
-            RENDER_TIMER_PERIOD_MS,
+            Config::Timing::RETAINED_VIEW_PERIOD_MS,
             &ProjectView::canDrainRender
         );
     if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;

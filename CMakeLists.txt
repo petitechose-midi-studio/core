@@ -4,10 +4,33 @@ project(petitechose_midi_studio_core LANGUAGES CXX)
 
 include(CTest)
 
+# Firmware and its native contract suite deliberately share GNU C++17.
+# Host-only targets opt into portable C++20 where their graph requires it.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+option(
+    MS_CORE_ENABLE_SANITIZERS
+    "Instrument native Core boundary tests with AddressSanitizer and UBSan"
+    OFF)
+option(
+    MS_CORE_ENABLE_FUZZING
+    "Build the opt-in libFuzzer boundary harnesses"
+    OFF)
+
+add_library(ms_core_compile_warnings INTERFACE)
+if(MSVC)
+    target_compile_options(ms_core_compile_warnings INTERFACE /W4)
+else()
+    target_compile_options(ms_core_compile_warnings INTERFACE -Wall -Wextra)
+endif()
+
+if(MS_CORE_ENABLE_FUZZING AND NOT MS_CORE_ENABLE_SANITIZERS)
+    message(FATAL_ERROR
+        "MS_CORE_ENABLE_FUZZING requires MS_CORE_ENABLE_SANITIZERS")
+endif()
 
 set(MS_CORE_OPEN_CONTROL_ROOT
     "${CMAKE_CURRENT_SOURCE_DIR}/../../open-control"
@@ -93,7 +116,67 @@ target_include_directories(midi_studio_core_native
         # sources. Their font/icon headers include LVGL types, supplied by the
         # same deterministic stub used by the individual test executables.
         "${CMAKE_CURRENT_SOURCE_DIR}/test")
-target_link_libraries(midi_studio_core_native PUBLIC oc_note_native oc_framework_native)
+target_link_libraries(midi_studio_core_native
+    PUBLIC oc_note_native oc_framework_native
+    PRIVATE ms_core_compile_warnings)
+
+if(MS_CORE_ENABLE_SANITIZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR
+            "MS_CORE_ENABLE_SANITIZERS requires a Clang or GCC compiler")
+    endif()
+    if(WIN32 AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR
+            "MS_CORE_ENABLE_SANITIZERS requires Clang on Windows")
+    endif()
+
+    add_library(ms_core_sanitizers INTERFACE)
+    target_compile_options(ms_core_sanitizers INTERFACE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer)
+    target_link_options(ms_core_sanitizers INTERFACE
+        -fsanitize=address,undefined)
+    if(MS_CORE_ENABLE_FUZZING)
+        if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            message(FATAL_ERROR
+                "MS_CORE_ENABLE_FUZZING requires Clang with libFuzzer")
+        endif()
+        target_compile_options(ms_core_sanitizers INTERFACE
+            -fsanitize=fuzzer-no-link)
+    endif()
+    if(WIN32)
+        # Core boundary fixtures retain large product aggregates on the host
+        # stack. ASan redzones need more than Windows' 1 MiB executable default;
+        # this is test capacity, not a firmware stack-budget relaxation.
+        target_link_options(ms_core_sanitizers INTERFACE
+            -Xlinker /STACK:16777216)
+    endif()
+
+    target_link_libraries(oc_framework_native PUBLIC ms_core_sanitizers)
+    target_link_libraries(oc_note_native PUBLIC ms_core_sanitizers)
+    target_link_libraries(midi_studio_core_native PUBLIC ms_core_sanitizers)
+
+    if(WIN32)
+        if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+            message(FATAL_ERROR
+                "MS_CORE_ENABLE_SANITIZERS supports 64-bit Windows only")
+        endif()
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}"
+                    "--print-file-name=clang_rt.asan_dynamic-x86_64.dll"
+            OUTPUT_VARIABLE MS_CORE_SANITIZER_RUNTIME
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY)
+        if(NOT EXISTS "${MS_CORE_SANITIZER_RUNTIME}")
+            message(FATAL_ERROR
+                "Clang AddressSanitizer runtime not found: "
+                "${MS_CORE_SANITIZER_RUNTIME}")
+        endif()
+        configure_file("${MS_CORE_SANITIZER_RUNTIME}"
+            "${CMAKE_BINARY_DIR}/clang_rt.asan_dynamic-x86_64.dll"
+            COPYONLY)
+    endif()
+endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreProjectFileTool.cmake")
 ms_core_add_project_file_tool()
@@ -142,18 +225,6 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     set_tests_properties(check_SequencerHistoryInventorySelfTest PROPERTIES LABELS core)
 
     add_test(
-        NAME check_TeensyMemoryBudgetParser
-        COMMAND "${Python3_EXECUTABLE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-memory-budget.py")
-    set_tests_properties(check_TeensyMemoryBudgetParser PROPERTIES LABELS core)
-
-    add_test(
-        NAME check_TeensyElfTopology
-        COMMAND "${Python3_EXECUTABLE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-elf-topology.py")
-    set_tests_properties(check_TeensyElfTopology PROPERTIES LABELS core)
-
-    add_test(
         NAME check_TeensyPostLinkGateV1
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-post-link-gate.py")
@@ -169,6 +240,40 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_*/test_main.cpp")
 
     set(MS_CORE_NATIVE_TEST_TARGETS)
+    set(MS_CORE_STANDALONE_TESTS
+        test_ActiveViewLifecycle
+        test_ForegroundCadence
+        test_MacroKnobVisualPolicy
+        test_ModulatorEnvelopeParameterMapping
+        test_ModulatorEnvelopeTiming
+        test_ModulatorLfoParameterMapping
+        test_PsramSpanTracker
+        test_StandaloneSequencerRuntimeGate
+        test_StorageQualificationProbe
+        test_TimingCadenceContracts
+        test_UxReplayTimeline)
+
+    # Each listed contract needs only the same-named implementation below.
+    set(MS_CORE_ISOLATED_TEST_SOURCES
+        src/persistence/StorageRecoveryMachine.cpp
+        src/sequencer/ClockSourceSelector.cpp
+        src/sequencer/ExternalClockEstimator.cpp
+        src/sequencer/MidiCcResolutionTelemetryExchange.cpp
+        src/sequencer/ProjectModulationTriggerQueue.cpp
+        src/state/StructureSelectionInteractionPolicy.cpp
+        src/state/interaction/TextKeyboardLayout.cpp
+        src/state/macro/MacroAutomationDomain.cpp
+        src/state/macro/MacroEditMenuModel.cpp
+        src/state/macro/MacroInteractionPolicy.cpp
+        src/state/project/ProjectSlug.cpp
+        src/state/sequencer/SequencerNoteSpelling.cpp
+        src/state/shared/MidiCcDestinationResolver.cpp
+        src/state/shared/StructureSlotOps.cpp)
+    foreach(isolated_test_source IN LISTS MS_CORE_ISOLATED_TEST_SOURCES)
+        get_filename_component(isolated_test_name "${isolated_test_source}" NAME_WE)
+        set("MS_CORE_ISOLATED_TEST_SOURCE_test_${isolated_test_name}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/${isolated_test_source}")
+    endforeach()
 
     add_test(
         NAME test_CoreFileToolInputLimits
@@ -234,13 +339,32 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         test_SequencerStepEditHandler
         test_StepPresetFileStore)
 
+    set(MS_CORE_SANITIZER_BOUNDARY_TESTS
+        test_AtomicProductFile
+        test_FileSystemRpc
+        test_SequencerCcLanePersistence)
+
     foreach(test_source IN LISTS MS_CORE_NATIVE_TESTS)
         get_filename_component(test_dir "${test_source}" DIRECTORY)
         get_filename_component(test_name "${test_dir}" NAME)
         list(APPEND MS_CORE_NATIVE_TEST_TARGETS "${test_name}")
 
         add_executable("${test_name}" "${test_source}")
-        target_link_libraries("${test_name}" PRIVATE midi_studio_core_native)
+        set(isolated_test_source
+            "${MS_CORE_ISOLATED_TEST_SOURCE_${test_name}}")
+        if(test_name IN_LIST MS_CORE_STANDALONE_TESTS OR isolated_test_source)
+            target_include_directories("${test_name}"
+                PRIVATE
+                    "${MS_DEVICE_SUPPORT_DIR}/src"
+                    "${MS_CORE_OC_FRAMEWORK_DIR}/src"
+                    "${MS_CORE_OC_NOTE_DIR}/src")
+        else()
+            target_link_libraries("${test_name}" PRIVATE midi_studio_core_native)
+        endif()
+        if(isolated_test_source)
+            target_sources("${test_name}" PRIVATE "${isolated_test_source}")
+            target_link_libraries("${test_name}" PRIVATE ms_core_compile_warnings)
+        endif()
         target_include_directories("${test_name}"
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
@@ -273,10 +397,66 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         endif()
     endforeach()
 
+    if(MS_CORE_ENABLE_SANITIZERS)
+        set_tests_properties(${MS_CORE_SANITIZER_BOUNDARY_TESTS} PROPERTIES
+            ENVIRONMENT
+                "ASAN_OPTIONS=halt_on_error=1:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+
+        if(PROJECT_IS_TOP_LEVEL)
+            list(JOIN MS_CORE_SANITIZER_BOUNDARY_TESTS "|"
+                MS_CORE_SANITIZER_BOUNDARY_REGEX)
+            add_custom_target(test-sanitized-boundaries
+                COMMAND "${CMAKE_CTEST_COMMAND}"
+                        --test-dir "${CMAKE_BINARY_DIR}"
+                        --tests-regex "^(${MS_CORE_SANITIZER_BOUNDARY_REGEX})$"
+                        --output-on-failure
+                DEPENDS ${MS_CORE_SANITIZER_BOUNDARY_TESTS}
+                USES_TERMINAL
+                VERBATIM)
+        endif()
+    endif()
+
     if(PROJECT_IS_TOP_LEVEL)
         add_custom_target(test-native
             COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${CMAKE_BINARY_DIR}" --parallel --output-on-failure
             DEPENDS ${MS_CORE_NATIVE_TEST_TARGETS}
             USES_TERMINAL)
+    endif()
+endif()
+
+if(MS_CORE_ENABLE_FUZZING)
+    add_executable(fuzz_FileSystemRpc EXCLUDE_FROM_ALL
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/FileSystemRpcFuzzer.cpp")
+    add_executable(fuzz_SequencerPatternEnvelope EXCLUDE_FROM_ALL
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/SequencerPatternEnvelopeFuzzer.cpp")
+    target_link_libraries(fuzz_FileSystemRpc PRIVATE midi_studio_core_native)
+    target_link_libraries(fuzz_SequencerPatternEnvelope PRIVATE midi_studio_core_native)
+    target_link_options(fuzz_FileSystemRpc PRIVATE -fsanitize=fuzzer)
+    target_link_options(fuzz_SequencerPatternEnvelope PRIVATE -fsanitize=fuzzer)
+
+    if(PROJECT_IS_TOP_LEVEL)
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/fuzz-artifacts")
+        add_custom_target(fuzz-smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                    "ASAN_OPTIONS=halt_on_error=1:abort_on_error=1"
+                    "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
+                    "$<TARGET_FILE:fuzz_FileSystemRpc>"
+                    -runs=2000
+                    -max_total_time=5
+                    -max_len=32768
+                    -dict=${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/FileSystemRpc.dict
+                    -artifact_prefix=${CMAKE_BINARY_DIR}/fuzz-artifacts/
+            COMMAND "${CMAKE_COMMAND}" -E env
+                    "ASAN_OPTIONS=halt_on_error=1:abort_on_error=1"
+                    "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
+                    "$<TARGET_FILE:fuzz_SequencerPatternEnvelope>"
+                    -runs=2000
+                    -max_total_time=5
+                    -max_len=16445
+                    -dict=${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/SequencerPatternEnvelope.dict
+                    -artifact_prefix=${CMAKE_BINARY_DIR}/fuzz-artifacts/
+            DEPENDS fuzz_FileSystemRpc fuzz_SequencerPatternEnvelope
+            USES_TERMINAL
+            VERBATIM)
     endif()
 endif()

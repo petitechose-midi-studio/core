@@ -1,6 +1,7 @@
 #include "handler/macro/MacroPerformanceHandler.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/macro/MacroEditHandler.hpp"
 #include "handler/sequencer/ProjectTrackEditorHandler.hpp"
@@ -50,7 +51,6 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     , performance_workflow_(
           MacroPerformanceModeWorkflow::StateRefs{
               state.macroUi,
-              state.pages,
               state.trackNavigation,
           },
           performanceServices,

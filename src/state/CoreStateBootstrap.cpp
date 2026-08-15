@@ -110,11 +110,15 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
-    if (!state.deviceSettingsStore.load(state.midiSync)) {
+    if (!state.deviceSettingsStore.load(
+            state.midiSync,
+            state.midiNoteDisplay
+        )) {
         OC_LOG_WARN(
             "{}",
             "[CoreState] Device settings rejected; retaining runtime defaults"
         );
+        state.midiNoteDisplay.syncFormatter();
     }
     state.setSharedTrackState_(
         state.pages.currentTrackEnabledMask(),

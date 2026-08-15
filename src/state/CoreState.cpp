@@ -149,6 +149,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
       trackNavigation(systemUi_->trackNavigation),
       structureClipboard(systemUi_->structureClipboard), viewSelector(systemUi_->viewSelector),
       statusBar(systemUi_->statusBar), midiSync(systemUi_->midiSync),
+      midiNoteDisplay(systemUi_->midiNoteDisplay),
       deviceSettings(systemUi_->deviceSettings),
       patternPitchSettings(systemUi_->patternPitchSettings), macroEdit(systemUi_->macroEdit),
       macroUi(systemUi_->macroUi), projectNavigation(systemUi_->projectNavigation),

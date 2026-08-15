@@ -50,6 +50,27 @@ FLASHMEM lv_coord_t drumLaneHeight(const lv_area_t& surface) {
     );
 }
 
+FLASHMEM void includeDamage(
+    lv_area_t& damage,
+    bool& hasDamage,
+    const lv_area_t& area
+) {
+    if (!hasDamage) {
+        damage = area;
+        hasDamage = true;
+        return;
+    }
+    damage.x1 = std::min(damage.x1, area.x1);
+    damage.y1 = std::min(damage.y1, area.y1);
+    damage.x2 = std::max(damage.x2, area.x2);
+    damage.y2 = std::max(damage.y2, area.y2);
+}
+
+constexpr bool sameArea(const lv_area_t& lhs, const lv_area_t& rhs) {
+    return lhs.x1 == rhs.x1 && lhs.y1 == rhs.y1 &&
+        lhs.x2 == rhs.x2 && lhs.y2 == rhs.y2;
+}
+
 FLASHMEM void drawRect(
     lv_layer_t* layer,
     const lv_area_t& area,
@@ -1047,7 +1068,11 @@ FLASHMEM void drawDrumLaneRow(
         : laneSelection.active
             ? lane == laneSelection.cursorLane
             : lane == drumUi.selectedLane && !addSlotFocused;
-    drawLaneFocusMarker(context, rowY, selected);
+    const lv_area_t& clip = context.layer->_clip_area;
+    const bool headerVisible = clip.x1 < context.gridStart;
+    if (headerVisible) {
+        drawLaneFocusMarker(context, rowY, selected);
+    }
     if (addRow) {
         drawAddLaneRow(context, rowY, selected);
         return;
@@ -1077,22 +1102,41 @@ FLASHMEM void drawDrumLaneRow(
     const uint8_t stepsPerBeat =
         drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane);
 
-    drawLaneHeader(context, lane, rowY, laneColor, selected);
-    for (uint8_t column = 0U;
-         column < DrumSequencerState::STEPS_PER_PAGE;
-         ++column) {
-        drawDrumStepCell(
-            context,
-            lane,
-            row,
-            column,
-            rowY,
-            laneLength,
-            stepsPerBeat,
-            laneBit,
-            laneColor,
-            selected
+    if (headerVisible) {
+        drawLaneHeader(context, lane, rowY, laneColor, selected);
+    }
+    if (clip.x2 >= context.gridStart && clip.x1 < context.gridEnd) {
+        // Gate tails can extend through every following cell. A negative
+        // Nudge can only pull the next cell half a cell to the left, so later
+        // cells cannot contribute to this damage band.
+        const lv_coord_t lastRelevantX = static_cast<lv_coord_t>(
+            clip.x2 - context.gridStart + context.cellWidth / 2
         );
+        const uint8_t lastColumn = static_cast<uint8_t>(
+            std::clamp<lv_coord_t>(
+                static_cast<lv_coord_t>(
+                    lastRelevantX / context.cellWidth
+                ),
+                0,
+                static_cast<lv_coord_t>(
+                    DrumSequencerState::STEPS_PER_PAGE - 1U
+                )
+            )
+        );
+        for (uint8_t column = 0U; column <= lastColumn; ++column) {
+            drawDrumStepCell(
+                context,
+                lane,
+                row,
+                column,
+                rowY,
+                laneLength,
+                stepsPerBeat,
+                laneBit,
+                laneColor,
+                selected
+            );
+        }
     }
     drawLaneLoopEnd(context, rowY, laneLength, selected);
     drawLanePlayhead(context, lane, laneBit, rowY);
@@ -1119,7 +1163,16 @@ FLASHMEM void drawDrumLaneGrid(const DrumGridRenderContext& context) {
               DrumSequencerState::VISIBLE_LANE_COUNT
           )
         : 0U;
+    const lv_area_t& clip = context.layer->_clip_area;
     for (uint8_t row = 0U; row < visibleRowCount; ++row) {
+        const lv_coord_t rowY = static_cast<lv_coord_t>(
+            context.surface.y1 + row * context.laneHeight
+        );
+        if (rowY > clip.y2 ||
+            static_cast<lv_coord_t>(rowY + context.laneHeight - 1) <
+                clip.y1) {
+            continue;
+        }
         drawDrumLaneRow(context, row, addSlotFocused);
     }
 }
@@ -1314,33 +1367,22 @@ DrumOverviewSurface::capturePlayback(
     return snapshot;
 }
 
-FLASHMEM void DrumOverviewSurface::invalidatePlayheadMarker(
-    const PlaybackSnapshot& snapshot,
+FLASHMEM void DrumOverviewSurface::includePlayheadDamage(
+    const PlaybackSnapshot& previous,
+    const PlaybackSnapshot& next,
     uint8_t lane,
     lv_coord_t rowY,
-    const lv_area_t& surface
+    const lv_area_t& surface,
+    lv_area_t& damage,
+    bool& hasDamage
 ) {
-    if (!root_ || !snapshot.playbackActive ||
-        lane >= RUNTIME_LANE_CAPACITY) {
-        return;
-    }
-    const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
-    if ((snapshot.playheadValidMask & laneBit) == 0U) return;
+    if (!root_ || lane >= RUNTIME_LANE_CAPACITY) return;
 
     const auto& projection = *renderedProps_.projection;
     const uint8_t pageStart = static_cast<uint8_t>(
         projection.page *
         core::state::sequencer::DrumSequencerState::STEPS_PER_PAGE
     );
-    const uint8_t step = snapshot.playheadSteps[lane];
-    if (step < pageStart ||
-        step >= static_cast<uint8_t>(
-            pageStart +
-            core::state::sequencer::DrumSequencerState::STEPS_PER_PAGE
-        )) {
-        return;
-    }
-
     const lv_coord_t width = static_cast<lv_coord_t>(
         surface.x2 - surface.x1 + 1
     );
@@ -1352,25 +1394,55 @@ FLASHMEM void DrumOverviewSurface::invalidatePlayheadMarker(
         surface.x1 + DRUM_LABEL_WIDTH
     );
     const lv_coord_t laneHeight = drumLaneHeight(surface);
-    const lv_coord_t x = static_cast<lv_coord_t>(
-        gridStart + (step - pageStart) * cellWidth +
-        (static_cast<uint16_t>(snapshot.playheadPhasesQ8[lane]) *
-         cellWidth) / 256U
-    );
-    const lv_area_t markerArea{
-        .x1 = static_cast<lv_coord_t>(x - 1),
-        .y1 = rowY,
-        .x2 = static_cast<lv_coord_t>(x + 1),
-        .y2 = static_cast<lv_coord_t>(rowY + laneHeight - 1),
+    const auto markerArea = [=](
+        const PlaybackSnapshot& snapshot,
+        lv_area_t& area
+    ) {
+        const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
+        if (!snapshot.playbackActive ||
+            (snapshot.playheadValidMask & laneBit) == 0U) {
+            return false;
+        }
+        const uint8_t step = snapshot.playheadSteps[lane];
+        if (step < pageStart ||
+            step >= static_cast<uint8_t>(
+                pageStart + DrumSequencerState::STEPS_PER_PAGE
+            )) {
+            return false;
+        }
+        const lv_coord_t x = static_cast<lv_coord_t>(
+            gridStart + (step - pageStart) * cellWidth +
+            (static_cast<uint16_t>(snapshot.playheadPhasesQ8[lane]) *
+             cellWidth) / 256U
+        );
+        area = {
+            .x1 = static_cast<lv_coord_t>(x - 1),
+            .y1 = rowY,
+            .x2 = static_cast<lv_coord_t>(x + 1),
+            .y2 = static_cast<lv_coord_t>(rowY + laneHeight - 1),
+        };
+        return true;
     };
-    oc::ui::lvgl::invalidateStaticSurfaceArea(root_, markerArea);
+
+    lv_area_t previousArea{};
+    lv_area_t nextArea{};
+    const bool previousVisible = markerArea(previous, previousArea);
+    const bool nextVisible = markerArea(next, nextArea);
+    if (previousVisible == nextVisible &&
+        (!previousVisible || sameArea(previousArea, nextArea))) {
+        return;
+    }
+    if (previousVisible) includeDamage(damage, hasDamage, previousArea);
+    if (nextVisible) includeDamage(damage, hasDamage, nextArea);
 }
 
-FLASHMEM void DrumOverviewSurface::invalidateChanceCell(
+FLASHMEM void DrumOverviewSurface::includeChanceCellDamage(
     const PlaybackSnapshot& snapshot,
     uint8_t lane,
     lv_coord_t rowY,
-    const lv_area_t& surface
+    const lv_area_t& surface,
+    lv_area_t& damage,
+    bool& hasDamage
 ) {
     if (!root_ || lane >= RUNTIME_LANE_CAPACITY) return;
     const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
@@ -1410,13 +1482,15 @@ FLASHMEM void DrumOverviewSurface::invalidateChanceCell(
         .x2 = static_cast<lv_coord_t>(cellX + cellWidth - 1),
         .y2 = static_cast<lv_coord_t>(rowY + laneHeight - 1),
     };
-    oc::ui::lvgl::invalidateStaticSurfaceArea(root_, cellArea);
+    includeDamage(damage, hasDamage, cellArea);
 }
 
-FLASHMEM void DrumOverviewSurface::invalidateResolvedCell(
+FLASHMEM void DrumOverviewSurface::includeResolvedCellDamage(
     uint8_t row,
     uint8_t column,
-    const lv_area_t& surface
+    const lv_area_t& surface,
+    lv_area_t& damage,
+    bool& hasDamage
 ) {
     if (!root_ ||
         row >= core::state::sequencer::DrumResolvedPageProjection::VISIBLE_LANES ||
@@ -1437,8 +1511,9 @@ FLASHMEM void DrumOverviewSurface::invalidateResolvedCell(
     const lv_coord_t rowY = static_cast<lv_coord_t>(
         surface.y1 + row * laneHeight
     );
-    oc::ui::lvgl::invalidateStaticSurfaceArea(
-        root_,
+    includeDamage(
+        damage,
+        hasDamage,
         lv_area_t{
             .x1 = cellX,
             .y1 = rowY,
@@ -1474,19 +1549,6 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
         const uint8_t lane = projection.visibleLane(row);
         if (lane >= RUNTIME_LANE_CAPACITY) continue;
         const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
-        const bool previousPlayhead =
-            previous.playbackActive &&
-            (previous.playheadValidMask & laneBit) != 0U;
-        const bool nextPlayhead =
-            next.playbackActive &&
-            (next.playheadValidMask & laneBit) != 0U;
-        const bool playheadChanged =
-            previousPlayhead != nextPlayhead ||
-            (previousPlayhead && nextPlayhead &&
-             (previous.playheadSteps[lane] != next.playheadSteps[lane] ||
-              previous.playheadPhasesQ8[lane] !=
-                  next.playheadPhasesQ8[lane]));
-
         const bool previousChance =
             (previous.chanceDecisionValidMask & laneBit) != 0U;
         const bool nextChance =
@@ -1502,13 +1564,18 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
         const lv_coord_t rowY = static_cast<lv_coord_t>(
             surface.y1 + row * laneHeight
         );
-        if (playheadChanged) {
-            invalidatePlayheadMarker(previous, lane, rowY, surface);
-            invalidatePlayheadMarker(next, lane, rowY, surface);
-        }
+        lv_area_t damage{};
+        bool hasDamage = false;
+        includePlayheadDamage(
+            previous, next, lane, rowY, surface, damage, hasDamage
+        );
         if (chanceChanged) {
-            invalidateChanceCell(previous, lane, rowY, surface);
-            invalidateChanceCell(next, lane, rowY, surface);
+            includeChanceCellDamage(
+                previous, lane, rowY, surface, damage, hasDamage
+            );
+            includeChanceCellDamage(
+                next, lane, rowY, surface, damage, hasDamage
+            );
         }
 
         for (uint8_t column = 0U;
@@ -1551,8 +1618,13 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
                    previous.resolvedPage.nudge[cell] !=
                        next.resolvedPage.nudge[cell]));
             if (resolvedChanged) {
-                invalidateResolvedCell(row, column, surface);
+                includeResolvedCellDamage(
+                    row, column, surface, damage, hasDamage
+                );
             }
+        }
+        if (hasDamage) {
+            oc::ui::lvgl::invalidateStaticSurfaceArea(root_, damage);
         }
     }
 }
@@ -1582,18 +1654,25 @@ FLASHMEM void DrumOverviewSurface::render(
     }
 
     const bool staticChanged = staticVisualChanged(props);
-    const PlaybackSnapshot nextPlayback = capturePlayback(*props.projection);
-    const PlaybackSnapshot previousPlayback = playback_;
     renderedProps_ = props;
     syncFocusedLaneName(props);
 
     if (staticChanged) {
+        if (props.navigationFocus ==
+            core::state::StructureNavigationFocus::TRACK) {
+            playback_ = {};
+        } else {
+            playback_ = capturePlayback(*props.projection);
+        }
         lv_obj_invalidate(root_);
-    } else {
-        invalidatePlaybackDelta(previousPlayback, nextPlayback);
+    } else if (props.navigationFocus !=
+               core::state::StructureNavigationFocus::TRACK) {
+        const PlaybackSnapshot nextPlayback =
+            capturePlayback(*props.projection);
+        invalidatePlaybackDelta(playback_, nextPlayback);
+        playback_ = nextPlayback;
     }
 
-    playback_ = nextPlayback;
     rendered_ = true;
 }
 

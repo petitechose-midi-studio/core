@@ -53,28 +53,6 @@ FLASHMEM bool MacroManualOverrideState::valueFor(
     return true;
 }
 
-FLASHMEM bool MacroManualOverrideState::captureSnapshot(Snapshot& out) const {
-    // Runtime mutations and publication normally share the application thread.
-    // The revision guard still makes the contract explicit and bounded for
-    // consumers that publish the snapshot at a frame boundary.
-    constexpr uint8_t kMaxAttempts = 2;
-    for (uint8_t attempt = 0; attempt < kMaxAttempts; ++attempt) {
-        const uint32_t revisionBefore = revision;
-        Snapshot candidate{};
-        candidate.revision = revisionBefore;
-        candidate.entryCount = entryCount > CAPACITY ? CAPACITY : entryCount;
-        for (uint8_t i = 0; i < candidate.entryCount; ++i) {
-            candidate.entries[i] = entries[i];
-        }
-        if (revisionBefore == revision) {
-            out = candidate;
-            return true;
-        }
-    }
-    out = {};
-    return false;
-}
-
 FLASHMEM MacroManualOverrideState::ActivateStatus MacroManualOverrideState::activate(
     const MacroAutomationSlotAddress& address,
     float value

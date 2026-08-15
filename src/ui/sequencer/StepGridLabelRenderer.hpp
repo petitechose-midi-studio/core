@@ -4,9 +4,22 @@
 
 #include "ui/sequencer/StepGridLabelLogic.hpp"
 #include "ui/sequencer/StepGridRenderTypes.hpp"
-#include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace core::ui::sequencer::grid::label_renderer {
+
+struct TileLabelWidgets {
+    lv_obj_t* primary = nullptr;
+    lv_obj_t* secondary = nullptr;
+    lv_obj_t* inlineIcon = nullptr;
+};
+
+struct TileLabelGeometry {
+    lv_coord_t baseX = 0;
+    lv_coord_t baselineY = 0;
+    lv_coord_t labelHeight = 0;
+    lv_coord_t iconWidth = 0;
+    lv_coord_t iconHeight = 0;
+};
 
 /**
  * Applies label/icon render decisions to LVGL objects for one tile.
@@ -14,25 +27,14 @@ namespace core::ui::sequencer::grid::label_renderer {
  * The renderer uses frame state, diffs, geometry, and cached values to update
  * only the affected note label and inline icon widgets.
  */
-void renderTileNoteLabel(uint8_t tileIndex,
-                         TileRenderCache& cache,
-                         lv_obj_t* noteLabel,
-                         lv_obj_t* originalNoteLabel,
-                         lv_obj_t* inlineIcon,
+void renderTileNoteLabel(TileRenderCache& cache,
+                         const TileLabelWidgets& widgets,
                          const TileRenderState& state,
                          const TileRenderDiff& diff,
                          bool propertyVisualChanged,
                          bool tileFeedbackChanged,
                          bool geometryChanged,
-                         core::state::sequencer::StepProperty activeProperty,
-                         StepGridPresentation presentation,
-                         uint32_t accentColor,
-                         const InlineFeedbackSnapshot& feedback,
-                         const visual::StepPropertyVisualSpec& propertyVisual,
-                         lv_coord_t noteBaseX,
-                         lv_coord_t noteLabelY,
-                         lv_coord_t noteLabelHeight,
-                         lv_coord_t inlineIconWidth,
-                         lv_coord_t inlineIconHeight);
+                         const StepGridFrameState& frameState,
+                         const TileLabelGeometry& geometry);
 
 }  // namespace core::ui::sequencer::grid::label_renderer

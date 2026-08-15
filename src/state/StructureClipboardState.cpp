@@ -190,7 +190,7 @@ FLASHMEM void commitClipboardKind(
 
 struct MacroAutomationClipboardBuild {
     core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard> value;
-    bool success = true;
+    bool success = false;
 };
 
 FLASHMEM MacroAutomationClipboardBuild
@@ -218,24 +218,24 @@ makeMacroAutomationClipboard(
                     address,
                     view
                 )) {
-                return {.success = false};
+                return {};
             }
             if (!view.present()) continue;
             if (!clipboard) {
                 clipboard = core::app::makeExtmemUnique<
                     core::state::MacroAutomationClipboard
                 >();
-                if (!clipboard) return {.success = false};
+                if (!clipboard) return {};
                 clipboard->trackScope = trackScope;
                 clipboard->sourceTrack = sourceTrack;
                 clipboard->sourcePage = sourcePage;
             }
             if (!clipboard->append(page, macro, control, address)) {
-                return {.success = false};
+                return {};
             }
         }
     }
-    return {.value = std::move(clipboard)};
+    return {.value = std::move(clipboard), .success = true};
 }
 
 }  // namespace

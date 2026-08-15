@@ -1,6 +1,7 @@
 #include "SequencerStepHandler.hpp"
 
 #include <config/App.hpp>
+#include <config/Timing.hpp>
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
@@ -722,7 +723,7 @@ FLASHMEM void SequencerStepHandler::enterSelectionModeForCurrentFocus() {
     navigation_workflow_.enterSelectionModeForCurrentFocus();
 }
 
-FLASHMEM void SequencerStepHandler::setupBindings() {
+FLASHMEM void SequencerStepHandler::setupDrumBindings() {
     // Drum owns its lane navigation and momentary property surfaces. Track and
     // Step structure actions deliberately fall through to the common workflow
     // registered below; only Pattern paging remains a prioritized exception.
@@ -1014,6 +1015,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 editDrumSequencerStepProperty(i, normalized);
             });
     }
+}
+
+FLASHMEM void SequencerStepHandler::setupBindings() {
+    setupDrumBindings();
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
@@ -1086,6 +1091,11 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             });
     }
 
+    setupNavigationBindings();
+    setupStructureActionBindings();
+}
+
+FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
@@ -1263,7 +1273,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 return;
             }
         });
+}
 
+FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)

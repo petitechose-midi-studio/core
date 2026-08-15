@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstring>
 #include <config/App.hpp>
+#include <config/InputIDs.hpp>
 #include <config/Timing.hpp>
 #include <iostream>
 

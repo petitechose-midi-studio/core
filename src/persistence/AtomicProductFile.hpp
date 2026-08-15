@@ -20,7 +20,6 @@ inline constexpr const char* PRODUCT_FILE_JOURNAL_SLOT_A =
     "tmp/rpc-product-file-a.journal";
 inline constexpr const char* PRODUCT_FILE_JOURNAL_SLOT_B =
     "tmp/rpc-product-file-b.journal";
-inline constexpr uint8_t PRODUCT_FILE_JOURNAL_LEGACY_VERSION = 1U;
 inline constexpr uint8_t PRODUCT_FILE_JOURNAL_VERSION = 2U;
 inline constexpr uint16_t PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE = 607U;
 inline constexpr size_t PRODUCT_FILE_INTEGRITY_CHUNK_SIZE = 512U;

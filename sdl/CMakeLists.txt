@@ -18,8 +18,11 @@ endif()
 # Build Settings
 # ==============================================================================
 set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_UNITY_BUILD OFF)
 
@@ -183,6 +186,8 @@ set(LV_BUILD_CONF_DIR "${LV_CONF_DIR}" CACHE STRING "" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory("${LVGL_DIR}" "${CMAKE_BINARY_DIR}/lvgl")
+# LVGL uses POSIX C APIs such as strnlen; keep that extension scoped to it.
+set_target_properties(lvgl PROPERTIES C_EXTENSIONS ON)
 target_include_directories(lvgl PUBLIC ${LV_CONF_DIR})
 # Select the app-specific LVGL configuration explicitly.  Several dependency
 # roots legitimately contain their own lv_conf.h, so relying on include search

@@ -129,6 +129,35 @@ FLASHMEM SlotProps makeSelectionCountSlot(uint8_t selectedCount) {
     return slot;
 }
 
+FLASHMEM void applyPastePlacementSlots(
+    StripProps& props,
+    uint8_t selectedCount,
+    uint8_t overwriteCount,
+    bool blocked,
+    Visual pasteVisual
+) {
+    props.slots[0].visualState = Visual::HIDDEN;
+    props.slots[1] = makeSelectionCountSlot(selectedCount);
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+        standalone::icons::ACTION_PASTE,
+        pasteVisual,
+        blocked
+            ? Tone::DESTRUCTIVE
+            : overwriteCount > 0U
+                ? Tone::WARNING
+                : Tone::POSITIVE
+    );
+    if (overwriteCount == 0U) return;
+
+    props.slots[2].showLabel = true;
+    std::snprintf(
+        props.slots[2].labelText.data(),
+        props.slots[2].labelText.size(),
+        "PST \xC2\xB7 %u OVR",
+        static_cast<unsigned>(overwriteCount)
+    );
+}
+
 FLASHMEM void applyHoldProgress(SlotProps& slot,
                        const core::state::StructureHoldState& holdState,
                        bool active) {
@@ -387,6 +416,342 @@ makeBottomInteractionContext(
     return context;
 }
 
+FLASHMEM bool projectDrumBottomActionStrip(
+    const SequencerViewModelSource& source,
+    StripProps& props
+) {
+    const auto& drumUi = source.sequencer.drumSequencer;
+    const bool ownsStrip =
+        core::state::sequencer::isDrumOverviewActive(source.sequencer) ||
+        (drumUi.active() && !drumUi.gridVisible());
+    if (!ownsStrip) return false;
+    if (!drumUi.gridVisible() || drumUi.selectorVisible() ||
+        drumUi.laneAddSlotFocused()) {
+        return true;
+    }
+
+    if (drumUi.laneSelection.active) {
+        const auto& selection = drumUi.laneSelection;
+        const uint8_t selectedCount = countSelectedItems(selection.selectedMask);
+        const auto interaction =
+            core::state::sequencer::buildSequencerInteractionPolicy(
+                makeBottomInteractionContext(source)
+            );
+        if (selection.moveActive()) {
+            props.slots[0].visualState = Visual::HIDDEN;
+            props.slots[1] = makeSelectionCountSlot(selectedCount);
+            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_APPLY,
+                Visual::ACTIVE,
+                Tone::POSITIVE
+            );
+            return true;
+        }
+        if (selection.placementActive()) {
+            const uint8_t overwriteCount = countSelectedItems(
+                selection.overwriteMask
+            );
+            const bool canPaste = !selection.pasteBlocked &&
+                selection.destinationMask != 0U;
+            const auto& hold = source.sequencer.structureUi.pageHold;
+            const bool holdActive = canPaste &&
+                hold.action.get() == core::state::StructureHoldAction::PASTE;
+            applyPastePlacementSlots(
+                props,
+                selectedCount,
+                overwriteCount,
+                selection.pasteBlocked,
+                holdActive
+                    ? Visual::ARMED
+                    : interactionVisual(interaction.bottomRightVisibility)
+            );
+            applyHoldProgress(props.slots[2], hold, holdActive);
+            return true;
+        }
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            interactionActionIcon(InteractionAction::CLEAR_SELECTION),
+            selectedCount > 0U ? Visual::ACTIVE : Visual::DISABLED,
+            Tone::WARNING
+        );
+        props.slots[1] = makeSelectionCountSlot(selectedCount);
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            interactionActionIcon(InteractionAction::COPY_STRUCTURE_SELECTION),
+            interactionVisual(interaction.bottomRightVisibility),
+            Tone::NEUTRAL
+        );
+        return true;
+    }
+
+    const auto focus = source.navigationFocus.get();
+    if (focus == core::state::StructureNavigationFocus::TRACK) {
+        // Track actions already snapshot the complete Drum payload and share
+        // the Instrument Track contract.
+        return false;
+    }
+    if (focus == core::state::StructureNavigationFocus::STEP) {
+        const auto& hold = source.sequencer.structureUi.pageHold;
+        const bool resetHold = hold.action.get() ==
+            core::state::StructureHoldAction::REMOVE;
+        const bool pasteAvailable = canPasteDrumStep(source);
+        const bool pasteHold = pasteAvailable &&
+            hold.action.get() == core::state::StructureHoldAction::PASTE;
+
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            interactionActionIcon(
+                resetHold
+                    ? InteractionAction::RESET_CURRENT_STEP_DEEP
+                    : InteractionAction::RESET_CURRENT_STEP_SHALLOW
+            ),
+            resetHold ? Visual::ARMED : Visual::ACTIVE,
+            resetHold ? Tone::DESTRUCTIVE : Tone::WARNING
+        );
+        applyHoldProgress(props.slots[0], hold, resetHold);
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            interactionActionIcon(
+                pasteHold
+                    ? InteractionAction::PASTE_CURRENT_STEP
+                    : InteractionAction::COPY_CURRENT_STEP
+            ),
+            pasteHold ? Visual::ARMED : Visual::ACTIVE,
+            pasteHold ? Tone::POSITIVE : Tone::NEUTRAL
+        );
+        applyHoldProgress(props.slots[2], hold, pasteHold);
+        return true;
+    }
+
+    const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(
+        drumUi.selectedLane
+    );
+    const uint8_t pageCount = std::max<uint8_t>(
+        1U,
+        static_cast<uint8_t>(
+            (length + drumUi.STEPS_PER_PAGE - 1U) / drumUi.STEPS_PER_PAGE
+        )
+    );
+    const Visual pagingVisual = pageCount > 1U
+        ? Visual::ACTIVE
+        : Visual::DISABLED;
+    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+        standalone::icons::ACTION_BACKWARD,
+        pagingVisual,
+        Tone::NEUTRAL
+    );
+    // BOTTOM_CENTER remains the global Transport control. Keeping this slot
+    // empty avoids presenting OPT as a button action.
+    props.slots[1].visualState = Visual::HIDDEN;
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+        standalone::icons::ACTION_BACKWARD,
+        pagingVisual,
+        Tone::NEUTRAL
+    );
+    props.slots[2].iconRotated180 = true;
+    return true;
+}
+
+FLASHMEM bool projectSelectionBottomActionStrip(
+    const SequencerViewModelSource& source,
+    StripProps& props
+) {
+    const bool selectingTrack =
+        source.trackNavigation.selection.active.get();
+    const bool selectingPage =
+        source.sequencer.structureUi.pageSelection.active.get();
+    const bool selectingStep =
+        source.sequencer.structureUi.stepSelection.active.get();
+    if (!selectingTrack && !selectingPage && !selectingStep) return false;
+
+    const auto stepPaste = selectingStep
+        ? stepSelectionPasteProjection(source)
+        : StepSelectionPasteProjection{};
+    const auto bottomContext =
+        makeBottomInteractionContext(source, &stepPaste);
+    const auto interaction = core::state::sequencer::buildSequencerInteractionPolicy(
+        bottomContext
+    );
+
+    if (selectingTrack || selectingPage) {
+        const auto& selection = selectingTrack
+            ? source.trackNavigation.selection
+            : source.sequencer.structureUi.pageSelection;
+        const uint8_t itemCount = selectingTrack
+            ? core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+            : core::state::sequencer::activeContentPageCount(source.sequencer);
+        const uint16_t availableMask = selectingTrack
+            ? source.sharedTrackEnabledMask.get()
+            : structure_slots::prefixMask(itemCount);
+        const uint16_t selectionMask = static_cast<uint16_t>(
+            selection.selectedMask.get() &
+            availableMask
+        );
+        const uint8_t selectedCount =
+            countSelectedItems(selectionMask);
+        const bool placing = selection.placementActive();
+        if (placing) {
+            const uint8_t overwriteCount =
+                countSelectedItems(selection.overwriteMask.get());
+            const bool blocked = selection.pasteBlocked.get();
+            const bool canPaste = !blocked &&
+                selection.destinationMask.get() != 0U;
+            const auto& holdState = selectingTrack
+                ? source.trackNavigation.hold
+                : source.sequencer.structureUi.pageHold;
+            const bool pageHoldActive =
+                !selectingTrack &&
+                holdState.action.get() ==
+                    core::state::StructureHoldAction::PASTE &&
+                canPaste;
+            const auto& trackPaste =
+                source.sequencer.structureUi.trackPaste;
+            const bool trackHoldActive =
+                selectingTrack &&
+                trackPaste.buttonOwned &&
+                trackPaste.guard.phase !=
+                    core::state::contextual::GuardedActionPhase::IDLE &&
+                trackPaste.guard.phase !=
+                    core::state::contextual::GuardedActionPhase::CANCELLED;
+
+            applyPastePlacementSlots(
+                props,
+                selectedCount,
+                overwriteCount,
+                blocked,
+                (trackHoldActive || pageHoldActive)
+                    ? Visual::ARMED
+                    : interactionVisual(interaction.bottomRightVisibility)
+            );
+            if (selectingTrack) {
+                applyTrackPasteProgress(
+                    props.slots[2],
+                    trackPaste.guard
+                );
+            } else {
+                applyHoldProgress(
+                    props.slots[2],
+                    holdState,
+                    pageHoldActive
+                );
+            }
+            return true;
+        }
+
+        const uint8_t availableCount =
+            countSelectedItems(availableMask);
+        const bool canTap = selectedCount > 0U;
+        const bool deletesStructure =
+            selectingTrack ||
+            core::state::sequencer::isRootContentView(source.sequencer);
+        const bool canHold = deletesStructure
+            ? selectedCount > 0U && selectedCount < availableCount
+            : selectedCount > 0U;
+        const auto& holdState = selectingTrack
+            ? source.trackNavigation.hold
+            : source.sequencer.structureUi.pageHold;
+        const bool holdActive =
+            holdState.action.get() ==
+                core::state::StructureHoldAction::REMOVE &&
+            canHold;
+        const auto displayedAction = holdActive
+            ? interaction.bottomLeftHold
+            : interaction.bottomLeftTap;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            interactionActionIcon(displayedAction),
+            holdActive
+                ? Visual::ARMED
+                : (canTap ? Visual::ACTIVE : Visual::DISABLED),
+            holdActive
+                ? Tone::DESTRUCTIVE
+                : (selectingPage ? Tone::WARNING : Tone::NEUTRAL)
+        );
+        applyHoldProgress(props.slots[0], holdState, holdActive);
+        props.slots[1] = makeSelectionCountSlot(selectedCount);
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            interactionActionIcon(
+                InteractionAction::COPY_STRUCTURE_SELECTION
+            ),
+            interactionVisual(interaction.bottomRightVisibility),
+            Tone::NEUTRAL
+        );
+        return true;
+    }
+
+    const auto& selection =
+        source.sequencer.structureUi.stepSelection;
+    const uint8_t selectedCount =
+        countSelectedSteps(
+            selection.selectedMask.get(),
+            core::state::sequencer::activeContentLength(source.sequencer)
+        );
+    if (selection.placementActive()) {
+        const uint8_t overwriteCount = stepPaste.overwriteCount;
+        const bool blocked = !stepPaste.canPaste;
+        const auto& holdState =
+            source.sequencer.structureUi.pageHold;
+        const bool pasteHoldActive =
+            !blocked &&
+            holdState.action.get() ==
+                core::state::StructureHoldAction::PASTE;
+
+        applyPastePlacementSlots(
+            props,
+            selectedCount,
+            overwriteCount,
+            blocked,
+            pasteHoldActive
+                ? Visual::ARMED
+                : interactionVisual(interaction.bottomRightVisibility)
+        );
+        if (blocked) {
+            props.slots[2].showLabel = true;
+            std::snprintf(
+                props.slots[2].labelText.data(),
+                props.slots[2].labelText.size(),
+                "PST BLOCK"
+            );
+        }
+        applyHoldProgress(
+            props.slots[2],
+            holdState,
+            pasteHoldActive
+        );
+        return true;
+    }
+
+    const bool canClear = selectedCount > 0;
+    const bool canPaste =
+        interaction.bottomRightHold ==
+        InteractionAction::PASTE_STEP_SELECTION;
+    const bool canCopy =
+        interaction.bottomRightTap ==
+        InteractionAction::COPY_STEP_SELECTION;
+    const auto& holdState = source.sequencer.structureUi.pageHold;
+    const auto holdAction = holdState.action.get();
+    const bool removeHoldActive =
+        holdAction == core::state::StructureHoldAction::REMOVE && canClear;
+    const bool pasteHoldActive =
+        holdAction == core::state::StructureHoldAction::PASTE && canPaste;
+    const auto rightAction = pasteHoldActive || (!canCopy && canPaste)
+        ? interaction.bottomRightHold
+        : interaction.bottomRightTap;
+    const auto leftAction = interaction.bottomLeftHold;
+    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+        interactionActionIcon(leftAction),
+        removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
+        removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
+    );
+    applyHoldProgress(props.slots[0], holdState, removeHoldActive);
+    props.slots[1] = makeSelectionCountSlot(selectedCount);
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+        interactionActionIcon(rightAction),
+        pasteHoldActive
+            ? Visual::ARMED
+            : interactionVisual(interaction.bottomRightVisibility),
+        pasteHoldActive ? Tone::POSITIVE : Tone::NEUTRAL
+    );
+    applyHoldProgress(props.slots[2], holdState, pasteHoldActive);
+    return true;
+}
+
 }  // namespace
 
 FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
@@ -394,158 +759,10 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
 ) {
     StripProps props;
     props.visible = true;
-    if (core::state::sequencer::isDrumOverviewActive(source.sequencer) ||
-        (source.sequencer.drumSequencer.active() &&
-         !source.sequencer.drumSequencer.gridVisible())) {
-        const auto& drumUi = source.sequencer.drumSequencer;
-        if (!drumUi.gridVisible()) return props;
-        if (drumUi.selectorVisible()) return props;
-        if (drumUi.laneAddSlotFocused()) return props;
-        if (drumUi.laneSelection.active) {
-            const auto& selection = drumUi.laneSelection;
-            const uint8_t selectedCount = countSelectedItems(
-                selection.selectedMask
-            );
-            const auto interaction =
-                core::state::sequencer::buildSequencerInteractionPolicy(
-                    makeBottomInteractionContext(source)
-                );
-            if (selection.moveActive()) {
-                props.slots[0].visualState = Visual::HIDDEN;
-                props.slots[1] = makeSelectionCountSlot(selectedCount);
-                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                    standalone::icons::ACTION_APPLY,
-                    Visual::ACTIVE,
-                    Tone::POSITIVE
-                );
-                return props;
-            }
-            if (selection.placementActive()) {
-                const uint8_t overwriteCount = countSelectedItems(
-                    selection.overwriteMask
-                );
-                const bool canPaste = !selection.pasteBlocked &&
-                    selection.destinationMask != 0U;
-                const auto& hold = source.sequencer.structureUi.pageHold;
-                const bool holdActive = canPaste &&
-                    hold.action.get() ==
-                        core::state::StructureHoldAction::PASTE;
-                props.slots[0].visualState = Visual::HIDDEN;
-                props.slots[1] = makeSelectionCountSlot(selectedCount);
-                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                    standalone::icons::ACTION_PASTE,
-                    holdActive
-                        ? Visual::ARMED
-                        : interactionVisual(
-                              interaction.bottomRightVisibility
-                          ),
-                    selection.pasteBlocked
-                        ? Tone::DESTRUCTIVE
-                        : overwriteCount > 0U
-                            ? Tone::WARNING
-                            : Tone::POSITIVE
-                );
-                if (overwriteCount > 0U) {
-                    props.slots[2].showLabel = true;
-                    std::snprintf(
-                        props.slots[2].labelText.data(),
-                        props.slots[2].labelText.size(),
-                        "PST \xC2\xB7 %u OVR",
-                        static_cast<unsigned>(overwriteCount)
-                    );
-                }
-                applyHoldProgress(props.slots[2], hold, holdActive);
-                return props;
-            }
-            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                interactionActionIcon(InteractionAction::CLEAR_SELECTION),
-                selectedCount > 0U ? Visual::ACTIVE : Visual::DISABLED,
-                Tone::WARNING
-            );
-            props.slots[1] = makeSelectionCountSlot(selectedCount);
-            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                interactionActionIcon(
-                    InteractionAction::COPY_STRUCTURE_SELECTION
-                ),
-                interactionVisual(interaction.bottomRightVisibility),
-                Tone::NEUTRAL
-            );
-            return props;
-        }
-        const auto focus = source.navigationFocus.get();
-        if (focus == core::state::StructureNavigationFocus::TRACK) {
-            // Track Mute/Remove/Copy/Paste is domain-agnostic and already
-            // snapshots the complete Drum payload. Let the common builder
-            // project exactly the same contract as an Instrument Track.
-        } else if (focus == core::state::StructureNavigationFocus::STEP) {
-            const auto& hold = source.sequencer.structureUi.pageHold;
-            const bool resetHold = hold.action.get() ==
-                core::state::StructureHoldAction::REMOVE;
-            const bool pasteAvailable = canPasteDrumStep(source);
-            const bool pasteHold = pasteAvailable &&
-                hold.action.get() == core::state::StructureHoldAction::PASTE;
-
-            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                interactionActionIcon(
-                    resetHold
-                        ? InteractionAction::RESET_CURRENT_STEP_DEEP
-                        : InteractionAction::RESET_CURRENT_STEP_SHALLOW
-                ),
-                resetHold ? Visual::ARMED : Visual::ACTIVE,
-                resetHold ? Tone::DESTRUCTIVE : Tone::WARNING
-            );
-            applyHoldProgress(props.slots[0], hold, resetHold);
-            props.slots[1].visualState = Visual::HIDDEN;
-            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                interactionActionIcon(
-                    pasteHold
-                        ? InteractionAction::PASTE_CURRENT_STEP
-                        : InteractionAction::COPY_CURRENT_STEP
-                ),
-                pasteHold ? Visual::ARMED : Visual::ACTIVE,
-                pasteHold ? Tone::POSITIVE : Tone::NEUTRAL
-            );
-            applyHoldProgress(props.slots[2], hold, pasteHold);
-            return props;
-        } else {
-        const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(
-            drumUi.selectedLane
-        );
-        const uint8_t pageCount = std::max<uint8_t>(
-            1U,
-            static_cast<uint8_t>(
-                (length + drumUi.STEPS_PER_PAGE - 1U) /
-                drumUi.STEPS_PER_PAGE
-            )
-        );
-        const Visual pagingVisual = pageCount > 1U
-            ? Visual::ACTIVE
-            : Visual::DISABLED;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_BACKWARD,
-            pagingVisual,
-            Tone::NEUTRAL
-        );
-        // BOTTOM_CENTER remains the global Transport control. Keeping this
-        // slot empty avoids presenting OPT as a button action.
-        props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_BACKWARD,
-            pagingVisual,
-            Tone::NEUTRAL
-        );
-        props.slots[2].iconRotated180 = true;
-        return props;
-        }
-    }
+    if (projectDrumBottomActionStrip(source, props)) return props;
 
     const bool trackFocus =
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
-    const bool selectingTrack =
-        source.trackNavigation.selection.active.get();
-    const bool selectingPage =
-        source.sequencer.structureUi.pageSelection.active.get();
-    const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
     const bool selectingPatternVariation =
         source.sequencer.stepPropertyInlineSelector.selecting.get();
     const bool selectingState = selectingPatternVariation &&
@@ -630,228 +847,12 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         return props;
     }
 
-    const auto stepPaste = selectingStep
-        ? stepSelectionPasteProjection(source)
-        : StepSelectionPasteProjection{};
-    const auto bottomContext =
-        makeBottomInteractionContext(source, &stepPaste);
+    if (projectSelectionBottomActionStrip(source, props)) return props;
+
+    const auto bottomContext = makeBottomInteractionContext(source);
     const auto interaction = core::state::sequencer::buildSequencerInteractionPolicy(
         bottomContext
     );
-
-    if (selectingTrack || selectingPage) {
-        const auto& selection = selectingTrack
-            ? source.trackNavigation.selection
-            : source.sequencer.structureUi.pageSelection;
-        const uint8_t itemCount = selectingTrack
-            ? core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
-            : core::state::sequencer::activeContentPageCount(source.sequencer);
-        const uint16_t availableMask = selectingTrack
-            ? source.sharedTrackEnabledMask.get()
-            : structure_slots::prefixMask(itemCount);
-        const uint16_t selectionMask = static_cast<uint16_t>(
-            selection.selectedMask.get() &
-            availableMask
-        );
-        const uint8_t selectedCount =
-            countSelectedItems(selectionMask);
-        const bool placing = selection.placementActive();
-        if (placing) {
-            const uint8_t overwriteCount =
-                countSelectedItems(selection.overwriteMask.get());
-            const bool blocked = selection.pasteBlocked.get();
-            const bool canPaste = !blocked &&
-                selection.destinationMask.get() != 0U;
-            const auto& holdState = selectingTrack
-                ? source.trackNavigation.hold
-                : source.sequencer.structureUi.pageHold;
-            const bool pageHoldActive =
-                !selectingTrack &&
-                holdState.action.get() ==
-                    core::state::StructureHoldAction::PASTE &&
-                canPaste;
-            const auto& trackPaste =
-                source.sequencer.structureUi.trackPaste;
-            const bool trackHoldActive =
-                selectingTrack &&
-                trackPaste.buttonOwned &&
-                trackPaste.guard.phase !=
-                    core::state::contextual::GuardedActionPhase::IDLE &&
-                trackPaste.guard.phase !=
-                    core::state::contextual::GuardedActionPhase::CANCELLED;
-
-            props.slots[0].visualState = Visual::HIDDEN;
-            props.slots[1] = makeSelectionCountSlot(selectedCount);
-            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                standalone::icons::ACTION_PASTE,
-                (trackHoldActive || pageHoldActive)
-                    ? Visual::ARMED
-                    : interactionVisual(
-                          interaction.bottomRightVisibility
-                      ),
-                blocked
-                    ? Tone::DESTRUCTIVE
-                    : (overwriteCount > 0U
-                        ? Tone::WARNING
-                        : Tone::POSITIVE)
-            );
-            if (overwriteCount > 0U) {
-                props.slots[2].showLabel = true;
-                std::snprintf(
-                    props.slots[2].labelText.data(),
-                    props.slots[2].labelText.size(),
-                    "PST \xC2\xB7 %u OVR",
-                    static_cast<unsigned>(overwriteCount)
-                );
-            }
-            if (selectingTrack) {
-                applyTrackPasteProgress(
-                    props.slots[2],
-                    trackPaste.guard
-                );
-            } else {
-                applyHoldProgress(
-                    props.slots[2],
-                    holdState,
-                    pageHoldActive
-                );
-            }
-            return props;
-        }
-
-        const uint8_t availableCount =
-            countSelectedItems(availableMask);
-        const bool canTap = selectedCount > 0U;
-        const bool deletesStructure =
-            selectingTrack ||
-            core::state::sequencer::isRootContentView(source.sequencer);
-        const bool canHold = deletesStructure
-            ? selectedCount > 0U && selectedCount < availableCount
-            : selectedCount > 0U;
-        const auto& holdState = selectingTrack
-            ? source.trackNavigation.hold
-            : source.sequencer.structureUi.pageHold;
-        const bool holdActive =
-            holdState.action.get() ==
-                core::state::StructureHoldAction::REMOVE &&
-            canHold;
-        const auto displayedAction = holdActive
-            ? interaction.bottomLeftHold
-            : interaction.bottomLeftTap;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(displayedAction),
-            holdActive
-                ? Visual::ARMED
-                : (canTap ? Visual::ACTIVE : Visual::DISABLED),
-            holdActive
-                ? Tone::DESTRUCTIVE
-                : (selectingPage ? Tone::WARNING : Tone::NEUTRAL)
-        );
-        applyHoldProgress(props.slots[0], holdState, holdActive);
-        props.slots[1] = makeSelectionCountSlot(selectedCount);
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(
-                InteractionAction::COPY_STRUCTURE_SELECTION
-            ),
-            interactionVisual(interaction.bottomRightVisibility),
-            Tone::NEUTRAL
-        );
-        return props;
-    }
-
-    if (selectingStep) {
-        const auto& selection =
-            source.sequencer.structureUi.stepSelection;
-        const uint8_t selectedCount =
-            countSelectedSteps(
-                selection.selectedMask.get(),
-                core::state::sequencer::activeContentLength(source.sequencer)
-            );
-        if (selection.placementActive()) {
-            const uint8_t overwriteCount =
-                stepPaste.overwriteCount;
-            const bool blocked = !stepPaste.canPaste;
-            const auto& holdState =
-                source.sequencer.structureUi.pageHold;
-            const bool pasteHoldActive =
-                !blocked &&
-                holdState.action.get() ==
-                    core::state::StructureHoldAction::PASTE;
-
-            props.slots[0].visualState = Visual::HIDDEN;
-            props.slots[1] = makeSelectionCountSlot(selectedCount);
-            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                standalone::icons::ACTION_PASTE,
-                pasteHoldActive
-                    ? Visual::ARMED
-                    : interactionVisual(
-                          interaction.bottomRightVisibility
-                      ),
-                blocked
-                    ? Tone::DESTRUCTIVE
-                    : (overwriteCount > 0U
-                        ? Tone::WARNING
-                        : Tone::POSITIVE)
-            );
-            if (blocked) {
-                props.slots[2].showLabel = true;
-                std::snprintf(
-                    props.slots[2].labelText.data(),
-                    props.slots[2].labelText.size(),
-                    "PST BLOCK"
-                );
-            } else if (overwriteCount > 0U) {
-                props.slots[2].showLabel = true;
-                std::snprintf(
-                    props.slots[2].labelText.data(),
-                    props.slots[2].labelText.size(),
-                    "PST \xC2\xB7 %u OVR",
-                    static_cast<unsigned>(overwriteCount)
-                );
-            }
-            applyHoldProgress(
-                props.slots[2],
-                holdState,
-                pasteHoldActive
-            );
-            return props;
-        }
-
-        const bool canClear = selectedCount > 0;
-        const bool canPaste =
-            interaction.bottomRightHold ==
-            InteractionAction::PASTE_STEP_SELECTION;
-        const bool canCopy =
-            interaction.bottomRightTap ==
-            InteractionAction::COPY_STEP_SELECTION;
-        const bool pastePreviewActive = false;
-        const auto& holdState = source.sequencer.structureUi.pageHold;
-        const auto holdAction = holdState.action.get();
-        const bool removeHoldActive =
-            holdAction == core::state::StructureHoldAction::REMOVE && canClear;
-        const bool pasteHoldActive =
-            holdAction == core::state::StructureHoldAction::PASTE && canPaste;
-        const auto rightAction = pasteHoldActive || pastePreviewActive || (!canCopy && canPaste)
-            ? interaction.bottomRightHold
-            : interaction.bottomRightTap;
-        const auto leftAction = interaction.bottomLeftHold;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(leftAction),
-            removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
-            removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
-        );
-        applyHoldProgress(props.slots[0], holdState, removeHoldActive);
-        props.slots[1] = makeSelectionCountSlot(selectedCount);
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(rightAction),
-            pasteHoldActive
-                ? Visual::ARMED
-                : interactionVisual(interaction.bottomRightVisibility),
-            (pasteHoldActive || pastePreviewActive) ? Tone::POSITIVE : Tone::NEUTRAL
-        );
-        applyHoldProgress(props.slots[2], holdState, pasteHoldActive);
-        return props;
-    }
 
     if (core::state::sequencer::isChildContentView(source.sequencer)) {
         const bool hasChildContent = bottomContext.currentStepHasChildContent;

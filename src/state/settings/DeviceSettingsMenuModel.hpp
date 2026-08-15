@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "state/DeviceSettingsState.hpp"
+#include "state/MidiNoteDisplayState.hpp"
 #include "state/MidiSyncState.hpp"
 
 namespace core::state::settings {
@@ -18,13 +19,15 @@ struct DeviceSettingsMenuContext {
     core::state::MidiSyncMode mode = core::state::MidiSyncMode::AUTO;
     bool followTransport = true;
     uint16_t autoFallbackMs = 500;
-    uint8_t autoLockClockCount = 4;
+    uint8_t autoLockClockCount = 6;
+    core::midi::NoteOctaveConvention noteOctaveConvention =
+        core::midi::DEFAULT_NOTE_OCTAVE_CONVENTION;
     core::state::ClockSourceActive activeSource = core::state::ClockSourceActive::INTERNAL;
     bool externalClockPresent = false;
 };
 
 struct DeviceSettingsMenuPage {
-    static constexpr uint8_t MAX_ROWS = 4;
+    static constexpr uint8_t MAX_ROWS = DeviceSettingsState::ROW_COUNT;
 
     const char* title = "Device Settings";
     std::array<char, 24> meta{};

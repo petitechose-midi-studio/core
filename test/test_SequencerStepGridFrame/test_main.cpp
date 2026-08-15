@@ -6,6 +6,7 @@
 #include "../../src/state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 #include "../../src/ui/sequencer/StepContentBadgeProjection.hpp"
+#include "../../src/ui/sequencer/StepGridRenderTypes.hpp"
 
 namespace {
 
@@ -26,6 +27,28 @@ using core::ui::sequencer::grid::buildStepContentBadgeProjectionForNode;
 using core::ui::sequencer::grid::applyCycleStatePlaybackProjection;
 using core::ui::sequencer::grid::applyMicroSequencePlaybackProjection;
 using core::ui::sequencer::grid::mergeExpandedTelemetryChordBadgeForNode;
+
+void test_render_cache_commits_state_without_resetting_visuals() {
+    core::ui::sequencer::grid::TileRenderCache cache;
+    cache.noteLabelVisible = true;
+    cache.playheadLineColorFull = 0x123456U;
+
+    core::ui::sequencer::grid::TileRenderState state;
+    state.absoluteStep = 7U;
+    state.noteEvents.count = 1U;
+    state.noteEvents.events[0].note = 64U;
+
+    cache.commitRenderedState(state);
+
+    assert(cache.initialized);
+    assert(cache.absoluteStep == 7U);
+    assert(cache.noteEvents.count == 1U);
+    assert(cache.noteEvents.events[0].note == 64U);
+    assert(cache.noteLabelVisible);
+    assert(cache.playheadLineColorFull == 0x123456U);
+
+    std::cout << "[PASS] test_render_cache_commits_state_without_resetting_visuals\n";
+}
 
 void test_projects_root_step_content_badges() {
     core::state::sequencer::SequencerPatternState pattern;
@@ -1264,6 +1287,7 @@ void test_ui_allows_three_child_content_levels_when_engine_depth_is_four() {
 }  // namespace
 
 int main() {
+    test_render_cache_commits_state_without_resetting_visuals();
     test_projects_root_step_content_badges();
     test_root_grid_projects_micro_rail_and_current_substep();
     test_root_grid_projects_rotated_cycle_phase();

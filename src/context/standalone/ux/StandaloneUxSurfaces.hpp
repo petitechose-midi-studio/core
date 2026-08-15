@@ -19,6 +19,7 @@ namespace core::state {
 struct DeviceSettingsState;
 struct MacroEditState;
 struct MacroState;
+struct MidiNoteDisplayState;
 struct MidiSyncState;
 struct StatusBarState;
 struct StructureClipboardState;
@@ -95,7 +96,8 @@ private:
 class DeviceSettingsUxSurface final : public core::validation::ux::SemanticUxSurface {
 public:
     DeviceSettingsUxSurface(core::state::DeviceSettingsState& deviceSettings,
-                            core::state::MidiSyncState& midiSync);
+                            core::state::MidiSyncState& midiSync,
+                            core::state::MidiNoteDisplayState& midiNoteDisplay);
 
     bool captureSemanticUxContext(
         const oc::core::input::InputBindingTraceEvent& event,
@@ -105,6 +107,7 @@ public:
 private:
     core::state::DeviceSettingsState& device_settings_;
     core::state::MidiSyncState& midi_sync_;
+    core::state::MidiNoteDisplayState& midi_note_display_;
 };
 
 class TransportUxSurface final : public core::validation::ux::SemanticUxSurface {

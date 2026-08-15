@@ -88,15 +88,6 @@ FLASHMEM bool cloneSnapshotGraph(
     return static_cast<bool>(out);
 }
 
-FLASHMEM void installSnapshotGraph(
-    SequencerPatternState& target,
-    SequencerHistoryGraphPtr graph,
-    uint32_t revision
-) {
-    target.graph = std::move(graph);
-    target.graphRevision.set(revision);
-}
-
 FLASHMEM bool validStructureSnapshotSource(
     const SequencerHistoryTrackStructureSnapshot& snapshot
 ) {
@@ -509,9 +500,7 @@ FLASHMEM bool liveHistoryStructureSnapshotMatches(
         if ((snapshot.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
             continue;
         }
-        const auto& live = track == snapshot.activeTrack
-            ? active.pattern
-            : bank.track(track);
+        const auto& live = canonicalTrackPattern(bank, active, track);
         if (!liveHistoryPatternSnapshotMatches(live, snapshot.tracks[track])) {
             return false;
         }
@@ -585,26 +574,21 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         if ((replay.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0U) continue;
-        applySnapshot(bank.track(i), snapshot->tracks[i].flat);
-        installSnapshotGraph(
+        installTrackContentSnapshotWithOwnedPayload(
             bank.track(i),
+            snapshot->tracks[i].flat,
             std::move(replay.bankGraphs[i]),
-            snapshot->tracks[i].flat.graphRevision
-        );
-        installSequencerCcLaneBank(
-            bank.track(i),
             std::move(replay.bankCcLanes[i])
         );
     }
 
     const uint8_t targetActive = replay.targetActiveTrack;
-    applySnapshotToEditor(active, snapshot->tracks[targetActive].flat);
-    installSnapshotGraph(
-        active.pattern,
+    installTrackContentSnapshotToEditorWithOwnedPayload(
+        active,
+        snapshot->tracks[targetActive].flat,
         std::move(replay.editorGraph),
-        snapshot->tracks[targetActive].flat.graphRevision
+        std::move(replay.editorCcLanes)
     );
-    installSequencerCcLaneBank(active.pattern, std::move(replay.editorCcLanes));
     commitHistoryStructureDrumSnapshot(bank, *snapshot);
     bank.syncSharedTrackState(snapshot->enabledMask, targetActive);
     active.focusedStep.set(snapshot->focusedStep);

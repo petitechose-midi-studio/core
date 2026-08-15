@@ -90,152 +90,11 @@ SequencerStepPresetLibraryAdapter(
 
 FLASHMEM SequencerPresetLibraryAdapter
 SequencerStepPresetLibraryAdapter::operations() {
-    SequencerPresetLibraryAdapter ops{};
-    ops.context = this;
-    ops.kind = sequencer::SequencerPresetLibraryKind::STEP;
-    ops.beginSession = beginSession_;
-    ops.loadPage = loadPage_;
-    ops.clearInspection = clearInspection_;
-    ops.inspect = inspect_;
-    ops.detailRowCount = detailRowCount_;
-    ops.adjustFocusedDetail = adjustFocusedDetail_;
-    ops.actionSpec = actionSpec_;
-    ops.shouldCommitBeforeLoad = shouldCommitBeforeLoad_;
-    ops.execute = execute_;
-    ops.update = update_;
-    return ops;
-}
-
-FLASHMEM bool SequencerStepPresetLibraryAdapter::beginSession_(
-    void* context
-) {
-    auto* self =
-        static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    return self != nullptr && self->beginSession();
-}
-
-FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
-SequencerStepPresetLibraryAdapter::loadPage_(
-    void* context,
-    SequencerPresetLibraryPager::Entry* entries,
-    uint8_t capacity,
-    const char* anchorExclusive,
-    SequencerPresetLibraryPager::PageDirection direction,
-    core::persistence::ProductAssetFileListResult& out
-) {
-    auto* self =
-        static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->loadPage(
-              entries,
-              capacity,
-              anchorExclusive,
-              direction,
-              out
-          )
-        : SequencerPresetLibraryPager::PageLoadStatus::FAILED;
-}
-
-FLASHMEM void SequencerStepPresetLibraryAdapter::clearInspection_(
-    void* context
-) {
-    auto* self =
-        static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    if (self != nullptr) self->clearInspection();
-}
-
-FLASHMEM sequencer::SequencerPresetLibraryFeedback
-SequencerStepPresetLibraryAdapter::inspect_(
-    void* context,
-    const char* assetId,
-    bool force
-) {
-    auto* self =
-        static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->inspect(assetId, force)
-        : sequencer::SequencerPresetLibraryFeedback::FAILED;
-}
-
-FLASHMEM uint8_t
-SequencerStepPresetLibraryAdapter::detailRowCount_(const void*) {
-    return DETAIL_ROW_COUNT;
-}
-
-FLASHMEM void
-SequencerStepPresetLibraryAdapter::adjustFocusedDetail_(
-    void* context,
-    const char* assetId,
-    float delta
-) {
-    auto* self =
-        static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    if (self != nullptr) {
-        self->adjustFocusedDetail(assetId, delta);
-    }
-}
-
-FLASHMEM contextual::ContextActionSpec
-SequencerStepPresetLibraryAdapter::actionSpec_(
-    const void* context,
-    bool saveMode,
-    bool selectedNewAsset,
-    bool hasFocusedAsset
-) {
-    const auto* self =
-        static_cast<const SequencerStepPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->actionSpec(
-              saveMode,
-              selectedNewAsset,
-              hasFocusedAsset
-          )
-        : contextual::ContextActionSpec{};
-}
-
-FLASHMEM bool
-SequencerStepPresetLibraryAdapter::shouldCommitBeforeLoad_(
-    const void* context,
-    bool hasFocusedAsset
-) {
-    return context != nullptr && hasFocusedAsset;
-}
-
-FLASHMEM SequencerPresetLibraryResult
-SequencerStepPresetLibraryAdapter::execute_(
-    void* context,
-    Mode mode,
-    const char* assetId,
-    bool createNew,
-    bool overwriteAuthorized
-) {
-    auto* self =
-        static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->execute(
-              mode,
-              assetId,
-              createNew,
-              overwriteAuthorized
-          )
-        : SequencerPresetLibraryResult{
-              .outcome = SequencerPresetLibraryOutcome::BLOCKED,
-              .feedback =
-                  sequencer::SequencerPresetLibraryFeedback::FAILED,
-              .reason = contextual::ContextActionReason::FAILED,
-          };
-}
-
-FLASHMEM SequencerPresetLibraryResult
-SequencerStepPresetLibraryAdapter::update_(
-    void* context,
-    uint32_t nowMs
-) {
-    auto* self =
-        static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->update(nowMs)
-        : SequencerPresetLibraryResult{};
+    return SequencerPresetLibraryAdapterBinding<
+        SequencerStepPresetLibraryAdapter>::bind(
+            *this,
+            sequencer::SequencerPresetLibraryKind::STEP
+        );
 }
 
 FLASHMEM bool SequencerStepPresetLibraryAdapter::beginSession() {
@@ -366,6 +225,11 @@ SequencerStepPresetLibraryAdapter::inspect(
     return sequencer::SequencerPresetLibraryFeedback::INCOMPATIBLE;
 }
 
+FLASHMEM uint8_t
+SequencerStepPresetLibraryAdapter::detailRowCount() const {
+    return DETAIL_ROW_COUNT;
+}
+
 FLASHMEM void
 SequencerStepPresetLibraryAdapter::adjustFocusedDetail(
     const char* assetId,
@@ -407,6 +271,13 @@ SequencerStepPresetLibraryAdapter::actionSpec(
         step.target,
         step.descriptor
     );
+}
+
+FLASHMEM bool
+SequencerStepPresetLibraryAdapter::shouldCommitBeforeLoad(
+    bool hasFocusedAsset
+) const {
+    return hasFocusedAsset;
 }
 
 FLASHMEM SequencerPresetLibraryResult

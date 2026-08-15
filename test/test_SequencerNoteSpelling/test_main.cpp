@@ -6,6 +6,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "../../src/midi/MidiUtils.hpp"
 #include "../../src/state/sequencer/SequencerNoteSpelling.hpp"
 
 namespace {
@@ -65,12 +66,52 @@ void test_compact_tonal_focus_label_exposes_degree_context() {
         << "[PASS] test_compact_tonal_focus_label_exposes_degree_context\n";
 }
 
+void test_note_octave_convention_changes_labels_without_changing_midi_note() {
+    char note[8]{};
+
+    core::midi::setActiveNoteOctaveConvention(
+        core::midi::NoteOctaveConvention::C3
+    );
+    core::midi::formatNoteName(note, sizeof(note), 60U);
+    assert(std::strcmp(note, "C3") == 0);
+    spelling::formatNoteName(
+        note,
+        sizeof(note),
+        60U,
+        harmonicMinor(0U)
+    );
+    assert(std::strcmp(note, "C3") == 0);
+    core::midi::formatNoteName(note, sizeof(note), 0U);
+    assert(std::strcmp(note, "C-2") == 0);
+    core::midi::formatNoteName(note, sizeof(note), 127U);
+    assert(std::strcmp(note, "G8") == 0);
+
+    core::midi::setActiveNoteOctaveConvention(
+        core::midi::NoteOctaveConvention::C5
+    );
+    core::midi::formatNoteName(note, sizeof(note), 60U);
+    assert(std::strcmp(note, "C5") == 0);
+    core::midi::formatNoteName(note, sizeof(note), 0U);
+    assert(std::strcmp(note, "C0") == 0);
+    core::midi::formatNoteName(note, sizeof(note), 127U);
+    assert(std::strcmp(note, "G10") == 0);
+
+    core::midi::setActiveNoteOctaveConvention(
+        core::midi::NoteOctaveConvention::C4
+    );
+    core::midi::formatNoteName(note, sizeof(note), 60U);
+    assert(std::strcmp(note, "C4") == 0);
+
+    std::cout << "[PASS] note octave naming leaves MIDI 60 unchanged\n";
+}
+
 }  // namespace
 
 int main() {
     test_f_harmonic_minor_uses_expected_flat_spelling();
     test_harmonic_minor_preserves_required_sharp_leading_tone();
     test_compact_tonal_focus_label_exposes_degree_context();
+    test_note_octave_convention_changes_labels_without_changing_midi_note();
     std::cout << "\nAll SequencerNoteSpelling tests passed.\n";
     return 0;
 }

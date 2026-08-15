@@ -7,7 +7,6 @@
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/AtomicProductFile.hpp"
 #include "persistence/ProductStorageRecoveryPlan.hpp"
-#include "protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
 #include "state/CoreState.hpp"
 
 namespace core::persistence {
@@ -16,8 +15,7 @@ namespace {
 
 using oc::type::ErrorCode;
 using oc::type::Error;
-namespace conditional = core::protocol::filesystem::conditional_mutation;
-using core::protocol::filesystem::FileSystemRpcStatus;
+namespace conditional = core::persistence::conditional_mutation;
 
 const char kConditionalRecoveryFailed[] PROGMEM =
     "conditional product mutation recovery failed";
@@ -334,7 +332,7 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
                 conditional_present_,
                 conditional_corrupt_
             );
-            if (status != FileSystemRpcStatus::OK) {
+            if (status != conditional::Status::OK) {
                 if (conditional_corrupt_) {
                     step_ = Step::QUARANTINE_CONDITIONAL;
                     return false;
@@ -355,7 +353,7 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
                 files,
                 lease_
             );
-            if (status != FileSystemRpcStatus::OK) {
+            if (status != conditional::Status::OK) {
                 return fail_(
                     files,
                     autosaveService,
@@ -375,7 +373,7 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
                 lease_,
                 conditional::JOURNAL_STAGING_PATH
             );
-            if (status != FileSystemRpcStatus::OK) {
+            if (status != conditional::Status::OK) {
                 return fail_(
                     files,
                     autosaveService,
@@ -412,7 +410,7 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
             if (!conditional_.advance(files, scratch_.data(), scratch_.size())) {
                 return false;
             }
-            if (conditional_.status() != FileSystemRpcStatus::OK) {
+            if (conditional_.status() != conditional::Status::OK) {
                 return fail_(
                     files,
                     autosaveService,
@@ -558,8 +556,7 @@ ProductPersistenceWorkQuota ProductStorageRecoveryPlan::nextWorkQuota(
     }
     if (step_ == Step::ADVANCE_CONDITIONAL) {
         return conditional_.nextWorkClass() ==
-                       protocol::filesystem::conditional_mutation::
-                           ConditionalPlanWorkClass::ORDINARY_IO
+                       conditional::ConditionalPlanWorkClass::ORDINARY_IO
             ? PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO
             : PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
     }

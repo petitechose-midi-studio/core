@@ -112,56 +112,35 @@ struct TileRenderDiff {
     bool playheadChanged = false;
 };
 
-struct TileRenderCache {
+struct TileRenderCache : TileRenderState {
     bool initialized = false;
-    uint8_t absoluteStep = 0;
-    bool inPattern = false;
-    bool enabled = false;
-    bool stepSelectionActive = false;
-    bool stepSelectionCursor = false;
-    bool stepSelectionSelected = false;
-    bool stepPastePreviewActive = false;
-    core::state::sequencer::SequencerStepPastePreview stepPastePreview =
-        core::state::sequencer::SequencerStepPastePreview::NONE;
-    bool playheadVisible = false;
-    bool playing = false;
-    bool probabilityCycleActive = false;
-    uint8_t note = 0;
-    uint8_t velocity = 0;
-    uint8_t probability = 0;
-    uint16_t gate = 0;
-    int8_t nudge = 0;
-    bool childContentContext = false;
-    int16_t childContentOffset = 0;
-    bool childContentNoteOffsetUsesScaleDegrees = false;
-    bool childPitchSummaryVisible = false;
-    uint8_t childPitchSummaryNote = 0;
-    uint8_t playheadProgress = 0U;
-    TileVariationRenderState variation{};
-    TileContentBadgeState contentBadges{};
-    TileNoteEventProjection noteEvents{};
     lv_coord_t noteLabelHeight = 0;
     bool noteLabelVisible = false;
-    bool originalNoteLabelVisible = false;
+    bool secondaryLabelVisible = false;
     bool inlineIconVisible = false;
     uint32_t noteLabelColorFull = 0;
     lv_opa_t noteLabelOpa = LV_OPA_TRANSP;
-    uint32_t originalNoteLabelColorFull = 0;
-    lv_opa_t originalNoteLabelOpa = LV_OPA_TRANSP;
+    uint32_t secondaryLabelColorFull = 0;
+    lv_opa_t secondaryLabelOpa = LV_OPA_TRANSP;
     uint32_t inlineIconColorFull = 0;
     lv_opa_t inlineIconOpa = LV_OPA_TRANSP;
     lv_coord_t noteLabelX = 0;
     lv_coord_t noteLabelY = 0;
-    lv_coord_t originalNoteLabelX = 0;
-    lv_coord_t originalNoteLabelY = 0;
+    lv_coord_t secondaryLabelX = 0;
+    lv_coord_t secondaryLabelY = 0;
     lv_coord_t inlineIconX = 0;
     lv_coord_t inlineIconY = 0;
     char noteLabelText[16] = {0};
-    char originalNoteLabelText[12] = {0};
+    char secondaryLabelText[12] = {0};
     bool playheadLineVisible = false;
     uint32_t playheadLineColorFull = 0;
     lv_opa_t playheadLineOpa = LV_OPA_TRANSP;
     char stepIndexText[4] = {0};
+
+    void commitRenderedState(const TileRenderState& state) {
+        static_cast<TileRenderState&>(*this) = state;
+        initialized = true;
+    }
 };
 
 struct StepGridFrameState {

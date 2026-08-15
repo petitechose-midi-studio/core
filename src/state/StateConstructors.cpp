@@ -30,6 +30,7 @@ FLASHMEM UiSystemState::UiSystemState()
       viewSelector{},
       statusBar{},
       midiSync{},
+      midiNoteDisplay{},
       deviceSettings{},
       patternPitchSettings{},
       macroEdit{},
