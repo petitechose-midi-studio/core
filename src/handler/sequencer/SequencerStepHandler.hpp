@@ -89,6 +89,7 @@ public:
 private:
     void setupBindings();
     void setupDrumBindings();
+    void setupStructureActionBindings();
 
     void toggleStep(uint8_t indexInPage);
     bool selectionHasItems() const;

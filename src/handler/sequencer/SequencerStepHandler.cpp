@@ -1269,6 +1269,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             }
         });
 
+    setupStructureActionBindings();
+}
+
+FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
