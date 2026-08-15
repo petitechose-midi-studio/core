@@ -73,145 +73,11 @@ SequencerChordPresetLibraryAdapter(
 
 FLASHMEM SequencerPresetLibraryAdapter
 SequencerChordPresetLibraryAdapter::operations() {
-    SequencerPresetLibraryAdapter ops{};
-    ops.context = this;
-    ops.kind = sequencer::SequencerPresetLibraryKind::CHORD;
-    ops.beginSession = beginSession_;
-    ops.loadPage = loadPage_;
-    ops.clearInspection = clearInspection_;
-    ops.inspect = inspect_;
-    ops.detailRowCount = detailRowCount_;
-    ops.adjustFocusedDetail = adjustFocusedDetail_;
-    ops.actionSpec = actionSpec_;
-    ops.shouldCommitBeforeLoad = shouldCommitBeforeLoad_;
-    ops.execute = execute_;
-    ops.update = update_;
-    return ops;
-}
-
-FLASHMEM bool SequencerChordPresetLibraryAdapter::beginSession_(
-    void* context
-) {
-    auto* self =
-        static_cast<SequencerChordPresetLibraryAdapter*>(context);
-    return self != nullptr && self->beginSession();
-}
-
-FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
-SequencerChordPresetLibraryAdapter::loadPage_(
-    void* context,
-    SequencerPresetLibraryPager::Entry* entries,
-    uint8_t capacity,
-    const char* anchorExclusive,
-    SequencerPresetLibraryPager::PageDirection direction,
-    core::persistence::ProductAssetFileListResult& out
-) {
-    auto* self =
-        static_cast<SequencerChordPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->loadPage(
-              entries,
-              capacity,
-              anchorExclusive,
-              direction,
-              out
-          )
-        : SequencerPresetLibraryPager::PageLoadStatus::FAILED;
-}
-
-FLASHMEM void
-SequencerChordPresetLibraryAdapter::clearInspection_(
-    void* context
-) {
-    auto* self =
-        static_cast<SequencerChordPresetLibraryAdapter*>(context);
-    if (self != nullptr) self->clearInspection();
-}
-
-FLASHMEM sequencer::SequencerPresetLibraryFeedback
-SequencerChordPresetLibraryAdapter::inspect_(
-    void* context,
-    const char* assetId,
-    bool force
-) {
-    auto* self =
-        static_cast<SequencerChordPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->inspect(assetId, force)
-        : sequencer::SequencerPresetLibraryFeedback::FAILED;
-}
-
-FLASHMEM uint8_t
-SequencerChordPresetLibraryAdapter::detailRowCount_(const void*) {
-    // Formula, Transform and Output are inspectable semantic groups. They are
-    // intentionally read-only, but exposing their focus keeps Detail
-    // navigation visually honest and consistent with the common grammar.
-    return 3U;
-}
-
-FLASHMEM void
-SequencerChordPresetLibraryAdapter::adjustFocusedDetail_(
-    void*,
-    const char*,
-    float
-) {}
-
-FLASHMEM contextual::ContextActionSpec
-SequencerChordPresetLibraryAdapter::actionSpec_(
-    const void* context,
-    bool saveMode,
-    bool selectedNewAsset,
-    bool hasFocusedAsset
-) {
-    const auto* self =
-        static_cast<const SequencerChordPresetLibraryAdapter*>(
-            context
+    return SequencerPresetLibraryAdapterBinding<
+        SequencerChordPresetLibraryAdapter>::bind(
+            *this,
+            sequencer::SequencerPresetLibraryKind::CHORD
         );
-    return self != nullptr
-        ? self->actionSpec(
-              saveMode,
-              selectedNewAsset,
-              hasFocusedAsset
-          )
-        : contextual::ContextActionSpec{};
-}
-
-FLASHMEM bool
-SequencerChordPresetLibraryAdapter::shouldCommitBeforeLoad_(
-    const void*,
-    bool
-) {
-    return false;
-}
-
-FLASHMEM SequencerPresetLibraryResult
-SequencerChordPresetLibraryAdapter::execute_(
-    void* context,
-    Mode mode,
-    const char* assetId,
-    bool createNew,
-    bool overwriteAuthorized
-) {
-    auto* self =
-        static_cast<SequencerChordPresetLibraryAdapter*>(context);
-    return self != nullptr
-        ? self->execute(
-              mode,
-              assetId,
-              createNew,
-              overwriteAuthorized
-          )
-        : SequencerPresetLibraryResult{
-              .outcome = SequencerPresetLibraryOutcome::BLOCKED,
-              .feedback =
-                  sequencer::SequencerPresetLibraryFeedback::FAILED,
-              .reason = contextual::ContextActionReason::FAILED,
-          };
-}
-
-FLASHMEM SequencerPresetLibraryResult
-SequencerChordPresetLibraryAdapter::update_(void*, uint32_t) {
-    return {};
 }
 
 FLASHMEM bool
@@ -323,6 +189,20 @@ SequencerChordPresetLibraryAdapter::inspect(
     return sequencer::SequencerPresetLibraryFeedback::INCOMPATIBLE;
 }
 
+FLASHMEM uint8_t
+SequencerChordPresetLibraryAdapter::detailRowCount() const {
+    // Formula, Transform and Output are inspectable semantic groups. They are
+    // intentionally read-only, but exposing their focus keeps Detail
+    // navigation visually honest and consistent with the common grammar.
+    return 3U;
+}
+
+FLASHMEM void
+SequencerChordPresetLibraryAdapter::adjustFocusedDetail(
+    const char*,
+    float
+) {}
+
 FLASHMEM contextual::ContextActionSpec
 SequencerChordPresetLibraryAdapter::actionSpec(
     bool saveMode,
@@ -338,6 +218,11 @@ SequencerChordPresetLibraryAdapter::actionSpec(
         chord.target,
         chord.descriptor
     );
+}
+
+FLASHMEM bool
+SequencerChordPresetLibraryAdapter::shouldCommitBeforeLoad(bool) const {
+    return false;
 }
 
 FLASHMEM SequencerPresetLibraryResult
@@ -436,6 +321,11 @@ SequencerChordPresetLibraryAdapter::execute(
             sequencer::SequencerPresetLibraryFeedback::LOADED,
         .reason = contextual::ContextActionReason::NONE,
     };
+}
+
+FLASHMEM SequencerPresetLibraryResult
+SequencerChordPresetLibraryAdapter::update(uint32_t) {
+    return {};
 }
 
 }  // namespace core::handler

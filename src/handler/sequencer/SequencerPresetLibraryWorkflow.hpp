@@ -105,6 +105,133 @@ struct SequencerPresetLibraryAdapter {
     }
 };
 
+// Template instantiations need their own COMDAT-compatible section. Teensy's
+// linker collects every .flashmem* section into cold Flash.
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    #define MS_PRESET_BINDING_FLASHMEM \
+        __attribute__((section(".flashmem.preset_binding")))
+#else
+    #define MS_PRESET_BINDING_FLASHMEM
+#endif
+
+/** Binds a concrete preset domain to the allocation-free workflow callbacks. */
+template <typename DomainAdapter>
+class SequencerPresetLibraryAdapterBinding {
+public:
+    static MS_PRESET_BINDING_FLASHMEM SequencerPresetLibraryAdapter bind(
+        DomainAdapter& domain,
+        SequencerPresetLibraryAdapter::Kind kind
+    ) {
+        SequencerPresetLibraryAdapter adapter{};
+        adapter.context = &domain;
+        adapter.kind = kind;
+        adapter.beginSession = beginSession;
+        adapter.loadPage = loadPage;
+        adapter.clearInspection = clearInspection;
+        adapter.inspect = inspect;
+        adapter.detailRowCount = detailRowCount;
+        adapter.adjustFocusedDetail = adjustFocusedDetail;
+        adapter.actionSpec = actionSpec;
+        adapter.shouldCommitBeforeLoad = shouldCommitBeforeLoad;
+        adapter.execute = execute;
+        adapter.update = update;
+        return adapter;
+    }
+
+private:
+    static MS_PRESET_BINDING_FLASHMEM bool beginSession(void* context) {
+        return static_cast<DomainAdapter*>(context)->beginSession();
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM
+    SequencerPresetLibraryPager::PageLoadStatus loadPage(
+        void* context,
+        SequencerPresetLibraryAdapter::Entry* entries,
+        uint8_t capacity,
+        const char* anchorExclusive,
+        SequencerPresetLibraryAdapter::PageDirection direction,
+        core::persistence::ProductAssetFileListResult& out
+    ) {
+        return static_cast<DomainAdapter*>(context)->loadPage(
+            entries,
+            capacity,
+            anchorExclusive,
+            direction,
+            out
+        );
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM void clearInspection(void* context) {
+        static_cast<DomainAdapter*>(context)->clearInspection();
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM
+    core::state::sequencer::SequencerPresetLibraryFeedback
+    inspect(void* context, const char* assetId, bool force) {
+        return static_cast<DomainAdapter*>(context)->inspect(assetId, force);
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM uint8_t detailRowCount(
+        const void* context
+    ) {
+        return static_cast<const DomainAdapter*>(context)->detailRowCount();
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM void adjustFocusedDetail(
+        void* context,
+        const char* assetId,
+        float delta
+    ) {
+        static_cast<DomainAdapter*>(context)->adjustFocusedDetail(assetId, delta);
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM
+    core::state::contextual::ContextActionSpec actionSpec(
+        const void* context,
+        bool saveMode,
+        bool selectedNewAsset,
+        bool hasFocusedAsset
+    ) {
+        return static_cast<const DomainAdapter*>(context)->actionSpec(
+            saveMode,
+            selectedNewAsset,
+            hasFocusedAsset
+        );
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM bool shouldCommitBeforeLoad(
+        const void* context,
+        bool hasFocusedAsset
+    ) {
+        return static_cast<const DomainAdapter*>(context)
+            ->shouldCommitBeforeLoad(hasFocusedAsset);
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM SequencerPresetLibraryResult execute(
+        void* context,
+        SequencerPresetLibraryAdapter::Mode mode,
+        const char* assetId,
+        bool createNew,
+        bool overwriteAuthorized
+    ) {
+        return static_cast<DomainAdapter*>(context)->execute(
+            mode,
+            assetId,
+            createNew,
+            overwriteAuthorized
+        );
+    }
+
+    static MS_PRESET_BINDING_FLASHMEM SequencerPresetLibraryResult update(
+        void* context,
+        uint32_t nowMs
+    ) {
+        return static_cast<DomainAdapter*>(context)->update(nowMs);
+    }
+};
+
+#undef MS_PRESET_BINDING_FLASHMEM
+
 class SequencerPresetLibraryWorkflow {
 public:
     SequencerPresetLibraryWorkflow(
