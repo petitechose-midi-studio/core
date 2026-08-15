@@ -1171,6 +1171,49 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(const SequencerHistoryEnt
     return descriptor;
 }
 
+FLASHMEM bool capturePatternHistoryUsingReservedStorage(
+    const SequencerPatternState& source,
+    uint8_t focusedStep,
+    SequencerHistoryPatternSnapshot& out
+) {
+    if (!capturePatternPayloadUsingReservedStorage(source, out.graph, out.ccLanes)) {
+        return false;
+    }
+    captureSnapshot(source, out.flat);
+    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.focusedStep = focusedStep;
+    out.ccLanesCaptured = true;
+    return true;
+}
+
+FLASHMEM bool capturePatternHistoryUsingReservedGraph(
+    const SequencerPatternState& source,
+    uint8_t focusedStep,
+    SequencerHistoryPatternSnapshot& out
+) {
+    captureSnapshot(source, out.flat);
+    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.focusedStep = focusedStep;
+    if (!captureGraphUsingReservedStorage(graphView(source), out.graph) ||
+        !captureSequencerCcLaneBankUsingReservedStorage(source.ccLanes.get(), out.ccLanes)) {
+        return false;
+    }
+    out.ccLanesCaptured = true;
+    return true;
+}
+
+FLASHMEM void captureFlatPatternHistory(
+    const SequencerPatternState& source,
+    uint8_t focusedStep,
+    SequencerHistoryPatternSnapshot& out
+) {
+    out.reset();
+    captureSnapshot(source, out.flat);
+    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.focusedStep = focusedStep;
+    out.ccLanesCaptured = false;
+}
+
 }  // namespace
 
 FLASHMEM bool captureHistorySnapshot(const SequencerState& source,
@@ -1208,14 +1251,11 @@ FLASHMEM bool reserveHistorySnapshotStorage(const SequencerState& source,
 
 FLASHMEM bool captureHistorySnapshotUsingReservedStorage(const SequencerState& source,
                                                          SequencerHistoryPatternSnapshot& out) {
-    if (!capturePatternPayloadUsingReservedStorage(source.pattern, out.graph, out.ccLanes)) {
-        return false;
-    }
-    captureSnapshot(source.pattern, out.flat);
-    out.ccLaneRevision = source.pattern.ccLaneRevision.get();
-    out.focusedStep = source.focusedStep.get();
-    out.ccLanesCaptured = true;
-    return true;
+    return capturePatternHistoryUsingReservedStorage(
+        source.pattern,
+        source.focusedStep.get(),
+        out
+    );
 }
 
 FLASHMEM bool captureDetachedHistorySnapshotUsingReservedStorage(
@@ -1223,17 +1263,11 @@ FLASHMEM bool captureDetachedHistorySnapshotUsingReservedStorage(
     uint8_t focusedStep,
     SequencerHistoryPatternSnapshot& out
 ) {
-    if (!capturePatternPayloadUsingReservedStorage(source, out.graph, out.ccLanes)) {
-        return false;
-    }
-    captureSnapshot(source, out.flat);
-    out.ccLaneRevision = source.ccLaneRevision.get();
     const uint8_t length = source.length.get();
-    out.focusedStep = length == 0U
+    const uint8_t clampedFocus = length == 0U
         ? 0U
         : static_cast<uint8_t>(std::min<uint16_t>(focusedStep, length - 1U));
-    out.ccLanesCaptured = true;
-    return true;
+    return capturePatternHistoryUsingReservedStorage(source, clampedFocus, out);
 }
 
 FLASHMEM bool reserveHistorySnapshotGraphStorage(SequencerHistoryPatternSnapshot& snapshot) {
@@ -1244,33 +1278,22 @@ FLASHMEM bool reserveHistorySnapshotGraphStorage(SequencerHistoryPatternSnapshot
 
 FLASHMEM bool captureHistorySnapshotUsingReservedGraph(const SequencerState& source,
                                                        SequencerHistoryPatternSnapshot& out) {
-    captureSnapshot(source.pattern, out.flat);
-    out.ccLaneRevision = source.pattern.ccLaneRevision.get();
-    out.focusedStep = source.focusedStep.get();
-    if (!captureGraphUsingReservedStorage(graphView(source.pattern), out.graph) ||
-        !captureSequencerCcLaneBankUsingReservedStorage(source.pattern.ccLanes.get(),
-                                                        out.ccLanes)) {
-        return false;
-    }
-    out.ccLanesCaptured = true;
-    return true;
+    return capturePatternHistoryUsingReservedGraph(
+        source.pattern,
+        source.focusedStep.get(),
+        out
+    );
 }
 
 FLASHMEM void captureFlatHistorySnapshot(const SequencerState& source,
                                          SequencerHistoryPatternSnapshot& out) {
-    out.reset();
-    captureSnapshot(source.pattern, out.flat);
-    out.ccLaneRevision = source.pattern.ccLaneRevision.get();
-    out.focusedStep = source.focusedStep.get();
-    out.ccLanesCaptured = false;
+    captureFlatPatternHistory(source.pattern, source.focusedStep.get(), out);
 }
 
 FLASHMEM bool captureHistorySnapshot(const SequencerTrackBankState& bank,
                                      const SequencerState& active, uint8_t trackIndex,
                                      SequencerHistoryPatternSnapshot& out) {
     const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    if (targetTrack == bank.activeTrackIndex()) { return captureHistorySnapshot(active, out); }
-
     out.reset();
     return reserveHistorySnapshotStorage(bank, active, targetTrack, out) &&
            captureHistorySnapshotUsingReservedStorage(bank, active, targetTrack, out);
@@ -1288,57 +1311,32 @@ FLASHMEM bool captureHistorySnapshotUsingReservedStorage(const SequencerTrackBan
                                                          const SequencerState& active,
                                                          uint8_t trackIndex,
                                                          SequencerHistoryPatternSnapshot& out) {
-    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    if (targetTrack == bank.activeTrackIndex()) {
-        return captureHistorySnapshotUsingReservedStorage(active, out);
-    }
-
-    const auto& source = bank.track(targetTrack);
-    if (!capturePatternPayloadUsingReservedStorage(source, out.graph, out.ccLanes)) {
-        return false;
-    }
-    captureSnapshot(source, out.flat);
-    out.ccLaneRevision = source.ccLaneRevision.get();
-    out.focusedStep = active.focusedStep.get();
-    out.ccLanesCaptured = true;
-    return true;
+    return capturePatternHistoryUsingReservedStorage(
+        canonicalTrackPattern(bank, active, trackIndex),
+        active.focusedStep.get(),
+        out
+    );
 }
 
 FLASHMEM bool captureHistorySnapshotUsingReservedGraph(const SequencerTrackBankState& bank,
                                                        const SequencerState& active,
                                                        uint8_t trackIndex,
                                                        SequencerHistoryPatternSnapshot& out) {
-    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    if (targetTrack == bank.activeTrackIndex()) {
-        return captureHistorySnapshotUsingReservedGraph(active, out);
-    }
-
-    const auto& source = bank.track(targetTrack);
-    captureSnapshot(source, out.flat);
-    out.ccLaneRevision = source.ccLaneRevision.get();
-    out.focusedStep = active.focusedStep.get();
-    if (!captureGraphUsingReservedStorage(graphView(source), out.graph) ||
-        !captureSequencerCcLaneBankUsingReservedStorage(source.ccLanes.get(), out.ccLanes)) {
-        return false;
-    }
-    out.ccLanesCaptured = true;
-    return true;
+    return capturePatternHistoryUsingReservedGraph(
+        canonicalTrackPattern(bank, active, trackIndex),
+        active.focusedStep.get(),
+        out
+    );
 }
 
 FLASHMEM void captureFlatHistorySnapshot(const SequencerTrackBankState& bank,
                                          const SequencerState& active, uint8_t trackIndex,
                                          SequencerHistoryPatternSnapshot& out) {
-    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    if (targetTrack == bank.activeTrackIndex()) {
-        captureFlatHistorySnapshot(active, out);
-        return;
-    }
-
-    out.reset();
-    captureSnapshot(bank.track(targetTrack), out.flat);
-    out.ccLaneRevision = bank.track(targetTrack).ccLaneRevision.get();
-    out.focusedStep = active.focusedStep.get();
-    out.ccLanesCaptured = false;
+    captureFlatPatternHistory(
+        canonicalTrackPattern(bank, active, trackIndex),
+        active.focusedStep.get(),
+        out
+    );
 }
 
 FLASHMEM bool captureHistorySnapshot(const SequencerTrackBankState& bank,
