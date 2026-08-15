@@ -110,6 +110,14 @@ void test_pattern_and_drum_placement_share_visual_grammar() {
     expectPlacementStrip(props, "2 selected", ContextActionStripVisualState::ACTIVE);
     assert(!props.slots[2].holdActive);
 
+    drum.laneSelection.reset();
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(sourceFor(state));
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[0].icon == standalone::icons::TRACK_MUTE);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+
     std::cout << "[PASS] Pattern and Drum placement share visual grammar\n";
 }
 
