@@ -112,34 +112,8 @@ struct TileRenderDiff {
     bool playheadChanged = false;
 };
 
-struct TileRenderCache {
+struct TileRenderCache : TileRenderState {
     bool initialized = false;
-    uint8_t absoluteStep = 0;
-    bool inPattern = false;
-    bool enabled = false;
-    bool stepSelectionActive = false;
-    bool stepSelectionCursor = false;
-    bool stepSelectionSelected = false;
-    bool stepPastePreviewActive = false;
-    core::state::sequencer::SequencerStepPastePreview stepPastePreview =
-        core::state::sequencer::SequencerStepPastePreview::NONE;
-    bool playheadVisible = false;
-    bool playing = false;
-    bool probabilityCycleActive = false;
-    uint8_t note = 0;
-    uint8_t velocity = 0;
-    uint8_t probability = 0;
-    uint16_t gate = 0;
-    int8_t nudge = 0;
-    bool childContentContext = false;
-    int16_t childContentOffset = 0;
-    bool childContentNoteOffsetUsesScaleDegrees = false;
-    bool childPitchSummaryVisible = false;
-    uint8_t childPitchSummaryNote = 0;
-    uint8_t playheadProgress = 0U;
-    TileVariationRenderState variation{};
-    TileContentBadgeState contentBadges{};
-    TileNoteEventProjection noteEvents{};
     lv_coord_t noteLabelHeight = 0;
     bool noteLabelVisible = false;
     bool originalNoteLabelVisible = false;
@@ -162,6 +136,11 @@ struct TileRenderCache {
     uint32_t playheadLineColorFull = 0;
     lv_opa_t playheadLineOpa = LV_OPA_TRANSP;
     char stepIndexText[4] = {0};
+
+    void commitRenderedState(const TileRenderState& state) {
+        static_cast<TileRenderState&>(*this) = state;
+        initialized = true;
+    }
 };
 
 struct StepGridFrameState {

@@ -1211,33 +1211,7 @@ void StepGrid::renderTile(
         );
     }
 
-    cache.initialized = true;
-    cache.absoluteStep = state.absoluteStep;
-    cache.inPattern = state.inPattern;
-    cache.enabled = state.enabled;
-    cache.stepSelectionActive = state.stepSelectionActive;
-    cache.stepSelectionCursor = state.stepSelectionCursor;
-    cache.stepSelectionSelected = state.stepSelectionSelected;
-    cache.stepPastePreviewActive = state.stepPastePreviewActive;
-    cache.stepPastePreview = state.stepPastePreview;
-    cache.playheadVisible = state.playheadVisible;
-    cache.playheadProgress = state.playheadProgress;
-    cache.playing = state.playing;
-    cache.probabilityCycleActive = state.probabilityCycleActive;
-    cache.note = state.note;
-    cache.velocity = state.velocity;
-    cache.probability = state.probability;
-    cache.gate = state.gate;
-    cache.nudge = state.nudge;
-    cache.childContentContext = state.childContentContext;
-    cache.childContentOffset = state.childContentOffset;
-    cache.childContentNoteOffsetUsesScaleDegrees = state.childContentNoteOffsetUsesScaleDegrees;
-    cache.childPitchSummaryVisible = state.childPitchSummaryVisible;
-    cache.childPitchSummaryNote = state.childPitchSummaryNote;
-    cache.variation = state.variation;
-    cache.contentBadges = state.contentBadges;
-    cache.noteEvents = state.noteEvents;
-
+    cache.commitRenderedState(state);
 }
 
 void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
