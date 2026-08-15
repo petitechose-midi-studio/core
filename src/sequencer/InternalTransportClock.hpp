@@ -35,9 +35,8 @@ public:
     bool isPlaying() const;
 
 private:
-    uint32_t tickPeriodUs_() const;
-
 #ifdef ARDUINO
+    uint32_t tickPeriodUs_() const;
     uint32_t segmentTicks_(uint64_t nowUs) const;
 
     mutable oc::hal::teensy::HighResolutionClock clock_{};

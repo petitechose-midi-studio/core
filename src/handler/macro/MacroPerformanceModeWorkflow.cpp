@@ -16,7 +16,6 @@ FLASHMEM MacroPerformanceModeWorkflow::MacroPerformanceModeWorkflow(
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders)
     : macro_ui_(state.macroUi)
-    , pages_(state.pages)
     , track_ui_(state.trackNavigation)
     , services_(services)
     , overlays_(overlays)

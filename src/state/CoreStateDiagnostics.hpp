@@ -2,7 +2,7 @@
 
 namespace core::state {
 
-class CoreState;
+struct CoreState;
 
 namespace diagnostics {
 

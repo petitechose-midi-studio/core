@@ -51,7 +51,6 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     , performance_workflow_(
           MacroPerformanceModeWorkflow::StateRefs{
               state.macroUi,
-              state.pages,
               state.trackNavigation,
           },
           performanceServices,
