@@ -77,7 +77,7 @@
     "core/.github/release-tooling.json": "cfa0160700381645ebf8cfb9e069a6126520f3ef503eeea0306755aad2bd6877",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "ab15811362f8824d9135e8b14dcf02aa54dfa08141ad186e94adcd2a56b2e00c",
+    "core/.github/workflows/ci.yml": "b456e69b2fbbe492f43bc4af17ca40e0129607f7fb3ad4f70d1454b9ce30f292",
     "core/CMakeLists.txt": "96c2e3cf4ef19f7c82f422cf91ce176be93d10818a427782c6ed42c9e04b3c6e",
     "core/cmake/MsCoreProductSources.cmake": "54a6e39f77e45999c3f4c971f654e9b1078f16f6c697ebc2765bf1b4ad07c03a",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
@@ -181,7 +181,7 @@
   "repositories": {
     "bitwig": {
       "cleanExpected": true,
-      "commit": "3239c22a60ef1c5fb7f659a9597ecd036b882f2c",
+      "commit": "bb81912399ee5db82395dd864e7ed481efeeff92",
       "tree": "63fb97c8a12274cbf9377cd821047ca369d16a10"
     },
     "core": {
@@ -2900,10 +2900,10 @@
       "declaredRepositoryPins": {
         "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
-        "MIDI_STUDIO_BITWIG_SHA": "3239c22a60ef1c5fb7f659a9597ecd036b882f2c",
+        "MIDI_STUDIO_BITWIG_SHA": "bb81912399ee5db82395dd864e7ed481efeeff92",
         "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "923550edbd8bb0a7bef3bee74248cc1e116db6e3",
         "MIDI_STUDIO_UI_SHA": "1cdf21526f6f08e49ac21f4fc466119e6468c9b3",
-        "MS_DEV_ENV_SHA": "38289bc1c4d5e1298145256086e0f6d2ce843203",
+        "MS_DEV_ENV_SHA": "2f6f8af02afc5b8af9096f83319953d7d9829dd5",
         "OPEN_CONTROL_FRAMEWORK_SHA": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
@@ -2916,7 +2916,7 @@
       },
       "emsdkVersion": "4.0.23",
       "finalWasmLink": true,
-      "msDevEnv": "38289bc1c4d5e1298145256086e0f6d2ce843203",
+      "msDevEnv": "2f6f8af02afc5b8af9096f83319953d7d9829dd5",
       "platformio": "6.1.18"
     }
   }
