@@ -11,6 +11,7 @@ namespace sdl::integration {
 enum class UxActionKind {
     Button,
     Encoder,
+    EncoderValue,
     Capture,
     Scenario,
     Tick,

@@ -398,6 +398,41 @@ void test_pattern_generation_change_panics_once_and_rephases() {
     std::cout << "[PASS] Drum generation change panics once and rephases\n";
 }
 
+void test_expression_change_hot_swaps_without_retrigger() {
+    drum::DrumTrackState track;
+    track.reset();
+    assert(track.kit.setLaneCount(1U));
+    assert(track.pattern.setLaneTimingCustom(0U, 1U, 4U));
+    assert(track.pattern.setStepEnabled(0U, 0U, true));
+    assert(track.pattern.setStepVelocity(0U, 0U, 80U));
+    assert(track.pattern.setStepGate(0U, 0U, 400U));
+
+    drum::DrumPatternRuntimeSnapshot first{};
+    drum::captureDrumRuntimeSnapshot(track, first);
+    RecordingSink sink;
+    DrumPlaybackEngine engine{sink};
+    engine.setPattern(&first, nullptr, 9U);
+    engine.update(0U, true);
+    assert(sink.hasNoteOnVelocity(36U, 0U, 9U, 80U));
+
+    assert(track.pattern.setStepVelocity(0U, 0U, 110U));
+    drum::DrumPatternRuntimeSnapshot second{};
+    drum::captureDrumRuntimeSnapshot(track, second);
+    assert(first.revision != second.revision);
+    engine.setPattern(&second, nullptr, 9U);
+    engine.update(1U, true);
+
+    assert(sink.eventCount(SequencerEventType::AllNotesOff) == 0U);
+    assert(sink.noteOnCount(36U) == 1U);
+    for (uint32_t tick = 2U; tick <= 6U; ++tick) {
+        engine.update(tick, true);
+    }
+    assert(sink.noteOnCount(36U) == 2U);
+    assert(sink.hasNoteOnVelocity(36U, 6U, 9U, 110U));
+
+    std::cout << "[PASS] Drum expression edits hot-swap without retrigger\n";
+}
+
 void test_advanced_micro_sequence_keeps_fixed_drum_pitch() {
     drum::DrumTrackState track;
     track.reset();
@@ -662,6 +697,7 @@ int main() {
     test_duplicate_note_retrigger_replaces_the_stale_note_off();
     test_long_gates_remain_bounded_across_all_sixteen_lanes();
     test_pattern_generation_change_panics_once_and_rephases();
+    test_expression_change_hot_swaps_without_retrigger();
     test_advanced_micro_sequence_keeps_fixed_drum_pitch();
     test_advanced_cycle_states_follow_lane_loop_cycles();
     test_track_bank_owns_independent_drum_tracks();

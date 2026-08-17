@@ -34,7 +34,7 @@ FLASHMEM bool MacroHistoryService::setModulationDepthCoalesced(
     );
 }
 
-FLASHMEM bool MacroHistoryService::setMacroValueCoalesced(
+bool MacroHistoryService::setMacroValueCoalesced(
     MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
     float value
@@ -48,17 +48,25 @@ FLASHMEM bool MacroHistoryService::setMacroValueCoalesced(
     const float next = macroAutomationClamp01(value);
     if (sameFloatBits(page.values[address.macro], next)) return false;
 
-    if (coalescing_ && undo_count_ > 0U &&
+    bool joinsValueGesture = coalescing_ &&
         coalesced_kind_ == MacroHistoryActionKind::STATIC_VALUE_EDIT &&
-        sameAddress(coalesced_address_, address)) {
-        auto& previous = undo_[undo_count_ - 1U];
-        if (previous && previous->valueEdit.valid &&
+        coalesced_address_.track == address.track &&
+        coalesced_address_.page == address.page;
+    if (joinsValueGesture) {
+        auto* previous = coalesced_value_entries_[address.macro];
+        if (previous != nullptr && previous->valueEdit.valid &&
+            sameAddress(previous->address, address) &&
             sameFloatBits(page.values[address.macro], previous->valueEdit.after)) {
             page.values[address.macro] = next;
             previous->valueEdit.after = next;
-            clearRedo_();
             return true;
         }
+        if (previous != nullptr) {
+            endCoalescing();
+            joinsValueGesture = false;
+        }
+    } else {
+        endCoalescing();
     }
 
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
@@ -70,10 +78,12 @@ FLASHMEM bool MacroHistoryService::setMacroValueCoalesced(
     change->valueEdit.valid = true;
 
     page.values[address.macro] = next;
+    auto* retained = change.get();
     recordNewEntry_(std::move(change));
     coalescing_ = true;
     coalesced_kind_ = MacroHistoryActionKind::STATIC_VALUE_EDIT;
-    coalesced_address_ = address;
+    if (!joinsValueGesture) coalesced_address_ = address;
+    coalesced_value_entries_[address.macro] = retained;
     return true;
 }
 

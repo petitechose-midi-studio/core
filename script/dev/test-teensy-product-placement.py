@@ -21,6 +21,7 @@ def main() -> int:
     valid = """
 1610613000 220 W oc::state::Signal<bool, 4u>::subscribe(std::function<void (bool const&)>)
 1610613300 32 t std::_Function_handler<void ()>::_M_manager(std::_Any_data&, std::_Any_data const&, std::_Manager_operation)
+1610613400 24 W core::app::allocateExtmemStrict(unsigned int)
 280504 8 t __lv_binfont_create_from_buffer_veneer
 281312 8 t __lv_draw_sw_box_shadow_veneer
 1610613500 1472 T lv_binfont_create
@@ -134,6 +135,9 @@ def main() -> int:
         "1610613000 220 W oc::state::Signal<bool, 4u>::subscribe",
         "24000 220 W oc::state::Signal<bool, 4u>::subscribe",
     ).replace(
+        "1610613400 24 W core::app::allocateExtmemStrict",
+        "24100 24 W core::app::allocateExtmemStrict",
+    ).replace(
         "34348 324 T core::handler::MacroValueHandler::handleValueChange",
         "1610620000 324 T core::handler::MacroValueHandler::handleValueChange",
     ).replace(
@@ -142,6 +146,7 @@ def main() -> int:
     )
     violations = product_placement_violations(invalid)
     assert "Signal subscription setup must execute from Flash" in violations
+    assert "strict PSRAM allocation/lifecycle must execute from Flash" in violations
     assert any("MacroValueHandler" in item for item in violations)
     assert "LVGL draw buffer must be one 320x240 RGB565 frame in RAM2" in violations
 

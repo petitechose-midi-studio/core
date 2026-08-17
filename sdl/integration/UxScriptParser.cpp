@@ -74,6 +74,7 @@ std::string uxActionName(UxActionKind kind) {
     switch (kind) {
         case UxActionKind::Button: return "button";
         case UxActionKind::Encoder: return "encoder";
+        case UxActionKind::EncoderValue: return "encoder_value";
         case UxActionKind::Capture: return "capture";
         case UxActionKind::Scenario: return "scenario";
         case UxActionKind::Tick:
@@ -167,6 +168,21 @@ bool UxScriptParser::parseLine(const std::string& raw,
             return false;
         }
         actions.push_back({dueMs, order++, lineNumber, UxActionKind::Encoder, id, delta, parsedDelta});
+        return true;
+    }
+
+    if (command == "ENCODER_VALUE") {
+        std::string id;
+        std::string value;
+        stream >> id >> value;
+        float parsedValue = 0.0f;
+        if (id.empty() || !parseFloat(value, parsedValue)) {
+            error_ = "line " + std::to_string(lineNumber) +
+                ": expected `encoder_value <id> <value>`";
+            return false;
+        }
+        actions.push_back({dueMs, order++, lineNumber, UxActionKind::EncoderValue,
+                           id, value, parsedValue});
         return true;
     }
 

@@ -17,7 +17,8 @@ constexpr const char* renderSchedulerDebugLabel(const char* label) {
 }
 
 /**
- * Frame-paces retained LVGL projections and coalesces related state changes.
+ * Frame-paces retained LVGL projections on the shared UI frame budget and
+ * coalesces related state changes.
  *
  * Signal callbacks only request render flags. The projection runs from LVGL's
  * timer phase at most once per period, keeping widget mutation out of the
@@ -31,12 +32,9 @@ public:
     using DrainCallback = void (*)(void* context, uint32_t flags);
     using DrainReadyCallback = bool (*)(void* context);
 
-    static constexpr uint32_t DEFAULT_PERIOD_MS = 16;
-
     CoalescedLvglRenderScheduler(const char* debugLabel,
                                  DrainCallback callback,
                                  void* context,
-                                 uint32_t periodMs = DEFAULT_PERIOD_MS,
                                  DrainReadyCallback drainReady = nullptr);
     ~CoalescedLvglRenderScheduler();
 

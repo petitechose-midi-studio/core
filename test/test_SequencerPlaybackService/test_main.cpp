@@ -199,7 +199,9 @@ public:
         const core::sequencer::SequencerCcLaneRuntimeProjectSnapshot*
             ccLaneSnapshot = nullptr,
         const core::sequencer::ProjectTrackRuntimeSnapshot* projectTracks = nullptr,
-        bool allowPredictiveLookahead = false
+        bool allowPredictiveLookahead = false,
+        const core::sequencer::SequencerDrumRuntimeProjectSnapshot*
+            drumSnapshot = nullptr
     ) {
         if (projectTracks != nullptr) {
             core::sequencer::SequencerPlaybackService::update(
@@ -211,7 +213,8 @@ public:
                 *projectTracks,
                 publishRuntimeState,
                 ccLaneSnapshot,
-                allowPredictiveLookahead
+                allowPredictiveLookahead,
+                drumSnapshot
             );
             return;
         }
@@ -235,10 +238,98 @@ public:
             projected,
             publishRuntimeState,
             ccLaneSnapshot,
-            allowPredictiveLookahead
+            allowPredictiveLookahead,
+            drumSnapshot
         );
     }
 };
+
+void test_track_engine_switches_between_melodic_and_drum_without_stale_notes() {
+    namespace seq = core::state::sequencer;
+    SequencerState sequencer;
+    seq::SequencerTrackBankState bank;
+    core::state::project::ProjectNavigationState navigation;
+    core::state::StatusBarState status;
+    core::sequencer::RealtimeMidiQueue queue;
+    core::sequencer::SequencerRuntimeGraphBank graphBank;
+    core::sequencer::SequencerRuntimeSnapshotBank snapshots{
+        sequencer, bank, navigation,
+    };
+
+    setRootStep(sequencer.pattern, 60U, 1U);
+    assert(sequencer.pattern.setStepGateAt(0U, 400U));
+    auto projectTracks = makeProjectTracks();
+    SequencerTrackFixturePlaybackAdapter service{
+        sequencer, status, queue, graphBank,
+    };
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    const auto& melodic = refreshSnapshot(
+        snapshots, graphBank, sequencer, bank
+    );
+    service.update(
+        melodic, 0U, true, 1000U, 1000U, false, nullptr,
+        &projectTracks, false,
+        snapshots.drumSnapshot(snapshots.activeIndex())
+    );
+    drainDue(queue, midi, 1000U, UINT32_MAX);
+    assert(transport.messages.size() == 1U);
+    assert(transport.messages[0].type ==
+           core::sequencer::RealtimeMidiEventType::NoteOn);
+    assert(transport.messages[0].note == 60U);
+
+    assert(bank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
+    auto& drumTrack = bank.drumTrack(0U);
+    assert(drumTrack.kit.setLaneCount(1U));
+    assert(drumTrack.pattern.setLaneTimingCustom(0U, 1U, 4U));
+    assert(drumTrack.pattern.setStepEnabled(0U, 0U, true));
+    assert(drumTrack.pattern.setStepGate(0U, 0U, 400U));
+    bank.publishDrumMutation(0U);
+
+    const auto& drum = refreshSnapshot(
+        snapshots, graphBank, sequencer, bank
+    );
+    const auto* drumSnapshot = snapshots.drumSnapshot(
+        snapshots.activeIndex()
+    );
+    assert(drumSnapshot != nullptr);
+    assert(drumSnapshot->presentMask == 0x0001U);
+    service.update(
+        drum, 6U, true, 7000U, 1000U, false, nullptr,
+        &projectTracks, false, drumSnapshot
+    );
+    drainDue(queue, midi, 7000U, UINT32_MAX);
+    assert(transport.messages.size() == 3U);
+    assert(transport.messages[1].type ==
+           core::sequencer::RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[1].note == 60U);
+    assert(transport.messages[2].type ==
+           core::sequencer::RealtimeMidiEventType::NoteOn);
+    assert(transport.messages[2].note == 36U);
+
+    assert(bank.setTrackKind(0U, seq::SequencerTrackKind::INSTRUMENT));
+    const auto& melodicAgain = refreshSnapshot(
+        snapshots, graphBank, sequencer, bank
+    );
+    const auto* noDrum = snapshots.drumSnapshot(snapshots.activeIndex());
+    assert(noDrum == nullptr || noDrum->presentMask == 0U);
+    service.update(
+        melodicAgain, 12U, true, 13000U, 1000U, false, nullptr,
+        &projectTracks, false, noDrum
+    );
+    drainDue(queue, midi, 13000U, UINT32_MAX);
+    assert(transport.messages.size() == 5U);
+    assert(transport.messages[3].type ==
+           core::sequencer::RealtimeMidiEventType::NoteOff);
+    assert(transport.messages[3].note == 36U);
+    assert(transport.messages[4].type ==
+           core::sequencer::RealtimeMidiEventType::NoteOn);
+    assert(transport.messages[4].note == 60U);
+
+    std::cout
+        << "[PASS] Track engine switches Melodic/Drum without stale notes\n";
+}
 
 void setProjectTrackMix(
     core::sequencer::ProjectTrackRuntimeSnapshot& snapshot,
@@ -2489,6 +2580,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
 
 int main() {
     installTimeProvider();
+    test_track_engine_switches_between_melodic_and_drum_without_stale_notes();
     test_canonical_project_track_contract_is_the_only_routing_authority();
     test_project_track_note_delay_positive_and_predictive_negative();
     test_negative_delay_tempo_change_rebuilds_future_plan_once();

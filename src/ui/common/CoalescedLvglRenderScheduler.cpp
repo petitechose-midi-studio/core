@@ -1,6 +1,7 @@
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
 namespace core::ui {
@@ -9,7 +10,6 @@ FLASHMEM CoalescedLvglRenderScheduler::CoalescedLvglRenderScheduler(
     const char* debugLabel,
     DrainCallback callback,
     void* context,
-    uint32_t periodMs,
     DrainReadyCallback drainReady
 )
 #if OC_ENABLE_STATS
@@ -20,7 +20,9 @@ FLASHMEM CoalescedLvglRenderScheduler::CoalescedLvglRenderScheduler(
 #endif
     , drain_ready_(drainReady)
     , context_(context)
-    , timer_(periodMs, &CoalescedLvglRenderScheduler::onTimer, this) {
+    , timer_(Config::Timing::UI_FRAME_PERIOD_MS,
+             &CoalescedLvglRenderScheduler::onTimer,
+             this) {
 #if !OC_ENABLE_STATS
     (void)debugLabel;
 #endif

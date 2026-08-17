@@ -157,10 +157,62 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
 {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         track_event_sinks_[i].emplace(midiQueue, i, &note_activity_observer_);
-        track_engines_[i].emplace(track_runtime_states_[i], *track_event_sinks_[i]);
-        drum_track_engines_[i].emplace(*track_event_sinks_[i]);
+        track_engines_[i].emplace<oc::note::sequencer::StepSequencerEngine>(
+            track_runtime_states_[i],
+            *track_event_sinks_[i]
+        );
     }
     publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
+}
+
+oc::note::sequencer::StepSequencerEngine*
+SequencerPlaybackService::melodicEngine_(uint8_t trackIndex) {
+    if (trackIndex >= track_engines_.size()) return nullptr;
+    return std::get_if<oc::note::sequencer::StepSequencerEngine>(
+        &track_engines_[trackIndex]
+    );
+}
+
+DrumPlaybackEngine* SequencerPlaybackService::drumEngine_(uint8_t trackIndex) {
+    if (trackIndex >= track_engines_.size()) return nullptr;
+    return std::get_if<DrumPlaybackEngine>(&track_engines_[trackIndex]);
+}
+
+void SequencerPlaybackService::resetTrackEngine_(uint8_t trackIndex) {
+    if (auto* melodic = melodicEngine_(trackIndex)) {
+        melodic->reset();
+    } else if (auto* drum = drumEngine_(trackIndex)) {
+        drum->reset();
+    }
+}
+
+bool SequencerPlaybackService::selectTrackEngine_(uint8_t trackIndex,
+                                                  bool drum) {
+    if (trackIndex >= track_engines_.size() ||
+        trackIndex >= track_event_sinks_.size() ||
+        !track_event_sinks_[trackIndex]) {
+        return false;
+    }
+    if ((drum && drumEngine_(trackIndex) != nullptr) ||
+        (!drum && melodicEngine_(trackIndex) != nullptr)) {
+        return false;
+    }
+
+    resetTrackEngine_(trackIndex);
+    if (drum) {
+        track_engines_[trackIndex].emplace<DrumPlaybackEngine>(
+            *track_event_sinks_[trackIndex]
+        );
+    } else {
+        auto& engine = track_engines_[trackIndex]
+            .emplace<oc::note::sequencer::StepSequencerEngine>(
+                track_runtime_states_[trackIndex],
+                *track_event_sinks_[trackIndex]
+            );
+        engine.setGraph(runtime_graph_bank_.graphForTrack(trackIndex));
+        (void)engine.setPlaybackRegion(track_playback_regions_[trackIndex]);
+    }
+    return true;
 }
 
 void SequencerPlaybackService::update(
@@ -172,8 +224,8 @@ void SequencerPlaybackService::update(
     const ProjectTrackRuntimeSnapshot& projectTracks,
     bool publishRuntimeState,
     const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot,
-    bool allowPredictiveLookahead
-    , const SequencerDrumRuntimeProjectSnapshot* drumSnapshot
+    bool allowPredictiveLookahead,
+    const SequencerDrumRuntimeProjectSnapshot* drumSnapshot
 ) {
     OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
     OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
@@ -202,6 +254,18 @@ void SequencerPlaybackService::update(
                     tickPeriodUs,
                     allowPredictiveLookahead
                 )
+            );
+        }
+    }
+    runtime_drum_mask_ = drumSnapshot != nullptr
+        ? drumSnapshot->presentMask
+        : 0U;
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        const uint16_t trackBit = static_cast<uint16_t>(1U << track);
+        const bool drum = (runtime_drum_mask_ & trackBit) != 0U;
+        if (selectTrackEngine_(track, drum) && playing && !drum) {
+            runtime_resync_mask_ = static_cast<uint16_t>(
+                runtime_resync_mask_ | trackBit
             );
         }
     }
@@ -234,20 +298,13 @@ void SequencerPlaybackService::update(
         tickPeriodUs,
         allowPredictiveLookahead
     );
-    runtime_drum_mask_ = drumSnapshot != nullptr
-        ? drumSnapshot->presentMask
-        : 0U;
-
     handleActiveTrackSwitch_();
     if (!playing) {
-        for (auto& trackEngine : track_engines_) {
-            if (trackEngine) {
-                trackEngine->update(tick, false);
-            }
-        }
-        for (auto& drumEngine : drum_track_engines_) {
-            if (drumEngine) {
-                drumEngine->update(tick, false);
+        for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+            if (auto* melodic = melodicEngine_(track)) {
+                melodic->update(tick, false);
+            } else if (auto* drum = drumEngine_(track)) {
+                drum->update(tick, false);
             }
         }
         last_playhead_ = -1;
@@ -258,8 +315,8 @@ void SequencerPlaybackService::update(
     }
 
     for (uint8_t i = 0; i < track_engines_.size(); ++i) {
-        auto& trackEngine = track_engines_[i];
-        if (!trackEngine) continue;
+        auto* const trackEngine = melodicEngine_(i);
+        auto* const drumEngine = drumEngine_(i);
         const uint16_t trackBit = static_cast<uint16_t>(1U << i);
         const bool trackPlaying =
             (runtime_audible_mask_ & trackBit) != 0 &&
@@ -267,11 +324,7 @@ void SequencerPlaybackService::update(
         const auto* drumPattern = drumSnapshot != nullptr
             ? drumSnapshot->patternForTrack(i)
             : nullptr;
-        auto& drumEngine = drum_track_engines_[i];
-        if (drumPattern != nullptr && drumEngine) {
-            // Retire the mutually exclusive melodic engine before the Drum
-            // scheduler owns this Track's active-note set.
-            trackEngine->update(tick, false);
+        if (drumPattern != nullptr && drumEngine != nullptr) {
             drumEngine->setPattern(
                 drumPattern,
                 runtime_graph_bank_.graphForTrack(i),
@@ -280,9 +333,7 @@ void SequencerPlaybackService::update(
             drumEngine->update(tick, trackPlaying, nowUs, tickPeriodUs);
             continue;
         }
-        if (drumEngine) {
-            drumEngine->update(tick, false);
-        }
+        if (trackEngine == nullptr) continue;
         const int32_t deadlineOffsetUs = projectTrackDeadlineOffsetUs(
             projectTracks,
             i,
@@ -347,16 +398,11 @@ void SequencerPlaybackService::update(
 }
 
 FLASHMEM void SequencerPlaybackService::stopTrack(uint8_t trackIndex) {
-    if (trackIndex < drum_track_engines_.size() &&
-        drum_track_engines_[trackIndex]) {
-        drum_track_engines_[trackIndex]->reset();
-    }
+    resetTrackEngine_(trackIndex);
     if (trackIndex == runtime_active_track_ &&
         drum_resolved_projection_cache_) {
         drum_resolved_projection_cache_->invalidate();
     }
-    if (trackIndex >= track_engines_.size() || !track_engines_[trackIndex]) return;
-    track_engines_[trackIndex]->reset();
 }
 
 FLASHMEM void SequencerPlaybackService::completeStop() {
@@ -660,17 +706,21 @@ void SequencerPlaybackService::syncRuntimeStates_(
         }
 
         syncRuntimeMasksForTrack_(projectTracks, i);
-        if (track_engines_[i]) {
-            track_engines_[i]->setGraph(runtime_graph_bank_.graphForTrack(i));
+        auto* const trackEngine = melodicEngine_(i);
+        if (trackEngine != nullptr) {
+            trackEngine->setGraph(runtime_graph_bank_.graphForTrack(i));
         }
 
         const auto trackSignature = captureRuntimeStateSignature(snapshot.tracks[i]);
         if (!track_runtime_signatures_[i].matches(trackSignature)) {
             const auto region = runtimePlaybackRegion(snapshot.tracks[i]);
-            if (!track_engines_[i] || !track_engines_[i]->setPlaybackRegion(region)) {
+            if (!region.isValid() ||
+                (trackEngine != nullptr &&
+                 !trackEngine->setPlaybackRegion(region))) {
                 continue;
             }
             syncRuntimeState(track_runtime_states_[i], snapshot.tracks[i]);
+            track_playback_regions_[i] = region;
             track_runtime_signatures_[i] = trackSignature;
         }
         track_runtime_states_[i].midiChannel =
@@ -678,8 +728,8 @@ void SequencerPlaybackService::syncRuntimeStates_(
 
         const uint16_t bit = static_cast<uint16_t>(1U << i);
         if ((runtime_resync_mask_ & bit) != 0U) {
-            if (playing && tick > 0U && track_engines_[i]) {
-                track_engines_[i]->resyncToTick(tick - 1U);
+            if (playing && tick > 0U && trackEngine != nullptr) {
+                trackEngine->resyncToTick(tick - 1U);
             }
             runtime_resync_mask_ = static_cast<uint16_t>(
                 runtime_resync_mask_ & static_cast<uint16_t>(~bit)
@@ -722,11 +772,12 @@ void SequencerPlaybackService::reconcileProjectTracks_(
             if (cc_coordinator_ != nullptr) {
                 cc_coordinator_->invalidateTrack(track);
             }
-            if (track_engines_[track]) {
+            if (melodicEngine_(track) != nullptr ||
+                drumEngine_(track) != nullptr) {
                 // Reset uses the previous runtime Channel, so physical Note
                 // Off edges are emitted on the route that originally owned
                 // the notes before the canonical route is replaced below.
-                track_engines_[track]->reset();
+                resetTrackEngine_(track);
             }
             if (playing && willBeAudible) {
                 runtime_resync_mask_ = static_cast<uint16_t>(
@@ -757,7 +808,8 @@ bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
                                                      uint32_t tick) const {
     if (trackIndex >= TRACK_COUNT) return true;
     const auto& runtime = track_runtime_states_[trackIndex];
-    if (!track_engines_[trackIndex]) return true;
+    const auto& region = track_playback_regions_[trackIndex];
+    if (!region.isValid()) return true;
 
     uint8_t stepsPerBeat = runtime.stepsPerBeat;
     if (stepsPerBeat == 0) {
@@ -773,7 +825,7 @@ bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
     if (ticksPerStep == 0) ticksPerStep = 1;
     oc::note::sequencer::StepSequencerPlaybackTickPosition position{};
     if (!oc::note::sequencer::tryResolvePlaybackTick(
-            track_engines_[trackIndex]->playbackRegion(),
+            region,
             tick,
             ticksPerStep,
             position
@@ -806,22 +858,29 @@ void SequencerPlaybackService::applyStagedTrack_(
     uint32_t tick,
     bool playing
 ) {
-    if (trackIndex >= TRACK_COUNT || !track_engines_[trackIndex] ||
-        track_activations_ == nullptr) {
+    if (trackIndex >= TRACK_COUNT || track_activations_ == nullptr ||
+        (melodicEngine_(trackIndex) == nullptr &&
+         drumEngine_(trackIndex) == nullptr)) {
         return;
     }
 
-    auto& engine = *track_engines_[trackIndex];
+    auto* const engine = melodicEngine_(trackIndex);
     midi_queue_.cancelPendingEvents(trackIndex);
-    engine.reset();
+    resetTrackEngine_(trackIndex);
 
     syncRuntimeMasksForTrack_(projectTracks, trackIndex);
     const auto region = runtimePlaybackRegion(snapshot.tracks[trackIndex]);
-    if (!engine.setPlaybackRegion(region)) return;
+    if (!region.isValid() ||
+        (engine != nullptr && !engine->setPlaybackRegion(region))) {
+        return;
+    }
     syncRuntimeState(track_runtime_states_[trackIndex], snapshot.tracks[trackIndex]);
+    track_playback_regions_[trackIndex] = region;
     track_runtime_states_[trackIndex].midiChannel =
         projectTrackChannel(projectTracks, trackIndex);
-    engine.setGraph(runtime_graph_bank_.graphForTrack(trackIndex));
+    if (engine != nullptr) {
+        engine->setGraph(runtime_graph_bank_.graphForTrack(trackIndex));
+    }
     track_runtime_signatures_[trackIndex] =
         captureRuntimeStateSignature(snapshot.tracks[trackIndex]);
     runtime_resync_mask_ = static_cast<uint16_t>(
@@ -833,13 +892,13 @@ void SequencerPlaybackService::applyStagedTrack_(
     const bool trackPlaying = playing &&
         (runtime_audible_mask_ & bit) != 0 &&
         track_runtime_states_[trackIndex].midiChannel <= 15U;
-    if (trackPlaying) {
+    if (trackPlaying && engine != nullptr) {
         if (tick == 0) {
-            engine.update(0, true);
+            engine->update(0, true);
         } else {
             // Seed one tick before the exact boundary so the new generation's
             // first boundary step is scheduled, without replaying past events.
-            engine.resyncToTick(tick - 1U);
+            engine->resyncToTick(tick - 1U);
         }
     }
     track_activations_->markAppliedFromRealtime(trackIndex, generation);
@@ -888,10 +947,10 @@ FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService
     };
     const uint16_t activeTrackBit = static_cast<uint16_t>(
         1U << runtime_active_track_);
+    auto* const activeDrumEngine = drumEngine_(runtime_active_track_);
     if ((runtime_drum_mask_ & activeTrackBit) != 0U &&
-        drum_track_engines_[runtime_active_track_]) {
-        const auto& telemetry =
-            drum_track_engines_[runtime_active_track_]->telemetry();
+        activeDrumEngine != nullptr) {
+        const auto& telemetry = activeDrumEngine->telemetry();
         snapshot.drumLaneSteps = telemetry.laneSteps;
         const uint32_t nowUs = core::time_compat::micros();
         for (uint8_t lane = 0U; lane < snapshot.drumLanePhaseQ8.size(); ++lane) {
@@ -911,17 +970,15 @@ FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService
         if (drum_resolved_projection_cache_ && previewRequested) {
             auto& cache = *drum_resolved_projection_cache_;
             const auto signature =
-                drum_track_engines_[runtime_active_track_]
-                    ->captureResolvedPageSignature(
-                        drumUi.page,
-                        drumUi.laneWindowStart
-                    );
+                activeDrumEngine->captureResolvedPageSignature(
+                    drumUi.page,
+                    drumUi.laneWindowStart
+                );
             if (!cache.valid || !cache.signature.matches(signature)) {
-                drum_track_engines_[runtime_active_track_]
-                    ->buildResolvedPageProjection(
-                        signature,
-                        cache.projection
-                    );
+                activeDrumEngine->buildResolvedPageProjection(
+                    signature,
+                    cache.projection
+                );
                 cache.signature = signature;
                 cache.valid = true;
             }

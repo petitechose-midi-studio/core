@@ -54,6 +54,7 @@ FLASHMEM bool MacroValueHandler::ensureActiveSlot(uint8_t index) {
 
 void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     OC_PERF_SCOPE(perfValueChange, "macro.value-change");
+    OC_PERF_UNITS(perfValueChange, index, 0U);
     const uint32_t nowMs = core::time_compat::millis();
     if (!ensureActiveSlot(index)) return;
     if (buttons_.isPressed(Config::MACRO_BUTTONS[index])) return;
@@ -87,16 +88,19 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
         // projection and is deliberately absent from the recorded column. The
         // canonical take-input workflow already published UI and MIDI.
         return;
-    } else if (services_.manualOverrideActiveFor(index) ||
-               services_.automationPlaybackActiveFor(index)) {
-        if (!services_.takeManualControl(index, quantized)) return;
     } else {
-        // Manual movement always authors the durable absolute base. A running
-        // Modulation lane remains audible around that base.
-        services_.setManualValue(index, quantized);
+        if (services_.manualOverrideActiveFor(index) ||
+            services_.automationPlaybackActiveFor(index)) {
+            if (!services_.takeManualControl(index, quantized)) return;
+        } else {
+            // Manual movement always authors the durable absolute base. A running
+            // Modulation lane remains audible around that base.
+            services_.setManualValue(index, quantized);
+        }
     }
 
-    const auto resolved = services_.resolveManualValue(index, quantized);
+    core::state::macro::MacroResolvedValue resolved{};
+    resolved = services_.resolveManualValue(index, quantized);
     services_.setResolvedValue(index, resolved);
 
     if (!services_.isActivePageEnabled()) return;

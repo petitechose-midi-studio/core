@@ -9,6 +9,7 @@
 #include <oc/time/Time.hpp>
 #include <oc/type/Event.hpp>
 
+#include "config/Timing.hpp"
 #include "config/TimeCompat.hpp"
 #include "app/ExtmemAllocator.hpp"
 #include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
@@ -179,23 +180,40 @@ FLASHMEM SequencerRuntimeService::~SequencerRuntimeService() {
 
 void SequencerRuntimeService::update() {
     OC_PERF_SCOPE(perfRuntime, "sequencer.runtime");
-    consumeProjectRuntimeReset_();
+    const bool projectRuntimeReset = consumeProjectRuntimeReset_();
     const uint32_t nowUs = core::time_compat::micros();
     const uint32_t nowMs = oc::time::millis();
     const auto clockConfig = captureClockSyncRuntimeConfig_();
     const auto activationPublication =
         track_activations_.captureRuntimePublication();
-    bool graphGenerationReady =
-        runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
-    // Keep graph and flat data on the same published generation. On a rare
-    // PSRAM allocation failure, retain the previous pair and retry next loop.
-    uint8_t snapshotIndex = graphGenerationReady
-        ? snapshot_bank_.refresh()
-        : snapshot_bank_.activeIndex();
-    if (graphGenerationReady && !snapshot_bank_.lastRefreshSucceeded()) {
-        runtime_graph_bank_.discardPrepared();
-        graphGenerationReady = false;
-        snapshotIndex = snapshot_bank_.activeIndex();
+
+    ClockDomainUpdateResult clockDomain{};
+    {
+        OC_PERF_SCOPE(perfClock, "sequencer.clock-domain");
+        clockDomain = updateClockDomainOwnership_(clockConfig, nowMs);
+    }
+
+    const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
+    bool runtimePublicationDue = true;
+#ifdef ARDUINO
+    runtimePublicationDue = runtimePublicationDue_(
+        nowUs,
+        projectRuntimeReset || resyncRequested || !activationPublication.empty()
+    );
+#endif
+    bool graphGenerationReady = false;
+    uint8_t snapshotIndex = snapshot_bank_.activeIndex();
+    if (runtimePublicationDue) {
+        graphGenerationReady =
+            runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
+        // Keep graph and flat data on the same published generation. On a rare
+        // PSRAM allocation failure, retain the previous pair and retry later.
+        if (graphGenerationReady) snapshotIndex = snapshot_bank_.refresh();
+        if (graphGenerationReady && !snapshot_bank_.lastRefreshSucceeded()) {
+            runtime_graph_bank_.discardPrepared();
+            graphGenerationReady = false;
+            snapshotIndex = snapshot_bank_.activeIndex();
+        }
     }
     const auto& runtimeSnapshot = snapshot_bank_.snapshot(snapshotIndex);
     if (graphGenerationReady) {
@@ -206,26 +224,24 @@ void SequencerRuntimeService::update() {
         );
     }
 
-    ClockDomainUpdateResult clockDomain{};
-    {
-        OC_PERF_SCOPE(perfClock, "sequencer.clock-domain");
-        clockDomain = updateClockDomainOwnership_(clockConfig, nowMs);
-    }
-
-    const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
-
     bool usingInternalTimerPath = false;
 
 #ifdef ARDUINO
     if (clockDomain.timerOwnsTransport) {
-        runtime_graph_bank_.publishPrepared([this, &clockConfig, snapshotIndex,
-                                             &activationPublication,
-                                             graphGenerationReady]() {
-            realtime_lane_->timer.publishRealtimeInputs(clockConfig, snapshotIndex);
-            if (graphGenerationReady) {
+        if (graphGenerationReady) {
+            runtime_graph_bank_.publishPrepared([
+                this,
+                &clockConfig,
+                snapshotIndex,
+                &activationPublication
+            ]() {
+                realtime_lane_->timer.publishRealtimeInputs(
+                    clockConfig,
+                    snapshotIndex
+                );
                 track_activations_.applyRuntimePublication(activationPublication);
-            }
-        });
+            });
+        }
 
         if (resyncRequested) {
             realtime_lane_->timer.stop();
@@ -240,31 +256,41 @@ void SequencerRuntimeService::update() {
         }
     } else {
         realtime_lane_->timer.stop();
-        runtime_graph_bank_.publishPrepared([this, snapshotIndex,
-                                             &activationPublication,
-                                             graphGenerationReady]() {
-            snapshot_bank_.commit(snapshotIndex);
-            if (graphGenerationReady) {
+        if (graphGenerationReady) {
+            runtime_graph_bank_.publishPrepared([
+                this,
+                snapshotIndex,
+                &activationPublication
+            ]() {
+                snapshot_bank_.commit(snapshotIndex);
                 track_activations_.applyRuntimePublication(activationPublication);
-            }
-        });
+            });
+        }
     }
 #endif
 
 #ifndef ARDUINO
-    runtime_graph_bank_.publishPrepared([this, snapshotIndex,
-                                         &activationPublication,
-                                         graphGenerationReady]() {
-        snapshot_bank_.commit(snapshotIndex);
-        if (graphGenerationReady) {
+    if (graphGenerationReady) {
+        runtime_graph_bank_.publishPrepared([
+            this,
+            snapshotIndex,
+            &activationPublication
+        ]() {
+            snapshot_bank_.commit(snapshotIndex);
             track_activations_.applyRuntimePublication(activationPublication);
-        }
-    });
+        });
+    }
 #endif
 
     if (usingInternalTimerPath) {
-        OC_PERF_SCOPE(perfTimerUi, "sequencer.timer-ui-projection");
-        publishPlaybackUiFromTimerPath_(nowMs);
+        // Runtime activation acknowledgements are transactional, not visual;
+        // keep them responsive at the app cadence. The larger telemetry/UI
+        // copy cannot be consumed faster than LVGL's service cadence.
+        track_activations_.publishRealtimeTelemetry();
+        if (uiProjectionDue_(nowUs)) {
+            OC_PERF_SCOPE(perfTimerUi, "sequencer.timer-ui-projection");
+            publishPlaybackUiFromTimerPath_(nowMs);
+        }
     } else {
         if (resyncRequested) {
             stopPlayback_();
@@ -297,18 +323,24 @@ void SequencerRuntimeService::update() {
         midi_clock_sync_.takeUiProjectionSnapshot(),
         nowMs
     );
+    OC_PERF_UNITS(
+        perfRuntime,
+        runtimePublicationDue ? 1U : 0U,
+        activationPublication.empty() ? 0U : 1U
+    );
 }
 
-void SequencerRuntimeService::consumeProjectRuntimeReset_() {
-    if (runtime_project_revision_ == nullptr) return;
+bool SequencerRuntimeService::consumeProjectRuntimeReset_() {
+    if (runtime_project_revision_ == nullptr) return false;
     const uint32_t revision = runtime_project_revision_->get();
-    if (revision == consumed_runtime_project_revision_) return;
+    if (revision == consumed_runtime_project_revision_) return false;
 #ifdef ARDUINO
     realtime_lane_->timer.stop();
 #endif
     stopPlayback_();
     realtime_lane_->playback.resetCcProject();
     consumed_runtime_project_revision_ = revision;
+    return true;
 }
 
 FLASHMEM void SequencerRuntimeService::stop() {
@@ -365,6 +397,24 @@ SequencerRuntimeService::updateClockDomainOwnership_(
 #endif
 }
 
+bool SequencerRuntimeService::runtimePublicationDue_(
+    uint32_t nowUs,
+    bool force
+) {
+    if (!force && runtime_publication_started_ &&
+        static_cast<uint32_t>(nowUs - last_runtime_publication_us_) <
+            Config::Timing::SEQUENCER_AUTHORING_PUBLICATION_PERIOD_US) {
+        return false;
+    }
+    last_runtime_publication_us_ = nowUs;
+    runtime_publication_started_ = true;
+    return true;
+}
+
+bool SequencerRuntimeService::uiProjectionDue_(uint32_t nowUs) {
+    return ui_projection_deadline_.consumeIfDue(nowUs);
+}
+
 // The timer lane has already produced a bounded snapshot under lock. Mapping
 // that snapshot into observable UI signals is main-loop control-plane work.
 FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
@@ -382,7 +432,6 @@ FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
     }
 
     publishRuntimeTelemetry(sequencer_state_, runtimeTelemetry);
-    track_activations_.publishRealtimeTelemetry();
     realtime_lane_->playback.publishUiProjection(uiProjection, nowMs);
 #else
     realtime_lane_->playback.publishUiState(nowMs);

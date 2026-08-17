@@ -11,12 +11,37 @@ constexpr uint32_t INPUT_APP_ADMISSION_HZ =
     ms::device_support::v1::timing::INPUT_APP_ADMISSION_HZ;
 constexpr uint32_t LVGL_SERVICE_HZ =
     ms::device_support::v1::timing::LVGL_SERVICE_HZ;
-// LVGL timers use whole milliseconds. A 5 ms period is therefore the honest
-// retained-view contract: 200 Hz, rather than a nominal 240 Hz rounded to the
-// same 5 ms period at every call site.
-constexpr uint32_t RETAINED_VIEW_PERIOD_MS = 5U;
-constexpr uint32_t PHYSICAL_DISPLAY_REQUEST_HZ =
-    ms::device_support::v1::timing::PHYSICAL_DISPLAY_REQUEST_HZ;
+constexpr uint32_t LVGL_SERVICE_PERIOD_US = 1000000U / LVGL_SERVICE_HZ;
+constexpr uint32_t UI_FRAME_SERVICE_DIVISOR =
+    ms::device_support::v1::timing::UI_FRAME_SERVICE_DIVISOR;
+constexpr uint32_t UI_FRAME_HZ =
+    ms::device_support::v1::timing::UI_FRAME_HZ;
+constexpr uint32_t UI_FRAME_PERIOD_US =
+    LVGL_SERVICE_PERIOD_US * UI_FRAME_SERVICE_DIVISOR;
+// LVGL timers use whole milliseconds. Servicing this 8 ms timer from the
+// 240 Hz lane admits at most one dirty projection every second service pass.
+constexpr uint32_t UI_FRAME_PERIOD_MS = 1000U / UI_FRAME_HZ;
+static_assert(UI_FRAME_PERIOD_US > 0U);
+static_assert(UI_FRAME_PERIOD_MS > 0U);
+// The internal timer lane owns musical scheduling at 1 kHz. The foreground
+// control plane keeps the same admission rate for transport and activation
+// acknowledgements, but large mutable authoring snapshots are paced below.
+constexpr uint32_t SEQUENCER_REALTIME_HZ = 1000U;
+constexpr uint32_t SEQUENCER_REALTIME_PERIOD_US =
+    1000000U / SEQUENCER_REALTIME_HZ;
+// Lower Teensy IRQ values have higher priority. Display work deliberately runs
+// below this timer so visual load cannot preempt musical scheduling.
+constexpr uint8_t SEQUENCER_REALTIME_IRQ_PRIORITY =
+    ms::device_support::v1::timing::MUSICAL_REALTIME_IRQ_PRIORITY;
+static_assert(SEQUENCER_REALTIME_PERIOD_US > 0U);
+// Authoring edits only need to reach the already-running timer once per UI
+// service period. This coalesces encoder bursts without changing the 1 kHz
+// musical scheduler or adding more than one 240 Hz frame of edit latency.
+constexpr uint32_t SEQUENCER_AUTHORING_PUBLICATION_HZ = LVGL_SERVICE_HZ;
+constexpr uint32_t SEQUENCER_AUTHORING_PUBLICATION_PERIOD_US =
+    1000000U / SEQUENCER_AUTHORING_PUBLICATION_HZ;
+static_assert(SEQUENCER_AUTHORING_PUBLICATION_PERIOD_US >=
+              SEQUENCER_REALTIME_PERIOD_US);
 
 constexpr uint8_t DEBOUNCE_MS = static_cast<uint8_t>(
     ms::device_support::v1::timing::DEBOUNCE_MS);  // Button debounce

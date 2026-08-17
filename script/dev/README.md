@@ -10,6 +10,7 @@ Utility scripts for development workflow.
 | `restart-clangd.sh` | Regenerate `compile_commands.json` and prompt to restart clangd |
 | `check-downstream-compat.ps1` | Build a downstream repo such as `plugin-bitwig` against the current `ms-core` export surface |
 | `check-architecture-contracts.py` | Enforce layer, legacy, input, mutation, placement, memory, and retained-view contracts; report the advisory >800-line inventory |
+| `ux_recording_to_script.py` | Convert raw logical inputs from a Core/MS Manager UX recording into a replayable `.ux` script |
 
 ## Usage
 
@@ -33,6 +34,11 @@ pwsh ./script/dev/check-downstream-compat.ps1 -DownstreamProjectPath ..\plugin-b
 # Check repository contracts and print the complete attention inventory
 python ./script/dev/check-architecture-contracts.py
 python ./script/dev/check-architecture-contracts.py --inventory
+
+# Convert a dev_ux_recorder session, then replay the same logical inputs natively
+python ./script/dev/ux_recording_to_script.py <recording.ndjson> .captures/replay.ux
+$exe = Resolve-Path ../../bin/core/native/midi_studio_core.exe
+& $exe --ux-script .captures/replay.ux --ux-output .captures/replay
 ```
 
 ## Requirements

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include <config/PlatformCompat.hpp>
 #include <lvgl.h>
 #include <oc/note/sequencer/StepBitMask128.hpp>
 #include <oc/note/sequencer/StepSequencerVariation.hpp>
@@ -48,10 +49,43 @@ struct TileNoteEventRenderState {
 
 struct TileNoteEventProjection {
     static constexpr uint8_t MAX_DETAILED_EVENTS = 8U;
+    static constexpr uint8_t VISIBLE_TILE_COUNT = 8U;
+    static constexpr int32_t Q8_PER_TILE = 256;
 
     std::array<TileNoteEventRenderState, MAX_DETAILED_EVENTS> events{};
     uint8_t count = 0U;
     bool dense = false;
+
+    FLASHMEM uint8_t coveredTileMask(uint8_t ownerTile) const {
+        if (ownerTile >= VISIBLE_TILE_COUNT) return 0U;
+
+        constexpr int32_t PAGE_END_Q8 =
+            VISIBLE_TILE_COUNT * Q8_PER_TILE;
+        uint8_t mask = 0U;
+        for (uint8_t index = 0U; index < count; ++index) {
+            const auto& event = events[index];
+            const int32_t startQ8 =
+                static_cast<int32_t>(ownerTile) * Q8_PER_TILE +
+                event.startQ8;
+            const int32_t endQ8 = startQ8 +
+                (event.spanQ8 == 0U ? 1 : event.spanQ8);
+            if (endQ8 <= 0 || startQ8 >= PAGE_END_Q8) continue;
+
+            const int32_t clippedStartQ8 = startQ8 < 0 ? 0 : startQ8;
+            const int32_t clippedEndQ8 =
+                endQ8 > PAGE_END_Q8 ? PAGE_END_Q8 : endQ8;
+            const uint8_t first = static_cast<uint8_t>(
+                clippedStartQ8 / Q8_PER_TILE
+            );
+            const uint8_t last = static_cast<uint8_t>(
+                (clippedEndQ8 - 1) / Q8_PER_TILE
+            );
+            for (uint8_t tile = first; tile <= last; ++tile) {
+                mask = static_cast<uint8_t>(mask | (1U << tile));
+            }
+        }
+        return mask;
+    }
 };
 
 /**

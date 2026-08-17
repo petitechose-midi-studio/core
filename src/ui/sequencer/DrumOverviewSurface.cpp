@@ -9,6 +9,7 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 #include <ms/ui/widget/TextOverflow.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 
 #include "state/sequencer/DrumPatternState.hpp"
@@ -36,6 +37,24 @@ constexpr lv_opa_t SELECTED_PAGE_GROUP_OPA = LV_OPA_80;
 constexpr lv_opa_t IDLE_LOOP_OPA = LV_OPA_60;
 constexpr uint8_t PAGE_GROUP_SPLIT_COLUMN =
     core::state::sequencer::DrumSequencerState::STEPS_PER_PAGE / 2U;
+constexpr uint32_t FNV_OFFSET = 2166136261U;
+constexpr uint32_t FNV_PRIME = 16777619U;
+
+inline void hashByte(uint32_t& hash, uint8_t value) {
+    hash = (hash ^ value) * FNV_PRIME;
+}
+
+inline void hashU16(uint32_t& hash, uint16_t value) {
+    hashByte(hash, static_cast<uint8_t>(value));
+    hashByte(hash, static_cast<uint8_t>(value >> 8U));
+}
+
+void hashText(uint32_t& hash, const char* text) {
+    while (text && *text != '\0') {
+        hashByte(hash, static_cast<uint8_t>(*text++));
+    }
+    hashByte(hash, 0U);
+}
 
 FLASHMEM lv_coord_t drumLaneHeight(const lv_area_t& surface) {
     const lv_coord_t height = static_cast<lv_coord_t>(
@@ -69,6 +88,11 @@ FLASHMEM void includeDamage(
 constexpr bool sameArea(const lv_area_t& lhs, const lv_area_t& rhs) {
     return lhs.x1 == rhs.x1 && lhs.y1 == rhs.y1 &&
         lhs.x2 == rhs.x2 && lhs.y2 == rhs.y2;
+}
+
+constexpr bool areasOverlap(const lv_area_t& lhs, const lv_area_t& rhs) {
+    return lhs.x1 <= rhs.x2 && lhs.x2 >= rhs.x1 &&
+        lhs.y1 <= rhs.y2 && lhs.y2 >= rhs.y1;
 }
 
 FLASHMEM void drawRect(
@@ -371,6 +395,14 @@ FLASHMEM void drawDrumHit(
             LV_OPA_COVER
         );
     }
+}
+
+constexpr bool hitGeometryOverlaps(
+    const DrumHitGeometry& geometry,
+    const lv_area_t& clip
+) {
+    return areasOverlap(geometry.hitArea, clip) ||
+        (geometry.nudgeVisible && areasOverlap(geometry.nudgeArea, clip));
 }
 
 using DrumSequencerState = core::state::sequencer::DrumSequencerState;
@@ -736,6 +768,59 @@ FLASHMEM void drawDrumStepCell(
               )
           )
         : 0U;
+
+    // LVGL can ask this retained surface to redraw only a narrow playhead or
+    // resolved-cell band. Avoid submitting every earlier cell merely because
+    // a long gate could theoretically reach the clip: inspect the authored
+    // and live geometries first and skip cells that cannot contribute pixels.
+    const lv_area_t cellBounds{
+        .x1 = cellX,
+        .y1 = rowY,
+        .x2 = static_cast<lv_coord_t>(cellX + context.cellWidth - 1),
+        .y2 = static_cast<lv_coord_t>(rowY + context.laneHeight - 1),
+    };
+    const auto& clip = context.layer->_clip_area;
+    if (!areasOverlap(cellBounds, clip)) {
+        if (!active) return;
+
+        const auto hitOverlapsClip = [&](uint8_t velocity,
+                                         uint16_t gate,
+                                         int8_t nudge) {
+            return hitGeometryOverlaps(
+                buildDrumHitGeometry(
+                    cellX,
+                    rowY,
+                    context.laneHeight,
+                    context.cellWidth,
+                    context.gridStart,
+                    context.gridEnd,
+                    drum_hit_visual::build(
+                        velocity, gate, nudge, laneColor, true
+                    )
+                ),
+                clip
+            );
+        };
+        bool contributes = hitOverlapsClip(
+            lanePattern.velocity[step],
+            lanePattern.gate[step],
+            lanePattern.nudge[step]
+        );
+
+        const bool liveAvailable = (hasMicroSequence || hasCycleStates) &&
+            drumUi.playbackActive && projectionAvailable &&
+            (resolvedPage.validMask & resolvedCellBit) != 0U;
+        const bool livePlayed = liveAvailable &&
+            (resolvedPage.playedMask & resolvedCellBit) != 0U;
+        if (!contributes && livePlayed) {
+            contributes = hitOverlapsClip(
+                resolvedPage.velocity[resolvedCell],
+                resolvedPage.gate[resolvedCell],
+                resolvedPage.nudge[resolvedCell]
+            );
+        }
+        if (!contributes) return;
+    }
 
     const bool pageGroupBoundary = column == PAGE_GROUP_SPLIT_COLUMN;
     const bool beatBoundary = available && stepsPerBeat > 0U &&
@@ -1239,6 +1324,8 @@ FLASHMEM void DrumOverviewSurface::hideFocusedLaneName() {
     }
     focused_lane_name_cache_[0] = '\0';
     focused_lane_name_lane_ = 0xFFU;
+    focused_lane_name_row_ = 0xFFU;
+    focused_lane_name_height_ = 0;
     focused_lane_name_visible_ = false;
 }
 
@@ -1285,6 +1372,21 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
             core::state::sequencer::DrumSequencerState::VISIBLE_LANE_COUNT
         )
     );
+    const char* name = core::state::sequencer::drumLaneDisplayName(
+        drumUi.drumTrack->kit.lanes[lane]
+    );
+    const bool contentChanged = focused_lane_name_lane_ != lane ||
+        std::strncmp(
+            focused_lane_name_cache_.data(),
+            name,
+            focused_lane_name_cache_.size()
+        ) != 0;
+    if (focused_lane_name_visible_ && !contentChanged &&
+        focused_lane_name_row_ == row &&
+        focused_lane_name_height_ == laneHeight) {
+        return;
+    }
+
     lv_obj_t* element = focused_lane_name_->getElement();
     lv_obj_set_pos(
         element,
@@ -1308,15 +1410,6 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
         );
     }
 
-    const char* name = core::state::sequencer::drumLaneDisplayName(
-        drumUi.drumTrack->kit.lanes[lane]
-    );
-    const bool contentChanged = focused_lane_name_lane_ != lane ||
-        std::strncmp(
-            focused_lane_name_cache_.data(),
-            name,
-            focused_lane_name_cache_.size()
-        ) != 0;
     if (contentChanged) {
         std::snprintf(
             focused_lane_name_cache_.data(),
@@ -1329,6 +1422,8 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
         focused_lane_name_lane_ = lane;
     }
     lv_obj_clear_flag(element, LV_OBJ_FLAG_HIDDEN);
+    focused_lane_name_row_ = row;
+    focused_lane_name_height_ = laneHeight;
     focused_lane_name_visible_ = true;
 }
 
@@ -1340,15 +1435,174 @@ FLASHMEM void DrumOverviewSurface::onDrawEvent(lv_event_t* event) {
     self->drawSurface(lv_event_get_layer(event));
 }
 
-FLASHMEM bool DrumOverviewSurface::staticVisualChanged(
+FLASHMEM bool DrumOverviewSurface::fullSurfaceChanged(
     const DrumOverviewSurfaceProps& props
 ) const {
     return !rendered_ ||
         renderedProps_.projection != props.projection ||
         renderedProps_.navigationFocus != props.navigationFocus ||
-        renderedProps_.midiChannel != props.midiChannel ||
-        renderedProps_.authoredRevision != props.authoredRevision ||
-        renderedProps_.uiRevision != props.uiRevision;
+        renderedProps_.midiChannel != props.midiChannel;
+}
+
+FLASHMEM DrumOverviewSurface::StaticRows
+DrumOverviewSurface::captureStaticRows(
+    const DrumOverviewSurfaceProps& props
+) const {
+    StaticRows rows{};
+    if (!props.projection || !props.projection->drumTrack ||
+        props.navigationFocus ==
+            core::state::StructureNavigationFocus::TRACK) {
+        return rows;
+    }
+
+    const auto& drumUi = *props.projection;
+    const auto& selection = drumUi.laneSelection;
+    const uint8_t laneCount = std::min<uint8_t>(
+        drumUi.drumTrack->kit.laneCount,
+        core::state::sequencer::DRUM_MAX_LANES
+    );
+    const bool addSlotFocused = drumUi.laneAddSlotFocused();
+    const uint8_t itemCount = static_cast<uint8_t>(
+        laneCount +
+        (drumUi.laneAddSlotVisible() && !selection.active ? 1U : 0U)
+    );
+    const uint8_t visibleRows = drumUi.laneWindowStart < itemCount
+        ? std::min<uint8_t>(
+              static_cast<uint8_t>(itemCount - drumUi.laneWindowStart),
+              core::state::sequencer::DrumSequencerState::
+                  VISIBLE_LANE_COUNT
+          )
+        : 0U;
+
+    constexpr uint8_t SELECTED = 1U << 0U;
+    constexpr uint8_t CONTENT_SELECTED = 1U << 1U;
+    constexpr uint8_t DESTINATION = 1U << 2U;
+    constexpr uint8_t DESTINATION_OVERWRITE = 1U << 3U;
+    constexpr uint8_t PASTE_BLOCKED = 1U << 4U;
+    constexpr uint8_t CUSTOM_TIMING = 1U << 5U;
+
+    for (uint8_t row = 0U; row < visibleRows; ++row) {
+        uint32_t hash = FNV_OFFSET;
+        const uint8_t lane = drumUi.visibleLane(row);
+        if (lane >= laneCount) {
+            hashByte(hash, 1U);
+            hashByte(hash, addSlotFocused ? SELECTED : 0U);
+            rows[row] = hash == 0U ? 1U : hash;
+            continue;
+        }
+
+        const auto& descriptor = drumUi.drumTrack->kit.lanes[lane];
+        const auto& pattern = drumUi.drumTrack->pattern.lanes[lane];
+        const uint8_t length =
+            drumUi.drumTrack->pattern.effectiveLength(lane);
+        hashByte(hash, 2U);
+        hashByte(hash, lane);
+        hashByte(hash, drumUi.page);
+        hashByte(hash, static_cast<uint8_t>(
+            core::state::sequencer::drumLaneDisplayIcon(descriptor)
+        ));
+        hashByte(
+            hash,
+            core::state::sequencer::drumLaneDisplayColorIndex(descriptor)
+        );
+        hashText(
+            hash,
+            core::state::sequencer::drumLaneDisplayName(descriptor)
+        );
+        hashByte(hash, length);
+        hashByte(
+            hash,
+            drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane)
+        );
+
+        const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
+        const bool selected = selection.active
+            ? lane == selection.cursorLane
+            : lane == drumUi.selectedLane && !addSlotFocused;
+        const bool destination =
+            (selection.placementActive() || selection.moveActive()) &&
+            (selection.destinationMask & laneBit) != 0U;
+        uint8_t markers = selected ? SELECTED : 0U;
+        if (selection.active &&
+            (selection.selectedMask & laneBit) != 0U) {
+            markers |= CONTENT_SELECTED;
+        }
+        if (destination) {
+            markers |= DESTINATION;
+            if ((selection.overwriteMask & laneBit) != 0U) {
+                markers |= DESTINATION_OVERWRITE;
+            }
+            if (selection.pasteBlocked) {
+                markers |= PASTE_BLOCKED;
+            }
+        }
+        if (pattern.timing.mode ==
+            core::state::sequencer::DrumLaneTimingMode::CUSTOM) {
+            markers |= CUSTOM_TIMING;
+        }
+        hashByte(hash, markers);
+        hashByte(
+            hash,
+            selected && props.navigationFocus ==
+                    core::state::StructureNavigationFocus::STEP
+                ? drumUi.focusedStep
+                : 0xFFU
+        );
+
+        for (uint8_t column = 0U; column < STATIC_STEP_COUNT; ++column) {
+            const uint8_t step = drumUi.visibleStep(column);
+            const bool active = step < length &&
+                drumUi.drumTrack->pattern.stepEnabled(lane, step);
+            hashByte(hash, active ? 1U : 0U);
+            if (!active) continue;
+            hashByte(hash, pattern.velocity[step]);
+            hashU16(hash, pattern.gate[step]);
+            hashByte(hash, static_cast<uint8_t>(pattern.nudge[step]));
+            hashByte(hash, pattern.probability[step]);
+        }
+        rows[row] = hash == 0U ? 1U : hash;
+    }
+    return rows;
+}
+
+FLASHMEM void DrumOverviewSurface::invalidateStaticDelta(
+    const StaticRows& previous,
+    const StaticRows& next
+) {
+    if (!root_) return;
+
+    lv_area_t surface{};
+    lv_obj_get_coords(root_, &surface);
+    const lv_coord_t laneHeight = drumLaneHeight(surface);
+    uint8_t firstChanged = 0xFFU;
+    for (uint8_t row = 0U; row <= STATIC_ROW_COUNT; ++row) {
+        const bool changed = row < STATIC_ROW_COUNT &&
+            previous[row] != next[row];
+        if (changed && firstChanged == 0xFFU) {
+            firstChanged = row;
+            continue;
+        }
+        if (changed || firstChanged == 0xFFU) continue;
+
+        const uint8_t lastChanged = static_cast<uint8_t>(row - 1U);
+        oc::ui::lvgl::invalidateStaticSurfaceArea(
+            root_,
+            lv_area_t{
+                .x1 = surface.x1,
+                .y1 = static_cast<lv_coord_t>(
+                    surface.y1 + firstChanged * laneHeight
+                ),
+                .x2 = surface.x2,
+                .y2 = std::min<lv_coord_t>(
+                    surface.y2,
+                    static_cast<lv_coord_t>(
+                        surface.y1 + (lastChanged + 1U) * laneHeight - 1
+                    )
+                ),
+            }
+        );
+        firstChanged = 0xFFU;
+    }
 }
 
 FLASHMEM DrumOverviewSurface::PlaybackSnapshot
@@ -1641,6 +1895,7 @@ FLASHMEM void DrumOverviewSurface::render(
         }
         rendered_ = false;
         renderedProps_ = {};
+        static_rows_ = {};
         playback_ = {};
         hideFocusedLaneName();
         return;
@@ -1653,11 +1908,22 @@ FLASHMEM void DrumOverviewSurface::render(
         rendered_ = false;
     }
 
-    const bool staticChanged = staticVisualChanged(props);
+    const bool fullChanged = fullSurfaceChanged(props);
+    const bool staticChanged = fullChanged ||
+        renderedProps_.authoredRevision != props.authoredRevision ||
+        renderedProps_.uiRevision != props.uiRevision;
+    const StaticRows nextStaticRows = staticChanged
+        ? captureStaticRows(props)
+        : static_rows_;
     renderedProps_ = props;
-    syncFocusedLaneName(props);
-
     if (staticChanged) {
+        syncFocusedLaneName(props);
+    }
+
+    if (fullChanged ||
+        (staticChanged && props.navigationFocus ==
+            core::state::StructureNavigationFocus::TRACK)) {
+        static_rows_ = nextStaticRows;
         if (props.navigationFocus ==
             core::state::StructureNavigationFocus::TRACK) {
             playback_ = {};
@@ -1667,6 +1933,10 @@ FLASHMEM void DrumOverviewSurface::render(
         lv_obj_invalidate(root_);
     } else if (props.navigationFocus !=
                core::state::StructureNavigationFocus::TRACK) {
+        if (staticChanged) {
+            invalidateStaticDelta(static_rows_, nextStaticRows);
+            static_rows_ = nextStaticRows;
+        }
         const PlaybackSnapshot nextPlayback =
             capturePlayback(*props.projection);
         invalidatePlaybackDelta(playback_, nextPlayback);
@@ -1682,6 +1952,8 @@ FLASHMEM void DrumOverviewSurface::drawSurface(
     if (!layer || !root_) return;
     const auto& drumUi = *renderedProps_.projection;
     if (!drumUi.gridVisible()) return;
+
+    OC_PERF_SCOPE(perfDraw, "ui.drum.draw-surface");
 
     lv_area_t surface{};
     lv_obj_get_coords(root_, &surface);

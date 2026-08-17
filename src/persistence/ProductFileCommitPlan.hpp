@@ -47,7 +47,6 @@ private:
         VERIFY_SELECTED_SLOT,
         CLEAN_CORRUPT_SLOT,
         INSPECT_TMP,
-        FLUSH_TMP,
         VERIFY_TMP,
         INSPECT_CURRENT,
         INSPECT_BACKUP,

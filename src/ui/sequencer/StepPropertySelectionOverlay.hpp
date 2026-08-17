@@ -38,6 +38,7 @@ public:
 
 private:
     void createUI(lv_obj_t* parent);
+    static void onSizeChanged(lv_event_t* event);
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* content_row_ = nullptr;

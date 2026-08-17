@@ -28,6 +28,7 @@ FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& cache
                                      const InlineFeedbackSnapshot& cachedFeedback,
                                      const StepGridFrameState& frameState) {
     FrameRenderPlan plan;
+    uint8_t noteLayerDirtyMask = 0U;
     plan.propertyVisualChanged = frameState.activeProperty != cachedProperty;
     plan.nextFeedback = readInlineFeedbackSnapshot(
         frameState.feedbackVisible,
@@ -40,13 +41,24 @@ FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& cache
         plan.diffs[i] = diffTileRenderState(caches[i], state);
         plan.feedbackChanged[i] =
             tileFeedbackChanged(state.absoluteStep, cachedFeedback, plan.nextFeedback);
+        if (plan.diffs[i].noteEventsChanged) {
+            noteLayerDirtyMask = static_cast<uint8_t>(
+                noteLayerDirtyMask |
+                caches[i].noteEvents.coveredTileMask(i) |
+                state.noteEvents.coveredTileMask(i)
+            );
+        }
+    }
+
+    for (uint8_t i = 0; i < frameState.tiles.size(); ++i) {
         plan.tileDirty[i] =
             plan.diffs[i].dataChanged ||
             plan.diffs[i].probabilityMaskChanged ||
             plan.diffs[i].playheadChanged ||
             plan.diffs[i].contentBadgesChanged ||
             plan.propertyVisualChanged ||
-            plan.feedbackChanged[i];
+            plan.feedbackChanged[i] ||
+            (noteLayerDirtyMask & static_cast<uint8_t>(1U << i)) != 0U;
         plan.anyDirty = plan.anyDirty || plan.tileDirty[i];
     }
 

@@ -234,14 +234,23 @@ bool CoreState::setMacroValueWithHistory(uint8_t index, float value) {
         .page = pages.currentActivePage(),
         .macro = index,
     };
+    const uint32_t nowMs = oc::time::millis();
     auto& pending = macroDomain_.coalescedValueHistory;
-    if (pending.pending && !macro::macroAutomationAddressEquals(pending.address, address)) {
+    const bool samePage = pending.address.track == address.track &&
+        pending.address.page == address.page;
+    const bool joinsCurrentGesture = pending.pending && pending.staticValues &&
+        samePage &&
+        (pending.address.macro == address.macro ||
+         static_cast<uint32_t>(nowMs - pending.lastTouchedMs) <=
+             MacroDomainState::COALESCED_VALUE_HISTORY_JOIN_MS);
+    if (pending.pending && !joinsCurrentGesture) {
         flushMacroValueHistoryCoalescing();
     }
     if (!macroHistory.setMacroValueCoalesced(pages, address, value)) { return false; }
     pending.pending = true;
+    pending.staticValues = true;
     pending.address = address;
-    pending.lastTouchedMs = oc::time::millis();
+    pending.lastTouchedMs = nowMs;
     markMacroValueEdited(index);
     return true;
 }
@@ -255,7 +264,9 @@ bool CoreState::takeMacroManualControlWithHistory(uint8_t index, float value, bo
     };
     auto& pending = macroDomain_.coalescedValueHistory;
     if (!coalesceValue ||
-        (pending.pending && !macro::macroAutomationAddressEquals(pending.address, address))) {
+        (pending.pending &&
+         (pending.staticValues ||
+          !macro::macroAutomationAddressEquals(pending.address, address)))) {
         flushMacroValueHistoryCoalescing();
     }
     const float beforeBase = pages.pageData(address.track, address.page).values[address.macro];
@@ -265,6 +276,7 @@ bool CoreState::takeMacroManualControlWithHistory(uint8_t index, float value, bo
     }
     if (coalesceValue) {
         pending.pending = true;
+        pending.staticValues = false;
         pending.address = address;
         pending.lastTouchedMs = oc::time::millis();
     }

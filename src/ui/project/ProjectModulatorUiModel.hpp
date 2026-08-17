@@ -11,32 +11,12 @@
 
 namespace core::ui::project::modulators {
 
-using SourceDetailItem = core::state::project::modulators::SourceDetailItem;
-using SourceDetailLayout = core::state::project::modulators::SourceDetailLayout;
-
-inline SourceDetailLayout sourceDetailLayout(
-    core::state::modulation::ModulatorKind kind
-) {
-    return core::state::project::modulators::sourceDetailLayout(kind);
-}
-
-inline SourceDetailLayout sourceOptionsLayout(
-    core::state::modulation::ModulatorKind kind
-) {
-    return core::state::project::modulators::sourceOptionsLayout(kind);
-}
-
-inline SourceDetailLayout sourceAuditionLayout(
-    core::state::modulation::ModulatorKind kind
-) {
-    return core::state::project::modulators::sourceAuditionLayout(kind);
-}
-
-inline SourceDetailLayout sourceAuditionOptionsLayout(
-    core::state::modulation::ModulatorKind kind
-) {
-    return core::state::project::modulators::sourceAuditionOptionsLayout(kind);
-}
+using core::state::project::modulators::SourceDetailItem;
+using core::state::project::modulators::SourceDetailLayout;
+using core::state::project::modulators::sourceAuditionLayout;
+using core::state::project::modulators::sourceAuditionOptionsLayout;
+using core::state::project::modulators::sourceDetailLayout;
+using core::state::project::modulators::sourceOptionsLayout;
 
 [[nodiscard]] const core::state::modulation::ModulatorSourceState*
 sourceAtRegistryIndex(
@@ -44,15 +24,7 @@ sourceAtRegistryIndex(
     uint16_t index
 );
 
-inline uint16_t sourceDestinationCount(
-    const core::state::modulation::ProjectModulationState& graph,
-    core::state::modulation::ModulatorId sourceId
-) {
-    return core::state::project::modulators::sourceDestinationCount(
-        graph,
-        sourceId
-    );
-}
+using core::state::project::modulators::sourceDestinationCount;
 
 void populateRegistryRow(
     const core::state::modulation::ProjectControlState& control,

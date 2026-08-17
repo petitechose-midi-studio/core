@@ -822,6 +822,46 @@ void test_macro_property_edits_coalesce_until_idle() {
     std::cout << "[PASS] test_macro_property_edits_coalesce_until_idle\n";
 }
 
+void test_rapid_multi_step_property_edits_share_one_history_gesture() {
+    SequencerMacroPropertyHarness h;
+    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    h.state.sequencer.pattern.velocity[0] = 10;
+    h.state.sequencer.pattern.velocity[1] = 20;
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_1, 0.25f);
+    g_now_ms = 110;
+    h.turn(Config::EncoderID::MACRO_2, 0.65f);
+    g_now_ms = 120;
+    h.turn(Config::EncoderID::MACRO_1, 0.40f);
+
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    assert(h.state.sequencer.pattern.velocity[0] == 51);
+    assert(h.state.sequencer.pattern.velocity[1] == 83);
+
+    h.advance(619);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    h.advance(620);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.velocity[0] == 10);
+    assert(h.state.sequencer.pattern.velocity[1] == 20);
+    assert(std::strcmp(
+        h.state.sequencer.historyFeedback.line2.data(),
+        "Step Property"
+    ) == 0);
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.velocity[0] == 51);
+    assert(h.state.sequencer.pattern.velocity[1] == 83);
+
+    std::cout
+        << "[PASS] rapid multi-Step property edits share one history gesture\n";
+}
+
 void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
     SequencerMacroPropertyHarness h;
     auto& pattern = h.state.sequencer.pattern;
@@ -1019,6 +1059,7 @@ int main() {
     test_left_bottom_selector_does_not_randomize_probability();
     test_left_center_quick_controls_do_not_randomize_step();
     test_macro_property_edits_coalesce_until_idle();
+    test_rapid_multi_step_property_edits_share_one_history_gesture();
     test_restored_root_payload_velocity_edits_coalesce_until_idle();
     test_macro_property_step_change_commits_previous_coalesced_edit();
     test_macro_property_track_change_commits_pending_coalesced_edit();

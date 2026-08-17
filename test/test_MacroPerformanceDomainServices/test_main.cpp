@@ -233,6 +233,52 @@ void test_manual_value_updates_base_and_stages_project_mutation() {
     std::cout << "[PASS] test_manual_value_updates_base_and_stages_project_mutation\n";
 }
 
+void test_interleaved_manual_values_reuse_one_history_entry_per_macro() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    assert(services.activateMacroSlot(1U));
+    assert(state.clearProjectHistory());
+    const float before0 = state.pages.activePageData().values[0];
+    const float before1 = state.pages.activePageData().values[1];
+
+    g_mock_now_ms = 1000U;
+    services.setManualValue(0U, 0.60f);
+    ++g_mock_now_ms;
+    services.setManualValue(1U, 0.70f);
+    ++g_mock_now_ms;
+    services.setManualValue(0U, 0.80f);
+    ++g_mock_now_ms;
+    services.setManualValue(1U, 0.90f);
+
+    assert(state.macroHistory.undoCount() == 2U);
+    assert(state.projectHistory.undoCount() == 2U);
+    state.flushMacroValueHistoryCoalescing();
+    assert(state.undoProjectHistory());
+    assert(std::fabs(state.pages.activePageData().values[1] - before1) < 0.0001f);
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.80f) < 0.0001f);
+    assert(state.undoProjectHistory());
+    assert(std::fabs(state.pages.activePageData().values[0] - before0) < 0.0001f);
+    assert(state.redoProjectHistory());
+    assert(state.redoProjectHistory());
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.80f) < 0.0001f);
+    assert(std::fabs(state.pages.activePageData().values[1] - 0.90f) < 0.0001f);
+
+    assert(state.clearProjectHistory());
+    g_mock_now_ms = 2000U;
+    services.setManualValue(0U, 0.20f);
+    g_mock_now_ms +=
+        core::state::MacroDomainState::COALESCED_VALUE_HISTORY_JOIN_MS + 1U;
+    services.setManualValue(1U, 0.30f);
+    ++g_mock_now_ms;
+    services.setManualValue(0U, 0.40f);
+    assert(state.macroHistory.undoCount() == 3U);
+
+    drainNotifications();
+    std::cout << "[PASS] interleaved values retain one history entry per Macro\n";
+}
+
 void test_manual_override_persists_absolute_base_and_is_addressed_by_slot() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
@@ -1765,6 +1811,7 @@ int main() {
     oc::time::setProvider(mockTimeMs);
     test_runtime_values_are_forwarded_and_clamped();
     test_manual_value_updates_base_and_stages_project_mutation();
+    test_interleaved_manual_values_reuse_one_history_entry_per_macro();
     test_manual_override_persists_absolute_base_and_is_addressed_by_slot();
     test_config_changes_mark_project_dirty_and_bump_revision();
     test_macro_channel_gesture_coalesces_into_one_global_track_command();

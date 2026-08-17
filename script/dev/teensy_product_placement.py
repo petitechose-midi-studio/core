@@ -214,6 +214,36 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
     elif any(address < FLASH_START for address in signal_subscriptions):
         violations.append("Signal subscription setup must execute from Flash")
 
+    extmem_lifecycle = tuple(
+        (address, name)
+        for address, _size, symbol_type, name in symbols
+        if symbol_type in "TtWw"
+        and (
+            name.startswith("core::app::allocateExtmemStrict(")
+            or name.startswith("core::app::freeExtmemStrict(")
+            or name.startswith("core::app::makeExtmemUnique")
+            or name.startswith("core::app::ExtmemDeleter<")
+            or name.startswith("core::app::ExtmemArrayDeleter<")
+            or (
+                "core::app::Extmem" in name
+                and (
+                    (
+                        name.startswith("std::unique_ptr<")
+                        and "::~unique_ptr()" in name
+                    )
+                    or (
+                        name.startswith("std::__uniq_ptr_impl<")
+                        and ">::reset(" in name
+                    )
+                )
+            )
+        )
+    )
+    if not extmem_lifecycle:
+        violations.append("strict PSRAM lifecycle symbols are missing from the ELF")
+    elif any(address < FLASH_START for address, _name in extmem_lifecycle):
+        violations.append("strict PSRAM allocation/lifecycle must execute from Flash")
+
     hot_markers = (
         "core::handler::MacroValueHandler::handleValueChange(",
         "core::handler::MacroAutomationPlaybackService::update(",

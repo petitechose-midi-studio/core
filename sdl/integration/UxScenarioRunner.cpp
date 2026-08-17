@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <SDL2/SDL.h>
+#include <oc/core/event/Events.hpp>
 #include <oc/hal/sdl/InputMapper.hpp>
 #include <oc/state/NotificationQueue.hpp>
 
@@ -172,6 +173,19 @@ bool UxScenarioRunner::run(const UxRunOptions& options,
                     return false;
                 }
                 env.inputMapper().post(id, action.amount);
+                break;
+            }
+
+            case UxActionKind::EncoderValue: {
+                oc::type::EncoderID id = 0;
+                if (!uxEncoderIdFromName(action.id, id)) {
+                    error_ = "line " + std::to_string(action.line) +
+                        ": unknown encoder `" + action.id + "`";
+                    return false;
+                }
+                app.eventBus().emit(
+                    oc::core::event::EncoderChangedEvent(id, action.amount)
+                );
                 break;
             }
 

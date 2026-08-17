@@ -73,9 +73,13 @@ def main() -> int:
     assert active_core_policy.profile_version == "release-2026.08.1"
     assert active_core_policy.vector_name == "release-current"
     assert active_core_policy.flash_enforcement == "advisory"
-    assert ux_recorder_policy.itcm_banks_exact == 10
+    assert active_core_policy.itcm_banks_exact is None
+    assert active_core_policy.itcm_banks_max == 9
+    assert ux_recorder_policy.itcm_banks_exact is None
+    assert ux_recorder_policy.itcm_banks_max == 10
     assert ux_recorder_policy.ram1_free_min == 98304
-    assert diagnostics_policy.itcm_banks_exact == 10
+    assert diagnostics_policy.itcm_banks_exact is None
+    assert diagnostics_policy.itcm_banks_max == 10
     assert diagnostics_policy.ram2_free_min == 294912
     assert bitwig_policy.flash_enforcement == "blocking"
     assert bitwig_policy.profile_id == "midi-studio-bitwig-teensy41"
@@ -93,9 +97,17 @@ def main() -> int:
         text("core.sections.txt"),
         text("core.symbols.txt"),
     )
+    diagnostics_with_nine_banks = gate.evaluate_post_link(
+        diagnostics_policy,
+        text("core.teensy-size.txt"),
+        text("core.sections.txt"),
+        text("core.symbols.txt"),
+    )
     bitwig = evaluated("bitwig", "bitwig-product-profile-v1.json")
     assert core.violations == (), core.violations
     assert active_core.violations == (), active_core.violations
+    assert diagnostics_with_nine_banks.violations == ()
+    assert diagnostics_with_nine_banks.itcm_banks == 9
     assert bitwig.violations == (), bitwig.violations
     assert active_core.advisories == (), active_core.advisories
     assert core.physical_itcm_bytes == core.copy_itcm_bytes == 292264

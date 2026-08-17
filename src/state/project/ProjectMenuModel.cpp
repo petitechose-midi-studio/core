@@ -61,11 +61,6 @@ constexpr const char* const CC_DEFAULT_LABELS[] PROGMEM = {
     "Lane 4",
 };
 
-FLASHMEM void setRowValue(ProjectMenuRow& target, const char* value) {
-    target.value = value ? value : "";
-    target.valueText[0] = '\0';
-}
-
 FLASHMEM void copyRowValue(ProjectMenuRow& target, const char* value) {
     auto* buffer = target.valueText.data();
     const auto size = target.valueText.size();
@@ -210,6 +205,10 @@ FLASHMEM const char* stepPasteModeValue(ProjectStepPasteMode mode) {
     }
 }
 
+FLASHMEM const char* inheritValue(bool inherit) {
+    return inherit ? "Inherit" : "Override";
+}
+
 FLASHMEM void addRow(ProjectMenuPage& page, ProjectMenuRow next) {
     if (page.rowCount >= page.rows.size()) return;
     page.rows[page.rowCount++] = next;
@@ -348,14 +347,33 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
     ));
 }
 
-FLASHMEM void buildMusicRootRows(ProjectMenuPage& page, ProjectMenuContext context) {
+FLASHMEM void buildMusicRootRows(
+    ProjectMenuPage& page,
+    ProjectMenuContext context,
+    const ProjectNavigationState& navigation
+) {
     context.projectScale.clamp();
     auto scaleRow = row("Scale", "", ProjectMenuRowKind::Folder, ProjectNodeId::MUSIC_SCALE, true);
     setScaleSummary(scaleRow, context.projectScale);
     addRow(page, scaleRow);
-    addRow(page, row("Pattern Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
-    addRow(page, row("Clip Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
-    addRow(page, row("Step Paste", "Extend", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row(
+        "Pattern Default",
+        inheritValue(navigation.patternsInheritScale),
+        ProjectMenuRowKind::Value,
+        ProjectNodeId::MUSIC_ROOT
+    ));
+    addRow(page, row(
+        "Clip Default",
+        inheritValue(navigation.clipsInheritScale),
+        ProjectMenuRowKind::Value,
+        ProjectNodeId::MUSIC_ROOT
+    ));
+    addRow(page, row(
+        "Step Paste",
+        stepPasteModeValue(navigation.stepPasteMode),
+        ProjectMenuRowKind::Value,
+        ProjectNodeId::MUSIC_ROOT
+    ));
     addRow(page, row(
         "CC Defaults",
         "4 Lanes",
@@ -365,40 +383,54 @@ FLASHMEM void buildMusicRootRows(ProjectMenuPage& page, ProjectMenuContext conte
     ));
 }
 
-FLASHMEM void buildMusicCcDefaultRows(ProjectMenuPage& page) {
+FLASHMEM void buildMusicCcDefaultRows(
+    ProjectMenuPage& page,
+    const ProjectNavigationState& navigation
+) {
     for (uint8_t lane = 0; lane < PROJECT_CC_LANE_DEFAULT_COUNT; ++lane) {
-        addRow(page, row(
+        auto laneRow = row(
             CC_DEFAULT_LABELS[lane],
             "",
             ProjectMenuRowKind::Value,
             ProjectNodeId::MUSIC_CC_DEFAULTS
-        ));
+        );
+        setMidiCcValue(laneRow, navigation.ccLaneDefaultControllers[lane]);
+        addRow(page, laneRow);
     }
 }
 
-FLASHMEM void buildMusicScaleRows(ProjectMenuPage& page, ProjectMenuContext context) {
+FLASHMEM void buildMusicScaleRows(
+    ProjectMenuPage& page,
+    ProjectMenuContext context,
+    const ProjectNavigationState& navigation
+) {
     context.projectScale.clamp();
     addRow(page, row("Root", scale_catalog::rootLabel(context.projectScale.root), ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE));
     addRow(page, row("Scale", scale_catalog::scaleTypeLabel(context.projectScale.type), ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE));
     addRow(page, row("Constraint", scale_catalog::constraintModeLabel(context.projectScale.mode), ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE));
-    addRow(page, row("Patterns", "Inherit", ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE));
-    addRow(page, row("Clips", "Inherit", ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE));
+    addRow(page, row("Patterns", inheritValue(navigation.patternsInheritScale), ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE));
+    addRow(page, row("Clips", inheritValue(navigation.clipsInheritScale), ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE));
 }
 
-FLASHMEM void buildTransportRows(ProjectMenuPage& page, ProjectMenuContext context) {
-    addRow(page, row("Tempo", "120 BPM", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Swing", "0%", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Clock", clockModeValue(context.clockMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Run Mode", "Continue", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Sync Settings", "System", ProjectMenuRowKind::Disabled, ProjectNodeId::TRANSPORT_ROOT, false, false));
+FLASHMEM void buildTransportRows(
+    ProjectMenuPage& page,
+    ProjectMenuContext context,
+    const ProjectNavigationState& navigation
+) {
+    auto tempo = row("Tempo", "", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT);
+    setRowValue(
+        tempo,
+        static_cast<unsigned>(roundedProjectTempoBpm(context.tempoBpm)),
+        " BPM"
+    );
+    addRow(page, tempo);
 
-    if (page.rowCount > 0) {
-        setRowValue(
-            page.rows[0],
-            static_cast<unsigned>(roundedProjectTempoBpm(context.tempoBpm)),
-            " BPM"
-        );
-    }
+    auto swing = row("Swing", "", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT);
+    setRowValue(swing, navigation.transportSwingPercent, "%");
+    addRow(page, swing);
+    addRow(page, row("Clock", clockModeValue(context.clockMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
+    addRow(page, row("Run Mode", runModeValue(navigation.transportRunMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
+    addRow(page, row("Sync Settings", "System", ProjectMenuRowKind::Disabled, ProjectNodeId::TRANSPORT_ROOT, false, false));
 }
 
 FLASHMEM void buildStorageRows(ProjectMenuPage& page, ProjectMenuContext context) {
@@ -611,41 +643,6 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
     return revision;
 }
 
-FLASHMEM const char* inheritValue(bool inherit) {
-    return inherit ? "Inherit" : "Override";
-}
-
-FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
-                                 const ProjectNavigationState& navigation) {
-    switch (navigation.currentNode.get()) {
-        case ProjectNodeId::MUSIC_ROOT:
-            if (page.rowCount > 3) {
-                setRowValue(page.rows[3], stepPasteModeValue(navigation.stepPasteMode));
-            }
-            break;
-        case ProjectNodeId::MUSIC_CC_DEFAULTS:
-            for (uint8_t lane = 0;
-                 lane < PROJECT_CC_LANE_DEFAULT_COUNT && lane < page.rowCount;
-                 ++lane) {
-                setMidiCcValue(
-                    page.rows[lane],
-                    navigation.ccLaneDefaultControllers[lane]
-                );
-            }
-            break;
-        case ProjectNodeId::MUSIC_SCALE:
-            if (page.rowCount > 3) page.rows[3].value = inheritValue(navigation.patternsInheritScale);
-            if (page.rowCount > 4) page.rows[4].value = inheritValue(navigation.clipsInheritScale);
-            break;
-        case ProjectNodeId::TRANSPORT_ROOT:
-            if (page.rowCount > 1) setRowValue(page.rows[1], navigation.transportSwingPercent, "%");
-            if (page.rowCount > 3) setRowValue(page.rows[3], runModeValue(navigation.transportRunMode));
-            break;
-        default:
-            break;
-    }
-}
-
 }  // namespace
 
 FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navigation) {
@@ -665,16 +662,16 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
 
     switch (navigation.currentNode.get()) {
         case ProjectNodeId::MUSIC_ROOT:
-            buildMusicRootRows(page, context);
+            buildMusicRootRows(page, context, navigation);
             break;
         case ProjectNodeId::MUSIC_SCALE:
-            buildMusicScaleRows(page, context);
+            buildMusicScaleRows(page, context, navigation);
             break;
         case ProjectNodeId::MUSIC_CC_DEFAULTS:
-            buildMusicCcDefaultRows(page);
+            buildMusicCcDefaultRows(page, navigation);
             break;
         case ProjectNodeId::TRANSPORT_ROOT:
-            buildTransportRows(page, context);
+            buildTransportRows(page, context, navigation);
             break;
         case ProjectNodeId::STORAGE_ROOT:
             buildStorageRows(page, context);
@@ -710,8 +707,6 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
             buildOverviewRows(page, context);
             break;
     }
-    applyDynamicValues(page, navigation);
-
     if (page.rowCount == 0) {
         page.selectedIndex = 0;
         return page;

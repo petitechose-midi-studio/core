@@ -201,11 +201,14 @@ uint32_t PerformanceReporter::percentileUs_(
 bool PerformanceReporter::alwaysReport_(const char* label) {
     if (label == nullptr) return false;
     return std::strncmp(label, "memory.", 7U) == 0 ||
+        std::strncmp(label, "display.ili9341.", 16U) == 0 ||
         std::strncmp(label, "midi.cc.global", 14U) == 0 ||
+        std::strncmp(label, "midi.queue.", 11U) == 0 ||
         std::strncmp(label, "macro.take.begin.", 17U) == 0 ||
         std::strncmp(label, "macro.take.commit.", 18U) == 0 ||
         std::strncmp(label, "persistence.project-codec.", 26U) == 0 ||
         std::strncmp(label, "persistence.project-control.", 28U) == 0 ||
+        std::strcmp(label, "sequencer.timer") == 0 ||
         std::strstr(label, "reject") != nullptr ||
         std::strstr(label, "overflow") != nullptr;
 }

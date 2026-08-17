@@ -77,6 +77,7 @@ private:
 
     void createUI(lv_obj_t* parent);
     static void onStripDrawEvent(lv_event_t* event);
+    static void onStripSizeChanged(lv_event_t* event);
     void renderTopRow(const SequencerHeaderBarProps& props);
     void renderStrip(const SequencerHeaderBarProps& props);
     void updatePageStripVisibility(bool visible);
@@ -117,6 +118,7 @@ private:
     lv_opa_t badge_text_opa_cache_ = LV_OPA_TRANSP;
 
     bool strip_cache_initialized_ = false;
+    bool strip_props_available_ = false;
     SequencerHeaderBarProps strip_draw_props_{};
     uint8_t strip_cached_length_ = 0;
     uint8_t strip_cached_active_page_ = 0;

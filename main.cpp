@@ -511,6 +511,11 @@ public:
 SerialSemanticUxSink semanticUxSink;
 core::app::ExtmemUniquePtr<core::validation::ux::SemanticUxRecorder>
     semanticUxRecorder;
+#if OC_ENABLE_STATS
+constexpr bool kEmitSemanticEncoderDispatch = false;
+#else
+constexpr bool kEmitSemanticEncoderDispatch = true;
+#endif
 
 }  // namespace
 #endif
@@ -548,6 +553,12 @@ static FLASHMEM void initDisplay() {
 
         const auto initialized = display->init();
         if (initialized) {
+            OC_LOG_INFO(
+                "Display panel={}Hz, UI frames<={}Hz, SPI={}MHz",
+                display->panelRefreshRateHz(),
+                Config::Timing::UI_FRAME_HZ,
+                device::display::SPI_SPEED_HZ / 1'000'000U
+            );
             if (attempt > 1U) {
                 OC_LOG_INFO(kDisplayInitRecoveredLog, attempt);
             }
@@ -678,6 +689,7 @@ static FLASHMEM void initApp() {
             core::validation::ux::SemanticUxRecorderOptions{
                 .sink = &semanticUxSink,
                 .enabled = true,
+                .emitSemanticEncoderDispatch = kEmitSemanticEncoderDispatch,
             }
         );
     if (!semanticUxRecorder) {
@@ -782,7 +794,7 @@ FLASHMEM void setup() {
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");
     OC_LOG_INFO(
-        "App {}Hz, LVGL {}Hz",
+        "App {}Hz, LVGL service {}Hz",
         Config::Timing::INPUT_APP_ADMISSION_HZ,
         Config::Timing::LVGL_SERVICE_HZ
     );
@@ -829,8 +841,6 @@ FLASHMEM void setup() {
 // Timing constants for main loop
 constexpr uint32_t APP_PERIOD_US =
     1'000'000U / Config::Timing::INPUT_APP_ADMISSION_HZ;
-constexpr uint32_t LVGL_PERIOD_US =
-    1'000'000U / Config::Timing::LVGL_SERVICE_HZ;
 void loop() {
 #if defined(MS_PROJECT_STORE_SMOKE)
     static uint32_t lastHeartbeatMs = 0;
@@ -851,7 +861,8 @@ void loop() {
     delay(25);
 #else
     static core::app::PhaseRetainingDeadline<APP_PERIOD_US> appDeadline;
-    static core::app::PhaseRetainingDeadline<LVGL_PERIOD_US> lvglDeadline;
+    static core::app::PhaseRetainingDeadline<
+        Config::Timing::LVGL_SERVICE_PERIOD_US> lvglDeadline;
 
     const uint32_t now = micros();
     if (!appDeadline.consumeIfDue(now)) return;

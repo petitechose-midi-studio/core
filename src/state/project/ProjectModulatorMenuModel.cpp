@@ -64,11 +64,8 @@ FLASHMEM uint16_t destinationPickerRowCount(
         return core::state::macro::MACRO_COUNT;
     }
     if (navigation.destinationPickerLevel == Level::TRACK) {
-        uint16_t count = 0U;
         const uint16_t mask = pages.currentTrackEnabledMask();
-        for (uint8_t index = 0U; index < core::state::macro::TRACK_COUNT; ++index) {
-            if ((mask & static_cast<uint16_t>(1U << index)) != 0U) ++count;
-        }
+        uint16_t count = enabledOrdinal(mask, core::state::macro::TRACK_COUNT);
         if (nextContiguousIndex(mask, core::state::macro::TRACK_COUNT) >= 0) {
             ++count;
         }
@@ -79,11 +76,8 @@ FLASHMEM uint16_t destinationPickerRowCount(
     const uint8_t track = navigation.destinationPickerTrack;
     if (track >= core::state::macro::TRACK_COUNT) return 0U;
     if (!pages.isTrackEnabled(track)) return 1U;
-    uint16_t count = 0U;
     const uint16_t mask = pages.tracks[track].enabledPageMask;
-    for (uint8_t index = 0U; index < core::state::macro::PAGE_COUNT; ++index) {
-        if ((mask & static_cast<uint16_t>(1U << index)) != 0U) ++count;
-    }
+    uint16_t count = enabledOrdinal(mask, core::state::macro::PAGE_COUNT);
     if (nextContiguousIndex(mask, core::state::macro::PAGE_COUNT) >= 0) ++count;
     return count;
 }
@@ -186,11 +180,7 @@ FLASHMEM uint8_t destinationPickerTrackRow(
     if ((mask & static_cast<uint16_t>(1U << track)) != 0U) {
         return enabledOrdinal(mask, track);
     }
-    uint8_t count = 0U;
-    for (uint8_t index = 0U; index < core::state::macro::TRACK_COUNT; ++index) {
-        if ((mask & static_cast<uint16_t>(1U << index)) != 0U) ++count;
-    }
-    return count;
+    return enabledOrdinal(mask, core::state::macro::TRACK_COUNT);
 }
 
 FLASHMEM uint8_t destinationPickerPageRow(
@@ -207,11 +197,7 @@ FLASHMEM uint8_t destinationPickerPageRow(
     if ((mask & static_cast<uint16_t>(1U << page)) != 0U) {
         return enabledOrdinal(mask, page);
     }
-    uint8_t count = 0U;
-    for (uint8_t index = 0U; index < core::state::macro::PAGE_COUNT; ++index) {
-        if ((mask & static_cast<uint16_t>(1U << index)) != 0U) ++count;
-    }
-    return count;
+    return enabledOrdinal(mask, core::state::macro::PAGE_COUNT);
 }
 
 FLASHMEM SourceDetailLayout sourceDetailLayout(ModulatorKind kind) {

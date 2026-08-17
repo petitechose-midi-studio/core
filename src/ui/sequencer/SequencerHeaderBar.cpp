@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <config/PlatformCompat.hpp>
@@ -170,6 +171,9 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     lv_obj_set_flex_grow(strip_row_, 1);
     lv_obj_add_flag(strip_row_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_add_event_cb(strip_row_, onStripDrawEvent, LV_EVENT_DRAW_MAIN, this);
+    lv_obj_add_event_cb(
+        strip_row_, onStripSizeChanged, LV_EVENT_SIZE_CHANGED, this
+    );
 
     context_icon_ = lv_label_create(container_);
     lv_obj_set_style_text_font(
@@ -306,7 +310,6 @@ FLASHMEM void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& pr
         headerLayoutChanged = true;
     }
     if (headerLayoutChanged) {
-        lv_obj_update_layout(container_);
         strip_cached_width_ = -1;
     }
     const auto visual = header_model::buildTopRowVisualState(props);
@@ -446,9 +449,17 @@ FLASHMEM void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
     }
 }
 
+FLASHMEM void SequencerHeaderBar::onStripSizeChanged(lv_event_t* event) {
+    auto* self = static_cast<SequencerHeaderBar*>(lv_event_get_user_data(event));
+    if (!self || !self->strip_props_available_) return;
+    self->renderStrip(self->strip_draw_props_);
+}
+
 FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& props) {
     if (!strip_row_) return;
 
+    strip_draw_props_ = props;
+    strip_props_available_ = true;
     updatePageStripVisibility(props.pageStripVisible);
     if (!props.pageStripVisible) return;
 
@@ -456,10 +467,7 @@ FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& pro
 
     bool widthChanged = false;
     lv_coord_t stripWidth = lv_obj_get_content_width(strip_row_);
-    if (stripWidth <= 0) {
-        lv_obj_update_layout(container_);
-        stripWidth = lv_obj_get_content_width(strip_row_);
-    }
+    if (stripWidth <= 0) return;
     if (stripWidth != strip_cached_width_) {
         strip_cached_width_ = stripWidth;
         widthChanged = true;
@@ -496,7 +504,6 @@ FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& pro
     strip_cached_page_destination_overwrite_mask_ = props.pageDestinationOverwriteMask;
     strip_cached_page_destination_blocked_mask_ =
         props.pageDestinationBlockedMask;
-    strip_draw_props_ = props;
     lv_obj_invalidate(strip_row_);
 
     const auto viewCursor = header_model::buildViewCursorLayout(props, strip_segment_geometry_);
