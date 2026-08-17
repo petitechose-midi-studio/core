@@ -43,7 +43,7 @@
 5190 button BOTTOM_LEFT up
 5410 capture screen assignment_removed
 
-# + Source opens the same concise creation grammar used by an empty Macro.
+# Add source opens the same concise creation grammar used by an empty Macro.
 5530 encoder NAV 1
 5650 encoder NAV 1
 5870 capture screen add_source_focused

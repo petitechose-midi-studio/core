@@ -38,6 +38,7 @@ enum class MacroModulationRowKind : uint8_t {
     ALL,
     ASSIGNMENT,
     ADD_SOURCE,
+    RECORD_SHAPE,
 };
 
 /**
@@ -67,6 +68,7 @@ struct MacroModulationRows {
     [[nodiscard]] int rowCount() const;
     [[nodiscard]] int firstAssignmentRow() const;
     [[nodiscard]] int addSourceRow() const;
+    [[nodiscard]] int recordShapeRow() const;
 };
 
 [[nodiscard]] MacroRootItem macroRootItemAt(uint8_t row);

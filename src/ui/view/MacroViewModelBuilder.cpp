@@ -226,7 +226,7 @@ FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
     }
 
     const auto mode = source.macroUi.performanceOverlayMode.get();
-    if (mode == core::state::macro::MacroPerformanceOverlayMode::NONE) {
+    if (mode != core::state::macro::MacroPerformanceOverlayMode::EDIT) {
         return {.visible = false};
     }
 
@@ -236,49 +236,14 @@ FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
         .useValueText = true,
     };
 
-    if (mode == core::state::macro::MacroPerformanceOverlayMode::EDIT) {
-        props.icon = standalone::icons::KNOB;
-        props.label = "EDIT";
-        props.color = standalone::theme::color::MACRO_CC_COLOR;
-        std::snprintf(
-            props.valueText.data(),
-            props.valueText.size(),
-            "PRESS A MACRO"
-        );
-        return props;
-    }
-
-    props.icon = standalone::icons::MACRO_AUTOMATION;
-    props.label = source.macroUi.automationTake.phase ==
-            core::state::macro::MacroAutomationTakePhase::RECORDING
-        ? "RECORDING"
-        : "AUTOMATION TAKE";
-    props.color = standalone::theme::color::MACRO_AUTOMATION;
-    if (source.macroUi.automationTake.phase ==
-        core::state::macro::MacroAutomationTakePhase::RECORDING) {
-        uint8_t count = 0U;
-        uint16_t mask = source.macroUi.automationTake.touchedMask;
-        while (mask != 0U) {
-            count = static_cast<uint8_t>(count + (mask & 1U));
-            mask = static_cast<uint16_t>(mask >> 1U);
-        }
-        std::snprintf(
-            props.valueText.data(),
-            props.valueText.size(),
-            "%u MACRO%s",
-            static_cast<unsigned>(count),
-            count == 1U ? "" : "S"
-        );
-    } else {
-        std::snprintf(
-            props.valueText.data(),
-            props.valueText.size(),
-            "%s",
-            core::state::macro::macroAutomationTakeTimingLabel(
-                source.macroUi.automationTake.timing
-            )
-        );
-    }
+    props.icon = standalone::icons::KNOB;
+    props.label = "EDIT";
+    props.color = standalone::theme::color::MACRO_CC_COLOR;
+    std::snprintf(
+        props.valueText.data(),
+        props.valueText.size(),
+        "PRESS A MACRO"
+    );
     return props;
 }
 

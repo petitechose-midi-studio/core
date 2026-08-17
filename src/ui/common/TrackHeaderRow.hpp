@@ -20,6 +20,7 @@ struct TrackHeaderRowProps {
     lv_opa_t accentOpa = LV_OPA_COVER;
     uint32_t backgroundColor = 0;
     lv_opa_t backgroundOpa = LV_OPA_TRANSP;
+    bool showStatusDot = false;
     std::array<uint32_t, MAX_ITEM_COUNT> itemColors{};
     std::array<lv_opa_t, MAX_ITEM_COUNT> itemOpacities{};
     std::array<bool, MAX_ITEM_COUNT> itemActive{};
@@ -48,6 +49,7 @@ private:
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* accent_ = nullptr;
+    lv_obj_t* status_dot_ = nullptr;
     lv_obj_t* label_ = nullptr;
     lv_obj_t* spacer_ = nullptr;
     lv_obj_t* items_row_ = nullptr;
@@ -61,6 +63,7 @@ private:
     lv_opa_t accent_cache_opa_ = LV_OPA_TRANSP;
     uint32_t background_cache_color_ = 0;
     lv_opa_t background_cache_opa_ = LV_OPA_TRANSP;
+    bool status_dot_visible_cache_ = false;
     std::array<uint32_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_color_cache_{};
     std::array<lv_opa_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_opa_cache_{};
     std::array<bool, TrackHeaderRowProps::MAX_ITEM_COUNT> item_hidden_cache_{};

@@ -23,6 +23,7 @@ constexpr lv_coord_t ROW_HEIGHT = 20;
 constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN_SM + 4;
 constexpr lv_opa_t LABEL_OPA = LV_OPA_COVER;
 constexpr lv_coord_t ACCENT_WIDTH = 4;
+constexpr lv_coord_t STATUS_DOT_SIZE = 5;
 constexpr lv_coord_t ITEM_SIZE_WIDE = 10;
 constexpr lv_coord_t ITEM_GAP_WIDE = 4;
 constexpr lv_coord_t ITEM_SIZE_DENSE = 8;
@@ -84,6 +85,15 @@ FLASHMEM void TrackHeaderRow::createUI(lv_obj_t* parent) {
         .pad(0);
     lv_obj_set_style_radius(accent_, 0, 0);
     lv_obj_set_style_bg_opa(accent_, LV_OPA_COVER, 0);
+
+    status_dot_ = lv_obj_create(container_);
+    style::apply(status_dot_)
+        .size(STATUS_DOT_SIZE, STATUS_DOT_SIZE)
+        .noBorder()
+        .noScroll()
+        .pad(0);
+    lv_obj_set_style_radius(status_dot_, LV_RADIUS_CIRCLE, 0);
+    lv_obj_add_flag(status_dot_, LV_OBJ_FLAG_HIDDEN);
 
     label_ = lv_label_create(container_);
     lv_obj_set_style_text_font(label_, fonts.header_label(), 0);
@@ -242,11 +252,22 @@ FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
 
     if (!surface_cache_initialized_ || accent_cache_color_ != props.accentColor) {
         lv_obj_set_style_bg_color(accent_, lv_color_hex(props.accentColor), 0);
+        lv_obj_set_style_bg_color(status_dot_, lv_color_hex(props.accentColor), 0);
         accent_cache_color_ = props.accentColor;
     }
     if (!surface_cache_initialized_ || accent_cache_opa_ != props.accentOpa) {
         lv_obj_set_style_bg_opa(accent_, props.accentOpa, 0);
+        lv_obj_set_style_bg_opa(status_dot_, props.accentOpa, 0);
         accent_cache_opa_ = props.accentOpa;
+    }
+
+    if (status_dot_visible_cache_ != props.showStatusDot) {
+        if (props.showStatusDot) {
+            lv_obj_clear_flag(status_dot_, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(status_dot_, LV_OBJ_FLAG_HIDDEN);
+        }
+        status_dot_visible_cache_ = props.showStatusDot;
     }
 
     if (!surface_cache_initialized_ || background_cache_color_ != props.backgroundColor) {

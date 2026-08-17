@@ -276,7 +276,7 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
     if (modulatorCreateActive()) {
         count = 3;
     } else if (modulationDetailActive() && !context.modulationStored) {
-        count = 3;
+        count = 4;
     } else if (modulationDetailActive()) {
         count = modulationRows(pages_, macroIndex()).rowCount();
     } else {
@@ -919,6 +919,27 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
     const auto context = detailContext(services_, macroIndex());
     bool resumeAutomation = false;
     bool convert = false;
+    const auto openRecordedShapeContext = [this]() {
+        const auto rows = modulationRows(pages_, macroIndex());
+        const uint8_t actionCount = menu::macroContextActionCount(
+            menu::MacroRootItem::MODULATION,
+            rows.assignmentCount
+        );
+        if (actionCount == 0U) return;
+        backToMacroEdit();
+        macro_edit_.focusedRow.set(
+            menu::macroRootRow(menu::MacroRootItem::MODULATION)
+        );
+        macro_edit_.contextPropertyIndex.set(
+            static_cast<uint8_t>(actionCount - 1U)
+        );
+        macro_edit_.contextSelectorActive.set(true);
+        encoders_.setMode(
+            Config::EncoderID::OPT,
+            oc::interface::EncoderMode::RAW
+        );
+        encoders_.setPosition(Config::EncoderID::OPT, 0.0f);
+    };
     if (modulatorCreateActive()) {
         const uint8_t row = macro_edit_.modulationFocusedRow.get();
         if (row == 0U) {
@@ -941,6 +962,8 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
                 (void)startAdsrAudition();
             } else if (row == 2U) {
                 (void)openModulatorPicker();
+            } else if (row == 3U) {
+                openRecordedShapeContext();
             }
         } else {
             const auto rows = modulationRows(pages_, macroIndex());
@@ -973,6 +996,9 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
                        menu::MacroModulationRowKind::ADD_SOURCE) {
                 macro_edit_.openModulatorCreate();
                 configureOptForFocusedRow();
+            } else if (descriptor.kind ==
+                       menu::MacroModulationRowKind::RECORD_SHAPE) {
+                openRecordedShapeContext();
             }
         }
         return;

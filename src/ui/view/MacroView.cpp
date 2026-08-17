@@ -224,7 +224,6 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.macroUi.automationTakeTiming.subscribe(
             [this](core::state::macro::MacroAutomationTakeTiming) {
                 requestHeaderRender();
-                requestSlotPropertyOverlayRender();
             }
         )
     );
@@ -237,9 +236,7 @@ FLASHMEM bool MacroView::bindToState() {
                 core::state::macro::macroAutomationRecordingRevisionDirtyIndex(
                     revision
                 );
-            if (markAutomationRecordingDirtyIfChanged(dirtyIndex)) {
-                requestSlotPropertyOverlayRender();
-            }
+            (void)markAutomationRecordingDirtyIfChanged(dirtyIndex);
         })
     );
 

@@ -308,9 +308,7 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
         core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE
     );
     overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
-    assert(overlay.visible);
-    assert(std::strcmp(overlay.label, "AUTOMATION TAKE") == 0);
-    assert(std::strcmp(overlay.valueText.data(), "4 BARS") == 0);
+    assert(!overlay.visible);
     auto header = core::ui::buildMacroHeaderBarProps(sourceFor(state));
     assert(header.automationTakePhase ==
            core::state::macro::MacroAutomationTakePhase::ARMED);
@@ -334,8 +332,7 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     assert(state.macroUi.automationTake.touch(0U, 48U, 1U));
     assert(state.macroUi.automationTake.touch(2U, 80U, 2U));
     overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
-    assert(std::strcmp(overlay.label, "RECORDING") == 0);
-    assert(std::strcmp(overlay.valueText.data(), "2 MACROS") == 0);
+    assert(!overlay.visible);
     const auto frame = core::ui::buildMacroViewFrameState(sourceFor(state));
     assert(frame.macros[0].automationRecording);
     assert(!frame.macros[1].automationRecording);

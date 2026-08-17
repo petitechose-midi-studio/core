@@ -590,7 +590,7 @@ FLASHMEM void MacroKnobWidget::drawArc(lv_layer_t* layer, lv_obj_t* target) cons
     arcDsc.center = geometry.center;
     arcDsc.radius = geometry.radius;
     arcDsc.width = geometry.width;
-    arcDsc.rounded = 1;
+    arcDsc.rounded = 0;
 
     arcDsc.color = lv_color_hex(theme::color::KNOB_BACKGROUND);
     arcDsc.opa = KNOB_BACKGROUND_OPA;

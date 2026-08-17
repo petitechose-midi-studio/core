@@ -235,19 +235,25 @@ FLASHMEM void buildAutomationRenderData(
             "%s",
             reusable ? "Choose" : "None yet"
         );
+        std::snprintf(
+            data.valueBuffers[3].data(),
+            data.valueBuffers[3].size(),
+            "%s",
+            "Record"
+        );
         data.rows = {{
             {.key = "New LFO", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {.key = "New DAHDSR", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::NOTE_PROP_GATE, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {.key = "Use Existing", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::ACTION_PLACE_TARGET, .iconFont = standalone_fonts.icons_14, .iconColor = reusable ? ::standalone::theme::color::MACRO_MODULATION : ::standalone::theme::color::TEXT_SECONDARY},
-            {},
+            {.key = "Record shape", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {},
             {},
             {},
         }};
-        data.rowCount = 3;
+        data.rowCount = 4;
         data.selectedIndex = std::min<int>(
             source.macroEdit.modulationFocusedRow.get(),
-            2
+            3
         );
         data.dataRevision = mixRevision(
             mixRevision(

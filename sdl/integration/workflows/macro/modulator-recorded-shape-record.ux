@@ -1,7 +1,8 @@
 # UX workflow: record a reusable relative Source from one Macro destination.
 # Purpose: proves the destination-first typed action, lazy signed capture,
 # live preview, one atomic Source+binding commit, and the exact Source deep-link.
-# Expect: capture_changed:macro_ready=record_context, capture_changed:record_context=shape_recording, capture_changed:shape_recording=shape_committed
+# Expect: capture_changed:macro_ready=record_shape_row, capture_changed:record_shape_row=record_context
+# Expect: capture_changed:record_context=shape_recording, capture_changed:shape_recording=shape_committed
 # Expect: capture_changed:shape_committed=assignment_detail, capture_changed:assignment_detail=source_workspace
 # Expect: semantic:record_context:effect=show_macro_context_properties
 # Expect: semantic:shape_recording:effect=record_macro_recorded_shape_value, semantic:shape_recording:operation_status=recording
@@ -18,22 +19,27 @@
 520 encoder NAV 1
 600 encoder NAV 1
 
-# The first contextual item is Record New Shape. The hold only exposes intent;
-# RAW OPT movement lazily creates and auditions the signed Project Source.
-720 button LEFT_BOTTOM down
-940 capture screen record_context
-1060 encoder OPT 64.00
-1320 tick
-1540 capture screen shape_recording
+# Open Modulation, select the first-rank Record shape row, then reuse the
+# contextual RAW capture already shared by Macro editing.
+720 tap NAV 60
+860 encoder NAV 1
+900 encoder NAV 1
+940 encoder NAV 1
+1000 capture screen record_shape_row
+1060 tap NAV 60
+1260 capture screen record_context
+1380 encoder OPT 64.00
+1640 tick
+1860 capture screen shape_recording
 
-# Modifier release is the only publish boundary: Source plus destination edge
-# become one history action and the new assignment receives focus.
-1660 button LEFT_BOTTOM up
-1940 capture screen shape_committed
+# NAV validates the latched capture: Source plus destination edge become one
+# history action and the new assignment receives focus.
+1980 tap NAV 60
+2260 capture screen shape_committed
 
 # NAV opens the focused assignment, then NAV again reaches the same complete
 # Project Source editor used by Project Modulators.
-2060 tap NAV 60
-2300 capture screen assignment_detail
-2420 tap NAV 60
-2700 capture screen source_workspace
+2380 tap NAV 60
+2620 capture screen assignment_detail
+2740 tap NAV 60
+3020 capture screen source_workspace

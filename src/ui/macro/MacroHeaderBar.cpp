@@ -99,12 +99,12 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
             ? props.previewPage
             : props.activePage;
     const bool trackScope = props.focusingTrack;
-    char recordingLabel[16] = {};
+    char recordingLabel[24] = {};
     if (props.automationTakePhase ==
         core::state::macro::MacroAutomationTakePhase::ARMED) {
         std::snprintf(recordingLabel,
                       sizeof(recordingLabel),
-                      "TAKE %s",
+                      "Take \xC2\xB7 %s",
                       core::state::macro::macroAutomationTakeTimingLabel(
                           props.automationTakeTiming
                       ));
@@ -115,15 +115,16 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
                       sizeof(recordingLabel),
                       props.automationRecordingStatus ==
                               core::state::macro::MacroAutomationRecordingStatus::REDUCED
-                          ? "REC~ %u MAC"
-                          : "REC %u MAC",
-                      count);
+                          ? "Rec~ \xC2\xB7 %u macro%s"
+                          : "Rec \xC2\xB7 %u macro%s",
+                      count,
+                      count == 1U ? "" : "s");
     } else if (props.automationRecordingStatus ==
                core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT) {
-        std::snprintf(recordingLabel, sizeof(recordingLabel), "REC SHORT");
+        std::snprintf(recordingLabel, sizeof(recordingLabel), "Rec \xC2\xB7 Short");
     } else if (props.automationRecordingStatus ==
                core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED) {
-        std::snprintf(recordingLabel, sizeof(recordingLabel), "REC ERR");
+        std::snprintf(recordingLabel, sizeof(recordingLabel), "Rec \xC2\xB7 Error");
     }
     const bool showRecordingStatus = recordingLabel[0] != '\0';
 
@@ -143,6 +144,7 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
             : trackInactiveColor());
     rowProps.accentOpa = LV_OPA_80;
     rowProps.backgroundColor = HEADER_BG_COLOR;
+    rowProps.showStatusDot = showRecordingStatus;
     rowProps.backgroundOpa =
         props.performanceOverlayMode !=
                 core::state::macro::MacroPerformanceOverlayMode::NONE

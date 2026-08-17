@@ -132,21 +132,24 @@ void test_modulation_rows_carry_stable_binding_ids() {
 
     const auto rows = macro::buildMacroModulationRows(graph, target);
     assert(rows.assignmentCount == 2U);
-    assert(rows.rowCount() == 4);
+    assert(rows.rowCount() == 5);
     assert(rows.firstAssignmentRow() == 1);
     assert(rows.addSourceRow() == 3);
+    assert(rows.recordShapeRow() == 4);
 
     const auto all = macro::macroModulationRowAt(graph, rows, 0);
     const auto first = macro::macroModulationRowAt(graph, rows, 1);
     const auto second = macro::macroModulationRowAt(graph, rows, 2);
     const auto add = macro::macroModulationRowAt(graph, rows, 3);
+    const auto record = macro::macroModulationRowAt(graph, rows, 4);
     assert(all.kind == macro::MacroModulationRowKind::ALL);
     assert(first.kind == macro::MacroModulationRowKind::ASSIGNMENT);
     assert(first.bindingId == modulation::ModulationBindingId{11U});
     assert(second.kind == macro::MacroModulationRowKind::ASSIGNMENT);
     assert(second.bindingId == modulation::ModulationBindingId{22U});
     assert(add.kind == macro::MacroModulationRowKind::ADD_SOURCE);
-    assert(macro::macroModulationRowAt(graph, rows, 4).kind ==
+    assert(record.kind == macro::MacroModulationRowKind::RECORD_SHAPE);
+    assert(macro::macroModulationRowAt(graph, rows, 5).kind ==
            macro::MacroModulationRowKind::INVALID);
     assert(macro::macroModulationBinding(graph, second)->id == second.bindingId);
     auto crossDestination = second;
@@ -155,6 +158,14 @@ void test_modulation_rows_carry_stable_binding_ids() {
     assert(macro::macroModulationRowForBinding(
         graph, rows, second.bindingId
     ) == 2);
+
+    modulation::ProjectModulationState emptyGraph{};
+    const auto emptyRows = macro::buildMacroModulationRows(emptyGraph, target);
+    assert(emptyRows.rowCount() == 3);
+    assert(emptyRows.addSourceRow() == 1);
+    assert(emptyRows.recordShapeRow() == 2);
+    assert(macro::macroModulationRowAt(emptyGraph, emptyRows, 2).kind ==
+           macro::MacroModulationRowKind::RECORD_SHAPE);
 
     std::cout << "[PASS] stable Macro modulation row identities\n";
 }

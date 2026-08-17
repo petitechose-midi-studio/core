@@ -164,7 +164,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         const int row = std::clamp(
             static_cast<int>(source.macroEdit.modulationFocusedRow.get()),
             0,
-            rows.addSourceRow()
+            rows.rowCount() - 1
         );
         const auto descriptor = menu::macroModulationRowAt(
             graph,
@@ -174,6 +174,12 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         if (descriptor.kind == menu::MacroModulationRowKind::ADD_SOURCE) {
             props.slots[0].visualState = Visual::HIDDEN;
             props.slots[1] = scopeLabel("Add source");
+            props.slots[2].visualState = Visual::HIDDEN;
+            return props;
+        }
+        if (descriptor.kind == menu::MacroModulationRowKind::RECORD_SHAPE) {
+            props.slots[0].visualState = Visual::HIDDEN;
+            props.slots[1] = scopeLabel("Record shape");
             props.slots[2].visualState = Visual::HIDDEN;
             return props;
         }
@@ -228,6 +234,13 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             source,
             core::state::MacroContextButton::BOTTOM_RIGHT
         );
+        return props;
+    }
+    if (modulation && !modulationStored &&
+        source.macroEdit.modulationFocusedRow.get() == 3U) {
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1] = scopeLabel("Record shape");
+        props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
     const bool stored = modulation ? modulationStored : automationStored;

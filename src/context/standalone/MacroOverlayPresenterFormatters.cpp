@@ -258,7 +258,6 @@ FLASHMEM void provideModulationAssignmentRow(
             ++enabledCount;
         }
     }
-    if (rows.assignmentCount == 0U) return;
     const auto descriptor = menu::macroModulationRowAt(
         graph,
         rows,
@@ -298,13 +297,26 @@ FLASHMEM void provideModulationAssignmentRow(
         return;
     }
     if (descriptor.kind == menu::MacroModulationRowKind::ADD_SOURCE) {
-        std::snprintf(out.key.data(), out.key.size(), "%s", "+ Source");
+        std::snprintf(out.key.data(), out.key.size(), "%s", "Add source");
         std::snprintf(out.value.data(), out.value.size(), "%s", "Add");
         std::snprintf(
             out.icon.data(),
             out.icon.size(),
             "%s",
             ::standalone::icons::ACTION_PLACE_TARGET
+        );
+        out.iconFont = standalone_fonts.icons_14;
+        out.iconColor = ::standalone::theme::color::MACRO_MODULATION;
+        return;
+    }
+    if (descriptor.kind == menu::MacroModulationRowKind::RECORD_SHAPE) {
+        std::snprintf(out.key.data(), out.key.size(), "%s", "Record shape");
+        std::snprintf(out.value.data(), out.value.size(), "%s", "Record");
+        std::snprintf(
+            out.icon.data(),
+            out.icon.size(),
+            "%s",
+            ::standalone::icons::MACRO_AUTOMATION
         );
         out.iconFont = standalone_fonts.icons_14;
         out.iconColor = ::standalone::theme::color::MACRO_MODULATION;
