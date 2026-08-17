@@ -36,7 +36,7 @@
       "oc-ui-lvgl-components"
     ],
     "coreNativePins": {
-      "oc-framework": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
+      "oc-framework": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
       "oc-note": "539e48a1529165c982e9ea619b2c319ad9128f2b"
     },
     "coreReleaseLibraries": [
@@ -45,12 +45,12 @@
       "ms-ui"
     ],
     "coreReleasePins": {
-      "oc-framework": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
+      "oc-framework": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
       "oc-hal-common": "e3aa784055554922d130bba8065422d11a7dcd02",
-      "oc-hal-teensy": "2969c2070aa1fd04bcf38126dcf85902da9c888b",
+      "oc-hal-teensy": "f3c49f75aeda045c28d698bca0ec450e20a56838",
       "oc-note": "539e48a1529165c982e9ea619b2c319ad9128f2b",
-      "oc-ui-lvgl": "3884a808e8478009e10d70c74cd7f7050e619803",
-      "oc-ui-lvgl-components": "235839489dbbd875e9580a009a1ec228352dcc09"
+      "oc-ui-lvgl": "04eeef42aee5b88863a22736af06b52c5815aed1",
+      "oc-ui-lvgl-components": "b04f88c32319f9bf62c016d16b3bbb5b71696011"
     },
     "libremidi": {
       "immutableCommit": true,
@@ -72,27 +72,27 @@
     "bitwig/.github/workflows/ci.yml": "6bda6ceb5b977546a9165e437be72524a97be608312a0a506f3cffb1916dc0b5",
     "bitwig/CMakeLists.txt": "2a6e5998a2bced40d5d3cef5f1ce2239f44bfedf1429850ce7d9f7f1aed14920",
     "bitwig/cmake/MidiStudioBitwigSources.cmake": "3cf5ed1ec09e37f0204445721244a4056db25b20b1a85082128b1677d893b174",
-    "bitwig/platformio.ini": "8675c10548e6f4e51b6fd97bdb85b00eba2ff6589f2ba9e535b3cf75625ae221",
+    "bitwig/platformio.ini": "12a2ea56f76573c7df457c1c39415904b771d6fd978cb0390058f3fe9966eea0",
     "bitwig/sdl/app.cmake": "1fb132597404331082690c7f7af6cd71f3f878262f77e2183ad6c1aa851676a8",
     "core/.github/release-tooling.json": "cfa0160700381645ebf8cfb9e069a6126520f3ef503eeea0306755aad2bd6877",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "d3926f1990c925c7f53ba68212e9d143defd1cf5a06d6ac636ebee13d86d1f6f",
-    "core/CMakeLists.txt": "69ea3e7be18d0dbdf59072d17a156d97fe0e3b6902f84a6868ee38d8a721c9c0",
+    "core/.github/workflows/ci.yml": "ab15811362f8824d9135e8b14dcf02aa54dfa08141ad186e94adcd2a56b2e00c",
+    "core/CMakeLists.txt": "96c2e3cf4ef19f7c82f422cf91ce176be93d10818a427782c6ed42c9e04b3c6e",
     "core/cmake/MsCoreProductSources.cmake": "54a6e39f77e45999c3f4c971f654e9b1078f16f6c697ebc2765bf1b4ad07c03a",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
     "core/cmake/MsCoreSources.cmake": "19abfcd9898d2977c4a2d1399906fafe822be492668fa972806a4790a6e8dfac",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
-    "core/oc-native-sdk.ini": "a6bac84ee1b88be36469738916370c3103e2a992b3a0367c19616900ac06c6f5",
-    "core/oc-sdk.ini": "2fa19185d68b75222682a955500f4a22e22a47205049dbb692cfdc6aa23cda34",
-    "core/platformio.ini": "12b8245eab21998bce8dec610dacb10507346c220780b05f603ac8e11fd7077f",
+    "core/oc-native-sdk.ini": "46992a84fb08ac9840c947836a605e4a5ed6c42d2c85d856b0e279098dfa5261",
+    "core/oc-sdk.ini": "a914a246698a05b71150cfff6bbf96e2cb153cc1c1ae16490e02a111ea3eef0b",
+    "core/platformio.ini": "42df57762db3d268b13f168bda1500ded25a4bdc5202225b499cf5b8af8d1542",
     "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
     "core/sdl/CMakeLists.txt": "4de68f4569e434ad40521e9c40473c56c98d34446764a0ab9eb5022c31920112",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
     "deviceSupport/library.json": "13a6d12ead206723952bf3dd62148512fbb790c7a3a7786d413c6415da83ba41",
-    "deviceSupport/platformio.ini": "da61c9aee265fac63b873d20ad918c035f0c2609e976e2f9720247751589ee4e",
+    "deviceSupport/platformio.ini": "7265fd9ad1515fa955af00274a983053ddebf99b48e05926bb19867f3befa127",
     "note/cmake/OpenControlNoteSources.cmake": "4d8928c67b1cd2814716ccb1998db1fb708d64968fa39aa6fda2f5fdf7ce830c",
     "ui/CMakeLists.txt": "381a454aee7465a850b4cbe63110925d7c44bad738f4345ec65148c7d212f9d9",
     "ui/cmake/MidiStudioUiSources.cmake": "3dac62dacd71abffca26e868f5e17038d023ccbbb968788b2b44b6d830ffee7d",
@@ -181,8 +181,8 @@
   "repositories": {
     "bitwig": {
       "cleanExpected": true,
-      "commit": "2c127b3db8cc2fd38cac72d42ed266ff169c8a76",
-      "tree": "d996e3b27fd43789464e1146f89f092177da69ce"
+      "commit": "3239c22a60ef1c5fb7f659a9597ecd036b882f2c",
+      "tree": "63fb97c8a12274cbf9377cd821047ca369d16a10"
     },
     "core": {
       "cleanExpected": true,
@@ -190,13 +190,13 @@
     },
     "deviceSupport": {
       "cleanExpected": true,
-      "commit": "c9f18d9a3762d4fbf80425dea12f801196a51c4a",
-      "tree": "c13599158fa4e83a694f72b68072504b7375158c"
+      "commit": "923550edbd8bb0a7bef3bee74248cc1e116db6e3",
+      "tree": "2b8f8d39a9ecba55389a5be5e22979cd6c5ec4eb"
     },
     "framework": {
       "cleanExpected": true,
-      "commit": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
-      "tree": "90ceb695e945420d17eb3a652370034f5ff53dd1"
+      "commit": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
+      "tree": "be670eaf87777c0be8fb5e6122e1e89be9562f11"
     },
     "halCommon": {
       "cleanExpected": true,
@@ -220,8 +220,8 @@
     },
     "halTeensy": {
       "cleanExpected": true,
-      "commit": "2969c2070aa1fd04bcf38126dcf85902da9c888b",
-      "tree": "0598d391953a4984f7aaa8925f1d26c1782f9618"
+      "commit": "f3c49f75aeda045c28d698bca0ec450e20a56838",
+      "tree": "d096547462df9cf7cd76a683cea42cf127281c4b"
     },
     "note": {
       "cleanExpected": true,
@@ -235,13 +235,13 @@
     },
     "uiLvgl": {
       "cleanExpected": true,
-      "commit": "3884a808e8478009e10d70c74cd7f7050e619803",
-      "tree": "b890a89daf24c69d79b96f3c6e0fed93285d9559"
+      "commit": "04eeef42aee5b88863a22736af06b52c5815aed1",
+      "tree": "7a399ffd7239b35f91fd00865e3e38963a64fe98"
     },
     "uiLvglComponents": {
       "cleanExpected": true,
-      "commit": "235839489dbbd875e9580a009a1ec228352dcc09",
-      "tree": "0a5e77dc3b4414aa4ec06751e564f7ccfa7c3489"
+      "commit": "b04f88c32319f9bf62c016d16b3bbb5b71696011",
+      "tree": "3459309f398fe54e85d279be77a21ea59cfe0ac1"
     }
   },
   "schema": 3,
@@ -2900,19 +2900,19 @@
       "declaredRepositoryPins": {
         "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
-        "MIDI_STUDIO_BITWIG_SHA": "2c127b3db8cc2fd38cac72d42ed266ff169c8a76",
-        "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "c9f18d9a3762d4fbf80425dea12f801196a51c4a",
+        "MIDI_STUDIO_BITWIG_SHA": "3239c22a60ef1c5fb7f659a9597ecd036b882f2c",
+        "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "923550edbd8bb0a7bef3bee74248cc1e116db6e3",
         "MIDI_STUDIO_UI_SHA": "1cdf21526f6f08e49ac21f4fc466119e6468c9b3",
         "MS_DEV_ENV_SHA": "38289bc1c4d5e1298145256086e0f6d2ce843203",
-        "OPEN_CONTROL_FRAMEWORK_SHA": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
+        "OPEN_CONTROL_FRAMEWORK_SHA": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
         "OPEN_CONTROL_HAL_NET_SHA": "2207e6befc4b18fad5e4db870ba5ca8aab13aa29",
         "OPEN_CONTROL_HAL_SDL_SHA": "f8755529b4240bf05547d3ab6eadc92d823882c3",
-        "OPEN_CONTROL_HAL_TEENSY_SHA": "2969c2070aa1fd04bcf38126dcf85902da9c888b",
+        "OPEN_CONTROL_HAL_TEENSY_SHA": "f3c49f75aeda045c28d698bca0ec450e20a56838",
         "OPEN_CONTROL_NOTE_SHA": "539e48a1529165c982e9ea619b2c319ad9128f2b",
-        "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "235839489dbbd875e9580a009a1ec228352dcc09",
-        "OPEN_CONTROL_UI_LVGL_SHA": "3884a808e8478009e10d70c74cd7f7050e619803"
+        "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "b04f88c32319f9bf62c016d16b3bbb5b71696011",
+        "OPEN_CONTROL_UI_LVGL_SHA": "04eeef42aee5b88863a22736af06b52c5815aed1"
       },
       "emsdkVersion": "4.0.23",
       "finalWasmLink": true,
