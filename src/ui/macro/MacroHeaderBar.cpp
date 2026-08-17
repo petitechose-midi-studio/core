@@ -22,7 +22,7 @@ constexpr lv_opa_t HEADER_BG_OPA_IDLE = LV_OPA_TRANSP;
 constexpr lv_opa_t HEADER_BG_OPA_CLUTCH = LV_OPA_TRANSP;
 constexpr lv_opa_t PAGE_SELECTOR_BASE_OPA_ENABLED = static_cast<lv_opa_t>(18);
 constexpr lv_opa_t PAGE_SELECTOR_BASE_OPA_DISABLED = static_cast<lv_opa_t>(8);
-constexpr lv_opa_t PAGE_SELECTOR_ACTIVE_BONUS = static_cast<lv_opa_t>(48);
+constexpr lv_opa_t PAGE_SELECTOR_ACTIVE_BONUS = static_cast<lv_opa_t>(72);
 constexpr lv_opa_t ACTIVITY_VELOCITY_RANGE = static_cast<lv_opa_t>(36);
 constexpr uint32_t HEADER_BG_COLOR = theme::color::TEXT_PRIMARY;
 
@@ -55,7 +55,7 @@ lv_opa_t pageSelectorOpa(uint8_t activity, bool isActive, bool enabled) {
 }
 
 const char* focusLabel(bool trackScope) {
-    return trackScope ? "TRACKS" : "PAGES";
+    return trackScope ? "Tracks" : "Pages";
 }
 
 }  // namespace
@@ -131,9 +131,9 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     rowProps.leftText = showRecordingStatus
         ? recordingLabel
         : props.slotSelectionActive
-            ? "MACROS"
+            ? "Macros"
             : props.pageSelectionActive
-                ? "PAGES"
+                ? "Pages"
             : focusLabel(trackScope);
     rowProps.itemCount = core::state::macro::PAGE_COUNT;
     rowProps.accentColor = showRecordingStatus

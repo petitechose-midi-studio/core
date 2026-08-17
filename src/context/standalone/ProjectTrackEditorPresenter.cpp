@@ -120,7 +120,7 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
             .visualState = core::ui::ContextActionStripVisualState::AVAILABLE,
             .tone = core::ui::ContextActionStripTone::NEUTRAL,
             .showLabel = true,
-            .label = "CANCEL",
+            .label = "Cancel",
         };
     } else {
         actions.slots[0] = {
@@ -131,7 +131,7 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
                 : core::ui::ContextActionStripVisualState::DISABLED,
             .tone = core::ui::ContextActionStripTone::WARNING,
             .showLabel = true,
-            .label = "MUTE",
+            .label = "Mute",
         };
     }
     // BOTTOM_CENTER remains the global Transport control.
@@ -147,7 +147,7 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
             ? core::ui::ContextActionStripTone::POSITIVE
             : core::ui::ContextActionStripTone::NEUTRAL,
         .showLabel = true,
-        .label = viewModel.typeChangePending ? "APPLY" : "SOLO",
+        .label = viewModel.typeChangePending ? "Apply" : "Solo",
     };
     action_strip_.render(actions);
 }
