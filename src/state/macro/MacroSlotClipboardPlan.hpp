@@ -14,6 +14,7 @@ struct MacroSlotClipboardPlanEntry {
     uint8_t targetLinear = 0U;
     uint8_t targetPage = PAGE_COUNT;
     uint8_t targetMacro = MACRO_COUNT;
+    uint8_t targetCc = 0U;
     bool overwrite = false;
 };
 
@@ -22,7 +23,9 @@ struct MacroSlotClipboardPlanEntry {
  *
  * Source offsets are preserved relative to the first copied Slot. Placement
  * may target every existing Page plus exactly one synthetic next Page. No
- * entry is clipped or shifted to avoid a collision.
+ * entry is clipped or physically shifted to avoid a collision. Destination CCs
+ * use the same sparse footprint and are shifted together only when an active CC
+ * collision requires it.
  */
 struct MacroSlotClipboardPlan {
     static constexpr uint8_t SLOT_COUNT = PAGE_COUNT * MACRO_COUNT;

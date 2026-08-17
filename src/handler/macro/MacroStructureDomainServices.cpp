@@ -561,7 +561,7 @@ FLASHMEM bool MacroStructureDomainServices::createNextPage() const {
         )) {
         return false;
     }
-    pages_->activeTrackData().pages[index].initDefault(index);
+    pages_->activeTrackData().pages[index].initEmpty(index);
     clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), index);
     applyPageStructureMutation(
         stateRefs_(),
@@ -817,8 +817,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
         for (uint8_t page = plan.existingPageCount;
              page < plan.requiredPageCount;
              ++page) {
-            pendingTrack.pages[page].initDefault(page);
-            pendingTrack.pages[page].activeMacroMask = 0U;
+            pendingTrack.pages[page].initEmpty(page);
             pendingTrack.setPageEnabled(page, true);
         }
     }
@@ -839,6 +838,8 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
                 )) {
             return false;
         }
+        pendingTrack.pages[entry.targetPage].cc[entry.targetMacro] =
+            entry.targetCc;
     }
     if (!core::state::modulation::validProjectModulationDomain(
             pendingDomain.modulation,

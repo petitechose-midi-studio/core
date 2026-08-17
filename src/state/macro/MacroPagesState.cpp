@@ -25,6 +25,11 @@ FLASHMEM void MacroPageData::initDefault(uint8_t pageIndex) {
     activeMacroMask = DEFAULT_ACTIVE_MACRO_MASK;
 }
 
+FLASHMEM void MacroPageData::initEmpty(uint8_t pageIndex) {
+    initDefault(pageIndex);
+    activeMacroMask = 0U;
+}
+
 FLASHMEM MacroTrackData::MacroTrackData() {
     initDefaults(0);
 }

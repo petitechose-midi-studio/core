@@ -457,6 +457,64 @@ void test_macro_selection_uses_existing_preview_page_value() {
         << "[PASS] Macro selection uses the existing preview Page value\n";
 }
 
+void test_non_created_track_and_page_project_as_truly_empty() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::TRACK
+    );
+    state.trackNavigation.previewTrackIndex.set(1U);
+    state.trackNavigation.previewAddSlot.set(true);
+    auto header = core::ui::buildMacroHeaderBarProps(sourceFor(state));
+    auto frame = core::ui::buildMacroViewFrameState(sourceFor(state));
+    assert(header.previewTrackAddSlot);
+    assert(header.previewTrack == 1U);
+    assert(header.enabledMask == 0U);
+    for (const auto& macro : frame.macros) {
+        assert(!macro.active);
+        assert(!macro.addSlot);
+    }
+
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::PAGE
+    );
+    state.trackNavigation.previewTrackIndex.set(0U);
+    state.trackNavigation.previewAddSlot.set(false);
+    state.macroUi.previewAddPageSlot.set(true);
+    header = core::ui::buildMacroHeaderBarProps(sourceFor(state));
+    frame = core::ui::buildMacroViewFrameState(sourceFor(state));
+    assert(header.previewPageAddSlot);
+    assert(header.previewPage == 1U);
+    for (const auto& macro : frame.macros) {
+        assert(!macro.active);
+        assert(!macro.addSlot);
+    }
+
+    std::cout << "[PASS] non-created Macro Track/Page projections are empty\n";
+}
+
+void test_created_empty_page_projects_only_add_slots() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    auto& track = state.pages.tracks[0U];
+    track.pages[1U].initDefault(1U);
+    track.pages[1U].activeMacroMask = 0U;
+    track.setPageEnabled(1U, true);
+    track.activePage = 1U;
+    state.pages.syncActiveTrackCache();
+    state.pages.setActivePage(1U);
+    state.macroUi.syncPreviewPage(1U);
+
+    const auto frame = core::ui::buildMacroViewFrameState(sourceFor(state));
+    for (const auto& macro : frame.macros) {
+        assert(!macro.active);
+        assert(macro.addSlot);
+    }
+
+    std::cout << "[PASS] an explicitly created empty Page exposes add slots\n";
+}
+
 }  // namespace
 
 int main() {
@@ -468,6 +526,8 @@ int main() {
     test_macro_performance_projection_explains_edit_and_shared_take();
     test_macro_selection_projection_exposes_copy_collision_and_blocked_states();
     test_macro_selection_uses_existing_preview_page_value();
+    test_non_created_track_and_page_project_as_truly_empty();
+    test_created_empty_page_projects_only_add_slots();
     std::cout << "\nAll MacroViewModelBuilder tests passed.\n";
     return 0;
 }

@@ -57,6 +57,105 @@ uint8_t clampPagePreviewIndex(uint8_t index) {
     return static_cast<uint8_t>(std::min<uint16_t>(index, core::state::macro::PAGE_COUNT - 1U));
 }
 
+struct MacroDisplayContext {
+    core::state::StructureNavigationFocus focus =
+        core::state::StructureNavigationFocus::STEP;
+    uint8_t activeTrack = 0U;
+    uint8_t displayTrack = 0U;
+    uint8_t displayPage = 0U;
+    uint8_t addTrackIndex = core::state::macro::TRACK_COUNT;
+    uint8_t addPageIndex = core::state::macro::PAGE_COUNT;
+    bool focusingTrack = false;
+    bool focusingPage = false;
+    bool slotSelectionActive = false;
+    bool pageSelectionActive = false;
+    bool previewTrackAddSlot = false;
+    bool previewPageAddSlot = false;
+    bool trackExists = false;
+    bool pageExists = false;
+};
+
+FLASHMEM MacroDisplayContext macroDisplayContext(
+    const MacroViewModelSource& source
+) {
+    MacroDisplayContext context;
+    context.focus = core::state::macro::effectiveMacroNavigationFocus(
+        source.navigationFocus.get()
+    );
+    context.focusingTrack =
+        context.focus == core::state::StructureNavigationFocus::TRACK;
+    context.focusingPage =
+        context.focus == core::state::StructureNavigationFocus::PAGE;
+    context.slotSelectionActive = source.macroUi.slotSelection.active.get();
+    context.pageSelectionActive = source.macroUi.pageSelection.active.get();
+
+    const bool previewAddTrackSlot =
+        source.trackNavigation.previewAddSlot.get();
+    context.activeTrack = source.sharedTrackActive.get();
+    context.addTrackIndex = previewAddTrackSlot
+        ? clampTrackPreviewIndex(
+              source.trackNavigation.previewTrackIndex.get()
+          )
+        : nextAddIndexOrCount(
+              source.sharedTrackEnabledMask.get(),
+              core::state::macro::TRACK_COUNT
+          );
+    const uint8_t previewTrackIndex = clampTrackPreviewIndex(
+        source.trackNavigation.previewTrackIndex.get()
+    );
+    context.previewTrackAddSlot =
+        previewAddTrackSlot && context.focusingTrack &&
+        context.addTrackIndex < core::state::macro::TRACK_COUNT;
+    context.displayTrack =
+        (context.focusingTrack || context.previewTrackAddSlot)
+        ? previewTrackIndex
+        : context.activeTrack;
+    context.trackExists =
+        (source.sharedTrackEnabledMask.get() &
+         static_cast<uint16_t>(1U << context.displayTrack)) != 0U;
+
+    const auto& displayTrackData =
+        source.pages.tracks[context.displayTrack];
+    context.addPageIndex = nextAddIndexOrCount(
+        displayTrackData.enabledPageMask,
+        core::state::macro::PAGE_COUNT
+    );
+    const uint8_t selectionPage = static_cast<uint8_t>(
+        source.macroUi.slotSelection.cursorLinear.get() /
+        core::state::macro::MACRO_COUNT
+    );
+    const bool previewAddPageSlot =
+        source.macroUi.previewAddPageSlot.get();
+    const uint8_t previewPageIndex = context.slotSelectionActive
+        ? clampPagePreviewIndex(selectionPage)
+        : context.pageSelectionActive
+            ? clampPagePreviewIndex(
+                  source.macroUi.pageSelection.cursorIndex.get()
+              )
+            : (previewAddPageSlot && context.focusingPage &&
+               context.addPageIndex < core::state::macro::PAGE_COUNT)
+                ? context.addPageIndex
+                : clampPagePreviewIndex(
+                      source.macroUi.previewPageIndex.get()
+                  );
+    context.previewPageAddSlot = context.slotSelectionActive
+        ? !displayTrackData.isPageEnabled(previewPageIndex)
+        : context.pageSelectionActive
+            ? !displayTrackData.isPageEnabled(previewPageIndex)
+            : previewAddPageSlot && context.focusingPage &&
+              context.addPageIndex < core::state::macro::PAGE_COUNT;
+    context.displayPage =
+        context.slotSelectionActive || context.pageSelectionActive
+        ? previewPageIndex
+        : (context.focusingPage || context.previewPageAddSlot)
+            ? previewPageIndex
+            : displayTrackData.activePage;
+    context.pageExists =
+        context.trackExists &&
+        displayTrackData.isPageEnabled(context.displayPage);
+    return context;
+}
+
 FLASHMEM core::state::macro::MacroInteractionContext macroInteractionContext(
     const MacroViewModelSource& source
 ) {
@@ -97,86 +196,31 @@ ContextActionStripVisualState macroVisual(
 FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source) {
     OC_PERF_SCOPE(perfProjection, "ui.macro.projection.header");
     MacroHeaderBarProps props;
-    const auto focus = core::state::macro::effectiveMacroNavigationFocus(
-        source.navigationFocus.get()
-    );
-    const bool focusingTrack =
-        focus == core::state::StructureNavigationFocus::TRACK;
-    const bool focusingPage =
-        focus == core::state::StructureNavigationFocus::PAGE;
-    const bool slotSelectionActive =
-        source.macroUi.slotSelection.active.get();
-    const bool pageSelectionActive =
-        source.macroUi.pageSelection.active.get();
-    const bool previewAddTrackSlot = source.trackNavigation.previewAddSlot.get();
-    const bool previewAddPageSlot = source.macroUi.previewAddPageSlot.get();
-    const uint8_t activeTrack = source.sharedTrackActive.get();
-    const uint8_t addTrackIndex =
-        previewAddTrackSlot
-            ? clampTrackPreviewIndex(source.trackNavigation.previewTrackIndex.get())
-            : nextAddIndexOrCount(source.sharedTrackEnabledMask.get(), core::state::macro::TRACK_COUNT);
-    const uint8_t previewTrackIndex =
-        clampTrackPreviewIndex(source.trackNavigation.previewTrackIndex.get());
-    const bool previewTrackAddSlot =
-        previewAddTrackSlot &&
-        focus == core::state::StructureNavigationFocus::TRACK &&
-        addTrackIndex < core::state::macro::TRACK_COUNT;
-    const uint8_t displayTrack =
-        (focusingTrack || previewTrackAddSlot) ? previewTrackIndex : activeTrack;
-    const auto& displayTrackData = source.pages.tracks[displayTrack];
-    const uint8_t addPageIndex = nextAddIndexOrCount(
-        displayTrackData.enabledPageMask,
-        core::state::macro::PAGE_COUNT
-    );
-    const uint8_t selectionPage = static_cast<uint8_t>(
-        source.macroUi.slotSelection.cursorLinear.get() /
-        core::state::macro::MACRO_COUNT
-    );
-    const uint8_t previewPageIndex = slotSelectionActive
-        ? clampPagePreviewIndex(selectionPage)
-        : pageSelectionActive
-            ? clampPagePreviewIndex(
-                  source.macroUi.pageSelection.cursorIndex.get()
-              )
-        : (previewAddPageSlot &&
-         focus == core::state::StructureNavigationFocus::PAGE &&
-         addPageIndex < core::state::macro::PAGE_COUNT)
-            ? addPageIndex
-            : clampPagePreviewIndex(source.macroUi.previewPageIndex.get());
-    const bool previewPageAddSlot = slotSelectionActive
-        ? !displayTrackData.isPageEnabled(previewPageIndex)
-        : pageSelectionActive
-            ? !displayTrackData.isPageEnabled(previewPageIndex)
-        : previewAddPageSlot &&
-          focus == core::state::StructureNavigationFocus::PAGE &&
-          addPageIndex < core::state::macro::PAGE_COUNT;
-    const uint8_t displayPage =
-        slotSelectionActive || pageSelectionActive
-        ? previewPageIndex
-        : (focusingPage || previewPageAddSlot)
-            ? previewPageIndex
-            : displayTrackData.activePage;
+    const auto context = macroDisplayContext(source);
+    const auto& displayTrackData = source.pages.tracks[context.displayTrack];
 
-    props.activeTrack = activeTrack;
-    props.previewTrack = displayTrack;
+    props.activeTrack = context.activeTrack;
+    props.previewTrack = context.displayTrack;
     props.activePage = source.pages.currentActivePage();
-    props.previewPage = displayPage;
-    props.addPageIndex = addPageIndex;
-    props.addTrackIndex = addTrackIndex;
-    props.enabledMask = displayTrackData.enabledPageMask;
+    props.previewPage = context.displayPage;
+    props.addPageIndex = context.addPageIndex;
+    props.addTrackIndex = context.addTrackIndex;
+    props.enabledMask = context.trackExists
+        ? displayTrackData.enabledPageMask
+        : 0U;
     props.trackEnabledMask = source.sharedTrackEnabledMask.get();
     props.performanceOverlayMode = source.macroUi.performanceOverlayMode.get();
     props.automationTakePhase = source.macroUi.automationTake.phase;
     props.automationTakeTiming = source.macroUi.automationTake.timing;
     props.automationTakeTouchedMask = source.macroUi.automationTake.touchedMask;
-    props.focusingPage = focusingPage;
-    props.focusingTrack = focusingTrack;
-    props.slotSelectionActive = slotSelectionActive;
-    props.pageSelectionActive = pageSelectionActive;
-    props.previewPageAddSlot = previewPageAddSlot;
-    props.previewTrackAddSlot = previewTrackAddSlot;
+    props.focusingPage = context.focusingPage;
+    props.focusingTrack = context.focusingTrack;
+    props.slotSelectionActive = context.slotSelectionActive;
+    props.pageSelectionActive = context.pageSelectionActive;
+    props.previewPageAddSlot = context.previewPageAddSlot;
+    props.previewTrackAddSlot = context.previewTrackAddSlot;
     props.automationRecordingStatus = source.macroUi.automationRecordingStatus.get();
-    if (pageSelectionActive) {
+    if (context.pageSelectionActive) {
         const auto& selection = source.macroUi.pageSelection;
         props.pageSelectedMask = selection.selectedMask.get();
         if (selection.placing.get()) {
@@ -192,7 +236,8 @@ FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource
     }
 
     props.pageOutputActivity.fill(0);
-    if (source.statusBar.ccOutActive.get()) {
+    if (context.displayTrack == context.activeTrack &&
+        context.trackExists && source.statusBar.ccOutActive.get()) {
         props.pageOutputActivity[displayTrackData.activePage] = 127;
     }
 
@@ -440,33 +485,23 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
     return props;
 }
 
-FLASHMEM MacroWidgetProps buildMacroWidgetProps(
+namespace {
+
+FLASHMEM MacroWidgetProps buildMacroWidgetPropsForDisplay(
     const MacroViewModelSource& source,
+    const MacroDisplayContext& display,
     uint8_t index
 ) {
     if (index >= Config::MACRO_COUNT) return {};
 
-    const auto focus = core::state::macro::effectiveMacroNavigationFocus(
-        source.navigationFocus.get()
-    );
     const bool selectionActive =
         source.macroUi.slotSelection.active.get();
     const bool placementActive =
         selectionActive &&
         source.macroUi.slotSelection.placing.get();
-    const uint8_t displayTrack =
-        source.pages.currentActiveTrack();
-    const uint8_t displayPage = selectionActive
-        ? static_cast<uint8_t>(
-              source.macroUi.slotSelection.cursorLinear.get() /
-              core::state::macro::MACRO_COUNT
-          )
-        : source.pages.currentActivePage();
-    const bool pageExists =
-        displayPage < core::state::macro::PAGE_COUNT &&
-        source.pages.tracks[displayTrack].isPageEnabled(
-            displayPage
-        );
+    const uint8_t displayTrack = display.displayTrack;
+    const uint8_t displayPage = display.displayPage;
+    const bool pageExists = display.pageExists;
     const auto& page =
         source.pages.pageData(displayTrack, displayPage);
     const bool active =
@@ -488,6 +523,7 @@ FLASHMEM MacroWidgetProps buildMacroWidgetProps(
     const uint16_t overrideBit = static_cast<uint16_t>(1U << index);
     const bool manualOverride =
         pageExists &&
+        displayTrack == source.pages.currentActiveTrack() &&
         displayPage == source.pages.currentActivePage() &&
         (source.macroUi.automationManualOverrideMask.get() & overrideBit) != 0;
     const uint8_t cursorLinear =
@@ -499,7 +535,7 @@ FLASHMEM MacroWidgetProps buildMacroWidgetProps(
                       core::state::macro::MACRO_COUNT +
                   index
               )
-        : focus == core::state::StructureNavigationFocus::STEP &&
+        : display.focus == core::state::StructureNavigationFocus::STEP &&
           source.macroUi.focusedMacroSlot.get() == index;
     const bool recording =
         pageExists &&
@@ -531,6 +567,7 @@ FLASHMEM MacroWidgetProps buildMacroWidgetProps(
     // Page value into the preview.
     const bool displayingActivePage =
         pageExists &&
+        displayTrack == source.pages.currentActiveTrack() &&
         displayPage == source.pages.currentActivePage();
     const float fallbackValue = !pageExists
         ? 0.5f
@@ -613,11 +650,29 @@ FLASHMEM MacroWidgetProps buildMacroWidgetProps(
     };
 }
 
+}  // namespace
+
+FLASHMEM MacroWidgetProps buildMacroWidgetProps(
+    const MacroViewModelSource& source,
+    uint8_t index
+) {
+    return buildMacroWidgetPropsForDisplay(
+        source,
+        macroDisplayContext(source),
+        index
+    );
+}
+
 FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source) {
     OC_PERF_SCOPE(perfProjection, "ui.macro.projection.frame");
     MacroViewFrameState frame;
+    const auto display = macroDisplayContext(source);
     for (uint8_t index = 0; index < Config::MACRO_COUNT; ++index) {
-        frame.macros[index] = buildMacroWidgetProps(source, index);
+        frame.macros[index] = buildMacroWidgetPropsForDisplay(
+            source,
+            display,
+            index
+        );
     }
     return frame;
 }

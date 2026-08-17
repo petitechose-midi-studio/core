@@ -1,6 +1,7 @@
 #include "state/macro/MacroSlotClipboardPlan.hpp"
 
 #include <algorithm>
+#include <bitset>
 #include <cmath>
 
 #include <config/PlatformCompat.hpp>
@@ -178,6 +179,67 @@ FLASHMEM bool applyCapacityDelta(
         }
     }
     return true;
+}
+
+FLASHMEM bool assignTargetCcs(
+    MacroSlotClipboardPlan& plan,
+    const MacroPagesState& pages
+) {
+    std::bitset<128U> used;
+    const auto& track = pages.tracks[plan.targetTrack];
+    for (uint8_t page = 0U; page < PAGE_COUNT; ++page) {
+        if (!track.isPageEnabled(page)) continue;
+        for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+            const uint8_t bit = static_cast<uint8_t>(1U << macro);
+            if (!track.pages[page].isMacroActive(macro) ||
+                (plan.destinationMasks[page] & bit) != 0U) {
+                continue;
+            }
+            const uint8_t cc = track.pages[page].cc[macro];
+            if (cc <= 127U) used.set(cc);
+        }
+    }
+
+    const uint8_t maxOffset = static_cast<uint8_t>(
+        plan.lastTargetLinear - plan.firstTargetLinear
+    );
+    for (uint16_t attempt = 0U; attempt < 128U; ++attempt) {
+        const uint8_t candidate = static_cast<uint8_t>(
+            (static_cast<uint16_t>(plan.firstTargetLinear) + attempt) &
+            0x007FU
+        );
+        if (static_cast<uint16_t>(candidate) + maxOffset > 127U) {
+            continue;
+        }
+
+        bool available = true;
+        for (uint8_t index = 0U; index < plan.count; ++index) {
+            const auto& entry = plan.entries[index];
+            const uint8_t targetCc = static_cast<uint8_t>(
+                candidate +
+                static_cast<uint8_t>(
+                    entry.targetLinear - plan.firstTargetLinear
+                )
+            );
+            if (used[targetCc]) {
+                available = false;
+                break;
+            }
+        }
+        if (!available) continue;
+
+        for (uint8_t index = 0U; index < plan.count; ++index) {
+            auto& entry = plan.entries[index];
+            entry.targetCc = static_cast<uint8_t>(
+                candidate +
+                static_cast<uint8_t>(
+                    entry.targetLinear - plan.firstTargetLinear
+                )
+            );
+        }
+        return true;
+    }
+    return false;
 }
 
 }  // namespace
@@ -367,6 +429,12 @@ FLASHMEM MacroSlotClipboardPlan buildMacroSlotClipboardPlan(
             core::state::ClipboardTransferReason::CAPACITY
         );
     }
+    if (!assignTargetCcs(plan, pages)) {
+        return disabledPlan(
+            plan,
+            core::state::ClipboardTransferReason::CAPACITY
+        );
+    }
 
     const uint8_t lastTargetPage = static_cast<uint8_t>(
         plan.lastTargetLinear / MACRO_COUNT
@@ -424,6 +492,7 @@ FLASHMEM bool sameMacroSlotClipboardPlan(
             left.targetLinear != right.targetLinear ||
             left.targetPage != right.targetPage ||
             left.targetMacro != right.targetMacro ||
+            left.targetCc != right.targetCc ||
             left.overwrite != right.overwrite) {
             return false;
         }

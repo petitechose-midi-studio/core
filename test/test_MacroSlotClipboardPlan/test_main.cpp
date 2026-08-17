@@ -49,6 +49,8 @@ void test_sparse_offsets_and_collision_warning_are_exact() {
     assert(plan.lastSourceLinear == 4U);
     assert(plan.entries[0].targetLinear == 10U);
     assert(plan.entries[1].targetLinear == 13U);
+    assert(plan.entries[0].targetCc == 10U);
+    assert(plan.entries[1].targetCc == 13U);
     assert(plan.destinationMasks[1] ==
            static_cast<uint8_t>((1U << 2U) | (1U << 5U)));
     assert(plan.overwriteMasks[1] ==
@@ -82,6 +84,8 @@ void test_one_virtual_page_materializes_without_intermediate_pages() {
     assert(plan.entries[0].targetMacro == 2U);
     assert(plan.entries[1].targetPage == 2U);
     assert(plan.entries[1].targetMacro == 5U);
+    assert(plan.entries[0].targetCc == 19U);
+    assert(plan.entries[1].targetCc == 22U);
     assert(plan.overwriteCount == 0U);
 
     std::cout
@@ -207,6 +211,88 @@ void test_full_automation_domain_blocks_the_whole_plan() {
         << "[PASS] full Automation capacity blocks the complete Macro paste\n";
 }
 
+void test_cc_search_wraps_once_and_preserves_the_sparse_footprint() {
+    macro::MacroPagesState pages;
+    core::state::StructureClipboardState clipboard;
+    pages.tracks[0].pages[0].setMacroActive(1U, true);
+    pages.tracks[0].pages[0].cc[1] = 21U;
+    pages.syncActiveTrackCache();
+    oc::note::sequencer::StepBitMask128 selected{};
+    selected.setBit(1U, true);
+    assert(clipboard.storeMacroSlotSelection(pages, 0U, selected));
+
+    auto& target = pages.tracks[1];
+    target.enabledPageMask = 0xFFFFU;
+    for (auto& page : target.pages) page.activeMacroMask = 0U;
+    target.pages[0].setMacroActive(0U, true);
+    target.pages[0].cc[0] = 127U;
+
+    const auto plan = macro::buildMacroSlotClipboardPlan(
+        clipboard,
+        pages,
+        1U,
+        127U
+    );
+
+    assert(plan.canCommit());
+    assert(plan.entries[0].targetCc == 0U);
+
+    std::cout << "[PASS] CC placement wraps at most once across 0..127\n";
+}
+
+void test_cc_capacity_blocks_the_whole_sparse_plan() {
+    macro::MacroPagesState pages;
+    core::state::StructureClipboardState clipboard;
+    storeSparseClipboard(pages, clipboard);
+
+    auto& target = pages.tracks[1];
+    target.enabledPageMask = 0xFFFFU;
+    for (uint8_t page = 0U; page < macro::PAGE_COUNT; ++page) {
+        target.pages[page].activeMacroMask = 0xFFU;
+        for (uint8_t slot = 0U; slot < macro::MACRO_COUNT; ++slot) {
+            target.pages[page].cc[slot] = static_cast<uint8_t>(
+                page * macro::MACRO_COUNT + slot
+            );
+        }
+    }
+    std::swap(target.pages[0].cc[0], target.pages[1].cc[2]);
+    std::swap(target.pages[0].cc[3], target.pages[2].cc[4]);
+
+    const auto plan = macro::buildMacroSlotClipboardPlan(
+        clipboard,
+        pages,
+        1U,
+        0U
+    );
+
+    assert(!plan.canCommit());
+    assert(plan.reason == ClipboardTransferReason::CAPACITY);
+    assert(plan.count == plan.sourceCount);
+
+    std::cout << "[PASS] no complete CC footprint blocks the whole Paste\n";
+}
+
+void test_plan_identity_includes_the_resolved_ccs() {
+    macro::MacroPagesState pages;
+    core::state::StructureClipboardState clipboard;
+    storeSparseClipboard(pages, clipboard);
+    const auto plan = macro::buildMacroSlotClipboardPlan(
+        clipboard,
+        pages,
+        0U,
+        10U
+    );
+    auto changed = plan;
+    changed.entries[0].targetCc = static_cast<uint8_t>(
+        changed.entries[0].targetCc + 1U
+    );
+
+    assert(macro::sameMacroSlotClipboardPlan(plan, plan));
+    assert(!macro::sameMacroSlotClipboardPlan(plan, changed));
+
+    std::cout << "[PASS] resolved CCs participate in stale-plan detection\n";
+}
+
 }  // namespace
 
 int main() {
@@ -214,5 +300,8 @@ int main() {
     test_one_virtual_page_materializes_without_intermediate_pages();
     test_second_nonexistent_page_blocks_without_clipping();
     test_full_automation_domain_blocks_the_whole_plan();
+    test_cc_search_wraps_once_and_preserves_the_sparse_footprint();
+    test_cc_capacity_blocks_the_whole_sparse_plan();
+    test_plan_identity_includes_the_resolved_ccs();
     return 0;
 }

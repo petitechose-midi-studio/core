@@ -698,12 +698,14 @@ void test_macro_page_hot_surface_exposes_terminal_add_and_creates() {
     assert(!h.state.macroUi.previewAddPageSlot.get());
     assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
     assert(h.state.pages.currentActivePage() == 1U);
+    assert(h.state.pages.activePageData().activeMacroMask == 0U);
     assert(h.state.undoProjectHistory());
     assert(h.state.pages.currentEnabledPageMask() == 0x0001U);
     assert(h.state.pages.currentActivePage() == 0U);
     assert(h.state.redoProjectHistory());
     assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
     assert(h.state.pages.currentActivePage() == 1U);
+    assert(h.state.pages.activePageData().activeMacroMask == 0U);
 
     std::cout << "[PASS] Macro Page hot create has exact Undo/Redo\n";
 }
@@ -1644,8 +1646,8 @@ void test_macro_slot_selection_pastes_sparse_footprint_atomically() {
     assert(pasted.isMacroActive(2U));
     assert(pasted.isMacroActive(5U));
     assert(!pasted.isMacroActive(0U));
-    assert(pasted.cc[2] == 21U);
-    assert(pasted.cc[5] == 74U);
+    assert(pasted.cc[2] == 10U);
+    assert(pasted.cc[5] == 13U);
     assert(std::fabs(pasted.values[2] - 0.21f) < 0.0001f);
     assert(std::fabs(pasted.values[5] - 0.74f) < 0.0001f);
     assert(test_support::project_control::readSlot(
@@ -1667,6 +1669,8 @@ void test_macro_slot_selection_pastes_sparse_footprint_atomically() {
     assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
     assert(h.state.pages.pageData(0U, 1U).isMacroActive(2U));
     assert(h.state.pages.pageData(0U, 1U).isMacroActive(5U));
+    assert(h.state.pages.pageData(0U, 1U).cc[2U] == 10U);
+    assert(h.state.pages.pageData(0U, 1U).cc[5U] == 13U);
 
     h.press(Config::ButtonID::LEFT_TOP);
     h.release(Config::ButtonID::LEFT_TOP);
