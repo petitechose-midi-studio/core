@@ -30,7 +30,7 @@ public:
 private:
     static constexpr size_t SAMPLE_CAPACITY = 256;
     static constexpr size_t MAX_DRAIN_PER_UPDATE = 64;
-    static constexpr size_t METRIC_CAPACITY = 128;
+    static constexpr size_t METRIC_CAPACITY = 96;
     static constexpr size_t MAX_REPORTED_METRICS = 12;
     // Zero plus two half-octave buckets for every uint32_t duration octave.
     // This keeps percentile storage bounded while covering sub-us/no-op

@@ -7,21 +7,35 @@
  * their setup/destruction managers and subscription construction live here.
  */
 
+/* Compiler-generated string literal subsections are immutable and remain in
+ * cached Flash. Numeric tables, vtables, descriptors, and general .rodata keep
+ * their default placement until their access temperature is known. */
+*(.rodata*.str1.*)
+
 /* Fixed-topology callback construction and teardown. */
 *(.text.*_M_manager*)
 *(.text.*9subscribe*)
+
+/* Strict PSRAM allocation and ownership teardown never execute from timer,
+ * MIDI publication, playback, or retained draw paths. Keep only this generic
+ * allocation machinery in cached Flash; the owned objects and their runtime
+ * methods retain their normal placement. */
+*(.text._ZN4core3app20allocateExtmemStrictE*)
+*(.text._ZN4core3app16freeExtmemStrictE*)
+*(.text._ZN4core3app16makeExtmemUniqueI*)
+*(.text._ZN4core3app20makeExtmemUniqueCopyI*)
+*(.text._ZN4core3app28makeExtmemUniqueForOverwriteI*)
+*(.text._ZN4core3app33makeExtmemUniqueArrayForOverwriteI*)
+*(.text._ZNK4core3app13ExtmemDeleterI*clE*)
+*(.text._ZNK4core3app18ExtmemArrayDeleterI*clE*)
+*(.text._ZNSt10unique_ptrI*Extmem*Deleter*EED*Ev*)
+*(.text._ZNSt15__uniq_ptr_implI*Extmem*Deleter*5resetE*)
 
 /* Subscription teardown is lifecycle-only.  Cancellation made reset() large
  * enough for GCC to emit standalone std::array destructors for the retained
  * subscription banks; keep both the primitive and those loops out of ITCM. */
 *(.text._ZN2oc5state12Subscription5resetEv*)
 *(.text._ZNSt5arrayIN2oc5state12SubscriptionE*D*Ev)
-
-/* Prepared FullBank History owners are created and destroyed only around
- * authored transactions.  Template helpers emitted outside their FLASHMEM
- * callers belong beside the cold provider, not in realtime code RAM. */
-*(.text._ZN4core3app16makeExtmemUniqueINS_5state9sequencer30SequencerHistoryFullBankChangeE*)
-*(.text._ZNSt15__uniq_ptr_implIN4core5state9sequencer30SequencerHistoryFullBankChangeE*)
 
 /* Page/Step/Track Structure plans are human-rate authored transactions.
  * Select ordinary per-function sections by object so dead action families remain

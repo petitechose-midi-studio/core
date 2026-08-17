@@ -7,6 +7,8 @@
 #include <oc/interface/IEventBus.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "app/PhaseRetainingDeadline.hpp"
+#include "config/Timing.hpp"
 #include "sequencer/MidiClockSyncService.hpp"
 #include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "sequencer/SequencerRuntimeGraphBank.hpp"
@@ -74,11 +76,13 @@ private:
         const MidiClockSyncRuntimeConfig& config,
         uint32_t nowMs
     );
+    bool runtimePublicationDue_(uint32_t nowUs, bool force);
+    bool uiProjectionDue_(uint32_t nowUs);
     void publishPlaybackUiFromTimerPath_(uint32_t nowMs);
     void stopPlayback_();
     void drainRealtimeMidiQueue_(uint32_t nowUs);
     void drainRealtimeMidiQueueFully_(uint32_t nowUs);
-    void consumeProjectRuntimeReset_();
+    bool consumeProjectRuntimeReset_();
 
     void subscribeToMidiEvents_();
     void unsubscribeFromMidiEvents_();
@@ -94,6 +98,10 @@ private:
     MidiCcGlobalFrameCoordinator** cc_coordinator_publication_ = nullptr;
     const oc::state::Signal<uint32_t>* runtime_project_revision_ = nullptr;
     uint32_t consumed_runtime_project_revision_ = 0;
+    uint32_t last_runtime_publication_us_ = 0;
+    bool runtime_publication_started_ = false;
+    core::app::PhaseRetainingDeadline<Config::Timing::UI_FRAME_PERIOD_US>
+        ui_projection_deadline_;
     MidiClockSyncService midi_clock_sync_;
     SequencerRuntimeGraphBank runtime_graph_bank_{};
     SequencerRuntimeSnapshotBank snapshot_bank_;

@@ -463,8 +463,6 @@ static FLASHMEM oc::type::Result<void> commitWithWorkspace(
             {ErrorCode::STORAGE_WRITE_FAILED, "product file temporary size mismatch"}
         );
     }
-    auto tmpFlushed = files.flush(lease, workspace.path(TMP_PATH));
-    if (!tmpFlushed) return tmpFlushed;
     auto tmpValid = payloadMatches(
         files,
         lease,

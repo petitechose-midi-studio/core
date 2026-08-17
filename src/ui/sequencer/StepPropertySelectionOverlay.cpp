@@ -89,6 +89,7 @@ FLASHMEM void StepPropertySelectionOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_style_border_opa(container_, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(container_, 3, 0);
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(container_, onSizeChanged, LV_EVENT_SIZE_CHANGED, nullptr);
 
     content_row_ = lv_obj_create(container_);
     lv_obj_remove_style_all(content_row_);
@@ -135,6 +136,11 @@ FLASHMEM void StepPropertySelectionOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_style_text_opa(value_, LV_OPA_80, 0);
     lv_label_set_long_mode(value_, LV_LABEL_LONG_CLIP);
     lv_obj_add_flag(value_, LV_OBJ_FLAG_HIDDEN);
+}
+
+FLASHMEM void StepPropertySelectionOverlay::onSizeChanged(lv_event_t* event) {
+    auto* container = lv_event_get_target_obj(event);
+    if (container) lv_obj_align(container, LV_ALIGN_CENTER, 0, 0);
 }
 
 FLASHMEM void StepPropertySelectionOverlay::render(
@@ -210,7 +216,6 @@ FLASHMEM void StepPropertySelectionOverlay::render(
     }
 
     if (needsLayout) {
-        lv_obj_update_layout(container_);
         lv_obj_align(container_, LV_ALIGN_CENTER, 0, 0);
     }
 }

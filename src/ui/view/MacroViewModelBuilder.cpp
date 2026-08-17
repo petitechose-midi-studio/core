@@ -479,8 +479,6 @@ FLASHMEM MacroWidgetProps buildMacroWidgetProps(
     const MacroViewModelSource& source,
     uint8_t index
 ) {
-    OC_PERF_SCOPE(perfProjection, "ui.macro.projection.knob");
-    OC_PERF_UNITS(perfProjection, index, 0U);
     if (index >= Config::MACRO_COUNT) return {};
 
     const auto focus = core::state::macro::effectiveMacroNavigationFocus(

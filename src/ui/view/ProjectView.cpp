@@ -98,7 +98,6 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
             core::ui::renderSchedulerDebugLabel("ProjectView"),
             &ProjectView::drainRender,
             this,
-            Config::Timing::RETAINED_VIEW_PERIOD_MS,
             &ProjectView::canDrainRender
         );
     if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;

@@ -22,6 +22,32 @@ uint8_t clampChannel(uint8_t channel) {
     return channel > 15U ? 15U : channel;
 }
 
+bool changesPlaybackTopology(
+    const drum::DrumPatternRuntimeSnapshot* previous,
+    const drum::DrumPatternRuntimeSnapshot* next
+) {
+    if (previous == next) return false;
+    if (previous == nullptr || next == nullptr ||
+        previous->laneCount != next->laneCount) {
+        return true;
+    }
+
+    const uint8_t laneCount = std::min<uint8_t>(
+        next->laneCount,
+        drum::DRUM_MAX_LANES
+    );
+    for (uint8_t lane = 0U; lane < laneCount; ++lane) {
+        const auto& before = previous->lanes[lane];
+        const auto& after = next->lanes[lane];
+        if (before.midiNote != after.midiNote ||
+            before.length != after.length ||
+            before.stepsPerBeat != after.stepsPerBeat) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 FLASHMEM void DrumPlaybackTelemetry::reset() {
@@ -258,8 +284,8 @@ void DrumPlaybackEngine::setPattern(
     const uint8_t channel = clampChannel(midiChannel);
     const uint32_t revision = pattern != nullptr ? pattern->revision : 0U;
     if (playing_ &&
-        (pattern_revision_ != revision || graph_ != graph ||
-         midi_channel_ != channel)) {
+        (midi_channel_ != channel ||
+         changesPlaybackTopology(pattern_, pattern))) {
         pattern_change_pending_ = true;
     }
     pattern_ = pattern;

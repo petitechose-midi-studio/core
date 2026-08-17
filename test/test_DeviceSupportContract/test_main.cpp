@@ -17,7 +17,6 @@ static_assert(device::API_VERSION == 1);
 
 static_assert(device::timing::INPUT_APP_ADMISSION_HZ == 1'920);
 static_assert(device::timing::LVGL_SERVICE_HZ == 240);
-static_assert(device::timing::PHYSICAL_DISPLAY_REQUEST_HZ == 240);
 static_assert(device::timing::DEBOUNCE_MS == 12);
 static_assert(device::timing::LONG_PRESS_MS == 500);
 static_assert(device::timing::LATCH_THRESHOLD_MS == 200);
@@ -73,16 +72,25 @@ static_assert(device::display::CONFIG.spiSpeed == 50'000'000);
 static_assert(device::display::CONFIG.rotation == 3);
 static_assert(device::display::CONFIG.invertDisplay);
 static_assert(device::display::CONFIG.vsyncSpacing == 1);
-static_assert(device::display::CONFIG.diffGap == 4);
-static_assert(device::display::CONFIG.irqPriority == 128);
+static_assert(device::display::CONFIG.diffGap == 8);
+static_assert(device::display::CONFIG.irqPriority == 160);
+static_assert(
+    device::timing::MUSICAL_REALTIME_IRQ_PRIORITY <
+    device::display::CONFIG.irqPriority);
 static_assert(device::display::CONFIG.lateStartRatio == 0.2f);
-static_assert(device::display::CONFIG.refreshRate == 240);
+static_assert(device::display::PHYSICAL_REFRESH_TARGET_HZ ==
+              device::timing::UI_FRAME_HZ);
+static_assert(device::display::CONFIG.refreshRate ==
+              device::timing::UI_FRAME_HZ);
 static_assert(device::display::FRAMEBUFFER_PIXEL_COUNT == 76'800);
-static_assert(device::display::DIFF_BUFFER_SIZE_BYTES == 16'384);
+static_assert(device::display::DIFF_BUFFER_SIZE_BYTES == 8'192);
 static_assert(
     device::display::LVGL_CONFIG.renderMode == LV_DISPLAY_RENDER_MODE_DIRECT);
 static_assert(device::display::LVGL_CONFIG.buffer2 == nullptr);
-static_assert(device::display::LVGL_CONFIG.refreshHz == 240);
+static_assert(device::timing::UI_FRAME_SERVICE_DIVISOR == 2);
+static_assert(device::timing::UI_FRAME_HZ == 120);
+static_assert(device::display::LVGL_CONFIG.refreshHz ==
+              device::timing::UI_FRAME_HZ);
 
 static_assert(device::mux::BUTTON_READS_PER_APP_TICK == 1);
 static_assert(device::mux::CONFIG.selectPins[0] == 3);
@@ -118,10 +126,10 @@ static_assert(
 static_assert(device::button::BUTTONS[14].id == 38);
 
 static_assert(sizeof(device::buffers::framebuffer) == 153'600);
-static_assert(sizeof(device::buffers::diff1) == 16'384);
-static_assert(sizeof(device::buffers::diff2) == 16'384);
+static_assert(sizeof(device::buffers::diff1) == 8'192);
+static_assert(sizeof(device::buffers::diff2) == 8'192);
 static_assert(sizeof(device::buffers::lvgl) == 153'600);
-static_assert(device::LVGL_MEMORY_POOL_SIZE_BYTES == 4'096'000);
+static_assert(device::LVGL_MEMORY_POOL_SIZE_BYTES == 1'048'576);
 
 int main() {
     std::uint8_t macroIndex = 0xff;

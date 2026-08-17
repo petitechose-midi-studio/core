@@ -123,7 +123,8 @@ class TeensyProductPolicy:
     profile_id: str
     profile_version: str
     vector_name: str
-    itcm_banks_exact: int
+    itcm_banks_max: int | None
+    itcm_banks_exact: int | None
     flash_code_max: int
     flash_data_max: int
     flash_headers_max: int
@@ -139,6 +140,14 @@ class TeensyProductPolicy:
     psram_capacity: int
     psram_static_max: int
     psram_free_min: int
+
+    @property
+    def itcm_banks_limit(self) -> int:
+        value = self.itcm_banks_exact
+        if value is None:
+            value = self.itcm_banks_max
+        assert value is not None
+        return value
 
 
 @dataclass(frozen=True)
@@ -237,10 +246,18 @@ def _policy_from_mapping(
     vector = _mapping(vectors[selected_vector], f"memoryVectors.{selected_vector}")
     vector_label = f"memoryVectors.{selected_vector}"
 
-    banks = _required_int(vector, "itcmBanksExact", vector_label)
-    if not 1 <= banks <= FLEXRAM_BANK_COUNT:
+    banks_max, banks_exact = _exclusive_bound(
+        vector,
+        "itcmBanksMax",
+        "itcmBanksExact",
+        vector_label,
+    )
+    banks_limit = banks_exact if banks_exact is not None else banks_max
+    assert banks_limit is not None
+    if not 1 <= banks_limit <= FLEXRAM_BANK_COUNT:
         raise ValueError(
-            f"{vector_label}.itcmBanksExact must be within 1..{FLEXRAM_BANK_COUNT}"
+            f"{vector_label} ITCM bank bound must be within "
+            f"1..{FLEXRAM_BANK_COUNT}"
         )
 
     linker = profile.get("linker")
@@ -256,7 +273,7 @@ def _policy_from_mapping(
             linker_banks = _required_int(
                 linker_values, "itcmBanksExact", "linker"
             )
-            if linker_banks != banks:
+            if banks_exact is None or linker_banks != banks_exact:
                 raise ValueError(
                     "linker.itcmBanksExact does not match the selected memory vector"
                 )
@@ -289,8 +306,8 @@ def _policy_from_mapping(
     ram1_free_min = _required_int(
         ram1, "localAndStackFreeMinBytes", f"{vector_label}.ram1"
     )
-    itcm_capacity = banks * ITCM_BANK_SIZE
-    ram1_capacity = (FLEXRAM_BANK_COUNT - banks) * ITCM_BANK_SIZE
+    itcm_capacity = banks_limit * ITCM_BANK_SIZE
+    ram1_capacity = (FLEXRAM_BANK_COUNT - banks_limit) * ITCM_BANK_SIZE
     if itcm_max + itcm_slack_min != itcm_capacity:
         raise ValueError(
             f"{vector_label}.ram1 ITCM maximum plus slack must equal {itcm_capacity}"
@@ -355,7 +372,8 @@ def _policy_from_mapping(
         profile_id=profile_id,
         profile_version=profile_version,
         vector_name=selected_vector,
-        itcm_banks_exact=banks,
+        itcm_banks_max=banks_max,
+        itcm_banks_exact=banks_exact,
         flash_code_max=flash_code_max,
         flash_data_max=flash_data_max,
         flash_headers_max=flash_headers_max,
@@ -613,6 +631,14 @@ def topology_summary(readelf_sections_output: str, nm_symbols_output: str) -> st
     )
 
 
+def _observed_itcm_banks(usage: TeensyMemoryUsage) -> int | None:
+    allocated_itcm = usage.ram1_code + usage.ram1_padding
+    if allocated_itcm % ITCM_BANK_SIZE != 0:
+        return None
+    banks = allocated_itcm // ITCM_BANK_SIZE
+    return banks if 1 <= banks <= FLEXRAM_BANK_COUNT else None
+
+
 def _memory_findings(
     policy: TeensyProductPolicy, usage: TeensyMemoryUsage
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -625,13 +651,14 @@ def _memory_findings(
             f"{prefix} Flash equation: loaded {usage.flash_loaded}B plus free "
             f"{usage.flash_free}B does not equal {FLASH_SIZE}B"
         )
-    if usage.ram1_code + usage.ram1_padding != policy.itcm_banks_exact * ITCM_BANK_SIZE:
+    observed_banks = _observed_itcm_banks(usage)
+    if observed_banks is None:
         violations.append(
             f"{prefix} ITCM equation: code {usage.ram1_code}B plus padding "
-            f"{usage.ram1_padding}B does not equal "
-            f"{policy.itcm_banks_exact * ITCM_BANK_SIZE}B"
+            f"{usage.ram1_padding}B does not form complete {ITCM_BANK_SIZE}B banks"
         )
-    ram1_capacity = (FLEXRAM_BANK_COUNT - policy.itcm_banks_exact) * ITCM_BANK_SIZE
+        observed_banks = policy.itcm_banks_limit
+    ram1_capacity = (FLEXRAM_BANK_COUNT - observed_banks) * ITCM_BANK_SIZE
     if usage.ram1_variables + usage.ram1_free != ram1_capacity:
         violations.append(
             f"{prefix} RAM1 equation: variables {usage.ram1_variables}B plus free "
@@ -736,13 +763,19 @@ def _allocated_section_violations(
         elif len(matches) != 1:
             violations.append(f"{prefix} allocated section appears more than once: {name}")
 
+    observed_banks = policy.itcm_banks_limit
+    if usage is not None:
+        candidate = _observed_itcm_banks(usage)
+        if candidate is not None:
+            observed_banks = candidate
+
     ranges = {
         "flash": (FLASH_ORIGIN, FLASH_ORIGIN + FLASH_SIZE),
-        "itcm": (ITCM_ORIGIN, policy.itcm_banks_exact * ITCM_BANK_SIZE),
+        "itcm": (ITCM_ORIGIN, observed_banks * ITCM_BANK_SIZE),
         "ram1": (
             RAM1_ORIGIN,
             RAM1_ORIGIN
-            + (FLEXRAM_BANK_COUNT - policy.itcm_banks_exact) * ITCM_BANK_SIZE,
+            + (FLEXRAM_BANK_COUNT - observed_banks) * ITCM_BANK_SIZE,
         ),
         "ram2": (RAM2_ORIGIN, RAM2_ORIGIN + RAM2_SIZE),
         "psram": (PSRAM_ORIGIN, PSRAM_ORIGIN + policy.psram_capacity),
@@ -836,10 +869,21 @@ def evaluate_post_link(
             physical_bytes = physical_end - physical_start
             copy_bytes = symbol_values["_etext"] - symbol_values["_stext"]
             banks = symbol_values["_itcm_block_count"]
-            if banks != policy.itcm_banks_exact:
+            if (
+                policy.itcm_banks_exact is not None
+                and banks != policy.itcm_banks_exact
+            ):
                 violations.append(
                     f"{prefix} ITCM banks {banks} does not equal profile "
                     f"{policy.itcm_banks_exact}"
+                )
+            elif (
+                policy.itcm_banks_max is not None
+                and banks > policy.itcm_banks_max
+            ):
+                violations.append(
+                    f"{prefix} ITCM banks {banks} exceeds profile maximum "
+                    f"{policy.itcm_banks_max}"
                 )
             if usage is not None and physical_bytes != usage.ram1_code:
                 violations.append(

@@ -506,6 +506,9 @@ private:
     bool coalescing_ = false;
     MacroHistoryActionKind coalesced_kind_ = MacroHistoryActionKind::SOURCE_STATE;
     MacroAutomationSlotAddress coalesced_address_{};
+    // Non-owning handles to the stable PSRAM entries opened by one concurrent
+    // multi-encoder gesture. At most MACRO_COUNT entries can join the gesture.
+    std::array<MacroHistoryChange*, MACRO_COUNT> coalesced_value_entries_{};
     const core::state::project::ProjectHistoryEventSink* project_history_sink_ = nullptr;
 };
 

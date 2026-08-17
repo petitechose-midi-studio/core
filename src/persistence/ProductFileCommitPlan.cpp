@@ -172,15 +172,6 @@ FLASHMEM oc::type::Result<bool> ProductFileCommitPlan::advance(
                     false
                 );
             }
-            step_ = Step::FLUSH_TMP;
-            return oc::type::Result<bool>::ok(false);
-        }
-        case Step::FLUSH_TMP: {
-            auto flushed = files.flush(
-                lease,
-                workspace_().path(transaction::TMP_PATH)
-            );
-            if (!flushed) return fail_(flushed.error(), false);
             beginIntegrityCheck_();
             step_ = Step::VERIFY_TMP;
             return oc::type::Result<bool>::ok(false);

@@ -22,7 +22,7 @@
   },
   "memoryVectors": {
     "release-current": {
-      "itcmBanksExact": 9,
+      "itcmBanksMax": 9,
       "flash": {
         "codeMaxBytes": 1208320,
         "dataMaxBytes": 303104,
@@ -46,7 +46,7 @@
       }
     },
     "ux-recorder": {
-      "itcmBanksExact": 10,
+      "itcmBanksMax": 10,
       "flash": {
         "codeMaxBytes": 1208320,
         "dataMaxBytes": 303104,
@@ -70,7 +70,7 @@
       }
     },
     "diagnostics": {
-      "itcmBanksExact": 10,
+      "itcmBanksMax": 10,
       "flash": {
         "codeMaxBytes": 1208320,
         "dataMaxBytes": 303104,

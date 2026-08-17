@@ -24,7 +24,6 @@ FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stat
             core::ui::renderSchedulerDebugLabel("DeviceSettingsView"),
             &DeviceSettingsView::drainRender,
             this,
-            Config::Timing::RETAINED_VIEW_PERIOD_MS,
             &DeviceSettingsView::canDrainRender
         );
     if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;

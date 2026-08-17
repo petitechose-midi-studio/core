@@ -3,8 +3,10 @@
 #include <cstddef>
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 #include <oc/diagnostics/Performance.hpp>
+#include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/sequencer/SequencerCcLaneGridViewModelBuilder.hpp"
@@ -527,7 +529,6 @@ FLASHMEM void SequencerView::ensureRenderScheduler() {
             core::ui::renderSchedulerDebugLabel("SequencerView"),
             &SequencerView::drainRender,
             this,
-            core::ui::CoalescedLvglRenderScheduler::DEFAULT_PERIOD_MS,
             &SequencerView::canDrainRender
         );
 }
@@ -677,6 +678,11 @@ void SequencerView::render(uint32_t flags) {
     }
 
     const auto source = modelSource();
+    const bool fullRender = (flags & RENDER_ALL) == RENDER_ALL;
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<1> invalidationBatch(
+        container_, fullRender
+    );
+    if (fullRender) invalidationBatch.include(container_);
 
     if (needsLeftActionStrip) {
         const auto props = sequencer::buildLeftActionStripProps(source);

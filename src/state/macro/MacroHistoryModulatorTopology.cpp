@@ -385,6 +385,7 @@ MacroHistoryService::deleteProjectModulator(
 
 FLASHMEM void MacroHistoryService::endCoalescing() {
     coalescing_ = false;
+    coalesced_value_entries_.fill(nullptr);
 }
 
 }  // namespace core::state::macro

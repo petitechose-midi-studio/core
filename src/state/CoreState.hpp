@@ -101,14 +101,17 @@ struct SequencerPreparedGraphContentPath;
  */
 struct MacroDomainState {
     static constexpr uint32_t COALESCED_VALUE_HISTORY_IDLE_MS = 500U;
+    static constexpr uint32_t COALESCED_VALUE_HISTORY_JOIN_MS = 32U;
 
     struct CoalescedValueHistory {
         bool pending = false;
+        bool staticValues = false;
         macro::MacroAutomationSlotAddress address{};
         uint32_t lastTouchedMs = 0U;
 
         void clear() {
             pending = false;
+            staticValues = false;
             address = {};
             lastTouchedMs = 0U;
         }
@@ -132,6 +135,7 @@ struct MacroDomainState {
 /** Owns the editable sequencer state, per-track bank, and history. */
 struct SequencerDomainState {
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
+    static constexpr uint32_t COALESCED_PATTERN_HISTORY_JOIN_MS = 32;
     static constexpr uint32_t COALESCED_CC_LANE_HISTORY_IDLE_MS = 320;
     static constexpr uint32_t COALESCED_DRUM_HISTORY_IDLE_MS = 500;
 
@@ -158,6 +162,7 @@ struct SequencerDomainState {
             sequencer::SequencerPreparedPatternEditOwner familyOwner;
         };
         bool stateProperty = false;
+        bool multiStep = false;
         union {
             uint8_t lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
             uint8_t familyKey;
@@ -175,12 +180,16 @@ struct SequencerDomainState {
         sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
         sequencer::SequencerHistoryPatternChangePtr preparedCcLaneChange;
 
-        bool matchesStepProperty(uint8_t nextActiveTrack, uint8_t nextStep,
-                                 sequencer::StepProperty nextProperty,
-                                 bool nextStateProperty) const {
-            return pending && kind == Kind::StepProperty && activeTrack == nextActiveTrack &&
-                   step == nextStep && property == nextProperty &&
-                   stateProperty == nextStateProperty;
+        bool joinsStepProperty(uint8_t nextActiveTrack, uint8_t nextStep,
+                               sequencer::StepProperty nextProperty,
+                               bool nextStateProperty, uint32_t nowMs) const {
+            const bool sameIdentity = pending && kind == Kind::StepProperty &&
+                activeTrack == nextActiveTrack && property == nextProperty &&
+                stateProperty == nextStateProperty;
+            return sameIdentity &&
+                (step == nextStep ||
+                 static_cast<uint32_t>(nowMs - lastTouchedMs) <=
+                     SequencerDomainState::COALESCED_PATTERN_HISTORY_JOIN_MS);
         }
 
         bool matchesCcLaneEvent(uint8_t nextActiveTrack, uint8_t nextLane, uint8_t nextStep) const {
@@ -218,10 +227,12 @@ struct SequencerDomainState {
         [[nodiscard]] bool matches(
             const sequencer::SequencerHistoryDescriptor& next
         ) const {
+            const bool sameGestureStep = key.stepIndex == next.stepIndex ||
+                key.kind == sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit;
             return pending && key.kind == next.kind &&
                 key.trackIndex == next.trackIndex &&
                 key.laneIndex == next.laneIndex &&
-                key.stepIndex == next.stepIndex && key.property == next.property;
+                sameGestureStep && key.property == next.property;
         }
 
         void clear() {

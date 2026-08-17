@@ -50,6 +50,32 @@ void test_render_cache_commits_state_without_resetting_visuals() {
     std::cout << "[PASS] test_render_cache_commits_state_without_resetting_visuals\n";
 }
 
+void test_note_event_projection_reports_only_covered_tiles() {
+    core::ui::sequencer::grid::TileNoteEventProjection projection;
+    projection.count = 2U;
+    projection.events[0].startQ8 = 128;
+    projection.events[0].spanQ8 = 256U;
+    projection.events[1].startQ8 = -640;
+    projection.events[1].spanQ8 = 128U;
+
+    // The visible event owned by tile 2 crosses into tile 3. The second event
+    // ends before the visible page and therefore invalidates nothing.
+    assert(projection.coveredTileMask(2U) == 0x0CU);
+
+    projection.count = 1U;
+    projection.events[0].startQ8 = -64;
+    projection.events[0].spanQ8 = 128U;
+    assert(projection.coveredTileMask(0U) == 0x01U);
+
+    projection.events[0].startQ8 = 200;
+    projection.events[0].spanQ8 = 200U;
+    assert(projection.coveredTileMask(7U) == 0x80U);
+    assert(projection.coveredTileMask(8U) == 0U);
+
+    std::cout
+        << "[PASS] test_note_event_projection_reports_only_covered_tiles\n";
+}
+
 void test_projects_root_step_content_badges() {
     core::state::sequencer::SequencerPatternState pattern;
 
@@ -1288,6 +1314,7 @@ void test_ui_allows_three_child_content_levels_when_engine_depth_is_four() {
 
 int main() {
     test_render_cache_commits_state_without_resetting_visuals();
+    test_note_event_projection_reports_only_covered_tiles();
     test_projects_root_step_content_badges();
     test_root_grid_projects_micro_rail_and_current_substep();
     test_root_grid_projects_rotated_cycle_phase();

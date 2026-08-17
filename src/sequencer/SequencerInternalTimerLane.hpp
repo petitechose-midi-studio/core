@@ -36,8 +36,6 @@ public:
     void publishRealtimeInputs(const MidiClockSyncRuntimeConfig& config, uint8_t snapshotIndex);
 
 private:
-    static constexpr uint32_t TIMER_PERIOD_US = 1000;
-
     void onTimer_();
     void drainRealtimeMidiQueue_(uint32_t nowUs);
 

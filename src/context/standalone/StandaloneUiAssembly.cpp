@@ -286,8 +286,7 @@ FLASHMEM bool StandaloneUiAssembly::createGlobalTrackStrip() {
         core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
             core::ui::renderSchedulerDebugLabel("GlobalTrackStrip"),
             &StandaloneUiAssembly::drainGlobalTrackStripRender,
-            this,
-            Config::Timing::RETAINED_VIEW_PERIOD_MS
+            this
         );
     if (!global_track_strip_scheduler_ || !global_track_strip_scheduler_->valid()) {
         OC_LOG_ERROR("StandaloneUiAssembly: global track strip scheduler allocation failed");

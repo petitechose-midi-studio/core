@@ -539,6 +539,7 @@ FLASHMEM SemanticUxRecorder::SemanticUxRecorder(SemanticUxRecorderOptions option
 FLASHMEM void SemanticUxRecorder::configure(SemanticUxRecorderOptions options) {
     sink_ = options.sink;
     enabled_ = options.enabled;
+    emit_semantic_encoder_dispatch_ = options.emitSemanticEncoderDispatch;
 }
 
 FLASHMEM void SemanticUxRecorder::setEnabled(bool enabled) {
@@ -559,7 +560,17 @@ FLASHMEM void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBin
         return;
     }
 
-    if (event.stage != oc::core::input::InputBindingTraceStage::Dispatch || !event.dispatched) {
+    const bool input =
+        event.stage == oc::core::input::InputBindingTraceStage::Event;
+    const bool dispatch =
+        event.stage == oc::core::input::InputBindingTraceStage::Dispatch &&
+        event.dispatched;
+    if (!input && !dispatch) {
+        return;
+    }
+    if (dispatch &&
+        event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
+        !emit_semantic_encoder_dispatch_) {
         return;
     }
 
@@ -572,19 +583,21 @@ FLASHMEM void SemanticUxRecorder::onBindingTrace(const oc::core::input::InputBin
     record.preSnapshot = preSnapshot;
 
     if (event.domain == oc::core::input::InputBindingTraceDomain::Encoder) {
-        record.kind = RecordKind::Encoder;
+        record.kind = input ? RecordKind::InputEncoder : RecordKind::Encoder;
         record.encoderId = event.encoderId;
         record.encoderType = event.encoderType;
         record.encoderValueKind = valueKindForEncoder(event.encoderId);
         record.encoderValueMilli = milliFromFloat(event.encoderValue);
     } else {
-        record.kind = RecordKind::Button;
+        record.kind = input ? RecordKind::InputButton : RecordKind::Button;
         record.buttonId = event.buttonId;
         record.buttonType = event.buttonType;
     }
 
-    if (auto* provider = currentSemanticUxContextProvider()) {
-        provider->captureSemanticUxContext(event, record.preContext);
+    if (dispatch) {
+        if (auto* provider = currentSemanticUxContextProvider()) {
+            provider->captureSemanticUxContext(event, record.preContext);
+        }
     }
 
     enqueue_(record);
@@ -709,6 +722,47 @@ FLASHMEM void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
             static_cast<long>(contract.normalizedTurnsMilli),
             viewName(postSnapshot.view),
             overlayName(postSnapshot.overlay)
+        );
+        line[sizeof(line) - 1U] = '\0';
+        sink_->writeLine(line);
+        return;
+    }
+
+    if (record.kind == RecordKind::InputEncoder) {
+        char line[256];
+        std::snprintf(
+            line,
+            sizeof(line),
+            "UXR {\"seq\":%lu,\"ms\":%lu,\"kind\":\"input\","
+            "\"gesture\":\"turn\",\"encoder\":\"%s\",\"encoder_id\":%u,"
+            "\"value_kind\":\"%s\",\"%s\":%ld}",
+            static_cast<unsigned long>(record.sequence),
+            static_cast<unsigned long>(nowMs),
+            encoderName(record.encoderId),
+            static_cast<unsigned int>(record.encoderId),
+            valueKindName(record.encoderValueKind),
+            record.encoderValueKind == EncoderValueKind::Delta
+                ? "delta_milli"
+                : "value_milli",
+            static_cast<long>(record.encoderValueMilli)
+        );
+        line[sizeof(line) - 1U] = '\0';
+        sink_->writeLine(line);
+        return;
+    }
+
+    if (record.kind == RecordKind::InputButton) {
+        char line[224];
+        std::snprintf(
+            line,
+            sizeof(line),
+            "UXR {\"seq\":%lu,\"ms\":%lu,\"kind\":\"input\","
+            "\"gesture\":\"%s\",\"button\":\"%s\",\"button_id\":%u}",
+            static_cast<unsigned long>(record.sequence),
+            static_cast<unsigned long>(nowMs),
+            buttonGestureName(record.buttonType),
+            buttonName(record.buttonId),
+            static_cast<unsigned int>(record.buttonId)
         );
         line[sizeof(line) - 1U] = '\0';
         sink_->writeLine(line);

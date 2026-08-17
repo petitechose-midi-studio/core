@@ -175,6 +175,7 @@ FLASHMEM void SequencerDomainState::CoalescedPatternHistory::clear() {
     step = 0;
     property = sequencer::StepProperty::NOTE;
     stateProperty = false;
+    multiStep = false;
     lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
     lastTouchedMs = 0;
     payloadPlan = sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
@@ -392,7 +393,8 @@ CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
 
-    if (pending.matchesStepProperty(activeTrack, step, property, stateProperty)) {
+    if (pending.joinsStepProperty(
+            activeTrack, step, property, stateProperty, nowMs)) {
         // The stable grouping key intentionally excludes storage policy. A
         // plan drift is a caller-classification bug; reject it atomically
         // rather than splitting one 500 ms gesture into two Undo entries.
@@ -406,6 +408,8 @@ CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
             return Outcome::HistoryUnavailable;
         }
         consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
+        pending.multiStep = pending.multiStep || pending.step != step;
+        pending.step = step;
         pending.sealed = false;
         pending.lastTouchedMs = nowMs;
         return Outcome::Continued;
@@ -714,6 +718,11 @@ FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(bool mutationChan
                                              change.after)
             : makeStepPropertyHistoryDescriptor(pending.activeTrack, pending.step, pending.property,
                                                 change.before, change.after);
+    if (pending.multiStep) {
+        change.descriptor.stepIndex =
+            sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
+        change.descriptor.hasValue = false;
+    }
 
     if (sequencer::sameMusicalHistorySnapshot(change.before, change.after)) {
         // The musical bytes returned to Before, but setters may have advanced
@@ -1102,19 +1111,19 @@ FLASHMEM bool CoreState::sealSequencerDrumHistory(
 ) {
     auto& pending = sequencerDomain_.coalescedDrumHistory;
     if (!pending.pending || pending.sealed || !pending.change ||
-        !pending.matches(descriptor) ||
-        !sequencer::capturePreparedHistoryDrumAfter(
-            sequencerTracks,
-            sequencer,
-            *pending.change
-        )) {
+        !pending.matches(descriptor)) {
         return false;
     }
     descriptor.trackIndex = pending.change->trackIndex;
+    if (pending.key.kind ==
+            sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit &&
+        pending.key.stepIndex != descriptor.stepIndex) {
+        descriptor.stepIndex = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
+        descriptor.hasValue = false;
+    }
     pending.key = descriptor;
     pending.change->descriptor = descriptor;
-    pending.hasChange = mutationChanged &&
-        !sequencer::sameMusicalHistoryDrumChange(*pending.change);
+    pending.hasChange = pending.hasChange || mutationChanged;
     pending.sealed = true;
     return true;
 }
@@ -1126,6 +1135,27 @@ CoreState::commitSequencerDrumHistoryCoalescing_() {
         return SequencerPatternHistoryCommitOutcome::NoPending;
     }
     if (!pending.sealed || !pending.change) {
+        return SequencerPatternHistoryCommitOutcome::Failed;
+    }
+
+    // A continuous Drum gesture may deliver hundreds of encoder samples per
+    // second. Keep authoring immediate, but copy the complete Drum Track only
+    // once at the coalescing boundary instead of once per sample.
+    if (!sequencer::capturePreparedHistoryDrumAfter(
+            sequencerTracks,
+            sequencer,
+            *pending.change
+        )) {
+        const bool restored = sequencer::restorePreparedHistoryDrumBefore(
+            sequencerTracks,
+            sequencer,
+            *pending.change
+        );
+        pending.clear();
+        consumePendingSequencerMutation_();
+        if (!restored) {
+            OC_LOG_ERROR("[CoreState] Failed allocation-free Drum history rollback");
+        }
         return SequencerPatternHistoryCommitOutcome::Failed;
     }
 

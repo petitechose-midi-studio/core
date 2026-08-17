@@ -56,9 +56,30 @@ void test_staying_in_standalone_keeps_runtime_updating() {
     std::cout << "[PASS] test_staying_in_standalone_keeps_runtime_updating\n";
 }
 
+void test_active_runtime_waits_without_losing_lifecycle_ownership() {
+    constexpr auto decision =
+        core::context::standalone::decideStandaloneSequencerRuntimeAction(
+            true,
+            true,
+            false
+        );
+    constexpr StandaloneSequencerRuntimeDecision expected{
+        StandaloneSequencerRuntimeAction::NONE,
+        true,
+    };
+
+    static_assert(decisionMatches(decision, expected));
+    assert(decisionMatches(decision, expected));
+    std::cout << "[PASS] test_active_runtime_waits_without_losing_lifecycle_ownership\n";
+}
+
 void test_leaving_standalone_stops_runtime_once_and_clears_gate() {
     constexpr auto decision =
-        core::context::standalone::decideStandaloneSequencerRuntimeAction(false, true);
+        core::context::standalone::decideStandaloneSequencerRuntimeAction(
+            false,
+            true,
+            false
+        );
     constexpr StandaloneSequencerRuntimeDecision expected{
         StandaloneSequencerRuntimeAction::STOP,
         false,
@@ -75,6 +96,7 @@ int main() {
     test_inactive_context_keeps_runtime_idle_when_already_inactive();
     test_entering_standalone_updates_runtime_and_marks_gate_active();
     test_staying_in_standalone_keeps_runtime_updating();
+    test_active_runtime_waits_without_losing_lifecycle_ownership();
     test_leaving_standalone_stops_runtime_once_and_clears_gate();
     std::cout << "\nAll standalone sequencer runtime gate tests passed.\n";
     return 0;

@@ -101,6 +101,8 @@ set_target_properties(ms_device_support_native PROPERTIES
 target_include_directories(ms_device_support_native
     PUBLIC "${MS_DEVICE_SUPPORT_DIR}/src"
     PRIVATE "${MS_CORE_OC_FRAMEWORK_DIR}/src")
+target_compile_definitions(ms_device_support_native PUBLIC
+    MS_DEVICE_SUPPORT_LVGL_MEMORY_POOL_SIZE_BYTES=1048576U)
 add_library(ms::device_support_native ALIAS ms_device_support_native)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreSources.cmake")

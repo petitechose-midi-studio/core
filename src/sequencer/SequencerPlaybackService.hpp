@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <variant>
 
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
 #include "app/ExtmemAllocator.hpp"
@@ -56,8 +57,8 @@ namespace core::sequencer {
 /**
  * Playback bridge from committed sequencer snapshots to note-engine runtime.
  *
- * The service owns per-track `StepSequencerEngine` instances and their event
- * sinks. It consumes immutable track-bank snapshots, queues MIDI through
+ * The service owns one active melodic or Drum engine and one event sink per
+ * Track. It consumes immutable track-bank snapshots, queues MIDI through
  * `RealtimeMidiQueue`, and publishes only telemetry/UI projection back to state.
  */
 class SequencerPlaybackService {
@@ -115,9 +116,8 @@ public:
                 const ProjectTrackRuntimeSnapshot& projectTracks,
                 bool publishRuntimeState = true,
                 const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot = nullptr,
-                bool allowPredictiveLookahead = false
-                , const SequencerDrumRuntimeProjectSnapshot* drumSnapshot =
-                      nullptr
+                bool allowPredictiveLookahead = false,
+                const SequencerDrumRuntimeProjectSnapshot* drumSnapshot = nullptr
                 );
     void stopTrack(uint8_t trackIndex);
     void completeStop();
@@ -132,7 +132,16 @@ public:
     }
 
 private:
+    using TrackEngineSlot = std::variant<
+        std::monostate,
+        oc::note::sequencer::StepSequencerEngine,
+        DrumPlaybackEngine>;
+
     const oc::note::sequencer::StepSequencerRuntimeState& activeRuntimeState_() const;
+    oc::note::sequencer::StepSequencerEngine* melodicEngine_(uint8_t trackIndex);
+    DrumPlaybackEngine* drumEngine_(uint8_t trackIndex);
+    bool selectTrackEngine_(uint8_t trackIndex, bool drum);
+    void resetTrackEngine_(uint8_t trackIndex);
 
     struct PendingUiProjection {
         bool noteOutPulse = false;
@@ -220,15 +229,14 @@ private:
         track_runtime_states_{};
     std::array<SequencerRuntimeStateSignature, TRACK_COUNT> track_runtime_signatures_{};
     std::array<std::optional<SequencerMidiEventSink>, TRACK_COUNT> track_event_sinks_{};
+    // A Track is either melodic or Drum. Reusing one inline scheduler slot per
+    // Track keeps the timer lane allocation-free without reserving both engine
+    // types at once. The active engine remains in RAM2; authored payloads stay
+    // in PSRAM.
+    std::array<TrackEngineSlot, TRACK_COUNT> track_engines_{};
     std::array<
-        std::optional<oc::note::sequencer::StepSequencerEngine>,
-        TRACK_COUNT> track_engines_{};
-    // A bounded scheduler per Track keeps the timer lane allocation-free and
-    // preserves independent polyrhythmic phase for simultaneous Drum Tracks.
-    // These hot schedulers intentionally remain in RAM2 with melodic engines;
-    // their large authored/runtime payloads remain in PSRAM.
-    std::array<std::optional<DrumPlaybackEngine>, TRACK_COUNT>
-        drum_track_engines_{};
+        oc::note::sequencer::StepSequencerPlaybackRegion,
+        TRACK_COUNT> track_playback_regions_{};
     uint16_t runtime_drum_mask_ = 0U;
     uint8_t runtime_active_track_ = 0;
     uint16_t runtime_enabled_mask_ = 0x0001;

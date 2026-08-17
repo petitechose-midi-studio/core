@@ -79,7 +79,6 @@ FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
             core::ui::renderSchedulerDebugLabel("MacroView"),
             &MacroView::drainRender,
             this,
-            Config::Timing::RETAINED_VIEW_PERIOD_MS,
             &MacroView::canDrainRender
         );
     if (!render_scheduler_ || !render_scheduler_->valid()) {
@@ -669,8 +668,6 @@ void MacroView::processRenderFlags(uint32_t flags) {
         requestRender(flags);
         return;
     }
-    OC_PERF_SCOPE(perfRender, "ui.macro.render");
-
     const bool headerDirty = (flags & RENDER_HEADER) != 0;
     const bool leftActionStripDirty = (flags & RENDER_LEFT_ACTION_STRIP) != 0;
     const bool bottomActionStripDirty = (flags & RENDER_BOTTOM_ACTION_STRIP) != 0;
@@ -728,12 +725,6 @@ void MacroView::processRenderFlags(uint32_t flags) {
         if (valueDirty || configDirty) {
             if (macros_[i]) {
                 const auto props = buildMacroWidgetProps(source, i);
-                OC_PERF_SCOPE(perfMutation, "ui.macro.mutation.knob");
-                OC_PERF_UNITS(
-                    perfMutation,
-                    i,
-                    (valueDirty ? 1U : 0U) | (configDirty ? 2U : 0U)
-                );
                 // Hot value changes perform their own exact arc invalidation.
                 // Structural batching is only required when retained labels,
                 // visibility, focus, or source styling can change.

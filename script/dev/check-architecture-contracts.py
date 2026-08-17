@@ -1643,6 +1643,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     recovery_source = "src/persistence/ProductStorageRecoveryService.cpp"
     recovery_header = "src/persistence/ProductStorageRecoveryService.hpp"
     atomic_header = "src/persistence/AtomicProductFile.hpp"
+    atomic_source = "src/persistence/AtomicProductFile.cpp"
     journal_source = "src/persistence/ProductFileTransactionJournal.cpp"
     journal_codec = "src/persistence/ProductFileTransactionJournalCodec.cpp"
     journal_internal = "src/persistence/ProductFileTransactionJournalInternal.hpp"
@@ -2143,10 +2144,10 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             r"files\.beginWrite\s*\(",
             r"appendExact\s*\(",
             r"files\.finishWrite\s*\(",
-            r"files\.flush\s*\(",
             r"workspace\.sequence\s*=\s*nextSequence",
         ),
-        "phase publication must write, finish and flush before becoming active",
+        "phase publication must write and durably finish the exact record "
+        "before becoming active",
     )
     require_ordered_function(
         journal_source,
@@ -2168,10 +2169,30 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         journal_source,
         "commitWithWorkspace",
         (
-            r"files\.flush\s*\([^;]*TMP_PATH",
+            r"payloadMatches\s*\(",
             r"executeCommit\s*\(",
         ),
-        "the exact temporary must be flushed before PREPARED admission",
+        "temporary integrity must be verified before PREPARED admission",
+    )
+    require_ordered_function(
+        atomic_source,
+        "writeProductFileTemp",
+        (
+            r"files\.beginWrite\s*\(",
+            r"files\.appendWrite\s*\(",
+            r"files\.finishWrite\s*\(",
+        ),
+        "the exact temporary must be written and durably finished in one "
+        "write session",
+    )
+    require_ordered_function(
+        atomic_source,
+        "replaceProductFileAtomically",
+        (
+            r"writeProductFileTemp\s*\(",
+            r"commitProductFileTemp\s*\(",
+        ),
+        "temporary admission must follow its durable write session",
     )
     require(
         journal_source,
@@ -5330,8 +5351,8 @@ def main(show_inventory: bool = False) -> int:
             "*(.text.*9subscribe*)",
             "*(.text._ZN2oc5state12Subscription5resetEv*)",
             "*(.text._ZNSt5arrayIN2oc5state12SubscriptionE*D*Ev)",
-            "*(.text._ZN4core3app16makeExtmemUniqueINS_5state9sequencer30SequencerHistoryFullBankChangeE*)",
-            "*(.text._ZNSt15__uniq_ptr_implIN4core5state9sequencer30SequencerHistoryFullBankChangeE*)",
+            "*(.text._ZN4core3app16makeExtmemUniqueI*)",
+            "*(.text._ZNSt15__uniq_ptr_implI*Extmem*Deleter*5resetE*)",
             "*lv_binfont_loader.c.o(.text* .rodata*)",
             "*lv_draw_sw_box_shadow.c.o(.text* .rodata*)",
             "*lz4.c.o(.text* .rodata*)",

@@ -172,6 +172,23 @@ oc::core::input::InputBindingTraceEvent dispatchedMacroEncoder() {
     return event;
 }
 
+oc::core::input::InputBindingTraceEvent inputButton(bool pressed) {
+    auto event = dispatchedButton();
+    event.stage = oc::core::input::InputBindingTraceStage::Event;
+    event.dispatched = false;
+    event.buttonType = pressed
+        ? oc::core::input::ButtonBindingType::PRESS
+        : oc::core::input::ButtonBindingType::RELEASE;
+    return event;
+}
+
+oc::core::input::InputBindingTraceEvent inputEncoder() {
+    auto event = dispatchedMacroEncoder();
+    event.stage = oc::core::input::InputBindingTraceStage::Event;
+    event.dispatched = false;
+    return event;
+}
+
 core::validation::ux::SemanticUxSnapshot sequencerSnapshot() {
     return core::validation::ux::SemanticUxSnapshot{
         .view = core::ui::ViewType::SEQUENCER,
@@ -199,7 +216,7 @@ void test_ignores_when_disabled() {
     std::cout << "[PASS] test_ignores_when_disabled\n";
 }
 
-void test_ignores_non_dispatch_rows() {
+void test_ignores_non_replayable_rows() {
     CapturingSink sink;
     core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
 
@@ -210,7 +227,59 @@ void test_ignores_non_dispatch_rows() {
     recorder.flush(100, sequencerSnapshot());
 
     assert(sink.lines.empty());
-    std::cout << "[PASS] test_ignores_non_dispatch_rows\n";
+    std::cout << "[PASS] test_ignores_non_replayable_rows\n";
+}
+
+void test_writes_replayable_input_before_semantics() {
+    CapturingSink sink;
+    core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
+
+    recorder.onBindingTrace(inputButton(true));
+    recorder.onBindingTrace(inputEncoder());
+    recorder.onBindingTrace(dispatchedMacroEncoder());
+    recorder.flush(100, sequencerSnapshot());
+
+    assert(sink.lines.size() == 3);
+    assert(contains(sink.lines[0], "\"kind\":\"input\""));
+    assert(contains(sink.lines[0], "\"gesture\":\"press\""));
+    assert(contains(sink.lines[0], "\"button\":\"MACRO_1\""));
+    assert(contains(sink.lines[1], "\"kind\":\"input\""));
+    assert(contains(sink.lines[1], "\"gesture\":\"turn\""));
+    assert(contains(sink.lines[1], "\"encoder\":\"MACRO_1\""));
+    assert(contains(sink.lines[1], "\"value_kind\":\"absolute\""));
+    assert(contains(sink.lines[1], "\"value_milli\":378"));
+    assert(contains(sink.lines[2], "\"kind\":\"encoder\""));
+    std::cout << "[PASS] test_writes_replayable_input_before_semantics\n";
+}
+
+void test_can_omit_semantic_encoder_rows_without_losing_replay_inputs() {
+    CapturingSink sink;
+    core::validation::ux::SemanticUxRecorder recorder{{
+        .sink = &sink,
+        .enabled = true,
+        .emitSemanticEncoderDispatch = false,
+    }};
+
+    recorder.onBindingTrace(inputEncoder());
+    recorder.onBindingTrace(dispatchedMacroEncoder());
+    recorder.onBindingTrace(inputButton(true));
+    recorder.onBindingTrace(dispatchedButton());
+    recorder.flush(100, sequencerSnapshot());
+
+    assert(sink.lines.size() == 3U);
+    assert(contains(sink.lines[0], "\"seq\":1"));
+    assert(contains(sink.lines[0], "\"kind\":\"input\""));
+    assert(contains(sink.lines[0], "\"encoder\":\"MACRO_1\""));
+    assert(contains(sink.lines[1], "\"seq\":2"));
+    assert(contains(sink.lines[1], "\"kind\":\"input\""));
+    assert(contains(sink.lines[1], "\"button\":\"MACRO_1\""));
+    assert(contains(sink.lines[2], "\"seq\":3"));
+    assert(contains(sink.lines[2], "\"kind\":\"button\""));
+    for (const auto& line : sink.lines) {
+        assert(!contains(line, "\"kind\":\"encoder\""));
+    }
+    std::cout
+        << "[PASS] semantic encoder rows can be omitted without losing replay inputs\n";
 }
 
 void test_writes_button_semantics_with_snapshot() {
@@ -578,7 +647,9 @@ void test_oversized_semantic_field_is_skipped_atomically() {
 
 int main() {
     test_ignores_when_disabled();
-    test_ignores_non_dispatch_rows();
+    test_ignores_non_replayable_rows();
+    test_writes_replayable_input_before_semantics();
+    test_can_omit_semantic_encoder_rows_without_losing_replay_inputs();
     test_writes_button_semantics_with_snapshot();
     test_writes_relative_encoder_delta_without_float_formatting();
     test_writes_normalized_encoder_value_without_delta_semantics();

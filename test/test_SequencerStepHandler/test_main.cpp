@@ -8839,6 +8839,51 @@ void test_drum_short_nav_uses_shared_step_editor_and_coalesces_opt() {
         << "[PASS] Drum short NAV uses shared Step editor and coalesces OPT\n";
 }
 
+void test_drum_overview_multi_step_property_edit_is_one_history_gesture() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    auto& track = h.state.sequencerTracks.drumTrack(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    drumUi.property = seq::DrumSequencerProperty::PROBABILITY;
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    h.turn(Config::MACRO_ENCODERS[0U], 0.25f);
+    h.turn(Config::MACRO_ENCODERS[1U], 0.65f);
+    h.turn(Config::MACRO_ENCODERS[0U], 0.40f);
+
+    assert(track.pattern.lanes[0U].probability[0U] == 40U);
+    assert(track.pattern.lanes[0U].probability[1U] == 65U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(
+        h.state.commitSequencerDrumHistoryCoalescingOutcome() ==
+        seq::SequencerPatternHistoryCommitOutcome::Committed
+    );
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+
+    assert(h.state.undoSequencerHistory());
+    assert(track.pattern.lanes[0U].probability[0U] ==
+           seq::DRUM_DEFAULT_PROBABILITY);
+    assert(track.pattern.lanes[0U].probability[1U] ==
+           seq::DRUM_DEFAULT_PROBABILITY);
+    assert(std::strcmp(
+        h.state.sequencer.historyFeedback.line2.data(),
+        "Drum Step Property"
+    ) == 0);
+    assert(std::strcmp(
+        h.state.sequencer.historyFeedback.line3.data(),
+        "Applied"
+    ) == 0);
+
+    assert(h.state.redoSequencerHistory());
+    assert(track.pattern.lanes[0U].probability[0U] == 40U);
+    assert(track.pattern.lanes[0U].probability[1U] == 65U);
+
+    std::cout
+        << "[PASS] Drum overview multi-Step property edits share one history gesture\n";
+}
+
 void test_drum_step_editor_keeps_distinct_step_and_lane_axes() {
     SequencerStepHarness h;
     createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
@@ -9559,6 +9604,7 @@ int main() {
     test_drum_lane_note_audition_is_bounded_latest_wins_and_stops();
     test_drum_lane_rhythm_is_live_coalesced_and_cancelable();
     test_drum_short_nav_uses_shared_step_editor_and_coalesces_opt();
+    test_drum_overview_multi_step_property_edit_is_one_history_gesture();
     test_drum_step_editor_keeps_distinct_step_and_lane_axes();
     test_drum_step_scope_reaches_micro_cycle_without_chord_detour();
     test_drum_step_editor_authors_advanced_rhythm_content_and_replays();

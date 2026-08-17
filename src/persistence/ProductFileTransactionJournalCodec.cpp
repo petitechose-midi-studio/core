@@ -376,8 +376,6 @@ FLASHMEM oc::type::Result<void> persistPhase(
         (void)files.abortWrite(lease);
         return finished;
     }
-    auto flushed = files.flush(lease, slotPath_(targetSlot));
-    if (!flushed) return flushed;
 
     workspace.sequence = nextSequence;
     workspace.phase = phase;

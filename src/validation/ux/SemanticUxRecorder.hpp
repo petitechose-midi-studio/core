@@ -64,6 +64,7 @@ public:
 struct SemanticUxRecorderOptions {
     SemanticUxLineSink* sink = nullptr;
     bool enabled = false;
+    bool emitSemanticEncoderDispatch = true;
 };
 
 class SemanticUxRecorder {
@@ -104,6 +105,8 @@ public:
 
 private:
     enum class RecordKind : uint8_t {
+        InputButton,
+        InputEncoder,
         Button,
         Encoder,
         EncoderContract,
@@ -156,6 +159,7 @@ private:
     bool allow_state_projection_capture_ = false;
     SemanticUxLineSink* sink_ = nullptr;
     bool enabled_ = false;
+    bool emit_semantic_encoder_dispatch_ = true;
 };
 
 // Diagnostic producers stay allocation-free and unaware of the recorder

@@ -961,6 +961,7 @@ FLASHMEM bool StepGrid::refreshStaticGeometry() {
         geometry_.containerHeight != containerHeight ||
         geometry_.noteLayerWidth != noteLayerWidth ||
         geometry_.noteLayerHeight != noteLayerHeight) {
+        OC_PERF_SCOPE(perfLayout, "ui.step-grid.layout");
         lv_obj_update_layout(container_);
         containerWidth = lv_obj_get_width(container_);
         containerHeight = lv_obj_get_height(container_);
@@ -1254,17 +1255,13 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
         return;
     }
 
-    bool noteLayerChanged = false;
-    for (const auto& diff : plan.diffs) {
-        noteLayerChanged = noteLayerChanged || diff.noteEventsChanged;
-    }
-
 #if OC_ENABLE_STATS
     uint32_t dirtyTileCount = 0;
 #endif
-    oc::ui::lvgl::StaticSurfaceInvalidationBatch<8> invalidation(container_);
+    // Preserve sparse updates; collapse dense multi-edits into one display region.
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<4> invalidation(container_);
     for (uint8_t i = 0; i < tiles_.size(); ++i) {
-        if (!plan.tileDirty[i] && !geometryChanged && !noteLayerChanged) continue;
+        if (!plan.tileDirty[i] && !geometryChanged) continue;
         invalidation.include(tiles_[i]);
 #if OC_ENABLE_STATS
         dirtyTileCount += 1;

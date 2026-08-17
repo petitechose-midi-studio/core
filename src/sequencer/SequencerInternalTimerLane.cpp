@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
+#include "config/Timing.hpp"
 #include "config/TimeCompat.hpp"
 #include "diagnostics/StorageQualificationProbe.hpp"
 #include "sequencer/SequencerTiming.hpp"
@@ -30,8 +31,11 @@ bool SequencerInternalTimerLane::start() {
     clock_.reset();
     playing_ = false;
     last_tick_sent_ = 0;
-    timer_.setPriority(128);
-    running_ = timer_.begin([this]() { onTimer_(); }, TIMER_PERIOD_US);
+    timer_.setPriority(Config::Timing::SEQUENCER_REALTIME_IRQ_PRIORITY);
+    running_ = timer_.begin(
+        [this]() { onTimer_(); },
+        Config::Timing::SEQUENCER_REALTIME_PERIOD_US
+    );
     return running_;
 }
 

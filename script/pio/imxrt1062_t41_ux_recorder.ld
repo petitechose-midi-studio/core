@@ -53,6 +53,10 @@ SECTIONS
 		*SemanticUxNames.cpp.o(.rodata*)
 		*SemanticUxSurface.cpp.o(.rodata*)
 		*SemanticUxContext.cpp.o(.rodata*)
+		/* Optional dev_ux_diagnostics companion; absent from recorder-only builds. */
+		*PerformanceReporter.cpp.o(.text* .rodata*)
+		*MemoryFootprintReporter.cpp.o(.text* .rodata*)
+		*CoreStateDiagnostics.cpp.o(.text* .rodata*)
 		. = ALIGN(4);
 	} > FLASH
 

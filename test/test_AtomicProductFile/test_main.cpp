@@ -385,7 +385,9 @@ void assertSuccessEnvelope(const BoundaryFaultFileSystem& backend, bool hadCurre
     assert(backend.backupRenameCount() == (hadCurrent ? 1U : 0U));
     assert(backend.promotionCount() == 1U);
     assert(backend.backupCleanupCount() == (hadCurrent ? 1U : 0U));
-    assert(backend.flushCount() <= (hadCurrent ? 7U : 5U));
+    // finishWrite() is already a durable sync. The only explicit flushes left
+    // are the ones that make renamed backup/current entries durable.
+    assert(backend.flushCount() == (hadCurrent ? 2U : 1U));
 }
 
 uint32_t executeBoundaryScenario(
