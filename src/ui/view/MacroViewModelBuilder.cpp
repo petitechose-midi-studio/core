@@ -347,8 +347,6 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
     if (slotSelecting || pageSelecting || trackSelecting) {
         props.slots[0].visualState =
             ContextActionStripVisualState::HIDDEN;
-        props.slots[1].visualState =
-            ContextActionStripVisualState::HIDDEN;
         auto& action = props.slots[2];
         const bool placing = slotSelecting
             ? source.macroUi.slotSelection.placing.get()
@@ -373,6 +371,7 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
         const uint8_t selectedCount = slotSelecting
             ? source.macroUi.slotSelection.selectedCount()
             : bitCount(selectedMask);
+        props.slots[1] = makeStructureSelectionCountStripSlot(selectedCount);
         const uint8_t overwriteCount = slotSelecting
             ? source.macroUi.slotSelection.overwriteCount
             : bitCount(overwriteMask);
@@ -415,29 +414,10 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
             : overwrite
                 ? ContextActionStripTone::WARNING
                 : ContextActionStripTone::CONSTRUCTIVE;
-        action.showLabel = true;
-        if (!placing) {
-            std::snprintf(
-                action.labelText.data(),
-                action.labelText.size(),
-                "CPY \xC2\xB7 %u",
-                static_cast<unsigned>(selectedCount)
-            );
-        } else if (overwrite) {
-            std::snprintf(
-                action.labelText.data(),
-                action.labelText.size(),
-                "PST \xC2\xB7 %u OVR",
-                static_cast<unsigned>(overwriteCount)
-            );
-        } else {
-            std::snprintf(
-                action.labelText.data(),
-                action.labelText.size(),
-                "%s",
-                pasteAvailable ? "PST" : "PST BLOCK"
-            );
-        }
+        action.showIcon = true;
+        action.icon = placing
+            ? standalone::icons::ACTION_PASTE
+            : standalone::icons::ACTION_COPY;
         action.holdActive = pasteHold;
         action.holdStartedAtMs =
             source.macroUi.pageHold.startedAtMs.get();

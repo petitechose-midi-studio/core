@@ -8,11 +8,13 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
 
 namespace theme = standalone::theme;
+namespace selection_visual = core::ui::interaction;
 namespace style = oc::ui::lvgl::style;
 
 namespace {
@@ -171,13 +173,21 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
         const bool blocked =
             (props.pageBlockedMask & bit) != 0U;
         rowProps.itemColors[i] = blocked
-            ? theme::color::MACRO_AUTOMATION_RECORDING
+            ? selection_visual::structureSelectionColor(
+                  selection_visual::StructureSelectionVisualRole::DESTINATION_BLOCKED
+              )
             : destination
                 ? (overwrite
-                    ? theme::color::MACRO_CONFLICT
-                    : theme::color::MACRO_CC_COLOR)
+                    ? selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::DESTINATION_OVERWRITE
+                      )
+                    : selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::DESTINATION_FREE
+                      ))
                 : selected
-                    ? theme::color::TEXT_PRIMARY
+                    ? selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::SELECTED
+                      )
                     : enabled
                         ? rowProps.accentColor
                         : theme::color::INACTIVE;

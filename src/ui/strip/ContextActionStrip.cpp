@@ -20,7 +20,7 @@ namespace core::ui {
 namespace {
 
 constexpr lv_coord_t HORIZONTAL_STRIP_HEIGHT = theme::layout::CONTEXT_ACTION_STRIP_HEIGHT;
-constexpr lv_coord_t VERTICAL_STRIP_WIDTH = 14;
+constexpr lv_coord_t VERTICAL_STRIP_WIDTH = 16;
 constexpr lv_coord_t SLOT_RADIUS = 0;
 constexpr lv_coord_t SLOT_PAD = 0;
 constexpr lv_coord_t INDICATOR_LONG = 8;
@@ -31,6 +31,8 @@ constexpr lv_coord_t HORIZONTAL_OUTER_PAD = 2;
 constexpr lv_coord_t VERTICAL_OUTER_PAD = 6;
 constexpr lv_coord_t VERTICAL_SLOT_GAP = 2;
 constexpr lv_coord_t VERTICAL_SPREAD_OUTER_PAD = 4;
+constexpr lv_coord_t HOLD_FEEDBACK_WIDTH = 84;
+constexpr lv_coord_t HOLD_FEEDBACK_HEIGHT = 34;
 constexpr uint32_t HOLD_TIMER_PERIOD_MS = 33;
 
 FLASHMEM uint32_t toneColor(ContextActionStripTone tone) {
@@ -73,8 +75,6 @@ FLASHMEM lv_opa_t backgroundOpacity(ContextActionStripVisualState /*state*/) {
 
 FLASHMEM lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     switch (state) {
-        case ContextActionStripVisualState::ACTIVE:
-            return LV_OPA_70;
         case ContextActionStripVisualState::PRESSED:
         case ContextActionStripVisualState::ARMED:
         case ContextActionStripVisualState::APPLIED:
@@ -144,6 +144,10 @@ FLASHMEM ContextActionStrip::ContextActionStrip(
 
 FLASHMEM ContextActionStrip::~ContextActionStrip() {
     hold_timer_.reset();
+    if (hold_feedback_) {
+        lv_obj_delete(hold_feedback_);
+        hold_feedback_ = nullptr;
+    }
     if (container_) {
         lv_obj_delete(container_);
         container_ = nullptr;
@@ -273,7 +277,54 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
     }
 
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    createHoldFeedback(parent);
     hold_timer_.emplace(HOLD_TIMER_PERIOD_MS, onHoldTimer, this);
+}
+
+FLASHMEM void ContextActionStrip::createHoldFeedback(lv_obj_t* parent) {
+    if (!parent) return;
+
+    hold_feedback_ = lv_obj_create(parent);
+    if (!hold_feedback_) return;
+    lv_obj_add_flag(hold_feedback_, LV_OBJ_FLAG_HIDDEN);
+    style::apply(hold_feedback_)
+        .size(HOLD_FEEDBACK_WIDTH, HOLD_FEEDBACK_HEIGHT)
+        .noScroll()
+        .pad(6);
+    lv_obj_add_flag(hold_feedback_, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_set_style_bg_color(
+        hold_feedback_, lv_color_hex(theme::color::SURFACE_RAISED), 0
+    );
+    lv_obj_set_style_bg_opa(hold_feedback_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(hold_feedback_, 1, 0);
+    lv_obj_set_style_border_color(
+        hold_feedback_, lv_color_hex(theme::color::BORDER_SUBTLE), 0
+    );
+    lv_obj_set_style_border_opa(hold_feedback_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(
+        hold_feedback_, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
+    );
+    lv_obj_set_layout(hold_feedback_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(hold_feedback_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(
+        hold_feedback_,
+        LV_FLEX_ALIGN_CENTER,
+        LV_FLEX_ALIGN_CENTER,
+        LV_FLEX_ALIGN_CENTER
+    );
+    lv_obj_set_style_pad_column(hold_feedback_, 6, 0);
+    lv_obj_align(hold_feedback_, LV_ALIGN_CENTER, 0, 0);
+
+    hold_feedback_icon_ = lv_label_create(hold_feedback_);
+    hold_feedback_label_ = lv_label_create(hold_feedback_);
+    if (!hold_feedback_icon_ || !hold_feedback_label_) return;
+    lv_obj_set_style_text_font(
+        hold_feedback_label_, fonts.compact_selected(), 0
+    );
+    lv_obj_set_style_text_color(
+        hold_feedback_label_, lv_color_hex(theme::color::TEXT_PRIMARY), 0
+    );
+    lv_obj_add_flag(hold_feedback_icon_, LV_OBJ_FLAG_HIDDEN);
 }
 
 FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
@@ -285,6 +336,9 @@ FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
         }
         rendered_props_ = props;
         has_rendered_ = true;
+        if (hold_feedback_) {
+            lv_obj_add_flag(hold_feedback_, LV_OBJ_FLAG_HIDDEN);
+        }
         updateHoldTimer();
         return;
     }
@@ -317,7 +371,7 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
     const lv_opa_t textOpa = contentOpacity(props.visualState);
     const lv_opa_t bgOpa = backgroundOpacity(props.visualState);
     const lv_opa_t accentOpa = indicatorOpacity(props.visualState);
-    const bool showContent = contentVisible(props) || props.holdActive;
+    const bool showContent = contentVisible(props);
 
     lv_obj_set_style_bg_color(slot.container, color, 0);
     lv_obj_set_style_bg_opa(slot.container, bgOpa, 0);
@@ -359,7 +413,7 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
     }
 
     if (props.showLabel && slotLabel(props)) {
-        setCachedText(slot.label, slot.hold_text, slotLabel(props));
+        setCachedText(slot.label, slot.label_text, slotLabel(props));
         const lv_font_t* labelFont =
             (props.visualState == ContextActionStripVisualState::ACTIVE ||
              props.visualState == ContextActionStripVisualState::PRESSED ||
@@ -379,7 +433,7 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
             slot.label_opa = textOpa;
         }
         lv_obj_clear_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
-    } else if (!props.holdActive) {
+    } else {
         lv_obj_add_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -388,8 +442,6 @@ FLASHMEM void ContextActionStrip::refreshHoldIndicators() {
     if (!container_ || !has_rendered_) return;
 
     const uint32_t nowMs = core::time_compat::millis();
-    char timerText[8]{};
-
     for (size_t index = 0; index < slots_.size(); ++index) {
         const auto& props = rendered_props_.slots[index];
         auto& slot = slots_[index];
@@ -399,7 +451,6 @@ FLASHMEM void ContextActionStrip::refreshHoldIndicators() {
             if (!props.showLabel || !slotLabel(props)) {
                 lv_obj_add_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
             }
-            slot.hold_tenths = std::numeric_limits<uint16_t>::max();
             if (!slot.hold_geometry_initialized || slot.indicator_fill_mode) {
                 if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
                     lv_obj_set_size(slot.indicator, INDICATOR_LONG, INDICATOR_THICKNESS);
@@ -429,35 +480,6 @@ FLASHMEM void ContextActionStrip::refreshHoldIndicators() {
         const uint32_t elapsedMs =
             (nowMs > props.holdStartedAtMs) ? (nowMs - props.holdStartedAtMs) : 0;
         const uint32_t clampedElapsed = std::min(elapsedMs, props.holdDurationMs);
-        const uint32_t remainingMs = props.holdDurationMs - clampedElapsed;
-        const uint16_t remainingTenths = static_cast<uint16_t>((remainingMs + 99U) / 100U);
-
-        if (slot.hold_tenths != remainingTenths) {
-            std::snprintf(
-                timerText,
-                sizeof(timerText),
-                "%u.%us",
-                static_cast<unsigned>(remainingTenths / 10U),
-                static_cast<unsigned>(remainingTenths % 10U)
-            );
-            setCachedText(slot.label, slot.hold_text, timerText);
-            slot.hold_tenths = remainingTenths;
-        }
-        if (slot.label_font != fonts.compact_selected()) {
-            lv_obj_set_style_text_font(slot.label, fonts.compact_selected(), 0);
-            slot.label_font = fonts.compact_selected();
-        }
-        const uint32_t holdColor = toneColor(props.tone);
-        if (slot.label_color != holdColor) {
-            lv_obj_set_style_text_color(slot.label, lv_color_hex(holdColor), 0);
-            slot.label_color = holdColor;
-        }
-        if (slot.label_opa != LV_OPA_COVER) {
-            lv_obj_set_style_text_opa(slot.label, LV_OPA_COVER, 0);
-            slot.label_opa = LV_OPA_COVER;
-        }
-        lv_obj_clear_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
-
         if (!slot.hold_geometry_initialized || !slot.indicator_fill_mode) {
             if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
                 lv_obj_set_size(
@@ -496,6 +518,85 @@ FLASHMEM void ContextActionStrip::refreshHoldIndicators() {
             slot.indicator_opa = LV_OPA_COVER;
         }
     }
+    refreshHoldFeedback(nowMs);
+}
+
+FLASHMEM void ContextActionStrip::refreshHoldFeedback(uint32_t nowMs) {
+    if (!hold_feedback_ || !hold_feedback_icon_ || !hold_feedback_label_) {
+        return;
+    }
+
+    const ContextActionStripSlotProps* active = nullptr;
+    for (const auto& slot : rendered_props_.slots) {
+        if (slot.holdActive && slot.holdDurationMs > 0U) {
+            active = &slot;
+            break;
+        }
+    }
+    if (!active) {
+        lv_obj_add_flag(hold_feedback_, LV_OBJ_FLAG_HIDDEN);
+        hold_feedback_icon_value_ = nullptr;
+        hold_feedback_tenths_ = std::numeric_limits<uint16_t>::max();
+        return;
+    }
+
+    const uint32_t elapsedMs = nowMs > active->holdStartedAtMs
+        ? nowMs - active->holdStartedAtMs
+        : 0U;
+    const uint32_t remainingMs = active->holdDurationMs - std::min(
+        elapsedMs,
+        active->holdDurationMs
+    );
+    const uint16_t remainingTenths = static_cast<uint16_t>(
+        (remainingMs + 99U) / 100U
+    );
+    if (hold_feedback_tenths_ != remainingTenths) {
+        char timerText[8]{};
+        std::snprintf(
+            timerText,
+            sizeof(timerText),
+            "%u.%us",
+            static_cast<unsigned>(remainingTenths / 10U),
+            static_cast<unsigned>(remainingTenths % 10U)
+        );
+        setCachedText(
+            hold_feedback_label_, hold_feedback_text_, timerText
+        );
+        hold_feedback_tenths_ = remainingTenths;
+    }
+
+    const bool showIcon = active->showIcon && active->icon;
+    if (showIcon) {
+        if (!sameText(hold_feedback_icon_value_, active->icon)) {
+            if (active->iconUsesStandaloneFont) {
+                standalone::icons::set(
+                    hold_feedback_icon_,
+                    active->icon,
+                    standalone::icons::Size::L
+                );
+            } else {
+                lv_label_set_text(hold_feedback_icon_, active->icon);
+            }
+            hold_feedback_icon_value_ = active->icon;
+        }
+        lv_obj_clear_flag(hold_feedback_icon_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        hold_feedback_icon_value_ = nullptr;
+        lv_obj_add_flag(hold_feedback_icon_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    const uint32_t color = toneColor(active->tone);
+    if (hold_feedback_color_ != color) {
+        lv_obj_set_style_text_color(
+            hold_feedback_icon_, lv_color_hex(color), 0
+        );
+        lv_obj_set_style_border_color(
+            hold_feedback_, lv_color_hex(color), 0
+        );
+        hold_feedback_color_ = color;
+    }
+    lv_obj_move_foreground(hold_feedback_);
+    lv_obj_clear_flag(hold_feedback_, LV_OBJ_FLAG_HIDDEN);
 }
 
 FLASHMEM void ContextActionStrip::updateHoldTimer() {

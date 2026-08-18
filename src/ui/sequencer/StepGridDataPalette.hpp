@@ -23,10 +23,6 @@ inline constexpr std::array<uint32_t, 12> CHROMATIC_NOTES = {
     0xF3E5C4,
 };
 
-inline constexpr uint32_t SELECTION_EMPTY = CHROMATIC_NOTES[7];
-inline constexpr uint32_t SELECTION_GHOST = CHROMATIC_NOTES[9];
-inline constexpr uint32_t SELECTION_OVERWRITE = CHROMATIC_NOTES[1];
-inline constexpr uint32_t SELECTION_BLOCKED = CHROMATIC_NOTES[2];
 inline constexpr uint32_t OUT_OF_SCALE = 0xFF6B6B;
 
 }  // namespace core::ui::sequencer::grid::palette

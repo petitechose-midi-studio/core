@@ -10,6 +10,7 @@
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/widget/MacroKnobVisualPolicy.hpp"
 
@@ -19,6 +20,7 @@ namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 namespace stheme = standalone::theme;
 namespace visual = macro_knob_visual;
+namespace selection_visual = core::ui::interaction;
 
 namespace {
 
@@ -115,6 +117,9 @@ FLASHMEM void MacroKnobWidget::createContainer(lv_obj_t* parent) {
     static const int32_t rowDsc[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(container_, colDsc, rowDsc);
     lv_obj_set_layout(container_, LV_LAYOUT_GRID);
+    lv_obj_add_event_cb(
+        container_, onSelectionDrawEvent, LV_EVENT_DRAW_POST, this
+    );
 }
 
 FLASHMEM void MacroKnobWidget::createConfigLabels() {
@@ -350,21 +355,28 @@ void MacroKnobWidget::updateFocusFrame() {
     const bool placement =
         placement_free_ || placement_overwrite_ ||
         placement_blocked_;
-    const bool framed = focused_ || selected_ || placement;
-    const uint32_t color = placement_blocked_
-        ? stheme::color::MACRO_AUTOMATION_RECORDING
+    const auto role = placement_blocked_
+        ? selection_visual::StructureSelectionVisualRole::DESTINATION_BLOCKED
         : placement_overwrite_
-            ? stheme::color::MACRO_CONFLICT
+            ? selection_visual::StructureSelectionVisualRole::DESTINATION_OVERWRITE
             : placement_free_
-                ? stheme::color::MACRO_CC_COLOR
-                : focused_
-                    ? stheme::color::FOCUS_EDIT
-                    : selected_
-                        ? stheme::color::CONTENT_ACTIVE
-                        : stheme::color::FOCUS_EDIT;
+                ? selection_visual::StructureSelectionVisualRole::DESTINATION_FREE
+                : selection_visual::StructureSelectionVisualRole::SELECTED;
+    const uint32_t color = selection_visual::structureSelectionColor(role);
+    const bool selectedSource = selected_ && !placement;
+    lv_obj_set_style_bg_color(container_, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(
+        container_,
+        placement
+            ? selection_visual::STRUCTURE_DESTINATION_FILL_OPA
+            : selectedSource
+                ? selection_visual::STRUCTURE_SELECTION_FILL_OPA
+                : LV_OPA_TRANSP,
+        0
+    );
     lv_obj_set_style_border_width(
         container_,
-        placement || selected_ ? 2 : (focused_ ? 1 : 0),
+        selectedSource ? 1 : 0,
         0
     );
     lv_obj_set_style_border_color(
@@ -374,10 +386,12 @@ void MacroKnobWidget::updateFocusFrame() {
     );
     lv_obj_set_style_border_opa(
         container_,
-        framed ? (placement ? LV_OPA_COVER : LV_OPA_70)
-               : LV_OPA_TRANSP,
+        selectedSource
+            ? selection_visual::STRUCTURE_SELECTION_OUTLINE_OPA
+            : LV_OPA_TRANSP,
         0
     );
+    lv_obj_invalidate(container_);
     if (add_label_) {
         lv_obj_set_style_text_opa(
             add_label_,
@@ -388,6 +402,28 @@ void MacroKnobWidget::updateFocusFrame() {
             0
         );
     }
+}
+
+void MacroKnobWidget::drawSelectionFrame(
+    lv_layer_t* layer,
+    lv_obj_t* target
+) const {
+    if (!layer || !target || !focused_) return;
+
+    const auto role = placement_blocked_
+        ? selection_visual::StructureSelectionVisualRole::DESTINATION_BLOCKED
+        : placement_overwrite_
+            ? selection_visual::StructureSelectionVisualRole::DESTINATION_OVERWRITE
+            : placement_free_
+                ? selection_visual::StructureSelectionVisualRole::DESTINATION_FREE
+                : selection_visual::StructureSelectionVisualRole::CURSOR;
+    lv_area_t area{};
+    lv_obj_get_coords(target, &area);
+    selection_visual::drawStructureSelectionCorners(
+        layer,
+        area,
+        selection_visual::structureSelectionColor(role)
+    );
 }
 
 void MacroKnobWidget::updateSlotVisibility() {
@@ -635,6 +671,15 @@ void MacroKnobWidget::onArcDrawEvent(lv_event_t* event) {
     auto* self = static_cast<MacroKnobWidget*>(lv_event_get_user_data(event));
     if (!self) return;
     self->drawArc(lv_event_get_layer(event), lv_event_get_target_obj(event));
+}
+
+void MacroKnobWidget::onSelectionDrawEvent(lv_event_t* event) {
+    auto* self = static_cast<MacroKnobWidget*>(lv_event_get_user_data(event));
+    if (!self) return;
+    self->drawSelectionFrame(
+        lv_event_get_layer(event),
+        lv_event_get_target_obj(event)
+    );
 }
 
 }  // namespace core::ui

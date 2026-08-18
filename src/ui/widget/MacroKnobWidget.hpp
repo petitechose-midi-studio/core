@@ -88,7 +88,9 @@ private:
                              lv_value_precise_t endAngle);
     void invalidateArcDelta(uint16_t previousAngle, uint16_t nextAngle);
     void drawArc(lv_layer_t* layer, lv_obj_t* target) const;
+    void drawSelectionFrame(lv_layer_t* layer, lv_obj_t* target) const;
     static void onArcDrawEvent(lv_event_t* event);
+    static void onSelectionDrawEvent(lv_event_t* event);
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* knob_ = nullptr;

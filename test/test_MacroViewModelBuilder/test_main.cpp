@@ -364,11 +364,14 @@ void test_macro_selection_projection_exposes_copy_collision_and_blocked_states()
         core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(strip.slots[0].visualState ==
            ContextActionStripVisualState::HIDDEN);
-    assert(strip.slots[2].showLabel);
+    assert(strip.slots[1].showLabel);
     assert(std::strcmp(
-        strip.slots[2].labelText.data(),
-        "CPY \xC2\xB7 2"
+        strip.slots[1].labelText.data(),
+        "2 selected"
     ) == 0);
+    assert(strip.slots[2].showIcon);
+    assert(strip.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(!strip.slots[2].showLabel);
     auto sourceSlot =
         core::ui::buildMacroWidgetProps(sourceFor(state), 0U);
     assert(sourceSlot.selected);
@@ -395,10 +398,8 @@ void test_macro_selection_projection_exposes_copy_collision_and_blocked_states()
     strip =
         core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(strip.slots[2].tone == ContextActionStripTone::WARNING);
-    assert(std::strcmp(
-        strip.slots[2].labelText.data(),
-        "PST \xC2\xB7 1 OVR"
-    ) == 0);
+    assert(strip.slots[2].icon == standalone::icons::ACTION_PASTE);
+    assert(!strip.slots[2].showLabel);
     const auto freeTarget =
         core::ui::buildMacroWidgetProps(sourceFor(state), 2U);
     const auto overwriteTarget =

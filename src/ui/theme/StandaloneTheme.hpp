@@ -32,7 +32,7 @@ constexpr uint32_t MACRO_8 = base_theme::color::MACRO_8_PINK;
 // text colors: the 320 x 240 display needs stable luminance steps more than
 // translucent decoration.
 constexpr uint32_t BACKGROUND = 0x000000;
-constexpr uint32_t SURFACE_IDLE = 0x12151A;
+constexpr uint32_t SURFACE_IDLE = 0x0C0E12;
 constexpr uint32_t SURFACE_RAISED = 0x1B1F25;
 constexpr uint32_t BORDER_SUBTLE = 0x353A42;
 constexpr uint32_t BORDER_STRONG = 0x565B63;
@@ -108,7 +108,7 @@ constexpr uint32_t LIVE_TIME = PLAY_ACTIVE;
 constexpr uint32_t CONTENT_ACTIVE = TEXT_PRIMARY;
 constexpr uint32_t POSITIVE = MACRO_4;
 constexpr uint32_t WARNING = MACRO_CONFLICT;
-constexpr uint32_t DESTRUCTIVE = MACRO_1;
+constexpr uint32_t DESTRUCTIVE = RECORD_ACTIVE;
 constexpr uint32_t SECONDARY = TEXT_SECONDARY;
 constexpr uint32_t DISABLED = TEXT_DISABLED;
 

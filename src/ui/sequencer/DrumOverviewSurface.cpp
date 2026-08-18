@@ -14,6 +14,7 @@
 
 #include "state/sequencer/DrumPatternState.hpp"
 #include "state/sequencer/SequencerUiState.hpp"
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/sequencer/DrumLaneVisuals.hpp"
 #include "ui/sequencer/DrumHitVisualSpec.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -1061,11 +1062,22 @@ FLASHMEM void drawDrumLaneRow(
         (laneSelection.overwriteMask & laneBit) != 0U;
     const uint32_t selectionMarkerColor = destination
         ? laneSelection.pasteBlocked
-            ? theme::color::DESTRUCTIVE
+            ? core::ui::interaction::structureSelectionColor(
+                  core::ui::interaction::StructureSelectionVisualRole::
+                      DESTINATION_BLOCKED
+              )
             : destinationOverwrite
-                ? theme::color::WARNING
-                : theme::color::POSITIVE
-        : theme::color::TEXT_PRIMARY;
+                ? core::ui::interaction::structureSelectionColor(
+                      core::ui::interaction::StructureSelectionVisualRole::
+                          DESTINATION_OVERWRITE
+                  )
+                : core::ui::interaction::structureSelectionColor(
+                      core::ui::interaction::StructureSelectionVisualRole::
+                          DESTINATION_FREE
+                  )
+        : core::ui::interaction::structureSelectionColor(
+              core::ui::interaction::StructureSelectionVisualRole::SELECTED
+          );
     const uint8_t laneLength =
         drumUi.drumTrack->pattern.effectiveLength(lane);
     const uint8_t stepsPerBeat =

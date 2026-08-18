@@ -105,30 +105,6 @@ FLASHMEM Tone trackPasteTone(const TrackTransferProjection& projection) {
         : Tone::POSITIVE;
 }
 
-FLASHMEM void formatSelectionLabel(
-    std::array<char, 16>& out,
-    uint8_t count
-) {
-    std::snprintf(
-        out.data(),
-        out.size(),
-        "%u selected",
-        static_cast<unsigned>(count)
-    );
-}
-
-FLASHMEM SlotProps makeSelectionCountSlot(uint8_t selectedCount) {
-    SlotProps slot{
-        .visualState = Visual::ACTIVE,
-        .tone = Tone::NEUTRAL,
-        .showIcon = false,
-        .icon = nullptr,
-        .showLabel = true,
-    };
-    formatSelectionLabel(slot.labelText, selectedCount);
-    return slot;
-}
-
 FLASHMEM void applyPastePlacementSlots(
     StripProps& props,
     uint8_t selectedCount,
@@ -137,7 +113,9 @@ FLASHMEM void applyPastePlacementSlots(
     Visual pasteVisual
 ) {
     props.slots[0].visualState = Visual::HIDDEN;
-    props.slots[1] = makeSelectionCountSlot(selectedCount);
+    props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
+        selectedCount
+    );
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         standalone::icons::ACTION_PASTE,
         pasteVisual,
@@ -146,15 +124,6 @@ FLASHMEM void applyPastePlacementSlots(
             : overwriteCount > 0U
                 ? Tone::WARNING
                 : Tone::POSITIVE
-    );
-    if (overwriteCount == 0U) return;
-
-    props.slots[2].showLabel = true;
-    std::snprintf(
-        props.slots[2].labelText.data(),
-        props.slots[2].labelText.size(),
-        "PST \xC2\xB7 %u OVR",
-        static_cast<unsigned>(overwriteCount)
     );
 }
 
@@ -439,7 +408,9 @@ FLASHMEM bool projectDrumBottomActionStrip(
             );
         if (selection.moveActive()) {
             props.slots[0].visualState = Visual::HIDDEN;
-            props.slots[1] = makeSelectionCountSlot(selectedCount);
+            props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
+                selectedCount
+            );
             props.slots[2] = core::ui::makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_PLACE_TARGET,
                 Visual::ACTIVE,
@@ -473,7 +444,9 @@ FLASHMEM bool projectDrumBottomActionStrip(
             selectedCount > 0U ? Visual::ACTIVE : Visual::DISABLED,
             Tone::WARNING
         );
-        props.slots[1] = makeSelectionCountSlot(selectedCount);
+        props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
+            selectedCount
+        );
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             interactionActionIcon(InteractionAction::COPY_STRUCTURE_SELECTION),
             interactionVisual(interaction.bottomRightVisibility),
@@ -664,7 +637,9 @@ FLASHMEM bool projectSelectionBottomActionStrip(
                 : (selectingPage ? Tone::WARNING : Tone::NEUTRAL)
         );
         applyHoldProgress(props.slots[0], holdState, holdActive);
-        props.slots[1] = makeSelectionCountSlot(selectedCount);
+        props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
+            selectedCount
+        );
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             interactionActionIcon(
                 InteractionAction::COPY_STRUCTURE_SELECTION
@@ -701,14 +676,6 @@ FLASHMEM bool projectSelectionBottomActionStrip(
                 ? Visual::ARMED
                 : interactionVisual(interaction.bottomRightVisibility)
         );
-        if (blocked) {
-            props.slots[2].showLabel = true;
-            std::snprintf(
-                props.slots[2].labelText.data(),
-                props.slots[2].labelText.size(),
-                "PST BLOCK"
-            );
-        }
         applyHoldProgress(
             props.slots[2],
             holdState,
@@ -740,7 +707,9 @@ FLASHMEM bool projectSelectionBottomActionStrip(
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
     applyHoldProgress(props.slots[0], holdState, removeHoldActive);
-    props.slots[1] = makeSelectionCountSlot(selectedCount);
+    props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
+        selectedCount
+    );
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         interactionActionIcon(rightAction),
         pasteHoldActive
