@@ -838,7 +838,7 @@ FLASHMEM void populateChordDetailOverlay(
                       .key = "Remove",
                       .value = "Trash",
                       .icon = ::standalone::icons::ACTION_REMOVE,
-                      .color = selectedColor,
+                      .color = ::standalone::theme::color::DESTRUCTIVE,
                   };
         data.overlayProps.chordPerformance[3] =
             core::ui::SequencerStepEditPropertyChip{

@@ -382,7 +382,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_width(chord_preview_, LV_PCT(100));
     lv_obj_set_height(chord_preview_, LV_SIZE_CONTENT);
     lv_obj_set_layout(chord_preview_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(chord_preview_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_flow(chord_preview_, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(
         chord_preview_,
         LV_FLEX_ALIGN_CENTER,
@@ -446,15 +446,13 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
 
     chord_preview_name_ =
         createLabel(chord_preview_, fonts.compact_selected(), TEXT_PRIMARY, LV_OPA_COVER);
-    lv_obj_set_width(chord_preview_name_, LV_PCT(100));
-    lv_obj_set_height(chord_preview_name_, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_align(chord_preview_name_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_size(chord_preview_name_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_add_flag(chord_preview_name_, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 
     chord_preview_detail_ =
         createLabel(chord_preview_, fonts.meta_label(), TEXT_SECONDARY, LV_OPA_80);
-    lv_obj_set_width(chord_preview_detail_, LV_PCT(100));
-    lv_obj_set_height(chord_preview_detail_, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_align(chord_preview_detail_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_size(chord_preview_detail_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_left(chord_preview_detail_, CHIP_GAP, 0);
 
     trigger_row_ = createChipRow(panel_);
     for (auto& widgets : trigger_widgets_) {
@@ -474,7 +472,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             widgets,
             property_row_,
             CHIP_PAD,
-            standalone_fonts.icons_14,
+            standalone_fonts.icons_16,
             TEXT_SECONDARY,
             fonts.compact_label()
         );
@@ -1081,7 +1079,7 @@ FLASHMEM void SequencerStepEditOverlay::render(
             props.properties[propertyIndex],
             selectedVisualSlot(props, slot, selectedProperty == propertyIndex),
             props.enabled && props.properties[propertyIndex].active,
-            standalone::icons::Size::M
+            standalone::icons::Size::L
         );
     }
 
