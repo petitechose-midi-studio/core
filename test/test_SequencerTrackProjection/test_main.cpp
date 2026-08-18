@@ -119,11 +119,46 @@ void testDrumTrackAndPatternProjectTheSameMusicalHeader() {
     assert(track.pageText == pattern.pageText);
 }
 
+void testPitchFeedbackProjectsTonalValueWithoutChangingContext() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    state.sequencer.pattern.setContentLength(8U);
+    state.sequencer.pattern.setEnabled(3U, true);
+    state.sequencer.pattern.note[3U] = 66U;
+    state.sequencer.activeStepProperty.set(
+        core::state::sequencer::StepProperty::NOTE
+    );
+    state.sequencer.stepInlineFeedback.show(
+        3U,
+        core::state::sequencer::StepProperty::NOTE,
+        100U
+    );
+    auto scale = state.sequencerTracks.projectScaleSettings();
+    scale.root = 0U;
+    scale.type = oc::note::sequencer::StepSequencerScaleType::Major;
+    assert(state.sequencerTracks.setProjectScaleSettings(scale));
+
+    const auto header = core::ui::sequencer::buildSequencerHeaderBarProps(
+        sourceFor(state)
+    );
+    assert(std::strcmp(header.leftText, "Pattern") == 0);
+    assert(std::strcmp(header.pageText.data(), "F#4 #IV") == 0);
+    assert(std::strcmp(
+        header.contextIcon,
+        ::standalone::icons::NOTE_PROP_PITCH
+    ) == 0);
+    assert(header.contextIconColor ==
+           core::ui::sequencer::semantic::colorForProperty(
+               core::state::sequencer::StepProperty::NOTE
+           ));
+}
+
 }  // namespace
 
 int main() {
     testEmptyTrackPreviewProjectsNoMusicalState();
     testDrumTrackAndPatternProjectTheSameMusicalHeader();
+    testPitchFeedbackProjectsTonalValueWithoutChangingContext();
     std::cout << "Sequencer Track projection tests passed\n";
     return 0;
 }

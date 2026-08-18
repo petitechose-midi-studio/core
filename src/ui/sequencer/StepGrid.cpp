@@ -78,11 +78,11 @@ constexpr uint32_t EXPANSION_LIMIT_BADGE_COLOR =
     ::standalone::theme::color::STEP_PITCH;
 constexpr lv_opa_t STEP_BADGE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_BADGE_DISABLED_OPA = LV_OPA_50;
-constexpr lv_coord_t NOTE_RAIL_HEIGHT = 2;
+constexpr lv_coord_t NOTE_RAIL_HEIGHT = 3;
 constexpr lv_coord_t NOTE_RAIL_HORIZONTAL_PAD = 0;
 constexpr lv_coord_t NOTE_GHOST_DASH = 3;
 constexpr lv_coord_t NOTE_GHOST_GAP = 2;
-constexpr lv_coord_t NOTE_HEAD_WIDTH = 2;
+constexpr lv_coord_t NOTE_HEAD_WIDTH = 3;
 constexpr lv_coord_t PITCH_OVERFLOW_EDGE_PAD = 8;
 constexpr lv_coord_t PITCH_OVERFLOW_LANE_GAP = 3;
 constexpr int32_t GRID_ROW_WRAP_Q8 = 4 * 256;
@@ -90,6 +90,9 @@ constexpr lv_coord_t SCALE_RULER_X_PAD = 1;
 constexpr lv_opa_t SCALE_RULER_CHROMATIC_OPA = LV_OPA_20;
 constexpr lv_opa_t SCALE_RULER_SCALE_OPA = LV_OPA_40;
 constexpr lv_opa_t SCALE_RULER_ROOT_OPA = LV_OPA_70;
+constexpr lv_opa_t SCALE_RULER_EDIT_CHROMATIC_OPA = LV_OPA_30;
+constexpr lv_opa_t SCALE_RULER_EDIT_SCALE_OPA = LV_OPA_60;
+constexpr lv_opa_t SCALE_RULER_EDIT_ROOT_OPA = LV_OPA_90;
 constexpr lv_coord_t PLAYHEAD_TOP_PAD = 12;
 constexpr lv_coord_t PLAYHEAD_BOTTOM_PAD = 5;
 constexpr lv_coord_t SELECTION_CORNER_LENGTH = 7;
@@ -597,7 +600,8 @@ FLASHMEM void drawScaleRuler(
     uint8_t tileIndex,
     grid::StepGridPresentation presentation,
     const grid::StepPitchViewport& viewport,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool pitchEditing
 ) {
     if (!layer || presentation != grid::StepGridPresentation::MELODIC ||
         (tileIndex % 4U) != 0U) {
@@ -629,12 +633,18 @@ FLASHMEM void drawScaleRuler(
             layer,
             static_cast<lv_coord_t>(buttonArea.x1 + SCALE_RULER_X_PAD),
             y,
-            root ? 4 : (inScale ? 2 : 1),
+            root ? (pitchEditing ? 5 : 4)
+                 : (inScale ? (pitchEditing ? 3 : 2) : 1),
             1,
             theme::color::TEXT_PRIMARY,
-            root ? SCALE_RULER_ROOT_OPA
-                 : (inScale ? SCALE_RULER_SCALE_OPA
-                            : SCALE_RULER_CHROMATIC_OPA)
+            root ? (pitchEditing ? SCALE_RULER_EDIT_ROOT_OPA
+                                 : SCALE_RULER_ROOT_OPA)
+                 : (inScale
+                        ? (pitchEditing ? SCALE_RULER_EDIT_SCALE_OPA
+                                        : SCALE_RULER_SCALE_OPA)
+                        : (pitchEditing
+                               ? SCALE_RULER_EDIT_CHROMATIC_OPA
+                               : SCALE_RULER_CHROMATIC_OPA))
         );
     }
 }
@@ -648,7 +658,7 @@ FLASHMEM void drawTileNoteEvents(
     uint32_t accentColor,
     const grid::StepPitchViewport& viewport,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    bool chromaticPitchEditing
+    bool pitchEditing
 ) {
     if (!layer || tileIndex >= tiles.size()) return;
 
@@ -809,7 +819,7 @@ FLASHMEM void drawTileNoteEvents(
                 );
             }
             if (presentation == grid::StepGridPresentation::MELODIC &&
-                chromaticPitchEditing &&
+                pitchEditing &&
                 scaleSettings.type !=
                     oc::note::sequencer::StepSequencerScaleType::Chromatic &&
                 !oc::note::sequencer::scaleContainsNote(
@@ -1097,7 +1107,8 @@ FLASHMEM void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
         tileIndex,
         self->render_cache_.presentation,
         self->render_cache_.pitchViewport,
-        self->render_cache_.scaleSettings
+        self->render_cache_.scaleSettings,
+        self->render_cache_.pitchEditing
     );
     drawTileNoteEvents(
         layer,
@@ -1108,7 +1119,7 @@ FLASHMEM void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
         self->render_cache_.accentColor,
         self->render_cache_.pitchViewport,
         self->render_cache_.scaleSettings,
-        self->render_cache_.chromaticPitchEditing
+        self->render_cache_.pitchEditing
     );
     drawPlayheadLine(layer, buttonArea, cache);
 
@@ -1231,14 +1242,13 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
         render_cache_.scaleSettings.root != frameState.scaleSettings.root ||
         render_cache_.scaleSettings.type != frameState.scaleSettings.type ||
         render_cache_.scaleSettings.mode != frameState.scaleSettings.mode ||
-        render_cache_.chromaticPitchEditing !=
-            frameState.chromaticPitchEditing) {
+        render_cache_.pitchEditing != frameState.pitchEditing) {
         invalidateTileCaches();
         render_cache_.presentation = frameState.presentation;
         render_cache_.accentColor = frameState.accentColor;
         render_cache_.pitchViewport = targetPitchViewport;
         render_cache_.scaleSettings = frameState.scaleSettings;
-        render_cache_.chromaticPitchEditing = frameState.chromaticPitchEditing;
+        render_cache_.pitchEditing = frameState.pitchEditing;
     }
 
     const auto plan = grid::buildFrameRenderPlan(

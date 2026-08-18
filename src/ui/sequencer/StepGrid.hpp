@@ -86,7 +86,7 @@ private:
         uint32_t accentColor = 0;
         sequencer::grid::StepPitchViewport pitchViewport{};
         oc::note::sequencer::StepSequencerScaleSettings scaleSettings{};
-        bool chromaticPitchEditing = false;
+        bool pitchEditing = false;
         core::state::sequencer::StepProperty property =
             core::state::sequencer::StepProperty::NOTE;
         InlineFeedbackSnapshot feedback{};

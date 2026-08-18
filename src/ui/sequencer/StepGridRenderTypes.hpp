@@ -182,7 +182,7 @@ struct StepGridFrameState {
     uint32_t accentColor = 0;
     StepPitchViewport pitchViewport{};
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings{};
-    bool chromaticPitchEditing = false;
+    bool pitchEditing = false;
     core::state::sequencer::StepProperty activeProperty =
         core::state::sequencer::StepProperty::NOTE;
     bool feedbackVisible = false;

@@ -15,6 +15,7 @@
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace core::ui::sequencer {
@@ -41,6 +42,30 @@ const char* clipboardBadge(const core::state::StructureClipboardState& clipboard
 uint16_t pageBit(uint8_t page) {
     if (page >= core::state::sequencer::SequencerState::PAGE_COUNT) return 0;
     return static_cast<uint16_t>(1U << page);
+}
+
+FLASHMEM bool inlinePitchFeedbackStep(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t& step
+) {
+    if (!sequencer.stepInlineFeedback.visible.get() ||
+        sequencer.stepInlineFeedback.property.get() !=
+            core::state::sequencer::StepProperty::NOTE) {
+        return false;
+    }
+
+    const auto mask = sequencer.stepInlineFeedback.touchedMask.get();
+    step = sequencer.focusedStep.get();
+    if (mask.test(step)) return true;
+
+    for (uint16_t candidate = 0U;
+         candidate < core::state::sequencer::SequencerState::MAX_STEPS;
+         ++candidate) {
+        if (!mask.test(static_cast<uint8_t>(candidate))) continue;
+        step = static_cast<uint8_t>(candidate);
+        return true;
+    }
+    return false;
 }
 
 }  // namespace
@@ -185,7 +210,44 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     std::array<core::ui::SequencerHeaderMetricProps, 2> metrics{};
     const char* contextIcon = "";
     uint32_t contextIconColor = 0U;
-    std::array<char, 8> pageText{};
+    std::array<char, SequencerHeaderBarProps::PAGE_TEXT_SIZE> pageText{};
+    uint8_t pitchFeedbackStep = 0U;
+    const bool inlinePitchFeedback =
+        !anySelection && !previewEmptyTrack && !drumGrid &&
+        inlinePitchFeedbackStep(sequencer, pitchFeedbackStep);
+    std::array<char, SequencerHeaderBarProps::PAGE_TEXT_SIZE> tonalPitchText{};
+    if (!drumGrid && !drumChild && !ccLaneGrid &&
+        (focusingStep || inlinePitchFeedback)) {
+        const auto displayContext =
+            core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+                sequencer,
+                source.tracks.projectScaleSettings(),
+                inlinePitchFeedback
+                    ? core::state::sequencer::StepProperty::NOTE
+                    : sequencer.activeStepProperty.get()
+            );
+        const auto display =
+            core::state::sequencer::buildSequencerResolvedStepDisplayState(
+                displayContext,
+                inlinePitchFeedback
+                    ? pitchFeedbackStep
+                    : sequencer.focusedStep.get(),
+                inlinePitchFeedback
+            );
+        if (display.valid) {
+            uint8_t note = display.note;
+            if (!inlinePitchFeedback && display.variation.visible &&
+                display.variation.deltaVisible) {
+                note = display.variation.resolved.resolved.note;
+            }
+            core::state::sequencer::note_spelling::formatTonalNoteLabel(
+                tonalPitchText.data(),
+                tonalPitchText.size(),
+                note,
+                displayContext.scaleSettings
+            );
+        }
+    }
     uint8_t headerLength =
         core::state::sequencer::activeContentLength(sequencer);
     uint8_t headerActivePage =
@@ -309,29 +371,12 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             );
         }
     } else if (focusingStep) {
-        const auto displayContext =
-            core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
-                sequencer,
-                source.tracks.projectScaleSettings(),
-                sequencer.activeStepProperty.get()
-            );
-        const auto focused =
-            core::state::sequencer::buildSequencerResolvedStepDisplayState(
-                displayContext,
-                sequencer.focusedStep.get(),
-                false
-            );
-        if (focused.valid) {
-            uint8_t note = focused.note;
-            if (focused.variation.visible &&
-                focused.variation.deltaVisible) {
-                note = focused.variation.resolved.resolved.note;
-            }
-            core::state::sequencer::note_spelling::formatTonalNoteLabel(
+        if (tonalPitchText[0] != '\0') {
+            std::snprintf(
                 badgeText.data(),
                 badgeText.size(),
-                note,
-                displayContext.scaleSettings
+                "%s",
+                tonalPitchText.data()
             );
         }
     } else if (trackPasteDetailsAvailable) {
@@ -352,6 +397,17 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             "%s",
             badge
         );
+    }
+
+    if (inlinePitchFeedback && tonalPitchText[0] != '\0') {
+        pageText = tonalPitchText;
+        contextIcon = visual::propertyIconGlyph(
+            core::state::sequencer::StepProperty::NOTE
+        );
+        contextIconColor = semantic::colorForProperty(
+            core::state::sequencer::StepProperty::NOTE
+        );
+        if (focusingStep) badgeText.fill('\0');
     }
 
     if (!previewEmptyTrack && pageText[0] == '\0' && !pageStripVisible) {

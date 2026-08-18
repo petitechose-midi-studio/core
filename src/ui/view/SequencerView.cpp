@@ -615,7 +615,17 @@ void SequencerView::requestHistoryFeedbackRender() {
 }
 
 void SequencerView::requestGridRender() {
-    requestRender(RENDER_GRID);
+    const auto& feedback = state_refs_.sequencer.stepInlineFeedback;
+    const bool pitchVisible =
+        feedback.visible.get() &&
+        feedback.property.get() ==
+            core::state::sequencer::StepProperty::NOTE;
+    uint32_t flags = RENDER_GRID;
+    if (pitchVisible || pitch_feedback_header_visible_) {
+        flags |= RENDER_HEADER_TOP;
+    }
+    pitch_feedback_header_visible_ = pitchVisible;
+    requestRender(flags);
 }
 
 void SequencerView::requestGridTickRender() {

@@ -336,9 +336,13 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     const auto& pattern =
         core::state::sequencer::authoringPattern(sequencer);
     frame.scaleSettings = context.scaleSettings;
-    frame.chromaticPitchEditing =
-        pattern.pitchEditMode ==
-        core::state::sequencer::SequencerPitchEditMode::CHROMATIC;
+    frame.pitchEditing =
+        frame.activeProperty ==
+            core::state::sequencer::StepProperty::NOTE &&
+        (stepFocusActive ||
+         (frame.feedbackVisible &&
+          frame.feedbackProperty ==
+              core::state::sequencer::StepProperty::NOTE));
     const uint8_t length = context.length;
     const auto& stepSelection = sequencer.structureUi.stepSelection;
     const bool stepSelectionActive = stepSelection.active.get();

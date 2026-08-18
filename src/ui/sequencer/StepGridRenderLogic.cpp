@@ -168,9 +168,9 @@ FLASHMEM lv_coord_t stepPitchY(
 }
 
 FLASHMEM uint8_t stepEventHeadHeight(uint8_t velocity) {
-    if (velocity < 43U) return 2U;
-    if (velocity < 86U) return 3U;
-    return 4U;
+    if (velocity < 43U) return 3U;
+    if (velocity < 86U) return 4U;
+    return 5U;
 }
 
 FLASHMEM int scaleDegreeIndexForNote(oc::note::sequencer::StepSequencerScaleSettings settings,
