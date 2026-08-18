@@ -219,10 +219,10 @@ FLASHMEM void provideModulatorPickerRow(
         out.icon.size(),
         "%s",
         modulator.kind == core::state::modulation::ModulatorKind::LFO
-            ? ::standalone::icons::MACRO_MODULATION
+            ? ::standalone::icons::MODULATION
             : (modulator.kind == core::state::modulation::ModulatorKind::ADSR
                 ? ::standalone::icons::NOTE_PROP_GATE
-                : ::standalone::icons::MACRO_AUTOMATION)
+                : ::standalone::icons::AUTOMATION)
     );
     out.iconFont = standalone_fonts.icons_14;
     const bool enabled =
@@ -287,7 +287,7 @@ FLASHMEM void provideModulationAssignmentRow(
             out.icon.data(),
             out.icon.size(),
             "%s",
-            enabledCount > 0U ? ::standalone::icons::MACRO_MODULATION
+            enabledCount > 0U ? ::standalone::icons::MODULATION
                               : ::standalone::icons::STATUS_PAUSED
         );
         out.iconFont = standalone_fonts.icons_14;
@@ -316,7 +316,7 @@ FLASHMEM void provideModulationAssignmentRow(
             out.icon.data(),
             out.icon.size(),
             "%s",
-            ::standalone::icons::MACRO_AUTOMATION
+            ::standalone::icons::AUTOMATION
         );
         out.iconFont = standalone_fonts.icons_14;
         out.iconColor = ::standalone::theme::color::MACRO_MODULATION;
@@ -349,8 +349,8 @@ FLASHMEM void provideModulationAssignmentRow(
         out.icon.size(),
         "%s",
         modulator->kind == core::state::modulation::ModulatorKind::LFO
-            ? ::standalone::icons::MACRO_MODULATION
-            : ::standalone::icons::MACRO_AUTOMATION
+            ? ::standalone::icons::MODULATION
+            : ::standalone::icons::AUTOMATION
     );
     out.iconFont = standalone_fonts.icons_14;
     out.iconColor = edgeEnabled && sourceEnabled

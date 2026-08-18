@@ -227,7 +227,7 @@ FLASHMEM void populateAuditionDepthRow(
         out.icon.data(),
         out.icon.size(),
         "%s",
-        standalone::icons::MACRO_MODULATION
+        standalone::icons::MODULATION
     );
     out.iconFont = standalone_fonts.icons_14;
     out.iconColor = theme::color::MACRO_MODULATION;
@@ -439,10 +439,10 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     standalone::icons::set(
         source_icon_,
         source.kind == ModulatorKind::LFO
-            ? standalone::icons::MACRO_MODULATION
+            ? standalone::icons::MODULATION
             : (source.kind == ModulatorKind::ADSR
                 ? standalone::icons::NOTE_PROP_GATE
-                : standalone::icons::MACRO_AUTOMATION),
+                : standalone::icons::AUTOMATION),
         standalone::icons::Size::L
     );
     lv_obj_set_style_text_color(
@@ -454,9 +454,9 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     );
     standalone::icons::set(
         state_icon_,
-        recording ? standalone::icons::MACRO_AUTOMATION
+        recording ? standalone::icons::AUTOMATION
         : existing ? standalone::icons::LOCK
-                       : (audition ? standalone::icons::ACTION_APPLY
+                       : (audition ? standalone::icons::STATUS_PREVIEW
                        : (enabled ? standalone::icons::STATUS_RESUME
                                   : standalone::icons::STATUS_PAUSED)),
         standalone::icons::Size::S

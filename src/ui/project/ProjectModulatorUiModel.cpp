@@ -128,9 +128,9 @@ FLASHMEM const char* adsrRetriggerLabel(ModulatorAdsrRetriggerMode mode) {
 }
 
 FLASHMEM const char* sourceIcon(ModulatorKind kind) {
-    if (kind == ModulatorKind::LFO) return standalone::icons::MACRO_MODULATION;
+    if (kind == ModulatorKind::LFO) return standalone::icons::MODULATION;
     if (kind == ModulatorKind::ADSR) return standalone::icons::NOTE_PROP_GATE;
-    return standalone::icons::MACRO_AUTOMATION;
+    return standalone::icons::AUTOMATION;
 }
 
 FLASHMEM void formatFreePeriod(char* out, size_t size, uint32_t milliseconds) {
@@ -267,7 +267,7 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
         setText(out.key, "+ Source");
         setText(out.value, "Create");
         out.iconFont = standalone_fonts.icons_14;
-        setText(out.icon, standalone::icons::MACRO_MODULATION);
+        setText(out.icon, standalone::icons::MODULATION);
         out.iconColor = standalone::theme::color::MACRO_MODULATION;
         return;
     }
@@ -351,7 +351,7 @@ FLASHMEM void populateSourceKindRow(
         case ModulatorKind::LFO:
             setText(out.key, "LFO");
             setText(out.value, "Cyclic");
-            setText(out.icon, standalone::icons::MACRO_MODULATION);
+            setText(out.icon, standalone::icons::MODULATION);
             break;
         case ModulatorKind::ADSR:
             setText(out.key, "DAHDSR");
@@ -361,7 +361,7 @@ FLASHMEM void populateSourceKindRow(
         case ModulatorKind::RECORDED_SHAPE:
             setText(out.key, "Recorded shape");
             setText(out.value, "Recorded motion");
-            setText(out.icon, standalone::icons::MACRO_AUTOMATION);
+            setText(out.icon, standalone::icons::AUTOMATION);
             break;
         default:
             return;
@@ -404,7 +404,7 @@ FLASHMEM void populateSourceDetailRow(
         case SourceDetailItem::SHAPE:
             setText(out.key, "Shape");
             setText(out.value, shapeLabel(source.parameters.lfo.shape));
-            setText(out.icon, standalone::icons::MACRO_MODULATION);
+            setText(out.icon, standalone::icons::MODULATION);
             break;
         case SourceDetailItem::RATE:
             setText(out.key, "Rate");
@@ -435,7 +435,7 @@ FLASHMEM void populateSourceDetailRow(
         case SourceDetailItem::RECORD:
             setText(out.key, "Record");
             setText(out.value, "Hold + turn");
-            setText(out.icon, standalone::icons::MACRO_AUTOMATION);
+            setText(out.icon, standalone::icons::AUTOMATION);
             break;
         case SourceDetailItem::LENGTH: {
             setText(out.key, "Length");
@@ -599,7 +599,7 @@ FLASHMEM void populateSourceOptionsRow(
                     source.parameters.adsr.traits
                 ))
             );
-            setText(out.icon, standalone::icons::MACRO_MODULATION);
+            setText(out.icon, standalone::icons::MODULATION);
             break;
         case SourceDetailItem::PHASE: {
             setText(out.key, "Phase");
@@ -925,7 +925,7 @@ FLASHMEM void populateDestinationPickerRow(
     }
     setText(
         out.icon,
-        auditioned ? standalone::icons::ACTION_APPLY : standalone::icons::KNOB
+        auditioned ? standalone::icons::STATUS_PREVIEW : standalone::icons::KNOB
     );
     out.iconFont = standalone_fonts.icons_14;
     out.iconColor = auditioned || ((active || addSlot) && !alreadyAssigned)

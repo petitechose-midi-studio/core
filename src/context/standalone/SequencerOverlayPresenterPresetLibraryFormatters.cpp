@@ -34,18 +34,18 @@ FLASHMEM core::ui::ContextActionStripProps buildPresetLibraryActionStripProps(
 
     props.visible = true;
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        action.saveIcon
-            ? ::standalone::icons::ACTION_APPLY
-            : ::standalone::icons::STORAGE,
+        action.saveMode
+            ? ::standalone::icons::ACTION_LOAD
+            : ::standalone::icons::ACTION_SAVE,
         Visual::ACTIVE,
-        action.saveIcon ? Tone::CONSTRUCTIVE : Tone::POSITIVE
+        action.saveMode ? Tone::CONSTRUCTIVE : Tone::POSITIVE
     );
     props.slots[0].showLabel = true;
     std::snprintf(
         props.slots[0].labelText.data(),
         props.slots[0].labelText.size(),
         "%s",
-        action.saveIcon ? "Load" : "Save"
+        action.saveMode ? "Load" : "Save"
     );
     props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
@@ -53,9 +53,9 @@ FLASHMEM core::ui::ContextActionStripProps buildPresetLibraryActionStripProps(
             ? action.statusIcon
             : (action.overwriteIcon
                 ? ::standalone::icons::ACTION_OVERWRITE
-                : (action.saveIcon
-                    ? ::standalone::icons::STORAGE
-                    : ::standalone::icons::ACTION_APPLY)),
+                : (action.saveMode
+                    ? ::standalone::icons::ACTION_SAVE
+                    : ::standalone::icons::ACTION_LOAD)),
         action.visual,
         action.tone
     );

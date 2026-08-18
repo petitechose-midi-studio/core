@@ -377,6 +377,33 @@ void test_cc_lane_feedback_status_icon_is_scoped_to_matching_action() {
         << "[PASS] test_cc_lane_feedback_status_icon_is_scoped_to_matching_action\n";
 }
 
+void test_context_icons_project_semantic_actions_without_fallback() {
+    namespace contextual = core::state::contextual;
+    namespace visuals =
+        core::context::standalone::cc_lane_overlay_visuals;
+
+    assert(visuals::iconGlyph(contextual::ContextIconId::NONE) == nullptr);
+    assert(std::strcmp(
+        visuals::iconGlyph(contextual::ContextIconId::CREATE),
+        standalone::icons::ACTION_CREATE
+    ) == 0);
+    assert(std::strcmp(
+        visuals::iconGlyph(contextual::ContextIconId::APPLY),
+        standalone::icons::ACTION_VALIDATE
+    ) == 0);
+    assert(std::strcmp(
+        visuals::iconGlyph(contextual::ContextIconId::SAVE),
+        standalone::icons::ACTION_SAVE
+    ) == 0);
+    assert(std::strcmp(
+        visuals::iconGlyph(contextual::ContextIconId::LOAD),
+        standalone::icons::ACTION_LOAD
+    ) == 0);
+
+    std::cout
+        << "[PASS] test_context_icons_project_semantic_actions_without_fallback\n";
+}
+
 }  // namespace
 
 int main() {
@@ -388,6 +415,7 @@ int main() {
     test_picker_revision_tracks_rendered_feedback_identity();
     test_cc_lane_guard_visual_is_scoped_to_the_matching_action();
     test_cc_lane_feedback_status_icon_is_scoped_to_matching_action();
+    test_context_icons_project_semantic_actions_without_fallback();
     std::cout << "\nAll SequencerOverlayPresenterFormatters tests passed.\n";
     return 0;
 }

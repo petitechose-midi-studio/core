@@ -89,7 +89,7 @@ struct SequencerPresetLibraryActionPresentation {
         core::ui::ContextActionStripVisualState::DISABLED;
     core::ui::ContextActionStripTone tone =
         core::ui::ContextActionStripTone::NEUTRAL;
-    bool saveIcon = false;
+    bool saveMode = false;
     bool overwriteIcon = false;
     const char* statusIcon = nullptr;
     bool showLabel = false;

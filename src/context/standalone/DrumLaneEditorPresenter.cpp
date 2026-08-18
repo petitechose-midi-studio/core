@@ -39,9 +39,9 @@ FLASHMEM const char* fieldIcon(Field field) {
     switch (field) {
         case Field::PRESET: return icons::ROUTING;
         case Field::NOTE: return icons::NOTE_PROP_PITCH;
-        case Field::IDENTITY: return icons::TEXT_NAME;
+        case Field::IDENTITY: return icons::ACTION_RENAME;
         case Field::POSITION: return icons::ACTION_PLACE_TARGET;
-        case Field::NAME: return icons::TEXT_NAME;
+        case Field::NAME: return icons::ACTION_RENAME;
         case Field::ICON: return icons::CYCLE_STATE;
         case Field::COLOR: return icons::COLOR_SWATCH;
         case Field::USE_PRESET_DEFAULTS: return icons::ACTION_RESET;

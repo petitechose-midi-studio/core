@@ -441,7 +441,7 @@ FLASHMEM bool projectDrumBottomActionStrip(
             props.slots[0].visualState = Visual::HIDDEN;
             props.slots[1] = makeSelectionCountSlot(selectedCount);
             props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                standalone::icons::ACTION_APPLY,
+                standalone::icons::ACTION_PLACE_TARGET,
                 Visual::ACTIVE,
                 Tone::POSITIVE
             );

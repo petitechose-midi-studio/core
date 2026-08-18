@@ -24,15 +24,27 @@ constexpr ProjectMenuRow row(const char* label,
                              ProjectMenuRowKind kind,
                              ProjectNodeId target,
                              bool hasTarget = false,
-                             bool enabled = true) {
+                             bool enabled = true,
+                             ProjectMenuIcon icon = ProjectMenuIcon::NONE) {
     return ProjectMenuRow{
         .label = label,
         .value = value,
         .kind = kind,
+        .icon = icon,
         .enabled = enabled,
         .target = target,
         .hasTarget = hasTarget,
     };
+}
+
+constexpr ProjectMenuRow row(const char* label,
+                             const char* value,
+                             ProjectMenuRowKind kind,
+                             ProjectNodeId target,
+                             ProjectMenuIcon icon,
+                             bool hasTarget = false,
+                             bool enabled = true) {
+    return row(label, value, kind, target, hasTarget, enabled, icon);
 }
 
 constexpr const char* const ROUTING_TRACK_LABELS[] PROGMEM = {
@@ -222,6 +234,7 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page, ProjectMenuContext contex
         "",
         ProjectMenuRowKind::Folder,
         ProjectNodeId::MUSIC_ROOT,
+        ProjectMenuIcon::SCALE,
         true
     );
     setScaleSummary(music, context.projectScale);
@@ -232,6 +245,7 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page, ProjectMenuContext contex
         "",
         ProjectMenuRowKind::Folder,
         ProjectNodeId::TRANSPORT_ROOT,
+        ProjectMenuIcon::TEMPO,
         true
     );
     setRowValue(
@@ -245,6 +259,7 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page, ProjectMenuContext contex
         clockModeValue(context.clockMode),
         ProjectMenuRowKind::Folder,
         ProjectNodeId::TRANSPORT_ROOT,
+        ProjectMenuIcon::CLOCK_SYNC,
         true
     ));
     addRow(page, row(
@@ -252,6 +267,7 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page, ProjectMenuContext contex
         "16 Tracks",
         ProjectMenuRowKind::Folder,
         ProjectNodeId::ROUTING_ROOT,
+        ProjectMenuIcon::ROUTING,
         true
     ));
     addRow(page, row(
@@ -261,6 +277,7 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page, ProjectMenuContext contex
             : (context.projectHasSavedIdentity ? "Saved" : "Unsaved"),
         ProjectMenuRowKind::Folder,
         ProjectNodeId::STORAGE_ROOT,
+        ProjectMenuIcon::STORAGE,
         true
     ));
 }
@@ -272,7 +289,8 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
             "Save & reset",
             "",
             ProjectMenuRowKind::Action,
-            ProjectNodeId::NEW_PROJECT_CONFIRM
+            ProjectNodeId::NEW_PROJECT_CONFIRM,
+            ProjectMenuIcon::ACTION_NEW_PROJECT
         );
         copyRowValue(saveAndReset, projectIdentityLabel(context));
         addRow(page, saveAndReset);
@@ -281,7 +299,8 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
             "Save as new",
             "Next",
             ProjectMenuRowKind::Action,
-            ProjectNodeId::NEW_PROJECT_CONFIRM
+            ProjectNodeId::NEW_PROJECT_CONFIRM,
+            ProjectMenuIcon::ACTION_NEW_PROJECT
         );
         addRow(page, saveAsNew);
     }
@@ -289,11 +308,18 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
         "Don't save",
         "Reset",
         ProjectMenuRowKind::Action,
-        ProjectNodeId::NEW_PROJECT_CONFIRM
+        ProjectNodeId::NEW_PROJECT_CONFIRM,
+        ProjectMenuIcon::ACTION_NEW_PROJECT
     );
     dontSave.tone = ProjectMenuRowTone::Destructive;
     addRow(page, dontSave);
-    addRow(page, row("Cancel", "Back", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
+    addRow(page, row(
+        "Cancel",
+        "Back",
+        ProjectMenuRowKind::Action,
+        ProjectNodeId::NEW_PROJECT_CONFIRM,
+        ProjectMenuIcon::ACTION_CANCEL
+    ));
 }
 
 FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
@@ -305,7 +331,8 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
             "Save & load",
             "",
             ProjectMenuRowKind::Action,
-            ProjectNodeId::LOAD_PROJECT_CONFIRM
+            ProjectNodeId::LOAD_PROJECT_CONFIRM,
+            ProjectMenuIcon::ACTION_LOAD
         );
         setTransitionValue(saveAndLoad, projectIdentityLabel(context), projectId);
         addRow(page, saveAndLoad);
@@ -314,7 +341,8 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
         "Save as & load",
         "",
         ProjectMenuRowKind::Action,
-        ProjectNodeId::LOAD_PROJECT_CONFIRM
+        ProjectNodeId::LOAD_PROJECT_CONFIRM,
+        ProjectMenuIcon::ACTION_LOAD
     );
     setTransitionValue(
         saveAsAndLoad,
@@ -327,7 +355,8 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
         "Don't save",
         "",
         ProjectMenuRowKind::Action,
-        ProjectNodeId::LOAD_PROJECT_CONFIRM
+        ProjectNodeId::LOAD_PROJECT_CONFIRM,
+        ProjectMenuIcon::ACTION_LOAD
     );
     dontSave.tone = ProjectMenuRowTone::Destructive;
     {
@@ -343,7 +372,8 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
         "Cancel",
         "Back",
         ProjectMenuRowKind::Action,
-        ProjectNodeId::LOAD_PROJECT_CONFIRM
+        ProjectNodeId::LOAD_PROJECT_CONFIRM,
+        ProjectMenuIcon::ACTION_CANCEL
     ));
 }
 
@@ -353,32 +383,43 @@ FLASHMEM void buildMusicRootRows(
     const ProjectNavigationState& navigation
 ) {
     context.projectScale.clamp();
-    auto scaleRow = row("Scale", "", ProjectMenuRowKind::Folder, ProjectNodeId::MUSIC_SCALE, true);
+    auto scaleRow = row(
+        "Scale",
+        "",
+        ProjectMenuRowKind::Folder,
+        ProjectNodeId::MUSIC_SCALE,
+        ProjectMenuIcon::SCALE,
+        true
+    );
     setScaleSummary(scaleRow, context.projectScale);
     addRow(page, scaleRow);
     addRow(page, row(
         "Pattern default",
         inheritValue(navigation.patternsInheritScale),
         ProjectMenuRowKind::Value,
-        ProjectNodeId::MUSIC_ROOT
+        ProjectNodeId::MUSIC_ROOT,
+        ProjectMenuIcon::PATTERN
     ));
     addRow(page, row(
         "Clip default",
         inheritValue(navigation.clipsInheritScale),
         ProjectMenuRowKind::Value,
-        ProjectNodeId::MUSIC_ROOT
+        ProjectNodeId::MUSIC_ROOT,
+        ProjectMenuIcon::CLIP
     ));
     addRow(page, row(
         "Step paste",
         stepPasteModeValue(navigation.stepPasteMode),
         ProjectMenuRowKind::Value,
-        ProjectNodeId::MUSIC_ROOT
+        ProjectNodeId::MUSIC_ROOT,
+        ProjectMenuIcon::ACTION_PASTE
     ));
     addRow(page, row(
         "CC defaults",
         "4 Lanes",
         ProjectMenuRowKind::Folder,
         ProjectNodeId::MUSIC_CC_DEFAULTS,
+        ProjectMenuIcon::MIDI_CC,
         true
     ));
 }
@@ -392,7 +433,8 @@ FLASHMEM void buildMusicCcDefaultRows(
             CC_DEFAULT_LABELS[lane],
             "",
             ProjectMenuRowKind::Value,
-            ProjectNodeId::MUSIC_CC_DEFAULTS
+            ProjectNodeId::MUSIC_CC_DEFAULTS,
+            ProjectMenuIcon::MIDI_CC
         );
         setMidiCcValue(laneRow, navigation.ccLaneDefaultControllers[lane]);
         addRow(page, laneRow);
@@ -405,11 +447,31 @@ FLASHMEM void buildMusicScaleRows(
     const ProjectNavigationState& navigation
 ) {
     context.projectScale.clamp();
-    addRow(page, row("Root", scale_catalog::rootLabel(context.projectScale.root), ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE));
-    addRow(page, row("Scale", scale_catalog::scaleTypeLabel(context.projectScale.type), ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE));
-    addRow(page, row("Constraint", scale_catalog::constraintModeLabel(context.projectScale.mode), ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE));
-    addRow(page, row("Patterns", inheritValue(navigation.patternsInheritScale), ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE));
-    addRow(page, row("Clips", inheritValue(navigation.clipsInheritScale), ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE));
+    addRow(page, row(
+        "Root", scale_catalog::rootLabel(context.projectScale.root),
+        ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE,
+        ProjectMenuIcon::NOTE_PROP_PITCH
+    ));
+    addRow(page, row(
+        "Scale", scale_catalog::scaleTypeLabel(context.projectScale.type),
+        ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE,
+        ProjectMenuIcon::SCALE
+    ));
+    addRow(page, row(
+        "Constraint", scale_catalog::constraintModeLabel(context.projectScale.mode),
+        ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_SCALE,
+        ProjectMenuIcon::LOCK
+    ));
+    addRow(page, row(
+        "Patterns", inheritValue(navigation.patternsInheritScale),
+        ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE,
+        ProjectMenuIcon::PATTERN
+    ));
+    addRow(page, row(
+        "Clips", inheritValue(navigation.clipsInheritScale),
+        ProjectMenuRowKind::Toggle, ProjectNodeId::MUSIC_SCALE,
+        ProjectMenuIcon::CLIP
+    ));
 }
 
 FLASHMEM void buildTransportRows(
@@ -417,7 +479,10 @@ FLASHMEM void buildTransportRows(
     ProjectMenuContext context,
     const ProjectNavigationState& navigation
 ) {
-    auto tempo = row("Tempo", "", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT);
+    auto tempo = row(
+        "Tempo", "", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT,
+        ProjectMenuIcon::TEMPO
+    );
     setRowValue(
         tempo,
         static_cast<unsigned>(roundedProjectTempoBpm(context.tempoBpm)),
@@ -425,28 +490,64 @@ FLASHMEM void buildTransportRows(
     );
     addRow(page, tempo);
 
-    auto swing = row("Swing", "", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT);
+    auto swing = row(
+        "Swing", "", ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT,
+        ProjectMenuIcon::SWING
+    );
     setRowValue(swing, navigation.transportSwingPercent, "%");
     addRow(page, swing);
-    addRow(page, row("Clock", clockModeValue(context.clockMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Run mode", runModeValue(navigation.transportRunMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Sync settings", "System", ProjectMenuRowKind::Disabled, ProjectNodeId::TRANSPORT_ROOT, false, false));
+    addRow(page, row(
+        "Clock", clockModeValue(context.clockMode),
+        ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT,
+        ProjectMenuIcon::CLOCK_SYNC
+    ));
+    addRow(page, row(
+        "Run mode", runModeValue(navigation.transportRunMode),
+        ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT,
+        ProjectMenuIcon::TRANSPORT_PLAY
+    ));
+    addRow(page, row(
+        "Sync settings", "System",
+        ProjectMenuRowKind::Disabled, ProjectNodeId::TRANSPORT_ROOT,
+        ProjectMenuIcon::SETTINGS_GEAR, false, false
+    ));
 }
 
 FLASHMEM void buildStorageRows(ProjectMenuPage& page, ProjectMenuContext context) {
-    addRow(page, row("Save project", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("Save as", "Name", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("Rename", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("New project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("Load project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    auto projectRow = row("Project", "", ProjectMenuRowKind::Disabled, ProjectNodeId::STORAGE_ROOT, false, false);
+    addRow(page, row(
+        "Save project", "Current", ProjectMenuRowKind::Action,
+        ProjectNodeId::STORAGE_ROOT, ProjectMenuIcon::ACTION_SAVE
+    ));
+    addRow(page, row(
+        "Save as", "Name", ProjectMenuRowKind::Action,
+        ProjectNodeId::STORAGE_ROOT, ProjectMenuIcon::ACTION_SAVE
+    ));
+    addRow(page, row(
+        "Rename", "Current", ProjectMenuRowKind::Action,
+        ProjectNodeId::STORAGE_ROOT, ProjectMenuIcon::ACTION_RENAME
+    ));
+    addRow(page, row(
+        "New project", "Reset", ProjectMenuRowKind::Action,
+        ProjectNodeId::STORAGE_ROOT, ProjectMenuIcon::ACTION_NEW_PROJECT
+    ));
+    addRow(page, row(
+        "Load project", "Browse", ProjectMenuRowKind::Action,
+        ProjectNodeId::STORAGE_ROOT, ProjectMenuIcon::ACTION_LOAD
+    ));
+    auto projectRow = row(
+        "Project", "", ProjectMenuRowKind::Disabled,
+        ProjectNodeId::STORAGE_ROOT, ProjectMenuIcon::VIEW_PROJECT, false, false
+    );
     copyRowValue(projectRow, projectIdentityLabel(context));
     addRow(page, projectRow);
 }
 
 FLASHMEM void buildProjectNameEditorRows(ProjectMenuPage& page,
                                          const ProjectNavigationState& navigation) {
-    auto nameRow = row("Name", "", ProjectMenuRowKind::Disabled, navigation.currentNode.get(), false, false);
+    auto nameRow = row(
+        "Name", "", ProjectMenuRowKind::Disabled, navigation.currentNode.get(),
+        ProjectMenuIcon::ACTION_RENAME, false, false
+    );
     copyRowValue(nameRow, navigation.editingProjectSlug.data());
     addRow(page, nameRow);
 
@@ -498,7 +599,8 @@ FLASHMEM void buildLoadProjectRows(ProjectMenuPage& page,
             navigation.loadProjects.entries[i].id.data(),
             "Load",
             ProjectMenuRowKind::Action,
-            ProjectNodeId::LOAD_PROJECT
+            ProjectNodeId::LOAD_PROJECT,
+            ProjectMenuIcon::VIEW_PROJECT
         ));
     }
 }
@@ -509,7 +611,8 @@ FLASHMEM void buildRoutingRows(ProjectMenuPage& page, ProjectMenuContext context
             ROUTING_TRACK_LABELS[i],
             "",
             ProjectMenuRowKind::Value,
-            ProjectNodeId::ROUTING_ROOT
+            ProjectNodeId::ROUTING_ROOT,
+            ProjectMenuIcon::MIDI_CHANNEL
         );
         setMidiChannelValue(routingRow, context.outputMidiChannels[i]);
         addRow(page, routingRow);

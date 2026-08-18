@@ -318,7 +318,7 @@ FLASHMEM ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewM
             : Visual::ACTIVE,
         .tone = Tone::WARNING,
         .showIcon = true,
-        .icon = standalone::icons::MACRO_AUTOMATION,
+        .icon = standalone::icons::AUTOMATION,
     };
     props.slots[2] = {
         .visualState = performanceMode ==

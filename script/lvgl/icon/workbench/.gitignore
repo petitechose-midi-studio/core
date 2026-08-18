@@ -1,0 +1,9 @@
+generated/
+source-crops/
+reference-contact-sheets/
+traced/
+ux-production-icons/
+ux-cross-context-review/
+__pycache__/
+*.pyc
+reference-contact-sheet.png

@@ -282,7 +282,7 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     auto strip = core::ui::buildMacroLeftActionStripProps(sourceFor(state));
     assert(strip.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
     assert(strip.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(strip.slots[1].icon == standalone::icons::MACRO_AUTOMATION);
+    assert(strip.slots[1].icon == standalone::icons::AUTOMATION);
     assert(strip.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
     assert(strip.slots[2].icon == standalone::icons::KNOB);
 

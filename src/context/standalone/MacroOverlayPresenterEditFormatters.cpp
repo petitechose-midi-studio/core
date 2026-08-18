@@ -300,14 +300,14 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         {
             .key = "Automation",
             .value = data.valueBuffers[1].data(),
-            .icon = ::standalone::icons::MACRO_AUTOMATION,
+            .icon = ::standalone::icons::AUTOMATION,
             .iconFont = standalone_fonts.icons_14,
             .iconColor = ::standalone::theme::color::MACRO_AUTOMATION,
         },
         {
             .key = "Modulation",
             .value = data.valueBuffers[2].data(),
-            .icon = ::standalone::icons::MACRO_MODULATION,
+            .icon = ::standalone::icons::MODULATION,
             .iconFont = standalone_fonts.icons_14,
             .iconColor = ::standalone::theme::color::MACRO_MODULATION,
         },
@@ -388,7 +388,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                            menu::MacroContextAction::AUTOMATION_OFFSET
                         ? "Offset"
                         : "Convert")));
-            data.interactionIcon = ::standalone::icons::MACRO_AUTOMATION;
+            data.interactionIcon = ::standalone::icons::AUTOMATION;
             data.interactionColor = ::standalone::theme::color::MACRO_AUTOMATION;
             std::snprintf(
                 data.interactionLabel.data(),
@@ -450,11 +450,11 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                 );
             }
         } else {
-            data.interactionIcon = ::standalone::icons::MACRO_MODULATION;
+            data.interactionIcon = ::standalone::icons::MODULATION;
             data.interactionColor = ::standalone::theme::color::MACRO_MODULATION;
             if (action.action ==
                 menu::MacroContextAction::MODULATION_RECORD_NEW_SHAPE) {
-                data.interactionIcon = ::standalone::icons::MACRO_AUTOMATION;
+                data.interactionIcon = ::standalone::icons::AUTOMATION;
                 std::snprintf(
                     data.interactionLabel.data(),
                     data.interactionLabel.size(),

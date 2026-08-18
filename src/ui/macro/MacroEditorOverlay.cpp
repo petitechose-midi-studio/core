@@ -93,8 +93,8 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     lv_obj_set_size(meta_, 150, 16);
 
     createTab(0, standalone::icons::MIDI_CC, "Destination", theme::color::MACRO_CC_COLOR);
-    createTab(1, standalone::icons::MACRO_AUTOMATION, "Automation", theme::color::MACRO_AUTOMATION);
-    createTab(2, standalone::icons::MACRO_MODULATION, "Modulation", theme::color::MACRO_MODULATION);
+    createTab(1, standalone::icons::AUTOMATION, "Automation", theme::color::MACRO_AUTOMATION);
+    createTab(2, standalone::icons::MODULATION, "Modulation", theme::color::MACRO_MODULATION);
 
     curve_preview_ = core::app::makeExtmemUnique<ms::ui::CurvePreviewWidget>(
         root_

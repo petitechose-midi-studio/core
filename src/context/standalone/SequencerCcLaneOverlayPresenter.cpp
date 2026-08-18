@@ -253,7 +253,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
                     state_.projectNavigation.ccLaneDefaultControllers[slot]
                 )
             );
-            addRow(key, value, ::standalone::icons::ACTION_APPLY);
+            addRow(key, value, ::standalone::icons::ACTION_CREATE);
         }
         selectedIndex = std::min<int>(ui.selectorIndex, std::max(0, rowCount - 1));
         std::snprintf(meta_.data(), meta_.size(), "%u/4 lanes%s%s",

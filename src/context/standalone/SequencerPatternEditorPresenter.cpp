@@ -460,7 +460,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
             core::ui::ContextActionStripVisualState::ACTIVE
         );
         actions.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            icons::ACTION_APPLY,
+            icons::ACTION_VALIDATE,
             state_.randomize.summary.changedCount > 0U
                 ? core::ui::ContextActionStripVisualState::ACTIVE
                 : core::ui::ContextActionStripVisualState::DISABLED,

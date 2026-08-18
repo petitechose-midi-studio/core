@@ -1,5 +1,7 @@
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 
+#include <array>
+
 #include <config/PlatformCompat.hpp>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -10,9 +12,23 @@
 #include "context/standalone/OverlayPresentationRegistry.hpp"
 #include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
+#include "ui/font/StandaloneIcons.hpp"
 #include "ui/interaction/SelectorPresentationPolicy.hpp"
 
 namespace core::context::standalone {
+
+namespace {
+
+constexpr std::array<const char*, core::state::VIEW_SELECTOR_ITEM_COUNT>
+    VIEW_SELECTOR_ICONS = {
+        ::standalone::icons::VIEW_MACROS,
+        ::standalone::icons::VIEW_SEQUENCER,
+        ::standalone::icons::MODULATION,
+        ::standalone::icons::VIEW_PROJECT,
+        ::standalone::icons::VIEW_DEVICE,
+    };
+
+}  // namespace
 
 FLASHMEM StandaloneOverlayAssembly::StandaloneOverlayAssembly(
     core::state::CoreState& state,
@@ -56,16 +72,17 @@ FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, b
         return;
     }
 
-    view_selector_->render(
-        core::ui::interaction::decisionSelectorProps(
-            "Views",
-            "",
-            core::state::VIEW_SELECTOR_ITEM_LABELS.data(),
-            core::state::VIEW_SELECTOR_ITEM_COUNT,
-            selectedIndex,
-            1U
-        )
+    auto props = core::ui::interaction::decisionSelectorProps(
+        "Views",
+        "",
+        core::state::VIEW_SELECTOR_ITEM_LABELS.data(),
+        core::state::VIEW_SELECTOR_ITEM_COUNT,
+        selectedIndex,
+        1U
     );
+    props.icons = VIEW_SELECTOR_ICONS.data();
+    props.iconFont = standalone_fonts.icons_16;
+    view_selector_->render(props);
 }
 
 FLASHMEM bool StandaloneOverlayAssembly::createOverlayController(

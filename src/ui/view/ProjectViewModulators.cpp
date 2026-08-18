@@ -413,7 +413,7 @@ void ProjectView::renderModulatorActionStrips(
     if (destinationAudition) {
         bottom.visible = true;
         bottom.slots[2] = makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_APPLY,
+            standalone::icons::STATUS_PREVIEW,
             ContextActionStripVisualState::ACTIVE,
             ContextActionStripTone::POSITIVE
         );
@@ -434,7 +434,7 @@ void ProjectView::renderModulatorActionStrips(
                core::state::modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
         bottom.slots[0] = recordedShapeRecordFocus
             ? makeStandaloneIconStripSlot(
-                  standalone::icons::MACRO_AUTOMATION,
+                  standalone::icons::AUTOMATION,
                   state_refs_.macroUi.recordedShapeCapture.active() &&
                           state_refs_.macroUi.recordedShapeCapture.mode ==
                               core::state::modulation::
