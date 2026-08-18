@@ -26,7 +26,6 @@ struct DrumOverviewSurfaceProps {
         nullptr;
     core::state::StructureNavigationFocus navigationFocus =
         core::state::StructureNavigationFocus::PAGE;
-    uint8_t midiChannel = 1U;
     uint32_t authoredRevision = 0U;
     uint32_t uiRevision = 0U;
 };

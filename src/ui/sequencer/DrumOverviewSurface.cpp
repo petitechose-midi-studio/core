@@ -423,122 +423,6 @@ struct DrumGridRenderContext {
     uint8_t focusedLaneNameLane = 0xFFU;
 };
 
-FLASHMEM void drawTrackOverview(
-    lv_layer_t* layer,
-    const lv_area_t& surface,
-    lv_coord_t width,
-    const DrumSequencerState& drumUi,
-    uint8_t laneCount,
-    uint8_t midiChannel
-) {
-    const uint32_t trackColor = theme::color::trackColor(drumUi.targetTrack);
-    drawRect(
-        layer,
-        lv_area_t{
-            .x1 = static_cast<lv_coord_t>(surface.x1 + 8),
-            .y1 = static_cast<lv_coord_t>(surface.y1 + 8),
-            .x2 = static_cast<lv_coord_t>(surface.x2 - 8),
-            .y2 = static_cast<lv_coord_t>(surface.y1 + 10),
-        },
-        trackColor,
-        LV_OPA_COVER,
-        0,
-        LV_OPA_TRANSP,
-        1
-    );
-
-    char title[32] = {};
-    std::snprintf(
-        title,
-        sizeof(title),
-        "Drum Track %u",
-        static_cast<unsigned>(drumUi.targetTrack + 1U)
-    );
-    drawLabel(
-        layer,
-        lv_area_t{
-            .x1 = static_cast<lv_coord_t>(surface.x1 + 8),
-            .y1 = static_cast<lv_coord_t>(surface.y1 + 16),
-            .x2 = static_cast<lv_coord_t>(surface.x2 - 8),
-            .y2 = static_cast<lv_coord_t>(surface.y1 + 35),
-        },
-        title,
-        theme::color::TEXT_PRIMARY,
-        LV_OPA_COVER
-    );
-
-    char summary[64] = {};
-    std::snprintf(
-        summary,
-        sizeof(summary),
-        "%u lanes  \xC2\xB7  Ch %u  \xC2\xB7  %u steps  \xC2\xB7  1/%u",
-        static_cast<unsigned>(laneCount),
-        static_cast<unsigned>(midiChannel),
-        static_cast<unsigned>(drumUi.drumTrack->pattern.defaultLength),
-        static_cast<unsigned>(
-            drumUi.drumTrack->pattern.defaultStepsPerBeat * 4U
-        )
-    );
-    drawLabel(
-        layer,
-        lv_area_t{
-            .x1 = static_cast<lv_coord_t>(surface.x1 + 8),
-            .y1 = static_cast<lv_coord_t>(surface.y1 + 39),
-            .x2 = static_cast<lv_coord_t>(surface.x2 - 8),
-            .y2 = static_cast<lv_coord_t>(surface.y1 + 56),
-        },
-        summary,
-        theme::color::TEXT_SECONDARY,
-        LV_OPA_80
-    );
-
-    const lv_coord_t paletteWidth = static_cast<lv_coord_t>(
-        std::max<lv_coord_t>(1, (width - 18) / 8)
-    );
-    for (uint8_t lane = 0U; lane < laneCount; ++lane) {
-        const uint8_t row = static_cast<uint8_t>(lane / 8U);
-        const uint8_t column = static_cast<uint8_t>(lane % 8U);
-        const lv_coord_t x = static_cast<lv_coord_t>(
-            surface.x1 + 8 + column * paletteWidth
-        );
-        const lv_coord_t y = static_cast<lv_coord_t>(
-            surface.y1 + 65 + row * 27
-        );
-        const auto& laneDescriptor = drumUi.drumTrack->kit.lanes[lane];
-        const uint32_t laneColor = theme::color::trackColor(
-            core::state::sequencer::drumLaneDisplayColorIndex(laneDescriptor)
-        );
-        drawRect(
-            layer,
-            lv_area_t{
-                .x1 = x,
-                .y1 = y,
-                .x2 = static_cast<lv_coord_t>(x + paletteWidth - 4),
-                .y2 = static_cast<lv_coord_t>(y + 2),
-            },
-            laneColor,
-            LV_OPA_COVER,
-            0,
-            LV_OPA_TRANSP,
-            1
-        );
-        drawIcon(
-            layer,
-            lv_area_t{
-                .x1 = x,
-                .y1 = static_cast<lv_coord_t>(y + 5),
-                .x2 = static_cast<lv_coord_t>(x + paletteWidth - 4),
-                .y2 = static_cast<lv_coord_t>(y + 20),
-            },
-            core::ui::sequencer::drumLaneIconGlyph(
-                core::state::sequencer::drumLaneDisplayIcon(laneDescriptor)
-            ),
-            laneColor,
-            LV_OPA_COVER
-        );
-    }
-}
-
 FLASHMEM void drawLaneFocusMarker(
     const DrumGridRenderContext& context,
     lv_coord_t rowY,
@@ -1333,7 +1217,8 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
     const DrumOverviewSurfaceProps& props
 ) {
     if (!focused_lane_name_ || !props.projection ||
-        props.navigationFocus != core::state::StructureNavigationFocus::PAGE) {
+        (props.navigationFocus != core::state::StructureNavigationFocus::PAGE &&
+         props.navigationFocus != core::state::StructureNavigationFocus::TRACK)) {
         hideFocusedLaneName();
         return;
     }
@@ -1440,8 +1325,7 @@ FLASHMEM bool DrumOverviewSurface::fullSurfaceChanged(
 ) const {
     return !rendered_ ||
         renderedProps_.projection != props.projection ||
-        renderedProps_.navigationFocus != props.navigationFocus ||
-        renderedProps_.midiChannel != props.midiChannel;
+        renderedProps_.navigationFocus != props.navigationFocus;
 }
 
 FLASHMEM DrumOverviewSurface::StaticRows
@@ -1449,9 +1333,7 @@ DrumOverviewSurface::captureStaticRows(
     const DrumOverviewSurfaceProps& props
 ) const {
     StaticRows rows{};
-    if (!props.projection || !props.projection->drumTrack ||
-        props.navigationFocus ==
-            core::state::StructureNavigationFocus::TRACK) {
+    if (!props.projection || !props.projection->drumTrack) {
         return rows;
     }
 
@@ -1920,19 +1802,11 @@ FLASHMEM void DrumOverviewSurface::render(
         syncFocusedLaneName(props);
     }
 
-    if (fullChanged ||
-        (staticChanged && props.navigationFocus ==
-            core::state::StructureNavigationFocus::TRACK)) {
+    if (fullChanged) {
         static_rows_ = nextStaticRows;
-        if (props.navigationFocus ==
-            core::state::StructureNavigationFocus::TRACK) {
-            playback_ = {};
-        } else {
-            playback_ = capturePlayback(*props.projection);
-        }
+        playback_ = capturePlayback(*props.projection);
         lv_obj_invalidate(root_);
-    } else if (props.navigationFocus !=
-               core::state::StructureNavigationFocus::TRACK) {
+    } else {
         if (staticChanged) {
             invalidateStaticDelta(static_rows_, nextStaticRows);
             static_rows_ = nextStaticRows;
@@ -1971,18 +1845,6 @@ FLASHMEM void DrumOverviewSurface::drawSurface(
         drumUi.drumTrack->kit.laneCount,
         core::state::sequencer::DRUM_MAX_LANES
     );
-    if (renderedProps_.navigationFocus ==
-        core::state::StructureNavigationFocus::TRACK) {
-        drawTrackOverview(
-            layer,
-            surface,
-            width,
-            drumUi,
-            laneCount,
-            renderedProps_.midiChannel
-        );
-        return;
-    }
 
     const lv_coord_t gridStart = static_cast<lv_coord_t>(
         surface.x1 + DRUM_LABEL_WIDTH

@@ -1,4 +1,4 @@
-// Auto-generated | 66 icons | 2026-08-12
+// Auto-generated | 67 icons | 2026-08-18
 #pragma once
 #include "StandaloneFonts.hpp"
 
@@ -72,7 +72,8 @@ enum class Size : uint8_t { S = 12, M = 14, L = 16 };
     constexpr const char* TEMPO = "\xEE\x80\xBE";
     constexpr const char* TEXT_NAME = "\xEE\x80\xBF";
     constexpr const char* TRACK_MUTE = "\xEE\x81\x80";
-    constexpr const char* TRANSPORT_PLAY = "\xEE\x81\x81";
+    constexpr const char* TRACK_SOLO = "\xEE\x81\x81";
+    constexpr const char* TRANSPORT_PLAY = "\xEE\x81\x82";
 
 inline void set(lv_obj_t* label, const char* icon, Size size = Size::M) {
     lv_font_t* font = (size == Size::S) ? standalone_fonts.icons_12

@@ -69,11 +69,13 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const bool anySelection =
         selectingTrack || selectingPage || selectingStep ||
         selectingDrumLanes;
+    const bool previewEmptyTrack =
+        !anySelection && sequencerPreviewingEmptyTrack(source);
     const bool focusingTrack =
         !anySelection &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
-    const bool drumLaneContext =
-        drumGrid && !selectingTrack && !focusingTrack;
+    const bool drumGridContext =
+        drumGrid && !selectingTrack && !previewEmptyTrack;
     const bool focusingStep =
         !anySelection &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP;
@@ -98,7 +100,9 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
          addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT)
             ? addTrackIndex
             : activeTrack);
-    const uint8_t viewedPage = drumLaneContext
+    const uint8_t viewedPage = previewEmptyTrack
+        ? 0U
+        : drumGridContext
         ? std::min<uint8_t>(
               drumUi.page,
               static_cast<uint8_t>(
@@ -188,7 +192,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         core::state::sequencer::activeContentPageForStep(
             sequencer.focusedStep.get()
         );
-    if (drumLaneContext && drumUi.drumTrack != nullptr) {
+    if (drumGridContext && drumUi.drumTrack != nullptr) {
         const uint8_t laneCount = std::min<uint8_t>(
             drumUi.drumTrack->kit.laneCount,
             core::state::sequencer::DRUM_MAX_LANES
@@ -350,7 +354,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         );
     }
 
-    if (pageText[0] == '\0' && !pageStripVisible) {
+    if (!previewEmptyTrack && pageText[0] == '\0' && !pageStripVisible) {
         const uint8_t pageCount = std::max<uint8_t>(
             1U,
             core::state::sequencer::activeContentPageCount(sequencer)
@@ -368,8 +372,12 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     }
 
     return {
-        .length = headerLength,
-        .activePage = headerActivePage,
+        .length = previewEmptyTrack
+            ? static_cast<uint8_t>(0U)
+            : headerLength,
+        .activePage = previewEmptyTrack
+            ? static_cast<uint8_t>(0U)
+            : headerActivePage,
         .viewedPage = viewedPage,
         .previewTrack = previewTrack,
         .enabledMask = source.sharedTrackEnabledMask.get(),

@@ -13,7 +13,6 @@
 #include "ui/sequencer/SequencerTrackPasteProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
-#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
@@ -716,7 +715,10 @@ void SequencerView::render(uint32_t flags) {
     if (needsGrid) {
         const auto& drumProjection =
             state_refs_.sequencer.drumSequencer;
-        if (core::state::sequencer::isDrumOverviewActive(
+        const bool previewEmptyTrack =
+            sequencer::sequencerPreviewingEmptyTrack(source);
+        if (!previewEmptyTrack &&
+            core::state::sequencer::isDrumOverviewActive(
                 state_refs_.sequencer)) {
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-overview");
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
@@ -725,30 +727,25 @@ void SequencerView::render(uint32_t flags) {
                 .visible = true,
                 .projection = &drumProjection,
                 .navigationFocus = state_refs_.structureNavigationFocus.get(),
-                .midiChannel = static_cast<uint8_t>(
-                    core::state::project::projectTrackMidiChannel(
-                        state_refs_.projectTracks,
-                        drumProjection.targetTrack
-                    ) + 1U
-                ),
                 .authoredRevision =
                     state_refs_.tracks.drumRevisionSignal().get(),
                 .uiRevision = drumProjection.revision.get(),
             });
         } else {
             drum_overview_surface_->render({.visible = false});
-        const auto ccLaneProps = sequencer::buildSequencerCcLaneGridProps(source);
-        if (ccLaneProps.visible) {
-            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
-            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
-            cc_lane_grid_->render(ccLaneProps);
-        } else {
-            const auto stepGridProps = sequencer::buildStepGridProps(source);
-            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.step-grid");
-            cc_lane_grid_->render({.visible = false});
-            lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
-            step_grid_->render(stepGridProps);
-        }
+            const auto ccLaneProps =
+                sequencer::buildSequencerCcLaneGridProps(source);
+            if (!previewEmptyTrack && ccLaneProps.visible) {
+                OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
+                lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+                cc_lane_grid_->render(ccLaneProps);
+            } else {
+                const auto stepGridProps = sequencer::buildStepGridProps(source);
+                OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.step-grid");
+                cc_lane_grid_->render({.visible = false});
+                lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+                step_grid_->render(stepGridProps);
+            }
         }
     }
 
