@@ -696,6 +696,8 @@ FLASHMEM void SequencerStepEditOverlay::render(
         title_centered_cache_ == props.titleCentered &&
         focus_label_visible_cache_ == props.focusLabelVisible &&
         primary_row_layout_cache_ == props.primaryRowLayout &&
+        property_row_layout_cache_ == props.propertyRowLayout &&
+        compact_action_row_cache_ == props.compactActionRow &&
         chord_detail_layout_cache_ == props.chordDetailLayout &&
         chord_formula_layout_cache_ == props.chordFormulaLayout &&
         chord_source_layout_cache_ == props.chordSourceLayout &&
@@ -723,6 +725,20 @@ FLASHMEM void SequencerStepEditOverlay::render(
             );
         }
         primary_row_layout_cache_ = props.primaryRowLayout;
+    }
+
+    if (property_row_layout_cache_ != props.propertyRowLayout) {
+        const bool primaryWide = props.propertyRowLayout ==
+            SequencerStepEditPrimaryRowLayout::PRIMARY_WIDE;
+        for (size_t i = 0; i < property_widgets_.size(); ++i) {
+            if (!property_widgets_[i].box) continue;
+            lv_obj_set_flex_grow(
+                property_widgets_[i].box,
+                primaryWide && i == 0U ? 5 :
+                    (primaryWide && i == 1U ? 3 : 1)
+            );
+        }
+        property_row_layout_cache_ = props.propertyRowLayout;
     }
 
     if (chord_detail_layout_cache_ != props.chordDetailLayout) {
@@ -1109,8 +1125,19 @@ FLASHMEM void SequencerStepEditOverlay::render(
                 selectedVisualSlot(props, slot, selectedAction == i)
             );
         }
+        const size_t activeActionCount = displayIndex;
         while (displayIndex < ACTION_COUNT) {
             renderAction(displayIndex++, {}, false);
+        }
+        if (props.compactActionRow && activeActionCount == 1U) {
+            for (size_t i = 1U; i < ACTION_COUNT; ++i) {
+                if (action_widgets_[i].box) {
+                    lv_obj_add_flag(
+                        action_widgets_[i].box,
+                        LV_OBJ_FLAG_HIDDEN
+                    );
+                }
+            }
         }
     }
 
@@ -1123,6 +1150,8 @@ FLASHMEM void SequencerStepEditOverlay::render(
     title_centered_cache_ = props.titleCentered;
     focus_label_visible_cache_ = props.focusLabelVisible;
     primary_row_layout_cache_ = props.primaryRowLayout;
+    property_row_layout_cache_ = props.propertyRowLayout;
+    compact_action_row_cache_ = props.compactActionRow;
     chord_detail_layout_cache_ = props.chordDetailLayout;
     chord_formula_layout_cache_ = props.chordFormulaLayout;
     chord_source_layout_cache_ = props.chordSourceLayout;

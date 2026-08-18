@@ -357,6 +357,33 @@ FLASHMEM bool setDrumLaneColorIndex(
     return !descriptorsEqual(previous, descriptorValue);
 }
 
+FLASHMEM uint8_t drumLaneIdentityOverrideCount(
+    const DrumLaneDescriptor& descriptorValue
+) {
+    const uint8_t mask = static_cast<uint8_t>(
+        descriptorValue.overrideMask & DRUM_LANE_OVERRIDE_ALL
+    );
+    return static_cast<uint8_t>(
+        ((mask & DRUM_LANE_OVERRIDE_NAME) != 0U ? 1U : 0U) +
+        ((mask & DRUM_LANE_OVERRIDE_ICON) != 0U ? 1U : 0U) +
+        ((mask & DRUM_LANE_OVERRIDE_COLOR) != 0U ? 1U : 0U)
+    );
+}
+
+FLASHMEM bool resetDrumLaneIdentityOverrides(
+    DrumLaneDescriptor& descriptorValue
+) {
+    const auto previous = descriptorValue;
+    descriptorValue.overrideMask = static_cast<uint8_t>(
+        descriptorValue.overrideMask & ~DRUM_LANE_OVERRIDE_ALL
+    );
+    descriptorValue.name.fill('\0');
+    descriptorValue.icon = DrumLaneIcon::GENERIC;
+    descriptorValue.colorIndex = 0U;
+    descriptorValue = canonicalDrumLaneDescriptor(descriptorValue);
+    return !descriptorsEqual(previous, descriptorValue);
+}
+
 FLASHMEM void DrumKitState::resetEmpty() {
     laneCount = 0U;
     lanes.fill({});

@@ -2,10 +2,17 @@
 # lane editing, shared Step Editor, advanced rhythmic content and return.
 # Expect: capture_changed:type_drum=kit_empty, capture_changed:kit_empty=kit_general_midi, capture_changed:kit_general_midi=pattern_overview
 # Expect: capture_changed:pattern_overview=kick_programmed, capture_changed:kick_programmed=snare_programmed
-# Expect: capture_changed:lane_editor_name_initial=lane_color_edited, capture_changed:lane_color_edited=overview_lane_color
-# Expect: semantic:lane_editor_name_initial:mode=sequencer.drum_lane_edit, semantic:lane_editor_name_initial:property=name, semantic:lane_editor_name_initial:draft_active=true, semantic:lane_editor_name_initial:dirty=false
-# Expect: semantic:lane_color_edited:property=color, semantic:lane_color_edited:effect=edit_drum_lane_draft, semantic:lane_color_edited:intent=edit_value, semantic:lane_color_edited:dirty=true
+# Expect: capture_changed:lane_editor_root=lane_identity_inherited, capture_changed:lane_identity_inherited=lane_identity_keyboard
+# Expect: capture_changed:lane_identity_keyboard=lane_identity_override, capture_changed:lane_identity_override=overview_lane_color
+# Expect: semantic:lane_editor_root:mode=sequencer.drum_lane_edit, semantic:lane_editor_root:property=preset, semantic:lane_editor_root:draft_active=true, semantic:lane_editor_root:dirty=false
+# Expect: semantic:lane_identity_inherited:mode=sequencer.drum_lane_edit.identity, semantic:lane_identity_inherited:property=name, semantic:lane_identity_inherited:effect=enter_drum_lane_identity
+# Expect: semantic:lane_identity_keyboard:property=name, semantic:lane_identity_keyboard:effect=enter_drum_lane_text_edit
+# Expect: semantic:lane_identity_override:property=color, semantic:lane_identity_override:effect=edit_drum_lane_draft, semantic:lane_identity_override:intent=edit_value, semantic:lane_identity_override:dirty=true
 # Expect: semantic:overview_lane_color:effect=apply_drum_lane_draft, semantic:overview_lane_color:intent=apply, semantic:overview_lane_color:draft_active=false, semantic:overview_lane_color:published=true, semantic:overview_lane_color:projection=published
+# Expect: capture_changed:overview_lane_color=lane_identity_reset_action, capture_changed:lane_identity_reset_action=lane_identity_reset
+# Expect: capture_changed:lane_identity_reset=lane_editor_root_after_reset, capture_changed:lane_editor_root_after_reset=overview_lane_reset
+# Expect: semantic:lane_identity_reset_action:property=preset_defaults, semantic:lane_identity_reset:effect=reset_drum_lane_identity, semantic:lane_identity_reset:dirty=true
+# Expect: semantic:lane_editor_root_after_reset:property=identity, semantic:lane_editor_root_after_reset:effect=leave_drum_lane_identity
 # Expect: semantic:pattern_overview:view=sequencer, semantic:pattern_overview:overlay=none, semantic:pattern_overview:shared_track=1
 # Expect: semantic:step_focus:mode=sequencer.step, semantic:step_focus:target=step, semantic:step_focus:target_index=0
 # Expect: semantic:per_lane_playheads:playing=true, semantic:per_lane_playheads:effect=transport_start
@@ -51,87 +58,108 @@
 5350 tap MACRO_7 60
 5650 capture screen snare_programmed
 
-# A short NAV at Pattern opens the selected lane editor. Change its stable
-# color metadata and apply; the overview must reflect it immediately.
+# A short NAV at Pattern opens the compact root. Identity is an explicit child;
+# Name reuses the shared keyboard and Color remains a draft until Apply.
 5800 tap NAV 60
-6150 capture screen lane_editor_name_initial
+6150 capture screen lane_editor_root
 6300 encoder NAV 1
 6450 encoder NAV 1
-6600 encoder NAV 1
-6800 encoder OPT 0.75
-7100 capture screen lane_color_edited
-7250 tap BOTTOM_RIGHT 60
-7650 capture screen overview_lane_color
+6600 tap NAV 60
+6900 capture screen lane_identity_inherited
+7050 tap NAV 60
+7350 capture screen lane_identity_keyboard
+7500 tap LEFT_TOP 60
+7650 encoder NAV 1
+7800 encoder NAV 1
+8000 encoder OPT 0.75
+8300 capture screen lane_identity_override
+8450 tap BOTTOM_RIGHT 60
+8850 capture screen overview_lane_color
+
+# Reopening Identity exposes one atomic reset. Back returns to the root without
+# discarding the draft; Apply then publishes the reset as one transaction.
+9000 tap NAV 60
+9150 encoder NAV 1
+9300 encoder NAV 1
+9450 tap NAV 60
+9600 encoder NAV -1
+9900 capture screen lane_identity_reset_action
+10050 tap NAV 60
+10350 capture screen lane_identity_reset
+10500 tap LEFT_TOP 60
+10800 capture screen lane_editor_root_after_reset
+10950 tap BOTTOM_RIGHT 60
+11350 capture screen overview_lane_reset
 
 # One context turn enters Step focus. NAV now moves horizontally and a
 # short press opens the same shared Step Editor as the melodic sequencer.
-7850 button NAV down
-7950 encoder NAV 1
-8050 button NAV up
-8400 capture screen step_focus
-8550 encoder NAV 1
-8700 tap MACRO_2 60
-8950 capture screen step_two_focused
-9100 tap NAV 60
-9500 capture screen step_editor_state
+11550 button NAV down
+11650 encoder NAV 1
+11750 button NAV up
+12100 capture screen step_focus
+12250 encoder NAV 1
+12400 tap MACRO_2 60
+12650 capture screen step_two_focused
+12800 tap NAV 60
+13200 capture screen step_editor_state
 
 # Root Drum rows are State, Chance, Velocity, Gate, Nudge, Micro and Cycle:
 # fixed lane pitch means Pitch/Chord are intentionally absent.
-9650 encoder NAV 1
-9850 encoder OPT 0.70
-10050 encoder NAV 1
-10250 encoder OPT 0.85
-10450 encoder NAV 1
-10650 encoder OPT 0.45
-10850 encoder NAV 1
-11050 encoder OPT 0.65
-11250 encoder NAV 1
-11500 capture screen micro_action
+13350 encoder NAV 1
+13550 encoder OPT 0.70
+13750 encoder NAV 1
+13950 encoder OPT 0.85
+14150 encoder NAV 1
+14350 encoder OPT 0.45
+14550 encoder NAV 1
+14750 encoder OPT 0.65
+14950 encoder NAV 1
+15200 capture screen micro_action
 
 # Create a MicroSequence through NAV. The shared editor remains open inside
 # the child, still exposes the compact rhythm rows and keeps the lane note.
-11650 tap NAV 60
-12200 capture screen micro_child
-12400 encoder NAV 1
-12600 encoder NAV 1
-12800 encoder OPT 0.55
-13100 capture screen micro_child_edited
+15350 tap NAV 60
+15900 capture screen micro_child
+16100 encoder NAV 1
+16300 encoder NAV 1
+16500 encoder OPT 0.55
+16800 capture screen micro_child_edited
 
 # Back exposes the explicit dirty-draft decision. NAV validates the default
 # Save choice, ascends one graph level, then Back closes the root editor.
 # Returning to the overview preserves the scalar geometry and Micro badge.
-13300 tap LEFT_TOP 60
-13600 tap NAV 60
-14000 capture screen advanced_root
-14200 tap LEFT_TOP 60
-14600 capture screen overview_advanced_marker
+17000 tap LEFT_TOP 60
+17300 tap NAV 60
+17700 capture screen advanced_root
+17900 tap LEFT_TOP 60
+18300 capture screen overview_advanced_marker
 
 # Re-open the same root Step and enter Cycle through the adjacent shared row.
 # The child uses the same Drum-lane presentation as Micro: fixed lane pitch,
 # compact rhythm geometry and no melodic Pitch/Chord detour.
-14800 button NAV down
-14900 encoder NAV 1
-15000 button NAV up
-15300 tap NAV 60
-15600 encoder NAV 1
-15750 encoder NAV 1
-15900 encoder NAV 1
-16050 encoder NAV 1
-16200 encoder NAV 1
-16350 encoder NAV 1
-16600 capture screen cycle_action
-16750 tap NAV 60
-17400 capture screen cycle_child
-17550 tap MACRO_2 60
-17900 capture screen cycle_child_edited
-18100 tap LEFT_TOP 60
-18400 tap NAV 60
-18800 capture screen cycle_root
-19000 tap LEFT_TOP 60
-19400 capture screen overview_cycle_marker
+18500 button NAV down
+18600 encoder NAV 1
+18700 button NAV up
+19000 tap NAV 60
+19300 encoder NAV 1
+19450 encoder NAV 1
+19600 encoder NAV 1
+19750 encoder NAV 1
+19900 encoder NAV 1
+20050 encoder NAV 1
+20300 capture screen cycle_action
+20450 tap NAV 60
+21100 capture screen cycle_child
+21250 tap MACRO_2 60
+21600 capture screen cycle_child_edited
+21800 tap LEFT_TOP 60
+22100 tap NAV 60
+22500 capture screen cycle_root
+22700 tap LEFT_TOP 60
+23100 capture screen overview_cycle_marker
 
 # Runtime publishes an independent continuous playhead for every lane.
-19600 tap BOTTOM_CENTER 60
-20300 capture screen per_lane_playheads
-20500 tap BOTTOM_CENTER 60
-20800 capture screen transport_stopped
+23300 tap BOTTOM_CENTER 60
+24000 capture screen per_lane_playheads
+24200 tap BOTTOM_CENTER 60
+24500 capture screen transport_stopped

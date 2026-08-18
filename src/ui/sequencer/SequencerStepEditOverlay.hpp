@@ -106,11 +106,14 @@ struct SequencerStepEditOverlayProps {
     bool focusLabelVisible = true;
     SequencerStepEditPrimaryRowLayout primaryRowLayout =
         SequencerStepEditPrimaryRowLayout::EQUAL;
+    SequencerStepEditPrimaryRowLayout propertyRowLayout =
+        SequencerStepEditPrimaryRowLayout::EQUAL;
     bool chordDetailLayout = false;
     bool chordFormulaLayout = false;
     bool chordSourceLayout = false;
     bool enabled = false;
     bool actionsVisible = true;
+    bool compactActionRow = false;
     uint32_t dataRevision = 0;
     int selectedIndex = 0;
     SequencerStepEditVisualSlot selectedVisualSlot = SequencerStepEditVisualSlot::AUTO;
@@ -239,6 +242,9 @@ private:
     bool focus_label_visible_cache_ = true;
     SequencerStepEditPrimaryRowLayout primary_row_layout_cache_ =
         SequencerStepEditPrimaryRowLayout::EQUAL;
+    SequencerStepEditPrimaryRowLayout property_row_layout_cache_ =
+        SequencerStepEditPrimaryRowLayout::EQUAL;
+    bool compact_action_row_cache_ = false;
     bool chord_detail_layout_cache_ = false;
     bool chord_formula_layout_cache_ = false;
     bool chord_source_layout_cache_ = false;

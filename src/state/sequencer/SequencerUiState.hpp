@@ -715,14 +715,23 @@ enum class DrumLaneEditorMode : uint8_t {
 };
 
 enum class DrumLaneEditorField : uint8_t {
-    NAME = 0,
+    PRESET = 0,
     NOTE,
+    IDENTITY,
+    POSITION,
+    NAME,
     ICON,
     COLOR,
-    POSITION,
-    ROLE,
+    USE_PRESET_DEFAULTS,
     COUNT,
 };
+
+[[nodiscard]] constexpr bool isDrumLaneIdentityEditorField(
+    DrumLaneEditorField field
+) {
+    return field >= DrumLaneEditorField::NAME &&
+        field <= DrumLaneEditorField::USE_PRESET_DEFAULTS;
+}
 
 struct DrumLaneEditorState {
     bool active = false;
@@ -731,7 +740,7 @@ struct DrumLaneEditorState {
     bool dirtyBeforeTextEditing = false;
     bool textShiftActive = false;
     DrumLaneEditorMode mode = DrumLaneEditorMode::CREATE;
-    DrumLaneEditorField field = DrumLaneEditorField::NAME;
+    DrumLaneEditorField field = DrumLaneEditorField::PRESET;
     uint8_t sourceLane = 0U;
     uint8_t targetLane = 0U;
     uint8_t textKeyIndex =
@@ -910,6 +919,9 @@ struct DrumSequencerState {
     bool retargetLaneEditor(float delta);
     void moveLaneEditorField(float delta);
     void editLaneEditorValue(float normalized);
+    bool enterLaneIdentityEditor();
+    bool leaveLaneIdentityEditor();
+    bool resetLaneIdentityOverrides();
     void toggleLaneNameEditing();
     void moveLaneNameKey(float delta);
     void moveLaneNameRow(float rawPosition);

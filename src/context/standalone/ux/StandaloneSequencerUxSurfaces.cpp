@@ -2150,12 +2150,14 @@ FLASHMEM const char* drumLaneEditorFieldName(
 ) {
     using Field = core::state::sequencer::DrumLaneEditorField;
     switch (field) {
-        case Field::ROLE: return "role";
+        case Field::PRESET: return "preset";
+        case Field::NOTE: return "midi_note";
+        case Field::IDENTITY: return "identity";
+        case Field::POSITION: return "position";
         case Field::NAME: return "name";
         case Field::ICON: return "icon";
         case Field::COLOR: return "color";
-        case Field::NOTE: return "midi_note";
-        case Field::POSITION: return "position";
+        case Field::USE_PRESET_DEFAULTS: return "preset_defaults";
         case Field::COUNT:
         default: return "lane";
     }
@@ -2184,20 +2186,29 @@ FLASHMEM bool DrumLaneEditorUxSurface::captureSemanticUxContext(
         drumUi.selector == seq::DrumSequencerSelector::LANE_EDITOR;
     const bool applyEvent = !editor.textEditing && isButton(
         event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE);
-    const bool cancelEvent = !editor.textEditing && isButton(
+    const bool backEvent = !editor.textEditing && isButton(
         event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE);
     const bool deleteEvent = isButton(
         event, Config::ButtonID::BOTTOM_LEFT, ButtonType::LONG_PRESS);
-    const bool terminalEvent = applyEvent || cancelEvent || deleteEvent;
 
     const bool laneChanged = active && editor_seen_ &&
         observed_source_lane_ != editor.sourceLane;
     const bool fieldChanged = active && editor_seen_ &&
         observed_field_ != static_cast<uint8_t>(editor.field);
+    const bool identity = seq::isDrumLaneIdentityEditorField(editor.field);
+    const bool previousIdentity = seq::isDrumLaneIdentityEditorField(
+        static_cast<seq::DrumLaneEditorField>(observed_field_)
+    );
+    const bool sectionChanged = active && editor_seen_ &&
+        previousIdentity != identity;
     const bool keyChanged = active && editor_seen_ &&
         observed_text_key_ != editor.textKeyIndex;
     const bool textModeChanged = active && editor_seen_ &&
         observed_text_editing_ != editor.textEditing;
+    const bool cancelEvent = backEvent &&
+        !identity &&
+        !sectionChanged;
+    const bool terminalEvent = applyEvent || cancelEvent || deleteEvent;
 
     if (active) {
         editor_seen_ = true;
@@ -2235,7 +2246,9 @@ FLASHMEM bool DrumLaneEditorUxSurface::captureSemanticUxContext(
         terminal_intent_ = Intent::DELETE_STRUCTURE;
     }
 
-    out.mode = "sequencer.drum_lane_edit";
+    out.mode = active && identity
+        ? "sequencer.drum_lane_edit.identity"
+        : "sequencer.drum_lane_edit";
     out.target = "drum_lane";
     out.targetIndex = observed_target_lane_;
     out.targetCount = observed_lane_count_;
@@ -2294,13 +2307,34 @@ FLASHMEM bool DrumLaneEditorUxSurface::captureSemanticUxContext(
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
         out.effect = "edit_drum_lane_draft";
         out.intent = editor.textEditing ? Intent::TEXT_EDIT : Intent::EDIT_VALUE;
-    } else if (isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE) &&
-               (editor.field == seq::DrumLaneEditorField::NAME ||
-                textModeChanged)) {
-        out.effect = editor.textEditing
-            ? "enter_drum_lane_text_edit"
-            : "leave_drum_lane_text_edit";
-        out.intent = Intent::TEXT_EDIT;
+    } else if (isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE)) {
+        if ((sectionChanged && identity) ||
+            (!identity &&
+             editor.field == seq::DrumLaneEditorField::IDENTITY)) {
+            out.effect = "enter_drum_lane_identity";
+            out.intent = Intent::ACTIVATE;
+        } else if (editor.field ==
+                   seq::DrumLaneEditorField::USE_PRESET_DEFAULTS) {
+            out.effect = "reset_drum_lane_identity";
+            out.intent = Intent::RESET;
+        } else if (editor.field == seq::DrumLaneEditorField::NAME ||
+                   textModeChanged) {
+            out.effect = textModeChanged
+                ? (editor.textEditing
+                       ? "enter_drum_lane_text_edit"
+                       : "leave_drum_lane_text_edit")
+                : (editor.textEditing
+                       ? "insert_drum_lane_name_key"
+                       : "enter_drum_lane_text_edit");
+            out.intent = Intent::TEXT_EDIT;
+        } else {
+            out.effect = "inspect_drum_lane_field";
+            out.intent = Intent::ACTIVATE;
+        }
+    } else if (backEvent &&
+               (sectionChanged || identity)) {
+        out.effect = "leave_drum_lane_identity";
+        out.intent = Intent::BACK;
     } else if (terminalEvent) {
         out.effect = terminal_effect_;
         out.intent = terminal_intent_;

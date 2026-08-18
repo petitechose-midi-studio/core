@@ -22,12 +22,14 @@ using Slot = core::ui::SequencerStepEditVisualSlot;
 
 FLASHMEM const char* fieldLabel(Field field) {
     switch (field) {
-        case Field::ROLE: return "Role";
+        case Field::PRESET: return "Preset";
+        case Field::NOTE: return "MIDI note";
+        case Field::IDENTITY: return "Identity";
+        case Field::POSITION: return "Position";
         case Field::NAME: return "Name";
         case Field::ICON: return "Icon";
         case Field::COLOR: return "Color";
-        case Field::NOTE: return "MIDI note";
-        case Field::POSITION: return "Position";
+        case Field::USE_PRESET_DEFAULTS: return "Preset defaults";
         case Field::COUNT:
         default: return "Lane";
     }
@@ -35,12 +37,14 @@ FLASHMEM const char* fieldLabel(Field field) {
 
 FLASHMEM const char* fieldIcon(Field field) {
     switch (field) {
-        case Field::ROLE: return icons::ROUTING;
+        case Field::PRESET: return icons::ROUTING;
+        case Field::NOTE: return icons::NOTE_PROP_PITCH;
+        case Field::IDENTITY: return icons::TEXT_NAME;
+        case Field::POSITION: return icons::ACTION_PLACE_TARGET;
         case Field::NAME: return icons::TEXT_NAME;
         case Field::ICON: return icons::CYCLE_STATE;
         case Field::COLOR: return icons::COLOR_SWATCH;
-        case Field::NOTE: return icons::NOTE_PROP_PITCH;
-        case Field::POSITION: return icons::ACTION_PLACE_TARGET;
+        case Field::USE_PRESET_DEFAULTS: return icons::ACTION_RESET;
         case Field::COUNT:
         default: return icons::SETTINGS_GEAR;
     }
@@ -59,8 +63,10 @@ FLASHMEM uint32_t fieldColor(
             );
         case Field::POSITION:
             return theme::color::STEP_NUDGE;
+        case Field::PRESET:
+        case Field::IDENTITY:
         case Field::NAME:
-        case Field::ROLE:
+        case Field::USE_PRESET_DEFAULTS:
         case Field::COUNT:
         default:
             return theme::color::TEXT_SECONDARY;
@@ -77,12 +83,14 @@ FLASHMEM const char* colorLabel(uint8_t colorIndex) {
 
 FLASHMEM Slot visualSlot(Field field) {
     switch (field) {
+        case Field::PRESET:
         case Field::NAME: return Slot::STATE;
         case Field::NOTE: return Slot::CHANCE;
+        case Field::IDENTITY:
         case Field::ICON: return Slot::PITCH;
+        case Field::POSITION:
         case Field::COLOR: return Slot::VELOCITY;
-        case Field::POSITION: return Slot::ACTION_1;
-        case Field::ROLE: return Slot::ACTION_2;
+        case Field::USE_PRESET_DEFAULTS: return Slot::ACTION_0;
         case Field::COUNT:
         default: return Slot::AUTO;
     }
@@ -209,52 +217,79 @@ FLASHMEM void DrumLaneEditorPresenter::render() {
     auto value = [this](Field field) -> char* {
         return values_[static_cast<size_t>(field)].data();
     };
-    std::snprintf(value(Field::ROLE), 16, "%s", seq::drumLaneRoleLabel(editor.draft.role));
-    std::snprintf(value(Field::NAME), 16, "%s", seq::drumLaneDisplayName(editor.draft));
+    const auto identityStatus = [&editor](uint8_t bit) {
+        return (editor.draft.overrideMask & bit) != 0U
+            ? "OVR"
+            : "Preset";
+    };
+    const uint8_t overrideCount =
+        seq::drumLaneIdentityOverrideCount(editor.draft);
+    std::snprintf(
+        value(Field::PRESET), values_[0].size(), "%s",
+        seq::drumLaneRoleLabel(editor.draft.role)
+    );
+    std::snprintf(
+        value(Field::IDENTITY), values_[0].size(), "%u override%s",
+        static_cast<unsigned>(overrideCount),
+        overrideCount == 1U ? "" : "s"
+    );
+    std::snprintf(
+        value(Field::NAME), values_[0].size(), "%s \xC2\xB7 %s",
+        seq::drumLaneDisplayName(editor.draft),
+        identityStatus(seq::DRUM_LANE_OVERRIDE_NAME)
+    );
     std::snprintf(
         value(Field::ICON),
-        16,
-        "%s",
-        seq::drumLaneIconLabel(seq::drumLaneDisplayIcon(editor.draft))
+        values_[0].size(),
+        "%s \xC2\xB7 %s",
+        seq::drumLaneIconLabel(seq::drumLaneDisplayIcon(editor.draft)),
+        identityStatus(seq::DRUM_LANE_OVERRIDE_ICON)
     );
     std::snprintf(
         value(Field::COLOR),
-        16,
-        "%s",
-        colorLabel(seq::drumLaneDisplayColorIndex(editor.draft))
+        values_[0].size(),
+        "%s \xC2\xB7 %s",
+        colorLabel(seq::drumLaneDisplayColorIndex(editor.draft)),
+        identityStatus(seq::DRUM_LANE_OVERRIDE_COLOR)
     );
     std::snprintf(
-        value(Field::NOTE), 16, "%s \xC2\xB7 %u",
+        value(Field::NOTE), values_[0].size(), "%s \xC2\xB7 %u",
         noteName.data(), static_cast<unsigned>(editor.draft.midiNote)
     );
     if (editor.mode == seq::DrumLaneEditorMode::CREATE) {
         std::snprintf(
-            value(Field::POSITION), 16, "Insert L%u",
+            value(Field::POSITION), values_[0].size(), "Insert L%u",
             static_cast<unsigned>(editor.targetLane + 1U)
         );
     } else if (moving) {
         std::snprintf(
-            value(Field::POSITION), 16, "L%u > L%u",
+            value(Field::POSITION), values_[0].size(), "L%u > L%u",
             static_cast<unsigned>(editor.sourceLane + 1U),
             static_cast<unsigned>(editor.targetLane + 1U)
         );
     } else {
         std::snprintf(
-            value(Field::POSITION), 16, "Lane %u",
+            value(Field::POSITION), values_[0].size(), "Lane %u",
             static_cast<unsigned>(editor.targetLane + 1U)
         );
     }
+
+    const bool identity = seq::isDrumLaneIdentityEditorField(editor.field);
 
     core::ui::SequencerStepEditOverlayProps props{
         .visible = true,
         .stepBadge = badge_.data(),
         .title = title_.data(),
         .meta = "",
-        .focusLabel = fieldLabel(editor.field),
+        .focusLabel = identity ? "Identity" : fieldLabel(editor.field),
         .primaryRowLayout =
             core::ui::SequencerStepEditPrimaryRowLayout::PRIMARY_WIDE,
+        .propertyRowLayout = identity
+            ? core::ui::SequencerStepEditPrimaryRowLayout::EQUAL
+            : core::ui::SequencerStepEditPrimaryRowLayout::PRIMARY_WIDE,
         .enabled = true,
-        .actionsVisible = true,
+        .actionsVisible = identity,
+        .compactActionRow = identity,
         .dataRevision = drumUi.revision.get(),
         .selectedIndex = static_cast<int>(editor.field),
         .selectedVisualSlot = visualSlot(editor.field),
@@ -262,19 +297,34 @@ FLASHMEM void DrumLaneEditorPresenter::render() {
             seq::drumLaneDisplayColorIndex(editor.draft)
         ),
     };
-    props.state = propertyChip(Field::NAME, value(Field::NAME), editor);
-    props.properties[0] = propertyChip(Field::ICON, value(Field::ICON), editor);
-    props.properties[1] = propertyChip(Field::COLOR, value(Field::COLOR), editor);
-    props.properties[4] = propertyChip(Field::NOTE, value(Field::NOTE), editor);
-    props.actions[1] = actionChip(Field::POSITION, value(Field::POSITION), editor);
-    props.actions[2] = actionChip(Field::ROLE, value(Field::ROLE), editor);
+    if (identity) {
+        props.state = propertyChip(Field::NAME, value(Field::NAME), editor);
+        props.properties[0] =
+            propertyChip(Field::ICON, value(Field::ICON), editor);
+        props.properties[1] =
+            propertyChip(Field::COLOR, value(Field::COLOR), editor);
+        props.actions[0] = actionChip(
+            Field::USE_PRESET_DEFAULTS,
+            "Preset defaults",
+            editor
+        );
+    } else {
+        props.state =
+            propertyChip(Field::PRESET, value(Field::PRESET), editor);
+        props.properties[4] =
+            propertyChip(Field::NOTE, value(Field::NOTE), editor);
+        props.properties[0] =
+            propertyChip(Field::IDENTITY, value(Field::IDENTITY), editor);
+        props.properties[1] =
+            propertyChip(Field::POSITION, value(Field::POSITION), editor);
+    }
     overlay_.render(props);
 
     if (editor.textEditing) {
         overlay_.setContentVisible(false);
         keyboard_.render({
             .visible = true,
-            .title = "LANE NAME",
+            .title = "Lane name",
             .meta = badge_.data(),
             .name = editor.draft.name.data(),
             .selectedKey = editor.textKeyIndex,

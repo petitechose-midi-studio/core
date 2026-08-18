@@ -30,6 +30,7 @@ private:
     static constexpr size_t FIELD_COUNT = static_cast<size_t>(
         core::state::sequencer::DrumLaneEditorField::COUNT
     );
+    static constexpr size_t VALUE_CAPACITY = 20U;
 
     static void drainRender(void* context, uint32_t flags);
     void requestRender();
@@ -40,7 +41,7 @@ private:
     core::ui::interaction::TextKeyboardView& keyboard_;
     core::ui::ContextActionStrip& action_strip_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
-    std::array<std::array<char, 16>, FIELD_COUNT> values_{};
+    std::array<std::array<char, VALUE_CAPACITY>, FIELD_COUNT> values_{};
     std::array<char, 8> badge_{};
     std::array<char, 24> title_{};
     uint32_t observed_revision_ = UINT32_MAX;

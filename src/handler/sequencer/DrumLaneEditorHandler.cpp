@@ -301,6 +301,10 @@ FLASHMEM void DrumLaneEditorHandler::close() {
         configureOpt();
         return;
     }
+    if (drumUi.leaveLaneIdentityEditor()) {
+        configureOpt();
+        return;
+    }
     drumUi.cancelLaneEditor();
     if (overlays_.isCurrent(core::ui::OverlayType::SEQ_DRUM_LANE_EDIT)) {
         overlays_.hide();
@@ -363,13 +367,21 @@ FLASHMEM void DrumLaneEditorHandler::editValue(float normalized) {
 
 FLASHMEM void DrumLaneEditorHandler::activateField() {
     auto& drumUi = sequencer_.drumSequencer;
-    if (drumUi.laneEditor.field != seq::DrumLaneEditorField::NAME) return;
-    if (drumUi.laneEditor.textEditing) {
+    auto& editor = drumUi.laneEditor;
+    if (editor.field == seq::DrumLaneEditorField::NAME &&
+        editor.textEditing) {
         drumUi.insertLaneNameKey();
         return;
     }
-    drumUi.toggleLaneNameEditing();
-    configureOpt();
+    if (editor.field == seq::DrumLaneEditorField::NAME) {
+        drumUi.toggleLaneNameEditing();
+        configureOpt();
+    } else if (editor.field == seq::DrumLaneEditorField::IDENTITY) {
+        if (drumUi.enterLaneIdentityEditor()) configureOpt();
+    } else if (editor.field ==
+               seq::DrumLaneEditorField::USE_PRESET_DEFAULTS) {
+        if (drumUi.resetLaneIdentityOverrides()) configureOpt();
+    }
 }
 
 FLASHMEM bool DrumLaneEditorHandler::beginHistory(
@@ -608,11 +620,13 @@ FLASHMEM void DrumLaneEditorHandler::configureOpt() {
     int count = 1;
     int index = 0;
     switch (editor.field) {
-        case seq::DrumLaneEditorField::ROLE:
+        case seq::DrumLaneEditorField::PRESET:
             count = static_cast<int>(seq::DrumLaneRole::PERCUSSION) + 1;
             index = static_cast<int>(editor.draft.role);
             break;
+        case seq::DrumLaneEditorField::IDENTITY:
         case seq::DrumLaneEditorField::NAME:
+        case seq::DrumLaneEditorField::USE_PRESET_DEFAULTS:
             count = 1;
             index = 0;
             break;

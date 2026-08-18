@@ -8514,7 +8514,7 @@ void test_drum_lane_add_slot_is_direct_and_reorder_is_transactional() {
     // Position is a draft preview. Apply moves descriptor, rhythm and advanced
     // mappings through the existing single History transaction.
     h.tap(Config::ButtonID::NAV);
-    for (uint8_t field = 0U; field < 4U; ++field) {
+    for (uint8_t field = 0U; field < 3U; ++field) {
         h.turn(Config::EncoderID::NAV, 1.0f);
     }
     assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::POSITION);
@@ -8608,6 +8608,13 @@ void test_drum_lane_name_keyboard_restores_opt_normalized_contract() {
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     h.tap(Config::ButtonID::NAV);
     assert(drumUi.laneEditor.active);
+    assert(!seq::isDrumLaneIdentityEditorField(drumUi.laneEditor.field));
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::PRESET);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::IDENTITY);
+    h.tap(Config::ButtonID::NAV);
+    assert(seq::isDrumLaneIdentityEditorField(drumUi.laneEditor.field));
     assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NAME);
     assert(
         h.encoderHw.getMode(optId) ==
@@ -8632,13 +8639,18 @@ void test_drum_lane_name_keyboard_restores_opt_normalized_contract() {
     assert(h.encoderHw.getBoundsMin(optId) == 0.0f);
     assert(h.encoderHw.getBoundsMax(optId) == 1.0f);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!seq::isDrumLaneIdentityEditorField(drumUi.laneEditor.field));
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::IDENTITY);
+    h.turn(Config::EncoderID::NAV, -1.0f);
     assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NOTE);
     assert(h.encoderHw.getDiscreteSteps(optId) == 128U);
     h.turn(Config::EncoderID::OPT, 0.5f);
     assert(drumUi.laneEditor.draft.midiNote == 64U);
 
-    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::IDENTITY);
+    h.tap(Config::ButtonID::NAV);
     assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NAME);
     h.tap(Config::ButtonID::NAV);
     assert(drumUi.laneEditor.textEditing);
@@ -8655,6 +8667,64 @@ void test_drum_lane_name_keyboard_restores_opt_normalized_contract() {
 
     std::cout
         << "[PASS] Drum Lane keyboard restores normalized OPT and intermediate values\n";
+}
+
+void test_drum_lane_identity_is_nested_resettable_and_transactional() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    auto& lane = h.state.sequencerTracks.drumTrack(1U).kit.lanes[0U];
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    const uint8_t originalNote = lane.midiNote;
+    const auto originalRole = lane.role;
+    const uint8_t historyBefore = h.state.sequencerHistory.undoCount();
+
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::IDENTITY);
+    h.tap(Config::ButtonID::NAV);
+    assert(seq::isDrumLaneIdentityEditorField(drumUi.laneEditor.field));
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NAME);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(seq::drumLaneIdentityOverrideCount(drumUi.laneEditor.draft) == 2U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(seq::drumLaneIdentityOverrideCount(lane) == 2U);
+    assert(h.state.sequencerHistory.undoCount() == historyBefore + 1U);
+
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(
+        drumUi.laneEditor.field ==
+        seq::DrumLaneEditorField::USE_PRESET_DEFAULTS
+    );
+    h.tap(Config::ButtonID::NAV);
+    assert(
+        seq::drumLaneIdentityOverrideCount(drumUi.laneEditor.draft) == 0U
+    );
+    assert(drumUi.laneEditor.draft.midiNote == originalNote);
+    assert(drumUi.laneEditor.draft.role == originalRole);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(drumUi.laneEditor.active);
+    assert(!seq::isDrumLaneIdentityEditorField(drumUi.laneEditor.field));
+    assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::IDENTITY);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(seq::drumLaneIdentityOverrideCount(lane) == 0U);
+    assert(h.state.sequencerHistory.undoCount() == historyBefore + 2U);
+    assert(h.state.undoSequencerHistory());
+    assert(seq::drumLaneIdentityOverrideCount(lane) == 2U);
+    assert(h.state.redoSequencerHistory());
+    assert(seq::drumLaneIdentityOverrideCount(lane) == 0U);
+
+    std::cout
+        << "[PASS] Drum Lane identity is nested, resettable, and transactional\n";
 }
 
 void test_drum_lane_note_audition_is_bounded_latest_wins_and_stops() {
@@ -8777,7 +8847,7 @@ void test_drum_lane_rhythm_is_live_coalesced_and_cancelable() {
     // Identity editing leaves the independently-authored lane rhythm intact.
     h.tap(Config::ButtonID::NAV);
     assert(drumUi.laneEditor.active);
-    static_assert(static_cast<uint8_t>(seq::DrumLaneEditorField::COUNT) == 6U);
+    static_assert(static_cast<uint8_t>(seq::DrumLaneEditorField::COUNT) == 8U);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NOTE);
     h.turn(Config::EncoderID::OPT, 0.5f);
@@ -9601,6 +9671,7 @@ int main() {
     test_drum_lane_add_slot_is_direct_and_reorder_is_transactional();
     test_drum_lane_editor_draft_retarget_cancel_and_history();
     test_drum_lane_name_keyboard_restores_opt_normalized_contract();
+    test_drum_lane_identity_is_nested_resettable_and_transactional();
     test_drum_lane_note_audition_is_bounded_latest_wins_and_stops();
     test_drum_lane_rhythm_is_live_coalesced_and_cancelable();
     test_drum_short_nav_uses_shared_step_editor_and_coalesces_opt();
