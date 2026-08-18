@@ -51,7 +51,7 @@ struct ProjectMenuPage {
     static constexpr uint8_t MAX_ROWS = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     static constexpr uint8_t META_TEXT_SIZE = 32;
 
-    const char* title = "PROJECT";
+    const char* title = "Project";
     const char* meta = "";
     std::array<char, META_TEXT_SIZE> metaText{};
     std::array<ProjectMenuRow, MAX_ROWS> rows{};

@@ -258,14 +258,14 @@ FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
             .icon = track
                 ? standalone::icons::TRACK_MUTE
                 : page ? standalone::icons::LENGTH : standalone::icons::KNOB,
-            .label = track ? "TRACK" : page ? "PAGE" : "MACRO",
+            .label = track ? "Track" : page ? "Page" : "Macro",
             .useValueText = true,
             .color = standalone::theme::color::MACRO_CC_COLOR,
         };
         std::snprintf(
             props.valueText.data(),
             props.valueText.size(),
-            "TURN + RELEASE"
+            "Turn + release"
         );
         return props;
     }
@@ -282,12 +282,12 @@ FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
     };
 
     props.icon = standalone::icons::KNOB;
-    props.label = "EDIT";
+    props.label = "Edit";
     props.color = standalone::theme::color::MACRO_CC_COLOR;
     std::snprintf(
         props.valueText.data(),
         props.valueText.size(),
-        "PRESS A MACRO"
+        "Press a macro"
     );
     return props;
 }

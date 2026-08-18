@@ -1585,7 +1585,7 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
             out.valueLabel,
             sizeof(out.valueLabel),
             "%s",
-            out.authoredValue != 0 ? "DRUM" : "INSTRUMENT"
+            out.authoredValue != 0 ? "Drum" : "Instrument"
         );
     } else if (editor_.selectedProperty ==
         core::state::project::ProjectTrackEditorProperty::DELAY) {
@@ -1644,7 +1644,7 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
         ) ? 1U : 0U;
         std::snprintf(
             out.valueLabel, sizeof(out.valueLabel), "%s",
-            out.authoredValue != 0U ? "ON" : "OFF"
+            out.authoredValue != 0U ? "On" : "Off"
         );
     } else if (solo) {
         if (kindDirty || wasKindDirty) {
@@ -1662,7 +1662,7 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
             ) ? 1U : 0U;
             std::snprintf(
                 out.valueLabel, sizeof(out.valueLabel), "%s",
-                out.authoredValue != 0U ? "ON" : "OFF"
+                out.authoredValue != 0U ? "On" : "Off"
             );
         }
     } else if (back) {

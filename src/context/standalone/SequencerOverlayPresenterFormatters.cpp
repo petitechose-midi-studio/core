@@ -100,10 +100,10 @@ FLASHMEM const char* draftFailureLabel(
 ) {
     using Failure = core::state::sequencer::SequencerStepContentDraftFailure;
     switch (draft.failure) {
-        case Failure::OUT_OF_MEMORY: return "APPLY FAILED · OUT OF MEMORY";
-        case Failure::HISTORY_UNAVAILABLE: return "APPLY FAILED · HISTORY FULL";
-        case Failure::PUBLISH_FAILED: return "APPLY FAILED · PUBLISH";
-        case Failure::UNPUBLISHABLE_MUTATION: return "APPLY FAILED · INVALID EDIT";
+        case Failure::OUT_OF_MEMORY: return "Apply failed · out of memory";
+        case Failure::HISTORY_UNAVAILABLE: return "Apply failed · history full";
+        case Failure::PUBLISH_FAILED: return "Apply failed · publish";
+        case Failure::UNPUBLISHABLE_MUTATION: return "Apply failed · invalid edit";
         case Failure::TRANSITION_BLOCKED:
             return core::ui::sequencer::standaloneStepContentDraftTransitionLabel(
                 draft.blockedTransition
@@ -723,8 +723,8 @@ FLASHMEM void buildStepEditRenderData(
 
     if (sequencer.stepContentDraft.exitPromptVisible.get()) {
         const auto choice = sequencer.stepContentDraft.exitChoice.get();
-        copyText(data.stepBadge.data(), data.stepBadge.size(), "BACK");
-        copyText(data.summary.data(), data.summary.size(), "EDITED DRAFT");
+        copyText(data.stepBadge.data(), data.stepBadge.size(), "Back");
+        copyText(data.summary.data(), data.summary.size(), "Edited draft");
         copyText(
             data.meta.data(),
             data.meta.size(),
@@ -825,7 +825,7 @@ FLASHMEM void buildStepEditRenderData(
         ) + 1U,
         static_cast<unsigned>(step) + 1U,
         static_cast<unsigned>(len),
-        projection.enabled ? "ON" : "OFF"
+        projection.enabled ? "On" : "Off"
     );
     if (const char* failure = draftFailureLabel(sequencer.stepContentDraft)) {
         copyText(data.meta.data(), data.meta.size(), failure);

@@ -32,10 +32,10 @@ namespace lfo_parameter = core::state::modulation::lfo;
 namespace project_modulators = core::state::project::modulators;
 
 const char LABEL_FREE[] PROGMEM = "Free";
-const char LABEL_TEMPO_SYNC[] PROGMEM = "Tempo Sync";
-const char LABEL_ON_PLAY[] PROGMEM = "On Play";
+const char LABEL_TEMPO_SYNC[] PROGMEM = "Tempo sync";
+const char LABEL_ON_PLAY[] PROGMEM = "On play";
 const char LABEL_TRIGGERED[] PROGMEM = "Triggered";
-const char LABEL_FREE_RUN[] PROGMEM = "Free Run";
+const char LABEL_FREE_RUN[] PROGMEM = "Free run";
 const char LABEL_RUN[] PROGMEM = "Run";
 const char LABEL_DETAILS[] PROGMEM = "Details";
 const char LABEL_MORE[] PROGMEM = "More >";
@@ -359,7 +359,7 @@ FLASHMEM void populateSourceKindRow(
             setText(out.icon, standalone::icons::NOTE_PROP_GATE);
             break;
         case ModulatorKind::RECORDED_SHAPE:
-            setText(out.key, "Recorded Shape");
+            setText(out.key, "Recorded shape");
             setText(out.value, "Recorded motion");
             setText(out.icon, standalone::icons::MACRO_AUTOMATION);
             break;
@@ -434,7 +434,7 @@ FLASHMEM void populateSourceDetailRow(
             break;
         case SourceDetailItem::RECORD:
             setText(out.key, "Record");
-            setText(out.value, "HOLD + TURN");
+            setText(out.value, "Hold + turn");
             setText(out.icon, standalone::icons::MACRO_AUTOMATION);
             break;
         case SourceDetailItem::LENGTH: {
@@ -684,7 +684,7 @@ FLASHMEM void populateTriggerRow(
             : trigger.noteMax;
         setText(
             out.key,
-            item == TriggerDetailItem::NOTE_LOW ? "Note Low" : "Note High"
+            item == TriggerDetailItem::NOTE_LOW ? "Note low" : "Note high"
         );
         char note[8]{};
         core::midi::formatNoteName(note, sizeof(note), noteValue);
@@ -700,8 +700,8 @@ FLASHMEM void populateTriggerRow(
         setText(
             out.key,
             item == TriggerDetailItem::VELOCITY_LOW
-                ? "Velocity Low"
-                : "Velocity High"
+                ? "Velocity low"
+                : "Velocity high"
         );
         std::snprintf(
             value,
@@ -794,7 +794,7 @@ FLASHMEM void populateDestinationPickerRow(
         );
     if (!target.valid) return;
     if (target.kind == RowKind::KEEP_UNASSIGNED) {
-        setText(out.key, "Keep Unassigned");
+        setText(out.key, "Keep unassigned");
         setText(out.value, "Explicit");
         setText(out.icon, standalone::icons::ROUTE_PIN);
         out.iconFont = standalone_fonts.icons_14;

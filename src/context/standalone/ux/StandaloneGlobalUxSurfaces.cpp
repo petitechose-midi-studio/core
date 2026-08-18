@@ -40,8 +40,8 @@ FLASHMEM void copyValueLabel(char (&out)[16], const char* value) {
     std::snprintf(out, sizeof(out), "%s", value);
 }
 
-constexpr const char* const MODE_ITEMS[] = {"MASTER", "SLAVE", "AUTO"};
-constexpr const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
+constexpr const char* const MODE_ITEMS[] = {"Master", "Slave", "Auto"};
+constexpr const char* const FOLLOW_ITEMS[] = {"Off", "On"};
 constexpr const char* const FALLBACK_ITEMS[] = {"150 ms", "250 ms", "500 ms", "750 ms", "1000 ms", "1500 ms", "2000 ms"};
 constexpr const char* const LOCK_ITEMS[] = {"1", "2", "3", "4", "6", "8", "12", "24"};
 constexpr const char* const NOTE_OCTAVE_ITEMS[] = {"C3", "C4", "C5"};

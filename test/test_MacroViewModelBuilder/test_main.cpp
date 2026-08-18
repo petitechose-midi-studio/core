@@ -291,8 +291,8 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     );
     auto overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
     assert(overlay.visible);
-    assert(std::strcmp(overlay.label, "EDIT") == 0);
-    assert(std::strcmp(overlay.valueText.data(), "PRESS A MACRO") == 0);
+    assert(std::strcmp(overlay.label, "Edit") == 0);
+    assert(std::strcmp(overlay.valueText.data(), "Press a macro") == 0);
 
     std::array<uint8_t, 8> bases{};
     bases[0] = 32U;

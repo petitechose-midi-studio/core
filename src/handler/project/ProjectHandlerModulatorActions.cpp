@@ -207,7 +207,7 @@ FLASHMEM bool ProjectHandler::beginRecordedShapeCapture() {
         return false;
     }
     recorded_shape_capture_button_active_ = true;
-    navigation_.setLifecycleFeedback("ARMED · TURN OPT");
+    navigation_.setLifecycleFeedback("Armed · turn OPT");
     navigation_.notifyContentChanged();
     return true;
 }

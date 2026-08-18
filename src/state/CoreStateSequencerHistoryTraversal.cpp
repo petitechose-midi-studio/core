@@ -29,7 +29,7 @@ namespace core::state {
 namespace {
 
 FLASHMEM const char* historyDirectionLabel(sequencer::SequencerHistoryDirection direction) {
-    return direction == sequencer::SequencerHistoryDirection::Redo ? "REDO" : "UNDO";
+    return direction == sequencer::SequencerHistoryDirection::Redo ? "Redo" : "Undo";
 }
 
 FLASHMEM const char* historyPropertyLabel(sequencer::StepProperty property) {

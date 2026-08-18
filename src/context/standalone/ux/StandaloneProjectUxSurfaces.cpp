@@ -757,8 +757,8 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                           matchingCapture
                               ? (capture.status == core::state::modulation::
                                         ProjectRecordedShapeCaptureStatus::ARMED
-                                     ? "ARMED"
-                                     : "RECORDING")
+                                     ? "Armed"
+                                     : "Recording")
                               : "HOLD + OPT");
             if (!sourceSession.existingAudition()) {
                 out.operationStatus = status ? status : "idle";

@@ -304,11 +304,11 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         layerColor = randomizePropertyColor(state_.randomize.draft.property);
     } else switch (editor.focusedLayer) {
         case Layer::NOTES:
-            std::snprintf(layer_.data(), layer_.size(), "NOTES");
+            std::snprintf(layer_.data(), layer_.size(), "Notes");
             layerColor = theme::color::STEP_PITCH;
             break;
         case Layer::REGION:
-            std::snprintf(layer_.data(), layer_.size(), "REGION");
+            std::snprintf(layer_.data(), layer_.size(), "Region");
             layerColor = theme::color::STEP_LENGTH;
             break;
         case Layer::CC1:
@@ -325,14 +325,14 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
                 );
                 layerColor = CC_LAYER_COLORS[lane];
             } else {
-                std::snprintf(layer_.data(), layer_.size(), "+ CC LANE");
+                std::snprintf(layer_.data(), layer_.size(), "+ CC lane");
                 layerColor = theme::color::SECONDARY;
             }
             break;
         }
         case Layer::COUNT:
         default:
-            std::snprintf(layer_.data(), layer_.size(), "PATTERN");
+            std::snprintf(layer_.data(), layer_.size(), "Pattern");
             break;
     }
 
@@ -349,12 +349,12 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         );
     } else if (editor.navigationMode == Mode::WINDOWS) {
         std::snprintf(
-            hint_.data(), hint_.size(), "WINDOW · STEPS %u–%u",
+            hint_.data(), hint_.size(), "Window · steps %u–%u",
             static_cast<unsigned>(editor.windowStart + 1U),
             static_cast<unsigned>(windowEnd)
         );
     } else if (editor.navigationMode == Mode::LAYERS) {
-        std::snprintf(hint_.data(), hint_.size(), "LAYER · %s", layer_.data());
+        std::snprintf(hint_.data(), hint_.size(), "Layer · %s", layer_.data());
     } else {
         const auto field = editor.focusedField;
         const int value = seq::patternEditorFieldValue(state_.sequencer, field);
@@ -363,7 +363,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
             : value;
         if (field == Field::DIVISION) {
             std::snprintf(
-                hint_.data(), hint_.size(), "DIVISION · 1/%u",
+                hint_.data(), hint_.size(), "Division · 1/%u",
                 static_cast<unsigned>(
                     4U * state_.sequencer.pattern.stepsPerBeat.get()
                 )
@@ -409,7 +409,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         );
         std::snprintf(
             field_values_[3].data(), field_values_[3].size(), "%s",
-            state_.randomize.draft.activeOnly ? "ACTIVE" : "ALL"
+            state_.randomize.draft.activeOnly ? "Active" : "All"
         );
         constexpr std::array<const char*, 4> randomIcons = {
             icons::NOTE_PROP_RANDOM,

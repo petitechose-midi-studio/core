@@ -74,7 +74,7 @@ void assertMemoryRejection(const core::state::CoreState& state, uint32_t expecte
     const auto& feedback = state.sequencer.historyFeedback;
     assert(feedback.visible.get());
     assert(feedback.revision.get() == expectedRevision);
-    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(feedback.line1.data(), "No change") == 0);
     assert(std::strcmp(feedback.line2.data(), "Memory unavailable") == 0);
     assert(std::strcmp(feedback.line3.data(), "") == 0);
 }

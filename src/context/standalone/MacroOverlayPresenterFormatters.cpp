@@ -38,25 +38,25 @@ FLASHMEM const char* recordedShapeCaptureLabel(
         ProjectRecordedShapeCaptureStatus;
     switch (capture.status) {
         case Status::ARMED:
-            return "ARMED";
+            return "Armed";
         case Status::RECORDING:
         case Status::REDUCED:
             return capture.take != nullptr && capture.take->touched
-                ? "RECORDING"
-                : "ARMED";
+                ? "Recording"
+                : "Armed";
         case Status::COMMITTED:
-            return "COMMITTED";
+            return "Committed";
         case Status::NO_CHANGE:
-            return "NO CHANGE";
+            return "No change";
         case Status::CANCELLED:
-            return "CANCELLED";
+            return "Cancelled";
         case Status::INVALIDATED:
         case Status::SCRATCH_UNAVAILABLE:
         case Status::COMMIT_FAILED:
-            return "INVALIDATED";
+            return "Invalidated";
         case Status::IDLE:
         default:
-            return "HOLD + TURN";
+            return "Hold + turn";
     }
 }
 

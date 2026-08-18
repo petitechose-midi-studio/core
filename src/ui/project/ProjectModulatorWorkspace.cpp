@@ -18,6 +18,7 @@
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/project/ProjectModulatorUiModel.hpp"
+#include "ui/interaction/InteractiveSurfaceVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::project {
@@ -40,21 +41,21 @@ constexpr lv_coord_t CARD_GAP = 3;
 constexpr lv_coord_t HORIZONTAL_PAD = 4;
 
 const char SOURCE_KIND_LFO[] PROGMEM = "LFO";
-const char SOURCE_KIND_MOTION[] PROGMEM = "MOTION";
+const char SOURCE_KIND_MOTION[] PROGMEM = "Motion";
 const char SOURCE_KIND_ADSR[] PROGMEM = "DAHDSR";
-const char SOURCE_STATE_ON[] PROGMEM = "ON";
-const char SOURCE_STATE_OFF[] PROGMEM = "OFF";
+const char SOURCE_STATE_ON[] PROGMEM = "On";
+const char SOURCE_STATE_OFF[] PROGMEM = "Off";
 const char SOURCE_STATE_FORMAT[] PROGMEM = "%s · %s";
 
 FLASHMEM const char* sourceTimingLabel(const ModulatorSourceState& source) {
     if (source.kind == ModulatorKind::LFO) {
         return source.parameters.lfo.timing == ModulatorTimingMode::FREE
-            ? "FREE" : "SYNC";
+            ? "Free" : "Sync";
     }
     if (source.kind == ModulatorKind::ADSR) {
         return modulatorAdsrTiming(source.parameters.adsr.traits) ==
                 ModulatorTimingMode::FREE
-            ? "FREE" : "SYNC";
+            ? "Free" : "Sync";
     }
     return nullptr;
 }
@@ -153,13 +154,13 @@ FLASHMEM const char* captureStatusLabel(
 ) {
     switch (status) {
         case ProjectRecordedShapeCaptureStatus::ARMED:
-            return "ARMED · TURN OPT";
+            return "Armed · turn OPT";
         case ProjectRecordedShapeCaptureStatus::RECORDING:
-            return "RECORDING";
+            return "Recording";
         case ProjectRecordedShapeCaptureStatus::REDUCED:
-            return "RECORDING · REDUCED";
+            return "Recording · reduced";
         default:
-            return "RECORDING";
+            return "Recording";
     }
 }
 
@@ -343,10 +344,10 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
         lv_obj_set_size(edit_feedback_, 146, 34);
         lv_obj_set_style_bg_color(
             edit_feedback_,
-            lv_color_hex(theme::color::BACKGROUND),
+            lv_color_hex(theme::color::SURFACE_RAISED),
             0
         );
-        lv_obj_set_style_bg_opa(edit_feedback_, LV_OPA_90, 0);
+        lv_obj_set_style_bg_opa(edit_feedback_, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(edit_feedback_, 1, 0);
         lv_obj_set_style_border_color(
             edit_feedback_,
@@ -498,24 +499,24 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
             std::snprintf(
                 stateText_.data(),
                 stateText_.size(),
-                "%s · %s · SHARED %+d%%",
+                "%s · %s · Shared %+d%%",
                 source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
                     : (source.kind == ModulatorKind::LFO
                         ? SOURCE_KIND_LFO : SOURCE_KIND_MOTION),
                 sourceTimingLabel(source) != nullptr
-                    ? sourceTimingLabel(source) : "MOTION",
+                    ? sourceTimingLabel(source) : "Motion",
                 depth
             );
         } else {
             std::snprintf(
                 stateText_.data(),
                 stateText_.size(),
-                "%s · %s · PREVIEW %+d%%",
+                "%s · %s · Preview %+d%%",
                 source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
                     : (source.kind == ModulatorKind::LFO
                         ? SOURCE_KIND_LFO : SOURCE_KIND_MOTION),
                 sourceTimingLabel(source) != nullptr
-                    ? sourceTimingLabel(source) : "MOTION",
+                    ? sourceTimingLabel(source) : "Motion",
                 depth
             );
         }
@@ -681,28 +682,14 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
         const uint32_t accent = mutableValue || action
             ? theme::color::MACRO_MODULATION
             : theme::color::TEXT_SECONDARY;
-        const uint32_t selectionColor = selected
-            ? theme::color::FOCUS_EDIT
-            : accent;
-        lv_obj_set_style_border_color(
+        const auto surfaceState = selected
+            ? core::ui::interaction::InteractiveSurfaceState::FOCUSED
+            : (mutableValue || action
+                ? core::ui::interaction::InteractiveSurfaceState::ACTIVE
+                : core::ui::interaction::InteractiveSurfaceState::IDLE);
+        core::ui::interaction::applyInteractiveSurfaceChrome(
             card.root,
-            lv_color_hex(selectionColor),
-            0
-        );
-        lv_obj_set_style_border_opa(
-            card.root,
-            selected ? LV_OPA_COVER : LV_OPA_20,
-            0
-        );
-        lv_obj_set_style_bg_color(
-            card.root,
-            lv_color_hex(selectionColor),
-            0
-        );
-        lv_obj_set_style_bg_opa(
-            card.root,
-            selected ? LV_OPA_10 : LV_OPA_TRANSP,
-            0
+            surfaceState
         );
         lv_obj_set_style_text_color(card.icon, lv_color_hex(accent), 0);
         lv_obj_set_style_text_opa(
@@ -1132,7 +1119,7 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
             editFeedbackValueText_,
             modulatorAdsrTiming(props.source->parameters.adsr.traits) ==
                     ModulatorTimingMode::FREE
-                ? "Free" : "Tempo Sync"
+                ? "Free" : "Tempo sync"
         );
     }
     if (item == Item::RESPONSE && props.source->kind == ModulatorKind::ADSR) {

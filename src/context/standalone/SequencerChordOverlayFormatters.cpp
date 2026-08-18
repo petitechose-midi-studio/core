@@ -747,7 +747,7 @@ FLASHMEM void populateChordDetailOverlay(
         data.overlayProps.chordPerformance[2] =
             core::ui::SequencerStepEditPropertyChip{
                 .key = "Cancel",
-                .value = "LEFT TOP",
+                .value = "Left top",
                 .icon = ::standalone::icons::ACTION_CANCEL,
                 .color = selectedColor,
             };

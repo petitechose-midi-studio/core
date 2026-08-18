@@ -126,7 +126,7 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
         root_, fonts.meta_label(), theme::color::MACRO_CONFLICT,
         LV_TEXT_ALIGN_RIGHT
     );
-    lv_label_set_text(clipping_, "CLIP");
+    lv_label_set_text(clipping_, "Clip");
     lv_obj_set_pos(clipping_, 252, 168);
     lv_obj_set_size(clipping_, 58, 15);
     lv_obj_add_flag(clipping_, LV_OBJ_FLAG_HIDDEN);

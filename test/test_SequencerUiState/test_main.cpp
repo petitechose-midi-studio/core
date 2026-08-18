@@ -182,7 +182,7 @@ void assertHistoryRejection(const core::state::sequencer::SequencerHistoryFeedba
                             uint32_t expectedHideAtMs) {
     assert(state.visible.get());
     assert(state.revision.get() == expectedRevision);
-    assert(std::strcmp(state.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(state.line1.data(), "No change") == 0);
     assert(std::strcmp(state.line2.data(), expectedDetail) == 0);
     assert(std::strcmp(state.line3.data(), "") == 0);
     assert(state.hideAtMs == expectedHideAtMs);

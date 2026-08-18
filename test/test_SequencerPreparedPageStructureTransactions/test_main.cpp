@@ -123,7 +123,7 @@ void assertHistoryRejection(const seq::SequencerState& sequencer, const char* ex
     const auto& feedback = sequencer.historyFeedback;
     assert(feedback.visible.get());
     assert(feedback.revision.get() == expectedRevision);
-    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(feedback.line1.data(), "No change") == 0);
     assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
     assert(std::strcmp(feedback.line3.data(), "") == 0);
 }

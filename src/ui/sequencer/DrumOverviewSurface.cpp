@@ -477,7 +477,7 @@ FLASHMEM void drawAddLaneRow(
             ),
             .y2 = static_cast<lv_coord_t>(rowY + context.laneHeight - 1),
         },
-        "ADD",
+        "Add",
         color,
         selected ? LV_OPA_COVER : LV_OPA_60,
         LV_TEXT_ALIGN_LEFT

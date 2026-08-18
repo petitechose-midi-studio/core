@@ -13,12 +13,12 @@ constexpr const char* const ROW_LABELS[] PROGMEM = {
 FLASHMEM const char* modeLabel(core::state::MidiSyncMode mode) {
     switch (mode) {
         case core::state::MidiSyncMode::MASTER:
-            return "MASTER";
+            return "Master";
         case core::state::MidiSyncMode::SLAVE:
-            return "SLAVE";
+            return "Slave";
         case core::state::MidiSyncMode::AUTO:
         default:
-            return "AUTO";
+            return "Auto";
     }
 }
 
@@ -70,7 +70,7 @@ FLASHMEM DeviceSettingsMenuPage buildDeviceSettingsMenuPage(
 
     page.rows = {{
         {.label = ROW_LABELS[0], .value = modeLabel(context.mode)},
-        {.label = ROW_LABELS[1], .value = context.followTransport ? "ON" : "OFF"},
+        {.label = ROW_LABELS[1], .value = context.followTransport ? "On" : "Off"},
         {.label = ROW_LABELS[2], .value = page.valueBuffers[0].data()},
         {.label = ROW_LABELS[3], .value = page.valueBuffers[1].data()},
         {

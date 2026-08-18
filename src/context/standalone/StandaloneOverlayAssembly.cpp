@@ -58,7 +58,7 @@ FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, b
 
     view_selector_->render(
         core::ui::interaction::decisionSelectorProps(
-            "VIEWS",
+            "Views",
             "",
             core::state::VIEW_SELECTOR_ITEM_LABELS.data(),
             core::state::VIEW_SELECTOR_ITEM_COUNT,

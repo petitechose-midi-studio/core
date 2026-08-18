@@ -16,8 +16,8 @@ namespace {
 
 namespace scale_catalog = core::state::sequencer::scale_catalog;
 
-const char MODULATOR_DETAILS_META[] PROGMEM = "MODULATORS > DETAILS";
-const char MODULATOR_RENAME_META[] PROGMEM = "MODULATORS > RENAME";
+const char MODULATOR_DETAILS_META[] PROGMEM = "Modulators > details";
+const char MODULATOR_RENAME_META[] PROGMEM = "Modulators > rename";
 
 constexpr ProjectMenuRow row(const char* label,
                              const char* value,
@@ -269,7 +269,7 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
                                          ProjectMenuContext context) {
     if (context.projectHasSavedIdentity) {
         auto saveAndReset = row(
-            "Save & Reset",
+            "Save & reset",
             "",
             ProjectMenuRowKind::Action,
             ProjectNodeId::NEW_PROJECT_CONFIRM
@@ -278,7 +278,7 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
         addRow(page, saveAndReset);
     } else {
         auto saveAsNew = row(
-            "Save As New",
+            "Save as new",
             "Next",
             ProjectMenuRowKind::Action,
             ProjectNodeId::NEW_PROJECT_CONFIRM
@@ -286,7 +286,7 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
         addRow(page, saveAsNew);
     }
     auto dontSave = row(
-        "Don't Save",
+        "Don't save",
         "Reset",
         ProjectMenuRowKind::Action,
         ProjectNodeId::NEW_PROJECT_CONFIRM
@@ -302,7 +302,7 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
     const char* projectId = navigation.pendingLoadProjectId.data();
     if (navigation.pendingLoadCanSaveCurrent) {
         auto saveAndLoad = row(
-            "Save & Load",
+            "Save & load",
             "",
             ProjectMenuRowKind::Action,
             ProjectNodeId::LOAD_PROJECT_CONFIRM
@@ -311,7 +311,7 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
         addRow(page, saveAndLoad);
     }
     auto saveAsAndLoad = row(
-        "Save As & Load",
+        "Save as & load",
         "",
         ProjectMenuRowKind::Action,
         ProjectNodeId::LOAD_PROJECT_CONFIRM
@@ -324,7 +324,7 @@ FLASHMEM void buildLoadProjectConfirmRows(ProjectMenuPage& page,
     addRow(page, saveAsAndLoad);
 
     auto dontSave = row(
-        "Don't Save",
+        "Don't save",
         "",
         ProjectMenuRowKind::Action,
         ProjectNodeId::LOAD_PROJECT_CONFIRM
@@ -357,25 +357,25 @@ FLASHMEM void buildMusicRootRows(
     setScaleSummary(scaleRow, context.projectScale);
     addRow(page, scaleRow);
     addRow(page, row(
-        "Pattern Default",
+        "Pattern default",
         inheritValue(navigation.patternsInheritScale),
         ProjectMenuRowKind::Value,
         ProjectNodeId::MUSIC_ROOT
     ));
     addRow(page, row(
-        "Clip Default",
+        "Clip default",
         inheritValue(navigation.clipsInheritScale),
         ProjectMenuRowKind::Value,
         ProjectNodeId::MUSIC_ROOT
     ));
     addRow(page, row(
-        "Step Paste",
+        "Step paste",
         stepPasteModeValue(navigation.stepPasteMode),
         ProjectMenuRowKind::Value,
         ProjectNodeId::MUSIC_ROOT
     ));
     addRow(page, row(
-        "CC Defaults",
+        "CC defaults",
         "4 Lanes",
         ProjectMenuRowKind::Folder,
         ProjectNodeId::MUSIC_CC_DEFAULTS,
@@ -429,16 +429,16 @@ FLASHMEM void buildTransportRows(
     setRowValue(swing, navigation.transportSwingPercent, "%");
     addRow(page, swing);
     addRow(page, row("Clock", clockModeValue(context.clockMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Run Mode", runModeValue(navigation.transportRunMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
-    addRow(page, row("Sync Settings", "System", ProjectMenuRowKind::Disabled, ProjectNodeId::TRANSPORT_ROOT, false, false));
+    addRow(page, row("Run mode", runModeValue(navigation.transportRunMode), ProjectMenuRowKind::Value, ProjectNodeId::TRANSPORT_ROOT));
+    addRow(page, row("Sync settings", "System", ProjectMenuRowKind::Disabled, ProjectNodeId::TRANSPORT_ROOT, false, false));
 }
 
 FLASHMEM void buildStorageRows(ProjectMenuPage& page, ProjectMenuContext context) {
-    addRow(page, row("Save Project", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("Save As", "Name", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
+    addRow(page, row("Save project", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
+    addRow(page, row("Save as", "Name", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
     addRow(page, row("Rename", "Current", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("New Project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
-    addRow(page, row("Load Project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
+    addRow(page, row("New project", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
+    addRow(page, row("Load project", "Browse", ProjectMenuRowKind::Action, ProjectNodeId::STORAGE_ROOT));
     auto projectRow = row("Project", "", ProjectMenuRowKind::Disabled, ProjectNodeId::STORAGE_ROOT, false, false);
     copyRowValue(projectRow, projectIdentityLabel(context));
     addRow(page, projectRow);
@@ -521,37 +521,37 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
                             const ProjectMenuContext& context) {
     switch (node) {
         case ProjectNodeId::MUSIC_ROOT:
-            page.meta = "MUSIC";
+            page.meta = "Music";
             return;
         case ProjectNodeId::MUSIC_SCALE:
-            page.meta = "MUSIC > SCALE";
+            page.meta = "Music > scale";
             return;
         case ProjectNodeId::MUSIC_CC_DEFAULTS:
-            page.meta = "MUSIC > CC DEFAULTS";
+            page.meta = "Music > CC defaults";
             return;
         case ProjectNodeId::TRANSPORT_ROOT:
-            page.meta = "TRANSPORT";
+            page.meta = "Transport";
             return;
         case ProjectNodeId::STORAGE_ROOT:
-            setPageMeta(page, "STORAGE", context);
+            setPageMeta(page, "Storage", context);
             return;
         case ProjectNodeId::LOAD_PROJECT:
-            page.meta = "LOAD PROJECT";
+            page.meta = "Load project";
             return;
         case ProjectNodeId::LOAD_PROJECT_CONFIRM:
-            page.meta = "LOAD DIRTY?";
+            page.meta = "Load dirty?";
             return;
         case ProjectNodeId::SAVE_AS_PROJECT_NAME:
-            page.meta = "SAVE AS";
+            page.meta = "Save as";
             return;
         case ProjectNodeId::RENAME_PROJECT_NAME:
-            page.meta = "RENAME";
+            page.meta = "Rename";
             return;
         case ProjectNodeId::ROUTING_ROOT:
-            page.meta = "ROUTING";
+            page.meta = "Routing";
             return;
         case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
-            page.meta = "MODULATORS > SOURCE";
+            page.meta = "Modulators > source";
             return;
         case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
             page.meta = MODULATOR_DETAILS_META;
@@ -560,26 +560,26 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
             page.meta = MODULATOR_RENAME_META;
             return;
         case ProjectNodeId::MODULATOR_DESTINATIONS:
-            page.meta = "MODULATORS > DESTINATIONS";
+            page.meta = "Modulators > destinations";
             return;
         case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
-            page.meta = "MODULATORS > ADD DESTINATION";
+            page.meta = "Modulators > add destination";
             return;
         case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
-            page.meta = "MODULATORS > ADD SOURCE";
+            page.meta = "Modulators > add source";
             return;
         case ProjectNodeId::MODULATOR_TRIGGER:
-            page.meta = "MODULATORS > TRIGGER";
+            page.meta = "Modulators > trigger";
             return;
         case ProjectNodeId::MODULATORS_ROOT:
-            page.meta = "MODULATORS";
+            page.meta = "Modulators";
             return;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
-            page.meta = "NEW PROJECT?";
+            page.meta = "New project?";
             return;
         case ProjectNodeId::OVERVIEW_ROOT:
         default:
-            setPageMeta(page, "OVERVIEW", context);
+            setPageMeta(page, "Overview", context);
             return;
     }
 }
@@ -655,7 +655,7 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
 FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navigation,
                                               ProjectMenuContext context) {
     ProjectMenuPage page{};
-    page.title = "PROJECT";
+    page.title = "Project";
     applyPageMeta(page, navigation.currentNode.get(), context);
     page.selectedIndex = navigation.focusedRow.get();
     page.dataRevision = revisionFor(navigation, context);

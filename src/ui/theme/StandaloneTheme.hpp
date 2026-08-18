@@ -49,12 +49,10 @@ constexpr uint32_t TEXT_DISABLED = 0x565A61;
 // Knob
 constexpr uint32_t KNOB_BACKGROUND = base_theme::color::KNOB_BACKGROUND;
 constexpr uint32_t KNOB_VALUE = base_theme::color::KNOB_VALUE;
-constexpr uint32_t KNOB_TRACK = base_theme::color::KNOB_TRACK;
 
 // MIDI indicators
 constexpr uint32_t MIDI_INACTIVE = 0x404040;
 constexpr uint32_t MIDI_IN_ACTIVE = 0xFFCC00;   // Yellow
-constexpr uint32_t MIDI_OUT_ACTIVE = 0xFF8800;  // Orange
 
 // Transport
 constexpr uint32_t PLAY_ACTIVE = 0x49E4B0;      // Live mint
@@ -135,15 +133,8 @@ constexpr uint32_t trackColor(uint8_t index) {
 // =============================================================================
 namespace layout {
 
-constexpr int16_t SCREEN_WIDTH = 320;
-constexpr int16_t SCREEN_HEIGHT = 240;
-
-constexpr int16_t TOP_BAR_HEIGHT = 20;
 constexpr int16_t TRANSPORT_BAR_HEIGHT = 20;
 constexpr int16_t CONTEXT_ACTION_STRIP_HEIGHT = 20;
-
-constexpr int16_t PARAMETER_GRID_COLS = 4;
-constexpr int16_t PARAMETER_GRID_ROWS = 2;
 
 constexpr int16_t INDICATOR_SIZE = 12;  // Same as plugin-bitwig
 
@@ -164,7 +155,6 @@ constexpr int16_t INTERACTIVE_SURFACE_BORDER_WIDTH = 1;
 // =============================================================================
 namespace timing {
 
-constexpr uint32_t MIDI_BLINK_MS = 80;
 constexpr uint32_t BEAT_PULSE_MS = 100;
 
 }  // namespace timing

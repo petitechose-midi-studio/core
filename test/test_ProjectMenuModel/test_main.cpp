@@ -63,7 +63,7 @@ void test_overview_root_is_a_navigable_project_summary() {
     );
     assert(page.rowCount == 5);
     assert(page.selectedIndex == 0);
-    assert(std::string(page.meta) == "OVERVIEW  p002*");
+    assert(std::string(page.meta) == "Overview  p002*");
     assert(std::string(page.rows[0].label) == "Music");
     assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[0].enabled);
@@ -170,11 +170,11 @@ void test_new_project_confirmation_page_defaults_to_save_choice() {
 
     const auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 3);
-    assert(std::string(page.meta) == "NEW PROJECT?");
-    assert(std::string(page.rows[0].label) == "Save As New");
+    assert(std::string(page.meta) == "New project?");
+    assert(std::string(page.rows[0].label) == "Save as new");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "Next");
-    assert(std::string(page.rows[1].label) == "Don't Save");
+    assert(std::string(page.rows[1].label) == "Don't save");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "Reset");
     assert(page.rows[1].tone == ProjectMenuRowTone::Destructive);
@@ -199,10 +199,10 @@ void test_new_project_confirmation_uses_current_project_identity() {
 
     assert(page.rowCount == 3);
     assert(page.selectedIndex == 0);
-    assert(std::string(page.rows[0].label) == "Save & Reset");
+    assert(std::string(page.rows[0].label) == "Save & reset");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "p002");
-    assert(std::string(page.rows[1].label) == "Don't Save");
+    assert(std::string(page.rows[1].label) == "Don't save");
     assert(std::string(rowValue(page.rows[1])) == "Reset");
 
     std::cout << "[PASS] test_new_project_confirmation_uses_current_project_identity\n";
@@ -242,10 +242,10 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     assert(page.rows[0].hasTarget);
     assert(page.rows[0].target == ProjectNodeId::MUSIC_SCALE);
     assert(std::string(rowValue(page.rows[0])) == "F Harm Minor >");
-    assert(std::string(page.rows[3].label) == "Step Paste");
+    assert(std::string(page.rows[3].label) == "Step paste");
     assert(page.rows[3].kind == core::state::project::ProjectMenuRowKind::Value);
     assert(std::string(rowValue(page.rows[3])) == "Extend");
-    assert(std::string(page.rows[4].label) == "CC Defaults");
+    assert(std::string(page.rows[4].label) == "CC defaults");
     assert(std::string(rowValue(page.rows[4])) == "4 Lanes");
     assert(page.rows[4].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[4].hasTarget);
@@ -257,7 +257,7 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     assert(navigation.depth.get() == 1U);
     const auto defaultsPage = core::state::project::buildProjectMenuPage(navigation, context);
     assert(defaultsPage.rowCount == 4U);
-    assert(std::string(defaultsPage.meta) == "MUSIC > CC DEFAULTS");
+    assert(std::string(defaultsPage.meta) == "Music > CC defaults");
     assert(std::string(defaultsPage.rows[0].label) == "Lane 1");
     assert(std::string(rowValue(defaultsPage.rows[0])) == "CC 1");
     assert(std::string(rowValue(defaultsPage.rows[1])) == "CC 11");
@@ -326,7 +326,7 @@ void test_storage_has_six_rows_and_read_only_project_identity() {
         projectContext("p002", "p002", true, true)
     );
     assert(page.rowCount == 6);
-    assert(std::string(page.meta) == "STORAGE  p002*");
+    assert(std::string(page.meta) == "Storage  p002*");
     for (uint8_t row = 0; row < 5U; ++row) {
         assert(page.rows[row].tone == ProjectMenuRowTone::Neutral);
     }
@@ -359,7 +359,7 @@ void test_project_name_editor_exposes_qwerty_entry_state() {
 
     const auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 2);
-    assert(std::string(page.meta) == "RENAME");
+    assert(std::string(page.meta) == "Rename");
     assert(std::string(page.rows[0].label) == "Name");
     assert(!page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "p042");
@@ -384,7 +384,7 @@ void test_load_project_picker_shows_detected_projects() {
 
     auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 2);
-    assert(std::string(page.meta) == "LOAD PROJECT");
+    assert(std::string(page.meta) == "Load project");
     assert(std::string(page.rows[0].label) == "p001");
     assert(std::string(rowValue(page.rows[0])) == "Load");
     assert(page.rows[0].enabled);
@@ -413,14 +413,14 @@ void test_load_project_confirmation_prompts_dirty_session_choice() {
         projectContext("p002", "p002", true, true)
     );
     assert(page.rowCount == 4);
-    assert(std::string(page.meta) == "LOAD DIRTY?");
-    assert(std::string(page.rows[0].label) == "Save & Load");
+    assert(std::string(page.meta) == "Load dirty?");
+    assert(std::string(page.rows[0].label) == "Save & load");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "p002 > p003");
-    assert(std::string(page.rows[1].label) == "Save As & Load");
+    assert(std::string(page.rows[1].label) == "Save as & load");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "New > p003");
-    assert(std::string(page.rows[2].label) == "Don't Save");
+    assert(std::string(page.rows[2].label) == "Don't save");
     assert(page.rows[2].enabled);
     assert(std::string(rowValue(page.rows[2])) == "Load p003");
     assert(page.rows[2].tone == ProjectMenuRowTone::Destructive);
@@ -445,10 +445,10 @@ void test_load_project_confirmation_without_saved_identity_disables_save_choice(
         projectContext("", "untitled", true, false)
     );
     assert(page.rowCount == 3);
-    assert(std::string(page.rows[0].label) == "Save As & Load");
+    assert(std::string(page.rows[0].label) == "Save as & load");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "untitled > p004");
-    assert(std::string(page.rows[1].label) == "Don't Save");
+    assert(std::string(page.rows[1].label) == "Don't save");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "Load p004");
     assert(std::string(page.rows[2].label) == "Cancel");

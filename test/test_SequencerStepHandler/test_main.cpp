@@ -1000,7 +1000,7 @@ void assertPreparedActionRejectionInvariant(const SequencerStepHarness& h,
     }
     assert(feedback.visible.get());
     assert(feedback.revision.get() == expected.product.historyFeedbackRevision + 1U);
-    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(feedback.line1.data(), "No change") == 0);
     assert(std::strcmp(feedback.line2.data(), detail) == 0);
     assert(std::strcmp(feedback.line3.data(), "") == 0);
     assert(feedback.hideAtMs == g_now_ms + seq::SequencerHistoryFeedbackState::DISPLAY_HOLD_MS);
@@ -4206,7 +4206,7 @@ void test_created_page_is_undoable_and_redoable() {
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T01") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "Undo T01") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Page Structure") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "2 pages -> 1 page") == 0);
 
@@ -4214,7 +4214,7 @@ void test_created_page_is_undoable_and_redoable() {
     assert(h.state.sequencer.pattern.length.get() == 16);
     assert(h.state.sequencer.page.get() == 1);
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 1);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "REDO T01") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "Redo T01") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "1 page -> 2 pages") == 0);
 
     std::cout << "[PASS] test_created_page_is_undoable_and_redoable\n";
@@ -7012,7 +7012,7 @@ void test_created_track_is_undoable_and_redoable() {
     assert(h.state.trackNavigation.previewTrackIndex.get() == 0);
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T02") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "Undo T02") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Track Structure") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "2 tracks -> 1 track") == 0);
 
@@ -7022,7 +7022,7 @@ void test_created_track_is_undoable_and_redoable() {
     assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 1);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "REDO T02") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "Redo T02") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "1 track -> 2 tracks") == 0);
 
     std::cout << "[PASS] test_created_track_is_undoable_and_redoable\n";

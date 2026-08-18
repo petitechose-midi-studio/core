@@ -29,7 +29,7 @@ struct DeviceSettingsMenuContext {
 struct DeviceSettingsMenuPage {
     static constexpr uint8_t MAX_ROWS = DeviceSettingsState::ROW_COUNT;
 
-    const char* title = "Device Settings";
+    const char* title = "Device settings";
     std::array<char, 24> meta{};
     std::array<std::array<char, 16>, 2> valueBuffers{};
     std::array<DeviceSettingsMenuRow, MAX_ROWS> rows{};

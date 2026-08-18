@@ -307,13 +307,13 @@ void ProjectView::render() {
                     node ==
                             core::state::project::ProjectNodeId::
                                 SAVE_AS_PROJECT_NAME
-                        ? "SAVE AS"
-                        : "RENAME",
+                        ? "Save as"
+                        : "Rename",
                 .meta = state_refs_.navigation.lifecycleFeedback.empty()
                     ? (node ==
                                core::state::project::ProjectNodeId::
                                    MODULATOR_SOURCE_RENAME
-                           ? "SOURCE"
+                           ? "Source"
                            : "")
                     : state_refs_.navigation.lifecycleFeedback.get(),
                 .name =

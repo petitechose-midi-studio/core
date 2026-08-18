@@ -12,7 +12,7 @@ namespace core::state::macro {
 
 namespace {
 
-const char kTimingHold[] PROGMEM = "HOLD";
+const char kTimingHold[] PROGMEM = "Hold";
 const char kTiming1_16[] PROGMEM = "1/16";
 const char kTiming1_8[] PROGMEM = "1/8";
 const char kTiming1_4[] PROGMEM = "1/4";

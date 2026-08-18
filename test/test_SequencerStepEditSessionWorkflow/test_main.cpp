@@ -195,7 +195,7 @@ void test_failed_generic_commit_keeps_retarget_ui_exact_and_retryable() {
     assert(h.overlays.current() == overlayBefore);
     assert(h.state.sequencerHistory.undoCount() == undoBefore);
     assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevisionBefore + 1U);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "No change") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "History unavailable") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "") == 0);
 
