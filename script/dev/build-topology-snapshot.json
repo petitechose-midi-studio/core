@@ -77,7 +77,7 @@
     "core/.github/release-tooling.json": "cfa0160700381645ebf8cfb9e069a6126520f3ef503eeea0306755aad2bd6877",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "b456e69b2fbbe492f43bc4af17ca40e0129607f7fb3ad4f70d1454b9ce30f292",
+    "core/.github/workflows/ci.yml": "a06f30644338193a387462f851531c3aff836b5b70cf84a2c237d8635e7d59fb",
     "core/CMakeLists.txt": "96c2e3cf4ef19f7c82f422cf91ce176be93d10818a427782c6ed42c9e04b3c6e",
     "core/cmake/MsCoreProductSources.cmake": "54a6e39f77e45999c3f4c971f654e9b1078f16f6c697ebc2765bf1b4ad07c03a",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
@@ -85,7 +85,7 @@
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
     "core/oc-native-sdk.ini": "46992a84fb08ac9840c947836a605e4a5ed6c42d2c85d856b0e279098dfa5261",
     "core/oc-sdk.ini": "a914a246698a05b71150cfff6bbf96e2cb153cc1c1ae16490e02a111ea3eef0b",
-    "core/platformio.ini": "42df57762db3d268b13f168bda1500ded25a4bdc5202225b499cf5b8af8d1542",
+    "core/platformio.ini": "c3d3d8e688592e554649ea5c118d02e7c5a1c8b3e6f1abc5a3b0696b8321070f",
     "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
     "core/sdl/CMakeLists.txt": "966fceb633f8910e1737b0afa81db0160cad8c45f0b95260368763ecd76dff38",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
@@ -230,8 +230,8 @@
     },
     "ui": {
       "cleanExpected": true,
-      "commit": "1cdf21526f6f08e49ac21f4fc466119e6468c9b3",
-      "tree": "aff07a5cb39d0a1e4b6bcb7b1d51469035899129"
+      "commit": "63806f5f76a4044c3ea57917e195d048242dea76",
+      "tree": "fc37ff0234613a59b39b4a2e41fc925219f2355c"
     },
     "uiLvgl": {
       "cleanExpected": true,
@@ -1475,7 +1475,7 @@
       "sha256": "305a43eee1ec11dabafb47eff17b546308fba3e33a94d916bb17136d7b6d263d"
     },
     "coreTotalHeaders": {
-      "count": 457,
+      "count": 458,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1856,6 +1856,7 @@
         "src/ui/interaction/ControllerUiPresentationContract.hpp",
         "src/ui/interaction/InteractiveSurfaceVisual.hpp",
         "src/ui/interaction/SelectorPresentationPolicy.hpp",
+        "src/ui/interaction/StructureSelectionVisual.hpp",
         "src/ui/interaction/TextKeyboardView.hpp",
         "src/ui/macro/MacroEditorOverlay.hpp",
         "src/ui/macro/MacroEditorPreviewModel.hpp",
@@ -1935,7 +1936,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "e3cc89a6f44b203e5538d96d313195b13fa43a6d4daf27d36f03c5b1097103a3"
+      "sha256": "5224edaac8fed2d2333b9b622e12699d624b429e624a6cb0b3c36b03e83b105a"
     },
     "coreTotalImplementations": {
       "count": 408,
@@ -2902,7 +2903,7 @@
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
         "MIDI_STUDIO_BITWIG_SHA": "bb81912399ee5db82395dd864e7ed481efeeff92",
         "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "923550edbd8bb0a7bef3bee74248cc1e116db6e3",
-        "MIDI_STUDIO_UI_SHA": "1cdf21526f6f08e49ac21f4fc466119e6468c9b3",
+        "MIDI_STUDIO_UI_SHA": "63806f5f76a4044c3ea57917e195d048242dea76",
         "MS_DEV_ENV_SHA": "2f6f8af02afc5b8af9096f83319953d7d9829dd5",
         "OPEN_CONTROL_FRAMEWORK_SHA": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
