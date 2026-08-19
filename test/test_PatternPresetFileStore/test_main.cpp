@@ -77,6 +77,20 @@ void testPatternPresetFileStoreRoundTrip() {
     ProductDirectoryCatalog catalog(files);
     PatternPresetFileStore store(files, catalog);
 
+    PatternPresetFileListEntry emptyEntries[1]{};
+    const auto empty = listSettled(
+        files,
+        catalog,
+        store,
+        emptyEntries,
+        1U
+    );
+    assert(empty);
+    assert(empty.value().count == 0U);
+    char firstId[seq::SEQUENCER_PRESET_TECHNICAL_ID_SIZE]{};
+    assert(store.nextPresetId(firstId, sizeof(firstId)));
+    assert(std::strcmp(firstId, "pattern-preset-001") == 0);
+
     seq::SequencerState source{};
     source.reset();
     assert(source.pattern.setContentLength(24U));

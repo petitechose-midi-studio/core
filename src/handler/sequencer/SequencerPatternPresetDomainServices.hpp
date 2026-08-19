@@ -124,6 +124,7 @@ public:
     bool targetMatches(
         const core::state::sequencer::SequencerPatternPresetTarget& target
     ) const;
+    [[nodiscard]] bool playbackActive() const;
     uint32_t projectRevision() const;
     SequencerPatternPresetInspectResult inspectPreset(
         const char* presetId,

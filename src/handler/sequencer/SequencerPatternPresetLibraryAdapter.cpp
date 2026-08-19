@@ -111,7 +111,7 @@ SequencerPatternPresetLibraryAdapter::loadPage(
     SequencerPresetLibraryPager::PageDirection direction,
     core::persistence::ProductAssetFileListResult& out
 ) {
-    const auto listed = pattern_presets_.listPresetsPage(
+    auto listed = pattern_presets_.listPresetsPage(
         entries,
         capacity,
         anchorExclusive,
@@ -119,6 +119,21 @@ SequencerPatternPresetLibraryAdapter::loadPage(
         sequencer_.presetLibrary.pattern().sourceFilter,
         sequencer_.presetLibrary.pattern().target.trackKind
     );
+    if (listed.status == SequencerPatternPresetDomainStatus::QUEUED &&
+        sequencer_.presetLibrary.pattern().sourceFilter ==
+            sequencer::SequencerPatternPresetSourceFilter::ALL &&
+        pattern_presets_.playbackActive()) {
+        sequencer_.presetLibrary.pattern().sourceFilter =
+            sequencer::SequencerPatternPresetSourceFilter::FACTORY;
+        listed = pattern_presets_.listPresetsPage(
+            entries,
+            capacity,
+            anchorExclusive,
+            direction,
+            sequencer::SequencerPatternPresetSourceFilter::FACTORY,
+            sequencer_.presetLibrary.pattern().target.trackKind
+        );
+    }
     if (listed.status == SequencerPatternPresetDomainStatus::QUEUED) {
         return SequencerPresetLibraryPager::PageLoadStatus::PENDING;
     }

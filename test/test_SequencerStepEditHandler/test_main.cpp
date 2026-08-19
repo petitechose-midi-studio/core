@@ -25,6 +25,7 @@
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerInputUtils.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
+#include "../../src/handler/sequencer/SequencerPresetLibraryPager.hpp"
 #include "../../src/handler/sequencer/SequencerStepContentDraftWorkflow.hpp"
 #include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
@@ -69,6 +70,40 @@ constexpr uint8_t CHANCE_ROW = step_edit_rows::PROPERTY_OFFSET + 4U;
 constexpr uint8_t CHORD_ROW = step_edit_rows::CHORD;
 constexpr uint8_t MICRO_SEQUENCE_ROW = step_edit_rows::MICRO_SEQUENCE;
 constexpr uint8_t CYCLE_STATES_ROW = step_edit_rows::CYCLE_STATES;
+
+core::handler::SequencerPresetLibraryPager::PageLoadStatus emptyPresetPage(
+    void*,
+    core::handler::SequencerPresetLibraryPager::Entry*,
+    uint8_t,
+    const char*,
+    core::handler::SequencerPresetLibraryPager::PageDirection,
+    core::persistence::ProductAssetFileListResult& out
+) {
+    out = {};
+    return core::handler::SequencerPresetLibraryPager::PageLoadStatus::READY;
+}
+
+void test_empty_save_catalog_focuses_new_asset_command() {
+    core::state::sequencer::SequencerPresetLibrarySessionState picker;
+    picker.open(
+        core::state::sequencer::SequencerPresetLibraryMode::SAVE,
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN
+    );
+    core::handler::SequencerPresetLibraryPager pager(
+        picker,
+        nullptr,
+        emptyPresetPage
+    );
+
+    assert(
+        pager.refreshFirstPage() ==
+        core::handler::SequencerPresetLibraryPager::PageLoadStatus::READY
+    );
+    assert(picker.entryCount.get() == 0U);
+    assert(picker.itemCount() == 1U);
+    assert(picker.selectedIndex.get() == 0U);
+    assert(picker.selectedItemIsNewAsset());
+}
 
 void assertMemoryRejection(const core::state::CoreState& state, uint32_t expectedRevision) {
     const auto& feedback = state.sequencer.historyFeedback;
@@ -3389,6 +3424,7 @@ void test_step_and_chord_preset_libraries_share_the_navigation_contract() {
 }  // namespace
 
 int main() {
+    test_empty_save_catalog_focuses_new_asset_command();
     test_focused_step_entry_keeps_next_nav_tap_available();
     test_direct_step_content_entry_opens_detail_or_child_without_intermediate_editor();
     test_left_center_nav_retargets_root_steps_across_pages();

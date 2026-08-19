@@ -59,13 +59,14 @@ private:
  */
 class ProductFileService {
 public:
-    static constexpr uint8_t LAYOUT_DIRECTORY_COUNT = 7U;
+    static constexpr uint8_t LAYOUT_DIRECTORY_COUNT = 8U;
     static constexpr const char* PRODUCT_ROOT = "/midi-studio";
     static constexpr const char* SESSION_DIR = "/midi-studio/session";
     static constexpr const char* PROJECTS_DIR = "/midi-studio/projects";
     static constexpr const char* LIBRARY_DIR = "/midi-studio/library";
     static constexpr const char* STEP_PRESETS_DIR = "/midi-studio/library/step-presets";
     static constexpr const char* CHORD_PRESETS_DIR = "/midi-studio/library/chord-presets";
+    static constexpr const char* PATTERN_PRESETS_DIR = "/midi-studio/library/pattern-presets";
     static constexpr const char* TMP_DIR = "/midi-studio/tmp";
 
     explicit ProductFileService(oc::interface::IFileSystem& filesystem);

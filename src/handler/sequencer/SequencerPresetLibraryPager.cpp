@@ -101,6 +101,16 @@ SequencerPresetLibraryPager::applyPage_(
         );
         return PageLoadStatus::READY;
     }
+    if (picker_.entryCount.get() == 0U) {
+        // In Save mode the synthetic "+ New" command is the sole row. The
+        // existing-entry offset is therefore not a valid selection.
+        picker_.selectedIndex.set(0);
+        picker_.feedback.set(
+            core::state::sequencer::SequencerPresetLibraryFeedback::NONE
+        );
+        picker_.bump();
+        return PageLoadStatus::READY;
+    }
     picker_.selectedIndex.set(
         selectLast
             ? static_cast<uint8_t>(picker_.itemCount() - 1U)

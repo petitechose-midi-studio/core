@@ -1,0 +1,15 @@
+# UX workflow: cold Pattern Preset library open during playback.
+# Purpose: proves that opening the library never waits on SD catalog work in
+# the musical path; a cold All catalog falls back truthfully to Factory.
+# Expect: semantic:pattern_preset_playing_factory:mode=sequencer.pattern_preset.load, semantic:pattern_preset_playing_factory:property=asset_id, semantic:pattern_preset_playing_factory:source=factory-instrument-bass-offbeat, semantic:pattern_preset_playing_factory:playing=true
+
+0 scenario sequencer
+
+100 tap BOTTOM_CENTER 60
+250 tap NAV 60
+450 button NAV down
+1550 tick
+1600 capture screen pattern_preset_playing_factory
+1650 button NAV up
+1850 tap LEFT_TOP 60
+2050 tap BOTTOM_CENTER 60

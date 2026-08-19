@@ -1,6 +1,7 @@
 #include "handler/sequencer/SequencerPatternPresetDomainServices.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -61,6 +62,35 @@ FLASHMEM void copyText(
     const char* text = source ? source : "";
     std::strncpy(target, text, targetSize - 1U);
     target[targetSize - 1U] = '\0';
+}
+
+FLASHMEM void defaultPatternPresetName(
+    seq::SequencerTrackKind trackKind,
+    const char* presetId,
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0U) return;
+    const char* suffix = presetId != nullptr
+        ? std::strrchr(presetId, '-')
+        : nullptr;
+    suffix = suffix != nullptr && suffix[1] != '\0'
+        ? suffix + 1
+        : nullptr;
+    const int written = suffix != nullptr
+        ? std::snprintf(
+              out,
+              outSize,
+              "%s Pattern %s",
+              trackKind == seq::SequencerTrackKind::DRUM
+                  ? "Drum"
+                  : "Instrument",
+              suffix
+          )
+        : -1;
+    if (written <= 0 || static_cast<size_t>(written) >= outSize) {
+        seq::sequencerPresetSemanticName(presetId, out, outSize);
+    }
 }
 
 FLASHMEM SequencerPatternPresetDomainStatus statusFromFileError(
@@ -759,6 +789,10 @@ FLASHMEM bool SequencerPatternPresetDomainServices::targetMatches(
         sameTarget(captureTarget(), target);
 }
 
+FLASHMEM bool SequencerPatternPresetDomainServices::playbackActive() const {
+    return state_ != nullptr && state_->statusBar.playing.get();
+}
+
 FLASHMEM uint32_t SequencerPatternPresetDomainServices::projectRevision() const {
     return state_ ? state_->project.metadata.modifiedCounter : 0U;
 }
@@ -822,6 +856,7 @@ SequencerPatternPresetDomainServices::savePreset(
     const seq::SequencerPatternPresetTarget& target,
     bool allowOverwrite
 ) const {
+    OC_PERF_SCOPE(perf, "persistence.pattern-preset.save");
     SequencerPatternPresetActionResult result{};
     copyText(result.presetId, sizeof(result.presetId), presetId);
     if (core::persistence::PatternPresetFactoryLibrary::contains(presetId)) {
@@ -857,7 +892,8 @@ SequencerPatternPresetDomainServices::savePreset(
         return result;
     }
     char semanticName[seq::SEQUENCER_PRESET_SEMANTIC_NAME_SIZE]{};
-    seq::sequencerPresetSemanticName(
+    defaultPatternPresetName(
+        target.trackKind,
         presetId,
         semanticName,
         sizeof(semanticName)
@@ -936,6 +972,7 @@ SequencerPatternPresetDomainServices::savePreset(
     }
     result.bytes = static_cast<uint16_t>(saved.value().bytes);
     result.activation = SequencerPatternPresetActivation::APPLIED;
+    OC_PERF_UNITS(perf, result.bytes, static_cast<uint32_t>(target.trackKind));
     return result;
 }
 
@@ -945,6 +982,7 @@ SequencerPatternPresetDomainServices::applyPreset(
     const seq::SequencerPatternPresetTarget& target,
     const seq::SequencerPatternPresetPreviewKey& expectedPreview
 ) const {
+    OC_PERF_SCOPE(perf, "persistence.pattern-preset.load-apply");
     SequencerPatternPresetActionResult result{};
     copyText(result.presetId, sizeof(result.presetId), presetId);
     if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
@@ -1178,6 +1216,7 @@ SequencerPatternPresetDomainServices::applyPreset(
     state_->publishPreparedSequencerMutation();
     state_->sequencerTrackActivations.publishPrepared(activation);
     setActivationResult(activation, target.trackIndex, result);
+    OC_PERF_UNITS(perf, result.bytes, static_cast<uint32_t>(result.activation));
     return result;
 }
 

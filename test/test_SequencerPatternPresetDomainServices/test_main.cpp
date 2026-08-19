@@ -169,7 +169,7 @@ void testInstrumentLifecycleAndSingleUndo() {
 
     const auto renamed = h.presets.renamePreset(
         "pattern-preset-0001",
-        "Pattern Preset 0001",
+        "Instrument Pattern 0001",
         "Broken Beat"
     );
     assert(renamed.ok());
@@ -253,6 +253,10 @@ void testDrumApplyPreservesKitAndQueuesAtLoop() {
         target
     );
     assert(inspected.status == SequencerPatternPresetDomainStatus::OK);
+    assert(std::strcmp(
+        inspected.descriptor.metadata.semanticName,
+        "Drum Pattern 0002"
+    ) == 0);
     assert(inspected.descriptor.drumLaneCount == drum.kit.laneCount);
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();

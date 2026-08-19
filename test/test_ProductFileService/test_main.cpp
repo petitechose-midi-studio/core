@@ -130,6 +130,15 @@ void test_init_creates_product_layout() {
 
     assert(std::filesystem::is_directory(testRoot() / "midi-studio" / "projects"));
     assert(std::filesystem::is_directory(testRoot() / "midi-studio" / "library"));
+    assert(std::filesystem::is_directory(
+        testRoot() / "midi-studio" / "library" / "step-presets"
+    ));
+    assert(std::filesystem::is_directory(
+        testRoot() / "midi-studio" / "library" / "chord-presets"
+    ));
+    assert(std::filesystem::is_directory(
+        testRoot() / "midi-studio" / "library" / "pattern-presets"
+    ));
     assert(std::filesystem::is_directory(testRoot() / "midi-studio" / "tmp"));
 
     std::cout << "[PASS] test_init_creates_product_layout\n";
