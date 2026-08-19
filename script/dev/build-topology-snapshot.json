@@ -87,7 +87,7 @@
     "core/oc-sdk.ini": "a914a246698a05b71150cfff6bbf96e2cb153cc1c1ae16490e02a111ea3eef0b",
     "core/platformio.ini": "42df57762db3d268b13f168bda1500ded25a4bdc5202225b499cf5b8af8d1542",
     "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
-    "core/sdl/CMakeLists.txt": "4de68f4569e434ad40521e9c40473c56c98d34446764a0ab9eb5022c31920112",
+    "core/sdl/CMakeLists.txt": "966fceb633f8910e1737b0afa81db0160cad8c45f0b95260368763ecd76dff38",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",

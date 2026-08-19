@@ -433,6 +433,14 @@
                     document.getElementById('loading').classList.add('hidden');
                 } catch (err) {
                     console.error('WASM init failed:', err);
+                    if (err && err.stack) {
+                        console.error('WASM stack:', err.stack);
+                    }
+                    const loading = document.getElementById('loading');
+                    const message = loading && loading.querySelector('div:last-child');
+                    if (message) {
+                        message.textContent = `MIDI Studio failed to start: ${err}`;
+                    }
                 }
             },
             setStatus: function(text) {

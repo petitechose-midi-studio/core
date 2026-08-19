@@ -19,9 +19,9 @@ struct ProjectControlDomainState {
     ProjectCurveArena curves{};
 
     void clear() {
-        automation = {};
-        modulation = {};
-        curves = {};
+        automation.clear();
+        modulation.clear();
+        curves.clear();
     }
 };
 
