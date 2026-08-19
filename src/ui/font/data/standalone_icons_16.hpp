@@ -1,4 +1,4 @@
-// Auto-generated | standalone_icons | 16px | 4bpp | 2026-08-18 22:09
+// Auto-generated | standalone_icons | 16px | 4bpp | 2026-08-19 12:07
 #pragma once
 #include "config/PlatformCompat.hpp"
 extern const uint8_t standalone_icons_16_bin[] PROGMEM;

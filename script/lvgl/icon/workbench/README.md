@@ -1,14 +1,17 @@
 # Icon workbench
 
 This directory is the isolated proving ground for the controller icon system.
-Nothing here is consumed by the firmware build. The reviewed 71-glyph set was
-promoted on 2026-08-18; production SVGs now live in `asset/icon`, while
-`reference` retains the clean 512 px raster masters used for visual review.
+Nothing here is consumed by the firmware build. The reviewed set was promoted
+on 2026-08-18; production SVGs now live in `asset/icon`, while `reference`
+retains the clean 512 px raster masters used for visual review. The unused
+`CHORD_PROP_COLOR` master remains review-only, so the production registry has
+70 glyphs.
 
-The documentation registry is the single manifest. It currently resolves to
-71 active glyphs: the 72 documented references minus the retired
-`ACTION_APPLY`. Seven families come from the approved 1254 px proposal sheets;
-the simple `ACTION_CREATE` plus uses its canonical transparent source.
+The documentation registry is the single review manifest. It resolves to 71
+review glyphs: the 72 documented references minus the retired `ACTION_APPLY`.
+Production excludes the unused `CHORD_PROP_COLOR`. Seven families come from
+the approved 1254 px proposal sheets; the simple `ACTION_CREATE` plus uses its
+canonical transparent source.
 
 ## Build clean masters
 
