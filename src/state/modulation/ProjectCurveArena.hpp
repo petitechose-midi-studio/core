@@ -56,6 +56,14 @@ struct ProjectCurveArena {
     uint16_t pointCount = 0;
     std::array<ProjectCurveRecord, PROJECT_CURVE_RECORD_CAPACITY> records{};
     std::array<ProjectPackedCurvePoint, PROJECT_CURVE_POINT_CAPACITY> points{};
+
+    void clear() {
+        nextCurveId = 1;
+        recordCount = 0;
+        pointCount = 0;
+        records.fill(ProjectCurveRecord{});
+        points.fill(ProjectPackedCurvePoint{});
+    }
 };
 
 /** Reserved now so the shared arena sizing cannot regress during MAUT lift. */
@@ -75,6 +83,12 @@ struct ProjectAutomationCurveDirectory {
         ProjectAutomationCurveEntry,
         PROJECT_AUTOMATION_ENTRY_CAPACITY
     > entries{};
+
+    void clear() {
+        entryCount = 0;
+        reserved = 0;
+        entries.fill(ProjectAutomationCurveEntry{});
+    }
 };
 
 struct ProjectCurveSpec {

@@ -42,6 +42,53 @@ mod::ProjectModulationCompileContext activeContext() {
     return context;
 }
 
+void testControlDomainClearRestoresDefaultsInPlace() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    domain->automation.entryCount = 3U;
+    domain->automation.reserved = 7U;
+    domain->automation.entries.front().flags = 0xFFU;
+    domain->automation.entries.back().flags = 0xFFU;
+    domain->modulation.nextSourceId = 42U;
+    domain->modulation.nextBindingId = 43U;
+    domain->modulation.sourceCount = 2U;
+    domain->modulation.sources.front().parameters.lfo.periodTicks = 1U;
+    domain->modulation.sources.back().parameters.lfo.freePeriodMs = 1U;
+    domain->modulation.triggerBindings.front().velocityMax = 1U;
+    domain->modulation.triggerBindings.back().flags = 0U;
+    domain->curves.nextCurveId = 99U;
+    domain->curves.recordCount = 2U;
+    domain->curves.pointCount = 2U;
+    domain->curves.records.front().durationTicks = 99U;
+    domain->curves.records.back().sourceDurationTicks = 99U;
+    domain->curves.points.front().tick = 99U;
+    domain->curves.points.back().value = 99;
+
+    domain->clear();
+
+    assert(domain->automation.entryCount == 0U);
+    assert(domain->automation.reserved == 0U);
+    assert(domain->automation.entries.front().flags == 0U);
+    assert(domain->automation.entries.back().flags == 0U);
+    assert(domain->modulation.nextSourceId == 1U);
+    assert(domain->modulation.nextBindingId == 1U);
+    assert(domain->modulation.sourceCount == 0U);
+    assert(domain->modulation.sources.front().parameters.lfo.periodTicks == 0U);
+    assert(domain->modulation.sources.back().parameters.lfo.freePeriodMs == 0U);
+    assert(domain->modulation.triggerBindings.front().velocityMax == 127U);
+    assert(
+        domain->modulation.triggerBindings.back().flags ==
+        mod::PROJECT_MODULATION_TRIGGER_FLAG_ENABLED
+    );
+    assert(domain->curves.nextCurveId == 1U);
+    assert(domain->curves.recordCount == 0U);
+    assert(domain->curves.pointCount == 0U);
+    assert(domain->curves.records.front().durationTicks == 1U);
+    assert(domain->curves.records.back().sourceDurationTicks == 1U);
+    assert(domain->curves.points.front().tick == 0U);
+    assert(domain->curves.points.back().value == 0);
+    std::cout << "[PASS] Project control domain clears in place with canonical defaults\n";
+}
+
 mod::ModulatorId addLfo(
     mod::ProjectControlDomainState& domain,
     mod::ModulatorLfoShape shape,
@@ -2243,6 +2290,7 @@ void testUiSourceProjectionReusesRuntimePhaseAuthority() {
 }  // namespace
 
 int main() {
+    testControlDomainClearRestoresDefaultsInPlace();
     testFiveCanonicalLfoShapes();
     testCanonicalAdsrProgressCurves();
     testFreeAdsrTrackTriggerRetriggerAndReleaseFromCurrentLevel();

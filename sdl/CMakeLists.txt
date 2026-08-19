@@ -307,8 +307,9 @@ if(BUILD_WASM)
         RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}/${APP_ID}/wasm"
         LINK_FLAGS "-s USE_SDL=2 -lwebsocket.js \
             -s INITIAL_MEMORY=67108864 -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=268435456 \
+            -s STACK_SIZE=262144 \
             -s ASYNCIFY=1 -s ASYNCIFY_STACK_SIZE=65536 -s INVOKE_RUN=0 \
-            -s EXPORTED_RUNTIME_METHODS=['callMain','UTF8ToString','stringToUTF8'] \
+            -s EXPORTED_RUNTIME_METHODS=['callMain','UTF8ToString','stringToUTF8','HEAPU8'] \
             -s EXPORTED_FUNCTIONS=['_main','_malloc','_free','_libremidi_devices_poll','_libremidi_devices_input'] \
             --shell-file ${SDL_DIR}/wasm/shell.html")
 

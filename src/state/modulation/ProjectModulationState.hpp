@@ -391,6 +391,19 @@ struct ProjectModulationState {
         ModulationDestinationScaleState,
         PROJECT_MODULATION_DESTINATION_SCALE_CAPACITY
     > destinationScales{};
+
+    void clear() {
+        nextSourceId = 1;
+        nextBindingId = 1;
+        sourceCount = 0;
+        outputBindingCount = 0;
+        triggerBindingCount = 0;
+        destinationScaleCount = 0;
+        sources.fill(ModulatorSourceState{});
+        outputBindings.fill(ModulationBindingState{});
+        triggerBindings.fill(ModulationTriggerBindingState{});
+        destinationScales.fill(ModulationDestinationScaleState{});
+    }
 };
 
 static_assert(sizeof(ModulatorLfoParameters) == 16U);
