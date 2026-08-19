@@ -119,9 +119,9 @@ FLASHMEM void buildAutomationRenderData(
         data.rows = {{
             {.key = "Policy", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {.key = "Reference", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_CC_COLOR},
-            {.key = "Automation", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION},
-            {.key = "Modulation", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Impact", .value = data.valueBuffers[4].data(), .icon = plan.overwritesModulation ? ::standalone::icons::ACTION_OVERWRITE : ::standalone::icons::ACTION_APPLY, .iconFont = standalone_fonts.icons_14, .iconColor = plan.overwritesModulation ? ::standalone::theme::color::MACRO_CONFLICT : ::standalone::theme::color::MACRO_CC_COLOR},
+            {.key = "Automation", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION},
+            {.key = "Modulation", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+            {.key = "Impact", .value = data.valueBuffers[4].data(), .icon = plan.overwritesModulation ? ::standalone::icons::ACTION_OVERWRITE : ::standalone::icons::ACTION_VALIDATE, .iconFont = standalone_fonts.icons_14, .iconColor = plan.overwritesModulation ? ::standalone::theme::color::MACRO_CONFLICT : ::standalone::theme::color::MACRO_CC_COLOR},
             {},
             {},
         }};
@@ -235,19 +235,25 @@ FLASHMEM void buildAutomationRenderData(
             "%s",
             reusable ? "Choose" : "None yet"
         );
+        std::snprintf(
+            data.valueBuffers[3].data(),
+            data.valueBuffers[3].size(),
+            "%s",
+            "Record"
+        );
         data.rows = {{
-            {.key = "New LFO", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+            {.key = "New LFO", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {.key = "New DAHDSR", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::NOTE_PROP_GATE, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {.key = "Use Existing", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::ACTION_PLACE_TARGET, .iconFont = standalone_fonts.icons_14, .iconColor = reusable ? ::standalone::theme::color::MACRO_MODULATION : ::standalone::theme::color::TEXT_SECONDARY},
-            {},
+            {.key = "Record shape", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {},
             {},
             {},
         }};
-        data.rowCount = 3;
+        data.rowCount = 4;
         data.selectedIndex = std::min<int>(
             source.macroEdit.modulationFocusedRow.get(),
-            2
+            3
         );
         data.dataRevision = mixRevision(
             mixRevision(
@@ -302,7 +308,7 @@ FLASHMEM void buildAutomationRenderData(
             ms::ui::KeyValueRow row{};
             switch (layout.items[i]) {
                 case core::state::macro::AutomationDetailItem::PLAYBACK:
-                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
+                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
                     break;
                 case core::state::macro::AutomationDetailItem::RESUME:
                     row = {.key = "Automation", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
@@ -419,13 +425,13 @@ FLASHMEM void buildAutomationRenderData(
             ms::ui::KeyValueRow row{};
             switch (layout.items[i]) {
                 case core::state::macro::ModulationDetailItem::PLAYBACK:
-                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
+                    row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
                     break;
                 case core::state::macro::ModulationDetailItem::DEPTH:
                     row = {.key = "Depth", .value = data.valueBuffers[1].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
                     break;
                 case core::state::macro::ModulationDetailItem::SHAPE:
-                    row = {.key = "Shape", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = modulationSparkline};
+                    row = {.key = "Shape", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = modulationSparkline};
                     break;
                 case core::state::macro::ModulationDetailItem::ORIGIN:
                     row = {.key = "Origin", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::TEXT_SECONDARY};

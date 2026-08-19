@@ -141,11 +141,9 @@ enum class ContextActionReason : uint8_t {
 
 enum class ContextIconId : uint8_t {
     NONE = 0,
-    OPEN,
     ENTER,
     CREATE,
     EDIT,
-    SELECT,
     MUTE,
     UNMUTE,
     CLEAR,
@@ -157,8 +155,6 @@ enum class ContextIconId : uint8_t {
     APPLY,
     SAVE,
     RENAME,
-    UNDO,
-    REDO,
     PREVIEW,
     QUEUED,
     APPLIED,

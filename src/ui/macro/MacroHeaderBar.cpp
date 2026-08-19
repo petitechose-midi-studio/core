@@ -8,11 +8,13 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
 
 namespace theme = standalone::theme;
+namespace selection_visual = core::ui::interaction;
 namespace style = oc::ui::lvgl::style;
 
 namespace {
@@ -22,7 +24,7 @@ constexpr lv_opa_t HEADER_BG_OPA_IDLE = LV_OPA_TRANSP;
 constexpr lv_opa_t HEADER_BG_OPA_CLUTCH = LV_OPA_TRANSP;
 constexpr lv_opa_t PAGE_SELECTOR_BASE_OPA_ENABLED = static_cast<lv_opa_t>(18);
 constexpr lv_opa_t PAGE_SELECTOR_BASE_OPA_DISABLED = static_cast<lv_opa_t>(8);
-constexpr lv_opa_t PAGE_SELECTOR_ACTIVE_BONUS = static_cast<lv_opa_t>(48);
+constexpr lv_opa_t PAGE_SELECTOR_ACTIVE_BONUS = static_cast<lv_opa_t>(72);
 constexpr lv_opa_t ACTIVITY_VELOCITY_RANGE = static_cast<lv_opa_t>(36);
 constexpr uint32_t HEADER_BG_COLOR = theme::color::TEXT_PRIMARY;
 
@@ -55,7 +57,7 @@ lv_opa_t pageSelectorOpa(uint8_t activity, bool isActive, bool enabled) {
 }
 
 const char* focusLabel(bool trackScope) {
-    return trackScope ? "TRACKS" : "PAGES";
+    return trackScope ? "Tracks" : "Pages";
 }
 
 }  // namespace
@@ -99,12 +101,12 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
             ? props.previewPage
             : props.activePage;
     const bool trackScope = props.focusingTrack;
-    char recordingLabel[16] = {};
+    char recordingLabel[24] = {};
     if (props.automationTakePhase ==
         core::state::macro::MacroAutomationTakePhase::ARMED) {
         std::snprintf(recordingLabel,
                       sizeof(recordingLabel),
-                      "TAKE %s",
+                      "Take \xC2\xB7 %s",
                       core::state::macro::macroAutomationTakeTimingLabel(
                           props.automationTakeTiming
                       ));
@@ -115,15 +117,16 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
                       sizeof(recordingLabel),
                       props.automationRecordingStatus ==
                               core::state::macro::MacroAutomationRecordingStatus::REDUCED
-                          ? "REC~ %u MAC"
-                          : "REC %u MAC",
-                      count);
+                          ? "Rec~ \xC2\xB7 %u macro%s"
+                          : "Rec \xC2\xB7 %u macro%s",
+                      count,
+                      count == 1U ? "" : "s");
     } else if (props.automationRecordingStatus ==
                core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT) {
-        std::snprintf(recordingLabel, sizeof(recordingLabel), "REC SHORT");
+        std::snprintf(recordingLabel, sizeof(recordingLabel), "Rec \xC2\xB7 Short");
     } else if (props.automationRecordingStatus ==
                core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED) {
-        std::snprintf(recordingLabel, sizeof(recordingLabel), "REC ERR");
+        std::snprintf(recordingLabel, sizeof(recordingLabel), "Rec \xC2\xB7 Error");
     }
     const bool showRecordingStatus = recordingLabel[0] != '\0';
 
@@ -131,9 +134,9 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     rowProps.leftText = showRecordingStatus
         ? recordingLabel
         : props.slotSelectionActive
-            ? "MACROS"
+            ? "Macros"
             : props.pageSelectionActive
-                ? "PAGES"
+                ? "Pages"
             : focusLabel(trackScope);
     rowProps.itemCount = core::state::macro::PAGE_COUNT;
     rowProps.accentColor = showRecordingStatus
@@ -143,6 +146,7 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
             : trackInactiveColor());
     rowProps.accentOpa = LV_OPA_80;
     rowProps.backgroundColor = HEADER_BG_COLOR;
+    rowProps.showStatusDot = showRecordingStatus;
     rowProps.backgroundOpa =
         props.performanceOverlayMode !=
                 core::state::macro::MacroPerformanceOverlayMode::NONE
@@ -169,13 +173,21 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
         const bool blocked =
             (props.pageBlockedMask & bit) != 0U;
         rowProps.itemColors[i] = blocked
-            ? theme::color::MACRO_AUTOMATION_RECORDING
+            ? selection_visual::structureSelectionColor(
+                  selection_visual::StructureSelectionVisualRole::DESTINATION_BLOCKED
+              )
             : destination
                 ? (overwrite
-                    ? theme::color::MACRO_CONFLICT
-                    : theme::color::MACRO_CC_COLOR)
+                    ? selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::DESTINATION_OVERWRITE
+                      )
+                    : selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::DESTINATION_FREE
+                      ))
                 : selected
-                    ? theme::color::TEXT_PRIMARY
+                    ? selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::SELECTED
+                      )
                     : enabled
                         ? rowProps.accentColor
                         : theme::color::INACTIVE;

@@ -460,7 +460,7 @@ buildSequencerPresetLibraryActionPresentation(const Picker& picker) {
         variant,
         feedback
     );
-    data.saveIcon = saveMode;
+    data.saveMode = saveMode;
     data.overwriteIcon = contextual::hasHoldAction(action);
     data.visual = action_visual::stripVisual(
         variant,

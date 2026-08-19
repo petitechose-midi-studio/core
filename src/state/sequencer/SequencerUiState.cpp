@@ -357,7 +357,7 @@ FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryRejec
             break;
         case SequencerHistoryRejectionReason::Blocked: break;
     }
-    show("NO CHANGE", detail, "", nowMs);
+    show("No change", detail, "", nowMs);
 }
 
 FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryOpenOutcome outcome,

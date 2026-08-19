@@ -30,6 +30,31 @@ enum class ProjectMenuRowTone : uint8_t {
     Destructive,
 };
 
+enum class ProjectMenuIcon : uint8_t {
+    NONE = 0,
+    SCALE,
+    TEMPO,
+    SWING,
+    CLOCK_SYNC,
+    ROUTING,
+    STORAGE,
+    PATTERN,
+    CLIP,
+    ACTION_PASTE,
+    MIDI_CC,
+    NOTE_PROP_PITCH,
+    LOCK,
+    TRANSPORT_PLAY,
+    SETTINGS_GEAR,
+    MIDI_CHANNEL,
+    ACTION_SAVE,
+    ACTION_RENAME,
+    ACTION_NEW_PROJECT,
+    ACTION_LOAD,
+    VIEW_PROJECT,
+    ACTION_CANCEL,
+};
+
 struct ProjectMenuRow {
     static constexpr uint8_t VALUE_TEXT_SIZE = 20;
 
@@ -37,6 +62,7 @@ struct ProjectMenuRow {
     const char* value = "";
     ProjectMenuRowKind kind = ProjectMenuRowKind::Value;
     ProjectMenuRowTone tone = ProjectMenuRowTone::Neutral;
+    ProjectMenuIcon icon = ProjectMenuIcon::NONE;
     bool enabled = true;
     ProjectNodeId target = ProjectNodeId::OVERVIEW_ROOT;
     bool hasTarget = false;
@@ -51,7 +77,7 @@ struct ProjectMenuPage {
     static constexpr uint8_t MAX_ROWS = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     static constexpr uint8_t META_TEXT_SIZE = 32;
 
-    const char* title = "PROJECT";
+    const char* title = "Project";
     const char* meta = "";
     std::array<char, META_TEXT_SIZE> metaText{};
     std::array<ProjectMenuRow, MAX_ROWS> rows{};

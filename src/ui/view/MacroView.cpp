@@ -186,7 +186,10 @@ FLASHMEM bool MacroView::bindToState() {
     };
     subscriptions_.push_back(
         state_refs_.macroUi.pageSelection.active.subscribe(
-            pageSelectionChanged
+            [this, pageSelectionChanged](bool active) {
+                pageSelectionChanged(active);
+                markAllConfigDirty();
+            }
         )
     );
     subscriptions_.push_back(
@@ -196,7 +199,10 @@ FLASHMEM bool MacroView::bindToState() {
     );
     subscriptions_.push_back(
         state_refs_.macroUi.pageSelection.cursorIndex.subscribe(
-            pageSelectionChanged
+            [this, pageSelectionChanged](uint8_t index) {
+                pageSelectionChanged(index);
+                markAllConfigDirty();
+            }
         )
     );
     subscriptions_.push_back(
@@ -224,7 +230,6 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.macroUi.automationTakeTiming.subscribe(
             [this](core::state::macro::MacroAutomationTakeTiming) {
                 requestHeaderRender();
-                requestSlotPropertyOverlayRender();
             }
         )
     );
@@ -237,9 +242,7 @@ FLASHMEM bool MacroView::bindToState() {
                 core::state::macro::macroAutomationRecordingRevisionDirtyIndex(
                     revision
                 );
-            if (markAutomationRecordingDirtyIfChanged(dirtyIndex)) {
-                requestSlotPropertyOverlayRender();
-            }
+            (void)markAutomationRecordingDirtyIfChanged(dirtyIndex);
         })
     );
 
@@ -317,6 +320,7 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.trackNavigation.previewAddSlot.subscribe([this](bool) {
             requestHeaderRender();
             requestBottomActionStripRender();
+            markAllConfigDirty();
         })
     );
 
@@ -324,6 +328,7 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.trackNavigation.previewTrackIndex.subscribe([this](uint8_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
+            markAllConfigDirty();
         })
     );
 
@@ -331,6 +336,7 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.macroUi.previewPageIndex.subscribe([this](uint8_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
+            markAllConfigDirty();
         })
     );
 
@@ -380,6 +386,7 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.macroUi.previewAddPageSlot.subscribe([this](bool) {
             requestHeaderRender();
             requestBottomActionStripRender();
+            markAllConfigDirty();
         })
     );
 
@@ -398,6 +405,7 @@ FLASHMEM bool MacroView::bindToState() {
     subscriptions_.push_back(
         state_refs_.pages.enabledPageMaskSignal().subscribe([this](uint16_t) {
             requestHeaderRender();
+            markConfigDirtyIfChanged();
         })
     );
 
@@ -420,6 +428,7 @@ FLASHMEM bool MacroView::bindToState() {
     subscriptions_.push_back(
         state_refs_.sharedTrackEnabledMask.subscribe([this](uint16_t) {
             requestHeaderRender();
+            markConfigDirtyIfChanged();
         })
     );
 
@@ -739,7 +748,7 @@ void MacroView::processRenderFlags(uint32_t flags) {
                 if (configDirty || valueNeedsBatchFallback) {
                     invalidation.include(macros_[i]->getElement());
                 }
-                if (valueDirty) {
+                if (valueDirty || configDirty) {
                     macros_[i]->setResolvedComponents(
                         props.baseValue,
                         props.modulationDelta,

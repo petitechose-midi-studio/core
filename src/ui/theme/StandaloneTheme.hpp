@@ -32,7 +32,7 @@ constexpr uint32_t MACRO_8 = base_theme::color::MACRO_8_PINK;
 // text colors: the 320 x 240 display needs stable luminance steps more than
 // translucent decoration.
 constexpr uint32_t BACKGROUND = 0x000000;
-constexpr uint32_t SURFACE_IDLE = 0x12151A;
+constexpr uint32_t SURFACE_IDLE = 0x0C0E12;
 constexpr uint32_t SURFACE_RAISED = 0x1B1F25;
 constexpr uint32_t BORDER_SUBTLE = 0x353A42;
 constexpr uint32_t BORDER_STRONG = 0x565B63;
@@ -49,50 +49,53 @@ constexpr uint32_t TEXT_DISABLED = 0x565A61;
 // Knob
 constexpr uint32_t KNOB_BACKGROUND = base_theme::color::KNOB_BACKGROUND;
 constexpr uint32_t KNOB_VALUE = base_theme::color::KNOB_VALUE;
-constexpr uint32_t KNOB_TRACK = base_theme::color::KNOB_TRACK;
 
 // MIDI indicators
 constexpr uint32_t MIDI_INACTIVE = 0x404040;
 constexpr uint32_t MIDI_IN_ACTIVE = 0xFFCC00;   // Yellow
-constexpr uint32_t MIDI_OUT_ACTIVE = 0xFF8800;  // Orange
 
 // Transport
 constexpr uint32_t PLAY_ACTIVE = 0x49E4B0;      // Live mint
 constexpr uint32_t PLAY_INACTIVE = INACTIVE;
 constexpr uint32_t BEAT_PULSE = 0x0088FF;       // Blue
 
-// Sequencer semantic palette.
-// Muted tones for persistent musical UI: use mostly as borders/icons/text,
-// with low-opacity fills only for selected or active states.
-constexpr uint32_t STEP_STATE = 0x7FA7C7;          // Blue-gray trigger state
-constexpr uint32_t STEP_CHANCE = 0xB886A8;         // Muted mauve trigger chance
-constexpr uint32_t STEP_PITCH = 0xD3B16E;          // Desaturated amber
-constexpr uint32_t STEP_VELOCITY = 0x6EAD9A;       // Soft teal-green
-constexpr uint32_t STEP_GATE = 0xB8AE63;           // Muted olive yellow
-constexpr uint32_t STEP_NUDGE = 0xBE8172;          // Desaturated coral
-constexpr uint32_t STEP_CHORD = 0x9D8BC0;          // Muted lavender harmony layer
-constexpr uint32_t STEP_CHORD_MODE = 0xA393C5;     // Harmony source / inheritance
-constexpr uint32_t STEP_CHORD_FORMULA = 0xB39A72;  // Formula / Custom shape
-constexpr uint32_t STEP_CHORD_SHAPE = 0xB88EAD;    // Named harmonic shape
-constexpr uint32_t STEP_CHORD_INVERSION = 0x9B86BD;// Bass/register rotation
-constexpr uint32_t STEP_CHORD_VOICING = 0xA2A66E;  // Named register spacing
-constexpr uint32_t STEP_CHORD_STRUM = 0x9CA877;    // Harmony voice timing
-constexpr uint32_t STEP_CHORD_VELOCITY = STEP_VELOCITY;  // Harmony voice dynamics
-constexpr uint32_t STEP_MICRO_SEQUENCE = 0x6FAE99; // Muted teal
-constexpr uint32_t STEP_CYCLE_STATE = 0xB99A58;    // Muted ochre
-constexpr uint32_t STEP_LENGTH = 0x8BA8BE;         // Muted steel blue
-constexpr uint32_t STEP_OFFSET = STEP_NUDGE;       // Shared with temporal displacement
-constexpr uint32_t STEP_DIVISION = 0xA8A66B;       // Muted clock olive
-constexpr uint32_t STEP_SWING = 0x9CA877;          // Soft desaturated swing olive
+// Small semantic accents. Keep large surfaces neutral and use these colors on
+// glyphs, notes and curves so the 320 x 240 display remains calm and legible.
+constexpr uint32_t ROUTING = 0x39D8D0;
+constexpr uint32_t RECORD_ACTIVE = 0xFF1748;
+constexpr uint32_t MODULATION = 0xB875F2;
+
+// Sequencer property families. Related properties intentionally share one
+// authority instead of drifting through near-identical shades.
+constexpr uint32_t STEP_STATE = 0x5BD21D;
+constexpr uint32_t STEP_CHANCE = 0xE04BFF;
+constexpr uint32_t STEP_PITCH = 0x22B8FF;
+constexpr uint32_t STEP_VELOCITY = 0x50DF80;
+constexpr uint32_t STEP_GATE = 0xFFD23F;
+constexpr uint32_t STEP_NUDGE = 0xFF684F;
+constexpr uint32_t STEP_CHORD = 0x9B6BFF;
+constexpr uint32_t STEP_CHORD_MODE = STEP_CHORD;
+constexpr uint32_t STEP_CHORD_FORMULA = STEP_CHORD;
+constexpr uint32_t STEP_CHORD_SHAPE = STEP_CHORD;
+constexpr uint32_t STEP_CHORD_INVERSION = STEP_CHORD;
+constexpr uint32_t STEP_CHORD_VOICING = STEP_CHORD;
+constexpr uint32_t STEP_CHORD_STRUM = STEP_CHORD;
+constexpr uint32_t STEP_CHORD_VELOCITY = STEP_VELOCITY;
+constexpr uint32_t STEP_MICRO_SEQUENCE = ROUTING;
+constexpr uint32_t STEP_CYCLE_STATE = 0x4F8CFF;
+constexpr uint32_t STEP_LENGTH = STEP_GATE;
+constexpr uint32_t STEP_OFFSET = STEP_NUDGE;
+constexpr uint32_t STEP_DIVISION = STEP_GATE;
+constexpr uint32_t STEP_SWING = STEP_NUDGE;
 constexpr uint32_t STEP_PATTERN_NUDGE = STEP_NUDGE;
 
-// Macro config labels (2 base colors, use opacity for prefix)
-constexpr uint32_t MACRO_CH_COLOR = 0xCC7777;    // Muted red
-constexpr uint32_t MACRO_CC_COLOR = 0x77CC77;    // Muted green
-constexpr uint32_t MACRO_AUTOMATION = 0xCC7777;         // Muted red automation lane
-constexpr uint32_t MACRO_AUTOMATION_RECORDING = 0xE06A6A;  // Stronger red recording lane
+// Macro domains reuse the same semantic authorities wherever they appear.
+constexpr uint32_t MACRO_CH_COLOR = ROUTING;
+constexpr uint32_t MACRO_CC_COLOR = ROUTING;
+constexpr uint32_t MACRO_AUTOMATION = RECORD_ACTIVE;
+constexpr uint32_t MACRO_AUTOMATION_RECORDING = RECORD_ACTIVE;
 constexpr uint32_t MACRO_AUTOMATION_MANUAL = 0xD1A35A;  // Muted amber manual override
-constexpr uint32_t MACRO_MODULATION = 0x9A7BD1;         // Relative modulation / violet
+constexpr uint32_t MACRO_MODULATION = MODULATION;
 constexpr uint32_t MACRO_PAUSED = 0x8BA8BE;             // Stored but depth-paused
 constexpr uint32_t MACRO_SUSPENDED = 0xD1A35A;          // Suspended/waiting attention
 constexpr uint32_t MACRO_CONFLICT = 0xD1A35A;           // Winner/loser warning
@@ -105,7 +108,7 @@ constexpr uint32_t LIVE_TIME = PLAY_ACTIVE;
 constexpr uint32_t CONTENT_ACTIVE = TEXT_PRIMARY;
 constexpr uint32_t POSITIVE = MACRO_4;
 constexpr uint32_t WARNING = MACRO_CONFLICT;
-constexpr uint32_t DESTRUCTIVE = MACRO_1;
+constexpr uint32_t DESTRUCTIVE = RECORD_ACTIVE;
 constexpr uint32_t SECONDARY = TEXT_SECONDARY;
 constexpr uint32_t DISABLED = TEXT_DISABLED;
 
@@ -130,15 +133,8 @@ constexpr uint32_t trackColor(uint8_t index) {
 // =============================================================================
 namespace layout {
 
-constexpr int16_t SCREEN_WIDTH = 320;
-constexpr int16_t SCREEN_HEIGHT = 240;
-
-constexpr int16_t TOP_BAR_HEIGHT = 20;
 constexpr int16_t TRANSPORT_BAR_HEIGHT = 20;
 constexpr int16_t CONTEXT_ACTION_STRIP_HEIGHT = 20;
-
-constexpr int16_t PARAMETER_GRID_COLS = 4;
-constexpr int16_t PARAMETER_GRID_ROWS = 2;
 
 constexpr int16_t INDICATOR_SIZE = 12;  // Same as plugin-bitwig
 
@@ -159,7 +155,6 @@ constexpr int16_t INTERACTIVE_SURFACE_BORDER_WIDTH = 1;
 // =============================================================================
 namespace timing {
 
-constexpr uint32_t MIDI_BLINK_MS = 80;
 constexpr uint32_t BEAT_PULSE_MS = 100;
 
 }  // namespace timing

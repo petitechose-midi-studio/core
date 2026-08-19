@@ -170,6 +170,7 @@ private:
     lv_obj_t* history_toast_line1_ = nullptr;
     lv_obj_t* history_toast_line2_ = nullptr;
     lv_obj_t* history_toast_line3_ = nullptr;
+    bool pitch_feedback_header_visible_ = false;
     bool initialized_ = false;
 };
 

@@ -43,6 +43,7 @@ std::unique_ptr<TrackBank> makeTrackBank() {
     (*tracks)[3].pages[2].cc[4] = 74U;
     (*tracks)[3].pages[2].values[4] = 0.625F;
     (*tracks)[3].pages[2].activeMacroMask = 0x15U;
+    (*tracks)[3].pages[0].activeMacroMask = 0U;
     return tracks;
 }
 
@@ -80,6 +81,7 @@ void testCanonicalRoundTrip() {
     assert((*decoded)[3].pages[2].cc[4] == 74U);
     assert((*decoded)[3].pages[2].values[4] == 0.625F);
     assert((*decoded)[3].pages[2].activeMacroMask == 0x15U);
+    assert((*decoded)[3].pages[0].activeMacroMask == 0U);
 
     std::cout << "[PASS] canonical Macro Track bank round-trip\n";
 }

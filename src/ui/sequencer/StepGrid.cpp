@@ -11,6 +11,7 @@
 #include <ms/ui/font/CoreFonts.hpp>
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/sequencer/StepGridDataPalette.hpp"
 #include "ui/sequencer/StepGridGeometryLogic.hpp"
 #include "ui/sequencer/StepGridLabelRenderer.hpp"
@@ -23,6 +24,7 @@
 
 namespace theme = oc::ui::lvgl::base_theme;
 namespace grid = core::ui::sequencer::grid;
+namespace selection_visual = core::ui::interaction;
 
 namespace core::ui {
 
@@ -40,18 +42,6 @@ constexpr uint32_t STEP_GUIDE_COLOR = theme::color::INACTIVE_LIGHTER;
 constexpr lv_opa_t STEP_GUIDE_OPA = LV_OPA_20;
 constexpr lv_coord_t STEP_GUIDE_WIDTH = 1;
 constexpr uint8_t STEP_GUIDE_COUNT = 3;
-constexpr uint32_t STEP_SELECTION_CURSOR_COLOR =
-    ::standalone::theme::color::FOCUS_EDIT;
-constexpr uint32_t STEP_SELECTION_SELECTED_COLOR =
-    ::standalone::theme::color::CONTENT_ACTIVE;
-constexpr uint32_t STEP_SELECTION_EMPTY_COLOR = grid::palette::SELECTION_EMPTY;
-constexpr uint32_t STEP_SELECTION_GHOST_COLOR = grid::palette::SELECTION_GHOST;
-constexpr uint32_t STEP_SELECTION_OVERWRITE_COLOR =
-    grid::palette::SELECTION_OVERWRITE;
-constexpr uint32_t STEP_SELECTION_BLOCKED_COLOR =
-    grid::palette::SELECTION_BLOCKED;
-constexpr lv_opa_t STEP_SELECTION_SELECTED_OPA = LV_OPA_20;
-constexpr lv_opa_t STEP_SELECTION_PREVIEW_OPA = LV_OPA_30;
 constexpr lv_coord_t STEP_SELECTION_SELECTED_BORDER = 1;
 constexpr lv_coord_t STEP_SELECTION_BORDER_OUTSET = 2;
 constexpr lv_coord_t STEP_INDEX_RIGHT_PAD = 4;
@@ -78,11 +68,11 @@ constexpr uint32_t EXPANSION_LIMIT_BADGE_COLOR =
     ::standalone::theme::color::STEP_PITCH;
 constexpr lv_opa_t STEP_BADGE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_BADGE_DISABLED_OPA = LV_OPA_50;
-constexpr lv_coord_t NOTE_RAIL_HEIGHT = 2;
+constexpr lv_coord_t NOTE_RAIL_HEIGHT = 3;
 constexpr lv_coord_t NOTE_RAIL_HORIZONTAL_PAD = 0;
 constexpr lv_coord_t NOTE_GHOST_DASH = 3;
 constexpr lv_coord_t NOTE_GHOST_GAP = 2;
-constexpr lv_coord_t NOTE_HEAD_WIDTH = 2;
+constexpr lv_coord_t NOTE_HEAD_WIDTH = 3;
 constexpr lv_coord_t PITCH_OVERFLOW_EDGE_PAD = 8;
 constexpr lv_coord_t PITCH_OVERFLOW_LANE_GAP = 3;
 constexpr int32_t GRID_ROW_WRAP_Q8 = 4 * 256;
@@ -90,10 +80,11 @@ constexpr lv_coord_t SCALE_RULER_X_PAD = 1;
 constexpr lv_opa_t SCALE_RULER_CHROMATIC_OPA = LV_OPA_20;
 constexpr lv_opa_t SCALE_RULER_SCALE_OPA = LV_OPA_40;
 constexpr lv_opa_t SCALE_RULER_ROOT_OPA = LV_OPA_70;
+constexpr lv_opa_t SCALE_RULER_EDIT_CHROMATIC_OPA = LV_OPA_30;
+constexpr lv_opa_t SCALE_RULER_EDIT_SCALE_OPA = LV_OPA_60;
+constexpr lv_opa_t SCALE_RULER_EDIT_ROOT_OPA = LV_OPA_90;
 constexpr lv_coord_t PLAYHEAD_TOP_PAD = 12;
 constexpr lv_coord_t PLAYHEAD_BOTTOM_PAD = 5;
-constexpr lv_coord_t SELECTION_CORNER_LENGTH = 7;
-constexpr lv_coord_t SELECTION_CORNER_THICKNESS = 2;
 
 FLASHMEM uint32_t chordBadgeColor(
     oc::note::sequencer::StepSequencerChordSource source
@@ -135,16 +126,23 @@ FLASHMEM uint32_t stepPastePreviewColor(
 ) {
     switch (preview) {
         case core::state::sequencer::SequencerStepPastePreview::EMPTY:
-            return STEP_SELECTION_EMPTY_COLOR;
         case core::state::sequencer::SequencerStepPastePreview::GHOST:
-            return STEP_SELECTION_GHOST_COLOR;
+            return selection_visual::structureSelectionColor(
+                selection_visual::StructureSelectionVisualRole::DESTINATION_FREE
+            );
         case core::state::sequencer::SequencerStepPastePreview::OVERWRITE:
-            return STEP_SELECTION_OVERWRITE_COLOR;
+            return selection_visual::structureSelectionColor(
+                selection_visual::StructureSelectionVisualRole::DESTINATION_OVERWRITE
+            );
         case core::state::sequencer::SequencerStepPastePreview::BLOCKED:
-            return STEP_SELECTION_BLOCKED_COLOR;
+            return selection_visual::structureSelectionColor(
+                selection_visual::StructureSelectionVisualRole::DESTINATION_BLOCKED
+            );
         case core::state::sequencer::SequencerStepPastePreview::NONE:
         default:
-            return STEP_SELECTION_CURSOR_COLOR;
+            return selection_visual::structureSelectionColor(
+                selection_visual::StructureSelectionVisualRole::CURSOR
+            );
     }
 }
 
@@ -158,16 +156,18 @@ FLASHMEM void drawSelectionOverlay(lv_layer_t* layer,
         lv_draw_rect_dsc_t fillDsc;
         lv_draw_rect_dsc_init(&fillDsc);
         fillDsc.bg_color = lv_color_hex(color);
-        fillDsc.bg_opa = STEP_SELECTION_PREVIEW_OPA;
+        fillDsc.bg_opa = selection_visual::STRUCTURE_DESTINATION_FILL_OPA;
         fillDsc.radius = 0;
         fillDsc.border_width = 0;
         lv_draw_rect(layer, &fillDsc, &buttonArea);
     } else if (cache.stepSelectionSelected) {
-        const uint32_t color = STEP_SELECTION_SELECTED_COLOR;
+        const uint32_t color = selection_visual::structureSelectionColor(
+            selection_visual::StructureSelectionVisualRole::SELECTED
+        );
         lv_draw_rect_dsc_t fillDsc;
         lv_draw_rect_dsc_init(&fillDsc);
         fillDsc.bg_color = lv_color_hex(color);
-        fillDsc.bg_opa = STEP_SELECTION_SELECTED_OPA;
+        fillDsc.bg_opa = selection_visual::STRUCTURE_SELECTION_FILL_OPA;
         fillDsc.radius = 0;
         fillDsc.border_width = 0;
         lv_draw_rect(layer, &fillDsc, &buttonArea);
@@ -185,15 +185,22 @@ FLASHMEM void drawSelectionOverlay(lv_layer_t* layer,
         borderDsc.bg_opa = LV_OPA_TRANSP;
         borderDsc.radius = 0;
         borderDsc.border_width = STEP_SELECTION_SELECTED_BORDER;
-        borderDsc.border_color = lv_color_hex(STEP_SELECTION_SELECTED_COLOR);
-        borderDsc.border_opa = LV_OPA_80;
+        borderDsc.border_color = lv_color_hex(
+            selection_visual::structureSelectionColor(
+                selection_visual::StructureSelectionVisualRole::SELECTED
+            )
+        );
+        borderDsc.border_opa =
+            selection_visual::STRUCTURE_SELECTION_OUTLINE_OPA;
         lv_draw_rect(layer, &borderDsc, &borderArea);
     }
 
     if (cache.stepSelectionCursor) {
         const uint32_t color = cache.stepPastePreviewActive
             ? stepPastePreviewColor(cache.stepPastePreview)
-            : STEP_SELECTION_CURSOR_COLOR;
+            : selection_visual::structureSelectionColor(
+                  selection_visual::StructureSelectionVisualRole::CURSOR
+              );
         // Keep focus corners inside the tile clip. Selection borders may extend
         // beyond it, but a cursor must always remain fully legible.
         lv_area_t cursorArea = buttonArea;
@@ -205,73 +212,10 @@ FLASHMEM void drawSelectionOverlay(lv_layer_t* layer,
                 )
             )
         );
-        const lv_coord_t width = lv_area_get_width(&cursorArea);
-        const lv_coord_t height = lv_area_get_height(&cursorArea);
-        const lv_coord_t corner = std::min<lv_coord_t>(
-            SELECTION_CORNER_LENGTH,
-            std::max<lv_coord_t>(1, std::min(width, height) / 2)
-        );
-        drawVariationRect(
-            layer, cursorArea.x1, cursorArea.y1,
-            corner, SELECTION_CORNER_THICKNESS, color, LV_OPA_COVER
-        );
-        drawVariationRect(
-            layer, cursorArea.x1, cursorArea.y1,
-            SELECTION_CORNER_THICKNESS, corner, color, LV_OPA_COVER
-        );
-        drawVariationRect(
+        selection_visual::drawStructureSelectionCorners(
             layer,
-            static_cast<lv_coord_t>(cursorArea.x2 - corner + 1),
-            cursorArea.y1,
-            corner,
-            SELECTION_CORNER_THICKNESS,
-            color,
-            LV_OPA_COVER
-        );
-        drawVariationRect(
-            layer,
-            static_cast<lv_coord_t>(cursorArea.x2 - SELECTION_CORNER_THICKNESS + 1),
-            cursorArea.y1,
-            SELECTION_CORNER_THICKNESS,
-            corner,
-            color,
-            LV_OPA_COVER
-        );
-        drawVariationRect(
-            layer,
-            cursorArea.x1,
-            static_cast<lv_coord_t>(cursorArea.y2 - SELECTION_CORNER_THICKNESS + 1),
-            corner,
-            SELECTION_CORNER_THICKNESS,
-            color,
-            LV_OPA_COVER
-        );
-        drawVariationRect(
-            layer,
-            cursorArea.x1,
-            static_cast<lv_coord_t>(cursorArea.y2 - corner + 1),
-            SELECTION_CORNER_THICKNESS,
-            corner,
-            color,
-            LV_OPA_COVER
-        );
-        drawVariationRect(
-            layer,
-            static_cast<lv_coord_t>(cursorArea.x2 - corner + 1),
-            static_cast<lv_coord_t>(cursorArea.y2 - SELECTION_CORNER_THICKNESS + 1),
-            corner,
-            SELECTION_CORNER_THICKNESS,
-            color,
-            LV_OPA_COVER
-        );
-        drawVariationRect(
-            layer,
-            static_cast<lv_coord_t>(cursorArea.x2 - SELECTION_CORNER_THICKNESS + 1),
-            static_cast<lv_coord_t>(cursorArea.y2 - corner + 1),
-            SELECTION_CORNER_THICKNESS,
-            corner,
-            color,
-            LV_OPA_COVER
+            cursorArea,
+            color
         );
     }
 }
@@ -597,7 +541,8 @@ FLASHMEM void drawScaleRuler(
     uint8_t tileIndex,
     grid::StepGridPresentation presentation,
     const grid::StepPitchViewport& viewport,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool pitchEditing
 ) {
     if (!layer || presentation != grid::StepGridPresentation::MELODIC ||
         (tileIndex % 4U) != 0U) {
@@ -629,12 +574,18 @@ FLASHMEM void drawScaleRuler(
             layer,
             static_cast<lv_coord_t>(buttonArea.x1 + SCALE_RULER_X_PAD),
             y,
-            root ? 4 : (inScale ? 2 : 1),
+            root ? (pitchEditing ? 5 : 4)
+                 : (inScale ? (pitchEditing ? 3 : 2) : 1),
             1,
             theme::color::TEXT_PRIMARY,
-            root ? SCALE_RULER_ROOT_OPA
-                 : (inScale ? SCALE_RULER_SCALE_OPA
-                            : SCALE_RULER_CHROMATIC_OPA)
+            root ? (pitchEditing ? SCALE_RULER_EDIT_ROOT_OPA
+                                 : SCALE_RULER_ROOT_OPA)
+                 : (inScale
+                        ? (pitchEditing ? SCALE_RULER_EDIT_SCALE_OPA
+                                        : SCALE_RULER_SCALE_OPA)
+                        : (pitchEditing
+                               ? SCALE_RULER_EDIT_CHROMATIC_OPA
+                               : SCALE_RULER_CHROMATIC_OPA))
         );
     }
 }
@@ -648,7 +599,7 @@ FLASHMEM void drawTileNoteEvents(
     uint32_t accentColor,
     const grid::StepPitchViewport& viewport,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    bool chromaticPitchEditing
+    bool pitchEditing
 ) {
     if (!layer || tileIndex >= tiles.size()) return;
 
@@ -809,7 +760,7 @@ FLASHMEM void drawTileNoteEvents(
                 );
             }
             if (presentation == grid::StepGridPresentation::MELODIC &&
-                chromaticPitchEditing &&
+                pitchEditing &&
                 scaleSettings.type !=
                     oc::note::sequencer::StepSequencerScaleType::Chromatic &&
                 !oc::note::sequencer::scaleContainsNote(
@@ -1097,7 +1048,8 @@ FLASHMEM void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
         tileIndex,
         self->render_cache_.presentation,
         self->render_cache_.pitchViewport,
-        self->render_cache_.scaleSettings
+        self->render_cache_.scaleSettings,
+        self->render_cache_.pitchEditing
     );
     drawTileNoteEvents(
         layer,
@@ -1108,7 +1060,7 @@ FLASHMEM void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
         self->render_cache_.accentColor,
         self->render_cache_.pitchViewport,
         self->render_cache_.scaleSettings,
-        self->render_cache_.chromaticPitchEditing
+        self->render_cache_.pitchEditing
     );
     drawPlayheadLine(layer, buttonArea, cache);
 
@@ -1231,14 +1183,13 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
         render_cache_.scaleSettings.root != frameState.scaleSettings.root ||
         render_cache_.scaleSettings.type != frameState.scaleSettings.type ||
         render_cache_.scaleSettings.mode != frameState.scaleSettings.mode ||
-        render_cache_.chromaticPitchEditing !=
-            frameState.chromaticPitchEditing) {
+        render_cache_.pitchEditing != frameState.pitchEditing) {
         invalidateTileCaches();
         render_cache_.presentation = frameState.presentation;
         render_cache_.accentColor = frameState.accentColor;
         render_cache_.pitchViewport = targetPitchViewport;
         render_cache_.scaleSettings = frameState.scaleSettings;
-        render_cache_.chromaticPitchEditing = frameState.chromaticPitchEditing;
+        render_cache_.pitchEditing = frameState.pitchEditing;
     }
 
     const auto plan = grid::buildFrameRenderPlan(

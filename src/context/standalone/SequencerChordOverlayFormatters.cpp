@@ -747,7 +747,7 @@ FLASHMEM void populateChordDetailOverlay(
         data.overlayProps.chordPerformance[2] =
             core::ui::SequencerStepEditPropertyChip{
                 .key = "Cancel",
-                .value = "LEFT TOP",
+                .value = "Left top",
                 .icon = ::standalone::icons::ACTION_CANCEL,
                 .color = selectedColor,
             };
@@ -838,7 +838,7 @@ FLASHMEM void populateChordDetailOverlay(
                       .key = "Remove",
                       .value = "Trash",
                       .icon = ::standalone::icons::ACTION_REMOVE,
-                      .color = selectedColor,
+                      .color = ::standalone::theme::color::DESTRUCTIVE,
                   };
         data.overlayProps.chordPerformance[3] =
             core::ui::SequencerStepEditPropertyChip{

@@ -3,10 +3,13 @@
 # Expect: capture_changed:constrained_degree_feedback=free_out_of_scale_feedback
 
 0 scenario seq-scale-constrained-degree
-80 capture screen constrained_degree_feedback
+50 encoder MACRO_1 0.51
+120 capture screen constrained_degree_feedback
 
-200 scenario seq-scale-free-out-of-scale
-280 capture screen free_out_of_scale_feedback
-
-# Exercise one real sequencer binding so workflow verification records dispatch.
-360 tap MACRO_8 60
+300 scenario seq-scale-free-out-of-scale
+350 encoder MACRO_1 1.00
+390 encoder MACRO_1 1.00
+430 encoder MACRO_1 1.00
+470 encoder MACRO_1 1.00
+510 encoder MACRO_1 1.00
+590 capture screen free_out_of_scale_feedback

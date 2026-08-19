@@ -172,6 +172,21 @@ void test_lane_roles_resolve_defaults_and_keep_only_real_overrides() {
     assert(drum::drumLaneDisplayIcon(descriptor) ==
            drum::DrumLaneIcon::GENERIC);
     assert(drum::drumLaneDisplayColorIndex(descriptor) == 2U);
+    assert(drum::drumLaneIdentityOverrideCount(descriptor) == 3U);
+
+    assert(drum::resetDrumLaneIdentityOverrides(descriptor));
+    assert(drum::drumLaneIdentityOverrideCount(descriptor) == 0U);
+    assert(std::strcmp(drum::drumLaneDisplayName(descriptor), "Snare") == 0);
+    assert(drum::drumLaneDisplayIcon(descriptor) ==
+           drum::DrumLaneIcon::SNARE);
+    assert(drum::drumLaneDisplayColorIndex(descriptor) == 3U);
+    assert(descriptor.midiNote == 38U);
+    assert(descriptor.role == drum::DrumLaneRole::SNARE);
+    assert(!drum::resetDrumLaneIdentityOverrides(descriptor));
+
+    assert(drum::setDrumLaneName(descriptor, "Backbeat"));
+    assert(drum::setDrumLaneIcon(descriptor, drum::DrumLaneIcon::GENERIC));
+    assert(drum::setDrumLaneColorIndex(descriptor, 2U));
 
     assert(drum::setDrumLaneName(descriptor, "Snare"));
     assert(drum::setDrumLaneIcon(descriptor, drum::DrumLaneIcon::SNARE));

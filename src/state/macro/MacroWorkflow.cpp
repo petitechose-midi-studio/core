@@ -333,10 +333,9 @@ FLASHMEM bool MacroWorkflow::applyDestinationActivation(
     }
     auto& track = pages.tracks[address.track];
     if (plan.createPage) {
-        track.pages[address.page].initDefault(address.page);
+        track.pages[address.page].initEmpty(address.page);
         // A destination-created Page contains exactly the requested physical
         // Macro position; Macro 1 is not silently inserted as a prerequisite.
-        track.pages[address.page].activeMacroMask = 0U;
         track.setPageEnabled(address.page, true);
     }
     if (plan.createMacro) {

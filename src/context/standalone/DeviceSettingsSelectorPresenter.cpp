@@ -9,8 +9,8 @@
 namespace core::context::standalone {
 namespace {
 
-constexpr const char* const MODE_ITEMS[] PROGMEM = {"MASTER", "SLAVE", "AUTO"};
-constexpr const char* const FOLLOW_ITEMS[] PROGMEM = {"OFF", "ON"};
+constexpr const char* const MODE_ITEMS[] PROGMEM = {"Master", "Slave", "Auto"};
+constexpr const char* const FOLLOW_ITEMS[] PROGMEM = {"Off", "On"};
 constexpr const char* const FALLBACK_ITEMS[] PROGMEM = {
     "150 ms",
     "250 ms",
@@ -146,7 +146,7 @@ FLASHMEM void DeviceSettingsSelectorPresenter::renderSelector() {
     selector_overlay_.render(
         core::ui::interaction::decisionSelectorProps(
             data.title,
-            "Device Settings",
+            "Device settings",
             data.items,
             data.itemCount,
             data.selectedIndex,

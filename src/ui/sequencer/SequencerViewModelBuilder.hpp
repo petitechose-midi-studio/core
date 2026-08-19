@@ -42,6 +42,14 @@ struct SequencerViewModelSource {
     const core::state::sequencer::SequencerTrackActivationQueue& trackActivations;
 };
 
+inline bool sequencerPreviewingEmptyTrack(
+    const SequencerViewModelSource& source
+) {
+    return source.navigationFocus.get() ==
+               core::state::StructureNavigationFocus::TRACK &&
+           source.trackNavigation.previewAddSlot.get();
+}
+
 SequencerHeaderBarProps buildHeaderBarProps(const SequencerViewModelSource& source);
 StepPropertySelectionOverlayProps buildPropertySelectionOverlayProps(
     const SequencerViewModelSource& source

@@ -93,6 +93,22 @@ void test_main_chord_surface_keeps_context_and_formula_visible() {
     assert(std::strcmp(value, "Follow DEG") == 0);
     presentation::formatSource(value, sizeof(value), chord);
     assert(std::strcmp(value, "Local chord") == 0);
+    assert(std::strcmp(
+        presentation::icon(Field::SHAPE),
+        standalone::icons::CHORD_PROP_SHAPE
+    ) == 0);
+    assert(std::strcmp(
+        presentation::icon(Field::FORMULA),
+        standalone::icons::CHORD
+    ) == 0);
+    assert(std::strcmp(
+        presentation::icon(Field::INVERSION),
+        standalone::icons::NOTE_PROP_PITCH
+    ) == 0);
+    assert(std::strcmp(
+        presentation::icon(Field::VOICING),
+        standalone::icons::CHORD_PROP_MODE
+    ) == 0);
 
     std::cout
         << "[PASS] test_main_chord_surface_keeps_context_and_formula_visible\n";

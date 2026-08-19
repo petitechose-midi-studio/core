@@ -40,18 +40,22 @@
 3750 capture screen shape_sus4
 3850 encoder NAV 1
 4050 capture screen formula_readable
-4150 encoder NAV 1
-4350 capture screen inversion_root
-4450 encoder OPT 1.0
-4650 capture screen inversion_first
-4750 encoder NAV 1
-4950 capture screen voicing_close
-5050 encoder OPT 2.0
-5250 capture screen voicing_wide
+# Formula uses the same full editor grammar and must remain legible at 320x240.
+4100 tap NAV 60
+4300 capture screen formula_editor
+4400 tap LEFT_TOP 60
+4550 encoder NAV 1
+4750 capture screen inversion_root
+4850 encoder OPT 1.0
+5050 capture screen inversion_first
+5150 encoder NAV 1
+5350 capture screen voicing_close
+5450 encoder OPT 2.0
+5650 capture screen voicing_wide
 
 # Back requests the transactional exit. NAV accepts the default Save choice;
 # the completed Step-content draft is then published on the Chord row.
-5350 tap LEFT_TOP 60
-5600 capture screen chord_exit_save
-5700 tap NAV 60
-6000 capture screen chord_published
+5750 tap LEFT_TOP 60
+6000 capture screen chord_exit_save
+6100 tap NAV 60
+6400 capture screen chord_published

@@ -38,25 +38,25 @@ FLASHMEM const char* recordedShapeCaptureLabel(
         ProjectRecordedShapeCaptureStatus;
     switch (capture.status) {
         case Status::ARMED:
-            return "ARMED";
+            return "Armed";
         case Status::RECORDING:
         case Status::REDUCED:
             return capture.take != nullptr && capture.take->touched
-                ? "RECORDING"
-                : "ARMED";
+                ? "Recording"
+                : "Armed";
         case Status::COMMITTED:
-            return "COMMITTED";
+            return "Committed";
         case Status::NO_CHANGE:
-            return "NO CHANGE";
+            return "No change";
         case Status::CANCELLED:
-            return "CANCELLED";
+            return "Cancelled";
         case Status::INVALIDATED:
         case Status::SCRATCH_UNAVAILABLE:
         case Status::COMMIT_FAILED:
-            return "INVALIDATED";
+            return "Invalidated";
         case Status::IDLE:
         default:
-            return "HOLD + TURN";
+            return "Hold + turn";
     }
 }
 
@@ -219,10 +219,10 @@ FLASHMEM void provideModulatorPickerRow(
         out.icon.size(),
         "%s",
         modulator.kind == core::state::modulation::ModulatorKind::LFO
-            ? ::standalone::icons::MACRO_MODULATION
+            ? ::standalone::icons::MODULATION
             : (modulator.kind == core::state::modulation::ModulatorKind::ADSR
                 ? ::standalone::icons::NOTE_PROP_GATE
-                : ::standalone::icons::MACRO_AUTOMATION)
+                : ::standalone::icons::AUTOMATION)
     );
     out.iconFont = standalone_fonts.icons_14;
     const bool enabled =
@@ -258,7 +258,6 @@ FLASHMEM void provideModulationAssignmentRow(
             ++enabledCount;
         }
     }
-    if (rows.assignmentCount == 0U) return;
     const auto descriptor = menu::macroModulationRowAt(
         graph,
         rows,
@@ -288,7 +287,7 @@ FLASHMEM void provideModulationAssignmentRow(
             out.icon.data(),
             out.icon.size(),
             "%s",
-            enabledCount > 0U ? ::standalone::icons::MACRO_MODULATION
+            enabledCount > 0U ? ::standalone::icons::MODULATION
                               : ::standalone::icons::STATUS_PAUSED
         );
         out.iconFont = standalone_fonts.icons_14;
@@ -298,13 +297,26 @@ FLASHMEM void provideModulationAssignmentRow(
         return;
     }
     if (descriptor.kind == menu::MacroModulationRowKind::ADD_SOURCE) {
-        std::snprintf(out.key.data(), out.key.size(), "%s", "+ Source");
+        std::snprintf(out.key.data(), out.key.size(), "%s", "Add source");
         std::snprintf(out.value.data(), out.value.size(), "%s", "Add");
         std::snprintf(
             out.icon.data(),
             out.icon.size(),
             "%s",
             ::standalone::icons::ACTION_PLACE_TARGET
+        );
+        out.iconFont = standalone_fonts.icons_14;
+        out.iconColor = ::standalone::theme::color::MACRO_MODULATION;
+        return;
+    }
+    if (descriptor.kind == menu::MacroModulationRowKind::RECORD_SHAPE) {
+        std::snprintf(out.key.data(), out.key.size(), "%s", "Record shape");
+        std::snprintf(out.value.data(), out.value.size(), "%s", "Record");
+        std::snprintf(
+            out.icon.data(),
+            out.icon.size(),
+            "%s",
+            ::standalone::icons::AUTOMATION
         );
         out.iconFont = standalone_fonts.icons_14;
         out.iconColor = ::standalone::theme::color::MACRO_MODULATION;
@@ -337,8 +349,8 @@ FLASHMEM void provideModulationAssignmentRow(
         out.icon.size(),
         "%s",
         modulator->kind == core::state::modulation::ModulatorKind::LFO
-            ? ::standalone::icons::MACRO_MODULATION
-            : ::standalone::icons::MACRO_AUTOMATION
+            ? ::standalone::icons::MODULATION
+            : ::standalone::icons::AUTOMATION
     );
     out.iconFont = standalone_fonts.icons_14;
     out.iconColor = edgeEnabled && sourceEnabled

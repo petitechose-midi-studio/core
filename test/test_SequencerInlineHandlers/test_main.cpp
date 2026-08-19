@@ -238,7 +238,7 @@ void test_property_selector_stays_open_when_history_barrier_fails() {
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0U);
     assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevisionBefore + 1U);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "No change") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "History unavailable") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "") == 0);
 
@@ -392,7 +392,7 @@ void test_property_selector_rejected_prepare_blocks_edit_and_feedback() {
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencer.historyFeedback.revision.get() == historyFeedbackRevision + 1U);
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "No change") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "") == 0);
 
@@ -715,7 +715,7 @@ void test_pattern_pitch_rejected_prepare_blocks_projection_and_feedback() {
            core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR);
     assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision + 1U);
     assert(h.state.sequencer.historyFeedback.visible.get());
-    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "No change") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "") == 0);
     assert(h.state.sequencerHistory.undoCount() == 0);

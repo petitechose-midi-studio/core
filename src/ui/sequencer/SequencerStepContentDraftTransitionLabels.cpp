@@ -11,14 +11,14 @@ namespace {
 using Transition =
     core::state::sequencer::SequencerStepContentDraftBlockedTransition;
 
-const char STANDALONE_NONE_LABEL[] PROGMEM = "APPLY OR DISCARD DRAFT";
-const char STANDALONE_TRACK_LABEL[] PROGMEM = "APPLY BEFORE CHANGING TRACK";
-const char STANDALONE_VIEW_LABEL[] PROGMEM = "APPLY BEFORE CHANGING VIEW";
-const char STANDALONE_PROJECT_LOAD_LABEL[] PROGMEM = "APPLY BEFORE LOADING";
-const char STANDALONE_RESET_LABEL[] PROGMEM = "APPLY BEFORE RESET";
+const char STANDALONE_NONE_LABEL[] PROGMEM = "Apply or discard draft";
+const char STANDALONE_TRACK_LABEL[] PROGMEM = "Apply before changing track";
+const char STANDALONE_VIEW_LABEL[] PROGMEM = "Apply before changing view";
+const char STANDALONE_PROJECT_LOAD_LABEL[] PROGMEM = "Apply before loading";
+const char STANDALONE_RESET_LABEL[] PROGMEM = "Apply before reset";
 const char STANDALONE_STRUCTURE_EDIT_LABEL[] PROGMEM =
-    "APPLY BEFORE STRUCTURE EDIT";
-const char STANDALONE_HISTORY_LABEL[] PROGMEM = "APPLY BEFORE UNDO/REDO";
+    "Apply before structure edit";
+const char STANDALONE_HISTORY_LABEL[] PROGMEM = "Apply before undo/redo";
 
 const char PROPERTY_NONE_LABEL[] PROGMEM = "Apply or discard";
 const char PROPERTY_TRACK_LABEL[] PROGMEM = "Apply before track";

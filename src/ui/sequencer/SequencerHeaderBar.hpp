@@ -30,6 +30,7 @@ struct SequencerHeaderMetricProps {
 
 struct SequencerHeaderBarProps {
     static constexpr uint8_t TRACK_COUNT = core::state::StatusBarState::TRACK_COUNT;
+    static constexpr size_t PAGE_TEXT_SIZE = 12U;
 
     uint8_t length = 0;
     uint8_t activePage = 0;
@@ -49,7 +50,7 @@ struct SequencerHeaderBarProps {
     std::array<SequencerHeaderMetricProps, 2> metrics{};
     const char* contextIcon = "";
     uint32_t contextIconColor = 0U;
-    std::array<char, 8> pageText{};
+    std::array<char, PAGE_TEXT_SIZE> pageText{};
 };
 
 /**
@@ -97,7 +98,7 @@ private:
     std::array<char, 16> left_text_cache_{};
     std::array<char, 20> badge_text_cache_{};
     std::array<char, 8> context_icon_cache_{};
-    std::array<char, 8> page_text_cache_{};
+    std::array<char, SequencerHeaderBarProps::PAGE_TEXT_SIZE> page_text_cache_{};
     bool badge_visible_cache_ = false;
     bool metrics_visible_cache_ = false;
     bool context_icon_visible_cache_ = false;

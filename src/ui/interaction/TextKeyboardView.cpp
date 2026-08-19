@@ -178,10 +178,9 @@ FLASHMEM void TextKeyboardView::createLayout(lv_obj_t* parent) {
     for (uint8_t i = 0; i < keys_.size(); ++i) {
         const auto& cell =
             core::state::interaction::textKeyboardCellAt(i);
-        const lv_coord_t centeredOffset =
-            (cell.row == 2 || cell.row == 3)
-                ? KEYBOARD_ROW_CENTER_OFFSET
-                : 0;
+        const lv_coord_t centeredOffset = cell.row == 2
+            ? KEYBOARD_ROW_CENTER_OFFSET
+            : 0;
         const lv_coord_t x = static_cast<lv_coord_t>(
             KEYBOARD_GRID_X + centeredOffset +
             cell.column * (KEYBOARD_KEY_W + KEYBOARD_KEY_GAP)

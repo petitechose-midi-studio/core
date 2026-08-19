@@ -6,12 +6,14 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace style = oc::ui::lvgl::style;
+namespace selection_visual = core::ui::interaction;
 namespace add_slot_icon_ns = core::ui::add_slot_icon;
 
 namespace {
@@ -266,7 +268,9 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
             if (selected) {
                 lv_obj_set_style_outline_color(
                     items_[i],
-                    lv_color_hex(theme::color::TEXT_PRIMARY),
+                    lv_color_hex(selection_visual::structureSelectionColor(
+                        selection_visual::StructureSelectionVisualRole::SELECTED
+                    )),
                     0
                 );
             }
@@ -297,10 +301,16 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
         }
         if (destination) {
             const uint32_t destinationColor = destinationBlocked
-                ? theme::color::MACRO_AUTOMATION_RECORDING
+                ? selection_visual::structureSelectionColor(
+                      selection_visual::StructureSelectionVisualRole::DESTINATION_BLOCKED
+                  )
                 : (destinationOverwrite
-                    ? theme::color::MACRO_CONFLICT
-                    : theme::color::MACRO_CC_COLOR);
+                    ? selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::DESTINATION_OVERWRITE
+                      )
+                    : selection_visual::structureSelectionColor(
+                          selection_visual::StructureSelectionVisualRole::DESTINATION_FREE
+                      ));
             if (!cache.initialized ||
                 cache.destinationColor != destinationColor) {
                 lv_obj_set_style_bg_color(

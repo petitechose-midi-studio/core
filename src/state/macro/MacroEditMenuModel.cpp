@@ -8,8 +8,8 @@ namespace modulation = core::state::modulation;
 
 FLASHMEM int MacroModulationRows::rowCount() const {
     return assignmentCount == 0U
-        ? 2
-        : static_cast<int>(assignmentCount) + 2;
+        ? 3
+        : static_cast<int>(assignmentCount) + 3;
 }
 
 FLASHMEM int MacroModulationRows::firstAssignmentRow() const {
@@ -20,6 +20,10 @@ FLASHMEM int MacroModulationRows::addSourceRow() const {
     return assignmentCount == 0U
         ? 1
         : firstAssignmentRow() + static_cast<int>(assignmentCount);
+}
+
+FLASHMEM int MacroModulationRows::recordShapeRow() const {
+    return addSourceRow() + 1;
 }
 
 FLASHMEM MacroRootItem macroRootItemAt(uint8_t row) {
@@ -69,6 +73,9 @@ FLASHMEM MacroModulationRowDescriptor macroModulationRowAt(
     }
     if (row == rows.addSourceRow()) {
         return {MacroModulationRowKind::ADD_SOURCE, {}, rows.destination};
+    }
+    if (row == rows.recordShapeRow()) {
+        return {MacroModulationRowKind::RECORD_SHAPE, {}, rows.destination};
     }
 
     const int targetOrdinal = row - rows.firstAssignmentRow();

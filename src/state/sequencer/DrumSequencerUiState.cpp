@@ -407,7 +407,7 @@ FLASHMEM bool DrumSequencerState::openLaneEditor(bool create) {
     laneEditor.mode = create
         ? DrumLaneEditorMode::CREATE
         : DrumLaneEditorMode::EDIT;
-    laneEditor.field = DrumLaneEditorField::NAME;
+    laneEditor.field = DrumLaneEditorField::PRESET;
     laneEditor.sourceLane = create ? laneCount : selectedLane;
     laneEditor.targetLane = laneEditor.sourceLane;
     if (create) {
@@ -461,12 +461,50 @@ FLASHMEM void DrumSequencerState::moveLaneEditorField(float delta) {
         moveLaneNameKey(delta);
         return;
     }
-    constexpr int count = static_cast<int>(DrumLaneEditorField::COUNT);
-    const int current = static_cast<int>(laneEditor.field);
+    const bool identity = isDrumLaneIdentityEditorField(laneEditor.field);
+    const int first = static_cast<int>(identity
+        ? DrumLaneEditorField::NAME
+        : DrumLaneEditorField::PRESET);
+    const int last = static_cast<int>(identity
+        ? DrumLaneEditorField::USE_PRESET_DEFAULTS
+        : DrumLaneEditorField::POSITION);
+    const int count = last - first + 1;
+    const int current = static_cast<int>(laneEditor.field) - first;
     laneEditor.field = static_cast<DrumLaneEditorField>(
-        (current + (delta > 0.0f ? 1 : -1) + count) % count
+        first + (current + (delta > 0.0f ? 1 : -1) + count) % count
     );
     bump();
+}
+
+FLASHMEM bool DrumSequencerState::enterLaneIdentityEditor() {
+    if (!laneEditor.active || laneEditor.textEditing ||
+        laneEditor.field != DrumLaneEditorField::IDENTITY) {
+        return false;
+    }
+    laneEditor.field = DrumLaneEditorField::NAME;
+    bump();
+    return true;
+}
+
+FLASHMEM bool DrumSequencerState::leaveLaneIdentityEditor() {
+    if (!laneEditor.active || laneEditor.textEditing ||
+        !isDrumLaneIdentityEditorField(laneEditor.field)) {
+        return false;
+    }
+    laneEditor.field = DrumLaneEditorField::IDENTITY;
+    bump();
+    return true;
+}
+
+FLASHMEM bool DrumSequencerState::resetLaneIdentityOverrides() {
+    if (!laneEditor.active || laneEditor.textEditing ||
+        laneEditor.field != DrumLaneEditorField::USE_PRESET_DEFAULTS) {
+        return false;
+    }
+    if (!resetDrumLaneIdentityOverrides(laneEditor.draft)) return false;
+    laneEditor.dirty = true;
+    bump();
+    return true;
 }
 
 FLASHMEM void DrumSequencerState::moveLaneNameKey(float delta) {
@@ -611,7 +649,7 @@ FLASHMEM void DrumSequencerState::editLaneEditorValue(float normalized) {
     };
 
     switch (laneEditor.field) {
-        case DrumLaneEditorField::ROLE: {
+        case DrumLaneEditorField::PRESET: {
             changed = setDrumLaneRole(
                 laneEditor.draft,
                 static_cast<DrumLaneRole>(
@@ -624,7 +662,9 @@ FLASHMEM void DrumSequencerState::editLaneEditorValue(float normalized) {
             );
             break;
         }
-        case DrumLaneEditorField::NAME: {
+        case DrumLaneEditorField::IDENTITY:
+        case DrumLaneEditorField::NAME:
+        case DrumLaneEditorField::USE_PRESET_DEFAULTS: {
             return;
         }
         case DrumLaneEditorField::ICON: {

@@ -9,6 +9,7 @@
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/font/StandaloneFonts.hpp"
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/sequencer/SequencerHeaderBarRenderModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -16,6 +17,7 @@ namespace core::ui {
 
 namespace theme = standalone::theme;
 namespace header_model = core::ui::sequencer::header_bar;
+namespace selection_visual = core::ui::interaction;
 namespace style = oc::ui::lvgl::style;
 
 namespace {
@@ -26,14 +28,23 @@ constexpr lv_coord_t ACCENT_WIDTH = 4;
 constexpr lv_coord_t LABEL_MAX_WIDTH = 46;
 constexpr lv_coord_t BADGE_WIDTH = 60;
 constexpr lv_coord_t CONTEXT_ICON_WIDTH = 18;
-constexpr lv_coord_t PAGE_LABEL_WIDTH = 32;
+constexpr lv_coord_t PAGE_LABEL_WIDTH = 44;
 constexpr lv_coord_t TITLE_SEPARATOR_WIDTH = 5;
-constexpr uint32_t PAGE_CURSOR_COLOR = theme::color::LIVE_TIME;
-constexpr uint32_t PAGE_SELECTION_COLOR = theme::color::MACRO_6;
-constexpr uint32_t PAGE_DUPLICATE_PREVIEW_COLOR = theme::color::MACRO_4;
-constexpr uint32_t PAGE_DUPLICATE_OVERWRITE_COLOR = theme::color::WARNING;
-constexpr uint32_t PAGE_DUPLICATE_BLOCKED_COLOR =
-    theme::color::MACRO_AUTOMATION_RECORDING;
+constexpr uint32_t PAGE_CURSOR_COLOR = selection_visual::structureSelectionColor(
+    selection_visual::StructureSelectionVisualRole::CURSOR
+);
+constexpr uint32_t PAGE_SELECTION_COLOR = selection_visual::structureSelectionColor(
+    selection_visual::StructureSelectionVisualRole::SELECTED
+);
+constexpr uint32_t PAGE_DUPLICATE_PREVIEW_COLOR = selection_visual::structureSelectionColor(
+    selection_visual::StructureSelectionVisualRole::DESTINATION_FREE
+);
+constexpr uint32_t PAGE_DUPLICATE_OVERWRITE_COLOR = selection_visual::structureSelectionColor(
+    selection_visual::StructureSelectionVisualRole::DESTINATION_OVERWRITE
+);
+constexpr uint32_t PAGE_DUPLICATE_BLOCKED_COLOR = selection_visual::structureSelectionColor(
+    selection_visual::StructureSelectionVisualRole::DESTINATION_BLOCKED
+);
 
 template <size_t N>
 FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {

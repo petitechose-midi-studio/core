@@ -275,9 +275,9 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
         origin,
         38,
         icons::MIDI_CHANNEL,
-        "MIDI OUTPUT",
+        "MIDI output",
         cache_.route.data(),
-        theme::color::STEP_STATE,
+        theme::color::ROUTING,
         cache_.selectedProperty ==
             core::state::project::ProjectTrackEditorProperty::CHANNEL,
         cache_.trackEnabled
@@ -287,7 +287,7 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
         origin,
         100,
         icons::OFFSET,
-        "DELAY",
+        "Delay",
         cache_.delay.data(),
         theme::color::STEP_NUDGE,
         cache_.selectedProperty ==
@@ -306,7 +306,7 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
     drawLabel(
         layer,
         translated(origin, 12, 173, 142, 16),
-        "TYPE",
+        "Type",
         fonts.meta_label(),
         cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,
         cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55

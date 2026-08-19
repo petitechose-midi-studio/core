@@ -52,6 +52,57 @@ FLASHMEM ms::ui::MenuRowTone toMenuRowTone(
     }
 }
 
+FLASHMEM const char* menuIcon(core::state::project::ProjectMenuIcon icon) {
+    using Icon = core::state::project::ProjectMenuIcon;
+    switch (icon) {
+        case Icon::SCALE:
+            return standalone::icons::SCALE;
+        case Icon::TEMPO:
+            return standalone::icons::TEMPO;
+        case Icon::SWING:
+            return standalone::icons::SWING;
+        case Icon::CLOCK_SYNC:
+            return standalone::icons::CLOCK_SYNC;
+        case Icon::ROUTING:
+            return standalone::icons::ROUTING;
+        case Icon::STORAGE:
+            return standalone::icons::STORAGE;
+        case Icon::PATTERN:
+            return standalone::icons::PATTERN;
+        case Icon::CLIP:
+            return standalone::icons::CLIP;
+        case Icon::ACTION_PASTE:
+            return standalone::icons::ACTION_PASTE;
+        case Icon::MIDI_CC:
+            return standalone::icons::MIDI_CC;
+        case Icon::NOTE_PROP_PITCH:
+            return standalone::icons::NOTE_PROP_PITCH;
+        case Icon::LOCK:
+            return standalone::icons::LOCK;
+        case Icon::TRANSPORT_PLAY:
+            return standalone::icons::TRANSPORT_PLAY;
+        case Icon::SETTINGS_GEAR:
+            return standalone::icons::SETTINGS_GEAR;
+        case Icon::MIDI_CHANNEL:
+            return standalone::icons::MIDI_CHANNEL;
+        case Icon::ACTION_SAVE:
+            return standalone::icons::ACTION_SAVE;
+        case Icon::ACTION_RENAME:
+            return standalone::icons::ACTION_RENAME;
+        case Icon::ACTION_NEW_PROJECT:
+            return standalone::icons::ACTION_NEW_PROJECT;
+        case Icon::ACTION_LOAD:
+            return standalone::icons::ACTION_LOAD;
+        case Icon::VIEW_PROJECT:
+            return standalone::icons::VIEW_PROJECT;
+        case Icon::ACTION_CANCEL:
+            return standalone::icons::ACTION_CANCEL;
+        case Icon::NONE:
+        default:
+            return "";
+    }
+}
+
 FLASHMEM core::state::project::ProjectTab tabAt(uint8_t index) {
     return core::state::project::projectRootTabAt(index);
 }
@@ -74,7 +125,7 @@ FLASHMEM const char* tabIcon(core::state::project::ProjectTab tab) {
             return standalone::icons::ROUTING;
         case core::state::project::ProjectTab::OVERVIEW:
         default:
-            return standalone::icons::HOME;
+            return standalone::icons::PROJECT_OVERVIEW;
     }
 }
 
@@ -307,13 +358,13 @@ void ProjectView::render() {
                     node ==
                             core::state::project::ProjectNodeId::
                                 SAVE_AS_PROJECT_NAME
-                        ? "SAVE AS"
-                        : "RENAME",
+                        ? "Save as"
+                        : "Rename",
                 .meta = state_refs_.navigation.lifecycleFeedback.empty()
                     ? (node ==
                                core::state::project::ProjectNodeId::
                                    MODULATOR_SOURCE_RENAME
-                           ? "SOURCE"
+                           ? "Source"
                            : "")
                     : state_refs_.navigation.lifecycleFeedback.get(),
                 .name =
@@ -360,6 +411,7 @@ void ProjectView::render() {
         rows_[i] = ms::ui::MenuRow{
             .label = source.label,
             .value = source.displayValue(),
+            .icon = menuIcon(source.icon),
             .kind = toMenuRowKind(source.kind),
             .tone = toMenuRowTone(source.tone),
             .enabled = source.enabled,
@@ -375,6 +427,7 @@ void ProjectView::render() {
         .rowCount = page.rowCount,
         .selectedIndex = page.selectedIndex,
         .dataRevision = page.dataRevision,
+        .iconFont = standalone_fonts.icons_14,
         .visualTokens = &theme::CONTROLLER_LIST_VISUALS,
     });
 }

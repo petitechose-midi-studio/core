@@ -10,6 +10,7 @@
 namespace {
 
 using core::state::project::ProjectNodeId;
+using core::state::project::ProjectMenuIcon;
 using core::state::project::ProjectMenuRowTone;
 using core::state::project::ProjectTab;
 namespace scale_catalog = core::state::sequencer::scale_catalog;
@@ -63,7 +64,7 @@ void test_overview_root_is_a_navigable_project_summary() {
     );
     assert(page.rowCount == 5);
     assert(page.selectedIndex == 0);
-    assert(std::string(page.meta) == "OVERVIEW  p002*");
+    assert(std::string(page.meta) == "Overview  p002*");
     assert(std::string(page.rows[0].label) == "Music");
     assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[0].enabled);
@@ -79,6 +80,11 @@ void test_overview_root_is_a_navigable_project_summary() {
     assert(std::string(page.rows[4].label) == "Storage");
     assert(std::string(rowValue(page.rows[4])) == "Modified");
     assert(page.rows[4].target == ProjectNodeId::STORAGE_ROOT);
+    assert(page.rows[0].icon == ProjectMenuIcon::SCALE);
+    assert(page.rows[1].icon == ProjectMenuIcon::TEMPO);
+    assert(page.rows[2].icon == ProjectMenuIcon::CLOCK_SYNC);
+    assert(page.rows[3].icon == ProjectMenuIcon::ROUTING);
+    assert(page.rows[4].icon == ProjectMenuIcon::STORAGE);
 
     assert(core::state::project::enterFocusedProjectRow(navigation));
     assert(navigation.activeTab.get() == ProjectTab::MUSIC);
@@ -170,16 +176,19 @@ void test_new_project_confirmation_page_defaults_to_save_choice() {
 
     const auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 3);
-    assert(std::string(page.meta) == "NEW PROJECT?");
-    assert(std::string(page.rows[0].label) == "Save As New");
+    assert(std::string(page.meta) == "New project?");
+    assert(std::string(page.rows[0].label) == "Save as new");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "Next");
-    assert(std::string(page.rows[1].label) == "Don't Save");
+    assert(std::string(page.rows[1].label) == "Don't save");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "Reset");
     assert(page.rows[1].tone == ProjectMenuRowTone::Destructive);
     assert(std::string(page.rows[2].label) == "Cancel");
     assert(page.rows[2].enabled);
+    assert(page.rows[0].icon == ProjectMenuIcon::ACTION_NEW_PROJECT);
+    assert(page.rows[1].icon == ProjectMenuIcon::ACTION_NEW_PROJECT);
+    assert(page.rows[2].icon == ProjectMenuIcon::ACTION_CANCEL);
 
     assert(core::state::project::backProjectNavigation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
@@ -199,10 +208,10 @@ void test_new_project_confirmation_uses_current_project_identity() {
 
     assert(page.rowCount == 3);
     assert(page.selectedIndex == 0);
-    assert(std::string(page.rows[0].label) == "Save & Reset");
+    assert(std::string(page.rows[0].label) == "Save & reset");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "p002");
-    assert(std::string(page.rows[1].label) == "Don't Save");
+    assert(std::string(page.rows[1].label) == "Don't save");
     assert(std::string(rowValue(page.rows[1])) == "Reset");
 
     std::cout << "[PASS] test_new_project_confirmation_uses_current_project_identity\n";
@@ -223,6 +232,11 @@ void test_music_scale_rows_use_project_scale_context() {
     assert(std::string(rowValue(page.rows[0])) == "F#");
     assert(std::string(rowValue(page.rows[1])) == "Whole Tone");
     assert(std::string(rowValue(page.rows[2])) == "Down");
+    assert(page.rows[0].icon == ProjectMenuIcon::NOTE_PROP_PITCH);
+    assert(page.rows[1].icon == ProjectMenuIcon::SCALE);
+    assert(page.rows[2].icon == ProjectMenuIcon::LOCK);
+    assert(page.rows[3].icon == ProjectMenuIcon::PATTERN);
+    assert(page.rows[4].icon == ProjectMenuIcon::CLIP);
 
     std::cout << "[PASS] test_music_scale_rows_use_project_scale_context\n";
 }
@@ -242,14 +256,19 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     assert(page.rows[0].hasTarget);
     assert(page.rows[0].target == ProjectNodeId::MUSIC_SCALE);
     assert(std::string(rowValue(page.rows[0])) == "F Harm Minor >");
-    assert(std::string(page.rows[3].label) == "Step Paste");
+    assert(std::string(page.rows[3].label) == "Step paste");
     assert(page.rows[3].kind == core::state::project::ProjectMenuRowKind::Value);
     assert(std::string(rowValue(page.rows[3])) == "Extend");
-    assert(std::string(page.rows[4].label) == "CC Defaults");
+    assert(std::string(page.rows[4].label) == "CC defaults");
     assert(std::string(rowValue(page.rows[4])) == "4 Lanes");
     assert(page.rows[4].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[4].hasTarget);
     assert(page.rows[4].target == ProjectNodeId::MUSIC_CC_DEFAULTS);
+    assert(page.rows[0].icon == ProjectMenuIcon::SCALE);
+    assert(page.rows[1].icon == ProjectMenuIcon::PATTERN);
+    assert(page.rows[2].icon == ProjectMenuIcon::CLIP);
+    assert(page.rows[3].icon == ProjectMenuIcon::ACTION_PASTE);
+    assert(page.rows[4].icon == ProjectMenuIcon::MIDI_CC);
 
     navigation.focusedRow.set(4U);
     assert(core::state::project::enterFocusedProjectRow(navigation));
@@ -257,13 +276,14 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     assert(navigation.depth.get() == 1U);
     const auto defaultsPage = core::state::project::buildProjectMenuPage(navigation, context);
     assert(defaultsPage.rowCount == 4U);
-    assert(std::string(defaultsPage.meta) == "MUSIC > CC DEFAULTS");
+    assert(std::string(defaultsPage.meta) == "Music > CC defaults");
     assert(std::string(defaultsPage.rows[0].label) == "Lane 1");
     assert(std::string(rowValue(defaultsPage.rows[0])) == "CC 1");
     assert(std::string(rowValue(defaultsPage.rows[1])) == "CC 11");
     assert(std::string(rowValue(defaultsPage.rows[2])) == "CC 74");
     assert(std::string(defaultsPage.rows[3].label) == "Lane 4");
     assert(std::string(rowValue(defaultsPage.rows[3])) == "CC 71");
+    assert(defaultsPage.rows[0].icon == ProjectMenuIcon::MIDI_CC);
     assert(core::state::project::backProjectNavigation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::MUSIC_ROOT);
     assert(navigation.focusedRow.get() == 4U);
@@ -287,6 +307,11 @@ void test_transport_rows_use_runtime_context() {
     assert(std::string(rowValue(page.rows[1])) == "12%");
     assert(std::string(rowValue(page.rows[2])) == "Master");
     assert(std::string(rowValue(page.rows[3])) == "Restart");
+    assert(page.rows[0].icon == ProjectMenuIcon::TEMPO);
+    assert(page.rows[1].icon == ProjectMenuIcon::SWING);
+    assert(page.rows[2].icon == ProjectMenuIcon::CLOCK_SYNC);
+    assert(page.rows[3].icon == ProjectMenuIcon::TRANSPORT_PLAY);
+    assert(page.rows[4].icon == ProjectMenuIcon::SETTINGS_GEAR);
 
     std::cout << "[PASS] test_transport_rows_use_runtime_context\n";
 }
@@ -309,6 +334,8 @@ void test_routing_rows_expose_all_track_output_channels() {
     assert(std::string(rowValue(page.rows[3])) == "MIDI Ch 10");
     assert(std::string(page.rows[15].label) == "Track 16");
     assert(std::string(rowValue(page.rows[15])) == "MIDI Ch 16");
+    assert(page.rows[0].icon == ProjectMenuIcon::MIDI_CHANNEL);
+    assert(page.rows[15].icon == ProjectMenuIcon::MIDI_CHANNEL);
 
     std::cout << "[PASS] test_routing_rows_expose_all_track_output_channels\n";
 }
@@ -326,13 +353,19 @@ void test_storage_has_six_rows_and_read_only_project_identity() {
         projectContext("p002", "p002", true, true)
     );
     assert(page.rowCount == 6);
-    assert(std::string(page.meta) == "STORAGE  p002*");
+    assert(std::string(page.meta) == "Storage  p002*");
     for (uint8_t row = 0; row < 5U; ++row) {
         assert(page.rows[row].tone == ProjectMenuRowTone::Neutral);
     }
     assert(std::string(page.rows[5].label) == "Project");
     assert(page.rows[5].kind == core::state::project::ProjectMenuRowKind::Disabled);
     assert(std::string(rowValue(page.rows[5])) == "p002");
+    assert(page.rows[0].icon == ProjectMenuIcon::ACTION_SAVE);
+    assert(page.rows[1].icon == ProjectMenuIcon::ACTION_SAVE);
+    assert(page.rows[2].icon == ProjectMenuIcon::ACTION_RENAME);
+    assert(page.rows[3].icon == ProjectMenuIcon::ACTION_NEW_PROJECT);
+    assert(page.rows[4].icon == ProjectMenuIcon::ACTION_LOAD);
+    assert(page.rows[5].icon == ProjectMenuIcon::VIEW_PROJECT);
     assert(navigation.contentRevision.get() == revisionBefore);
 
     core::state::project::navigateProjectRows(navigation, 1.0f);
@@ -359,10 +392,11 @@ void test_project_name_editor_exposes_qwerty_entry_state() {
 
     const auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 2);
-    assert(std::string(page.meta) == "RENAME");
+    assert(std::string(page.meta) == "Rename");
     assert(std::string(page.rows[0].label) == "Name");
     assert(!page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "p042");
+    assert(page.rows[0].icon == ProjectMenuIcon::ACTION_RENAME);
     assert(std::string(page.rows[1].label) == "Key");
     assert(page.rows[1].kind == core::state::project::ProjectMenuRowKind::Value);
     assert(std::string(rowValue(page.rows[1])) == "q");
@@ -384,11 +418,13 @@ void test_load_project_picker_shows_detected_projects() {
 
     auto page = core::state::project::buildProjectMenuPage(navigation);
     assert(page.rowCount == 2);
-    assert(std::string(page.meta) == "LOAD PROJECT");
+    assert(std::string(page.meta) == "Load project");
     assert(std::string(page.rows[0].label) == "p001");
     assert(std::string(rowValue(page.rows[0])) == "Load");
     assert(page.rows[0].enabled);
     assert(std::string(page.rows[1].label) == "p003");
+    assert(page.rows[0].icon == ProjectMenuIcon::VIEW_PROJECT);
+    assert(page.rows[1].icon == ProjectMenuIcon::VIEW_PROJECT);
 
     assert(core::state::project::backProjectNavigation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
@@ -413,18 +449,22 @@ void test_load_project_confirmation_prompts_dirty_session_choice() {
         projectContext("p002", "p002", true, true)
     );
     assert(page.rowCount == 4);
-    assert(std::string(page.meta) == "LOAD DIRTY?");
-    assert(std::string(page.rows[0].label) == "Save & Load");
+    assert(std::string(page.meta) == "Load dirty?");
+    assert(std::string(page.rows[0].label) == "Save & load");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "p002 > p003");
-    assert(std::string(page.rows[1].label) == "Save As & Load");
+    assert(std::string(page.rows[1].label) == "Save as & load");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "New > p003");
-    assert(std::string(page.rows[2].label) == "Don't Save");
+    assert(std::string(page.rows[2].label) == "Don't save");
     assert(page.rows[2].enabled);
     assert(std::string(rowValue(page.rows[2])) == "Load p003");
     assert(page.rows[2].tone == ProjectMenuRowTone::Destructive);
     assert(std::string(page.rows[3].label) == "Cancel");
+    assert(page.rows[0].icon == ProjectMenuIcon::ACTION_LOAD);
+    assert(page.rows[1].icon == ProjectMenuIcon::ACTION_LOAD);
+    assert(page.rows[2].icon == ProjectMenuIcon::ACTION_LOAD);
+    assert(page.rows[3].icon == ProjectMenuIcon::ACTION_CANCEL);
 
     assert(core::state::project::backProjectNavigation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
@@ -445,10 +485,10 @@ void test_load_project_confirmation_without_saved_identity_disables_save_choice(
         projectContext("", "untitled", true, false)
     );
     assert(page.rowCount == 3);
-    assert(std::string(page.rows[0].label) == "Save As & Load");
+    assert(std::string(page.rows[0].label) == "Save as & load");
     assert(page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "untitled > p004");
-    assert(std::string(page.rows[1].label) == "Don't Save");
+    assert(std::string(page.rows[1].label) == "Don't save");
     assert(page.rows[1].enabled);
     assert(std::string(rowValue(page.rows[1])) == "Load p004");
     assert(std::string(page.rows[2].label) == "Cancel");

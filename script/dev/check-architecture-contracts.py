@@ -1539,7 +1539,12 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
         )
 
     menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
-    if menu.count('row("Clock", clockModeValue(context.clockMode)') != 1:
+    clock_rows = re.findall(
+        r'row\s*\(\s*"Clock"\s*,\s*clockModeValue\s*\(\s*context\.clockMode\s*\)\s*,'
+        r"\s*ProjectMenuRowKind::Value\s*,\s*ProjectNodeId::TRANSPORT_ROOT",
+        menu,
+    )
+    if len(clock_rows) != 1:
         errors.append(
             f"{PROJECT_MENU_MODEL_SOURCE}: Transport Clock Device control must remain visible"
         )
@@ -2574,13 +2579,13 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
 
     frozen_labels = (
-        ("STANDALONE_NONE_LABEL", "APPLY OR DISCARD DRAFT"),
-        ("STANDALONE_TRACK_LABEL", "APPLY BEFORE CHANGING TRACK"),
-        ("STANDALONE_VIEW_LABEL", "APPLY BEFORE CHANGING VIEW"),
-        ("STANDALONE_PROJECT_LOAD_LABEL", "APPLY BEFORE LOADING"),
-        ("STANDALONE_RESET_LABEL", "APPLY BEFORE RESET"),
-        ("STANDALONE_STRUCTURE_EDIT_LABEL", "APPLY BEFORE STRUCTURE EDIT"),
-        ("STANDALONE_HISTORY_LABEL", "APPLY BEFORE UNDO/REDO"),
+        ("STANDALONE_NONE_LABEL", "Apply or discard draft"),
+        ("STANDALONE_TRACK_LABEL", "Apply before changing track"),
+        ("STANDALONE_VIEW_LABEL", "Apply before changing view"),
+        ("STANDALONE_PROJECT_LOAD_LABEL", "Apply before loading"),
+        ("STANDALONE_RESET_LABEL", "Apply before reset"),
+        ("STANDALONE_STRUCTURE_EDIT_LABEL", "Apply before structure edit"),
+        ("STANDALONE_HISTORY_LABEL", "Apply before undo/redo"),
         ("PROPERTY_NONE_LABEL", "Apply or discard"),
         ("PROPERTY_TRACK_LABEL", "Apply before track"),
         ("PROPERTY_VIEW_LABEL", "Apply before view"),

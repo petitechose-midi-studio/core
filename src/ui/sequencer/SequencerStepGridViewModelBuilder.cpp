@@ -65,6 +65,16 @@ FLASHMEM void applyStepPasteFootprint(
 FLASHMEM grid::StepGridFrameState buildSequencerStepGridProps(
     const SequencerViewModelSource& source
 ) {
+    if (sequencerPreviewingEmptyTrack(source)) {
+        grid::StepGridFrameState frame{};
+        frame.accentColor = standalone::theme::color::trackColor(
+            core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+                source.trackNavigation.previewTrackIndex.get()
+            )
+        );
+        return frame;
+    }
+
     auto frame = grid::buildStepGridFrameState(
         source.sequencer,
         source.tracks.projectScaleSettings(),

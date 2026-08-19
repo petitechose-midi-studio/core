@@ -14,9 +14,9 @@ namespace core::ui {
 
 namespace {
 
-const char MODULATOR_SELECT_TRACK_TITLE[] PROGMEM = "SELECT TRACK";
-const char MODULATOR_SELECT_PAGE_TITLE[] PROGMEM = "SELECT PAGE";
-const char MODULATOR_SELECT_MACRO_TITLE[] PROGMEM = "SELECT MACRO";
+const char MODULATOR_SELECT_TRACK_TITLE[] PROGMEM = "Select track";
+const char MODULATOR_SELECT_PAGE_TITLE[] PROGMEM = "Select page";
+const char MODULATOR_SELECT_MACRO_TITLE[] PROGMEM = "Select macro";
 
 }  // namespace
 
@@ -186,7 +186,7 @@ void ProjectView::renderModulators() {
                    ? " · New DAHDSR"
                    : (state_refs_.navigation.creatingModulatorKind ==
                               core::state::modulation::ModulatorKind::RECORDED_SHAPE
-                          ? " · New Recorded Shape"
+                          ? " · New recorded shape"
                           : " · New LFO"))
             : "";
         if (level == PickerLevel::TRACK) {
@@ -297,11 +297,11 @@ void ProjectView::renderModulators() {
                         )).count
               );
     }
-    const char* title = source ? source->name.data() : "SOURCE";
+    const char* title = source ? source->name.data() : "Source";
     if (node == ProjectNodeId::MODULATORS_ROOT) {
-        title = "MODULATORS";
+        title = "Modulators";
     } else if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
-        title = "ADD SOURCE";
+        title = "Add source";
     } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         using PickerLevel =
             core::state::project::ModulatorDestinationPickerLevel;
@@ -312,7 +312,7 @@ void ProjectView::renderModulators() {
                    ? MODULATOR_SELECT_PAGE_TITLE
                    : MODULATOR_SELECT_MACRO_TITLE);
     } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {
-        title = "DESTINATIONS";
+        title = "Destinations";
     }
     modulator_registry_->render({
         .title = title,
@@ -413,7 +413,7 @@ void ProjectView::renderModulatorActionStrips(
     if (destinationAudition) {
         bottom.visible = true;
         bottom.slots[2] = makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_APPLY,
+            standalone::icons::STATUS_PREVIEW,
             ContextActionStripVisualState::ACTIVE,
             ContextActionStripTone::POSITIVE
         );
@@ -434,7 +434,7 @@ void ProjectView::renderModulatorActionStrips(
                core::state::modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
         bottom.slots[0] = recordedShapeRecordFocus
             ? makeStandaloneIconStripSlot(
-                  standalone::icons::MACRO_AUTOMATION,
+                  standalone::icons::AUTOMATION,
                   state_refs_.macroUi.recordedShapeCapture.active() &&
                           state_refs_.macroUi.recordedShapeCapture.mode ==
                               core::state::modulation::

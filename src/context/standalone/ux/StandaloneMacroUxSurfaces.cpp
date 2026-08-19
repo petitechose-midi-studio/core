@@ -806,6 +806,38 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         return true;
     }
 
+    const auto recordedShapeStatus = macro_ui_.recordedShapeCapture.status;
+    const bool recordedShapeTerminal =
+        recordedShapeStatus == core::state::modulation::
+            ProjectRecordedShapeCaptureStatus::COMMITTED ||
+        recordedShapeStatus == core::state::modulation::
+            ProjectRecordedShapeCaptureStatus::NO_CHANGE ||
+        recordedShapeStatus == core::state::modulation::
+            ProjectRecordedShapeCaptureStatus::CANCELLED ||
+        recordedShapeStatus == core::state::modulation::
+            ProjectRecordedShapeCaptureStatus::INVALIDATED ||
+        recordedShapeStatus == core::state::modulation::
+            ProjectRecordedShapeCaptureStatus::SCRATCH_UNAVAILABLE ||
+        recordedShapeStatus == core::state::modulation::
+            ProjectRecordedShapeCaptureStatus::COMMIT_FAILED;
+    const auto describeRecordedShapeRelease = [&]() {
+        const auto& capture = macro_ui_.recordedShapeCapture;
+        const bool touched = capture.take != nullptr && capture.take->touched;
+        const bool committed = capture.status == core::state::modulation::
+            ProjectRecordedShapeCaptureStatus::COMMITTED;
+        const bool commitAttempted = committed ||
+            capture.status == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::INVALIDATED ||
+            capture.status == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::COMMIT_FAILED;
+        out.effect = touched || commitAttempted
+            ? "commit_macro_recorded_shape"
+            : "discard_empty_macro_recorded_shape";
+        out.operationStatus = recordedShapeOperationStatus(capture.status);
+        out.outcome = recordedShapeOutcome(capture.status);
+        contextual_recorded_shape_armed_ = false;
+    };
+
     const auto phase = macro_edit_.flowPhase.get();
     if (phase == core::state::MacroEditFlowPhase::EDIT) {
         const auto data = core::context::standalone::macro_overlay_presenter::buildEditRenderData(source);
@@ -841,21 +873,6 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             macro_edit_.contextSelectorActive.get() && modulationRow &&
             contextAction.action == core::state::macro::MacroContextAction::
                 MODULATION_RECORD_NEW_SHAPE;
-        const auto recordedShapeStatus =
-            macro_ui_.recordedShapeCapture.status;
-        const bool recordedShapeTerminal =
-            recordedShapeStatus == core::state::modulation::
-                ProjectRecordedShapeCaptureStatus::COMMITTED ||
-            recordedShapeStatus == core::state::modulation::
-                ProjectRecordedShapeCaptureStatus::NO_CHANGE ||
-            recordedShapeStatus == core::state::modulation::
-                ProjectRecordedShapeCaptureStatus::CANCELLED ||
-            recordedShapeStatus == core::state::modulation::
-                ProjectRecordedShapeCaptureStatus::INVALIDATED ||
-            recordedShapeStatus == core::state::modulation::
-                ProjectRecordedShapeCaptureStatus::SCRATCH_UNAVAILABLE ||
-            recordedShapeStatus == core::state::modulation::
-                ProjectRecordedShapeCaptureStatus::COMMIT_FAILED;
         out.mode = "macro.edit";
         out.target = destinationRow
             ? "macro_destination"
@@ -916,7 +933,12 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                 copyValueLabel(out.valueLabel, data.interactionValue.data());
             }
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "open_macro_config_value";
+            if (contextual_recorded_shape_armed_ ||
+                contextualRecordedShapeRecord) {
+                describeRecordedShapeRelease();
+            } else {
+                out.effect = "open_macro_config_value";
+            }
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "close_macro_edit";
             contextual_automation_record_seen_ = false;
@@ -937,24 +959,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
             if (contextual_recorded_shape_armed_ ||
                 contextualRecordedShapeRecord) {
-                const auto& capture = macro_ui_.recordedShapeCapture;
-                const bool touched = capture.take != nullptr &&
-                    capture.take->touched;
-                const bool committed = capture.status == core::state::
-                    modulation::ProjectRecordedShapeCaptureStatus::COMMITTED;
-                const bool commitAttempted = committed ||
-                    capture.status == core::state::modulation::
-                        ProjectRecordedShapeCaptureStatus::INVALIDATED ||
-                    capture.status == core::state::modulation::
-                        ProjectRecordedShapeCaptureStatus::COMMIT_FAILED;
-                out.effect = touched || commitAttempted
-                    ? "commit_macro_recorded_shape"
-                    : "discard_empty_macro_recorded_shape";
-                out.operationStatus = recordedShapeOperationStatus(
-                    capture.status
-                );
-                out.outcome = recordedShapeOutcome(capture.status);
-                contextual_recorded_shape_armed_ = false;
+                describeRecordedShapeRelease();
             } else if (contextual_automation_record_seen_) {
                 out.effect = "commit_macro_automation_take";
                 contextual_automation_record_seen_ = false;
@@ -1198,9 +1203,16 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                            Config::ButtonID::NAV,
                            oc::core::input::ButtonBindingType::RELEASE
                        )) {
-                out.effect = row <= 1
-                    ? "start_destination_audition"
-                    : "open_existing_modulator_picker";
+                if (row == 3 && contextual_recorded_shape_armed_ &&
+                    recordedShapeTerminal) {
+                    describeRecordedShapeRelease();
+                } else {
+                    out.effect = row <= 1
+                        ? "start_destination_audition"
+                        : (row == 3
+                            ? "show_macro_context_properties"
+                            : "open_existing_modulator_picker");
+                }
             } else if (isButton(
                            event,
                            Config::ButtonID::LEFT_TOP,

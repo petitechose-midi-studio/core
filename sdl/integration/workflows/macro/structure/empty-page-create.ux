@@ -1,0 +1,15 @@
+# UX workflow: create an explicitly empty Macro Page.
+# Purpose: proves that the terminal Page add target previews no stale Macro
+# content and that confirming it creates a Page with no implicit Macro slot.
+# Expect: capture_changed:source_page=page_add_target, capture_changed:page_add_target=empty_page_created
+
+0 scenario macro-automation-clean
+80 capture screen source_page
+
+# The next Page is a non-created preview and must not reuse the active Page.
+180 encoder NAV 1
+360 capture screen page_add_target
+
+# Confirm through the ordinary NAV grammar. The new Page remains truly empty.
+480 tap NAV 60
+680 capture screen empty_page_created

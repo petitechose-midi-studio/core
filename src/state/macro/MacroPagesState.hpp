@@ -55,6 +55,8 @@ struct MacroPageData {
 
     /// Initialize with page number
     void initDefault(uint8_t pageIndex);
+    /// Initialize an explicitly created Page without an implicit Macro slot.
+    void initEmpty(uint8_t pageIndex);
 
     bool isMacroActive(uint8_t macroIndex) const {
         if (macroIndex >= MACRO_COUNT) return false;

@@ -31,7 +31,7 @@ void assertHistoryRejection(const seq::SequencerState& sequencer, const char* ex
     const auto& feedback = sequencer.historyFeedback;
     assert(feedback.visible.get());
     assert(feedback.revision.get() == expectedRevision);
-    assert(std::strcmp(feedback.line1.data(), "NO CHANGE") == 0);
+    assert(std::strcmp(feedback.line1.data(), "No change") == 0);
     assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
     assert(std::strcmp(feedback.line3.data(), "") == 0);
 }
@@ -325,11 +325,11 @@ void test_transition_rejection_is_active_only_idempotent_and_exactly_labelled() 
     assert(std::strcmp(
                core::ui::sequencer::standaloneStepContentDraftTransitionLabel(
                    Transition::STRUCTURE_EDIT),
-               "APPLY BEFORE STRUCTURE EDIT") == 0);
+               "Apply before structure edit") == 0);
     assert(std::strcmp(
                core::ui::sequencer::standaloneStepContentDraftTransitionLabel(
                    Transition::HISTORY),
-               "APPLY BEFORE UNDO/REDO") == 0);
+               "Apply before undo/redo") == 0);
     assert(std::strcmp(
                core::ui::sequencer::propertyOverlayStepContentDraftTransitionLabel(
                    Transition::STRUCTURE_EDIT),

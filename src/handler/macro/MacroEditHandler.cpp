@@ -269,6 +269,12 @@ FLASHMEM void MacroEditHandler::setupBindings() {
         })
         .then([this]() { openValueSelector(); });
 
+    buttons_.button(navButton)
+        .release()
+        .scope(mainScope)
+        .when([this]() { return macro_edit_.contextSelectorActive.get(); })
+        .then([this]() { endContextSelector(); });
+
     buttons_.button(leftTopButton)
         .release()
         .scope(mainScope)

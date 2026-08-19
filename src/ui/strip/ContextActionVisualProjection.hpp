@@ -122,20 +122,32 @@ inline const char* iconGlyph(
     using Icon = core::state::contextual::ContextIconId;
     switch (icon) {
         case Icon::CREATE:
+            return ::standalone::icons::ACTION_CREATE;
         case Icon::APPLY:
-            return ::standalone::icons::ACTION_APPLY;
         case Icon::ENTER:
+        case Icon::APPLIED:
             return ::standalone::icons::ACTION_VALIDATE;
         case Icon::EDIT:
             return ::standalone::icons::SETTINGS_GEAR;
         case Icon::SAVE:
-            return ::standalone::icons::STORAGE;
+            return ::standalone::icons::ACTION_SAVE;
         case Icon::LOAD:
-            return ::standalone::icons::ACTION_APPLY;
+            return ::standalone::icons::ACTION_LOAD;
         case Icon::CLEAR:
             return ::standalone::icons::ACTION_CLEAR;
+        case Icon::RESET:
+            return ::standalone::icons::ACTION_RESET;
         case Icon::REMOVE:
             return ::standalone::icons::ACTION_REMOVE;
+        case Icon::COPY:
+            return ::standalone::icons::ACTION_COPY;
+        case Icon::PASTE:
+            return ::standalone::icons::ACTION_PASTE;
+        case Icon::RENAME:
+            return ::standalone::icons::ACTION_RENAME;
+        case Icon::MUTE:
+        case Icon::UNMUTE:
+            return ::standalone::icons::TRACK_MUTE;
         case Icon::ROUTE_INHERITED:
             return ::standalone::icons::ROUTING;
         case Icon::ROUTE_PINNED:
@@ -147,17 +159,24 @@ inline const char* iconGlyph(
             return ::standalone::icons::STATUS_ERROR;
         case Icon::QUEUED:
             return ::standalone::icons::STATUS_QUEUED;
-        case Icon::APPLIED:
-            return ::standalone::icons::ACTION_VALIDATE;
         case Icon::WARNING:
             return ::standalone::icons::STATUS_WARNING;
         case Icon::PREVIEW:
             return ::standalone::icons::STATUS_PREVIEW;
         case Icon::HOLD:
             return ::standalone::icons::ACTION_OVERWRITE;
-        default:
-            return ::standalone::icons::MIDI_CC;
+        case Icon::AUTOMATION:
+            return ::standalone::icons::AUTOMATION;
+        case Icon::MODULATION:
+            return ::standalone::icons::MODULATION;
+        case Icon::MANUAL:
+            return ::standalone::icons::KNOB;
+        case Icon::RESUME:
+            return ::standalone::icons::STATUS_RESUME;
+        case Icon::NONE:
+            return nullptr;
     }
+    return nullptr;
 }
 
 inline const char* feedbackIconGlyph(

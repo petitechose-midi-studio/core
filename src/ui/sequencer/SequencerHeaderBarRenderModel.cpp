@@ -4,11 +4,13 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "ui/interaction/StructureSelectionVisual.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::sequencer::header_bar {
 
 namespace theme = standalone::theme;
+namespace selection_visual = core::ui::interaction;
 
 namespace {
 
@@ -65,11 +67,17 @@ FLASHMEM TopRowVisualState buildTopRowVisualState(
     state.accentOpa = props.selectingTrack ? LV_OPA_COVER : LV_OPA_80;
     state.backgroundColor = theme::color::BACKGROUND;
     state.backgroundOpa = LV_OPA_COVER;
-    state.badgeBgColor = selectionMode ? theme::color::TEXT_PRIMARY : accentColor;
+    state.badgeBgColor = selectionMode
+        ? selection_visual::structureSelectionColor(
+              selection_visual::StructureSelectionVisualRole::SELECTED
+          )
+        : accentColor;
     state.badgeBgOpa =
         showBadge ? (selectionMode ? LV_OPA_20 : static_cast<lv_opa_t>(24)) : LV_OPA_TRANSP;
     state.badgeBorderWidth = (showBadge && selectionMode) ? 1 : 0;
-    state.badgeBorderColor = theme::color::TEXT_PRIMARY;
+    state.badgeBorderColor = selection_visual::structureSelectionColor(
+        selection_visual::StructureSelectionVisualRole::SELECTED
+    );
     state.badgeBorderOpa = (showBadge && selectionMode) ? LV_OPA_80 : LV_OPA_TRANSP;
     state.badgeTextOpa = showBadge ? LV_OPA_80 : LV_OPA_TRANSP;
     return state;

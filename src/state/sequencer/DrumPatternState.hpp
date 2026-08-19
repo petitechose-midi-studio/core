@@ -175,6 +175,8 @@ bool setDrumLaneRole(DrumLaneDescriptor& descriptor, DrumLaneRole role);
 bool setDrumLaneName(DrumLaneDescriptor& descriptor, const char* name);
 bool setDrumLaneIcon(DrumLaneDescriptor& descriptor, DrumLaneIcon icon);
 bool setDrumLaneColorIndex(DrumLaneDescriptor& descriptor, uint8_t colorIndex);
+uint8_t drumLaneIdentityOverrideCount(const DrumLaneDescriptor& descriptor);
+bool resetDrumLaneIdentityOverrides(DrumLaneDescriptor& descriptor);
 
 struct DrumKitState {
     uint8_t laneCount = DRUM_DEFAULT_LANE_COUNT;

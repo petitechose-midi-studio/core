@@ -16,6 +16,7 @@
 #include "../../src/handler/macro/MacroAutomationHandler.hpp"
 #include "../../src/handler/macro/MacroEditDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/macro/MacroEditMenuModel.hpp"
 #include "../../src/state/modulation/ProjectModulationDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
@@ -923,6 +924,46 @@ void test_new_adsr_selection_keeps_create_origin_and_exact_return_ids() {
         << "[PASS] New ADSR keeps Create origin and exact Project return IDs\n";
 }
 
+void test_record_shape_row_opens_the_existing_context_capture() {
+    MacroAutomationHarness h;
+    h.state.pages.setMacroSlotActive(0U, true);
+    h.openModulationEditor();
+    h.handler.update(0U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 3U);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::EDIT);
+    assert(h.state.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
+    assert(h.state.macroEdit.focusedRow.get() ==
+           core::state::macro::macroRootRow(
+               core::state::macro::MacroRootItem::MODULATION
+           ));
+    assert(h.state.macroEdit.contextSelectorActive.get());
+    const auto rows = core::state::macro::buildMacroModulationRows(
+        h.state.pages.control.authored.modulation,
+        core::state::modulation::projectControlDestination({0U, 0U, 0U})
+    );
+    assert(core::state::macro::macroContextActionAt(
+        h.state.pages.control.authored.modulation,
+        rows,
+        core::state::macro::MacroRootItem::MODULATION,
+        h.state.macroEdit.contextPropertyIndex.get()
+    ).action ==
+           core::state::macro::MacroContextAction::
+               MODULATION_RECORD_NEW_SHAPE);
+    assert(h.encoderHw.getMode(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == oc::interface::EncoderMode::RAW);
+
+    std::cout << "[PASS] Record shape row reuses the contextual capture\n";
+}
+
 core::state::modulation::ModulatorId createReusableLfo(
     MacroAutomationHarness& h
 ) {
@@ -1347,6 +1388,7 @@ int main() {
     test_left_center_enables_coarse_length_and_offset_steps_temporarily();
     test_new_lfo_selection_opens_full_project_source_workspace();
     test_new_adsr_selection_keeps_create_origin_and_exact_return_ids();
+    test_record_shape_row_opens_the_existing_context_capture();
     test_stale_assignment_row_cannot_paste_over_replacement_edge();
     test_stale_all_row_cannot_clear_replacement_assignments();
     test_stale_assignment_row_cannot_remove_the_replacement_edge();

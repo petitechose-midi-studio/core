@@ -282,7 +282,7 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     auto strip = core::ui::buildMacroLeftActionStripProps(sourceFor(state));
     assert(strip.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
     assert(strip.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(strip.slots[1].icon == standalone::icons::MACRO_AUTOMATION);
+    assert(strip.slots[1].icon == standalone::icons::AUTOMATION);
     assert(strip.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
     assert(strip.slots[2].icon == standalone::icons::KNOB);
 
@@ -291,8 +291,8 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     );
     auto overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
     assert(overlay.visible);
-    assert(std::strcmp(overlay.label, "EDIT") == 0);
-    assert(std::strcmp(overlay.valueText.data(), "PRESS A MACRO") == 0);
+    assert(std::strcmp(overlay.label, "Edit") == 0);
+    assert(std::strcmp(overlay.valueText.data(), "Press a macro") == 0);
 
     std::array<uint8_t, 8> bases{};
     bases[0] = 32U;
@@ -308,9 +308,7 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
         core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE
     );
     overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
-    assert(overlay.visible);
-    assert(std::strcmp(overlay.label, "AUTOMATION TAKE") == 0);
-    assert(std::strcmp(overlay.valueText.data(), "4 BARS") == 0);
+    assert(!overlay.visible);
     auto header = core::ui::buildMacroHeaderBarProps(sourceFor(state));
     assert(header.automationTakePhase ==
            core::state::macro::MacroAutomationTakePhase::ARMED);
@@ -334,8 +332,7 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     assert(state.macroUi.automationTake.touch(0U, 48U, 1U));
     assert(state.macroUi.automationTake.touch(2U, 80U, 2U));
     overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
-    assert(std::strcmp(overlay.label, "RECORDING") == 0);
-    assert(std::strcmp(overlay.valueText.data(), "2 MACROS") == 0);
+    assert(!overlay.visible);
     const auto frame = core::ui::buildMacroViewFrameState(sourceFor(state));
     assert(frame.macros[0].automationRecording);
     assert(!frame.macros[1].automationRecording);
@@ -367,11 +364,14 @@ void test_macro_selection_projection_exposes_copy_collision_and_blocked_states()
         core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(strip.slots[0].visualState ==
            ContextActionStripVisualState::HIDDEN);
-    assert(strip.slots[2].showLabel);
+    assert(strip.slots[1].showLabel);
     assert(std::strcmp(
-        strip.slots[2].labelText.data(),
-        "CPY \xC2\xB7 2"
+        strip.slots[1].labelText.data(),
+        "2 selected"
     ) == 0);
+    assert(strip.slots[2].showIcon);
+    assert(strip.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(!strip.slots[2].showLabel);
     auto sourceSlot =
         core::ui::buildMacroWidgetProps(sourceFor(state), 0U);
     assert(sourceSlot.selected);
@@ -398,10 +398,8 @@ void test_macro_selection_projection_exposes_copy_collision_and_blocked_states()
     strip =
         core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(strip.slots[2].tone == ContextActionStripTone::WARNING);
-    assert(std::strcmp(
-        strip.slots[2].labelText.data(),
-        "PST \xC2\xB7 1 OVR"
-    ) == 0);
+    assert(strip.slots[2].icon == standalone::icons::ACTION_PASTE);
+    assert(!strip.slots[2].showLabel);
     const auto freeTarget =
         core::ui::buildMacroWidgetProps(sourceFor(state), 2U);
     const auto overwriteTarget =
@@ -460,6 +458,64 @@ void test_macro_selection_uses_existing_preview_page_value() {
         << "[PASS] Macro selection uses the existing preview Page value\n";
 }
 
+void test_non_created_track_and_page_project_as_truly_empty() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::TRACK
+    );
+    state.trackNavigation.previewTrackIndex.set(1U);
+    state.trackNavigation.previewAddSlot.set(true);
+    auto header = core::ui::buildMacroHeaderBarProps(sourceFor(state));
+    auto frame = core::ui::buildMacroViewFrameState(sourceFor(state));
+    assert(header.previewTrackAddSlot);
+    assert(header.previewTrack == 1U);
+    assert(header.enabledMask == 0U);
+    for (const auto& macro : frame.macros) {
+        assert(!macro.active);
+        assert(!macro.addSlot);
+    }
+
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::PAGE
+    );
+    state.trackNavigation.previewTrackIndex.set(0U);
+    state.trackNavigation.previewAddSlot.set(false);
+    state.macroUi.previewAddPageSlot.set(true);
+    header = core::ui::buildMacroHeaderBarProps(sourceFor(state));
+    frame = core::ui::buildMacroViewFrameState(sourceFor(state));
+    assert(header.previewPageAddSlot);
+    assert(header.previewPage == 1U);
+    for (const auto& macro : frame.macros) {
+        assert(!macro.active);
+        assert(!macro.addSlot);
+    }
+
+    std::cout << "[PASS] non-created Macro Track/Page projections are empty\n";
+}
+
+void test_created_empty_page_projects_only_add_slots() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    auto& track = state.pages.tracks[0U];
+    track.pages[1U].initDefault(1U);
+    track.pages[1U].activeMacroMask = 0U;
+    track.setPageEnabled(1U, true);
+    track.activePage = 1U;
+    state.pages.syncActiveTrackCache();
+    state.pages.setActivePage(1U);
+    state.macroUi.syncPreviewPage(1U);
+
+    const auto frame = core::ui::buildMacroViewFrameState(sourceFor(state));
+    for (const auto& macro : frame.macros) {
+        assert(!macro.active);
+        assert(macro.addSlot);
+    }
+
+    std::cout << "[PASS] an explicitly created empty Page exposes add slots\n";
+}
+
 }  // namespace
 
 int main() {
@@ -471,6 +527,8 @@ int main() {
     test_macro_performance_projection_explains_edit_and_shared_take();
     test_macro_selection_projection_exposes_copy_collision_and_blocked_states();
     test_macro_selection_uses_existing_preview_page_value();
+    test_non_created_track_and_page_project_as_truly_empty();
+    test_created_empty_page_projects_only_add_slots();
     std::cout << "\nAll MacroViewModelBuilder tests passed.\n";
     return 0;
 }

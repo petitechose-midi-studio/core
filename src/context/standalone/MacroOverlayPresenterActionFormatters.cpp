@@ -71,8 +71,8 @@ FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
             : modulationPlayback;
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             playback
-                ? (automation ? ::standalone::icons::MACRO_AUTOMATION
-                              : ::standalone::icons::MACRO_MODULATION)
+                ? (automation ? ::standalone::icons::AUTOMATION
+                              : ::standalone::icons::MODULATION)
                 : ::standalone::icons::STATUS_PAUSED,
             stored ? Visual::ACTIVE : Visual::DISABLED,
             Tone::NEUTRAL
@@ -130,7 +130,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             status == Status::OVERWRITE_REQUIRED
                 ? ::standalone::icons::ACTION_OVERWRITE
-                : ::standalone::icons::ACTION_APPLY,
+                : ::standalone::icons::ACTION_VALIDATE,
             status == Status::READY || status == Status::OVERWRITE_REQUIRED
                 ? Visual::ACTIVE
                 : Visual::DISABLED,
@@ -164,7 +164,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         const int row = std::clamp(
             static_cast<int>(source.macroEdit.modulationFocusedRow.get()),
             0,
-            rows.addSourceRow()
+            rows.rowCount() - 1
         );
         const auto descriptor = menu::macroModulationRowAt(
             graph,
@@ -177,10 +177,16 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             props.slots[2].visualState = Visual::HIDDEN;
             return props;
         }
+        if (descriptor.kind == menu::MacroModulationRowKind::RECORD_SHAPE) {
+            props.slots[0].visualState = Visual::HIDDEN;
+            props.slots[1] = scopeLabel("Record shape");
+            props.slots[2].visualState = Visual::HIDDEN;
+            return props;
+        }
         if (descriptor.kind == menu::MacroModulationRowKind::ALL) {
             const bool anyEnabled = slot.activeModulationCount > 0U;
             props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                anyEnabled ? ::standalone::icons::MACRO_MODULATION
+                anyEnabled ? ::standalone::icons::MODULATION
                            : ::standalone::icons::STATUS_PAUSED,
                 Visual::ACTIVE,
                 Tone::NEUTRAL
@@ -207,7 +213,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             (binding->flags & core::state::modulation::
                 PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            enabled ? ::standalone::icons::MACRO_MODULATION
+            enabled ? ::standalone::icons::MODULATION
                     : ::standalone::icons::STATUS_PAUSED,
             Visual::ACTIVE,
             Tone::NEUTRAL
@@ -230,14 +236,21 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         );
         return props;
     }
+    if (modulation && !modulationStored &&
+        source.macroEdit.modulationFocusedRow.get() == 3U) {
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1] = scopeLabel("Record shape");
+        props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
     const bool stored = modulation ? modulationStored : automationStored;
     const bool playback = stored && (modulation
         ? slot.activeModulationCount > 0U
         : slot.automation.enabled);
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
         playback
-            ? (modulation ? ::standalone::icons::MACRO_MODULATION
-                          : ::standalone::icons::MACRO_AUTOMATION)
+            ? (modulation ? ::standalone::icons::MODULATION
+                          : ::standalone::icons::AUTOMATION)
             : ::standalone::icons::STATUS_PAUSED,
         stored ? Visual::ACTIVE : Visual::DISABLED,
         Tone::NEUTRAL

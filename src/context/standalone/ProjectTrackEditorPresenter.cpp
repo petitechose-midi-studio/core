@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "ui/font/StandaloneIcons.hpp"
 #include "ui/project/ProjectTrackEditorViewModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -120,35 +121,48 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
             .visualState = core::ui::ContextActionStripVisualState::AVAILABLE,
             .tone = core::ui::ContextActionStripTone::NEUTRAL,
             .showLabel = true,
-            .label = "CANCEL",
+            .label = "Cancel",
         };
     } else {
-        actions.slots[0] = {
-            .visualState = viewModel.trackEnabled
+        actions.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::TRACK_MUTE,
+            viewModel.trackEnabled
                 ? (viewModel.muted
                     ? core::ui::ContextActionStripVisualState::ARMED
                     : core::ui::ContextActionStripVisualState::AVAILABLE)
                 : core::ui::ContextActionStripVisualState::DISABLED,
-            .tone = core::ui::ContextActionStripTone::WARNING,
-            .showLabel = true,
-            .label = "MUTE",
-        };
+            viewModel.muted
+                ? core::ui::ContextActionStripTone::WARNING
+                : core::ui::ContextActionStripTone::NEUTRAL,
+            ::standalone::icons::Size::L
+        );
     }
     // BOTTOM_CENTER remains the global Transport control.
     actions.slots[1].visualState =
         core::ui::ContextActionStripVisualState::HIDDEN;
-    actions.slots[2] = {
-        .visualState = viewModel.trackEnabled
-            ? (viewModel.typeChangePending || !viewModel.soloed
+    if (viewModel.typeChangePending) {
+        actions.slots[2] = {
+            .visualState = viewModel.trackEnabled
                 ? core::ui::ContextActionStripVisualState::AVAILABLE
-                : core::ui::ContextActionStripVisualState::ARMED)
-            : core::ui::ContextActionStripVisualState::DISABLED,
-        .tone = viewModel.typeChangePending
-            ? core::ui::ContextActionStripTone::POSITIVE
-            : core::ui::ContextActionStripTone::NEUTRAL,
-        .showLabel = true,
-        .label = viewModel.typeChangePending ? "APPLY" : "SOLO",
-    };
+                : core::ui::ContextActionStripVisualState::DISABLED,
+            .tone = core::ui::ContextActionStripTone::POSITIVE,
+            .showLabel = true,
+            .label = "Apply",
+        };
+    } else {
+        actions.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::TRACK_SOLO,
+            viewModel.trackEnabled
+                ? (viewModel.soloed
+                    ? core::ui::ContextActionStripVisualState::ARMED
+                    : core::ui::ContextActionStripVisualState::AVAILABLE)
+                : core::ui::ContextActionStripVisualState::DISABLED,
+            viewModel.soloed
+                ? core::ui::ContextActionStripTone::POSITIVE
+                : core::ui::ContextActionStripTone::NEUTRAL,
+            ::standalone::icons::Size::L
+        );
+    }
     action_strip_.render(actions);
 }
 

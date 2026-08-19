@@ -1,0 +1,48 @@
+# Drum Track/Pattern parity: one musical grid, distinct scope and direct mix.
+# Expect: capture_changed:drum_pattern_grid=drum_track_grid
+# Expect: semantic:track_editor_playing:mode=sequencer.track_editor, semantic:track_editor_playing:target_track=1
+# Expect: semantic:track_muted_playing:effect=toggle_track_mute, semantic:track_muted_playing:property=mute, semantic:track_muted_playing:authored_value=1
+# Expect: semantic:track_soloed_playing:effect=toggle_track_solo, semantic:track_soloed_playing:property=solo, semantic:track_soloed_playing:authored_value=1
+
+0 scenario drum-sequencer
+
+# Create Track 2 as a General MIDI Drum Track and author a visible phrase.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1530 encoder NAV 1
+1830 tap NAV 60
+2300 encoder NAV 1
+2650 tap NAV 60
+3100 encoder NAV 1
+3450 tap NAV 60
+4350 tap MACRO_1 60
+4550 tap MACRO_5 60
+5000 encoder NAV 1
+5150 tap MACRO_3 60
+5350 tap MACRO_7 60
+5650 capture screen drum_pattern_grid
+
+# The canonical held-NAV scope turn changes only Pattern -> Track semantics.
+5800 button NAV down
+5880 encoder NAV -1
+5960 button NAV up
+6250 capture screen drum_track_grid
+
+# Playback remains global while the shared Track Editor toggles Mute and Solo.
+6400 tap BOTTOM_CENTER 60
+6600 tap NAV 60
+7000 capture screen track_editor_playing
+7150 tap BOTTOM_LEFT 60
+7350 capture screen track_muted_playing
+7500 tap BOTTOM_RIGHT 60
+7700 capture screen track_soloed_playing
+7850 tap BOTTOM_CENTER 60
+8000 tap LEFT_TOP 60
+
+# Return to Pattern without changing the authored musical surface.
+8200 button NAV down
+8280 encoder NAV 1
+8360 button NAV up
+8650 capture screen drum_pattern_returned

@@ -300,14 +300,14 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         {
             .key = "Automation",
             .value = data.valueBuffers[1].data(),
-            .icon = ::standalone::icons::MACRO_AUTOMATION,
+            .icon = ::standalone::icons::AUTOMATION,
             .iconFont = standalone_fonts.icons_14,
             .iconColor = ::standalone::theme::color::MACRO_AUTOMATION,
         },
         {
             .key = "Modulation",
             .value = data.valueBuffers[2].data(),
-            .icon = ::standalone::icons::MACRO_MODULATION,
+            .icon = ::standalone::icons::MODULATION,
             .iconFont = standalone_fonts.icons_14,
             .iconColor = ::standalone::theme::color::MACRO_MODULATION,
         },
@@ -326,12 +326,12 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         std::snprintf(
             data.interactionLabel.data(),
             data.interactionLabel.size(),
-            "ACTIVE MACRO"
+            "Active macro"
         );
         std::snprintf(
             data.interactionValue.data(),
             data.interactionValue.size(),
-            "MACRO %u",
+            "Macro %u",
             static_cast<unsigned>(macroIndex) + 1U
         );
     } else if (contextSelector) {
@@ -363,12 +363,12 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                 data.interactionLabel.data(),
                 data.interactionLabel.size(),
                 "%s",
-                channel ? "TRACK CHANNEL" : "CC NUMBER"
+                channel ? "Track channel" : "CC number"
             );
             std::snprintf(
                 data.interactionValue.data(),
                 data.interactionValue.size(),
-                channel ? "CHANNEL %u" : "CC %u",
+                channel ? "Channel %u" : "CC %u",
                 static_cast<unsigned>(
                     channel
                         ? trackChannel + 1U
@@ -378,17 +378,17 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         } else if (focusedItem == menu::MacroRootItem::AUTOMATION) {
             const char* label =
                 action.action == menu::MacroContextAction::AUTOMATION_RECORD
-                ? "RECORD MACRO"
+                ? "Record macro"
                 : (action.action == menu::MacroContextAction::AUTOMATION_PLAYBACK
-                ? "PLAYBACK"
+                ? "Playback"
                 : (action.action ==
                        menu::MacroContextAction::AUTOMATION_LENGTH
-                    ? "LENGTH"
+                    ? "Length"
                     : (action.action ==
                            menu::MacroContextAction::AUTOMATION_OFFSET
-                        ? "OFFSET"
-                        : "CONVERT")));
-            data.interactionIcon = ::standalone::icons::MACRO_AUTOMATION;
+                        ? "Offset"
+                        : "Convert")));
+            data.interactionIcon = ::standalone::icons::AUTOMATION;
             data.interactionColor = ::standalone::theme::color::MACRO_AUTOMATION;
             std::snprintf(
                 data.interactionLabel.data(),
@@ -406,7 +406,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                     data.interactionValue.data(),
                     data.interactionValue.size(),
                     "%s",
-                    recording ? "RECORDING" : "TURN OPT TO RECORD"
+                    recording ? "Recording" : "Turn OPT to record"
                 );
             } else if (action.action ==
                 menu::MacroContextAction::AUTOMATION_PLAYBACK) {
@@ -418,10 +418,10 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                     data.interactionValue.size(),
                     "%s",
                     manual
-                        ? "TURN OPT FOR AUTO"
+                        ? "Turn OPT for auto"
                         : (slot != nullptr && slot->automation.enabled
-                            ? "ON"
-                            : "OFF")
+                            ? "On"
+                            : "Off")
                 );
             } else if (action.action ==
                            menu::MacroContextAction::AUTOMATION_LENGTH ||
@@ -437,7 +437,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                     data.interactionValue.data(),
                     data.interactionValue.size(),
                     ticks,
-                    " BEATS"
+                    " beats"
                 );
             } else {
                 std::snprintf(
@@ -445,20 +445,20 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                     data.interactionValue.size(),
                     "%s",
                     slot != nullptr && slot->automation.stored()
-                        ? "TURN OPT TO PREVIEW"
-                        : "NO AUTOMATION"
+                        ? "Turn OPT to preview"
+                        : "No automation"
                 );
             }
         } else {
-            data.interactionIcon = ::standalone::icons::MACRO_MODULATION;
+            data.interactionIcon = ::standalone::icons::MODULATION;
             data.interactionColor = ::standalone::theme::color::MACRO_MODULATION;
             if (action.action ==
                 menu::MacroContextAction::MODULATION_RECORD_NEW_SHAPE) {
-                data.interactionIcon = ::standalone::icons::MACRO_AUTOMATION;
+                data.interactionIcon = ::standalone::icons::AUTOMATION;
                 std::snprintf(
                     data.interactionLabel.data(),
                     data.interactionLabel.size(),
-                    "RECORD NEW SHAPE"
+                    "Record new shape"
                 );
                 std::snprintf(
                     data.interactionValue.data(),
@@ -485,7 +485,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                     data.interactionLabel.data(),
                     data.interactionLabel.size(),
                     "%s",
-                    modulator != nullptr ? modulator->name.data() : "SOURCE DEPTH"
+                    modulator != nullptr ? modulator->name.data() : "Source depth"
                 );
                 const int depth = binding != nullptr
                     ? bindingDepthPercent(source.pages.control, *binding)
@@ -493,7 +493,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                 std::snprintf(
                     data.interactionValue.data(),
                     data.interactionValue.size(),
-                    "%+d%% DEPTH",
+                    "%+d%% depth",
                     depth
                 );
             } else {
@@ -504,7 +504,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                 std::snprintf(
                     data.interactionLabel.data(),
                     data.interactionLabel.size(),
-                    "ALL DEPTH"
+                    "All depth"
                 );
                 std::snprintf(
                     data.interactionValue.data(),
