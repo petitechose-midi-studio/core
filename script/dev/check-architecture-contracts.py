@@ -1539,7 +1539,12 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
         )
 
     menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
-    if menu.count('row("Clock", clockModeValue(context.clockMode)') != 1:
+    clock_rows = re.findall(
+        r'row\s*\(\s*"Clock"\s*,\s*clockModeValue\s*\(\s*context\.clockMode\s*\)\s*,'
+        r"\s*ProjectMenuRowKind::Value\s*,\s*ProjectNodeId::TRANSPORT_ROOT",
+        menu,
+    )
+    if len(clock_rows) != 1:
         errors.append(
             f"{PROJECT_MENU_MODEL_SOURCE}: Transport Clock Device control must remain visible"
         )
