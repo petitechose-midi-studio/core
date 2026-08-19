@@ -45,6 +45,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     core::state::project::ProjectTrackDomainServices trackDomain,
     core::handler::SequencerStepPresetDomainServices stepPresets,
     core::handler::SequencerChordPresetDomainServices chordPresets,
+    core::handler::SequencerPatternPresetDomainServices patternPresets,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
@@ -520,6 +521,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.history,
             stepPresets,
             chordPresets,
+            patternPresets,
         },
         overlays,
         encoders,
@@ -547,6 +549,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     if (!drum_lane_editor_handler_) return;
     if (!step_handler_ || !step_edit_handler_ || !pattern_editor_handler_ ||
         !track_editor_handler_) return;
+    pattern_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
     step_handler_->attachStepEditHandler(*step_edit_handler_);
     step_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
     step_handler_->attachTrackEditorHandler(*track_editor_handler_);

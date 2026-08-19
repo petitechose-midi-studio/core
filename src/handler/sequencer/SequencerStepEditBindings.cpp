@@ -334,7 +334,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .release()
         .scope(preset_library_overlay_scope_)
-        .then([]() {});
+        .then([this]() { cyclePatternPresetLibrarySource(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()

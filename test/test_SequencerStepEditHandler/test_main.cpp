@@ -2998,7 +2998,7 @@ void test_step_preset_queued_feedback_resolves_to_applied_and_auto_closes() {
     const auto queuedTelemetry = h.state.sequencerTrackActivations.telemetry(0);
     assert(queuedTelemetry.generation == activationGeneration);
     assert(queuedTelemetry.origin ==
-           core::state::sequencer::SequencerTrackActivationOrigin::STEP_PRESET);
+           core::state::sequencer::SequencerTrackActivationOrigin::PRESET);
     assert(h.state.sequencer.pattern.note[0] == 70);
     assert(h.state.sequencerTrackActivations.pendingTrackMask() == 0x0001);
 
@@ -3092,7 +3092,7 @@ void test_step_preset_queued_feedback_resolves_to_cancelled_on_undo() {
            core::state::sequencer::SequencerTrackActivationStatus::CANCELLED);
     assert(cancelledTelemetry.generation == activationGeneration);
     assert(cancelledTelemetry.origin ==
-           core::state::sequencer::SequencerTrackActivationOrigin::STEP_PRESET);
+           core::state::sequencer::SequencerTrackActivationOrigin::PRESET);
     assert(picker.visible.get());
 
     g_now_ms += Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS;

@@ -134,7 +134,8 @@ FLASHMEM SequencerHistoryDrumChangePtr prepareHistoryDrumChangeBefore(
     change->after = change->before;
     change->capturesGraph =
         descriptor.kind == SequencerHistoryActionKind::DrumAdvancedContent ||
-        descriptor.kind == SequencerHistoryActionKind::DrumLaneContent;
+        descriptor.kind == SequencerHistoryActionKind::DrumLaneContent ||
+        descriptor.kind == SequencerHistoryActionKind::PatternPreset;
     if (change->capturesGraph) {
         const auto& source = canonicalTrackPattern(bank, active, target);
         change->beforeGraphRevision = source.graphRevision.get();
@@ -174,6 +175,29 @@ FLASHMEM bool capturePreparedHistoryDrumAfter(
             *change.afterGraph = *sourceGraph;
         }
     }
+    return true;
+}
+
+FLASHMEM bool captureDetachedHistoryDrumAfter(
+    SequencerHistoryDrumChange& change,
+    SequencerTrackKind kind,
+    const DrumTrackState& drum,
+    const oc::note::sequencer::StepSequencerGraph* graph,
+    uint32_t graphRevision
+) {
+    if (change.trackIndex >= SequencerTrackBankState::TRACK_COUNT ||
+        !change.capturesGraph) {
+        return false;
+    }
+    change.afterKind = kind;
+    change.after = drum;
+    change.afterGraphRevision = graphRevision;
+    if (graph == nullptr) {
+        change.afterGraph.reset();
+        return true;
+    }
+    if (!change.afterGraph) return false;
+    *change.afterGraph = *graph;
     return true;
 }
 
@@ -2570,6 +2594,12 @@ FLASHMEM bool SequencerHistoryService::peekUndoTrackActivation(
         out.targetAudibleMask = entry.pattern->auxiliary.activation.targetAudibleMask;
         return true;
     }
+    if (entry.scope == SequencerHistoryScope::Drum && entry.drum &&
+        entry.drum->activation.reference.valid()) {
+        out.reference = entry.drum->activation.reference;
+        out.targetAudibleMask = entry.drum->activation.targetAudibleMask;
+        return true;
+    }
     if (entry.scope != SequencerHistoryScope::Structure || !entry.structure ||
         !entry.structure->activation.valid())
         return false;
@@ -2587,6 +2617,12 @@ FLASHMEM bool SequencerHistoryService::peekRedoTrackActivation(
         entry.pattern->auxiliary.activation.reference.valid()) {
         out.reference = entry.pattern->auxiliary.activation.reference;
         out.targetAudibleMask = entry.pattern->auxiliary.activation.targetAudibleMask;
+        return true;
+    }
+    if (entry.scope == SequencerHistoryScope::Drum && entry.drum &&
+        entry.drum->activation.reference.valid()) {
+        out.reference = entry.drum->activation.reference;
+        out.targetAudibleMask = entry.drum->activation.targetAudibleMask;
         return true;
     }
     if (entry.scope != SequencerHistoryScope::Structure || !entry.structure ||

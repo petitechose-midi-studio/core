@@ -186,12 +186,17 @@ FLASHMEM void SequencerPresetLibraryWorkflow::enterDetail() {
         return;
     }
     completePendingInspection();
-    const bool descriptorValid =
-        picker.libraryKind.get() ==
-            core::state::sequencer::
-                SequencerPresetLibraryKind::CHORD
-        ? picker.chord().descriptor.valid
-        : picker.step().descriptor.valid;
+    bool descriptorValid = false;
+    if (picker.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::CHORD) {
+        descriptorValid = picker.chord().descriptor.valid;
+    } else if (picker.libraryKind.get() ==
+               core::state::sequencer::
+                   SequencerPresetLibraryKind::PATTERN) {
+        descriptorValid = picker.pattern().descriptor.valid;
+    } else {
+        descriptorValid = picker.step().descriptor.valid;
+    }
     if (!descriptorValid) {
         return;
     }
@@ -225,10 +230,49 @@ FLASHMEM void SequencerPresetLibraryWorkflow::toggleMode() {
     picker.inspecting.set(false);
     adapter_.clearInspection(adapter_.context);
     pager_.toggleModePreservingSelection();
+    if (picker.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        picker.pattern().sourceFilter = picker.mode.get() ==
+                core::state::sequencer::SequencerPresetLibraryMode::SAVE
+            ? core::state::sequencer::
+                  SequencerPatternPresetSourceFilter::USER
+            : core::state::sequencer::
+                  SequencerPatternPresetSourceFilter::ALL;
+        (void)refreshPage(
+            nullptr,
+            SequencerPresetLibraryPager::PageDirection::FORWARD,
+            false
+        );
+        return;
+    }
     if (picker.mode.get() ==
         core::state::sequencer::SequencerPresetLibraryMode::LOAD) {
         inspectFocused(true);
     }
+}
+
+FLASHMEM void
+SequencerPresetLibraryWorkflow::cyclePatternSourceFilter() {
+    using Filter = core::state::sequencer::
+        SequencerPatternPresetSourceFilter;
+    auto& picker = sequencer_.presetLibrary;
+    if (!active() || operationPending() || actionGuardEngaged() ||
+        picker.detailVisible.get() ||
+        picker.libraryKind.get() !=
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN ||
+        picker.mode.get() !=
+            core::state::sequencer::SequencerPresetLibraryMode::LOAD) {
+        return;
+    }
+    auto& filter = picker.pattern().sourceFilter;
+    filter = filter == Filter::ALL
+        ? Filter::FACTORY
+        : (filter == Filter::FACTORY ? Filter::USER : Filter::ALL);
+    (void)refreshPage(
+        nullptr,
+        SequencerPresetLibraryPager::PageDirection::FORWARD,
+        false
+    );
 }
 
 FLASHMEM bool SequencerPresetLibraryWorkflow::active() const {

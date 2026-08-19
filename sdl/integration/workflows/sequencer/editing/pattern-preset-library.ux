@@ -1,0 +1,34 @@
+# UX workflow: Pattern Preset Factory/User library from Pattern Editor.
+# Purpose: validates the shared library shell, Pattern-specific source filter,
+# immutable Factory detail, exact stopped load, and return to Pattern Editor.
+# Expect: capture_changed:pattern_preset_all=pattern_preset_factory, capture_changed:pattern_preset_factory=pattern_preset_detail, capture_changed:pattern_preset_detail=pattern_preset_loaded
+# Expect: semantic:pattern_preset_factory:effect=cycle_pattern_preset_source, semantic:pattern_preset_factory:property=source_filter, semantic:pattern_preset_factory:value_label=factory
+# Expect: semantic:pattern_preset_detail:effect=enter_preset_library_detail, semantic:pattern_preset_detail:mode=sequencer.pattern_preset.load.detail, semantic:pattern_preset_detail:target=pattern
+# Expect: semantic:pattern_preset_loaded:effect=load_pattern_preset, semantic:pattern_preset_loaded:outcome=applied, semantic:pattern_preset_loaded:route_policy=preserve_destination, semantic:pattern_preset_loaded:projection=exact_copy
+
+0 scenario sequencer
+
+# Pattern focus opens the retained Pattern Editor.
+100 tap NAV 60
+
+# NAV hold opens the Pattern library. The matching release is consumed.
+300 button NAV down
+1400 tick
+1450 capture screen pattern_preset_all
+1500 button NAV up
+
+# LEFT_CENTER cycles All -> Factory without changing musical state.
+1750 tick
+1850 tap LEFT_CENTER 60
+2050 capture screen pattern_preset_factory
+
+# NAV tap enters the common read-only detail surface.
+2150 tap NAV 60
+2350 capture screen pattern_preset_detail
+2450 tap LEFT_TOP 60
+
+# BOTTOM_RIGHT applies the Factory asset through the normal Pattern history and
+# activation boundary, then the temporary feedback returns to Pattern Editor.
+2650 tap BOTTOM_RIGHT 60
+2850 capture screen pattern_preset_loaded
+4000 capture screen pattern_editor_after_pattern_preset

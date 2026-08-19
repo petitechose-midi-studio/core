@@ -14,6 +14,7 @@
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerPatternPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackEditorState.hpp"
@@ -131,6 +132,7 @@ public:
                            core::state::project::ProjectTrackDomainServices trackDomain,
                            core::handler::SequencerStepPresetDomainServices stepPresets,
                            core::handler::SequencerChordPresetDomainServices chordPresets,
+                           core::handler::SequencerPatternPresetDomainServices patternPresets,
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            OverlayPresentationRegistry& overlayPresentations,
                            oc::api::EncoderAPI& encoders,

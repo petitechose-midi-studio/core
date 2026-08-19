@@ -21,6 +21,15 @@ inline contextual::ContextActionSpec buildSequencerPresetLibraryActionSpec(
             picker.chord().descriptor
         );
     }
+    if (picker.libraryKind.get() == SequencerPresetLibraryKind::PATTERN) {
+        return buildSequencerPatternPresetActionSpec(
+            saveMode,
+            selectedNewAsset,
+            focusedAsset,
+            picker.pattern().target,
+            picker.pattern().descriptor
+        );
+    }
     return buildSequencerStepPresetActionSpec(
         saveMode,
         selectedNewAsset,

@@ -114,6 +114,8 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerStepEditHandler.cpp
     src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp
     src/handler/sequencer/SequencerStepHandler.cpp
+    src/handler/sequencer/SequencerPatternPresetDomainServices.cpp
+    src/handler/sequencer/SequencerPatternPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerStepPresetDomainServices.cpp
     src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerStepValueRowWorkflow.cpp
@@ -138,6 +140,8 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/persistence/DeviceSettingsStore.cpp
     src/persistence/DrumTrackPersistenceCodec.cpp
     src/persistence/MacroTrackBankPersistenceCodec.cpp
+    src/persistence/PatternPresetFactoryLibrary.cpp
+    src/persistence/PatternPresetFileStore.cpp
     src/persistence/PersistenceChecksum.cpp
     src/persistence/ProductAssetFileStore.cpp
     src/persistence/ProductConditionalMutationDigest.cpp
@@ -172,6 +176,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/persistence/SequencerCcLanePersistenceCodec.cpp
     src/persistence/SequencerGraphAssetCodec.cpp
     src/persistence/SequencerGraphRecordCodec.cpp
+    src/persistence/SequencerPatternPresetCodec.cpp
     src/persistence/SequencerPersistenceCodec.cpp
     src/persistence/SequencerPersistenceEnvelope.cpp
     src/persistence/StepPresetFileStore.cpp
@@ -316,10 +321,12 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/sequencer/SequencerNoteSpelling.cpp
     src/state/sequencer/SequencerPatternEditorOps.cpp
     src/state/sequencer/SequencerPatternEditorState.cpp
+    src/state/sequencer/SequencerPatternPreset.cpp
     src/state/sequencer/SequencerPatternRandomizeOps.cpp
     src/state/sequencer/SequencerPatternRandomizeSession.cpp
     src/state/sequencer/SequencerPatternRegionOps.cpp
     src/state/sequencer/SequencerPitchEditAuthority.cpp
+    src/state/sequencer/SequencerPresetMetadata.cpp
     src/state/sequencer/SequencerProjectScaleOps.cpp
     src/state/sequencer/SequencerQuickControlsDraft.cpp
     src/state/sequencer/SequencerResolvedDisplayProjectionOps.cpp
@@ -367,6 +374,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/sequencer/SequencerHeaderViewModelBuilder.cpp
     src/ui/sequencer/SequencerLeftActionStripViewModelBuilder.cpp
     src/ui/sequencer/SequencerPatternEditorOverlay.cpp
+    src/ui/sequencer/SequencerPatternPresetPresentation.cpp
     src/ui/sequencer/SequencerPatternTimelineModel.cpp
     src/ui/sequencer/SequencerPresetLibraryPresentation.cpp
     src/ui/sequencer/SequencerPropertyOverlayViewModelBuilder.cpp

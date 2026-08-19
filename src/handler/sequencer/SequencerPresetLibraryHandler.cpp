@@ -28,12 +28,22 @@ FLASHMEM void SequencerStepEditHandler::openChordPresetLibrary() {
     (void)preset_library_.open(chord_preset_library_adapter_.operations());
 }
 
+FLASHMEM void SequencerStepEditHandler::openPatternPresetLibrary() {
+    if (!sequencer_.patternEditor.active.get()) return;
+    preset_library_auto_close_pending_ = false;
+    preset_library_auto_close_at_ms_ = 0U;
+    preset_open_release_latch_.arm(Config::ButtonID::NAV);
+    (void)preset_library_.open(
+        pattern_preset_library_adapter_.operations()
+    );
+}
+
 FLASHMEM void SequencerStepEditHandler::closePresetLibrary() {
     preset_library_action_press_active_ = false;
     preset_library_auto_close_pending_ = false;
     preset_library_auto_close_at_ms_ = 0U;
     preset_library_.close();
-    configureOptForFocusedRow();
+    if (sequencer_.stepEdit.visible.get()) configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::backFromPresetLibrary() {
@@ -45,7 +55,10 @@ FLASHMEM void SequencerStepEditHandler::backFromPresetLibrary() {
     preset_library_action_press_active_ = false;
     preset_library_auto_close_pending_ = false;
     preset_library_auto_close_at_ms_ = 0U;
-    if (preset_library_.back(time_provider_())) { configureOptForFocusedRow(); }
+    if (preset_library_.back(time_provider_()) &&
+        sequencer_.stepEdit.visible.get()) {
+        configureOptForFocusedRow();
+    }
 }
 
 FLASHMEM void SequencerStepEditHandler::movePresetLibraryItem(float delta) {
@@ -66,6 +79,12 @@ FLASHMEM void SequencerStepEditHandler::enterPresetLibraryDetail() {
 FLASHMEM void SequencerStepEditHandler::togglePresetLibraryMode() {
     if (preset_library_auto_close_pending_) return;
     preset_library_.toggleMode();
+}
+
+FLASHMEM void
+SequencerStepEditHandler::cyclePatternPresetLibrarySource() {
+    if (preset_library_auto_close_pending_) return;
+    preset_library_.cyclePatternSourceFilter();
 }
 
 FLASHMEM void SequencerStepEditHandler::beginPresetLibraryActionGuard() {

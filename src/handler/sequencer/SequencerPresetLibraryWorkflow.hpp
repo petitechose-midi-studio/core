@@ -250,6 +250,7 @@ public:
     void enterDetail();
     void adjustFocusedDetail(float delta);
     void toggleMode();
+    void cyclePatternSourceFilter();
 
     [[nodiscard]] bool active() const;
     [[nodiscard]] bool shouldCommitBeforeLoad(

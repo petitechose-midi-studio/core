@@ -62,7 +62,8 @@ FLASHMEM bool ProductDirectoryCatalog::validCatalogOwner_(
 ) {
     return owner == ProductPersistenceJobOwner::PROJECT_CATALOG ||
            owner == ProductPersistenceJobOwner::STEP_PRESET_CATALOG ||
-           owner == ProductPersistenceJobOwner::CHORD_PRESET_CATALOG;
+           owner == ProductPersistenceJobOwner::CHORD_PRESET_CATALOG ||
+           owner == ProductPersistenceJobOwner::PATTERN_PRESET_CATALOG;
 }
 
 FLASHMEM bool ProductDirectoryCatalog::sameText_(

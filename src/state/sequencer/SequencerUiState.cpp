@@ -89,6 +89,8 @@ FLASHMEM void SequencerPresetLibrarySessionState::open(
     previewGeneration.set(0);
     if (kind == SequencerPresetLibraryKind::CHORD) {
         payload.emplace<SequencerChordPresetLibraryState>();
+    } else if (kind == SequencerPresetLibraryKind::PATTERN) {
+        payload.emplace<SequencerPatternPresetLibraryState>();
     } else {
         payload.emplace<SequencerStepPresetLibraryState>();
     }
@@ -189,6 +191,16 @@ SequencerPresetLibrarySessionState::chord() {
 FLASHMEM const SequencerChordPresetLibraryState&
 SequencerPresetLibrarySessionState::chord() const {
     return *std::get_if<SequencerChordPresetLibraryState>(&payload);
+}
+
+FLASHMEM SequencerPatternPresetLibraryState&
+SequencerPresetLibrarySessionState::pattern() {
+    return *std::get_if<SequencerPatternPresetLibraryState>(&payload);
+}
+
+FLASHMEM const SequencerPatternPresetLibraryState&
+SequencerPresetLibrarySessionState::pattern() const {
+    return *std::get_if<SequencerPatternPresetLibraryState>(&payload);
 }
 
 FLASHMEM uint8_t SequencerPresetLibrarySessionState::itemCount() const {

@@ -15,6 +15,8 @@
 
 namespace core::handler {
 
+class SequencerStepEditHandler;
+
 /** Allocation-free input owner for the retained Pattern Editor session. */
 class SequencerPatternEditorHandler {
 public:
@@ -38,6 +40,9 @@ public:
     void close();
     /** Closes a stale session as soon as another Track owns the editor. */
     void update(uint32_t nowMs);
+    void attachPresetLibraryHandler(SequencerStepEditHandler& handler) {
+        preset_library_handler_ = &handler;
+    }
 private:
     void setupBindings();
     bool ownsActiveTrack() const;
@@ -76,6 +81,7 @@ private:
     int32_t edit_before_value_ = 0;
     int32_t edit_after_value_ = 0;
     bool edit_pending_ = false;
+    SequencerStepEditHandler* preset_library_handler_ = nullptr;
 };
 
 }  // namespace core::handler

@@ -19,6 +19,8 @@
 #include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerChordPresetLibraryAdapter.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerPatternPresetDomainServices.hpp"
+#include "handler/sequencer/SequencerPatternPresetLibraryAdapter.hpp"
 #include "handler/sequencer/SequencerPresetLibraryWorkflow.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetLibraryAdapter.hpp"
@@ -47,6 +49,7 @@ public:
         SequencerHistoryDomainServices history;
         SequencerStepPresetDomainServices stepPresets;
         SequencerChordPresetDomainServices chordPresets;
+        SequencerPatternPresetDomainServices patternPresets;
     };
 
     SequencerStepEditHandler(StateRefs state,
@@ -71,6 +74,8 @@ public:
      * focused Step, without leaving the generic Step Editor in-between.
      */
     bool openFocusedStepContentAtRow(uint8_t row);
+    /** Open the shared library for the active Pattern Editor target. */
+    void openPatternPresetLibrary();
 private:
     void setupBindings();
 
@@ -162,6 +167,7 @@ private:
     void adjustPresetLibraryDetail(float delta);
     void enterPresetLibraryDetail();
     void togglePresetLibraryMode();
+    void cyclePatternPresetLibrarySource();
     void beginPresetLibraryActionGuard();
     void releasePresetLibraryAction();
     void commitPresetLibraryActionGuard();
@@ -180,8 +186,10 @@ private:
     SequencerHistoryDomainServices history_;
     SequencerStepPresetDomainServices step_presets_;
     SequencerChordPresetDomainServices chord_presets_;
+    SequencerPatternPresetDomainServices pattern_presets_;
     SequencerStepPresetLibraryAdapter step_preset_library_adapter_;
     SequencerChordPresetLibraryAdapter chord_preset_library_adapter_;
+    SequencerPatternPresetLibraryAdapter pattern_preset_library_adapter_;
     SequencerPresetLibraryWorkflow preset_library_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

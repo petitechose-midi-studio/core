@@ -1368,7 +1368,8 @@ FLASHMEM bool SequencerPatternEditorUxSurface::captureSemanticUxContext(
     core::validation::ux::SemanticUxContext& out
 ) const {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER ||
-        !sequencer_.patternEditor.active.get()) {
+        !sequencer_.patternEditor.active.get() ||
+        sequencer_.presetLibrary.visible.get()) {
         return false;
     }
 

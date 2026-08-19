@@ -22,6 +22,7 @@ enum class ProductPersistenceJobOwner : uint8_t {
     PROJECT_CATALOG,
     STEP_PRESET_CATALOG,
     CHORD_PRESET_CATALOG,
+    PATTERN_PRESET_CATALOG,
 };
 
 enum class ProductPersistenceJobPriority : uint8_t {
@@ -54,6 +55,7 @@ constexpr ProductPersistenceJobPriority productPersistenceJobPriority(
         case ProductPersistenceJobOwner::PROJECT_CATALOG:
         case ProductPersistenceJobOwner::STEP_PRESET_CATALOG:
         case ProductPersistenceJobOwner::CHORD_PRESET_CATALOG:
+        case ProductPersistenceJobOwner::PATTERN_PRESET_CATALOG:
             return ProductPersistenceJobPriority::CATALOG;
         case ProductPersistenceJobOwner::NONE:
         default:

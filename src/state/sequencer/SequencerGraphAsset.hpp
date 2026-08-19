@@ -5,6 +5,7 @@
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
+#include "state/sequencer/SequencerPresetMetadata.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::state::sequencer {
@@ -64,8 +65,10 @@ struct SequencerGraphAssetReport {
 struct SequencerStepGraphPreset {
     static constexpr uint16_t ASSET_ROOT_NODE_ID = 0;
     static constexpr uint8_t CURRENT_FORMAT_VERSION = 5;
-    static constexpr size_t TECHNICAL_ID_SIZE = 55;
-    static constexpr size_t SEMANTIC_NAME_SIZE = 32;
+    static constexpr size_t TECHNICAL_ID_SIZE =
+        SEQUENCER_PRESET_TECHNICAL_ID_SIZE;
+    static constexpr size_t SEMANTIC_NAME_SIZE =
+        SEQUENCER_PRESET_SEMANTIC_NAME_SIZE;
 
     enum class ScalePolicy : uint8_t {
         CHROMATIC = 0,

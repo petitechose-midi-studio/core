@@ -1247,7 +1247,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     core::state::sequencer::SequencerTrackActivationBatch activationBatch{};
     if (!state_->sequencerTrackActivations.prepare(
             targetTrackBit, targetAudibleMask, state_->statusBar.playing.get(), activationBatch,
-            core::state::sequencer::SequencerTrackActivationOrigin::STEP_PRESET)) {
+            core::state::sequencer::SequencerTrackActivationOrigin::PRESET)) {
         result.status = SequencerStepPresetStatus::STALE_TARGET;
         return result;
     }

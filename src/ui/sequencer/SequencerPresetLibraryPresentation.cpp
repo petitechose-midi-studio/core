@@ -8,6 +8,7 @@
 
 #include "state/sequencer/SequencerPresetLibraryActionSpec.hpp"
 #include "ui/sequencer/SequencerChordPresetPresentation.hpp"
+#include "ui/sequencer/SequencerPatternPresetPresentation.hpp"
 #include "ui/sequencer/SequencerPresetLibraryPresentationCommon.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/strip/ContextActionVisualProjection.hpp"
@@ -382,6 +383,10 @@ buildSequencerPresetLibraryPresentation(
     if (sequencer.presetLibrary.libraryKind.get() ==
         core::state::sequencer::SequencerPresetLibraryKind::CHORD) {
         return buildSequencerChordPresetPresentation(sequencer);
+    }
+    if (sequencer.presetLibrary.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        return buildSequencerPatternPresetPresentation(sequencer);
     }
     Presentation data{};
     const auto& picker = sequencer.presetLibrary;

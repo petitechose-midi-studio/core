@@ -1412,7 +1412,7 @@ bool prepareStepPresetActivationScenario(
             0x0001,
             true,
             batch,
-            SequencerTrackActivationOrigin::STEP_PRESET
+            SequencerTrackActivationOrigin::PRESET
         ) || !queue.armPrepared(batch)) {
         return false;
     }
@@ -1456,7 +1456,7 @@ bool prepareStepPresetActivationScenario(
         (status == FeedbackStatus::CANCELLED &&
          telemetry.status == SequencerTrackActivationStatus::CANCELLED);
     return statusMatches && telemetry.generation == batch.generation &&
-        telemetry.origin == SequencerTrackActivationOrigin::STEP_PRESET;
+        telemetry.origin == SequencerTrackActivationOrigin::PRESET;
 }
 
 bool addSequencerCaptureLane(

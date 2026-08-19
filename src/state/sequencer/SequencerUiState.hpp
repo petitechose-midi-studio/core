@@ -22,6 +22,7 @@
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerChordPresetModel.hpp"
 #include "state/sequencer/SequencerHistoryOutcomes.hpp"
+#include "state/sequencer/SequencerPatternPreset.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerStepPresetModel.hpp"
 #include "state/sequencer/SequencerUiStateFwd.hpp"
@@ -243,6 +244,7 @@ enum class SequencerPresetLibraryMode : uint8_t {
 enum class SequencerPresetLibraryKind : uint8_t {
     STEP = 0,
     CHORD,
+    PATTERN,
 };
 
 enum class SequencerPresetLibraryFeedback : uint8_t {
@@ -269,9 +271,18 @@ struct SequencerChordPresetLibraryState {
     SequencerChordPresetDescriptor descriptor{};
 };
 
+struct SequencerPatternPresetLibraryState {
+    SequencerPatternPresetTarget target{};
+    SequencerPatternPresetDescriptor descriptor{};
+    SequencerPatternPresetSourceFilter sourceFilter =
+        SequencerPatternPresetSourceFilter::ALL;
+    uint32_t activationGeneration = 0U;
+};
+
 using SequencerPresetLibraryPayload = std::variant<
     SequencerStepPresetLibraryState,
-    SequencerChordPresetLibraryState>;
+    SequencerChordPresetLibraryState,
+    SequencerPatternPresetLibraryState>;
 
 struct SequencerPresetLibrarySessionState {
     static constexpr uint8_t ENTRY_CAPACITY = 15;
@@ -333,6 +344,8 @@ struct SequencerPresetLibrarySessionState {
     const SequencerStepPresetLibraryState& step() const;
     SequencerChordPresetLibraryState& chord();
     const SequencerChordPresetLibraryState& chord() const;
+    SequencerPatternPresetLibraryState& pattern();
+    const SequencerPatternPresetLibraryState& pattern() const;
     uint8_t itemCount() const;
     uint8_t newAssetItemOffset() const;
     bool selectedItemIsNewAsset() const;
