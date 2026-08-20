@@ -65,17 +65,7 @@ public:
         const auto viewSelectorScope = oc::ui::lvgl::scopeID(viewSelectorElement);
         if (viewSelectorScope == 0) return;
         view_switcher_handler_ = core::app::makeExtmemUnique<core::handler::ViewSwitcherHandler>(
-            core::handler::ViewSwitcherHandler::StateRefs{
-                state,
-                state.overlays,
-                state.activeView,
-                state.viewSelector,
-                state.sequencer.patternQuickControls,
-                state.sequencer.stepPropertyInlineSelector,
-                state.sequencer.ccLaneUi,
-                state.sequencer.structureUi.stepSelection,
-                state.projectNavigation,
-            },
+            state,
             overlays,
             encoders,
             buttons,

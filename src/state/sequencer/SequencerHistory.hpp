@@ -265,6 +265,7 @@ enum class SequencerHistoryActionKind : uint8_t {
     DrumTrackKind,
     DrumAdvancedContent,
     DrumLaneContent,
+    PatternPreset,
 };
 
 struct SequencerHistoryDescriptor {
@@ -384,6 +385,7 @@ struct SequencerHistoryDrumChange {
     SequencerTrackKind afterKind = SequencerTrackKind::INSTRUMENT;
     bool capturesGraph = false;
     SequencerHistoryDescriptor descriptor{};
+    SequencerHistoryPatternActivationMetadata activation{};
     DrumTrackState before{};
     DrumTrackState after{};
     uint32_t beforeGraphRevision = 0U;
@@ -405,6 +407,13 @@ bool capturePreparedHistoryDrumAfter(
     const SequencerTrackBankState& bank,
     const SequencerState& active,
     SequencerHistoryDrumChange& change
+);
+bool captureDetachedHistoryDrumAfter(
+    SequencerHistoryDrumChange& change,
+    SequencerTrackKind kind,
+    const DrumTrackState& drum,
+    const oc::note::sequencer::StepSequencerGraph* graph,
+    uint32_t graphRevision
 );
 /** Allocation-free rollback for an admitted Drum mutation that cannot commit. */
 bool restorePreparedHistoryDrumBefore(

@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "scope": "L-R08-09 raw Sequencer History API retirement slice 1",
   "recordingBoundary": {
-    "entryRecordingCallTotal": 44,
+    "entryRecordingCallTotal": 45,
     "expectedMigratedRemovalTotal": 38,
     "expectedProviderForwardTotal": 1,
     "expectedCoalescedPreparedTotal": 1,
-    "expectedTotal": 8,
+    "expectedTotal": 9,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -19,12 +19,12 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 8,
-      "expectedSinkTotal": 4,
+      "expectedTotal": 9,
+      "expectedSinkTotal": 5,
       "expectedServiceAdapterTotal": 4,
       "expectedSinkClassifications": {
         "post-fallible": 0,
-        "prepared": 4,
+        "prepared": 5,
         "rollback-aware": 0
       },
       "groups": [
@@ -37,6 +37,13 @@
         },
         {
           "path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerPatternPresetDomainServices.cpp",
           "method": "recordPreparedPattern",
           "count": 1,
           "role": "sink",

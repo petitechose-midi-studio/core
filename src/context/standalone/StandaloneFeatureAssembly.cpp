@@ -19,6 +19,7 @@
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
+#include "handler/sequencer/SequencerPatternPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/project/ProjectScaleSettingsDomainServices.hpp"
@@ -120,6 +121,11 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             productCatalog
         ),
         core::handler::SequencerChordPresetDomainServices::fromCoreState(
+            state,
+            productFiles,
+            productCatalog
+        ),
+        core::handler::SequencerPatternPresetDomainServices::fromCoreState(
             state,
             productFiles,
             productCatalog

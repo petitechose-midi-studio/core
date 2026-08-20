@@ -1,11 +1,11 @@
 #include "state/sequencer/SequencerStepPresetModel.hpp"
 
-#include <cctype>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
 #include "config/Timing.hpp"
+#include "state/sequencer/SequencerPresetMetadata.hpp"
 #include "state/sequencer/SequencerPresetLibraryActionPolicy.hpp"
 
 namespace core::state::sequencer {
@@ -125,14 +125,7 @@ FLASHMEM contextual::ContextActionReason sequencerStepPresetCompatibilityReason(
 }
 
 FLASHMEM uint32_t sequencerStepPresetIdHash(const char* presetId) {
-    uint32_t hash = FNV_OFFSET;
-    if (presetId == nullptr) return hash;
-    for (const auto* cursor = reinterpret_cast<const uint8_t*>(presetId);
-         *cursor != 0;
-         ++cursor) {
-        hash = mixByte(hash, *cursor);
-    }
-    return hash;
+    return sequencerPresetIdHash(presetId);
 }
 
 FLASHMEM uint32_t sequencerStepPresetTargetHash(
@@ -159,28 +152,7 @@ FLASHMEM void sequencerStepPresetSemanticName(
     char* out,
     size_t outSize
 ) {
-    if (out == nullptr || outSize == 0) return;
-    out[0] = '\0';
-    if (presetId == nullptr) return;
-
-    size_t written = 0;
-    bool capitalize = true;
-    for (size_t i = 0; presetId[i] != '\0' && written + 1U < outSize; ++i) {
-        const unsigned char ch = static_cast<unsigned char>(presetId[i]);
-        if (ch == '-' || ch == '_') {
-            if (written > 0 && out[written - 1U] != ' ') {
-                out[written++] = ' ';
-            }
-            capitalize = true;
-            continue;
-        }
-        out[written++] = static_cast<char>(
-            capitalize ? std::toupper(ch) : ch
-        );
-        capitalize = false;
-    }
-    while (written > 0 && out[written - 1U] == ' ') --written;
-    out[written] = '\0';
+    sequencerPresetSemanticName(presetId, out, outSize);
 }
 
 FLASHMEM contextual::ContextActionSpec buildSequencerStepPresetActionSpec(

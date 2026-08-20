@@ -8,8 +8,11 @@
 
 #include "state/ViewSelectorItems.hpp"
 #include "state/sequencer/SequencerScaleCatalog.hpp"
+#include "ui/font/StandaloneFonts.hpp"
+#include "ui/font/StandaloneIcons.hpp"
 #include "ui/interaction/SelectorPresentationPolicy.hpp"
 #include "ui/theme/StandaloneListVisuals.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
 
@@ -100,13 +103,30 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
     auto effectiveScale = override ? pattern.scaleOverride
                                    : state_refs_.trackBank.projectScaleSettings();
     effectiveScale.clamp();
+    const uint8_t selectedRow = state_refs_.settings.focusedRow.get();
+    const auto iconColor = [selectedRow](uint8_t row) {
+        return row == selectedRow ? ::standalone::theme::color::FOCUS_EDIT
+                                  : ::standalone::theme::color::TEXT_SECONDARY;
+    };
 
     const std::array<ms::ui::KeyValueRow, 4> rows{{
         {.key = ROW_KEYS[0], .value = override ? catalog::PATTERN_SCALE_POLICY_LABELS[1]
-                                                : catalog::PATTERN_SCALE_POLICY_LABELS[0]},
-        {.key = ROW_KEYS[1], .value = catalog::rootLabel(effectiveScale.root)},
-        {.key = ROW_KEYS[2], .value = catalog::scaleTypeLabel(effectiveScale.type)},
-        {.key = ROW_KEYS[3], .value = catalog::pitchEditModeLabel(pattern.pitchEditMode)},
+                                                : catalog::PATTERN_SCALE_POLICY_LABELS[0],
+         .icon = ::standalone::icons::PATTERN,
+         .iconFont = standalone_fonts.icons_14,
+         .iconColor = iconColor(0)},
+        {.key = ROW_KEYS[1], .value = catalog::rootLabel(effectiveScale.root),
+         .icon = ::standalone::icons::NOTE_PROP_PITCH,
+         .iconFont = standalone_fonts.icons_14,
+         .iconColor = iconColor(1)},
+        {.key = ROW_KEYS[2], .value = catalog::scaleTypeLabel(effectiveScale.type),
+         .icon = ::standalone::icons::SCALE,
+         .iconFont = standalone_fonts.icons_14,
+         .iconColor = iconColor(2)},
+        {.key = ROW_KEYS[3], .value = catalog::pitchEditModeLabel(pattern.pitchEditMode),
+         .icon = ::standalone::icons::LOCK,
+         .iconFont = standalone_fonts.icons_14,
+         .iconColor = iconColor(3)},
     }};
 
     overlay_.render({
@@ -117,6 +137,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
         .selectedIndex = state_refs_.settings.focusedRow.get(),
         .visible = true,
         .dataRevision = 1U |
+            (static_cast<uint32_t>(selectedRow) << 4) |
             (static_cast<uint32_t>(state_refs_.sequencer.pattern.patternScaleRevision.get()) << 8) |
             (static_cast<uint32_t>(state_refs_.trackBank.projectScaleRevisionSignal().get()) << 16),
         .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,

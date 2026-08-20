@@ -113,6 +113,7 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
             : theme::color::TEXT_SECONDARY,
         .selectedProperty = viewModel.selectedProperty,
         .trackEnabled = viewModel.trackEnabled,
+        .drum = viewModel.draftDrum,
     });
 
     core::ui::ContextActionStripProps actions{.visible = true};

@@ -667,9 +667,9 @@ FLASHMEM void populateTriggerRow(
     const auto item = static_cast<TriggerDetailItem>(index);
     out.iconFont = standalone_fonts.icons_14;
     out.iconColor = standalone::theme::color::MACRO_MODULATION;
-    setText(out.icon, standalone::icons::NOTE_PROP_GATE);
     char value[32]{};
     if (item == TriggerDetailItem::TRACK) {
+        setText(out.icon, standalone::icons::ROUTING);
         setText(out.key, "Track");
         std::snprintf(
             value,
@@ -679,6 +679,7 @@ FLASHMEM void populateTriggerRow(
         );
     } else if (item == TriggerDetailItem::NOTE_LOW ||
                item == TriggerDetailItem::NOTE_HIGH) {
+        setText(out.icon, standalone::icons::NOTE_PROP_PITCH);
         const uint8_t noteValue = item == TriggerDetailItem::NOTE_LOW
             ? trigger.noteMin
             : trigger.noteMax;
@@ -697,6 +698,7 @@ FLASHMEM void populateTriggerRow(
         );
     } else if (item == TriggerDetailItem::VELOCITY_LOW ||
                item == TriggerDetailItem::VELOCITY_HIGH) {
+        setText(out.icon, standalone::icons::NOTE_PROP_VEL);
         setText(
             out.key,
             item == TriggerDetailItem::VELOCITY_LOW

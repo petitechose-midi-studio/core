@@ -8,11 +8,13 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerPatternEditorOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "config/Timing.hpp"
 
 namespace core::handler {
 namespace {
@@ -86,6 +88,19 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() { return sequencer_.patternEditor.active.get() && ownsActiveTrack(); })
         .then([this](float delta) { navigate(delta); });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(overlay_scope_)
+        .when([this]() {
+            return preset_library_handler_ != nullptr &&
+                sequencer_.patternEditor.active.get() &&
+                ownsActiveTrack() && !randomize_.active &&
+                sequencer_.patternEditor.navigationMode == Mode::FIELDS;
+        })
+        .then([this]() {
+            preset_library_handler_->openPatternPresetLibrary();
+        });
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
@@ -216,7 +231,13 @@ FLASHMEM void SequencerPatternEditorHandler::update(uint32_t nowMs) {
         if (overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) { overlays_.hide(); }
         return;
     }
-    if (!overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) {
+    const bool patternLibraryActive =
+        overlays_.isCurrent(core::ui::OverlayType::PRESET_LIBRARY) &&
+        sequencer_.presetLibrary.visible.get() &&
+        sequencer_.presetLibrary.libraryKind.get() ==
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN;
+    if (!overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT) &&
+        !patternLibraryActive) {
         if (!commitPendingEdit()) return;
         randomize_.cancel();
         core::state::sequencer::closePatternEditor(sequencer_);

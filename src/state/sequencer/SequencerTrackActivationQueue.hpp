@@ -19,7 +19,7 @@ enum class SequencerTrackActivationStatus : uint8_t {
 enum class SequencerTrackActivationOrigin : uint8_t {
     UNSPECIFIED = 0,
     TRACK_PASTE,
-    STEP_PRESET,
+    PRESET,
     HISTORY,
 };
 

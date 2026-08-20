@@ -14,6 +14,7 @@
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerPatternPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackEditorState.hpp"
@@ -47,6 +48,10 @@ namespace core::ui {
 class SequencerChordVoiceRail;
 class SequencerPatternEditorOverlay;
 class SequencerStepEditOverlay;
+}
+
+namespace core::ui::sequencer {
+class SequencerPatternPresetPreview;
 }
 
 namespace core::ui::interaction {
@@ -131,6 +136,7 @@ public:
                            core::state::project::ProjectTrackDomainServices trackDomain,
                            core::handler::SequencerStepPresetDomainServices stepPresets,
                            core::handler::SequencerChordPresetDomainServices chordPresets,
+                           core::handler::SequencerPatternPresetDomainServices patternPresets,
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            OverlayPresentationRegistry& overlayPresentations,
                            oc::api::EncoderAPI& encoders,
@@ -200,6 +206,10 @@ private:
         preset_library_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::SequencerChordVoiceRail>
         preset_library_chord_voice_rail_;
+    core::app::ExtmemUniquePtr<core::ui::sequencer::SequencerPatternPresetPreview>
+        preset_library_pattern_preview_;
+    core::app::ExtmemUniquePtr<core::ui::interaction::TextKeyboardView>
+        preset_library_keyboard_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         cc_lane_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>

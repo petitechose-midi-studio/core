@@ -5,8 +5,11 @@
 
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
 #include "ui/interaction/SelectorPresentationPolicy.hpp"
+#include "ui/interaction/TextKeyboardView.hpp"
 #include "ui/sequencer/SequencerChordVoiceRail.hpp"
+#include "ui/sequencer/SequencerPatternPresetPreview.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
+#include "ui/font/StandaloneFonts.hpp"
 
 namespace core::context::standalone {
 
@@ -18,7 +21,10 @@ FLASHMEM SequencerOverlayPresenter::SequencerOverlayPresenter(
     core::ui::ContextActionStrip& stepEditActionStrip,
     ms::ui::VirtualListSelectorOverlay& presetLibraryOverlay,
     core::ui::ContextActionStrip& presetLibraryActionStrip,
-    core::ui::SequencerChordVoiceRail& presetLibraryChordVoiceRail
+    core::ui::SequencerChordVoiceRail& presetLibraryChordVoiceRail,
+    core::ui::sequencer::SequencerPatternPresetPreview&
+        presetLibraryPatternPreview,
+    core::ui::interaction::TextKeyboardView& presetLibraryKeyboard
 )
     : state_refs_(stateRefs)
     , step_edit_overlay_(stepEditOverlay)
@@ -26,6 +32,8 @@ FLASHMEM SequencerOverlayPresenter::SequencerOverlayPresenter(
     , preset_library_overlay_(presetLibraryOverlay)
     , preset_library_action_strip_(presetLibraryActionStrip)
     , preset_library_chord_voice_rail_(presetLibraryChordVoiceRail)
+    , preset_library_pattern_preview_(presetLibraryPatternPreview)
+    , preset_library_keyboard_(presetLibraryKeyboard)
     , render_scheduler_(
           core::ui::renderSchedulerDebugLabel("SequencerOverlay"),
           &SequencerOverlayPresenter::drainRenderQueue,
@@ -164,34 +172,97 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEditActionStrip() {
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderPresetLibrary() {
-    const auto data =
+    preset_library_render_data_ =
         core::context::standalone::sequencer_overlay_presenter::
             buildPresetLibraryRenderData({
                 state_refs_.sequencer,
                 state_refs_.tracks,
             });
+    const auto& data = preset_library_render_data_;
     if (!data.visible) {
         preset_library_overlay_.render({.visible = false});
         preset_library_chord_voice_rail_.render({.visible = false});
+        preset_library_pattern_preview_.render({.visible = false});
+        preset_library_keyboard_.setVisible(false);
         return;
     }
 
-    preset_library_overlay_.render(
-        core::ui::interaction::decisionSelectorProps(
-            data.title.data(),
-            data.meta.data(),
-            data.items.data(),
-            data.itemCount,
-            data.selectedIndex,
-            data.dataRevision
-        )
+    const auto& picker = state_refs_.sequencer.presetLibrary;
+    const bool textEditing =
+        picker.libraryKind.get() ==
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN &&
+        picker.pattern().textEdit !=
+            core::state::sequencer::SequencerPatternPresetTextEdit::NONE;
+    if (textEditing) {
+        const auto& pattern = picker.pattern();
+        preset_library_overlay_.setContentVisible(false);
+        preset_library_chord_voice_rail_.render({.visible = false});
+        preset_library_pattern_preview_.render({.visible = false});
+        preset_library_keyboard_.render({
+            .visible = true,
+            .title = pattern.textEdit ==
+                    core::state::sequencer::
+                        SequencerPatternPresetTextEdit::RENAME
+                ? "Rename"
+                : "New folder",
+            .meta = pattern.location.root()
+                ? "User"
+                : pattern.location.relativeDirectory.data(),
+            .name = pattern.textDraft.data(),
+            .selectedKey = pattern.textKeyIndex,
+            .shiftActive = pattern.textShiftActive,
+        });
+        return;
+    }
+    preset_library_keyboard_.setVisible(false);
+    preset_library_overlay_.setContentVisible(true);
+
+    auto props = core::ui::interaction::decisionSelectorProps(
+        data.title.data(),
+        data.meta.data(),
+        data.items.data(),
+        data.itemCount,
+        data.selectedIndex,
+        data.dataRevision
     );
+    props.breadcrumb = data.breadcrumb.data();
+    props.icons = data.itemIcons.data();
+    props.values = data.itemValues.data();
+    props.iconColors = data.itemIconColors.data();
+    props.iconFont = standalone_fonts.icons_16;
+    props.metaIcon = data.headerIcon;
+    props.metaIconFont = standalone_fonts.icons_12;
+    props.metaIconColor = data.headerIconColor;
+    props.showIndexColumn = data.showIndexColumn;
+    preset_library_overlay_.render(props);
     preset_library_chord_voice_rail_.render(data.chordVoiceRail);
+    if (data.patternPreviewVisible) {
+        const auto& pattern = state_refs_.sequencer.presetLibrary.pattern();
+        preset_library_pattern_preview_.render({
+            .descriptor = &pattern.descriptor,
+            .revision = data.dataRevision,
+            .visible = true,
+        });
+    } else {
+        preset_library_pattern_preview_.render({.visible = false});
+    }
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderPresetLibraryActionStrip() {
     if (!state_refs_.sequencer.presetLibrary.visible.get()) {
         preset_library_action_strip_.render({.visible = false});
+        return;
+    }
+
+    const auto& picker = state_refs_.sequencer.presetLibrary;
+    if (picker.libraryKind.get() ==
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN &&
+        picker.pattern().textEdit !=
+            core::state::sequencer::SequencerPatternPresetTextEdit::NONE) {
+        preset_library_action_strip_.render(
+            core::ui::interaction::TextKeyboardView::
+                bottomActionStripProps(true, false)
+        );
         return;
     }
 

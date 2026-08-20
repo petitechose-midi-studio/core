@@ -72,6 +72,34 @@ FLASHMEM const char* stepPresetActionName(
     }
 }
 
+FLASHMEM const char* patternPresetActionName(
+    core::state::contextual::ContextActionId action
+) {
+    using Action = core::state::contextual::ContextActionId;
+    switch (action) {
+        case Action::CREATE: return "create_pattern_preset_folder";
+        case Action::SAVE: return "save_pattern_preset";
+        case Action::LOAD: return "load_pattern_preset";
+        case Action::RENAME: return "rename_pattern_preset_entry";
+        case Action::MOVE: return "move_pattern_preset_entry";
+        case Action::DELETE_ASSET: return "delete_pattern_preset_entry";
+        default: return nullptr;
+    }
+}
+
+FLASHMEM const char* patternPresetSourceFilterName(
+    core::state::sequencer::SequencerPatternPresetSourceFilter filter
+) {
+    using Filter =
+        core::state::sequencer::SequencerPatternPresetSourceFilter;
+    switch (filter) {
+        case Filter::ALL: return "all";
+        case Filter::FACTORY: return "factory";
+        case Filter::USER: return "user";
+    }
+    return "all";
+}
+
 FLASHMEM const char* stepPresetCompatibilityReasonName(
     core::state::sequencer::SequencerStepPresetCompatibility compatibility
 ) {
@@ -97,6 +125,346 @@ FLASHMEM const char* stepPresetCompatibilityReasonName(
 }  // namespace
 
 namespace {
+
+FLASHMEM bool captureSequencerPatternPresetSemanticUxContext(
+    const core::state::sequencer::SequencerPresetLibrarySessionState& picker,
+    const core::state::sequencer::SequencerTrackActivationQueue*
+        trackActivations,
+    const oc::core::input::InputBindingTraceEvent& event,
+    core::validation::ux::SemanticUxContext& out
+) {
+    namespace seq = core::state::sequencer;
+    namespace contextual = core::state::contextual;
+    using ButtonType = oc::core::input::ButtonBindingType;
+    const auto& patternLibrary = picker.pattern();
+    const auto feedback = picker.operationFeedback.get();
+    const bool focusedAsset = picker.selectedItemIsExistingAsset() &&
+        picker.entryKind(picker.existingEntryIndexForSelectedItem()) ==
+            seq::SequencerPresetLibraryEntryKind::ASSET;
+    const bool focusedFolder = picker.selectedItemIsExistingAsset() &&
+        picker.entryKind(picker.existingEntryIndexForSelectedItem()) ==
+            seq::SequencerPresetLibraryEntryKind::FOLDER;
+    const bool feedbackIsSave = feedback.active &&
+        feedback.action == contextual::ContextActionId::SAVE;
+    const bool saveMode = feedbackIsSave ||
+        (!feedback.active &&
+         picker.mode.get() == seq::SequencerPresetLibraryMode::SAVE);
+    if (patternLibrary.textEdit !=
+        seq::SequencerPatternPresetTextEdit::NONE) {
+        out.mode = patternLibrary.textEdit ==
+                seq::SequencerPatternPresetTextEdit::RENAME
+            ? "sequencer.pattern_preset.rename"
+            : "sequencer.pattern_preset.create_folder";
+    } else if (patternLibrary.panel ==
+               seq::SequencerPatternPresetLibraryPanel::MANAGE) {
+        out.mode = "sequencer.pattern_preset.manage";
+    } else if (patternLibrary.panel ==
+               seq::SequencerPatternPresetLibraryPanel::MOVE_DESTINATION) {
+        out.mode = "sequencer.pattern_preset.move_destination";
+    } else if (patternLibrary.factoryCopyPending) {
+        out.mode = "sequencer.pattern_preset.copy_destination";
+    } else {
+        out.mode = picker.detailVisible.get()
+            ? (saveMode
+                   ? "sequencer.pattern_preset.save.detail"
+                   : "sequencer.pattern_preset.load.detail")
+            : (saveMode
+                   ? "sequencer.pattern_preset.save"
+                   : "sequencer.pattern_preset.load");
+    }
+
+    const auto spec = seq::buildSequencerPresetLibraryActionSpec(picker);
+    const auto variant = contextual::hasHoldAction(spec)
+        ? spec.hold
+        : spec.tap;
+    const auto action = feedback.active ? feedback.action : variant.action;
+
+    out.target = "pattern";
+    out.targetIndex = static_cast<int16_t>(
+        patternLibrary.target.trackIndex
+    );
+    out.routePolicy = "preserve_destination";
+    out.projection = picker.inspecting.get()
+        ? "inspection_pending"
+        : "exact_copy";
+    if (patternLibrary.factoryCopyPending) {
+        out.source = patternLibrary.copySourceId.data();
+    } else if (patternLibrary.panel !=
+            seq::SequencerPatternPresetLibraryPanel::BROWSE) {
+        out.source = patternLibrary.managedEntryId.data();
+    } else if (patternLibrary.descriptor.valid &&
+        patternLibrary.descriptor.metadata.technicalId[0] != '\0') {
+        out.source = patternLibrary.descriptor.metadata.technicalId;
+    } else if (focusedAsset) {
+        out.source = picker.entryId(
+            picker.existingEntryIndexForSelectedItem()
+        );
+    } else if (saveMode && picker.selectedItemIsNewAsset()) {
+        out.source = "new_pattern_preset";
+    } else {
+        out.source = "no_pattern_preset";
+    }
+
+    if (patternLibrary.factoryCopyPending) {
+        out.property = "destination";
+        copyValueLabel(
+            out.valueLabel,
+            patternLibrary.location.root()
+                ? "user_root"
+                : patternLibrary.location.relativeDirectory.data()
+        );
+    } else if (patternLibrary.panel ==
+        seq::SequencerPatternPresetLibraryPanel::MANAGE) {
+        out.property = "management_action";
+        switch (patternLibrary.managementAction) {
+            case seq::SequencerPatternPresetManagementAction::RENAME:
+                copyValueLabel(out.valueLabel, "rename");
+                break;
+            case seq::SequencerPatternPresetManagementAction::MOVE:
+                copyValueLabel(out.valueLabel, "move");
+                break;
+            case seq::SequencerPatternPresetManagementAction::DELETE:
+                copyValueLabel(out.valueLabel, "delete");
+                break;
+            case seq::SequencerPatternPresetManagementAction::COUNT:
+                break;
+        }
+    } else if (patternLibrary.panel ==
+               seq::SequencerPatternPresetLibraryPanel::MOVE_DESTINATION) {
+        out.property = "destination";
+        copyValueLabel(
+            out.valueLabel,
+            patternLibrary.location.root()
+                ? "user_root"
+                : patternLibrary.location.relativeDirectory.data()
+        );
+    } else if (patternLibrary.textEdit !=
+               seq::SequencerPatternPresetTextEdit::NONE) {
+        out.property = "name";
+        copyValueLabel(out.valueLabel, patternLibrary.textDraft.data());
+    } else if (picker.detailVisible.get() &&
+        patternLibrary.descriptor.valid) {
+        switch (picker.detailFocus.get()) {
+            case 0U:
+                out.property = "track_kind";
+                copyValueLabel(
+                    out.valueLabel,
+                    patternLibrary.descriptor.metadata.trackKind ==
+                            seq::SequencerTrackKind::DRUM
+                        ? "drum"
+                        : "instrument"
+                );
+                break;
+            case 1U:
+                out.property = "timing";
+                std::snprintf(
+                    out.valueLabel,
+                    sizeof(out.valueLabel),
+                    "%u@1/%u",
+                    static_cast<unsigned>(
+                        patternLibrary.descriptor.patternLength
+                    ),
+                    static_cast<unsigned>(
+                        4U * patternLibrary.descriptor.stepsPerBeat
+                    )
+                );
+                break;
+            case 2U:
+            default:
+                out.property = "content";
+                if (patternLibrary.descriptor.metadata.trackKind ==
+                    seq::SequencerTrackKind::DRUM) {
+                    std::snprintf(
+                        out.valueLabel,
+                        sizeof(out.valueLabel),
+                        "%u lanes",
+                        static_cast<unsigned>(
+                            patternLibrary.descriptor.drumLaneCount
+                        )
+                    );
+                } else {
+                    copyValueLabel(out.valueLabel, "graph+cc");
+                }
+                break;
+        }
+    } else if (patternLibrary.descriptor.valid) {
+        out.property = "asset_id";
+        copyValueLabel(out.valueLabel, out.source);
+    } else if (picker.selectedItemIsNewAsset()) {
+        out.property = "new_asset";
+        copyValueLabel(out.valueLabel, "unsaved");
+    } else {
+        out.property = "asset_id";
+        copyValueLabel(out.valueLabel, out.source);
+    }
+
+    if (picker.inspecting.get()) {
+        out.outcome = "pending";
+        out.reason = "preset_inspection_pending";
+    } else if (feedback.active) {
+        out.outcome = sequencerUxOperationOutcomeName(feedback.status);
+        out.reason = sequencerUxContextActionReasonName(feedback.reason);
+    } else {
+        out.outcome = sequencerUxGuardedActionOutcomeName(
+            picker.actionGuard.get().phase
+        );
+        out.reason = sequencerUxContextActionReasonName(variant.reason);
+        if (out.outcome == nullptr) {
+            out.outcome = variant.availability ==
+                    contextual::ContextActionAvailability::AVAILABLE
+                ? "ready"
+                : (variant.availability ==
+                           contextual::ContextActionAvailability::WARNING
+                       ? "warning"
+                       : "blocked");
+        }
+    }
+    if (feedback.active &&
+        patternLibrary.activationGeneration != 0U &&
+        patternLibrary.target.valid && trackActivations != nullptr) {
+        const auto telemetry = trackActivations->telemetry(
+            patternLibrary.target.trackIndex
+        );
+        if (telemetry.generation ==
+                patternLibrary.activationGeneration &&
+            telemetry.origin ==
+                seq::SequencerTrackActivationOrigin::PRESET) {
+            out.activationOrigin = "pattern_preset";
+            out.hasActivationGeneration = true;
+            out.activationGeneration = telemetry.generation;
+        }
+    }
+    if (out.reason == nullptr && patternLibrary.descriptor.valid) {
+        out.reason = sequencerUxContextActionReasonName(
+            seq::sequencerPatternPresetCompatibilityReason(
+                patternLibrary.descriptor.compatibility
+            )
+        );
+    }
+    out.hasConflict = true;
+    out.conflict = feedback.active &&
+        (feedback.status == contextual::OperationFeedbackStatus::CONFLICT ||
+         feedback.reason == contextual::ContextActionReason::CONFLICT);
+
+    const bool actionGesture =
+        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::PRESS) ||
+        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE) ||
+        isButton(
+            event,
+            Config::ButtonID::BOTTOM_RIGHT,
+            ButtonType::LONG_PRESS
+        );
+    if (isEncoder(event, Config::EncoderID::NAV)) {
+        out.effect = patternLibrary.textEdit !=
+                seq::SequencerPatternPresetTextEdit::NONE
+            ? "select_keyboard_key"
+            : (patternLibrary.panel ==
+                    seq::SequencerPatternPresetLibraryPanel::MANAGE
+                ? "select_pattern_preset_management_action"
+                : (patternLibrary.panel ==
+                        seq::SequencerPatternPresetLibraryPanel::
+                            MOVE_DESTINATION
+                    ? "select_pattern_preset_destination"
+                    : (picker.detailVisible.get()
+                        ? "focus_preset_library_detail"
+                        : "select_preset_library_asset")));
+    } else if (isEncoder(event, Config::EncoderID::OPT)) {
+        out.effect = "noop";
+        out.outcome = "noop";
+        out.reason = "preset_library_detail_has_no_adjustable_row";
+    } else if (isButton(event, Config::ButtonID::NAV, ButtonType::LONG_PRESS)) {
+        out.effect = "open_pattern_preset_management";
+    } else if (isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE)) {
+        if (patternLibrary.textEdit !=
+            seq::SequencerPatternPresetTextEdit::NONE) {
+            out.effect = "append_keyboard_character";
+        } else if (patternLibrary.panel ==
+                   seq::SequencerPatternPresetLibraryPanel::MOVE_DESTINATION) {
+            out.effect = "enter_pattern_preset_folder";
+        } else if (focusedFolder) {
+            out.effect = "enter_pattern_preset_folder";
+        } else {
+            out.effect = picker.detailVisible.get()
+                ? "noop"
+                : "enter_preset_library_detail";
+        }
+        if (picker.detailVisible.get() &&
+            patternLibrary.panel ==
+                seq::SequencerPatternPresetLibraryPanel::BROWSE) {
+            out.outcome = "noop";
+            out.reason = "preset_library_detail_already_open";
+        }
+    } else if (isButton(
+                   event,
+                   Config::ButtonID::LEFT_TOP,
+                   ButtonType::RELEASE
+               )) {
+        out.effect = patternLibrary.factoryCopyPending
+            ? "cancel_pattern_preset_copy"
+            : patternLibrary.textEdit !=
+                seq::SequencerPatternPresetTextEdit::NONE
+            ? "cancel_text_edit"
+            : (patternLibrary.panel ==
+                    seq::SequencerPatternPresetLibraryPanel::MANAGE
+                ? "back_to_preset_library_list"
+                : (patternLibrary.panel ==
+                        seq::SequencerPatternPresetLibraryPanel::
+                            MOVE_DESTINATION
+                    ? "leave_destination_folder_or_cancel_move"
+                    : (picker.detailVisible.get()
+                        ? "back_to_preset_library_list"
+                        : "close_preset_library")));
+    } else if (isButton(
+                   event,
+                   Config::ButtonID::LEFT_CENTER,
+                   ButtonType::RELEASE
+               )) {
+        if (!saveMode && !picker.detailVisible.get()) {
+            out.effect = "cycle_pattern_preset_source";
+            out.property = "source_filter";
+            copyValueLabel(
+                out.valueLabel,
+                patternPresetSourceFilterName(patternLibrary.sourceFilter)
+            );
+        } else {
+            out.effect = "noop";
+            out.outcome = "noop";
+            out.reason = saveMode
+                ? "source_filter_locked_to_user_in_save_mode"
+                : "preset_library_detail_open";
+        }
+    } else if (isButton(
+                   event,
+                   Config::ButtonID::BOTTOM_LEFT,
+                   ButtonType::RELEASE
+               )) {
+        out.effect = patternLibrary.textEdit !=
+                seq::SequencerPatternPresetTextEdit::NONE
+            ? "delete_text_character"
+            : (picker.detailVisible.get() &&
+               patternLibrary.descriptor.valid &&
+               patternLibrary.descriptor.source ==
+                   seq::SequencerPatternPresetSource::FACTORY)
+                ? "choose_pattern_preset_copy_destination"
+            : (patternLibrary.panel !=
+                    seq::SequencerPatternPresetLibraryPanel::BROWSE
+                ? "back_from_pattern_preset_management"
+                : ((picker.detailVisible.get() ||
+                    (picker.selectedItemIsExistingAsset() &&
+                     picker.entryKind(
+                         picker.existingEntryIndexForSelectedItem()
+                     ) == seq::SequencerPresetLibraryEntryKind::FOLDER))
+                    ? "open_pattern_preset_management"
+                    : (saveMode
+                        ? "show_preset_library_save_mode"
+                        : "show_preset_library_load_mode")));
+    } else if (actionGesture) {
+        out.effect = patternLibrary.factoryCopyPending
+            ? "copy_factory_pattern_preset"
+            : patternPresetActionName(action);
+    }
+    return true;
+}
 
 FLASHMEM bool captureSequencerChordPresetSemanticUxContext(
     const core::state::sequencer::SequencerPresetLibrarySessionState& picker,
@@ -356,6 +724,15 @@ SequencerPresetLibraryUxSurface::captureSemanticUxContext(
             out
         );
     }
+    if (picker.libraryKind.get() ==
+        seq::SequencerPresetLibraryKind::PATTERN) {
+        return captureSequencerPatternPresetSemanticUxContext(
+            picker,
+            track_activations_,
+            event,
+            out
+        );
+    }
     const auto& stepLibrary = picker.step();
 
     const auto feedback = picker.operationFeedback.get();
@@ -529,7 +906,7 @@ SequencerPresetLibraryUxSurface::captureSemanticUxContext(
             telemetry.generation ==
                 stepLibrary.activationGeneration &&
             telemetry.origin ==
-                seq::SequencerTrackActivationOrigin::STEP_PRESET) {
+                seq::SequencerTrackActivationOrigin::PRESET) {
             out.activationOrigin = "step_preset";
             out.hasActivationGeneration = true;
             out.activationGeneration = telemetry.generation;

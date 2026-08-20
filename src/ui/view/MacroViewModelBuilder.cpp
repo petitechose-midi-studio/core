@@ -303,14 +303,23 @@ FLASHMEM ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewM
     if (source.macroUi.slotSelection.active.get() ||
         source.macroUi.pageSelection.active.get() ||
         source.trackNavigation.selection.active.get()) {
-        for (auto& slot : props.slots) {
-            slot.visualState = Visual::HIDDEN;
-        }
+        props.slots[0] = makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CANCEL,
+            Visual::ACTIVE
+        );
         return props;
     }
 
     const auto performanceMode = source.macroUi.performanceOverlayMode.get();
-    props.slots[0].visualState = Visual::HIDDEN;
+    props.slots[0] = makeStandaloneIconStripSlot(
+        performanceMode == core::state::macro::MacroPerformanceOverlayMode::NONE
+            ? standalone::icons::ACTION_PLACE_TARGET
+            : standalone::icons::ACTION_CANCEL,
+        Visual::ACTIVE,
+        performanceMode == core::state::macro::MacroPerformanceOverlayMode::NONE
+            ? Tone::NEUTRAL
+            : Tone::WARNING
+    );
     props.slots[1] = {
         .visualState = performanceMode ==
                 core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE

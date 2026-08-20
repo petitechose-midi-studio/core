@@ -53,6 +53,8 @@ enum class ProjectMenuIcon : uint8_t {
     ACTION_LOAD,
     VIEW_PROJECT,
     ACTION_CANCEL,
+    STATUS_QUEUED,
+    STATUS_WARNING,
 };
 
 struct ProjectMenuRow {

@@ -97,6 +97,10 @@ FLASHMEM const char* menuIcon(core::state::project::ProjectMenuIcon icon) {
             return standalone::icons::VIEW_PROJECT;
         case Icon::ACTION_CANCEL:
             return standalone::icons::ACTION_CANCEL;
+        case Icon::STATUS_QUEUED:
+            return standalone::icons::STATUS_QUEUED;
+        case Icon::STATUS_WARNING:
+            return standalone::icons::STATUS_WARNING;
         case Icon::NONE:
         default:
             return "";
@@ -347,7 +351,7 @@ void ProjectView::render() {
         modulator_workspace_->render({.visible = false});
     }
 
-    renderKeyboardActionStrips(keyboardActive);
+    renderProjectActionStrips(keyboardActive);
 
     if (keyboardActive) {
         if (menu_) menu_->hide();
@@ -432,23 +436,33 @@ void ProjectView::render() {
     });
 }
 
-
-
-void ProjectView::renderKeyboardActionStrips(bool visible) {
+void ProjectView::renderProjectActionStrips(bool keyboardActive) {
     if (left_action_strip_) {
-        left_action_strip_->render(
-            core::ui::interaction::TextKeyboardView::
-                leftActionStripProps(
-                    visible,
+        if (keyboardActive) {
+            left_action_strip_->render(
+                core::ui::interaction::TextKeyboardView::leftActionStripProps(
+                    true,
                     state_refs_.navigation.projectNameShiftActive
                 )
-        );
+            );
+        } else {
+            ContextActionStripProps left{.visible = true};
+            left.slots[0] = makeStandaloneIconStripSlot(
+                core::state::project::projectNavigationAtRoot(
+                    state_refs_.navigation
+                )
+                    ? standalone::icons::ACTION_PLACE_TARGET
+                    : standalone::icons::ACTION_BACKWARD,
+                ContextActionStripVisualState::ACTIVE
+            );
+            left_action_strip_->render(left);
+        }
     }
     if (bottom_action_strip_) {
         bottom_action_strip_->render(
             core::ui::interaction::TextKeyboardView::
                 bottomActionStripProps(
-                    visible,
+                    keyboardActive,
                     state_refs_.statusBar.playing.get()
                 )
         );

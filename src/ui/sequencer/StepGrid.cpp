@@ -34,8 +34,8 @@ constexpr uint32_t PLAYHEAD_ACTIVE_COLOR =
     ::standalone::theme::color::LIVE_TIME;
 constexpr uint32_t PLAYHEAD_INACTIVE_COLOR = theme::color::INACTIVE_LIGHTER;
 constexpr lv_coord_t STEP_BOTTOM_RESERVED_HEIGHT = grid::STEP_BOTTOM_RESERVED_HEIGHT;
-constexpr lv_opa_t PLAYHEAD_ACTIVE_OPA = LV_OPA_COVER;
-constexpr lv_opa_t PLAYHEAD_INACTIVE_OPA = LV_OPA_70;
+constexpr lv_opa_t PLAYHEAD_ACTIVE_OPA = LV_OPA_80;
+constexpr lv_opa_t PLAYHEAD_INACTIVE_OPA = LV_OPA_50;
 constexpr uint32_t STEP_INDEX_COLOR = theme::color::INACTIVE_LIGHTER;
 constexpr lv_opa_t STEP_INDEX_OPA = LV_OPA_60;
 constexpr uint32_t STEP_GUIDE_COLOR = theme::color::INACTIVE_LIGHTER;
@@ -781,13 +781,8 @@ FLASHMEM void drawTileNoteEvents(
     }
 }
 
-FLASHMEM void drawPlayheadLine(lv_layer_t* layer,
-                      const lv_area_t& buttonArea,
-                      const grid::TileRenderCache& cache) {
-    if (!layer || !cache.playheadLineVisible ||
-        cache.playheadLineOpa == LV_OPA_TRANSP) {
-        return;
-    }
+FLASHMEM lv_area_t playheadLineArea(const lv_area_t& buttonArea,
+                                    uint8_t progress) {
     const lv_coord_t width = std::max<lv_coord_t>(
         1,
         static_cast<lv_coord_t>(
@@ -797,7 +792,7 @@ FLASHMEM void drawPlayheadLine(lv_layer_t* layer,
     const lv_coord_t usableSpan = std::max<lv_coord_t>(0, width - 1);
     const lv_coord_t x = static_cast<lv_coord_t>(
         buttonArea.x1 + NOTE_RAIL_HORIZONTAL_PAD +
-        (static_cast<uint16_t>(cache.playheadProgress) * usableSpan) / 255U
+        (static_cast<uint16_t>(progress) * usableSpan) / 255U
     );
     const lv_coord_t y = static_cast<lv_coord_t>(
         buttonArea.y1 + PLAYHEAD_TOP_PAD
@@ -809,12 +804,28 @@ FLASHMEM void drawPlayheadLine(lv_layer_t* layer,
             PLAYHEAD_TOP_PAD - PLAYHEAD_BOTTOM_PAD
         )
     );
+    return lv_area_t{
+        .x1 = x,
+        .y1 = y,
+        .x2 = x,
+        .y2 = static_cast<lv_coord_t>(y + height - 1),
+    };
+}
+
+FLASHMEM void drawPlayheadLine(lv_layer_t* layer,
+                               const lv_area_t& buttonArea,
+                               const grid::TileRenderCache& cache) {
+    if (!layer || !cache.playheadLineVisible ||
+        cache.playheadLineOpa == LV_OPA_TRANSP) {
+        return;
+    }
+    const lv_area_t area = playheadLineArea(buttonArea, cache.playheadProgress);
     drawVariationRect(
         layer,
-        x,
-        y,
-        1,
-        height,
+        area.x1,
+        area.y1,
+        lv_area_get_width(&area),
+        lv_area_get_height(&area),
         cache.playheadLineColorFull,
         cache.playheadLineOpa
     );
@@ -1213,7 +1224,24 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
     oc::ui::lvgl::StaticSurfaceInvalidationBatch<4> invalidation(container_);
     for (uint8_t i = 0; i < tiles_.size(); ++i) {
         if (!plan.tileDirty[i] && !geometryChanged) continue;
-        invalidation.include(tiles_[i]);
+        const bool narrowPlayheadDamage = plan.playheadOnly[i] && !geometryChanged;
+        lv_area_t tileArea{};
+        lv_area_t playheadDamage{};
+        bool hasPlayheadDamage = false;
+        if (narrowPlayheadDamage) {
+            lv_obj_get_coords(tiles_[i], &tileArea);
+            const auto& cache = render_cache_.tiles[i];
+            if (cache.playheadLineVisible &&
+                cache.playheadLineOpa != LV_OPA_TRANSP) {
+                playheadDamage = playheadLineArea(
+                    tileArea,
+                    cache.playheadProgress
+                );
+                hasPlayheadDamage = true;
+            }
+        } else {
+            invalidation.include(tiles_[i]);
+        }
 #if OC_ENABLE_STATS
         dirtyTileCount += 1;
 #endif
@@ -1227,6 +1255,26 @@ void StepGrid::render(const sequencer::grid::StepGridFrameState& frameState) {
             geometryChanged,
             frameState
         );
+        if (narrowPlayheadDamage) {
+            const auto& cache = render_cache_.tiles[i];
+            if (cache.playheadLineVisible &&
+                cache.playheadLineOpa != LV_OPA_TRANSP) {
+                const lv_area_t current = playheadLineArea(
+                    tileArea,
+                    cache.playheadProgress
+                );
+                if (hasPlayheadDamage) {
+                    playheadDamage.x1 = std::min(playheadDamage.x1, current.x1);
+                    playheadDamage.x2 = std::max(playheadDamage.x2, current.x2);
+                } else {
+                    playheadDamage = current;
+                    hasPlayheadDamage = true;
+                }
+            }
+            if (hasPlayheadDamage) {
+                invalidation.include(playheadDamage);
+            }
+        }
     }
     invalidation.flush();
 

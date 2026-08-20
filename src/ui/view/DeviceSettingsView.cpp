@@ -4,6 +4,8 @@
 #include <config/Timing.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
+#include "ui/font/StandaloneFonts.hpp"
+#include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneListVisuals.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
 
@@ -12,13 +14,25 @@ namespace {
 
 namespace style = oc::ui::lvgl::style;
 
+constexpr std::array<const char*, core::state::DeviceSettingsState::ROW_COUNT>
+    SETTING_ICONS{
+        standalone::icons::CLOCK_SYNC,
+        standalone::icons::TRANSPORT_PLAY,
+        standalone::icons::STATUS_QUEUED,
+        standalone::icons::LOCK,
+        standalone::icons::NOTE_PROP_PITCH,
+    };
+
 }  // namespace
 
 FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     createLayout(parent);
     if (!frame_ || !frame_->valid() || !container_ || !body_container_ ||
-        !menu_ || !menu_->getElement()) return;
+        !interaction_container_ || !center_column_ || !left_action_strip_ ||
+        !left_action_strip_->getElement() || !menu_ || !menu_->getElement()) {
+        return;
+    }
     render_scheduler_ =
         core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
             core::ui::renderSchedulerDebugLabel("DeviceSettingsView"),
@@ -33,9 +47,12 @@ FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stat
 FLASHMEM DeviceSettingsView::~DeviceSettingsView() {
     render_scheduler_.reset();
     menu_.reset();
+    left_action_strip_.reset();
     frame_.reset();
     container_ = nullptr;
     body_container_ = nullptr;
+    interaction_container_ = nullptr;
+    center_column_ = nullptr;
 }
 
 FLASHMEM void DeviceSettingsView::onActivate() {
@@ -58,7 +75,25 @@ FLASHMEM void DeviceSettingsView::createLayout(lv_obj_t* parent) {
     style::apply(container_).noScroll();
     RetainedViewRenderPolicy::initializeHidden(container_);
 
-    menu_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(body_container_);
+    frame_->createInteractionRow();
+    interaction_container_ = frame_->interactionRow();
+    if (!interaction_container_) return;
+
+    left_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
+        interaction_container_,
+        ContextActionStripOrientation::VERTICAL,
+        ContextActionStripVerticalLayout::SPREAD
+    );
+    if (!left_action_strip_ || !left_action_strip_->getElement()) return;
+    lv_obj_set_width(left_action_strip_->getElement(), 32);
+    lv_obj_set_style_pad_left(left_action_strip_->getElement(), 3, 0);
+    lv_obj_set_style_pad_right(left_action_strip_->getElement(), 1, 0);
+
+    frame_->createCenterColumn();
+    center_column_ = frame_->centerColumn();
+    if (!center_column_) return;
+
+    menu_ = core::app::makeExtmemUnique<ms::ui::MenuListView>(center_column_);
     if (menu_ && menu_->getElement()) {
         lv_obj_set_height(menu_->getElement(), 0);
         lv_obj_set_flex_grow(menu_->getElement(), 1);
@@ -105,10 +140,18 @@ void DeviceSettingsView::render() {
         rows_[i] = ms::ui::MenuRow{
             .label = source.label,
             .value = source.value,
+            .icon = SETTING_ICONS[i],
             .kind = ms::ui::MenuRowKind::Value,
             .enabled = source.enabled,
         };
     }
+
+    ContextActionStripProps left{.visible = true};
+    left.slots[0] = makeStandaloneIconStripSlot(
+        standalone::icons::ACTION_PLACE_TARGET,
+        ContextActionStripVisualState::ACTIVE
+    );
+    left_action_strip_->render(left);
 
     menu_->render(ms::ui::MenuListViewProps{
         .title = page.title,
@@ -117,6 +160,7 @@ void DeviceSettingsView::render() {
         .rowCount = page.rowCount,
         .selectedIndex = page.selectedIndex,
         .dataRevision = page.dataRevision,
+        .iconFont = standalone_fonts.icons_14,
         .visualTokens = &standalone::theme::CONTROLLER_LIST_VISUALS,
     });
 

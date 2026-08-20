@@ -48,6 +48,8 @@ public:
 
     [[nodiscard]] bool pending() const;
     [[nodiscard]] bool focusedExistingAsset() const;
+    [[nodiscard]] bool focusedFolder() const;
+    [[nodiscard]] const char* selectedEntryId() const;
     [[nodiscard]] const char* selectedAssetId() const;
 
 private:

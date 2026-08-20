@@ -124,9 +124,10 @@ inline const char* iconGlyph(
         case Icon::CREATE:
             return ::standalone::icons::ACTION_CREATE;
         case Icon::APPLY:
-        case Icon::ENTER:
         case Icon::APPLIED:
             return ::standalone::icons::ACTION_VALIDATE;
+        case Icon::ENTER:
+            return ::standalone::icons::ACTION_MOVE;
         case Icon::EDIT:
             return ::standalone::icons::SETTINGS_GEAR;
         case Icon::SAVE:
@@ -145,6 +146,8 @@ inline const char* iconGlyph(
             return ::standalone::icons::ACTION_PASTE;
         case Icon::RENAME:
             return ::standalone::icons::ACTION_RENAME;
+        case Icon::MOVE:
+            return ::standalone::icons::ACTION_MOVE;
         case Icon::MUTE:
         case Icon::UNMUTE:
             return ::standalone::icons::TRACK_MUTE;

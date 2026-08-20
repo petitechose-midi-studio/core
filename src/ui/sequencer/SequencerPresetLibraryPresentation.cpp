@@ -8,9 +8,11 @@
 
 #include "state/sequencer/SequencerPresetLibraryActionSpec.hpp"
 #include "ui/sequencer/SequencerChordPresetPresentation.hpp"
+#include "ui/sequencer/SequencerPatternPresetPresentation.hpp"
 #include "ui/sequencer/SequencerPresetLibraryPresentationCommon.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/strip/ContextActionVisualProjection.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::sequencer {
 namespace contextual = core::state::contextual;
@@ -43,59 +45,6 @@ FLASHMEM const char* feedbackLabel(
     }
 }
 
-FLASHMEM const char* operationReasonLabel(
-    contextual::ContextActionReason reason
-) {
-    using Reason = contextual::ContextActionReason;
-    switch (reason) {
-        case Reason::CAPACITY: return "Capacity full";
-        case Reason::STORAGE_UNAVAILABLE: return "Storage unavailable";
-        case Reason::ALLOCATION_UNAVAILABLE: return "Memory unavailable";
-        case Reason::CORRUPT_ASSET: return "Corrupt preset";
-        case Reason::UNSUPPORTED_VERSION: return "Unsupported preset version";
-        case Reason::STALE_TARGET: return "Target changed";
-        case Reason::CONFLICT: return "Conflict - retry";
-        case Reason::INCOMPATIBLE: return "Incompatible target";
-        case Reason::HISTORY_UNAVAILABLE: return "Undo unavailable";
-        case Reason::READ_ONLY: return "Read only";
-        case Reason::NO_ROUTE: return "No MIDI route";
-        case Reason::FAILED: return "Operation failed";
-        case Reason::PENDING: return "Waiting for loop boundary";
-        case Reason::NONE:
-        default: return "";
-    }
-}
-
-FLASHMEM const char* operationLabel(
-    const contextual::OperationFeedbackState& feedback,
-    const ListConfig& config
-) {
-    const char* reason = operationReasonLabel(feedback.reason);
-    using Status = contextual::OperationFeedbackStatus;
-    if ((feedback.status == Status::BLOCKED ||
-         feedback.status == Status::CONFLICT ||
-         feedback.status == Status::FAILED) && reason[0] != '\0') {
-        return reason;
-    }
-    switch (feedback.status) {
-        case Status::PRESSED: return "Hold to confirm";
-        case Status::ARMED: return "Armed - keep holding";
-        case Status::QUEUED: return "Queued for loop boundary";
-        case Status::APPLIED:
-            return feedback.action == contextual::ContextActionId::SAVE
-                ? "Saved"
-                : config.loadedFeedback;
-        case Status::CANCELLED: return "Cancelled";
-        case Status::BLOCKED: return "Blocked";
-        case Status::WARNING: return config.warningFeedback;
-        case Status::CONFLICT: return "Target changed";
-        case Status::FAILED: return "Failed";
-        case Status::PREVIEW: return "Preview";
-        case Status::NONE:
-        default: return "";
-    }
-}
-
 FLASHMEM const char* shortOperationLabel(
     const contextual::OperationFeedbackState& feedback
 ) {
@@ -103,11 +52,20 @@ FLASHMEM const char* shortOperationLabel(
     switch (feedback.status) {
         case Status::PRESSED: return "Hold";
         case Status::ARMED: return "Armed";
-        case Status::QUEUED: return "Queued";
+        case Status::QUEUED:
+            return feedback.action == contextual::ContextActionId::LOAD
+                ? "Next loop"
+                : "Queued";
         case Status::APPLIED:
-            return feedback.action == contextual::ContextActionId::SAVE
-                ? "Saved"
-                : "Loaded";
+            switch (feedback.action) {
+                case contextual::ContextActionId::SAVE: return "Saved";
+                case contextual::ContextActionId::CREATE: return "Created";
+                case contextual::ContextActionId::RENAME: return "Renamed";
+                case contextual::ContextActionId::MOVE: return "Moved";
+                case contextual::ContextActionId::DELETE_ASSET:
+                    return "Deleted";
+                default: return "Loaded";
+            }
         case Status::CANCELLED: return "Cancelled";
         case Status::BLOCKED: return "Blocked";
         case Status::WARNING: return "Warning";
@@ -141,29 +99,46 @@ FLASHMEM void formatList(
     std::snprintf(
         data.title.data(),
         data.title.size(),
-        "%s %s Preset",
+        "%s %s",
         saveMode ? "Save" : "Load",
         config.kindLabel
     );
+    data.showIndexColumn = false;
 
     int itemIndex = 0;
     if (picker.newAssetItemOffset() > 0U) {
         std::snprintf(
             data.itemBuffers[itemIndex].data(),
             data.itemBuffers[itemIndex].size(),
-            "+  New %s Preset",
+            "New %s",
             config.kindLabel
         );
         data.items[itemIndex] = data.itemBuffers[itemIndex].data();
+        data.itemIcons[itemIndex] = config.newItemIcon;
+        data.itemIconColors[itemIndex] = config.newItemIconColor;
+        ++itemIndex;
+    }
+    if (picker.newAssetItemOffset() > 1U) {
+        std::snprintf(
+            data.itemBuffers[itemIndex].data(),
+            data.itemBuffers[itemIndex].size(),
+            "New Folder"
+        );
+        data.items[itemIndex] = data.itemBuffers[itemIndex].data();
+        data.itemIcons[itemIndex] = config.newFolderIcon;
+        data.itemIconColors[itemIndex] = config.folderIconColor;
         ++itemIndex;
     }
     for (uint8_t index = 0;
          index < picker.entryCount.get() &&
          itemIndex < static_cast<int>(data.items.size());
          ++index) {
-        const bool readable = picker.entryHasReadableMetadata(index) &&
+        const bool folder = picker.entryKind(index) ==
+            core::state::sequencer::SequencerPresetLibraryEntryKind::FOLDER;
+        const bool readable = (folder ||
+            picker.entryHasReadableMetadata(index)) &&
             picker.entryName(index)[0] != '\0';
-        if (readable && duplicateName(picker, index)) {
+        if (!folder && readable && duplicateName(picker, index)) {
             std::snprintf(
                 data.itemBuffers[itemIndex].data(),
                 data.itemBuffers[itemIndex].size(),
@@ -176,10 +151,28 @@ FLASHMEM void formatList(
                 data.itemBuffers[itemIndex].data(),
                 data.itemBuffers[itemIndex].size(),
                 "%s",
-                readable ? picker.entryName(index) : picker.entryId(index)
+                readable
+                    ? picker.entryName(index)
+                    : (folder && picker.entryId(index)[0] == '@'
+                        ? picker.entryId(index) + 1
+                        : picker.entryId(index))
             );
         }
         data.items[itemIndex] = data.itemBuffers[itemIndex].data();
+        data.itemIcons[itemIndex] = folder
+            ? config.folderIcon
+            : config.itemIcon;
+        data.itemIconColors[itemIndex] = folder
+            ? config.folderIconColor
+            : config.itemIconColor;
+        std::snprintf(
+            data.itemValueBuffers[itemIndex].data(),
+            data.itemValueBuffers[itemIndex].size(),
+            "%s",
+            picker.entryValue(index)
+        );
+        data.itemValues[itemIndex] =
+            data.itemValueBuffers[itemIndex].data();
         ++itemIndex;
     }
     if (itemIndex == 0) {
@@ -201,7 +194,7 @@ FLASHMEM void formatList(
 
     const auto operation = picker.operationFeedback.get();
     const char* operationText = operation.active
-        ? operationLabel(operation, config)
+        ? shortOperationLabel(operation)
         : "";
     const char* currentFeedback = feedbackLabel(
         picker.feedback.get(),
@@ -383,6 +376,10 @@ buildSequencerPresetLibraryPresentation(
         core::state::sequencer::SequencerPresetLibraryKind::CHORD) {
         return buildSequencerChordPresetPresentation(sequencer);
     }
+    if (sequencer.presetLibrary.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        return buildSequencerPatternPresetPresentation(sequencer);
+    }
     Presentation data{};
     const auto& picker = sequencer.presetLibrary;
     if (!picker.visible.get()) return data;
@@ -411,9 +408,12 @@ buildSequencerPresetLibraryPresentation(
             saveMode,
             {
                 .kindLabel = "Step",
+                .itemIcon = ::standalone::icons::NOTE,
+                .newItemIcon = ::standalone::icons::ACTION_CREATE,
+                .itemIconColor = ::standalone::theme::color::STEP_PITCH,
+                .newItemIconColor = ::standalone::theme::color::FOCUS_EDIT,
                 .loadedFeedback = "Loaded into editor",
                 .queuedFeedback = "Queued for loop boundary",
-                .warningFeedback = "Check impact",
                 .compatibility = step.descriptor.valid
                     ? core::state::sequencer::
                           sequencerStepPresetCompatibilityLabel(
@@ -468,6 +468,7 @@ buildSequencerPresetLibraryActionPresentation(const Picker& picker) {
         feedback
     );
     data.tone = action_visual::stripTone(visualPolicy.tone);
+    data.primaryIcon = action_visual::iconGlyph(visualPolicy.icon);
 
     using Guard = contextual::GuardedActionPhase;
     const bool holdFeedbackMatches =
@@ -487,13 +488,6 @@ buildSequencerPresetLibraryActionPresentation(const Picker& picker) {
     data.statusIcon = action_visual::feedbackIconGlyph(
         feedback,
         visualPolicy.icon
-    );
-    data.showLabel = true;
-    std::snprintf(
-        data.label.data(),
-        data.label.size(),
-        "%s",
-        preset_library_presentation_common::shortOperationLabel(feedback)
     );
     return data;
 }

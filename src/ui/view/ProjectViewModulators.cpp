@@ -361,6 +361,7 @@ void ProjectView::renderModulatorActionStrips(
 ) {
     ContextActionStripProps left;
     ContextActionStripProps bottom;
+    const bool auditioning = state_refs_.pages.control.audition.active();
     const bool detail = state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         state_refs_.navigation.currentNode.get() ==
@@ -373,14 +374,20 @@ void ProjectView::renderModulatorActionStrips(
             core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
         state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
-    if (detail) {
-        left.visible = true;
-        left.slots[0] = makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_BACKWARD,
-            ContextActionStripVisualState::ACTIVE,
-            ContextActionStripTone::WARNING
-        );
-    }
+    const bool backAvailable = detail ||
+        state_refs_.navigation.modulatorReturn.active();
+    const char* leftIcon = auditioning
+        ? standalone::icons::ACTION_CANCEL
+        : backAvailable ? standalone::icons::ACTION_BACKWARD
+                        : standalone::icons::ACTION_PLACE_TARGET;
+    left.visible = true;
+    left.slots[0] = makeStandaloneIconStripSlot(
+        leftIcon,
+        ContextActionStripVisualState::ACTIVE,
+        auditioning
+            ? ContextActionStripTone::WARNING
+            : ContextActionStripTone::NEUTRAL
+    );
     const bool destinations = state_refs_.navigation.currentNode.get() ==
         core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS;
     const bool destinationPicker = state_refs_.navigation.currentNode.get() ==

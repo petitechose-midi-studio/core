@@ -508,8 +508,25 @@ void test_load_project_picker_empty_state_is_disabled() {
     assert(std::string(page.rows[0].label) == "No projects");
     assert(!page.rows[0].enabled);
     assert(std::string(rowValue(page.rows[0])) == "Save first");
+    assert(page.rows[0].icon == ProjectMenuIcon::STATUS_WARNING);
 
     std::cout << "[PASS] test_load_project_picker_empty_state_is_disabled\n";
+}
+
+void test_load_project_picker_scanning_state_has_status_icon() {
+    core::state::project::ProjectNavigationState navigation;
+
+    navigation.loadProjects.clear();
+    assert(core::state::project::openProjectLoadPicker(navigation));
+
+    const auto page = core::state::project::buildProjectMenuPage(navigation);
+    assert(page.rowCount == 1);
+    assert(std::string(page.rows[0].label) == "Loading projects");
+    assert(std::string(rowValue(page.rows[0])) == "Please wait");
+    assert(!page.rows[0].enabled);
+    assert(page.rows[0].icon == ProjectMenuIcon::STATUS_QUEUED);
+
+    std::cout << "[PASS] scanning state has queued status icon\n";
 }
 
 void test_navigation_wraps_rows() {
@@ -826,6 +843,7 @@ int main() {
     test_load_project_picker_shows_detected_projects();
     test_load_project_confirmation_prompts_dirty_session_choice();
     test_load_project_confirmation_without_saved_identity_disables_save_choice();
+    test_load_project_picker_scanning_state_has_status_icon();
     test_load_project_picker_empty_state_is_disabled();
     test_navigation_wraps_rows();
     test_focus_changes_selection_without_content_revision_change();

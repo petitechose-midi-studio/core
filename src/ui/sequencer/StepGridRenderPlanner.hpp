@@ -19,6 +19,7 @@ struct FrameRenderPlan {
     std::array<TileRenderDiff, 8> diffs{};
     std::array<bool, 8> feedbackChanged{};
     std::array<bool, 8> tileDirty{};
+    std::array<bool, 8> playheadOnly{};
     bool anyDirty = false;
 };
 

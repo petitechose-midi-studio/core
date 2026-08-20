@@ -11,6 +11,7 @@
 #include <oc/time/Time.hpp>
 
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #if defined(MS_UX_RECORDER)
@@ -202,6 +203,19 @@ FLASHMEM void DrumLaneEditorHandler::setupBindings() {
         })
         .then([this]() FLASHMEM { activateField(); });
 
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(overlay_scope_)
+        .when([this]() FLASHMEM {
+            const auto& editor = sequencer_.drumSequencer.laneEditor;
+            return preset_library_handler_ != nullptr && editor.active &&
+                !editor.textEditing;
+        })
+        .then([this]() FLASHMEM {
+            cancelNoteAudition(core::time_compat::millis());
+            preset_library_handler_->openPatternPresetLibrary();
+        });
+
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(overlay_scope_)
@@ -316,8 +330,14 @@ FLASHMEM void DrumLaneEditorHandler::update(uint32_t nowMs) {
     auto& drumUi = sequencer_.drumSequencer;
     const bool current =
         overlays_.isCurrent(core::ui::OverlayType::SEQ_DRUM_LANE_EDIT);
+    const bool patternLibraryActive =
+        overlays_.isCurrent(core::ui::OverlayType::PRESET_LIBRARY) &&
+        sequencer_.presetLibrary.visible.get() &&
+        sequencer_.presetLibrary.libraryKind.get() ==
+            seq::SequencerPresetLibraryKind::PATTERN;
     if (drumUi.laneEditor.active &&
-        (!current || !drumUi.gridVisible() || drumUi.drumTrack == nullptr)) {
+        ((!current && !patternLibraryActive) || !drumUi.gridVisible() ||
+         drumUi.drumTrack == nullptr)) {
         close();
         return;
     }

@@ -82,7 +82,14 @@ SequencerPresetLibraryPager::applyPage_(
             index,
             index < page.count ? entries[index].id : nullptr,
             index < page.count ? entries[index].semanticName : nullptr,
-            index < page.count && entries[index].metadataReadable
+            index < page.count && entries[index].metadataReadable,
+            index < page.count && entries[index].kind ==
+                    core::persistence::ProductDirectoryAssetEntryKind::FOLDER
+                ? core::state::sequencer::
+                      SequencerPresetLibraryEntryKind::FOLDER
+                : core::state::sequencer::
+                      SequencerPresetLibraryEntryKind::ASSET,
+            index < page.count ? entries[index].displayValue : nullptr
         );
     }
     picker_.entryCount.set(page.count);
@@ -99,6 +106,16 @@ SequencerPresetLibraryPager::applyPage_(
         picker_.setFeedback(
             core::state::sequencer::SequencerPresetLibraryFeedback::EMPTY
         );
+        return PageLoadStatus::READY;
+    }
+    if (picker_.entryCount.get() == 0U) {
+        // In Save mode the synthetic "+ New" command is the sole row. The
+        // existing-entry offset is therefore not a valid selection.
+        picker_.selectedIndex.set(0);
+        picker_.feedback.set(
+            core::state::sequencer::SequencerPresetLibraryFeedback::NONE
+        );
+        picker_.bump();
         return PageLoadStatus::READY;
     }
     picker_.selectedIndex.set(
@@ -352,15 +369,30 @@ SequencerPresetLibraryPager::toggleModePreservingSelection() {
 
 FLASHMEM bool
 SequencerPresetLibraryPager::focusedExistingAsset() const {
-    return picker_.selectedItemIsExistingAsset();
+    if (!picker_.selectedItemIsExistingAsset()) return false;
+    return picker_.entryKind(
+        picker_.existingEntryIndexForSelectedItem()
+    ) == core::state::sequencer::SequencerPresetLibraryEntryKind::ASSET;
+}
+
+FLASHMEM bool SequencerPresetLibraryPager::focusedFolder() const {
+    if (!picker_.selectedItemIsExistingAsset()) return false;
+    return picker_.entryKind(
+        picker_.existingEntryIndexForSelectedItem()
+    ) == core::state::sequencer::SequencerPresetLibraryEntryKind::FOLDER;
+}
+
+FLASHMEM const char* SequencerPresetLibraryPager::selectedEntryId() const {
+    if (!picker_.selectedItemIsExistingAsset()) return "";
+    return picker_.entryId(
+        picker_.existingEntryIndexForSelectedItem()
+    );
 }
 
 FLASHMEM const char*
 SequencerPresetLibraryPager::selectedAssetId() const {
     if (!focusedExistingAsset()) return "";
-    return picker_.entryId(
-        picker_.existingEntryIndexForSelectedItem()
-    );
+    return selectedEntryId();
 }
 
 }  // namespace core::handler

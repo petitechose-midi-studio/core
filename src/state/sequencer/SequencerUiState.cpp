@@ -89,6 +89,8 @@ FLASHMEM void SequencerPresetLibrarySessionState::open(
     previewGeneration.set(0);
     if (kind == SequencerPresetLibraryKind::CHORD) {
         payload.emplace<SequencerChordPresetLibraryState>();
+    } else if (kind == SequencerPresetLibraryKind::PATTERN) {
+        payload.emplace<SequencerPatternPresetLibraryState>();
     } else {
         payload.emplace<SequencerStepPresetLibraryState>();
     }
@@ -126,7 +128,9 @@ FLASHMEM void SequencerPresetLibrarySessionState::clearCatalog() {
     for (uint8_t i = 0; i < ENTRY_CAPACITY; ++i) {
         entryIds[i][0] = '\0';
         entryNames[i][0] = '\0';
+        entryValues[i][0] = '\0';
         entryMetadataReadable[i] = false;
+        entryKinds[i] = SequencerPresetLibraryEntryKind::ASSET;
     }
 }
 
@@ -141,7 +145,9 @@ FLASHMEM void SequencerPresetLibrarySessionState::setEntry(
     uint8_t index,
     const char* id,
     const char* semanticName,
-    bool metadataReadable
+    bool metadataReadable,
+    SequencerPresetLibraryEntryKind kind,
+    const char* displayValue
 ) {
     if (index >= ENTRY_CAPACITY) return;
     const char* source = id ? id : "";
@@ -150,13 +156,34 @@ FLASHMEM void SequencerPresetLibrarySessionState::setEntry(
     source = semanticName ? semanticName : "";
     std::strncpy(entryNames[index].data(), source, NAME_SIZE - 1U);
     entryNames[index][NAME_SIZE - 1U] = '\0';
+    source = displayValue ? displayValue : "";
+    std::strncpy(
+        entryValues[index].data(),
+        source,
+        entryValues[index].size() - 1U
+    );
+    entryValues[index][entryValues[index].size() - 1U] = '\0';
     entryMetadataReadable[index] = metadataReadable;
+    entryKinds[index] = kind;
+}
+
+FLASHMEM const char* SequencerPresetLibrarySessionState::entryValue(
+    uint8_t index
+) const {
+    return index < ENTRY_CAPACITY ? entryValues[index].data() : "";
 }
 
 FLASHMEM const char* SequencerPresetLibrarySessionState::entryId(
     uint8_t index
 ) const {
     return index < ENTRY_CAPACITY ? entryIds[index].data() : "";
+}
+
+FLASHMEM SequencerPresetLibraryEntryKind
+SequencerPresetLibrarySessionState::entryKind(uint8_t index) const {
+    return index < ENTRY_CAPACITY
+        ? entryKinds[index]
+        : SequencerPresetLibraryEntryKind::ASSET;
 }
 
 FLASHMEM const char* SequencerPresetLibrarySessionState::entryName(
@@ -191,6 +218,16 @@ SequencerPresetLibrarySessionState::chord() const {
     return *std::get_if<SequencerChordPresetLibraryState>(&payload);
 }
 
+FLASHMEM SequencerPatternPresetLibraryState&
+SequencerPresetLibrarySessionState::pattern() {
+    return *std::get_if<SequencerPatternPresetLibraryState>(&payload);
+}
+
+FLASHMEM const SequencerPatternPresetLibraryState&
+SequencerPresetLibrarySessionState::pattern() const {
+    return *std::get_if<SequencerPatternPresetLibraryState>(&payload);
+}
+
 FLASHMEM uint8_t SequencerPresetLibrarySessionState::itemCount() const {
     const uint8_t existing = entryCount.get();
     const uint8_t offset = newAssetItemOffset();
@@ -203,14 +240,31 @@ FLASHMEM uint8_t SequencerPresetLibrarySessionState::itemCount() const {
 
 FLASHMEM uint8_t
 SequencerPresetLibrarySessionState::newAssetItemOffset() const {
+    if (libraryKind.get() == SequencerPresetLibraryKind::PATTERN &&
+        pattern().panel ==
+            SequencerPatternPresetLibraryPanel::MOVE_DESTINATION) {
+        return 1U;
+    }
     // Save-new is a first-class command, not an asset belonging to a
     // particular catalog page. Keep it reachable from every Save page.
-    return mode.get() == SequencerPresetLibraryMode::SAVE ? 1U : 0U;
+    if (mode.get() != SequencerPresetLibraryMode::SAVE) return 0U;
+    return libraryKind.get() == SequencerPresetLibraryKind::PATTERN ? 2U : 1U;
 }
 
 FLASHMEM bool
 SequencerPresetLibrarySessionState::selectedItemIsNewAsset() const {
-    return newAssetItemOffset() > 0 && selectedIndex.get() == 0;
+    return newAssetItemOffset() > 0 && selectedIndex.get() == 0 &&
+        !(libraryKind.get() == SequencerPresetLibraryKind::PATTERN &&
+          pattern().panel ==
+              SequencerPatternPresetLibraryPanel::MOVE_DESTINATION);
+}
+
+FLASHMEM bool
+SequencerPresetLibrarySessionState::selectedItemIsNewFolder() const {
+    return mode.get() == SequencerPresetLibraryMode::SAVE &&
+           libraryKind.get() == SequencerPresetLibraryKind::PATTERN &&
+           pattern().panel == SequencerPatternPresetLibraryPanel::BROWSE &&
+           selectedIndex.get() == 1U;
 }
 
 FLASHMEM bool
@@ -241,6 +295,47 @@ SequencerPresetLibrarySessionState::clampSelection() {
 }
 
 FLASHMEM void SequencerPresetLibrarySessionState::bump() {
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerPatternPresetPreviewUiState::begin(
+    const SequencerPatternPresetTarget& nextTarget,
+    const char* semanticName,
+    bool waitsForLoop
+) {
+    target = nextTarget;
+    name.fill('\0');
+    std::strncpy(
+        name.data(),
+        semanticName != nullptr ? semanticName : "Pattern",
+        name.size() - 1U
+    );
+    phase = waitsForLoop
+        ? SequencerPatternPresetPreviewPhase::NEXT_LOOP
+        : SequencerPatternPresetPreviewPhase::PREVIEW;
+    bump();
+}
+
+FLASHMEM void SequencerPatternPresetPreviewUiState::setQueued(
+    bool waitsForLoop
+) {
+    if (!active()) return;
+    const auto next = waitsForLoop
+        ? SequencerPatternPresetPreviewPhase::NEXT_LOOP
+        : SequencerPatternPresetPreviewPhase::PREVIEW;
+    if (phase == next) return;
+    phase = next;
+    bump();
+}
+
+FLASHMEM void SequencerPatternPresetPreviewUiState::reset() {
+    phase = SequencerPatternPresetPreviewPhase::INACTIVE;
+    target = {};
+    name.fill('\0');
+    bump();
+}
+
+FLASHMEM void SequencerPatternPresetPreviewUiState::bump() {
     revision.set(revision.get() + 1U);
 }
 

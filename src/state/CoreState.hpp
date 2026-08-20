@@ -430,6 +430,13 @@ public:
     void publishPreparedSequencerMutation(
         bool notifyProjectNavigation = true
     );
+    /**
+     * Publishes an already-synchronized provisional Sequencer state without
+     * advancing the durable Project revision. The owning interaction must
+     * later either commit through publishPreparedSequencerMutation() or
+     * restore its captured Before state through the same provisional sink.
+     */
+    void publishPreparedSequencerPreview();
     sequencer::SequencerPreparedFullBankEditResult applyPreparedProjectScaleChoice(
         sequencer::SequencerPreparedFullBankEditOwner owner,
         uint8_t row,

@@ -127,8 +127,10 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
       structure_clipboard_(state.structureClipboard), track_ui_(state.trackNavigation),
       pattern_pitch_settings_(state.patternPitchSettings), navigation_focus_(state.navigationFocus),
       history_(state.history), step_presets_(state.stepPresets), chord_presets_(state.chordPresets),
+      pattern_presets_(state.patternPresets),
       step_preset_library_adapter_(sequencer_, step_presets_),
       chord_preset_library_adapter_(sequencer_, chord_presets_),
+      pattern_preset_library_adapter_(sequencer_, pattern_presets_),
       preset_library_(sequencer_, overlays), overlays_(overlays), encoders_(encoders),
       buttons_(buttons), sequencer_view_scope_(sequencerViewScope), overlay_scope_(overlayScope),
       preset_library_overlay_scope_(presetLibraryOverlayScope),
@@ -137,6 +139,7 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
 }
 
 void SequencerStepEditHandler::update(uint32_t nowMs) {
+    pattern_preset_library_adapter_.updatePreview();
     if (pitch_context_settings_open_ && pattern_pitch_settings_.flowPhase.get() ==
                                             core::state::PatternPitchSettingsFlowPhase::CLOSED) {
         pitch_context_settings_open_ = false;

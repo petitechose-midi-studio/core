@@ -376,6 +376,7 @@ FLASHMEM void SequencerState::reset() {
     stepEdit.reset();
     contextSelector.reset();
     presetLibrary.reset();
+    patternPresetPreview.reset();
     ccLaneUi.reset();
     stepPropertyInlineSelector.reset();
     stepContentSelector.reset();

@@ -60,17 +60,7 @@ struct ViewSwitcherHarness {
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
-        , handler(core::handler::ViewSwitcherHandler::StateRefs{
-                      state,
-                      state.overlays,
-                      state.activeView,
-                      state.viewSelector,
-                      state.sequencer.patternQuickControls,
-                      state.sequencer.stepPropertyInlineSelector,
-                      state.sequencer.ccLaneUi,
-                      state.sequencer.structureUi.stepSelection,
-                      state.projectNavigation,
-                  },
+        , handler(state,
                   overlays,
                   encoders,
                   buttons,
@@ -133,6 +123,12 @@ void openSelector(ViewSwitcherHarness& h) {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.viewSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::VIEW_SELECTOR);
+}
+
+void assertSelectorStaysClosed(ViewSwitcherHarness& h) {
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.viewSelector.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
 }
 
 void recordMacroDestination(ViewSwitcherHarness& h, uint8_t cc) {
@@ -753,6 +749,76 @@ void test_selector_waits_until_cc_lane_has_backed_to_root() {
     std::cout << "[PASS] CC Lane owns LEFT_TOP until Back reaches root\n";
 }
 
+void test_selector_defers_to_local_transient_owners() {
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::MACRO);
+        h.state.macroUi.performanceOverlayMode.set(
+            core::state::macro::MacroPerformanceOverlayMode::EDIT
+        );
+        assertSelectorStaysClosed(h);
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::MACRO);
+        h.state.macroUi.contextSelector.visible = true;
+        assertSelectorStaysClosed(h);
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::MACRO);
+        h.state.trackNavigation.hold.begin(
+            core::state::StructureHoldAction::REMOVE,
+            0U
+        );
+        assertSelectorStaysClosed(h);
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.sequencer.contextSelector.visible = true;
+        assertSelectorStaysClosed(h);
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.sequencer.structureUi.trackPaste.buttonOwned = true;
+        assertSelectorStaysClosed(h);
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::MODULATORS);
+        h.state.projectNavigation.activeTab.set(
+            core::state::project::ProjectTab::MODULATORS
+        );
+        h.state.projectNavigation.currentNode.set(
+            core::state::project::ProjectNodeId::MODULATORS_ROOT
+        );
+        h.state.projectNavigation.modulatorReturn.caller =
+            core::state::project::ModulatorNavigationCaller::MACRO_ASSIGNMENT;
+        assertSelectorStaysClosed(h);
+    }
+
+    std::cout << "[PASS] selector defers to local transient owners\n";
+}
+
+void test_selector_is_not_a_chord_and_recovers_after_release() {
+    ViewSwitcherHarness h;
+    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+
+    h.press(Config::ButtonID::NAV);
+    assertSelectorStaysClosed(h);
+    h.release(Config::ButtonID::NAV);
+
+    openSelector(h);
+    std::cout << "[PASS] selector is a standalone gesture and recovers cleanly\n";
+}
+
 }  // namespace
 
 int main() {
@@ -779,6 +845,8 @@ int main() {
     test_selector_waits_until_project_folder_has_backed_to_root();
     test_selector_does_not_open_during_project_modulator_audition();
     test_selector_waits_until_cc_lane_has_backed_to_root();
+    test_selector_defers_to_local_transient_owners();
+    test_selector_is_not_a_chord_and_recovers_after_release();
 
     std::cout << "\nAll ViewSwitcherHandler tests passed.\n";
     return 0;

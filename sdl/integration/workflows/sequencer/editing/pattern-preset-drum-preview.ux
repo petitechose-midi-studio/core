@@ -1,0 +1,50 @@
+# UX workflow: Drum Pattern Preset library from the retained Lane Editor.
+# Purpose: proves the shared Pattern library is reachable without changing the
+# short-NAV lane-edit gesture, filters Factory assets by Drum kind, and keeps
+# stopped preview reversible before one explicit confirmation.
+# Expect: capture_changed:drum_pattern_preset_all=drum_pattern_preset_factory, capture_changed:drum_pattern_preset_factory=drum_pattern_preset_factory_category, capture_changed:drum_pattern_preset_factory_category=drum_pattern_preset_detail, capture_changed:drum_pattern_preset_detail=drum_pattern_preset_preview, capture_changed:drum_pattern_preset_preview=drum_pattern_preset_confirmed
+# Expect: semantic:drum_pattern_preset_detail:mode=sequencer.pattern_preset.load.detail, semantic:drum_pattern_preset_detail:target=pattern
+# Expect: semantic:drum_pattern_preset_preview:mode=sequencer.pattern_preset.preview, semantic:drum_pattern_preset_preview:projection=provisional
+# Expect: semantic:drum_pattern_preset_confirmed:effect=confirm_pattern_preset_preview, semantic:drum_pattern_preset_confirmed:outcome=ready
+
+0 scenario drum-sequencer
+
+# Create Track 2 as a General MIDI Drum Track and author a visible phrase.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1530 encoder NAV 1
+1830 tap NAV 60
+2300 encoder NAV 1
+2650 tap NAV 60
+3100 encoder NAV 1
+3450 tap NAV 60
+4350 tap MACRO_1 60
+4550 tap MACRO_5 60
+5000 encoder NAV 1
+5150 tap MACRO_3 60
+5350 tap MACRO_7 60
+
+# Short NAV opens the Lane Editor; held NAV opens the shared Pattern library.
+5650 tap NAV 60
+5900 button NAV down
+7000 tick
+7050 capture screen drum_pattern_preset_all
+7100 button NAV up
+
+# Browse Factory > House > Four on the floor.
+7350 tick
+7450 tap LEFT_CENTER 60
+7650 capture screen drum_pattern_preset_factory
+7750 tap NAV 60
+7950 capture screen drum_pattern_preset_factory_category
+8050 tap NAV 60
+8250 capture screen drum_pattern_preset_detail
+8350 tap LEFT_TOP 60
+
+# Audition on the Drum grid, then confirm once through the normal history path.
+8550 tap BOTTOM_RIGHT 60
+8750 capture screen drum_pattern_preset_preview
+8950 tap BOTTOM_RIGHT 60
+9150 capture screen drum_pattern_preset_confirmed

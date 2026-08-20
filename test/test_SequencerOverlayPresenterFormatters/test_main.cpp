@@ -33,9 +33,9 @@ void test_picker_list_uses_semantic_names_and_disambiguates_duplicates() {
         sequencer
     );
     assert(data.visible);
-    assert(std::strcmp(data.title.data(), "Save Step Preset") == 0);
+    assert(std::strcmp(data.title.data(), "Save Step") == 0);
     assert(data.itemCount == 4);
-    assert(std::strcmp(data.items[0], "+  New Step Preset") == 0);
+    assert(std::strcmp(data.items[0], "New Step") == 0);
     assert(std::strcmp(data.items[1], "Pulse  [preset-a]") == 0);
     assert(std::strcmp(data.items[2], "Pulse  [preset-b]") == 0);
     assert(std::strcmp(data.items[3], "unnamed-id") == 0);
@@ -43,10 +43,43 @@ void test_picker_list_uses_semantic_names_and_disambiguates_duplicates() {
     picker.hasPreviousPage.set(true);
     data = presenter::buildSequencerPresetLibraryPresentation(sequencer);
     assert(data.itemCount == 4);
-    assert(std::strcmp(data.items[0], "+  New Step Preset") == 0);
+    assert(std::strcmp(data.items[0], "New Step") == 0);
     assert(std::strcmp(data.items[1], "Pulse  [preset-a]") == 0);
 
     std::cout << "[PASS] test_picker_list_uses_semantic_names_and_disambiguates_duplicates\n";
+}
+
+void test_pattern_folder_projects_enter_as_the_primary_action() {
+    namespace seq = core::state::sequencer;
+
+    seq::SequencerState sequencer;
+    auto& picker = sequencer.presetLibrary;
+    picker.open(
+        SequencerPresetLibraryMode::LOAD,
+        seq::SequencerPresetLibraryKind::PATTERN
+    );
+    picker.setEntry(
+        0,
+        "@Bass",
+        "Bass",
+        true,
+        seq::SequencerPresetLibraryEntryKind::FOLDER,
+        "1"
+    );
+    picker.entryCount.set(1);
+
+    const auto action =
+        presenter::buildSequencerPresetLibraryActionPresentation(picker);
+    assert(action.visual == core::ui::ContextActionStripVisualState::ACTIVE);
+    assert(action.tone == core::ui::ContextActionStripTone::WARNING);
+    assert(action.primaryIcon != nullptr);
+    assert(std::strcmp(
+        action.primaryIcon,
+        standalone::icons::ACTION_MOVE
+    ) == 0);
+
+    std::cout
+        << "[PASS] test_pattern_folder_projects_enter_as_the_primary_action\n";
 }
 
 void test_picker_detail_is_temporary_semantic_impact_projection() {
@@ -163,14 +196,16 @@ void test_picker_action_strip_projects_guard_and_temporary_outcome() {
     props = presenter::buildSequencerPresetLibraryActionPresentation(picker);
     assert(props.visual == core::ui::ContextActionStripVisualState::APPLIED);
     assert(props.tone == core::ui::ContextActionStripTone::POSITIVE);
-    assert(props.showLabel);
     assert(props.statusIcon != nullptr);
-    assert(std::strcmp(props.label.data(), "Loaded") == 0);
+    assert(std::strcmp(
+        props.statusIcon,
+        standalone::icons::ACTION_VALIDATE
+    ) == 0);
 
     const auto data = presenter::buildSequencerPresetLibraryPresentation(
         sequencer
     );
-    assert(std::strcmp(data.meta.data(), "Loaded into editor") == 0);
+    assert(std::strcmp(data.meta.data(), "Loaded") == 0);
 
     std::cout << "[PASS] test_picker_action_strip_projects_guard_and_temporary_outcome\n";
 }
@@ -201,19 +236,25 @@ void test_picker_explains_capacity_storage_and_queued_states() {
     feedback.reason = core::state::contextual::ContextActionReason::STORAGE_UNAVAILABLE;
     picker.operationFeedback.set(feedback);
     data = presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(data.meta.data(), "Storage unavailable") == 0);
+    assert(std::strcmp(data.meta.data(), "Failed") == 0);
 
     feedback.status = core::state::contextual::OperationFeedbackStatus::QUEUED;
+    feedback.action = core::state::contextual::ContextActionId::LOAD;
     feedback.reason = core::state::contextual::ContextActionReason::PENDING;
+    picker.step().descriptor.compatibility = SequencerStepPresetCompatibility::READY;
     picker.operationFeedback.set(feedback);
     data = presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(data.meta.data(), "Queued for loop boundary") == 0);
+    assert(std::strcmp(data.meta.data(), "Next loop") == 0);
     const auto action = presenter::buildSequencerPresetLibraryActionPresentation(
         picker
     );
-    assert(action.showLabel);
+    assert(action.visual == core::ui::ContextActionStripVisualState::ARMED);
+    assert(action.tone == core::ui::ContextActionStripTone::WARNING);
     assert(action.statusIcon != nullptr);
-    assert(std::strcmp(action.label.data(), "Queued") == 0);
+    assert(std::strcmp(
+        action.statusIcon,
+        standalone::icons::STATUS_QUEUED
+    ) == 0);
 
     std::cout
         << "[PASS] test_picker_explains_capacity_storage_and_queued_states\n";
@@ -266,14 +307,14 @@ void test_picker_revision_tracks_rendered_feedback_identity() {
     picker.operationFeedback.set(feedback);
     const auto storage =
         presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(storage.meta.data(), "Storage unavailable") == 0);
+    assert(std::strcmp(storage.meta.data(), "Failed") == 0);
     assert(storage.dataRevision != idle.dataRevision);
 
     feedback.reason = contextual::ContextActionReason::CORRUPT_ASSET;
     picker.operationFeedback.set(feedback);
     const auto corrupt =
         presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(corrupt.meta.data(), "Corrupt preset") == 0);
+    assert(std::strcmp(corrupt.meta.data(), "Failed") == 0);
     assert(corrupt.dataRevision != storage.dataRevision);
 
     feedback.action = contextual::ContextActionId::SAVE;
@@ -408,6 +449,7 @@ void test_context_icons_project_semantic_actions_without_fallback() {
 
 int main() {
     test_picker_list_uses_semantic_names_and_disambiguates_duplicates();
+    test_pattern_folder_projects_enter_as_the_primary_action();
     test_picker_detail_is_temporary_semantic_impact_projection();
     test_picker_action_strip_projects_guard_and_temporary_outcome();
     test_picker_explains_capacity_storage_and_queued_states();

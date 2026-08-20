@@ -1261,7 +1261,7 @@ void test_apply_playing_is_queued_and_undo_before_boundary_cancels_it() {
     assert(result.activation == SequencerStepPresetActivation::QUEUED);
     assert(result.activationGeneration != 0);
     assert(h.state.sequencerTrackActivations.telemetry(target.trackIndex).origin ==
-           core::state::sequencer::SequencerTrackActivationOrigin::STEP_PRESET);
+           core::state::sequencer::SequencerTrackActivationOrigin::PRESET);
     assert(
         h.presets.activationStatus(target.trackIndex, result.activationGeneration) ==
         core::state::sequencer::SequencerTrackActivationStatus::QUEUED

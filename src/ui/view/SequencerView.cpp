@@ -264,7 +264,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.patternQuickControls.previewRevision,
-        state_refs_.sequencer.drumSequencer.revision
+        state_refs_.sequencer.drumSequencer.revision,
+        state_refs_.sequencer.patternPresetPreview.revision
     );
 }
 
@@ -432,7 +433,8 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.stepContentSelector.focusedAction,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.contentView.kind,
-        state_refs_.sequencer.ccLaneUi.revision
+        state_refs_.sequencer.ccLaneUi.revision,
+        state_refs_.sequencer.patternPresetPreview.revision
     );
     left_action_strip_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
@@ -466,7 +468,8 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.trackActivations.telemetryRevision(),
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.ccLaneUi.actionGuard,
-        state_refs_.sequencer.ccLaneUi.operationFeedback
+        state_refs_.sequencer.ccLaneUi.operationFeedback,
+        state_refs_.sequencer.patternPresetPreview.revision
     );
     bottom_action_strip_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision

@@ -6,6 +6,7 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
+#include "ui/sequencer/SequencerPresetLibraryPresentation.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
 namespace ms::ui {
@@ -16,6 +17,14 @@ class VirtualListSelectorOverlay;
 namespace core::ui {
 class SequencerChordVoiceRail;
 class SequencerStepEditOverlay;
+}
+
+namespace core::ui::sequencer {
+class SequencerPatternPresetPreview;
+}
+
+namespace core::ui::interaction {
+class TextKeyboardView;
 }
 
 namespace core::context::standalone {
@@ -40,7 +49,11 @@ public:
                               ms::ui::VirtualListSelectorOverlay& presetLibraryOverlay,
                               core::ui::ContextActionStrip& presetLibraryActionStrip,
                               core::ui::SequencerChordVoiceRail&
-                                  presetLibraryChordVoiceRail);
+                                  presetLibraryChordVoiceRail,
+                              core::ui::sequencer::SequencerPatternPresetPreview&
+                                  presetLibraryPatternPreview,
+                              core::ui::interaction::TextKeyboardView&
+                                  presetLibraryKeyboard);
     ~SequencerOverlayPresenter();
 
     [[nodiscard]] bool bind();
@@ -69,6 +82,13 @@ private:
     core::ui::ContextActionStrip& preset_library_action_strip_;
     core::ui::SequencerChordVoiceRail&
         preset_library_chord_voice_rail_;
+    core::ui::sequencer::SequencerPatternPresetPreview&
+        preset_library_pattern_preview_;
+    core::ui::interaction::TextKeyboardView& preset_library_keyboard_;
+    // VirtualList may rebind after LVGL header layout. Keep every string and
+    // pointer backing the current props alive until the next projection.
+    core::ui::sequencer::SequencerPresetLibraryPresentation
+        preset_library_render_data_{};
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
     oc::state::StaticWatchGroup<16> step_edit_watcher_;
     oc::state::StaticWatchGroup<3> step_edit_action_watcher_;

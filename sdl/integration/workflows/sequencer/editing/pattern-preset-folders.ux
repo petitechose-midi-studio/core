@@ -1,0 +1,29 @@
+# UX workflow: Pattern Preset folder creation and navigation.
+# Purpose: proves the typed User hierarchy, shared text keyboard, folder
+# entry, one-level Back grammar, and the dedicated folder icons at 320x240.
+# Expect: capture_changed:pattern_folder_save_list=pattern_folder_keyboard, capture_changed:pattern_folder_keyboard=pattern_folder_created, capture_changed:pattern_folder_created=pattern_folder_parent
+
+0 scenario sequencer
+
+# Enter Pattern Editor and open its Pattern Preset library.
+100 tap NAV 60
+300 button NAV down
+1400 tick
+1450 button NAV up
+
+# Switch Load -> Save, focus New Folder and open the common text keyboard.
+1650 tap BOTTOM_LEFT 60
+1850 encoder NAV 1
+2000 capture screen pattern_folder_save_list
+2100 tap BOTTOM_RIGHT 60
+2300 capture screen pattern_folder_keyboard
+
+# Enter a minimal valid folder name, create it, and enter it immediately.
+2400 tap NAV 60
+2550 tap BOTTOM_RIGHT 60
+2850 capture screen pattern_folder_created
+
+# LEFT_TOP backs out exactly one hierarchy level before closing the library.
+3000 tap LEFT_TOP 60
+3250 capture screen pattern_folder_parent
+3400 tap LEFT_TOP 60

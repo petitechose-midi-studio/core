@@ -32,6 +32,7 @@
 #include "handler/sequencer/SequencerStepHandler.hpp"
 #include "ui/sequencer/SequencerPatternEditorOverlay.hpp"
 #include "ui/sequencer/SequencerChordVoiceRail.hpp"
+#include "ui/sequencer/SequencerPatternPresetPreview.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
 #include "ui/interaction/TextKeyboardView.hpp"
 #include "ui/project/ProjectTrackEditorOverlay.hpp"
@@ -45,6 +46,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     core::state::project::ProjectTrackDomainServices trackDomain,
     core::handler::SequencerStepPresetDomainServices stepPresets,
     core::handler::SequencerChordPresetDomainServices chordPresets,
+    core::handler::SequencerPatternPresetDomainServices patternPresets,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
@@ -292,6 +294,18 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     } else {
         return;
     }
+    preset_library_pattern_preview_ = core::app::makeExtmemUnique<
+        core::ui::sequencer::SequencerPatternPresetPreview>();
+    if (!preset_library_pattern_preview_) return;
+    preset_library_pattern_preview_->create(
+        preset_library_overlay_->getElement()
+    );
+    if (!preset_library_pattern_preview_->element()) return;
+    preset_library_keyboard_ = core::app::makeExtmemUnique<
+        core::ui::interaction::TextKeyboardView>(
+            preset_library_overlay_->getElement()
+        );
+    if (!preset_library_keyboard_ || !preset_library_keyboard_->valid()) return;
     cc_lane_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(overlayRoot);
     if (!cc_lane_overlay_ || !cc_lane_overlay_->getElement()) return;
@@ -379,7 +393,9 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         *step_edit_action_strip_,
         *preset_library_overlay_,
         *preset_library_action_strip_,
-        *preset_library_chord_voice_rail_
+        *preset_library_chord_voice_rail_,
+        *preset_library_pattern_preview_,
+        *preset_library_keyboard_
     );
     if (!presenter_ || !presenter_->bind()) return;
     pattern_editor_presenter_ =
@@ -520,6 +536,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.history,
             stepPresets,
             chordPresets,
+            patternPresets,
         },
         overlays,
         encoders,
@@ -547,6 +564,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     if (!drum_lane_editor_handler_) return;
     if (!step_handler_ || !step_edit_handler_ || !pattern_editor_handler_ ||
         !track_editor_handler_) return;
+    pattern_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
+    drum_lane_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
     step_handler_->attachStepEditHandler(*step_edit_handler_);
     step_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
     step_handler_->attachTrackEditorHandler(*track_editor_handler_);

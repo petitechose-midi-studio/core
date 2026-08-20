@@ -378,6 +378,10 @@ FLASHMEM void CoreState::publishPreparedSequencerMutation(
     }
 }
 
+FLASHMEM void CoreState::publishPreparedSequencerPreview() {
+    consumePendingSequencerMutation_();
+}
+
 FLASHMEM sequencer::SequencerHistoryOpenOutcome
 CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step, sequencer::StepProperty property, uint32_t nowMs,

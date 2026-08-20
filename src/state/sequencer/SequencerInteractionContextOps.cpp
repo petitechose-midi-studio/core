@@ -25,6 +25,7 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
                              sequencer.contextSelector.visible ||
                              drumTransientVisible ||
                              sequencer.stepContentDraft.exitPromptVisible.get() ||
+                             sequencer.patternPresetPreview.active() ||
                              sequencer.patternEditor.active.get();
     context.previewingAddSlot =
         context.navigationFocus == core::state::StructureNavigationFocus::TRACK

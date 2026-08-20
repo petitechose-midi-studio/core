@@ -223,6 +223,7 @@ FLASHMEM void ProjectTrackEditorOverlay::render(
     next.statusColor = props.statusColor;
     next.selectedProperty = props.selectedProperty;
     next.trackEnabled = props.trackEnabled;
+    next.drum = props.drum;
 
     if (!rendered_ || !(cache_ == next)) {
         cache_ = next;
@@ -305,7 +306,16 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
     );
     drawLabel(
         layer,
-        translated(origin, 12, 173, 142, 16),
+        translated(origin, 12, 172, 18, 18),
+        cache_.drum ? icons::DRUM_GENERIC : icons::NOTE,
+        standalone_fonts.icons_16,
+        cache_.trackEnabled ? theme::color::ROUTING : theme::color::INACTIVE,
+        cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55,
+        LV_TEXT_ALIGN_CENTER
+    );
+    drawLabel(
+        layer,
+        translated(origin, 40, 173, 114, 16),
         "Type",
         fonts.meta_label(),
         cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,

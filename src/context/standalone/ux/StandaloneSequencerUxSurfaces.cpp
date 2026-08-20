@@ -1368,7 +1368,8 @@ FLASHMEM bool SequencerPatternEditorUxSurface::captureSemanticUxContext(
     core::validation::ux::SemanticUxContext& out
 ) const {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER ||
-        !sequencer_.patternEditor.active.get()) {
+        !sequencer_.patternEditor.active.get() ||
+        sequencer_.presetLibrary.visible.get()) {
         return false;
     }
 
@@ -1737,6 +1738,51 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::LONG_PRESS);
     if (!structureEvent) {
         return false;
+    }
+
+    if (sequencer_.patternPresetPreview.active()) {
+        using ButtonType = oc::core::input::ButtonBindingType;
+        const bool queued = sequencer_.patternPresetPreview.queued();
+        const bool cancel = isButton(
+            event,
+            Config::ButtonID::LEFT_TOP,
+            ButtonType::RELEASE
+        );
+        const bool confirm = isButton(
+            event,
+            Config::ButtonID::BOTTOM_RIGHT,
+            ButtonType::RELEASE
+        );
+        out.mode = queued
+            ? "sequencer.pattern_preset.preview.queued"
+            : "sequencer.pattern_preset.preview";
+        out.target = "pattern";
+        out.targetIndex = static_cast<int16_t>(
+            sequencer_.patternPresetPreview.target.trackIndex
+        );
+        out.source = sequencer_.patternPresetPreview.name.data();
+        out.property = "activation";
+        copyValueLabel(out.valueLabel, queued ? "Next loop" : "Preview");
+        out.routePolicy = "preserve_destination";
+        out.projection = "provisional";
+        out.outcome = queued ? "queued" : "ready";
+        out.reason = queued ? "activation_pending" : nullptr;
+        if (cancel) {
+            out.intent = core::state::interaction::ControllerIntent::CANCEL;
+            out.effect = "cancel_pattern_preset_preview";
+            out.outcome = "cancelled";
+            out.reason = nullptr;
+        } else if (confirm) {
+            out.intent = core::state::interaction::ControllerIntent::APPLY;
+            out.effect = "confirm_pattern_preset_preview";
+        } else if (stateProjection) {
+            out.effect = "inspect_pattern_preset_preview";
+        } else {
+            out.effect = "noop";
+            out.outcome = "noop";
+            out.reason = "pattern_preset_preview_modal";
+        }
+        return true;
     }
 
     const auto& drumUi = sequencer_.drumSequencer;
@@ -2179,6 +2225,17 @@ FLASHMEM bool DrumLaneEditorUxSurface::captureSemanticUxContext(
     using Intent = core::state::interaction::ControllerIntent;
 
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) return false;
+
+    // A Pattern preset audition deliberately closes the retained Lane Editor
+    // before returning to the grid. Do not misclassify the library action's
+    // BOTTOM_RIGHT release as an editor Apply; the preset-preview surface owns
+    // that transition and the following confirm/cancel gestures.
+    if (sequencer_.patternPresetPreview.active()) {
+        editor_seen_ = false;
+        terminal_effect_ = nullptr;
+        terminal_intent_ = Intent::NONE;
+        return false;
+    }
 
     const auto& drumUi = sequencer_.drumSequencer;
     const auto& editor = drumUi.laneEditor;

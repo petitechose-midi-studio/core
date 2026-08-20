@@ -1,0 +1,49 @@
+# UX workflow: User Pattern Preset hierarchy management.
+# Purpose: proves one coherent User asset grammar for manage, rename,
+# destination browsing and guarded deletion without exposing Factory mutation.
+# Expect: capture_changed:pattern_folder_focused=pattern_folder_manage, capture_changed:pattern_folder_manage=pattern_folder_rename, capture_changed:pattern_folder_rename=pattern_folder_move, capture_changed:pattern_folder_move=pattern_folder_delete
+# Expect: semantic:pattern_folder_manage:effect=open_pattern_preset_management, semantic:pattern_folder_manage:mode=sequencer.pattern_preset.manage, semantic:pattern_folder_manage:property=management_action, semantic:pattern_folder_manage:value_label=rename
+# Expect: semantic:pattern_folder_rename:effect=rename_pattern_preset_entry, semantic:pattern_folder_rename:mode=sequencer.pattern_preset.rename
+# Expect: semantic:pattern_folder_move:effect=move_pattern_preset_entry, semantic:pattern_folder_move:mode=sequencer.pattern_preset.move_destination
+# Expect: semantic:pattern_folder_delete:property=management_action, semantic:pattern_folder_delete:value_label=delete
+
+0 scenario sequencer
+
+# Open Pattern Presets, switch to Save and create a small User folder.
+100 tap NAV 60
+300 button NAV down
+1400 tick
+1450 button NAV up
+1650 tap BOTTOM_LEFT 60
+1850 encoder NAV 1
+2050 tap BOTTOM_RIGHT 60
+2250 tap NAV 60
+2400 tap BOTTOM_RIGHT 60
+
+# Return to User root. The created folder remains focused.
+2700 tap LEFT_TOP 60
+2900 capture screen pattern_folder_focused
+
+# BOTTOM_LEFT exposes the same compact management panel as NAV hold.
+3050 tap BOTTOM_LEFT 60
+3250 capture screen pattern_folder_manage
+
+# Rename reuses the common keyboard with the existing name prefilled.
+3400 tap BOTTOM_RIGHT 60
+3600 capture screen pattern_folder_rename
+3750 tap LEFT_TOP 60
+
+# Move reuses the folder browser. The source folder is not offered as its own
+# destination and root is rejected because it is unchanged.
+3900 encoder NAV 1
+4050 tap BOTTOM_RIGHT 60
+4250 capture screen pattern_folder_move
+4400 tap LEFT_TOP 60
+
+# Delete is explicit, red and guarded.
+4550 encoder NAV 1
+4750 capture screen pattern_folder_delete
+4900 button BOTTOM_RIGHT down
+6100 tick
+6150 button BOTTOM_RIGHT up
+6400 capture screen pattern_folder_deleted
