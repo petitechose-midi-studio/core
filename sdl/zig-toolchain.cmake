@@ -40,9 +40,15 @@ set(CMAKE_RANLIB "${ZIG_WRAPPER_DIR}/zig-ranlib.cmd")
 set(CMAKE_C_COMPILER_RANLIB "${ZIG_WRAPPER_DIR}/zig-ranlib.cmd")
 set(CMAKE_CXX_COMPILER_RANLIB "${ZIG_WRAPPER_DIR}/zig-ranlib.cmd")
 
-# Disable resource compiler (not needed, Zig doesn't have one)
-set(CMAKE_RC_COMPILER_INIT "")
-set(CMAKE_RC_COMPILER NOTFOUND)
+# Use Zig's Windows resource compiler instead of relying on a host-provided
+# windres/rc executable. FORCE also replaces stale machine-specific cache values.
+set(ZIG_RC_COMPILER "${ZIG_WRAPPER_DIR}/zig-rc.cmd")
+if(NOT EXISTS "${ZIG_RC_COMPILER}")
+    message(FATAL_ERROR
+        "Zig RC wrapper not found: ${ZIG_RC_COMPILER}\nRun: ms sync --tools")
+endif()
+set(CMAKE_RC_COMPILER "${ZIG_RC_COMPILER}" CACHE FILEPATH
+    "Windows resource compiler" FORCE)
 
 # =============================================================================
 # Skip Compiler Checks
