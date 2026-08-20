@@ -250,10 +250,12 @@ void test_preset_library_keeps_only_the_active_domain_payload() {
     using Payload = seq::SequencerPresetLibraryPayload;
     using StepPayload = seq::SequencerStepPresetLibraryState;
     using ChordPayload = seq::SequencerChordPresetLibraryState;
+    using PatternPayload = seq::SequencerPatternPresetLibraryState;
 
     static_assert(
-        sizeof(Payload) < sizeof(StepPayload) + sizeof(ChordPayload),
-        "The shared preset library must not retain both domain descriptors"
+        sizeof(Payload) <
+            sizeof(StepPayload) + sizeof(ChordPayload) + sizeof(PatternPayload),
+        "The shared preset library must not retain every domain descriptor"
     );
 
     Library library;

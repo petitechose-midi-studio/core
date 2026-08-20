@@ -100,7 +100,7 @@ void test_empty_save_catalog_focuses_new_asset_command() {
         core::handler::SequencerPresetLibraryPager::PageLoadStatus::READY
     );
     assert(picker.entryCount.get() == 0U);
-    assert(picker.itemCount() == 1U);
+    assert(picker.itemCount() == 2U);
     assert(picker.selectedIndex.get() == 0U);
     assert(picker.selectedItemIsNewAsset());
 }

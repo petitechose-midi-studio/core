@@ -209,7 +209,7 @@ void test_chord_preset_surface_has_dedicated_copy_and_voice_preview() {
     auto list = core::ui::sequencer::
         buildSequencerPresetLibraryPresentation(sequencer);
     assert(list.visible);
-    assert(std::strcmp(list.title.data(), "Load Chord Preset") == 0);
+    assert(std::strcmp(list.title.data(), "Load Chord") == 0);
     assert(std::strcmp(list.items[0], "Wide minor") == 0);
     assert(!list.chordVoiceRail.visible);
 

@@ -94,19 +94,19 @@ RETIRED_RAW_API_MUTATION_LAYERS = (
     ),
     ("test-clients", "test/Regression.cpp", "recordPattern"),
 )
-ENTRY_RECORDING_CALL_TOTAL = 44
+ENTRY_RECORDING_CALL_TOTAL = 45
 EXPECTED_MIGRATED_REMOVAL_TOTAL = 38
 EXPECTED_PROVIDER_FORWARD_TOTAL = 1
 EXPECTED_COALESCED_PREPARED_TOTAL = 1
-EXPECTED_MEMBER_DISPATCH_TOTAL = 8
+EXPECTED_MEMBER_DISPATCH_TOTAL = 9
 EXPECTED_CORE_STATE_ADAPTER_TOTAL = 0
 EXPECTED_INTERNAL_FORWARD_TOTAL = 0
-EXPECTED_RECORDING_CALL_TOTAL = 8
-EXPECTED_SINK_TOTAL = 4
+EXPECTED_RECORDING_CALL_TOTAL = 9
+EXPECTED_SINK_TOTAL = 5
 EXPECTED_SERVICE_ADAPTER_TOTAL = 4
 EXPECTED_SINK_CLASSIFICATIONS = {
     "post-fallible": 0,
-    "prepared": 4,
+    "prepared": 5,
     "rollback-aware": 0,
 }
 D_OOM_ENUM_MEMBERS = {
@@ -965,13 +965,13 @@ def manifest_errors(manifest) -> list[str]:
             f"member manifest total is {member_total}, expected {members.get('expectedTotal')}"
         )
     if members.get("expectedTotal") != EXPECTED_MEMBER_DISPATCH_TOTAL:
-        errors.append("member-dispatch total must remain 8 after L-R08-09 slice 1")
+        errors.append("member-dispatch total must remain 9 with the Pattern preset sink")
     if sink_total != members.get("expectedSinkTotal"):
         errors.append(
             f"sink manifest total is {sink_total}, expected {members.get('expectedSinkTotal')}"
         )
     if members.get("expectedSinkTotal") != EXPECTED_SINK_TOTAL:
-        errors.append("mutation-sink total must remain 4 after L-R08-09 slice 1")
+        errors.append("mutation-sink total must remain 5 with the Pattern preset sink")
     if service_total != members.get("expectedServiceAdapterTotal"):
         errors.append(
             "service/adapter manifest total is "
@@ -986,7 +986,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {dict(expected_classifications)}, observed {dict(classifications)}"
         )
     if dict(expected_classifications) != EXPECTED_SINK_CLASSIFICATIONS:
-        errors.append("sink classifications must remain 0 post-fallible, 4 prepared and 0 rollback-aware")
+        errors.append("sink classifications must remain 0 post-fallible, 5 prepared and 0 rollback-aware")
 
     forwards = boundary.get("internalForwards", {})
     forward_groups = forwards.get("groups", [])
@@ -1018,7 +1018,7 @@ def manifest_errors(manifest) -> list[str]:
             provider_forward_total += provider_count
 
     if boundary.get("entryRecordingCallTotal") != ENTRY_RECORDING_CALL_TOTAL:
-        errors.append("entry recording-call total must remain 44")
+        errors.append("entry recording-call total must remain 45")
     if boundary.get("expectedMigratedRemovalTotal") != EXPECTED_MIGRATED_REMOVAL_TOTAL:
         errors.append("migrated recording-call removal total must remain 38")
     if boundary.get("expectedProviderForwardTotal") != EXPECTED_PROVIDER_FORWARD_TOTAL:
@@ -1050,7 +1050,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {boundary.get('expectedTotal')}"
         )
     if boundary.get("expectedTotal") != EXPECTED_RECORDING_CALL_TOTAL:
-        errors.append("recording boundary total must remain 8 after L-R08-09 slice 1")
+        errors.append("recording boundary total must remain 9 with the Pattern preset sink")
     if recording_total != (
         ENTRY_RECORDING_CALL_TOTAL -
         EXPECTED_MIGRATED_REMOVAL_TOTAL +
@@ -1058,7 +1058,7 @@ def manifest_errors(manifest) -> list[str]:
         coalesced_prepared_total
     ):
         errors.append(
-            "recording boundary must equal the 44-call entry minus thirty-eight "
+            "recording boundary must equal the 45-call entry minus thirty-eight "
             "migrated calls plus one provider forward and one prepared "
             "coalesced boundary"
         )

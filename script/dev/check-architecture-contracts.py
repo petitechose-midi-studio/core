@@ -4852,15 +4852,15 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require(
         SEQUENCER_VIEW_HEADER,
-        r"StaticWatchGroup\s*<\s*15\s*>\s+header_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*16\s*>\s+header_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+header_strip_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*2U\s*\*\s*"
         r"core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT\s*>\s*"
         r"structure_selection_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*45\s*>\s+grid_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*26\s*>\s+selector_overlay_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*11\s*>\s+left_action_strip_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*24\s*>\s+bottom_action_strip_watcher_\s*;",
+        r"StaticWatchGroup\s*<\s*12\s*>\s+left_action_strip_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*25\s*>\s+bottom_action_strip_watcher_\s*;",
         "Sequencer UI watcher capacities must retain the shared selection and Drum UI locks",
     )
 
