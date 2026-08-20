@@ -68,7 +68,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
 
-        project_at_limit = root / "project-at-limit.mspj"
+        # Exercise the UTF-8 command-line/path conversion on every host build.
+        project_at_limit = root / "projet-é-at-limit.mspj"
         create_file(project_at_limit, PROJECT_FILE_MAX_SIZE)
         assert_reaches_codec(
             run_tool(tool, "inspect", project_at_limit),
@@ -82,7 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             PROJECT_FILE_MAX_SIZE,
         )
 
-        preset_at_limit = root / "preset-at-limit.mssp"
+        preset_at_limit = root / "préréglage-at-limit.mssp"
         create_file(preset_at_limit, STEP_GRAPH_PRESET_MAX_SIZE)
         assert_reaches_codec(
             run_tool(tool, "inspect-step-graph-preset", preset_at_limit),

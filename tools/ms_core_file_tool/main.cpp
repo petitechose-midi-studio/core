@@ -4,8 +4,10 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -139,7 +141,36 @@ const char* codeName(project_file::LoadCode code) {
 }
 
 std::filesystem::path pathFromUtf8(const std::string& text) {
-    return std::filesystem::path(reinterpret_cast<const char8_t*>(text.c_str()));
+#ifdef _WIN32
+    if (text.empty()) return {};
+    if (text.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return {};
+    }
+    const int textSize = static_cast<int>(text.size());
+    const int wideSize = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        text.data(),
+        textSize,
+        nullptr,
+        0
+    );
+    if (wideSize <= 0) return {};
+    std::wstring wide(static_cast<size_t>(wideSize), L'\0');
+    if (MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            text.data(),
+            textSize,
+            wide.data(),
+            wideSize
+        ) != wideSize) {
+        return {};
+    }
+    return std::filesystem::path(std::move(wide));
+#else
+    return std::filesystem::path(text);
+#endif
 }
 
 uint32_t inputSizeLimitForCommand(const std::string& command) {
