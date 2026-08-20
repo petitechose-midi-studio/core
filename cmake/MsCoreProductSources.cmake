@@ -96,6 +96,8 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerInteractionPolicyAdapter.cpp
     src/handler/sequencer/SequencerMacroPropertyHandler.cpp
     src/handler/sequencer/SequencerPatternEditorHandler.cpp
+    src/handler/sequencer/SequencerPatternPresetDomainServices.cpp
+    src/handler/sequencer/SequencerPatternPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp
     src/handler/sequencer/SequencerPreparedPageStructureMutationPlan.cpp
     src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp
@@ -114,8 +116,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerStepEditHandler.cpp
     src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp
     src/handler/sequencer/SequencerStepHandler.cpp
-    src/handler/sequencer/SequencerPatternPresetDomainServices.cpp
-    src/handler/sequencer/SequencerPatternPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerStepPresetDomainServices.cpp
     src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerStepValueRowWorkflow.cpp
