@@ -16,6 +16,9 @@
 #ifdef ERROR
 #undef ERROR
 #endif
+#ifdef DELETE
+#undef DELETE
+#endif
 #endif
 
 #include "persistence/ProjectFileLimits.hpp"
