@@ -106,6 +106,15 @@ FLASHMEM void setStripIconFromAction(
 FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     const SequencerViewModelSource& source
 ) {
+    if (source.sequencer.patternPresetPreview.active()) {
+        StripProps props;
+        props.visible = true;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_BACKWARD,
+            Visual::ACTIVE
+        );
+        return props;
+    }
     if (core::state::sequencer::isDrumOverviewActive(source.sequencer) ||
         (source.sequencer.drumSequencer.active() &&
          !source.sequencer.drumSequencer.gridVisible())) {

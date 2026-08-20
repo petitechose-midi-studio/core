@@ -32,8 +32,12 @@ struct SequencerPresetLibraryResult {
     core::state::contextual::ContextActionReason reason =
         core::state::contextual::ContextActionReason::NONE;
     bool refreshPublishedState = false;
+    bool returnToParent = false;
     char assetId[
         core::state::sequencer::SequencerPresetLibrarySessionState::ID_SIZE
+    ] = {};
+    char displayName[
+        core::state::sequencer::SEQUENCER_PRESET_SEMANTIC_NAME_SIZE
     ] = {};
 };
 
@@ -96,6 +100,24 @@ struct SequencerPresetLibraryAdapter {
         void* context,
         uint32_t nowMs
     ) = nullptr;
+    bool (*enterFolder)(void* context, const char* entryId) = nullptr;
+    bool (*leaveFolder)(void* context) = nullptr;
+    SequencerPresetLibraryResult (*createFolder)(
+        void* context,
+        const char* folderName
+    ) = nullptr;
+    bool (*beginManagement)(
+        void* context,
+        core::state::sequencer::SequencerPresetLibraryEntryKind kind,
+        const char* entryId,
+        const char* entryName
+    ) = nullptr;
+    SequencerPresetLibraryResult (*renameManaged)(
+        void* context,
+        const char* newName
+    ) = nullptr;
+    SequencerPresetLibraryResult (*moveManaged)(void* context) = nullptr;
+    SequencerPresetLibraryResult (*deleteManaged)(void* context) = nullptr;
 
     [[nodiscard]] bool valid() const {
         return context != nullptr && beginSession != nullptr &&
@@ -248,9 +270,11 @@ public:
     bool back(uint32_t nowMs);
     void move(float delta, uint32_t nowMs);
     void enterDetail();
+    bool openFocusedManagement();
     void adjustFocusedDetail(float delta);
     void toggleMode();
     void cyclePatternSourceFilter();
+    void setTextShift(bool active);
 
     [[nodiscard]] bool active() const;
     [[nodiscard]] bool shouldCommitBeforeLoad(
@@ -259,6 +283,7 @@ public:
     [[nodiscard]] core::state::contextual::ContextActionSpec
         actionSpec() const;
     [[nodiscard]] bool actionGuardEngaged() const;
+    [[nodiscard]] bool textEditing() const;
 
     bool beginActionGuard(uint32_t nowMs);
     SequencerPresetLibraryResult update(uint32_t nowMs);
@@ -283,6 +308,16 @@ private:
     void scheduleFocusedInspection(uint32_t nowMs);
     void completePendingInspection();
     void inspectFocused(bool force = false);
+    void beginTextEditing(
+        core::state::sequencer::SequencerPatternPresetTextEdit purpose
+    );
+    void cancelTextEditing();
+    SequencerPresetLibraryResult confirmTextEditing(uint32_t nowMs);
+    SequencerPresetLibraryResult executeManagementAction(uint32_t nowMs);
+    SequencerPresetLibraryResult executeMove(uint32_t nowMs);
+    void restoreManagedLocation();
+    void beginFactoryCopy();
+    void cancelFactoryCopy();
     [[nodiscard]] bool operationPending() const;
     SequencerPresetLibraryResult executeCurrentAction(
         bool overwriteAuthorized,

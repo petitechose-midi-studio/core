@@ -68,6 +68,37 @@ listSettled(
     return listed;
 }
 
+oc::type::Result<core::persistence::PatternPresetFileListResult>
+listFoldersSettled(
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog,
+    PatternPresetFileStore& store,
+    PatternPresetFileListEntry* entries,
+    uint8_t capacity
+) {
+    auto listed = store.listFoldersPage(
+        entries,
+        capacity,
+        nullptr,
+        PatternPresetFilePageDirection::FORWARD
+    );
+    for (uint32_t nowMs = 1U;
+         !listed &&
+         listed.error().code == oc::type::ErrorCode::HARDWARE_BUSY &&
+         nowMs <= ProductDirectoryCatalog::MAX_ENTRIES + 2U;
+         ++nowMs) {
+        assert(files.persistenceJobs().beginTurn(nowMs));
+        catalog.advance(nowMs, false);
+        listed = store.listFoldersPage(
+            entries,
+            capacity,
+            nullptr,
+            PatternPresetFilePageDirection::FORWARD
+        );
+    }
+    return listed;
+}
+
 void testPatternPresetFileStoreRoundTrip() {
     resetTestRoot();
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
@@ -166,9 +197,68 @@ void testPatternPresetFileStoreRoundTrip() {
     std::cout << "[PASS] PatternPresetFileStore round-trip and catalog\n";
 }
 
+void testPatternPresetFolderLifecycle() {
+    resetTestRoot();
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    assert(filesystem.init());
+    ProductFileService files(filesystem);
+    assert(files.init());
+    ProductDirectoryCatalog catalog(files);
+    PatternPresetFileStore root(files, catalog);
+
+    assert(root.createFolder("Beats"));
+    assert(root.createFolder("Archive"));
+    PatternPresetFileListEntry folders[4]{};
+    auto listed = listFoldersSettled(files, catalog, root, folders, 4U);
+    assert(listed && listed.value().count == 2U);
+    assert(std::strcmp(folders[0].id, "@Archive") == 0);
+    assert(std::strcmp(folders[1].id, "@Beats") == 0);
+
+    assert(root.renameFolder("Archive", "Collections"));
+    seq::SequencerPatternPresetLocation beatsLocation{};
+    assert(beatsLocation.enter("Beats"));
+    PatternPresetFileStore beats(files, catalog, beatsLocation);
+    const uint8_t payload[] = {1U, 2U, 3U};
+    assert(beats.save("pattern-preset-001", payload, sizeof(payload)));
+
+    seq::SequencerPatternPresetLocation collectionsLocation{};
+    assert(collectionsLocation.enter("Collections"));
+    assert(beats.movePreset("pattern-preset-001", collectionsLocation));
+    PatternPresetFileStore collections(files, catalog, collectionsLocation);
+    uint8_t loaded[8]{};
+    uint16_t loadedSize = 0U;
+    assert(collections.load(
+        "pattern-preset-001",
+        loaded,
+        sizeof(loaded),
+        loadedSize
+    ));
+    assert(loadedSize == sizeof(payload));
+
+    assert(root.moveFolder("Beats", collectionsLocation));
+    PatternPresetFileListEntry nested[2]{};
+    listed = listFoldersSettled(
+        files,
+        catalog,
+        collections,
+        nested,
+        2U
+    );
+    assert(listed && listed.value().count == 1U);
+    assert(std::strcmp(nested[0].id, "@Beats") == 0);
+
+    assert(collections.removeEmptyFolder("Beats"));
+    assert(collections.remove("pattern-preset-001"));
+    assert(root.removeEmptyFolder("Collections"));
+
+    resetTestRoot();
+    std::cout << "[PASS] PatternPresetFileStore folder lifecycle\n";
+}
+
 }  // namespace
 
 int main() {
     testPatternPresetFileStoreRoundTrip();
+    testPatternPresetFolderLifecycle();
     return 0;
 }

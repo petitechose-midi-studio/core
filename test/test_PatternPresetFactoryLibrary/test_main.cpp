@@ -32,6 +32,7 @@ void testCatalogIsSmallSortedAndTyped() {
             assert(descriptor.trackKind == kind);
             assert(descriptor.id != nullptr);
             assert(descriptor.semanticName != nullptr);
+            assert(descriptor.category != nullptr);
             assert(std::strcmp(previous, descriptor.id) < 0);
             assert(factory::PatternPresetFactoryLibrary::contains(
                 descriptor.id
@@ -39,6 +40,29 @@ void testCatalogIsSmallSortedAndTyped() {
             previous = descriptor.id;
         }
     }
+
+    assert(factory::PatternPresetFactoryLibrary::categoryCount(
+        seq::SequencerTrackKind::INSTRUMENT
+    ) == 3U);
+    assert(std::strcmp(
+        factory::PatternPresetFactoryLibrary::categoryAt(
+            seq::SequencerTrackKind::INSTRUMENT,
+            0U
+        ),
+        "Bass"
+    ) == 0);
+    assert(factory::PatternPresetFactoryLibrary::count(
+        seq::SequencerTrackKind::INSTRUMENT,
+        "Rhythmic"
+    ) == 2U);
+    factory::PatternPresetFactoryDescriptor descriptor{};
+    assert(factory::PatternPresetFactoryLibrary::descriptorAt(
+        seq::SequencerTrackKind::INSTRUMENT,
+        0U,
+        descriptor,
+        "Rhythmic"
+    ));
+    assert(std::strcmp(descriptor.category, "Rhythmic") == 0);
     std::cout << "[PASS] Factory catalog is bounded, sorted, and typed\n";
 }
 

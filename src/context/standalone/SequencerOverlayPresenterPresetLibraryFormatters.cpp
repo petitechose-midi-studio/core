@@ -31,20 +31,55 @@ FLASHMEM core::ui::ContextActionStripProps buildPresetLibraryActionStripProps(
 
     const auto action = core::ui::sequencer::
         buildSequencerPresetLibraryActionPresentation(picker);
+    const bool patternLibrary = picker.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN;
+    const bool managementPanel = patternLibrary &&
+        picker.pattern().panel != core::state::sequencer::
+            SequencerPatternPresetLibraryPanel::BROWSE;
+    const bool userDetail = patternLibrary &&
+        picker.detailVisible.get() && picker.pattern().descriptor.valid &&
+        picker.pattern().descriptor.source == core::state::sequencer::
+            SequencerPatternPresetSource::USER;
+    const bool factoryDetail = patternLibrary &&
+        picker.detailVisible.get() && picker.pattern().descriptor.valid &&
+        picker.pattern().descriptor.source == core::state::sequencer::
+            SequencerPatternPresetSource::FACTORY;
+    const bool factoryCopyPending = patternLibrary &&
+        picker.pattern().factoryCopyPending;
+    const bool focusedFolder = patternLibrary &&
+        picker.pattern().sourceFilter == core::state::sequencer::
+            SequencerPatternPresetSourceFilter::USER &&
+        picker.selectedItemIsExistingAsset() &&
+        picker.entryKind(picker.existingEntryIndexForSelectedItem()) ==
+            core::state::sequencer::SequencerPresetLibraryEntryKind::FOLDER;
 
     props.visible = true;
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        action.saveMode
+        managementPanel
+            ? ::standalone::icons::ACTION_BACKWARD
+            : factoryCopyPending
+                ? ::standalone::icons::ACTION_BACKWARD
+            : factoryDetail
+                ? ::standalone::icons::ACTION_COPY
+            : (userDetail || focusedFolder)
+                ? ::standalone::icons::SETTINGS_GEAR
+                : action.saveMode
             ? ::standalone::icons::ACTION_LOAD
             : ::standalone::icons::ACTION_SAVE,
         Visual::ACTIVE,
-        action.saveMode ? Tone::CONSTRUCTIVE : Tone::POSITIVE
+        managementPanel || factoryCopyPending || userDetail || focusedFolder
+            ? Tone::NEUTRAL
+            : factoryDetail
+                ? Tone::CONSTRUCTIVE
+            : (action.saveMode ? Tone::CONSTRUCTIVE : Tone::POSITIVE)
     );
     props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         action.statusIcon != nullptr
             ? action.statusIcon
-            : (action.overwriteIcon
+            : (action.primaryIcon != nullptr
+                ? action.primaryIcon
+                : action.overwriteIcon
                 ? ::standalone::icons::ACTION_OVERWRITE
                 : (action.saveMode
                     ? ::standalone::icons::ACTION_SAVE
@@ -55,10 +90,6 @@ FLASHMEM core::ui::ContextActionStripProps buildPresetLibraryActionStripProps(
     props.slots[2].holdActive = action.holdActive;
     props.slots[2].holdStartedAtMs = action.holdStartedAtMs;
     props.slots[2].holdDurationMs = action.holdDurationMs;
-    if (action.showLabel) {
-        props.slots[2].showLabel = true;
-        props.slots[2].labelText = action.label;
-    }
     return props;
 }
 

@@ -1,5 +1,8 @@
 #include "handler/sequencer/SequencerPresetLibraryWorkflow.hpp"
 
+#include <cstdio>
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
@@ -7,8 +10,10 @@
 #include "config/Timing.hpp"
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "state/interaction/TextKeyboardLayout.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
+#include "state/sequencer/SequencerPresetLibraryActionSpec.hpp"
 
 namespace core::handler {
 namespace {
@@ -43,6 +48,30 @@ terminalFeedback(SequencerPresetLibraryOutcome outcome) {
         case SequencerPresetLibraryOutcome::NONE:
         default:
             return Feedback::NONE;
+    }
+}
+
+FLASHMEM void managedCatalogId(
+    const core::state::sequencer::SequencerPatternPresetLibraryState& pattern,
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0U) return;
+    if (pattern.managedEntryKind == core::state::sequencer::
+            SequencerPresetLibraryEntryKind::FOLDER) {
+        std::snprintf(
+            out,
+            outSize,
+            "@%s",
+            pattern.managedEntryId.data()
+        );
+    } else {
+        std::snprintf(
+            out,
+            outSize,
+            "%s",
+            pattern.managedEntryId.data()
+        );
     }
 }
 
@@ -116,14 +145,64 @@ FLASHMEM bool SequencerPresetLibraryWorkflow::back(uint32_t nowMs) {
         return true;
     }
     if (operationPending()) return false;
+    if (textEditing()) {
+        cancelTextEditing();
+        return false;
+    }
     if (actionGuardEngaged()) {
         (void)cancelActionGuard(nowMs);
         return false;
+    }
+    if (picker.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        auto& pattern = picker.pattern();
+        if (pattern.panel == core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MOVE_DESTINATION) {
+            if (adapter_.leaveFolder != nullptr &&
+                adapter_.leaveFolder(adapter_.context)) {
+                (void)refreshPage(
+                    nullptr,
+                    SequencerPresetLibraryPager::PageDirection::FORWARD,
+                    false
+                );
+            } else {
+                restoreManagedLocation();
+                pattern.panel = core::state::sequencer::
+                    SequencerPatternPresetLibraryPanel::MANAGE;
+                picker.operationFeedback.set({});
+                picker.bump();
+            }
+            return false;
+        }
+        if (pattern.panel == core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MANAGE) {
+            restoreManagedLocation();
+            pattern.panel = core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::BROWSE;
+            char entryId[core::state::sequencer::
+                SequencerPresetLibrarySessionState::ID_SIZE]{};
+            managedCatalogId(pattern, entryId, sizeof(entryId));
+            (void)refreshPageContainingAndSelect(entryId);
+            return false;
+        }
+        if (pattern.factoryCopyPending && pattern.location.root()) {
+            cancelFactoryCopy();
+            return false;
+        }
     }
     if (picker.detailVisible.get()) {
         picker.detailVisible.set(false);
         picker.detailFocus.set(0);
         picker.bump();
+        return false;
+    }
+    if (adapter_.leaveFolder != nullptr &&
+        adapter_.leaveFolder(adapter_.context)) {
+        (void)refreshPage(
+            nullptr,
+            SequencerPresetLibraryPager::PageDirection::FORWARD,
+            false
+        );
         return false;
     }
     close();
@@ -138,6 +217,37 @@ FLASHMEM void SequencerPresetLibraryWorkflow::move(
     auto& picker = sequencer_.presetLibrary;
     if (!active() || !nav::hasTurnDelta(delta) ||
         operationPending() || actionGuardEngaged()) {
+        return;
+    }
+    if (textEditing()) {
+        auto& pattern = picker.pattern();
+        pattern.textKeyIndex =
+            core::state::interaction::textKeyboardMoveColumn(
+                pattern.textKeyIndex,
+                delta > 0.0f ? 1 : -1
+            );
+        picker.bump();
+        return;
+    }
+
+    if (picker.libraryKind.get() ==
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN &&
+        picker.pattern().panel == core::state::sequencer::
+            SequencerPatternPresetLibraryPanel::MANAGE) {
+        const int count = static_cast<int>(
+            core::state::sequencer::
+                SequencerPatternPresetManagementAction::COUNT
+        );
+        const int current = static_cast<int>(
+            picker.pattern().managementAction
+        );
+        picker.pattern().managementAction = static_cast<
+            core::state::sequencer::SequencerPatternPresetManagementAction>(
+                nav::nextWrappedIndex(delta, current, count)
+            );
+        picker.actionGuard.set({});
+        picker.operationFeedback.set({});
+        picker.bump();
         return;
     }
     OC_PERF_UNITS(
@@ -180,11 +290,45 @@ FLASHMEM void SequencerPresetLibraryWorkflow::move(
 
 FLASHMEM void SequencerPresetLibraryWorkflow::enterDetail() {
     auto& picker = sequencer_.presetLibrary;
-    if (!active() || operationPending() ||
-        picker.detailVisible.get() ||
-        !pager_.focusedExistingAsset()) {
+    if (textEditing()) {
+        auto& pattern = picker.pattern();
+        if (core::state::interaction::textKeyboardAppend(
+                pattern.textDraft.data(),
+                pattern.textDraft.size(),
+                core::state::interaction::textKeyboardCharacterAt(
+                    pattern.textKeyIndex,
+                    pattern.textShiftActive
+                )
+            )) {
+            picker.bump();
+        }
         return;
     }
+    if (!active() || operationPending() ||
+        picker.detailVisible.get()) {
+        return;
+    }
+    if (picker.libraryKind.get() ==
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN &&
+        picker.pattern().panel == core::state::sequencer::
+            SequencerPatternPresetLibraryPanel::MANAGE) {
+        return;
+    }
+    if (pager_.focusedFolder()) {
+        if (adapter_.enterFolder != nullptr &&
+            adapter_.enterFolder(
+                adapter_.context,
+                pager_.selectedEntryId()
+            )) {
+            (void)refreshPage(
+                nullptr,
+                SequencerPresetLibraryPager::PageDirection::FORWARD,
+                false
+            );
+        }
+        return;
+    }
+    if (!pager_.focusedExistingAsset()) return;
     completePendingInspection();
     bool descriptorValid = false;
     if (picker.libraryKind.get() ==
@@ -205,10 +349,55 @@ FLASHMEM void SequencerPresetLibraryWorkflow::enterDetail() {
     picker.bump();
 }
 
+FLASHMEM bool
+SequencerPresetLibraryWorkflow::openFocusedManagement() {
+    auto& picker = sequencer_.presetLibrary;
+    if (!active() || operationPending() || actionGuardEngaged() ||
+        picker.libraryKind.get() !=
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN ||
+        picker.pattern().panel != core::state::sequencer::
+            SequencerPatternPresetLibraryPanel::BROWSE ||
+        !picker.selectedItemIsExistingAsset() ||
+        adapter_.beginManagement == nullptr) {
+        return false;
+    }
+
+    completePendingInspection();
+    const uint8_t index = picker.existingEntryIndexForSelectedItem();
+    if (!adapter_.beginManagement(
+            adapter_.context,
+            picker.entryKind(index),
+            picker.entryId(index),
+            picker.entryName(index)
+        )) {
+        return false;
+    }
+    auto& pattern = picker.pattern();
+    pattern.panel = core::state::sequencer::
+        SequencerPatternPresetLibraryPanel::MANAGE;
+    pattern.managementAction = core::state::sequencer::
+        SequencerPatternPresetManagementAction::RENAME;
+    picker.detailVisible.set(false);
+    picker.actionGuard.set({});
+    picker.operationFeedback.set({});
+    picker.bump();
+    return true;
+}
+
 FLASHMEM void SequencerPresetLibraryWorkflow::adjustFocusedDetail(
     float delta
 ) {
     auto& picker = sequencer_.presetLibrary;
+    if (textEditing() && nav::hasTurnDelta(delta)) {
+        auto& pattern = picker.pattern();
+        pattern.textKeyIndex =
+            core::state::interaction::textKeyboardMoveRow(
+                pattern.textKeyIndex,
+                delta > 0.0f ? 1 : -1
+            );
+        picker.bump();
+        return;
+    }
     if (!active() || operationPending() ||
         !picker.detailVisible.get() ||
         adapter_.adjustFocusedDetail == nullptr ||
@@ -223,10 +412,56 @@ FLASHMEM void SequencerPresetLibraryWorkflow::adjustFocusedDetail(
 }
 
 FLASHMEM void SequencerPresetLibraryWorkflow::toggleMode() {
+    if (textEditing()) {
+        auto& picker = sequencer_.presetLibrary;
+        if (core::state::interaction::textKeyboardBackspace(
+                picker.pattern().textDraft.data()
+            )) {
+            picker.bump();
+        }
+        return;
+    }
     if (!active() || operationPending() || actionGuardEngaged()) return;
     inspection_pending_ = false;
     inspection_due_at_ms_ = 0U;
     auto& picker = sequencer_.presetLibrary;
+    if (picker.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        auto& pattern = picker.pattern();
+        if (pattern.factoryCopyPending) {
+            cancelFactoryCopy();
+            return;
+        }
+        if (picker.detailVisible.get() && pattern.descriptor.valid &&
+            pattern.descriptor.source == core::state::sequencer::
+                SequencerPatternPresetSource::FACTORY) {
+            beginFactoryCopy();
+            return;
+        }
+        if (pattern.panel == core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MOVE_DESTINATION) {
+            restoreManagedLocation();
+            pattern.panel = core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MANAGE;
+            picker.bump();
+            return;
+        }
+        if (pattern.panel == core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MANAGE) {
+            pattern.panel = core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::BROWSE;
+            (void)refreshPage(
+                nullptr,
+                SequencerPresetLibraryPager::PageDirection::FORWARD,
+                false
+            );
+            return;
+        }
+        if ((picker.detailVisible.get() || pager_.focusedFolder()) &&
+            openFocusedManagement()) {
+            return;
+        }
+    }
     picker.inspecting.set(false);
     adapter_.clearInspection(adapter_.context);
     pager_.toggleModePreservingSelection();
@@ -251,15 +486,104 @@ FLASHMEM void SequencerPresetLibraryWorkflow::toggleMode() {
     }
 }
 
+FLASHMEM void SequencerPresetLibraryWorkflow::beginFactoryCopy() {
+    auto& picker = sequencer_.presetLibrary;
+    if (!active() || picker.libraryKind.get() !=
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        return;
+    }
+    auto& pattern = picker.pattern();
+    if (!picker.detailVisible.get() || !pattern.descriptor.valid ||
+        pattern.descriptor.source != core::state::sequencer::
+            SequencerPatternPresetSource::FACTORY) {
+        return;
+    }
+
+    pattern.copySourceLocation = pattern.location;
+    std::strncpy(
+        pattern.copySourceId.data(),
+        pattern.descriptor.metadata.technicalId,
+        pattern.copySourceId.size() - 1U
+    );
+    std::strncpy(
+        pattern.copySourceName.data(),
+        pattern.descriptor.metadata.semanticName,
+        pattern.copySourceName.size() - 1U
+    );
+    pattern.factoryCopyPending = true;
+    pattern.location.reset();
+    pattern.sourceFilter = core::state::sequencer::
+        SequencerPatternPresetSourceFilter::USER;
+    pattern.descriptor = {};
+    picker.mode.set(
+        core::state::sequencer::SequencerPresetLibraryMode::SAVE
+    );
+    picker.detailVisible.set(false);
+    picker.detailFocus.set(0U);
+    picker.actionGuard.set({});
+    picker.operationFeedback.set({});
+    picker.feedback.set(
+        core::state::sequencer::SequencerPresetLibraryFeedback::NONE
+    );
+    (void)refreshPage(
+        nullptr,
+        SequencerPresetLibraryPager::PageDirection::FORWARD,
+        false
+    );
+}
+
+FLASHMEM void SequencerPresetLibraryWorkflow::cancelFactoryCopy() {
+    auto& picker = sequencer_.presetLibrary;
+    if (!active() || picker.libraryKind.get() !=
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN ||
+        !picker.pattern().factoryCopyPending) {
+        return;
+    }
+    auto& pattern = picker.pattern();
+    const auto sourceLocation = pattern.copySourceLocation;
+    char sourceId[core::state::sequencer::
+        SequencerPresetLibrarySessionState::ID_SIZE]{};
+    std::strncpy(sourceId, pattern.copySourceId.data(), sizeof(sourceId) - 1U);
+
+    pattern.factoryCopyPending = false;
+    pattern.copySourceId.fill('\0');
+    pattern.copySourceName.fill('\0');
+    pattern.copySourceLocation.reset();
+    pattern.location = sourceLocation;
+    pattern.sourceFilter = core::state::sequencer::
+        SequencerPatternPresetSourceFilter::FACTORY;
+    picker.mode.set(
+        core::state::sequencer::SequencerPresetLibraryMode::LOAD
+    );
+    picker.actionGuard.set({});
+    picker.operationFeedback.set({});
+    picker.feedback.set(
+        core::state::sequencer::SequencerPresetLibraryFeedback::NONE
+    );
+    const auto status = refreshPageContainingAndSelect(sourceId);
+    if (status == SequencerPresetLibraryPager::PageLoadStatus::READY &&
+        pattern.descriptor.valid) {
+        picker.detailVisible.set(true);
+        picker.bump();
+    }
+}
+
 FLASHMEM void
 SequencerPresetLibraryWorkflow::cyclePatternSourceFilter() {
     using Filter = core::state::sequencer::
         SequencerPatternPresetSourceFilter;
     auto& picker = sequencer_.presetLibrary;
+    if (textEditing()) {
+        picker.pattern().textShiftActive = false;
+        picker.bump();
+        return;
+    }
     if (!active() || operationPending() || actionGuardEngaged() ||
         picker.detailVisible.get() ||
         picker.libraryKind.get() !=
             core::state::sequencer::SequencerPresetLibraryKind::PATTERN ||
+        picker.pattern().panel != core::state::sequencer::
+            SequencerPatternPresetLibraryPanel::BROWSE ||
         picker.mode.get() !=
             core::state::sequencer::SequencerPresetLibraryMode::LOAD) {
         return;
@@ -268,11 +592,19 @@ SequencerPresetLibraryWorkflow::cyclePatternSourceFilter() {
     filter = filter == Filter::ALL
         ? Filter::FACTORY
         : (filter == Filter::FACTORY ? Filter::USER : Filter::ALL);
+    picker.pattern().location.reset();
     (void)refreshPage(
         nullptr,
         SequencerPresetLibraryPager::PageDirection::FORWARD,
         false
     );
+}
+
+FLASHMEM void SequencerPresetLibraryWorkflow::setTextShift(bool active) {
+    if (!textEditing()) return;
+    auto& picker = sequencer_.presetLibrary;
+    picker.pattern().textShiftActive = active;
+    picker.bump();
 }
 
 FLASHMEM bool SequencerPresetLibraryWorkflow::active() const {
@@ -316,15 +648,9 @@ FLASHMEM bool SequencerPresetLibraryWorkflow::operationPending() const {
 
 FLASHMEM contextual::ContextActionSpec
 SequencerPresetLibraryWorkflow::actionSpec() const {
-    if (!active() || adapter_.actionSpec == nullptr) return {};
-    const auto& picker = sequencer_.presetLibrary;
-    return adapter_.actionSpec(
-        adapter_.context,
-        picker.mode.get() ==
-            core::state::sequencer::SequencerPresetLibraryMode::SAVE,
-        picker.selectedItemIsNewAsset(),
-        pager_.focusedExistingAsset()
-    );
+    if (!active()) return {};
+    return core::state::sequencer::
+        buildSequencerPresetLibraryActionSpec(sequencer_.presetLibrary);
 }
 
 FLASHMEM bool
@@ -336,10 +662,22 @@ SequencerPresetLibraryWorkflow::actionGuardEngaged() const {
            phase == contextual::GuardedActionPhase::COMMITTED;
 }
 
+FLASHMEM bool SequencerPresetLibraryWorkflow::textEditing() const {
+    const auto& picker = sequencer_.presetLibrary;
+    return active() &&
+        picker.libraryKind.get() ==
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN &&
+        picker.pattern().textEdit !=
+            core::state::sequencer::SequencerPatternPresetTextEdit::NONE;
+}
+
 FLASHMEM bool SequencerPresetLibraryWorkflow::beginActionGuard(
     uint32_t nowMs
 ) {
-    if (!active() || operationPending()) return false;
+    if (!active() || operationPending() || textEditing() ||
+        sequencer_.presetLibrary.selectedItemIsNewFolder()) {
+        return false;
+    }
     completePendingInspection();
     const auto spec = actionSpec();
     if (!contextual::canExecute(spec.hold) ||
@@ -492,6 +830,24 @@ FLASHMEM bool SequencerPresetLibraryWorkflow::cancelActionGuard(
 
 FLASHMEM SequencerPresetLibraryResult
 SequencerPresetLibraryWorkflow::executeTap(uint32_t nowMs) {
+    if (textEditing()) return confirmTextEditing(nowMs);
+    if (sequencer_.presetLibrary.selectedItemIsNewFolder()) {
+        beginTextEditing(
+            core::state::sequencer::
+                SequencerPatternPresetTextEdit::CREATE_FOLDER
+        );
+        return {};
+    }
+    const bool managingPatternEntry =
+        sequencer_.presetLibrary.libraryKind.get() ==
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN &&
+        sequencer_.presetLibrary.pattern().panel ==
+            core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MANAGE;
+    if (pager_.focusedFolder() && !managingPatternEntry) {
+        enterDetail();
+        return {};
+    }
     if (operationPending()) {
         return blockedResult(contextual::ContextActionReason::PENDING);
     }
@@ -508,6 +864,298 @@ SequencerPresetLibraryWorkflow::executeTap(uint32_t nowMs) {
         return result;
     }
     return executeCurrentAction(false, nowMs);
+}
+
+FLASHMEM void
+SequencerPresetLibraryWorkflow::beginTextEditing(
+    core::state::sequencer::SequencerPatternPresetTextEdit purpose
+) {
+    auto& picker = sequencer_.presetLibrary;
+    if (!active() ||
+        picker.libraryKind.get() !=
+            core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        return;
+    }
+    auto& pattern = picker.pattern();
+    if ((purpose == core::state::sequencer::
+             SequencerPatternPresetTextEdit::CREATE_FOLDER &&
+         (picker.mode.get() != core::state::sequencer::
+              SequencerPresetLibraryMode::SAVE ||
+          pattern.panel != core::state::sequencer::
+              SequencerPatternPresetLibraryPanel::BROWSE)) ||
+        (purpose == core::state::sequencer::
+             SequencerPatternPresetTextEdit::RENAME &&
+         pattern.panel != core::state::sequencer::
+             SequencerPatternPresetLibraryPanel::MANAGE)) {
+        return;
+    }
+    pattern.textEdit = purpose;
+    pattern.textShiftActive = false;
+    pattern.textKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
+    pattern.textDraft.fill('\0');
+    if (purpose == core::state::sequencer::
+            SequencerPatternPresetTextEdit::RENAME) {
+        std::strncpy(
+            pattern.textDraft.data(),
+            pattern.managedEntryName.data(),
+            pattern.textDraft.size() - 1U
+        );
+    }
+    picker.actionGuard.set({});
+    picker.operationFeedback.set({});
+    picker.bump();
+}
+
+FLASHMEM void
+SequencerPresetLibraryWorkflow::cancelTextEditing() {
+    auto& picker = sequencer_.presetLibrary;
+    if (picker.libraryKind.get() !=
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        return;
+    }
+    auto& pattern = picker.pattern();
+    pattern.textEdit = core::state::sequencer::
+        SequencerPatternPresetTextEdit::NONE;
+    pattern.textShiftActive = false;
+    pattern.textDraft.fill('\0');
+    picker.operationFeedback.set({});
+    picker.bump();
+}
+
+FLASHMEM SequencerPresetLibraryResult
+SequencerPresetLibraryWorkflow::confirmTextEditing(uint32_t nowMs) {
+    auto& picker = sequencer_.presetLibrary;
+    if (!textEditing()) {
+        return blockedResult(contextual::ContextActionReason::NO_ACTION);
+    }
+
+    auto& pattern = picker.pattern();
+    const auto purpose = pattern.textEdit;
+    const auto& draft = pattern.textDraft;
+    const bool renamingAsset = purpose == core::state::sequencer::
+            SequencerPatternPresetTextEdit::RENAME &&
+        pattern.managedEntryKind == core::state::sequencer::
+            SequencerPresetLibraryEntryKind::ASSET;
+    const bool validName = renamingAsset
+        ? core::state::sequencer::validSequencerPresetSemanticName(
+              draft.data()
+          )
+        : core::state::sequencer::sequencerPatternPresetFolderNameIsValid(
+              draft.data()
+          );
+    if (!validName) {
+        const auto result =
+            blockedResult(contextual::ContextActionReason::INVALID_PAYLOAD);
+        publishOperationFeedback(
+            contextual::OperationFeedbackStatus::BLOCKED,
+            result.reason,
+            contextual::OperationFeedbackExpiryPolicy::ON_ACKNOWLEDGEMENT,
+            nowMs
+        );
+        return result;
+    }
+
+    char editedName[
+        core::state::sequencer::SEQUENCER_PRESET_SEMANTIC_NAME_SIZE
+    ]{};
+    std::strncpy(editedName, draft.data(), sizeof(editedName) - 1U);
+    const auto result = purpose == core::state::sequencer::
+            SequencerPatternPresetTextEdit::RENAME
+        ? (adapter_.renameManaged != nullptr
+            ? adapter_.renameManaged(adapter_.context, editedName)
+            : blockedResult(contextual::ContextActionReason::NO_ACTION))
+        : (adapter_.createFolder != nullptr
+            ? adapter_.createFolder(adapter_.context, editedName)
+            : blockedResult(contextual::ContextActionReason::NO_ACTION));
+    if (result.outcome != SequencerPresetLibraryOutcome::SAVED) {
+        publishOperationFeedback(
+            contextual::OperationFeedbackStatus::BLOCKED,
+            result.reason,
+            contextual::OperationFeedbackExpiryPolicy::ON_ACKNOWLEDGEMENT,
+            nowMs
+        );
+        return result;
+    }
+
+    cancelTextEditing();
+    if (purpose == core::state::sequencer::
+            SequencerPatternPresetTextEdit::RENAME) {
+        std::strncpy(
+            pattern.managedEntryName.data(),
+            editedName,
+            pattern.managedEntryName.size() - 1U
+        );
+        if (pattern.managedEntryKind == core::state::sequencer::
+                SequencerPresetLibraryEntryKind::FOLDER) {
+            std::strncpy(
+                pattern.managedEntryId.data(),
+                editedName,
+                pattern.managedEntryId.size() - 1U
+            );
+        }
+        restoreManagedLocation();
+        pattern.panel = core::state::sequencer::
+            SequencerPatternPresetLibraryPanel::BROWSE;
+        pattern.sourceFilter = core::state::sequencer::
+            SequencerPatternPresetSourceFilter::USER;
+        char entryId[core::state::sequencer::
+            SequencerPresetLibrarySessionState::ID_SIZE]{};
+        managedCatalogId(pattern, entryId, sizeof(entryId));
+        (void)refreshPageContainingAndSelect(entryId);
+        picker.feedback.set(
+            core::state::sequencer::SequencerPresetLibraryFeedback::SAVED
+        );
+        publishOperationFeedback(
+            contextual::OperationFeedbackStatus::APPLIED,
+            contextual::ContextActionReason::NONE,
+            contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+            nowMs,
+            Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS,
+            contextual::ContextActionId::RENAME
+        );
+        return result;
+    }
+
+    char entryId[
+        core::state::sequencer::
+            SequencerPatternPresetLocation::MAX_FOLDER_NAME_SIZE + 2U
+    ]{};
+    std::snprintf(entryId, sizeof(entryId), "@%s", editedName);
+    if (adapter_.enterFolder == nullptr ||
+        !adapter_.enterFolder(adapter_.context, entryId)) {
+        return blockedResult(contextual::ContextActionReason::FAILED);
+    }
+    (void)refreshPage(
+        nullptr,
+        SequencerPresetLibraryPager::PageDirection::FORWARD,
+        false
+    );
+    picker.feedback.set(
+        core::state::sequencer::SequencerPresetLibraryFeedback::SAVED
+    );
+    publishOperationFeedback(
+        contextual::OperationFeedbackStatus::APPLIED,
+        contextual::ContextActionReason::NONE,
+        contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS,
+        contextual::ContextActionId::CREATE
+    );
+    return result;
+}
+
+FLASHMEM SequencerPresetLibraryResult
+SequencerPresetLibraryWorkflow::executeManagementAction(uint32_t nowMs) {
+    auto& picker = sequencer_.presetLibrary;
+    auto& pattern = picker.pattern();
+    switch (pattern.managementAction) {
+        case core::state::sequencer::
+                SequencerPatternPresetManagementAction::RENAME:
+            beginTextEditing(
+                core::state::sequencer::
+                    SequencerPatternPresetTextEdit::RENAME
+            );
+            return {};
+        case core::state::sequencer::
+                SequencerPatternPresetManagementAction::MOVE:
+            pattern.location.reset();
+            pattern.sourceFilter = core::state::sequencer::
+                SequencerPatternPresetSourceFilter::USER;
+            pattern.panel = core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MOVE_DESTINATION;
+            (void)refreshPage(
+                nullptr,
+                SequencerPresetLibraryPager::PageDirection::FORWARD,
+                false
+            );
+            return {};
+        case core::state::sequencer::
+                SequencerPatternPresetManagementAction::DELETE: {
+            if (adapter_.deleteManaged == nullptr) {
+                return blockedResult(
+                    contextual::ContextActionReason::NO_ACTION
+                );
+            }
+            const auto result = adapter_.deleteManaged(adapter_.context);
+            if (result.outcome != SequencerPresetLibraryOutcome::SAVED) {
+                publishOperationFeedback(
+                    contextual::OperationFeedbackStatus::BLOCKED,
+                    result.reason,
+                    contextual::OperationFeedbackExpiryPolicy::
+                        ON_ACKNOWLEDGEMENT,
+                    nowMs
+                );
+                return result;
+            }
+            restoreManagedLocation();
+            pattern.panel = core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::BROWSE;
+            pattern.sourceFilter = core::state::sequencer::
+                SequencerPatternPresetSourceFilter::USER;
+            (void)refreshPage(
+                nullptr,
+                SequencerPresetLibraryPager::PageDirection::FORWARD,
+                false
+            );
+            publishOperationFeedback(
+                contextual::OperationFeedbackStatus::APPLIED,
+                contextual::ContextActionReason::NONE,
+                contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+                nowMs,
+                Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS,
+                contextual::ContextActionId::DELETE_ASSET
+            );
+            return result;
+        }
+        case core::state::sequencer::
+                SequencerPatternPresetManagementAction::COUNT:
+        default:
+            return blockedResult(contextual::ContextActionReason::NO_ACTION);
+    }
+}
+
+FLASHMEM SequencerPresetLibraryResult
+SequencerPresetLibraryWorkflow::executeMove(uint32_t nowMs) {
+    auto& picker = sequencer_.presetLibrary;
+    auto& pattern = picker.pattern();
+    if (picker.selectedIndex.get() != 0U || adapter_.moveManaged == nullptr) {
+        return blockedResult(contextual::ContextActionReason::NO_ACTION);
+    }
+    const auto result = adapter_.moveManaged(adapter_.context);
+    if (result.outcome != SequencerPresetLibraryOutcome::SAVED) {
+        publishOperationFeedback(
+            contextual::OperationFeedbackStatus::BLOCKED,
+            result.reason,
+            contextual::OperationFeedbackExpiryPolicy::ON_ACKNOWLEDGEMENT,
+            nowMs
+        );
+        return result;
+    }
+    pattern.panel = core::state::sequencer::
+        SequencerPatternPresetLibraryPanel::BROWSE;
+    pattern.sourceFilter = core::state::sequencer::
+        SequencerPatternPresetSourceFilter::USER;
+    char entryId[core::state::sequencer::
+        SequencerPresetLibrarySessionState::ID_SIZE]{};
+    managedCatalogId(pattern, entryId, sizeof(entryId));
+    (void)refreshPageContainingAndSelect(entryId);
+    publishOperationFeedback(
+        contextual::OperationFeedbackStatus::APPLIED,
+        contextual::ContextActionReason::NONE,
+        contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS,
+        contextual::ContextActionId::MOVE
+    );
+    return result;
+}
+
+FLASHMEM void SequencerPresetLibraryWorkflow::restoreManagedLocation() {
+    auto& pattern = sequencer_.presetLibrary.pattern();
+    pattern.location = pattern.managedLocation;
+    pattern.sourceFilter = core::state::sequencer::
+        SequencerPatternPresetSourceFilter::USER;
 }
 
 FLASHMEM SequencerPresetLibraryResult
@@ -684,6 +1332,19 @@ SequencerPresetLibraryWorkflow::executeCurrentAction(
     );
     using Mode =
         core::state::sequencer::SequencerPresetLibraryMode;
+
+    if (picker.libraryKind.get() ==
+        core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
+        const auto panel = picker.pattern().panel;
+        if (panel == core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MANAGE) {
+            return executeManagementAction(nowMs);
+        }
+        if (panel == core::state::sequencer::
+                SequencerPatternPresetLibraryPanel::MOVE_DESTINATION) {
+            return executeMove(nowMs);
+        }
+    }
 
     if (picker.mode.get() == Mode::SAVE) {
         const bool createNew = picker.selectedItemIsNewAsset();

@@ -247,6 +247,11 @@ enum class SequencerPresetLibraryKind : uint8_t {
     PATTERN,
 };
 
+enum class SequencerPresetLibraryEntryKind : uint8_t {
+    ASSET = 0,
+    FOLDER,
+};
+
 enum class SequencerPresetLibraryFeedback : uint8_t {
     NONE = 0,
     SAVED,
@@ -256,6 +261,25 @@ enum class SequencerPresetLibraryFeedback : uint8_t {
     EMPTY,
     INCOMPATIBLE,
     FAILED,
+};
+
+enum class SequencerPatternPresetLibraryPanel : uint8_t {
+    BROWSE = 0,
+    MANAGE,
+    MOVE_DESTINATION,
+};
+
+enum class SequencerPatternPresetManagementAction : uint8_t {
+    RENAME = 0,
+    MOVE,
+    DELETE,
+    COUNT,
+};
+
+enum class SequencerPatternPresetTextEdit : uint8_t {
+    NONE = 0,
+    CREATE_FOLDER,
+    RENAME,
 };
 
 struct SequencerStepPresetLibraryState {
@@ -272,11 +296,36 @@ struct SequencerChordPresetLibraryState {
 };
 
 struct SequencerPatternPresetLibraryState {
+    static constexpr uint16_t DELETE_GUARD_MS = 1000U;
+
     SequencerPatternPresetTarget target{};
     SequencerPatternPresetDescriptor descriptor{};
     SequencerPatternPresetSourceFilter sourceFilter =
         SequencerPatternPresetSourceFilter::ALL;
+    SequencerPatternPresetLocation location{};
+    SequencerPatternPresetLocation managedLocation{};
+    // Factory Save As is a destination-selection session, not a save of the
+    // currently edited Pattern. Keep the immutable source explicit while the
+    // user browses User folders.
+    SequencerPatternPresetLocation copySourceLocation{};
+    std::array<char, SEQUENCER_PRESET_TECHNICAL_ID_SIZE> copySourceId{};
+    std::array<char, SEQUENCER_PRESET_SEMANTIC_NAME_SIZE> copySourceName{};
+    bool factoryCopyPending = false;
     uint32_t activationGeneration = 0U;
+    SequencerPatternPresetLibraryPanel panel =
+        SequencerPatternPresetLibraryPanel::BROWSE;
+    SequencerPatternPresetManagementAction managementAction =
+        SequencerPatternPresetManagementAction::RENAME;
+    SequencerPresetLibraryEntryKind managedEntryKind =
+        SequencerPresetLibraryEntryKind::ASSET;
+    std::array<char, SEQUENCER_PRESET_TECHNICAL_ID_SIZE> managedEntryId{};
+    std::array<char, SEQUENCER_PRESET_SEMANTIC_NAME_SIZE> managedEntryName{};
+    SequencerPatternPresetTextEdit textEdit =
+        SequencerPatternPresetTextEdit::NONE;
+    bool textShiftActive = false;
+    uint8_t textKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
+    std::array<char, SEQUENCER_PRESET_SEMANTIC_NAME_SIZE> textDraft{};
 };
 
 using SequencerPresetLibraryPayload = std::variant<
@@ -317,7 +366,9 @@ struct SequencerPresetLibrarySessionState {
     Signal<uint32_t> revision{0};
     std::array<std::array<char, ID_SIZE>, ENTRY_CAPACITY> entryIds{};
     std::array<std::array<char, NAME_SIZE>, ENTRY_CAPACITY> entryNames{};
+    std::array<std::array<char, 12>, ENTRY_CAPACITY> entryValues{};
     std::array<bool, ENTRY_CAPACITY> entryMetadataReadable{};
+    std::array<SequencerPresetLibraryEntryKind, ENTRY_CAPACITY> entryKinds{};
     // Exactly one domain payload is alive. This avoids retaining parallel
     // Step and Chord descriptors and makes the active library authoritative.
     SequencerPresetLibraryPayload payload{};
@@ -335,11 +386,16 @@ struct SequencerPresetLibrarySessionState {
         uint8_t index,
         const char* id,
         const char* semanticName = nullptr,
-        bool metadataReadable = false
+        bool metadataReadable = false,
+        SequencerPresetLibraryEntryKind kind =
+            SequencerPresetLibraryEntryKind::ASSET,
+        const char* displayValue = nullptr
     );
     const char* entryId(uint8_t index) const;
     const char* entryName(uint8_t index) const;
+    const char* entryValue(uint8_t index) const;
     bool entryHasReadableMetadata(uint8_t index) const;
+    SequencerPresetLibraryEntryKind entryKind(uint8_t index) const;
     SequencerStepPresetLibraryState& step();
     const SequencerStepPresetLibraryState& step() const;
     SequencerChordPresetLibraryState& chord();
@@ -349,6 +405,7 @@ struct SequencerPresetLibrarySessionState {
     uint8_t itemCount() const;
     uint8_t newAssetItemOffset() const;
     bool selectedItemIsNewAsset() const;
+    bool selectedItemIsNewFolder() const;
     bool selectedItemIsExistingAsset() const;
     uint8_t existingEntryIndexForSelectedItem() const;
     void clampSelection();
@@ -356,6 +413,36 @@ struct SequencerPresetLibrarySessionState {
 
 private:
     void clearCatalog();
+};
+
+enum class SequencerPatternPresetPreviewPhase : uint8_t {
+    INACTIVE = 0,
+    PREVIEW,
+    NEXT_LOOP,
+};
+
+/** Lightweight parent-grid projection for one provisional preset. */
+struct SequencerPatternPresetPreviewUiState {
+    Signal<uint32_t, 6> revision{0};
+    SequencerPatternPresetPreviewPhase phase =
+        SequencerPatternPresetPreviewPhase::INACTIVE;
+    SequencerPatternPresetTarget target{};
+    std::array<char, SEQUENCER_PRESET_SEMANTIC_NAME_SIZE> name{};
+
+    [[nodiscard]] bool active() const {
+        return phase != SequencerPatternPresetPreviewPhase::INACTIVE;
+    }
+    [[nodiscard]] bool queued() const {
+        return phase == SequencerPatternPresetPreviewPhase::NEXT_LOOP;
+    }
+    void begin(
+        const SequencerPatternPresetTarget& nextTarget,
+        const char* semanticName,
+        bool waitsForLoop
+    );
+    void setQueued(bool waitsForLoop);
+    void reset();
+    void bump();
 };
 
 enum class SequencerCcLaneUiMode : uint8_t {

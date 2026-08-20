@@ -1,0 +1,51 @@
+# UX workflow: quantized Drum Pattern preset audition while Transport plays.
+# Purpose: proves that the same Factory workflow reports Next loop, becomes a
+# live provisional Preview at the local boundary, and can still be cancelled
+# without adding an Undo entry.
+# Expect: capture_changed:drum_pattern_preset_queued=drum_pattern_preset_applied_preview, capture_changed:drum_pattern_preset_applied_preview=drum_pattern_preset_cancelled
+# Expect: semantic:drum_pattern_preset_queued:mode=sequencer.pattern_preset.preview.queued, semantic:drum_pattern_preset_queued:outcome=queued, semantic:drum_pattern_preset_queued:reason=activation_pending
+# Expect: semantic:drum_pattern_preset_applied_preview:mode=sequencer.pattern_preset.preview, semantic:drum_pattern_preset_applied_preview:projection=provisional
+# Expect: semantic:drum_pattern_preset_cancelled:effect=cancel_pattern_preset_preview, semantic:drum_pattern_preset_cancelled:outcome=cancelled
+
+0 scenario drum-sequencer
+
+# Create Track 2 as a General MIDI Drum Track and author a visible phrase.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1530 encoder NAV 1
+1830 tap NAV 60
+2300 encoder NAV 1
+2650 tap NAV 60
+3100 encoder NAV 1
+3450 tap NAV 60
+4350 tap MACRO_1 60
+4550 tap MACRO_5 60
+5000 encoder NAV 1
+5150 tap MACRO_3 60
+5350 tap MACRO_7 60
+
+# Open Factory > House > Four on the floor through the Lane Editor hold path.
+5650 tap NAV 60
+5900 button NAV down
+7000 tick
+7100 button NAV up
+7350 tick
+7450 tap LEFT_CENTER 60
+7750 tap NAV 60
+8050 tap NAV 60
+
+# Start Transport from the detail, return to its category and request audition.
+8300 tap BOTTOM_CENTER 60
+8450 tap LEFT_TOP 60
+8650 tap BOTTOM_RIGHT 60
+8850 capture screen drum_pattern_preset_queued
+
+# Four beats later the local loop boundary publishes the provisional candidate.
+11050 capture screen drum_pattern_preset_applied_preview
+
+# Back cancels the preview and restores the authored phrase; Transport remains global.
+11250 tap LEFT_TOP 60
+11450 capture screen drum_pattern_preset_cancelled
+11650 tap BOTTOM_CENTER 60

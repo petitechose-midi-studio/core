@@ -238,6 +238,7 @@ FLASHMEM void SequencerStepHandler::confirmDrumSequencerType() {
 FLASHMEM void SequencerStepHandler::handleDrumSequencerNavTurn(
     float delta
 ) {
+    if (sequencer_.patternPresetPreview.active()) return;
     auto& drumUi = sequencer_.drumSequencer;
     if (!drumUi.gridVisible() || delta == 0.0f) return;
     if (context_selector_workflow_.ownsGesture()) {
@@ -276,6 +277,7 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavTurn(
 }
 
 FLASHMEM void SequencerStepHandler::handleDrumSequencerNavPress() {
+    if (sequencer_.patternPresetPreview.active()) return;
     auto& drumUi = sequencer_.drumSequencer;
     if (!drumUi.gridVisible() || drumUi.selectorVisible() ||
         context_selector_workflow_.ownsGesture()) {
@@ -299,6 +301,7 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavPress() {
 }
 
 FLASHMEM void SequencerStepHandler::handleDrumSequencerNavRelease() {
+    if (sequencer_.patternPresetPreview.active()) return;
     auto& drumUi = sequencer_.drumSequencer;
     if (!drumUi.gridVisible() || !context_selector_workflow_.ownsGesture()) {
         return;
@@ -344,6 +347,7 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavRelease() {
 FLASHMEM bool SequencerStepHandler::drumBackActionAvailable() const {
     const auto& drumUi = sequencer_.drumSequencer;
     if (!drumUi.active()) return false;
+    if (sequencer_.patternPresetPreview.active()) return true;
     if (core::state::sequencer::isDrumContentView(sequencer_)) return false;
 
     // Pickers and local transient contexts still own Back. At the Track root,
@@ -359,6 +363,12 @@ FLASHMEM bool SequencerStepHandler::drumBackActionAvailable() const {
 }
 
 FLASHMEM void SequencerStepHandler::handleDrumSequencerBack() {
+    if (sequencer_.patternPresetPreview.active()) {
+        if (step_edit_handler_ != nullptr) {
+            step_edit_handler_->cancelPatternPresetPreview();
+        }
+        return;
+    }
     auto& drumUi = sequencer_.drumSequencer;
     if (sequencer_.stepContentSelector.selecting.get()) {
         sequencer_.stepContentSelector.selecting.set(false);
@@ -409,6 +419,7 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerStepProperty(
     uint8_t indexInPage,
     float normalized
 ) {
+    if (sequencer_.patternPresetPreview.active()) return;
     auto& drumUi = sequencer_.drumSequencer;
     if (drumUi.laneAddSlotFocused() ||
         indexInPage >= drumUi.STEPS_PER_PAGE) return;
@@ -502,6 +513,7 @@ FLASHMEM void SequencerStepHandler::applyDrumSelector() {
 FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
     float normalized
 ) {
+    if (sequencer_.patternPresetPreview.active()) return;
     auto& drumUi = sequencer_.drumSequencer;
     if (drumUi.selector == seq::DrumSequencerSelector::LANE_EDITOR) {
         return;
@@ -849,7 +861,8 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
         .priority(100)
         .when([this]() {
             const auto& drumUi = sequencer_.drumSequencer;
-            return core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+            return !sequencer_.patternPresetPreview.active() &&
+                core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                 !drumUi.selectorVisible() &&
                 !drumUi.laneSelection.active &&
                 !context_selector_workflow_.ownsGesture();
@@ -891,7 +904,8 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
         .priority(100)
         .when([this]() {
             const auto& drumUi = sequencer_.drumSequencer;
-            return core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+            return !sequencer_.patternPresetPreview.active() &&
+                core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                 !drumUi.selectorVisible() &&
                 !drumUi.laneSelection.active &&
                 !context_selector_workflow_.ownsGesture() &&
@@ -933,7 +947,8 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
         .scope(scope_id_)
         .priority(100)
         .when([this]() {
-            return core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+            return !sequencer_.patternPresetPreview.active() &&
+                core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                 !sequencer_.drumSequencer.selectorVisible() &&
                 !sequencer_.drumSequencer.laneSelection.active &&
                 !context_selector_workflow_.ownsGesture() &&
@@ -947,14 +962,25 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
         .scope(scope_id_)
         .priority(100)
         .when([this]() {
-            return core::state::sequencer::isDrumOverviewActive(sequencer_) &&
-                !sequencer_.drumSequencer.selectorVisible() &&
-                !sequencer_.drumSequencer.laneSelection.active &&
-                !context_selector_workflow_.ownsGesture() &&
-                navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::PAGE;
+            if (!core::state::sequencer::isDrumOverviewActive(sequencer_)) {
+                return false;
+            }
+            if (sequencer_.patternPresetPreview.active()) return true;
+            return !sequencer_.drumSequencer.selectorVisible() &&
+                   !sequencer_.drumSequencer.laneSelection.active &&
+                   !context_selector_workflow_.ownsGesture() &&
+                   navigation_focus_.get() ==
+                       core::state::StructureNavigationFocus::PAGE;
         })
-        .then([this]() { sequencer_.drumSequencer.movePage(1); });
+        .then([this]() {
+            if (sequencer_.patternPresetPreview.active()) {
+                if (step_edit_handler_ != nullptr) {
+                    step_edit_handler_->confirmPatternPresetPreview();
+                }
+                return;
+            }
+            sequencer_.drumSequencer.movePage(1);
+        });
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         buttons_.button(Config::MACRO_BUTTONS[i])
@@ -962,7 +988,8 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
             .scope(scope_id_)
             .priority(100)
             .when([this]() {
-                return core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+                return !sequencer_.patternPresetPreview.active() &&
+                    core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                     !sequencer_.drumSequencer.selectorVisible() &&
                     !sequencer_.drumSequencer.laneSelection.active &&
                     !context_selector_workflow_.ownsGesture();
@@ -1255,11 +1282,18 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return navigation_workflow_.allowsMainBindings() &&
-                   core::state::sequencer::isChildContentView(sequencer_) &&
-                   !edit_workflow_.trackPasteNavigationBlocked();
+            return sequencer_.patternPresetPreview.active() ||
+                (navigation_workflow_.allowsMainBindings() &&
+                 core::state::sequencer::isChildContentView(sequencer_) &&
+                 !edit_workflow_.trackPasteNavigationBlocked());
         })
         .then([this]() {
+            if (sequencer_.patternPresetPreview.active()) {
+                if (step_edit_handler_ != nullptr) {
+                    step_edit_handler_->cancelPatternPresetPreview();
+                }
+                return;
+            }
             if (core::state::sequencer::isChildContentView(sequencer_)) {
                 if (sequencer_.stepContentDraft.active.get()) {
                     backFromStepContentDraft();
@@ -1593,8 +1627,17 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return currentStructureBottomActionsAvailable(); })
+        .when([this]() {
+            return sequencer_.patternPresetPreview.active() ||
+                currentStructureBottomActionsAvailable();
+        })
         .then([this]() {
+            if (sequencer_.patternPresetPreview.active()) {
+                if (step_edit_handler_ != nullptr) {
+                    step_edit_handler_->confirmPatternPresetPreview();
+                }
+                return;
+            }
             if (trackFocusActive()) {
                 const auto release =
                     edit_workflow_.releaseTrackPasteAction(core::time_compat::millis());
@@ -1741,7 +1784,8 @@ FLASHMEM bool SequencerStepHandler::currentStructureBottomActionsAvailable() con
     // A child-content draft owns the bottom strip exclusively: only Apply is
     // admissible until the unpublished authoring session is resolved. Do not
     // let hidden structure bindings mutate, copy, or paste behind it.
-    if (sequencer_.stepContentDraft.active.get()) return false;
+    if (sequencer_.stepContentDraft.active.get() ||
+        sequencer_.patternPresetPreview.active()) return false;
     if (core::state::sequencer::isDrumOverviewActive(sequencer_)) {
         return
                !sequencer_.drumSequencer.selectorVisible() &&

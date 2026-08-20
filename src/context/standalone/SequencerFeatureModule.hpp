@@ -50,6 +50,10 @@ class SequencerPatternEditorOverlay;
 class SequencerStepEditOverlay;
 }
 
+namespace core::ui::sequencer {
+class SequencerPatternPresetPreview;
+}
+
 namespace core::ui::interaction {
 class TextKeyboardView;
 }
@@ -202,6 +206,10 @@ private:
         preset_library_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::SequencerChordVoiceRail>
         preset_library_chord_voice_rail_;
+    core::app::ExtmemUniquePtr<core::ui::sequencer::SequencerPatternPresetPreview>
+        preset_library_pattern_preview_;
+    core::app::ExtmemUniquePtr<core::ui::interaction::TextKeyboardView>
+        preset_library_keyboard_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         cc_lane_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>

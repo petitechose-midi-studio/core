@@ -326,15 +326,29 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
             enterPresetLibraryDetail();
         });
 
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(preset_library_overlay_scope_)
+        .then([this]() { openPresetLibraryManagement(); });
+
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(preset_library_overlay_scope_)
         .then([this]() { backFromPresetLibrary(); });
 
     buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .press()
+        .scope(preset_library_overlay_scope_)
+        .then([this]() { preset_library_.setTextShift(true); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
         .release()
         .scope(preset_library_overlay_scope_)
-        .then([this]() { cyclePatternPresetLibrarySource(); });
+        .then([this]() {
+            const bool wasEditing = preset_library_.textEditing();
+            preset_library_.setTextShift(false);
+            if (!wasEditing) cyclePatternPresetLibrarySource();
+        });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()

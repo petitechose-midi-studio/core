@@ -76,6 +76,9 @@ public:
     bool openFocusedStepContentAtRow(uint8_t row);
     /** Open the shared library for the active Pattern Editor target. */
     void openPatternPresetLibrary();
+    [[nodiscard]] bool patternPresetPreviewActive() const;
+    void confirmPatternPresetPreview();
+    void cancelPatternPresetPreview();
 private:
     void setupBindings();
 
@@ -166,12 +169,14 @@ private:
     void movePresetLibraryItem(float delta);
     void adjustPresetLibraryDetail(float delta);
     void enterPresetLibraryDetail();
+    void openPresetLibraryManagement();
     void togglePresetLibraryMode();
     void cyclePatternPresetLibrarySource();
     void beginPresetLibraryActionGuard();
     void releasePresetLibraryAction();
     void commitPresetLibraryActionGuard();
     void handlePresetLibraryResult(const SequencerPresetLibraryResult& result);
+    void returnPatternPresetWorkflowToGrid();
 
     ButtonReleaseLatch<2> context_release_latch_;
     ButtonReleaseLatch<1> preset_open_release_latch_;

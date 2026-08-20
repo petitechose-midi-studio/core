@@ -64,6 +64,7 @@ struct SequencerState {
     SequencerStepEditOverlayState stepEdit;
     SequencerContextSelectorState contextSelector;
     SequencerPresetLibrarySessionState presetLibrary;
+    SequencerPatternPresetPreviewUiState patternPresetPreview;
     SequencerCcLaneUiState ccLaneUi;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepContentSelectorState stepContentSelector;

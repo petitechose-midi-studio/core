@@ -728,6 +728,14 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
 ) {
     StripProps props;
     props.visible = true;
+    if (source.sequencer.patternPresetPreview.active()) {
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_VALIDATE,
+            Visual::ACTIVE,
+            Tone::POSITIVE
+        );
+        return props;
+    }
     if (projectDrumBottomActionStrip(source, props)) return props;
 
     const bool trackFocus =

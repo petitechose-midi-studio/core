@@ -13,6 +13,12 @@ public:
     );
 
     [[nodiscard]] SequencerPresetLibraryAdapter operations();
+    [[nodiscard]] bool previewActive() const {
+        return preview_session_.active();
+    }
+    SequencerPresetLibraryResult confirmPreview();
+    SequencerPresetLibraryResult cancelPreview();
+    void updatePreview();
 
 private:
     using PickerState =
@@ -50,9 +56,40 @@ private:
         bool overwriteAuthorized
     );
     SequencerPresetLibraryResult update(uint32_t nowMs);
+    bool enterFolder(const char* entryId);
+    bool leaveFolder();
+    SequencerPresetLibraryResult createFolder(const char* folderName);
+    bool beginManagement(
+        core::state::sequencer::SequencerPresetLibraryEntryKind kind,
+        const char* entryId,
+        const char* entryName
+    );
+    SequencerPresetLibraryResult renameManaged(const char* newName);
+    SequencerPresetLibraryResult moveManaged();
+    SequencerPresetLibraryResult deleteManaged();
+
+    static bool enterFolder_(void* context, const char* entryId);
+    static bool leaveFolder_(void* context);
+    static SequencerPresetLibraryResult createFolder_(
+        void* context,
+        const char* folderName
+    );
+    static bool beginManagement_(
+        void* context,
+        core::state::sequencer::SequencerPresetLibraryEntryKind kind,
+        const char* entryId,
+        const char* entryName
+    );
+    static SequencerPresetLibraryResult renameManaged_(
+        void* context,
+        const char* newName
+    );
+    static SequencerPresetLibraryResult moveManaged_(void* context);
+    static SequencerPresetLibraryResult deleteManaged_(void* context);
 
     core::state::sequencer::SequencerState& sequencer_;
     SequencerPatternPresetDomainServices& pattern_presets_;
+    SequencerPatternPresetPreviewSession preview_session_{};
 };
 
 }  // namespace core::handler

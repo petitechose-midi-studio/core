@@ -8,9 +8,15 @@ namespace core::ui::sequencer::preset_library_presentation_common {
 
 struct ListConfig {
     const char* kindLabel = "Preset";
+    const char* itemIcon = nullptr;
+    const char* newItemIcon = nullptr;
+    const char* folderIcon = nullptr;
+    const char* newFolderIcon = nullptr;
+    uint32_t itemIconColor = 0U;
+    uint32_t newItemIconColor = 0U;
+    uint32_t folderIconColor = 0U;
     const char* loadedFeedback = "Loaded";
     const char* queuedFeedback = "Queued";
-    const char* warningFeedback = "Check impact";
     const char* compatibility = "";
     const char* idleMeta = "";
 };

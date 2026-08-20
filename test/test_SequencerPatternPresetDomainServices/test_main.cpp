@@ -23,6 +23,7 @@ namespace seq = core::state::sequencer;
 using core::handler::SequencerPatternPresetActivation;
 using core::handler::SequencerPatternPresetDomainServices;
 using core::handler::SequencerPatternPresetDomainStatus;
+using core::handler::SequencerPatternPresetPreviewSession;
 using core::persistence::ProductDirectoryCatalog;
 using core::persistence::ProductFileService;
 
@@ -76,7 +77,8 @@ core::handler::SequencerPatternPresetListResult listSettled(
     seq::SequencerTrackKind trackKind,
     const char* anchorExclusive = nullptr,
     core::persistence::PatternPresetFilePageDirection direction =
-        core::persistence::PatternPresetFilePageDirection::FORWARD
+        core::persistence::PatternPresetFilePageDirection::FORWARD,
+    const seq::SequencerPatternPresetLocation& location = {}
 ) {
     auto listed = harness.presets.listPresetsPage(
         entries,
@@ -84,7 +86,8 @@ core::handler::SequencerPatternPresetListResult listSettled(
         anchorExclusive,
         direction,
         filter,
-        trackKind
+        trackKind,
+        location
     );
     for (uint8_t attempt = 0U;
          listed.status == SequencerPatternPresetDomainStatus::QUEUED &&
@@ -97,7 +100,8 @@ core::handler::SequencerPatternPresetListResult listSettled(
             anchorExclusive,
             direction,
             filter,
-            trackKind
+            trackKind,
+            location
         );
     }
     return listed;
@@ -147,17 +151,44 @@ void testInstrumentLifecycleAndSingleUndo() {
     assert(inspected.descriptor.patternLength == 8U);
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
-    const auto applied = h.presets.applyPreset(
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    SequencerPatternPresetPreviewSession cancelledPreview{};
+    const auto previewed = h.presets.previewPreset(
         "pattern-preset-0001",
         target,
-        inspected.descriptor.previewKey
+        inspected.descriptor.previewKey,
+        cancelledPreview
     );
-    assert(applied.ok());
-    assert(applied.activation == SequencerPatternPresetActivation::APPLIED);
+    assert(previewed.ok());
+    assert(cancelledPreview.active());
     assert(h.state.sequencer.pattern.note[2U] == 67U);
     assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
     assert(h.state.sequencerTracks.track(0U).note[2U] == 67U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+
+    const auto cancelled = h.presets.cancelPresetPreview(cancelledPreview);
+    assert(cancelled.ok());
+    assert(!cancelledPreview.active());
+    assert(h.state.sequencer.pattern.note[2U] == 48U);
+    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(h.state.sequencerTracks.track(0U).note[2U] == 48U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+
+    SequencerPatternPresetPreviewSession confirmedPreview{};
+    assert(h.presets.previewPreset(
+        "pattern-preset-0001",
+        target,
+        inspected.descriptor.previewKey,
+        confirmedPreview
+    ).ok());
+    const auto applied = h.presets.confirmPresetPreview(confirmedPreview);
+    assert(applied.ok());
+    assert(applied.activation == SequencerPatternPresetActivation::APPLIED);
+    assert(!confirmedPreview.active());
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.note[2U] == 48U);
@@ -260,14 +291,18 @@ void testDrumApplyPreservesKitAndQueuesAtLoop() {
     assert(inspected.descriptor.drumLaneCount == drum.kit.laneCount);
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
-    const auto applied = h.presets.applyPreset(
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    SequencerPatternPresetPreviewSession preview{};
+    const auto previewed = h.presets.previewPreset(
         "pattern-preset-0002",
         target,
-        inspected.descriptor.previewKey
+        inspected.descriptor.previewKey,
+        preview
     );
-    assert(applied.ok());
-    assert(applied.status == SequencerPatternPresetDomainStatus::QUEUED);
-    assert(applied.activation == SequencerPatternPresetActivation::QUEUED);
+    assert(previewed.ok());
+    assert(previewed.status == SequencerPatternPresetDomainStatus::QUEUED);
+    assert(previewed.activation == SequencerPatternPresetActivation::QUEUED);
+    assert(preview.active());
     assert(h.state.sequencerTrackActivations.telemetry(0U).origin ==
            seq::SequencerTrackActivationOrigin::PRESET);
     assert(drum.pattern.stepEnabled(1U, 2U));
@@ -276,7 +311,16 @@ void testDrumApplyPreservesKitAndQueuesAtLoop() {
     assert(seq::drumLaneDisplayColorIndex(drum.kit.lanes[1U]) == 6U);
     assert(drum.advancedRootSlot(1U, 2U) >= 0);
     assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+
+    const auto applied = h.presets.confirmPresetPreview(preview);
+    assert(applied.ok());
+    assert(applied.status == SequencerPatternPresetDomainStatus::QUEUED);
+    assert(applied.activation == SequencerPatternPresetActivation::QUEUED);
+    assert(!preview.active());
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);
 
     assert(h.state.undoSequencerHistory());
     assert(!drum.pattern.stepEnabled(1U, 2U));
@@ -333,8 +377,26 @@ void testFactoryAndUserLibrarySources() {
         seq::SequencerTrackKind::INSTRUMENT
     );
     assert(listed.ok());
-    assert(listed.count == 4U);
-    assert(listed.totalCount == 4U);
+    assert(listed.count == 3U);
+    assert(listed.totalCount == 3U);
+    assert(entries[0].kind ==
+           core::persistence::ProductDirectoryAssetEntryKind::FOLDER);
+    assert(std::strcmp(entries[0].id, "@Bass") == 0);
+
+    seq::SequencerPatternPresetLocation bass{};
+    assert(bass.enter("Bass"));
+    listed = listSettled(
+        h,
+        entries,
+        seq::SequencerPatternPresetSourceFilter::FACTORY,
+        seq::SequencerTrackKind::INSTRUMENT,
+        nullptr,
+        core::persistence::PatternPresetFilePageDirection::FORWARD,
+        bass
+    );
+    assert(listed.ok());
+    assert(listed.count == 1U);
+    assert(listed.totalCount == 1U);
     assert(std::strcmp(entries[0].id, "factory-instrument-bass-offbeat") == 0);
 
     listed = listSettled(
@@ -421,6 +483,29 @@ void testFactoryAndUserLibrarySources() {
     assert(applied.ok());
     assert(h.state.sequencer.pattern.note[0U] == 60U);
     assert(h.state.sequencer.pattern.note[7U] == 72U);
+
+    const uint8_t undoBeforeCopy = h.state.sequencerHistory.undoCount();
+    const auto copied = h.presets.copyFactoryPreset(
+        "factory-instrument-rising"
+    );
+    assert(copied.ok());
+    assert(copied.presetId[0] != '\0');
+    assert(std::strcmp(
+        copied.presetId,
+        "factory-instrument-rising"
+    ) != 0);
+    assert(h.state.sequencerHistory.undoCount() == undoBeforeCopy);
+    const auto copiedInspect = h.presets.inspectPreset(
+        copied.presetId,
+        h.presets.captureTarget()
+    );
+    assert(copiedInspect.status == SequencerPatternPresetDomainStatus::OK);
+    assert(copiedInspect.descriptor.source ==
+           seq::SequencerPatternPresetSource::USER);
+    assert(std::strcmp(
+        copiedInspect.descriptor.metadata.semanticName,
+        "Rising sequence"
+    ) == 0);
 
     assert(h.presets.savePreset(
         "factory-instrument-rising",

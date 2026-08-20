@@ -1,0 +1,28 @@
+# UX workflow: copy an immutable Factory Pattern preset into User storage.
+# Purpose: proves that Save As selects a User destination and copies the
+# Factory payload instead of saving the currently edited Pattern.
+# Expect: capture_changed:pattern_factory_copy_source=pattern_factory_copy_destination, capture_changed:pattern_factory_copy_destination=pattern_factory_copied
+# Expect: semantic:pattern_factory_copy_destination:effect=choose_pattern_preset_copy_destination, semantic:pattern_factory_copy_destination:mode=sequencer.pattern_preset.copy_destination, semantic:pattern_factory_copy_destination:property=destination, semantic:pattern_factory_copy_destination:value_label=user_root
+# Expect: semantic:pattern_factory_copied:effect=copy_factory_pattern_preset, semantic:pattern_factory_copied:outcome=applied, semantic:pattern_factory_copied:route_policy=preserve_destination, semantic:pattern_factory_copied:projection=exact_copy
+
+0 scenario sequencer
+
+# Enter Pattern Editor and open the Pattern Preset library.
+100 tap NAV 60
+300 button NAV down
+1400 tick
+1450 button NAV up
+
+# All -> Factory, enter the first category and inspect its first preset.
+1650 tap LEFT_CENTER 60
+1850 tap NAV 60
+2050 tap NAV 60
+2250 capture screen pattern_factory_copy_source
+
+# The Factory detail copy action opens the User destination browser.
+2400 tap BOTTOM_LEFT 60
+2650 capture screen pattern_factory_copy_destination
+
+# Copy here creates a distinct User asset and leaves it selected.
+2800 tap BOTTOM_RIGHT 60
+3300 capture screen pattern_factory_copied

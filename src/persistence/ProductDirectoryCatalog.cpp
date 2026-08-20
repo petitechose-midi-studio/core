@@ -224,6 +224,11 @@ FLASHMEM oc::type::Result<void> ProductDirectoryCatalog::requestAssets(
     }
     identity_ = files_.storageIdentity();
     query_ = query;
+    // `requestAssets()` callers may build a directory path in a bounded local
+    // buffer. The catalog already owns the canonical copy in `directory_`;
+    // retain that address for the asynchronous enrichment stage instead of a
+    // caller-owned pointer.
+    query_.directory = directory_;
     stage_ = keepRaw ? Stage::ASSET_ENRICH : Stage::RAW_SCAN;
     const auto admitted = admit_(owner);
     if (!admitted) {

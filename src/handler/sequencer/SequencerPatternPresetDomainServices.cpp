@@ -127,6 +127,19 @@ FLASHMEM SequencerPatternPresetDomainStatus statusFromCodec(
     }
 }
 
+FLASHMEM SequencerPatternPresetActionResult fileMutationResult(
+    const oc::type::Result<void>& mutation
+) {
+    SequencerPatternPresetActionResult result{};
+    if (!mutation) {
+        result.status = statusFromFileError(mutation.error().code);
+        result.fileError = mutation.error().code;
+        return result;
+    }
+    result.activation = SequencerPatternPresetActivation::APPLIED;
+    return result;
+}
+
 FLASHMEM uint32_t hashPresetPayload(
     const char* presetId,
     const uint8_t* bytes,
@@ -143,7 +156,8 @@ FLASHMEM uint32_t hashPresetPayload(
 FLASHMEM LoadedPatternPreset loadPreset(
     core::persistence::ProductFileService& files,
     core::persistence::ProductDirectoryCatalog& catalog,
-    const char* presetId
+    const char* presetId,
+    const seq::SequencerPatternPresetLocation& location
 ) {
     LoadedPatternPreset loaded{};
     loaded.buffer = core::app::makeExtmemUniqueForOverwrite<PatternPresetBuffer>();
@@ -191,7 +205,7 @@ FLASHMEM LoadedPatternPreset loadPreset(
         return loaded;
     }
 
-    core::persistence::PatternPresetFileStore store(files, catalog);
+    core::persistence::PatternPresetFileStore store(files, catalog, location);
     const auto result = store.load(
         presetId,
         loaded.buffer->bytes,
@@ -245,6 +259,76 @@ FLASHMEM LoadedPatternPreset loadPreset(
         loaded.codecStatus = seq::SequencerPatternPresetStatus::INVALID_FORMAT;
     }
     return loaded;
+}
+
+FLASHMEM void projectVisualSummary(
+    const LoadedPatternPreset& loaded,
+    seq::SequencerPatternPresetVisualSummary& out
+) {
+    out = {};
+    if (!loaded.ok()) return;
+
+    const auto& pattern = loaded.staged->pattern;
+    out.valid = true;
+    out.visibleStepCount = std::min<uint8_t>(
+        pattern.length.get(),
+        seq::SequencerPatternPresetVisualSummary::STEP_CAPACITY
+    );
+
+    if (pattern.graph) {
+        uint8_t microCount = 0U;
+        for (uint8_t index = 0U;
+             index < pattern.graph->sequenceCount;
+             ++index) {
+            if (pattern.graph->sequences[index].kind ==
+                oc::note::sequencer::StepSequencerSequenceKind::
+                    MicroSequence) {
+                ++microCount;
+            }
+        }
+        out.microSequenceCount = microCount;
+        out.cycleStateCount = pattern.graph->cycleSetCount;
+    }
+    if (pattern.ccLanes) {
+        out.ccLaneCount = seq::sequencerCcLaneCount(*pattern.ccLanes);
+    }
+
+    if (loaded.drum) {
+        out.laneCount = std::min<uint8_t>(
+            loaded.drum->kit.laneCount,
+            seq::SequencerPatternPresetVisualSummary::LANE_CAPACITY
+        );
+        for (uint8_t lane = 0U; lane < out.laneCount; ++lane) {
+            const auto& descriptor = loaded.drum->kit.lanes[lane];
+            out.drumIcons[lane] = seq::drumLaneDisplayIcon(descriptor);
+            out.drumColorIndices[lane] =
+                seq::drumLaneDisplayColorIndex(descriptor);
+            copyText(
+                out.drumNames[lane].data(),
+                out.drumNames[lane].size(),
+                seq::drumLaneDisplayName(descriptor)
+            );
+            for (uint8_t step = 0U;
+                 step < out.visibleStepCount;
+                 ++step) {
+                if (loaded.drum->pattern.stepEnabled(lane, step)) {
+                    out.drumEnabledMasks[lane] |=
+                        static_cast<uint16_t>(UINT16_C(1) << step);
+                }
+            }
+        }
+        return;
+    }
+
+    const auto enabled = pattern.enabledMask.get();
+    for (uint8_t step = 0U; step < out.visibleStepCount; ++step) {
+        if (enabled.test(step)) {
+            out.melodicEnabledMask |=
+                static_cast<uint16_t>(UINT16_C(1) << step);
+        }
+        out.notes[step] = pattern.note[step];
+        out.velocities[step] = pattern.velocity[step];
+    }
 }
 
 FLASHMEM bool sameTarget(
@@ -360,16 +444,21 @@ using PatternPresetDirection =
 FLASHMEM bool factoryPresetIndex(
     seq::SequencerTrackKind trackKind,
     const char* presetId,
-    uint8_t& outIndex
+    uint8_t& outIndex,
+    const char* category = nullptr
 ) {
     core::persistence::PatternPresetFactoryDescriptor descriptor{};
     const uint8_t count =
-        core::persistence::PatternPresetFactoryLibrary::count(trackKind);
+        core::persistence::PatternPresetFactoryLibrary::count(
+            trackKind,
+            category
+        );
     for (uint8_t index = 0U; index < count; ++index) {
         if (!core::persistence::PatternPresetFactoryLibrary::descriptorAt(
                 trackKind,
                 index,
-                descriptor
+                descriptor,
+                category
             )) {
             continue;
         }
@@ -385,13 +474,15 @@ FLASHMEM bool factoryPresetIndex(
 FLASHMEM bool copyFactoryPresetEntry(
     seq::SequencerTrackKind trackKind,
     uint8_t index,
-    PatternPresetEntry& out
+    PatternPresetEntry& out,
+    const char* category = nullptr
 ) {
     core::persistence::PatternPresetFactoryDescriptor descriptor{};
     if (!core::persistence::PatternPresetFactoryLibrary::descriptorAt(
             trackKind,
             index,
-            descriptor
+            descriptor,
+            category
         )) {
         return false;
     }
@@ -402,6 +493,22 @@ FLASHMEM bool copyFactoryPresetEntry(
         sizeof(out.semanticName),
         descriptor.semanticName
     );
+    if (descriptor.trackKind == seq::SequencerTrackKind::DRUM) {
+        std::snprintf(
+            out.displayValue,
+            sizeof(out.displayValue),
+            "%u×%u",
+            static_cast<unsigned>(descriptor.laneCount),
+            static_cast<unsigned>(descriptor.patternLength)
+        );
+    } else {
+        std::snprintf(
+            out.displayValue,
+            sizeof(out.displayValue),
+            "%u",
+            static_cast<unsigned>(descriptor.patternLength)
+        );
+    }
     out.metadataReadable = true;
     return true;
 }
@@ -411,11 +518,15 @@ FLASHMEM SequencerPatternPresetListResult listFactoryPresets(
     uint8_t capacity,
     const char* anchorExclusive,
     PatternPresetDirection direction,
-    seq::SequencerTrackKind trackKind
+    seq::SequencerTrackKind trackKind,
+    const char* category = nullptr
 ) {
     SequencerPatternPresetListResult result{};
     const uint8_t total =
-        core::persistence::PatternPresetFactoryLibrary::count(trackKind);
+        core::persistence::PatternPresetFactoryLibrary::count(
+            trackKind,
+            category
+        );
     result.totalCount = total;
     if (capacity == 0U) return result;
     if (entries == nullptr) {
@@ -428,7 +539,12 @@ FLASHMEM SequencerPatternPresetListResult listFactoryPresets(
         anchorExclusive != nullptr && anchorExclusive[0] != '\0';
     uint8_t anchorIndex = 0U;
     if (hasAnchor &&
-        !factoryPresetIndex(trackKind, anchorExclusive, anchorIndex)) {
+        !factoryPresetIndex(
+            trackKind,
+            anchorExclusive,
+            anchorIndex,
+            category
+        )) {
         result.status = SequencerPatternPresetDomainStatus::FAILED;
         result.fileError = oc::type::ErrorCode::INVALID_ARGUMENT;
         return result;
@@ -453,6 +569,109 @@ FLASHMEM SequencerPatternPresetListResult listFactoryPresets(
     }
     for (uint8_t index = begin; index < end; ++index) {
         if (copyFactoryPresetEntry(
+                trackKind,
+                index,
+                entries[result.count],
+                category
+            )) {
+            ++result.count;
+        }
+    }
+    result.hasPrevious = begin > 0U;
+    result.hasNext = end < total;
+    result.truncated = result.hasPrevious || result.hasNext;
+    return result;
+}
+
+FLASHMEM bool copyFactoryCategoryEntry(
+    seq::SequencerTrackKind trackKind,
+    uint8_t index,
+    PatternPresetEntry& out
+) {
+    const char* category =
+        core::persistence::PatternPresetFactoryLibrary::categoryAt(
+            trackKind,
+            index
+        );
+    if (category == nullptr) return false;
+    out = {};
+    std::snprintf(out.id, sizeof(out.id), "@%s", category);
+    copyText(out.semanticName, sizeof(out.semanticName), category);
+    std::snprintf(
+        out.displayValue,
+        sizeof(out.displayValue),
+        "%u",
+        static_cast<unsigned>(
+            core::persistence::PatternPresetFactoryLibrary::count(
+                trackKind,
+                category
+            )
+        )
+    );
+    out.metadataReadable = true;
+    out.kind = core::persistence::ProductDirectoryAssetEntryKind::FOLDER;
+    return true;
+}
+
+FLASHMEM SequencerPatternPresetListResult listFactoryCategories(
+    PatternPresetEntry* entries,
+    uint8_t capacity,
+    const char* anchorExclusive,
+    PatternPresetDirection direction,
+    seq::SequencerTrackKind trackKind
+) {
+    SequencerPatternPresetListResult result{};
+    const uint8_t total =
+        core::persistence::PatternPresetFactoryLibrary::categoryCount(
+            trackKind
+        );
+    result.totalCount = total;
+    if (capacity == 0U) return result;
+    if (entries == nullptr) {
+        result.status = SequencerPatternPresetDomainStatus::FAILED;
+        result.fileError = oc::type::ErrorCode::INVALID_ARGUMENT;
+        return result;
+    }
+
+    const bool hasAnchor =
+        anchorExclusive != nullptr && anchorExclusive[0] != '\0';
+    uint8_t anchorIndex = 0U;
+    if (hasAnchor) {
+        bool found = false;
+        for (uint8_t index = 0U; index < total; ++index) {
+            PatternPresetEntry candidate{};
+            if (copyFactoryCategoryEntry(trackKind, index, candidate) &&
+                std::strcmp(candidate.id, anchorExclusive) == 0) {
+                anchorIndex = index;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            result.status = SequencerPatternPresetDomainStatus::FAILED;
+            result.fileError = oc::type::ErrorCode::INVALID_ARGUMENT;
+            return result;
+        }
+    }
+    if (direction == PatternPresetDirection::BACKWARD && !hasAnchor) {
+        result.status = SequencerPatternPresetDomainStatus::FAILED;
+        result.fileError = oc::type::ErrorCode::INVALID_ARGUMENT;
+        return result;
+    }
+
+    const uint8_t begin = direction == PatternPresetDirection::FORWARD
+        ? (hasAnchor ? static_cast<uint8_t>(anchorIndex + 1U) : 0U)
+        : (anchorIndex > capacity
+            ? static_cast<uint8_t>(anchorIndex - capacity)
+            : 0U);
+    const uint8_t end = direction == PatternPresetDirection::FORWARD
+        ? static_cast<uint8_t>(std::min<unsigned>(
+              total,
+              static_cast<unsigned>(begin) + capacity
+          ))
+        : anchorIndex;
+    for (uint8_t index = begin; index < end; ++index) {
+        if (copyFactoryCategoryEntry(
                 trackKind,
                 index,
                 entries[result.count]
@@ -505,6 +724,17 @@ FLASHMEM UserPatternPresetPage listUserPresets(
 
 }  // namespace
 
+FLASHMEM void SequencerPatternPresetPreviewSession::reset() {
+    target = {};
+    pattern.reset();
+    drum.reset();
+    rollbackPatternBank.reset();
+    rollbackDrumBankGraph.reset();
+    activation = {};
+    presentationActivation = SequencerPatternPresetActivation::NONE;
+    activationGeneration = 0U;
+}
+
 FLASHMEM SequencerPatternPresetDomainServices::
 SequencerPatternPresetDomainServices(
     core::state::CoreState& state,
@@ -528,18 +758,33 @@ SequencerPatternPresetDomainServices::listPresetsPage(
     const char* anchorExclusive,
     core::persistence::PatternPresetFilePageDirection direction,
     seq::SequencerPatternPresetSourceFilter filter,
-    seq::SequencerTrackKind trackKind
+    seq::SequencerTrackKind trackKind,
+    const seq::SequencerPatternPresetLocation& location
 ) const {
     OC_PERF_SCOPE(perf, "persistence.pattern-preset.list-page");
     SequencerPatternPresetListResult result{};
     if (filter == seq::SequencerPatternPresetSourceFilter::FACTORY) {
-        result = listFactoryPresets(
-            entries,
-            capacity,
-            anchorExclusive,
-            direction,
-            trackKind
-        );
+        if (location.root()) {
+            result = listFactoryCategories(
+                entries,
+                capacity,
+                anchorExclusive,
+                direction,
+                trackKind
+            );
+        } else if (location.depth == 1U) {
+            result = listFactoryPresets(
+                entries,
+                capacity,
+                anchorExclusive,
+                direction,
+                trackKind,
+                location.relativeDirectory.data()
+            );
+        } else {
+            result.status = SequencerPatternPresetDomainStatus::FAILED;
+            result.fileError = oc::type::ErrorCode::INVALID_ARGUMENT;
+        }
         OC_PERF_UNITS(perf, result.count, result.totalCount);
         return result;
     }
@@ -548,7 +793,11 @@ SequencerPatternPresetDomainServices::listPresetsPage(
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
     }
-    core::persistence::PatternPresetFileStore store(*files_, *catalog_);
+    core::persistence::PatternPresetFileStore store(
+        *files_,
+        *catalog_,
+        location
+    );
 
     if (filter == seq::SequencerPatternPresetSourceFilter::ALL) {
         if (entries == nullptr && capacity > 0U) {
@@ -749,10 +998,45 @@ SequencerPatternPresetDomainServices::listPresetsPage(
     return result;
 }
 
+FLASHMEM SequencerPatternPresetListResult
+SequencerPatternPresetDomainServices::listFoldersPage(
+    Entry* entries,
+    uint8_t capacity,
+    const char* anchorExclusive,
+    core::persistence::PatternPresetFilePageDirection direction,
+    const seq::SequencerPatternPresetLocation& location
+) const {
+    SequencerPatternPresetListResult result{};
+    if (files_ == nullptr || catalog_ == nullptr) {
+        result.status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE;
+        result.fileError = oc::type::ErrorCode::INVALID_STATE;
+        return result;
+    }
+    core::persistence::PatternPresetFileStore store(
+        *files_, *catalog_, location
+    );
+    const auto listed = store.listFoldersPage(
+        entries, capacity, anchorExclusive, direction
+    );
+    if (!listed) {
+        result.status = statusFromFileError(listed.error().code);
+        result.fileError = listed.error().code;
+        return result;
+    }
+    const auto& page = listed.value();
+    result.count = page.count;
+    result.truncated = page.truncated;
+    result.hasPrevious = page.hasPrevious;
+    result.hasNext = page.hasNext;
+    result.totalCount = page.totalCount;
+    return result;
+}
+
 FLASHMEM SequencerPatternPresetActionResult
 SequencerPatternPresetDomainServices::nextPresetId(
     char* out,
-    size_t outSize
+    size_t outSize,
+    const seq::SequencerPatternPresetLocation& location
 ) const {
     SequencerPatternPresetActionResult result{};
     if (files_ == nullptr || catalog_ == nullptr) {
@@ -760,7 +1044,11 @@ SequencerPatternPresetDomainServices::nextPresetId(
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
     }
-    core::persistence::PatternPresetFileStore store(*files_, *catalog_);
+    core::persistence::PatternPresetFileStore store(
+        *files_,
+        *catalog_,
+        location
+    );
     const auto next = store.nextPresetId(out, outSize);
     if (!next) {
         result.status = statusFromFileError(next.error().code);
@@ -769,6 +1057,109 @@ SequencerPatternPresetDomainServices::nextPresetId(
     }
     copyText(result.presetId, sizeof(result.presetId), out);
     return result;
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::createFolder(
+    const seq::SequencerPatternPresetLocation& location,
+    const char* folderName
+) const {
+    SequencerPatternPresetActionResult result{};
+    if (files_ == nullptr || catalog_ == nullptr) {
+        result.status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE;
+        result.fileError = oc::type::ErrorCode::INVALID_STATE;
+        return result;
+    }
+    if (location.depth >= seq::SequencerPatternPresetLocation::MAX_DEPTH ||
+        !seq::sequencerPatternPresetFolderNameIsValid(folderName)) {
+        result.status = SequencerPatternPresetDomainStatus::FAILED;
+        result.fileError = oc::type::ErrorCode::INVALID_ARGUMENT;
+        return result;
+    }
+    core::persistence::PatternPresetFileStore store(
+        *files_,
+        *catalog_,
+        location
+    );
+    const auto created = store.createFolder(folderName);
+    if (!created) {
+        result.status = statusFromFileError(created.error().code);
+        result.fileError = created.error().code;
+    }
+    return result;
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::renameFolder(
+    const seq::SequencerPatternPresetLocation& location,
+    const char* folderName,
+    const char* newFolderName
+) const {
+    if (files_ == nullptr || catalog_ == nullptr) {
+        return {
+            .status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE,
+            .fileError = oc::type::ErrorCode::INVALID_STATE,
+        };
+    }
+    core::persistence::PatternPresetFileStore store(
+        *files_, *catalog_, location
+    );
+    return fileMutationResult(store.renameFolder(folderName, newFolderName));
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::deleteFolder(
+    const seq::SequencerPatternPresetLocation& location,
+    const char* folderName
+) const {
+    if (files_ == nullptr || catalog_ == nullptr) {
+        return {
+            .status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE,
+            .fileError = oc::type::ErrorCode::INVALID_STATE,
+        };
+    }
+    core::persistence::PatternPresetFileStore store(
+        *files_, *catalog_, location
+    );
+    return fileMutationResult(store.removeEmptyFolder(folderName));
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::movePreset(
+    const seq::SequencerPatternPresetLocation& source,
+    const char* presetId,
+    const seq::SequencerPatternPresetLocation& destination
+) const {
+    if (files_ == nullptr || catalog_ == nullptr) {
+        return {
+            .status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE,
+            .fileError = oc::type::ErrorCode::INVALID_STATE,
+        };
+    }
+    core::persistence::PatternPresetFileStore store(
+        *files_, *catalog_, source
+    );
+    auto result = fileMutationResult(store.movePreset(presetId, destination));
+    copyText(result.presetId, sizeof(result.presetId), presetId);
+    return result;
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::moveFolder(
+    const seq::SequencerPatternPresetLocation& source,
+    const char* folderName,
+    const seq::SequencerPatternPresetLocation& destination
+) const {
+    if (files_ == nullptr || catalog_ == nullptr) {
+        return {
+            .status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE,
+            .fileError = oc::type::ErrorCode::INVALID_STATE,
+        };
+    }
+    core::persistence::PatternPresetFileStore store(
+        *files_, *catalog_, source
+    );
+    return fileMutationResult(store.moveFolder(folderName, destination));
 }
 
 FLASHMEM seq::SequencerPatternPresetTarget
@@ -800,7 +1191,8 @@ FLASHMEM uint32_t SequencerPatternPresetDomainServices::projectRevision() const 
 FLASHMEM SequencerPatternPresetInspectResult
 SequencerPatternPresetDomainServices::inspectPreset(
     const char* presetId,
-    const seq::SequencerPatternPresetTarget& target
+    const seq::SequencerPatternPresetTarget& target,
+    const seq::SequencerPatternPresetLocation& location
 ) const {
     OC_PERF_SCOPE(perf, "persistence.pattern-preset.inspect");
     SequencerPatternPresetInspectResult result{};
@@ -819,7 +1211,7 @@ SequencerPatternPresetDomainServices::inspectPreset(
             seq::SequencerPatternPresetCompatibility::STORAGE_UNAVAILABLE;
         return result;
     }
-    auto loaded = loadPreset(*files_, *catalog_, presetId);
+    auto loaded = loadPreset(*files_, *catalog_, presetId, location);
     result.status = loaded.status;
     result.codecStatus = loaded.codecStatus;
     result.fileError = loaded.fileError;
@@ -839,6 +1231,7 @@ SequencerPatternPresetDomainServices::inspectPreset(
     descriptor.patternLength = loaded.staged->pattern.length.get();
     descriptor.stepsPerBeat = loaded.staged->pattern.stepsPerBeat.get();
     descriptor.drumLaneCount = loaded.drum ? loaded.drum->kit.laneCount : 0U;
+    projectVisualSummary(loaded, descriptor.visual);
     descriptor.compatibility = compatibilityFor(
         loaded,
         target,
@@ -854,7 +1247,8 @@ FLASHMEM SequencerPatternPresetActionResult
 SequencerPatternPresetDomainServices::savePreset(
     const char* presetId,
     const seq::SequencerPatternPresetTarget& target,
-    bool allowOverwrite
+    bool allowOverwrite,
+    const seq::SequencerPatternPresetLocation& location
 ) const {
     OC_PERF_SCOPE(perf, "persistence.pattern-preset.save");
     SequencerPatternPresetActionResult result{};
@@ -873,7 +1267,11 @@ SequencerPatternPresetDomainServices::savePreset(
         return result;
     }
 
-    core::persistence::PatternPresetFileStore store(*files_, *catalog_);
+    core::persistence::PatternPresetFileStore store(
+        *files_,
+        *catalog_,
+        location
+    );
     const auto existing = store.exists(presetId);
     if (!existing) {
         result.status = statusFromFileError(existing.error().code);
@@ -923,6 +1321,11 @@ SequencerPatternPresetDomainServices::savePreset(
             );
         }
     }
+    copyText(
+        result.semanticName,
+        sizeof(result.semanticName),
+        semanticName
+    );
 
     seq::SequencerPatternPresetMetadata metadata{};
     if (!seq::setSequencerPatternPresetMetadata(
@@ -977,14 +1380,114 @@ SequencerPatternPresetDomainServices::savePreset(
 }
 
 FLASHMEM SequencerPatternPresetActionResult
-SequencerPatternPresetDomainServices::applyPreset(
+SequencerPatternPresetDomainServices::copyFactoryPreset(
+    const char* sourcePresetId,
+    const seq::SequencerPatternPresetLocation& destination
+) const {
+    OC_PERF_SCOPE(perf, "persistence.pattern-preset.copy-factory");
+    SequencerPatternPresetActionResult result{};
+    if (sourcePresetId == nullptr ||
+        !core::persistence::PatternPresetFactoryLibrary::contains(
+            sourcePresetId
+        )) {
+        result.status = SequencerPatternPresetDomainStatus::READ_ONLY;
+        return result;
+    }
+    if (files_ == nullptr || catalog_ == nullptr) {
+        result.status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE;
+        result.fileError = oc::type::ErrorCode::INVALID_STATE;
+        return result;
+    }
+
+    char destinationId[seq::SEQUENCER_PRESET_TECHNICAL_ID_SIZE]{};
+    result = nextPresetId(
+        destinationId,
+        sizeof(destinationId),
+        destination
+    );
+    if (!result.ok()) return result;
+
+    auto loaded = loadPreset(
+        *files_,
+        *catalog_,
+        sourcePresetId,
+        {}
+    );
+    result.status = loaded.status;
+    result.codecStatus = loaded.codecStatus;
+    result.fileError = loaded.fileError;
+    result.bytes = loaded.bytes;
+    if (!loaded.ok()) return result;
+
+    seq::SequencerPatternPresetMetadata metadata{};
+    if (!seq::setSequencerPatternPresetMetadata(
+            metadata,
+            loaded.metadata.trackKind,
+            destinationId,
+            loaded.metadata.semanticName
+        )) {
+        result.status = SequencerPatternPresetDomainStatus::FAILED;
+        result.codecStatus =
+            seq::SequencerPatternPresetStatus::INVALID_ARGUMENT;
+        return result;
+    }
+    const auto encoded = codec::encode(
+        metadata,
+        loaded.staged->pattern,
+        loaded.drum.get(),
+        loaded.buffer->bytes,
+        codec::MAX_ENCODED_SIZE
+    );
+    result.codecStatus = encoded.status;
+    result.bytes = encoded.bytesWritten;
+    if (!encoded.ok()) {
+        result.status = statusFromCodec(encoded.status);
+        return result;
+    }
+
+    core::persistence::PatternPresetFileStore store(
+        *files_,
+        *catalog_,
+        destination
+    );
+    const auto saved = store.save(
+        destinationId,
+        loaded.buffer->bytes,
+        encoded.bytesWritten
+    );
+    if (!saved) {
+        result.status = statusFromFileError(saved.error().code);
+        result.fileError = saved.error().code;
+        return result;
+    }
+    result.status = SequencerPatternPresetDomainStatus::OK;
+    result.activation = SequencerPatternPresetActivation::APPLIED;
+    result.bytes = static_cast<uint16_t>(saved.value().bytes);
+    copyText(result.presetId, sizeof(result.presetId), destinationId);
+    OC_PERF_UNITS(
+        perf,
+        result.bytes,
+        static_cast<uint32_t>(loaded.metadata.trackKind)
+    );
+    return result;
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::previewPreset(
     const char* presetId,
     const seq::SequencerPatternPresetTarget& target,
-    const seq::SequencerPatternPresetPreviewKey& expectedPreview
+    const seq::SequencerPatternPresetPreviewKey& expectedPreview,
+    SequencerPatternPresetPreviewSession& session,
+    const seq::SequencerPatternPresetLocation& location
 ) const {
     OC_PERF_SCOPE(perf, "persistence.pattern-preset.load-apply");
     SequencerPatternPresetActionResult result{};
     copyText(result.presetId, sizeof(result.presetId), presetId);
+    if (session.active()) {
+        result.status = SequencerPatternPresetDomainStatus::STALE_TARGET;
+        return result;
+    }
+    session.reset();
     if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerPatternPresetDomainStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
@@ -995,7 +1498,7 @@ SequencerPatternPresetDomainServices::applyPreset(
         return result;
     }
 
-    auto loaded = loadPreset(*files_, *catalog_, presetId);
+    auto loaded = loadPreset(*files_, *catalog_, presetId, location);
     result.status = loaded.status;
     result.codecStatus = loaded.codecStatus;
     result.fileError = loaded.fileError;
@@ -1070,7 +1573,14 @@ SequencerPatternPresetDomainServices::applyPreset(
         core::app::ExtmemUniquePtr<
             oc::note::sequencer::StepSequencerGraph
         > bankGraph;
-        if (!core::state::cloneSequencerGraph(bankGraph, sourceGraph)) {
+        core::app::ExtmemUniquePtr<
+            oc::note::sequencer::StepSequencerGraph
+        > rollbackBankGraph;
+        if (!core::state::cloneSequencerGraph(bankGraph, sourceGraph) ||
+            !core::state::cloneSequencerGraph(
+                rollbackBankGraph,
+                change->beforeGraph.get()
+            )) {
             result.status =
                 SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
             result.codecStatus =
@@ -1123,7 +1633,8 @@ SequencerPatternPresetDomainServices::applyPreset(
         seq::refreshContentView(state_->sequencer);
         state_->sequencer.drumSequencer.bump();
         state_->sequencer.invalidateVariationTelemetry();
-        state_->sequencerHistory.recordPreparedDrum(std::move(change));
+        session.drum = std::move(change);
+        session.rollbackDrumBankGraph = std::move(rollbackBankGraph);
     } else {
         auto change = core::app::makeExtmemUnique<
             seq::SequencerHistoryPatternChange
@@ -1151,6 +1662,7 @@ SequencerPatternPresetDomainServices::applyPreset(
             oc::note::sequencer::StepSequencerGraph
         > bankGraph;
         seq::SequencerCcLaneBankPtr bankCcLanes;
+        seq::SequencerPreparedActiveTrackSynchronization rollbackBank;
         if (!core::state::cloneSequencerGraph(
                 bankGraph,
                 seq::graphView(loaded.staged->pattern)
@@ -1158,6 +1670,12 @@ SequencerPatternPresetDomainServices::applyPreset(
             !seq::cloneSequencerCcLaneBank(
                 bankCcLanes,
                 seq::sequencerCcLaneView(loaded.staged->pattern)
+            ) ||
+            !seq::prepareActiveTrackSynchronizationFromSnapshot(
+                state_->sequencerTracks,
+                target.trackIndex,
+                change->before,
+                rollbackBank
             )) {
             result.status =
                 SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
@@ -1175,9 +1693,6 @@ SequencerPatternPresetDomainServices::applyPreset(
             result.status = SequencerPatternPresetDomainStatus::STALE_TARGET;
             return result;
         }
-        change->auxiliary.activation.reference =
-            seq::activationHistoryRef(activation);
-        change->auxiliary.activation.targetAudibleMask = audibleMask;
         if (!state_->sequencerHistory.canRecordPattern(*change)) {
             result.status = SequencerPatternPresetDomainStatus::HISTORY_UNAVAILABLE;
             return result;
@@ -1208,16 +1723,201 @@ SequencerPatternPresetDomainServices::applyPreset(
             std::move(bankGraph),
             std::move(bankCcLanes)
         );
+        seq::synchronizeHistoryPatternRevisionSignals(
+            state_->sequencer.pattern,
+            change->after.flat,
+            change->after.ccLaneRevision
+        );
+        seq::synchronizeHistoryPatternRevisionSignals(
+            state_->sequencerTracks.track(target.trackIndex),
+            change->after.flat,
+            change->after.ccLaneRevision
+        );
         seq::refreshContentView(state_->sequencer);
         state_->sequencer.invalidateVariationTelemetry();
-        state_->sequencerHistory.recordPreparedPattern(std::move(change));
+        change->setPreparedPayloadOwnerProof(state_->sequencer.pattern);
+        session.pattern = std::move(change);
+        session.rollbackPatternBank = std::move(rollbackBank);
     }
 
-    state_->publishPreparedSequencerMutation();
+    session.target = target;
+    session.activation.reference = seq::activationHistoryRef(activation);
+    session.activation.targetAudibleMask = audibleMask;
+    session.activationGeneration = activation.generation;
+    state_->publishPreparedSequencerPreview();
     state_->sequencerTrackActivations.publishPrepared(activation);
     setActivationResult(activation, target.trackIndex, result);
+    session.presentationActivation = result.activation;
     OC_PERF_UNITS(perf, result.bytes, static_cast<uint32_t>(result.activation));
     return result;
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::confirmPresetPreview(
+    SequencerPatternPresetPreviewSession& session
+) const {
+    SequencerPatternPresetActionResult result{};
+    if (state_ == nullptr || !session.active() ||
+        !targetMatches(session.target)) {
+        result.status = SequencerPatternPresetDomainStatus::STALE_TARGET;
+        return result;
+    }
+
+    if (session.pattern) {
+        if (!seq::preparedHistoryPatternAfterMatchesTrack(
+                state_->sequencerTracks,
+                state_->sequencer,
+                session.target.trackIndex,
+                session.pattern->after,
+                session.pattern->storage
+            ) ||
+            !state_->sequencerHistory.canRecordPattern(*session.pattern)) {
+            result.status = SequencerPatternPresetDomainStatus::HISTORY_UNAVAILABLE;
+            return result;
+        }
+        session.pattern->clearPreparedPayloadOwnerProof();
+        session.pattern->auxiliary.activation = {
+            session.activation.reference,
+            session.activation.targetAudibleMask,
+        };
+        state_->sequencerHistory.recordPreparedPattern(
+            std::move(session.pattern)
+        );
+    } else {
+        const auto& live = state_->sequencerTracks.drumTrack(
+            session.target.trackIndex
+        );
+        if (std::memcmp(
+                &live,
+                &session.drum->after,
+                sizeof(seq::DrumTrackState)
+            ) != 0 ||
+            !state_->sequencerHistory.canRecordDrum(*session.drum)) {
+            result.status = SequencerPatternPresetDomainStatus::HISTORY_UNAVAILABLE;
+            return result;
+        }
+        state_->sequencerHistory.recordPreparedDrum(std::move(session.drum));
+    }
+
+    result.activation = session.presentationActivation;
+    result.activationGeneration = session.activationGeneration;
+    result.status = result.activation == SequencerPatternPresetActivation::QUEUED
+        ? SequencerPatternPresetDomainStatus::QUEUED
+        : SequencerPatternPresetDomainStatus::OK;
+    state_->publishPreparedSequencerMutation();
+    session.reset();
+    return result;
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::cancelPresetPreview(
+    SequencerPatternPresetPreviewSession& session
+) const {
+    SequencerPatternPresetActionResult result{};
+    if (state_ == nullptr || !session.active() ||
+        !targetMatches(session.target)) {
+        result.status = SequencerPatternPresetDomainStatus::STALE_TARGET;
+        return result;
+    }
+
+    seq::SequencerTrackActivationHistoryTransition transition{};
+    if (!state_->sequencerTrackActivations.prepareHistoryTransition(
+            session.activation.reference,
+            seq::SequencerTrackActivationTarget::BEFORE,
+            session.activation.targetAudibleMask,
+            state_->statusBar.playing.get(),
+            transition
+        )) {
+        result.status = SequencerPatternPresetDomainStatus::STALE_TARGET;
+        return result;
+    }
+
+    bool restored = false;
+    if (session.pattern) {
+        restored = seq::preparedActiveTrackSynchronizationMatches(
+                state_->sequencerTracks,
+                session.rollbackPatternBank
+            ) &&
+            seq::preparedHistoryPatternAfterMatchesTrack(
+                state_->sequencerTracks,
+                state_->sequencer,
+                session.target.trackIndex,
+                session.pattern->after,
+                session.pattern->storage
+            ) &&
+            seq::restorePreparedHistoryPatternBefore(
+                state_->sequencerTracks,
+                state_->sequencer,
+                *session.pattern,
+                false
+            );
+        if (restored) {
+            seq::publishPreparedActiveTrackSynchronization(
+                state_->sequencerTracks,
+                state_->sequencer,
+                session.pattern->before,
+                std::move(session.rollbackPatternBank)
+            );
+        }
+    } else {
+        restored = seq::restorePreparedHistoryDrumBefore(
+            state_->sequencerTracks,
+            state_->sequencer,
+            *session.drum
+        );
+        if (restored) {
+            auto& bankPattern = state_->sequencerTracks.track(
+                session.target.trackIndex
+            );
+            bankPattern.graph = std::move(session.rollbackDrumBankGraph);
+            bankPattern.graphRevision.set(
+                session.drum->beforeGraphRevision
+            );
+            state_->sequencer.drumSequencer.bump();
+        }
+    }
+
+    if (!restored) {
+        state_->sequencerTrackActivations.rollbackHistoryTransition(transition);
+        result.status = SequencerPatternPresetDomainStatus::FAILED;
+        return result;
+    }
+
+    seq::refreshContentView(state_->sequencer);
+    state_->sequencer.invalidateVariationTelemetry();
+    state_->sequencerTrackActivations.commitHistoryTransition(transition);
+    state_->publishPreparedSequencerPreview();
+    result.activation = transition.queuedMask != 0U
+        ? SequencerPatternPresetActivation::QUEUED
+        : SequencerPatternPresetActivation::APPLIED;
+    result.status = result.activation == SequencerPatternPresetActivation::QUEUED
+        ? SequencerPatternPresetDomainStatus::QUEUED
+        : SequencerPatternPresetDomainStatus::OK;
+    session.reset();
+    return result;
+}
+
+FLASHMEM SequencerPatternPresetActionResult
+SequencerPatternPresetDomainServices::applyPreset(
+    const char* presetId,
+    const seq::SequencerPatternPresetTarget& target,
+    const seq::SequencerPatternPresetPreviewKey& expectedPreview,
+    const seq::SequencerPatternPresetLocation& location
+) const {
+    SequencerPatternPresetPreviewSession session{};
+    auto result = previewPreset(
+        presetId,
+        target,
+        expectedPreview,
+        session,
+        location
+    );
+    if (!result.ok() || !session.active()) return result;
+
+    auto confirmed = confirmPresetPreview(session);
+    confirmed.bytes = result.bytes;
+    copyText(confirmed.presetId, sizeof(confirmed.presetId), presetId);
+    return confirmed;
 }
 
 FLASHMEM seq::SequencerTrackActivationStatus
@@ -1239,7 +1939,8 @@ FLASHMEM SequencerPatternPresetActionResult
 SequencerPatternPresetDomainServices::renamePreset(
     const char* presetId,
     const char* expectedSemanticName,
-    const char* newSemanticName
+    const char* newSemanticName,
+    const seq::SequencerPatternPresetLocation& location
 ) const {
     SequencerPatternPresetActionResult result{};
     copyText(result.presetId, sizeof(result.presetId), presetId);
@@ -1260,7 +1961,7 @@ SequencerPatternPresetDomainServices::renamePreset(
         return result;
     }
 
-    auto loaded = loadPreset(*files_, *catalog_, presetId);
+    auto loaded = loadPreset(*files_, *catalog_, presetId, location);
     result.status = loaded.status;
     result.codecStatus = loaded.codecStatus;
     result.fileError = loaded.fileError;
@@ -1291,7 +1992,11 @@ SequencerPatternPresetDomainServices::renamePreset(
         result.status = statusFromCodec(encoded.status);
         return result;
     }
-    core::persistence::PatternPresetFileStore store(*files_, *catalog_);
+    core::persistence::PatternPresetFileStore store(
+        *files_,
+        *catalog_,
+        location
+    );
     const auto saved = store.save(
         presetId,
         loaded.buffer->bytes,
@@ -1310,7 +2015,8 @@ SequencerPatternPresetDomainServices::renamePreset(
 FLASHMEM SequencerPatternPresetActionResult
 SequencerPatternPresetDomainServices::deletePreset(
     const char* presetId,
-    const char* expectedSemanticName
+    const char* expectedSemanticName,
+    const seq::SequencerPatternPresetLocation& location
 ) const {
     SequencerPatternPresetActionResult result{};
     copyText(result.presetId, sizeof(result.presetId), presetId);
@@ -1323,7 +2029,7 @@ SequencerPatternPresetDomainServices::deletePreset(
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
     }
-    auto loaded = loadPreset(*files_, *catalog_, presetId);
+    auto loaded = loadPreset(*files_, *catalog_, presetId, location);
     result.status = loaded.status;
     result.codecStatus = loaded.codecStatus;
     result.fileError = loaded.fileError;
@@ -1336,7 +2042,11 @@ SequencerPatternPresetDomainServices::deletePreset(
         result.status = SequencerPatternPresetDomainStatus::STALE_TARGET;
         return result;
     }
-    core::persistence::PatternPresetFileStore store(*files_, *catalog_);
+    core::persistence::PatternPresetFileStore store(
+        *files_,
+        *catalog_,
+        location
+    );
     const auto removed = store.remove(presetId);
     if (!removed) {
         result.status = statusFromFileError(removed.error().code);

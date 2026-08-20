@@ -34,7 +34,9 @@ public:
 
     PatternPresetFileStore(
         ProductFileService& files,
-        ProductDirectoryCatalog& catalog
+        ProductDirectoryCatalog& catalog,
+        const core::state::sequencer::SequencerPatternPresetLocation&
+            location = {}
     );
 
     oc::type::Result<PatternPresetFileTransferResult> save(
@@ -59,12 +61,44 @@ public:
         PatternPresetFilePageDirection direction
     );
 
+    oc::type::Result<PatternPresetFileListResult> listFoldersPage(
+        PatternPresetFileListEntry* entries,
+        uint8_t capacity,
+        const char* anchorExclusive,
+        PatternPresetFilePageDirection direction
+    );
+
     oc::type::Result<void> nextPresetId(char* out, size_t outSize);
     oc::type::Result<bool> exists(const char* presetId);
+
+    oc::type::Result<void> createFolder(const char* folderName);
+    oc::type::Result<void> removeEmptyFolder(const char* folderName);
+    oc::type::Result<void> renameFolder(
+        const char* folderName,
+        const char* newFolderName
+    );
+    oc::type::Result<void> movePreset(
+        const char* presetId,
+        const core::state::sequencer::SequencerPatternPresetLocation&
+            destination
+    );
+    oc::type::Result<void> moveFolder(
+        const char* folderName,
+        const core::state::sequencer::SequencerPatternPresetLocation&
+            destination
+    );
+
+    static bool folderNameFromEntryId(
+        const char* entryId,
+        char* out,
+        size_t outSize
+    );
 
     static bool validPresetId(const char* presetId);
 
 private:
+    static constexpr char FOLDER_ENTRY_PREFIX = '@';
+
     static bool readMetadata_(
         ProductFileService& files,
         const char* currentPath,
@@ -74,6 +108,9 @@ private:
         size_t outSemanticNameSize
     );
 
+    ProductFileService& files_;
+    ProductDirectoryCatalog& catalog_;
+    char directory_[ProductAssetFilePaths::PATH_SIZE] = {};
     ProductAssetFileStore store_;
 };
 

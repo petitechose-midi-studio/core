@@ -13,6 +13,8 @@
 
 namespace core::handler {
 
+class SequencerStepEditHandler;
+
 /** Input and transaction owner for the retained Drum Lane Editor. */
 class DrumLaneEditorHandler {
 public:
@@ -31,6 +33,9 @@ public:
     bool open(bool create);
     void close();
     void update(uint32_t nowMs);
+    void attachPresetLibraryHandler(SequencerStepEditHandler& handler) {
+        preset_library_handler_ = &handler;
+    }
 
 private:
     void setupBindings();
@@ -68,6 +73,7 @@ private:
     uint32_t audition_off_at_ms_ = 0U;
     uint32_t audition_retry_at_ms_ = 0U;
     uint32_t audition_next_on_at_ms_ = 0U;
+    SequencerStepEditHandler* preset_library_handler_ = nullptr;
 };
 
 }  // namespace core::handler

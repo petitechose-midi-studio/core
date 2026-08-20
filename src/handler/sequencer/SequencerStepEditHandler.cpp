@@ -139,6 +139,7 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
 }
 
 void SequencerStepEditHandler::update(uint32_t nowMs) {
+    pattern_preset_library_adapter_.updatePreview();
     if (pitch_context_settings_open_ && pattern_pitch_settings_.flowPhase.get() ==
                                             core::state::PatternPitchSettingsFlowPhase::CLOSED) {
         pitch_context_settings_open_ = false;

@@ -1,5 +1,6 @@
 #include "state/sequencer/SequencerPatternPreset.hpp"
 
+#include <cstdio>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
@@ -7,6 +8,91 @@
 #include "state/sequencer/SequencerPresetLibraryActionPolicy.hpp"
 
 namespace core::state::sequencer {
+
+FLASHMEM bool sequencerPatternPresetFolderNameIsValid(
+    const char* folderName
+) {
+    if (folderName == nullptr) return false;
+    const size_t length = std::strlen(folderName);
+    if (length == 0U ||
+        length > SequencerPatternPresetLocation::MAX_FOLDER_NAME_SIZE ||
+        (length == 1U && folderName[0] == '.') ||
+        (length == 2U && folderName[0] == '.' && folderName[1] == '.')) {
+        return false;
+    }
+    for (size_t index = 0U; index < length; ++index) {
+        const auto byte = static_cast<unsigned char>(folderName[index]);
+        if (folderName[index] == '/' || folderName[index] == '\\' ||
+            folderName[index] == ':' || byte < 32U || byte == 127U) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM void SequencerPatternPresetLocation::reset() {
+    relativeDirectory.fill('\0');
+    depth = 0U;
+}
+
+FLASHMEM bool SequencerPatternPresetLocation::enter(
+    const char* folderName
+) {
+    if (depth >= MAX_DEPTH ||
+        !sequencerPatternPresetFolderNameIsValid(folderName)) {
+        return false;
+    }
+    const size_t currentLength = std::strlen(relativeDirectory.data());
+    const size_t folderLength = std::strlen(folderName);
+    const size_t separator = currentLength > 0U ? 1U : 0U;
+    if (currentLength + separator + folderLength >=
+        relativeDirectory.size()) {
+        return false;
+    }
+    if (separator != 0U) relativeDirectory[currentLength] = '/';
+    std::memcpy(
+        relativeDirectory.data() + currentLength + separator,
+        folderName,
+        folderLength + 1U
+    );
+    ++depth;
+    return true;
+}
+
+FLASHMEM bool SequencerPatternPresetLocation::leave() {
+    if (root()) {
+        reset();
+        return false;
+    }
+    char* path = relativeDirectory.data();
+    char* separator = std::strrchr(path, '/');
+    if (separator != nullptr) {
+        *separator = '\0';
+    } else {
+        path[0] = '\0';
+    }
+    --depth;
+    return true;
+}
+
+FLASHMEM bool formatSequencerPatternPresetDirectory(
+    const SequencerPatternPresetLocation& location,
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0U) return false;
+    constexpr const char* ROOT = "library/pattern-presets";
+    const int written = location.root()
+        ? std::snprintf(out, outSize, "%s", ROOT)
+        : std::snprintf(
+              out,
+              outSize,
+              "%s/%s",
+              ROOT,
+              location.relativeDirectory.data()
+          );
+    return written > 0 && static_cast<size_t>(written) < outSize;
+}
 
 FLASHMEM bool setSequencerPatternPresetMetadata(
     SequencerPatternPresetMetadata& metadata,

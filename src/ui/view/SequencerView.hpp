@@ -129,7 +129,7 @@ private:
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
-    oc::state::StaticWatchGroup<15> header_watcher_;
+    oc::state::StaticWatchGroup<16> header_watcher_;
     oc::state::StaticWatchGroup<14> header_strip_watcher_;
     oc::state::StaticWatchGroup<
         2U * core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
@@ -138,8 +138,8 @@ private:
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
     oc::state::StaticWatchGroup<26> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<5> overlay_visibility_watcher_;
-    oc::state::StaticWatchGroup<11> left_action_strip_watcher_;
-    oc::state::StaticWatchGroup<24> bottom_action_strip_watcher_;
+    oc::state::StaticWatchGroup<12> left_action_strip_watcher_;
+    oc::state::StaticWatchGroup<25> bottom_action_strip_watcher_;
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
     oc::state::StaticWatchGroup<9> track_paste_preflight_watcher_;

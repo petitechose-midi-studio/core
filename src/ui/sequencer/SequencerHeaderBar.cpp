@@ -27,8 +27,10 @@ constexpr lv_coord_t HORIZONTAL_INSET = oc::ui::lvgl::base_theme::layout::MARGIN
 constexpr lv_coord_t ACCENT_WIDTH = 4;
 constexpr lv_coord_t LABEL_MAX_WIDTH = 46;
 constexpr lv_coord_t BADGE_WIDTH = 60;
+constexpr lv_coord_t PREVIEW_BADGE_WIDTH = 84;
 constexpr lv_coord_t CONTEXT_ICON_WIDTH = 18;
 constexpr lv_coord_t PAGE_LABEL_WIDTH = 44;
+constexpr lv_coord_t PREVIEW_PAGE_LABEL_WIDTH = 52;
 constexpr lv_coord_t TITLE_SEPARATOR_WIDTH = 5;
 constexpr uint32_t PAGE_CURSOR_COLOR = selection_visual::structureSelectionColor(
     selection_visual::StructureSelectionVisualRole::CURSOR
@@ -161,7 +163,8 @@ FLASHMEM void SequencerHeaderBar::createUI(lv_obj_t* parent) {
     lv_obj_set_style_pad_right(badge_, 4, 0);
     lv_obj_set_style_pad_top(badge_, 1, 0);
     lv_obj_set_style_pad_bottom(badge_, 1, 0);
-    lv_label_set_long_mode(badge_, LV_LABEL_LONG_CLIP);
+    lv_label_set_long_mode(badge_, LV_LABEL_LONG_DOT);
+    lv_obj_set_height(badge_, 18);
     lv_obj_set_width(badge_, BADGE_WIDTH);
     lv_obj_set_style_text_align(badge_, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_flag(badge_, LV_OBJ_FLAG_HIDDEN);
@@ -262,6 +265,26 @@ FLASHMEM void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& pr
     updatePageStripVisibility(props.pageStripVisible);
     setLabelTextIfChanged(label_, left_text_cache_, props.leftText);
     setLabelTextIfChanged(badge_, badge_text_cache_, props.badgeText.data());
+    bool headerLayoutChanged = false;
+    if (props.previewLayout != preview_layout_cache_) {
+        lv_obj_set_width(
+            badge_,
+            props.previewLayout ? PREVIEW_BADGE_WIDTH : BADGE_WIDTH
+        );
+        lv_obj_set_style_text_align(
+            badge_,
+            props.previewLayout ? LV_TEXT_ALIGN_LEFT : LV_TEXT_ALIGN_CENTER,
+            0
+        );
+        lv_obj_set_width(
+            page_label_,
+            props.previewLayout
+                ? PREVIEW_PAGE_LABEL_WIDTH
+                : PAGE_LABEL_WIDTH
+        );
+        preview_layout_cache_ = props.previewLayout;
+        headerLayoutChanged = true;
+    }
     std::array<CompactMetricProps, 2> compactMetrics{};
     for (size_t index = 0; index < compactMetrics.size(); ++index) {
         compactMetrics[index] = {
@@ -270,12 +293,12 @@ FLASHMEM void SequencerHeaderBar::renderTopRow(const SequencerHeaderBarProps& pr
         };
     }
     const bool metricsVisible = metric_row_.render(compactMetrics);
-    bool headerLayoutChanged = false;
     if (metricsVisible != metrics_visible_cache_) {
         metrics_visible_cache_ = metricsVisible;
         headerLayoutChanged = true;
     }
-    const bool badgeVisible = !metricsVisible && props.badgeText[0] != '\0';
+    const bool badgeVisible = props.badgeText[0] != '\0' &&
+        (props.previewLayout || !metricsVisible);
     if (badgeVisible != badge_visible_cache_) {
         if (badgeVisible) {
             lv_obj_clear_flag(badge_, LV_OBJ_FLAG_HIDDEN);

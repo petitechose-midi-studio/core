@@ -10,14 +10,22 @@
 
 namespace core::persistence {
 
+enum class ProductDirectoryAssetEntryKind : uint8_t {
+    ASSET = 0,
+    FOLDER,
+};
+
 struct ProductDirectoryAssetEntry {
     static constexpr size_t ID_SIZE = 64U;
     static constexpr size_t SEMANTIC_NAME_SIZE = 32U;
 
     char id[ID_SIZE] = {};
     char semanticName[SEMANTIC_NAME_SIZE] = {};
+    char displayValue[12] = {};
     uint32_t sizeBytes = 0U;
     bool metadataReadable = false;
+    ProductDirectoryAssetEntryKind kind =
+        ProductDirectoryAssetEntryKind::ASSET;
 };
 
 using ProductDirectoryMetadataReader = bool (*)(

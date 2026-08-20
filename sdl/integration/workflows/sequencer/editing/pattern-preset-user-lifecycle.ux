@@ -1,68 +1,47 @@
-# UX workflow: Pattern Preset User lifecycle from the Pattern Editor.
-# Purpose: proves the musician-facing Save, deterministic naming, overwrite
-# guard, User filtering, stopped Load, and playback-safe queued activation.
-# Expect: capture_changed:pattern_preset_save_new=pattern_preset_saved, capture_changed:pattern_preset_overwrite_ready=pattern_preset_overwrite_armed, capture_changed:pattern_preset_user_filter=pattern_preset_user_detail
-# Expect: semantic:pattern_preset_saved:effect=save_pattern_preset, semantic:pattern_preset_saved:outcome=applied, semantic:pattern_preset_saved:mode=sequencer.pattern_preset.save, semantic:pattern_preset_saved:source=*
-# Expect: semantic:pattern_preset_overwrite_pressed:effect=save_pattern_preset, semantic:pattern_preset_overwrite_pressed:outcome=pressed, semantic:pattern_preset_overwrite_armed:outcome=armed, semantic:pattern_preset_overwritten:outcome=applied
+# UX workflow: Pattern Preset User save and guarded overwrite.
+# Purpose: proves that an authored Pattern Save returns to the musical grid,
+# keeps a musician-facing name, and requires the shared guarded hold before an
+# existing User asset can be overwritten.
+# Expect: capture_changed:pattern_preset_save_new=pattern_preset_saved, capture_changed:pattern_preset_saved=pattern_preset_user_filter, capture_changed:pattern_preset_user_filter=pattern_preset_user_detail, capture_changed:pattern_preset_overwrite_ready=pattern_preset_overwrite_pressed, capture_changed:pattern_preset_overwrite_pressed=pattern_preset_overwrite_armed, capture_changed:pattern_preset_overwrite_armed=pattern_preset_overwritten
+# Expect: semantic:pattern_preset_saved:effect=save_pattern_preset
 # Expect: semantic:pattern_preset_user_filter:effect=cycle_pattern_preset_source, semantic:pattern_preset_user_filter:property=source_filter, semantic:pattern_preset_user_filter:value_label=user
 # Expect: semantic:pattern_preset_user_detail:effect=enter_preset_library_detail, semantic:pattern_preset_user_detail:mode=sequencer.pattern_preset.load.detail, semantic:pattern_preset_user_detail:target=pattern
-# Expect: semantic:pattern_preset_loaded_stopped:effect=load_pattern_preset, semantic:pattern_preset_loaded_stopped:outcome=applied, semantic:pattern_preset_loaded_stopped:route_policy=preserve_destination
-# Expect: semantic:pattern_preset_queued:effect=load_pattern_preset, semantic:pattern_preset_queued:outcome=queued, semantic:pattern_preset_queued:reason=pending, semantic:pattern_preset_queued:playing=true, semantic:pattern_preset_queued:activation_origin=pattern_preset
+# Expect: semantic:pattern_preset_overwrite_pressed:effect=save_pattern_preset, semantic:pattern_preset_overwrite_pressed:outcome=pressed, semantic:pattern_preset_overwrite_armed:outcome=armed
+# Expect: semantic:pattern_preset_overwritten:effect=save_pattern_preset
 
 0 scenario sequencer
 
-# Enter Pattern Editor, then open the Pattern Preset library.
+# Enter Pattern Editor, open Pattern Presets and save the current Pattern.
 100 tap NAV 60
 300 button NAV down
 1400 tick
 1450 button NAV up
-
-# Save a new User preset. The generated technical id receives a concise,
-# track-aware semantic name and remains selected after Save.
 1650 tap BOTTOM_LEFT 60
 1850 capture screen pattern_preset_save_new
 1950 tap BOTTOM_RIGHT 60
 2450 capture screen pattern_preset_saved
 
-# Overwrite is explicit and guarded. A complete hold commits exactly once.
-2650 tap BOTTOM_LEFT 60
-2850 encoder NAV 1
-3050 capture screen pattern_preset_overwrite_ready
-3150 button BOTTOM_RIGHT down
-3300 capture screen pattern_preset_overwrite_pressed
-3450 tick
-3500 capture screen pattern_preset_overwrite_armed
-4300 tick
-4350 capture screen pattern_preset_overwritten
-4400 button BOTTOM_RIGHT up
+# Reopen the library and isolate User assets. The saved asset remains a normal
+# inspectable entry instead of a hidden side effect.
+2650 tap NAV 60
+2850 button NAV down
+3950 tick
+4000 button NAV up
+4200 tap LEFT_CENTER 60
+4350 tap LEFT_CENTER 60
+4550 capture screen pattern_preset_user_filter
+4700 tap NAV 60
+4900 capture screen pattern_preset_user_detail
+5050 tap LEFT_TOP 60
 
-# A successful overwrite returns to Load on the retained User source. Inspect
-# the saved asset, then switch User -> All -> Factory so the stopped Load makes
-# a real musical change before the later queued restoration.
-4600 tap LEFT_CENTER 60
-4750 tap LEFT_CENTER 60
-4900 tap LEFT_CENTER 60
-5100 capture screen pattern_preset_user_filter
-5200 tap NAV 60
-5400 capture screen pattern_preset_user_detail
-5500 tap LEFT_TOP 60
-5650 tap LEFT_CENTER 60
-5800 tap LEFT_CENTER 60
-
-# Stopped Factory Load applies immediately and returns to the Pattern Editor.
-6000 tap BOTTOM_RIGHT 60
-6200 capture screen pattern_preset_loaded_stopped
-7350 capture screen pattern_editor_after_user_load
-
-# Reopen, select the retained User asset, then start transport through the
-# modal. Applying immediately after start must queue at the local loop boundary.
-7450 button NAV down
-8550 tick
-8600 button NAV up
-8800 tap LEFT_CENTER 60
-9000 tap LEFT_CENTER 60
-9200 tap BOTTOM_CENTER 60
-9350 tap BOTTOM_RIGHT 60
-9430 capture screen pattern_preset_queued
-9650 tap LEFT_TOP 60
-9850 tap BOTTOM_CENTER 60
+# Save mode on an existing asset exposes the shared overwrite hold. A tap is
+# insufficient; Pressed -> Armed -> committed is visible and deterministic.
+5200 tap BOTTOM_LEFT 60
+5400 capture screen pattern_preset_overwrite_ready
+5500 button BOTTOM_RIGHT down
+5650 capture screen pattern_preset_overwrite_pressed
+5800 tick
+5850 capture screen pattern_preset_overwrite_armed
+6700 tick
+6750 capture screen pattern_preset_overwritten
+6800 button BOTTOM_RIGHT up

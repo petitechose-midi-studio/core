@@ -80,6 +80,12 @@ FLASHMEM TopRowVisualState buildTopRowVisualState(
     );
     state.badgeBorderOpa = (showBadge && selectionMode) ? LV_OPA_80 : LV_OPA_TRANSP;
     state.badgeTextOpa = showBadge ? LV_OPA_80 : LV_OPA_TRANSP;
+    if (props.previewLayout) {
+        state.badgeBgOpa = LV_OPA_TRANSP;
+        state.badgeBorderWidth = 0;
+        state.badgeBorderOpa = LV_OPA_TRANSP;
+        state.badgeTextOpa = showBadge ? LV_OPA_COVER : LV_OPA_TRANSP;
+    }
     return state;
 }
 

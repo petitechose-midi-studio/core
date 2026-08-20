@@ -17,6 +17,7 @@
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::sequencer {
 
@@ -410,6 +411,28 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         if (focusingStep) badgeText.fill('\0');
     }
 
+    if (sequencer.patternPresetPreview.active()) {
+        const bool queued = sequencer.patternPresetPreview.queued();
+        std::snprintf(
+            badgeText.data(),
+            badgeText.size(),
+            "%s",
+            sequencer.patternPresetPreview.name.data()
+        );
+        std::snprintf(
+            pageText.data(),
+            pageText.size(),
+            "%s",
+            queued ? "Next loop" : "Preview"
+        );
+        contextIcon = queued
+            ? standalone::icons::STATUS_QUEUED
+            : standalone::icons::STATUS_PREVIEW;
+        contextIconColor = queued
+            ? standalone::theme::color::ACTIVE
+            : standalone::theme::color::LIVE_TIME;
+    }
+
     if (!previewEmptyTrack && pageText[0] == '\0' && !pageStripVisible) {
         const uint8_t pageCount = std::max<uint8_t>(
             1U,
@@ -455,7 +478,9 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             ? pageSelectionOverwriteMask
             : pageClipboardOverwriteMask,
         .pageDestinationBlockedMask = pageSelectionBlockedMask,
-        .pageStripVisible = pageStripVisible,
+        .pageStripVisible = pageStripVisible &&
+            !sequencer.patternPresetPreview.active(),
+        .previewLayout = sequencer.patternPresetPreview.active(),
         .leftText = leftText,
         .badgeText = badgeText,
         .metrics = metrics,

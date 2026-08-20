@@ -45,6 +45,7 @@ struct SequencerHeaderBarProps {
     uint16_t pageDestinationOverwriteMask = 0;
     uint16_t pageDestinationBlockedMask = 0;
     bool pageStripVisible = true;
+    bool previewLayout = false;
     const char* leftText = "";
     std::array<char, 20> badgeText{};
     std::array<SequencerHeaderMetricProps, 2> metrics{};
@@ -105,6 +106,7 @@ private:
     uint32_t context_icon_color_cache_ = UINT32_MAX;
     bool page_label_visible_cache_ = false;
     bool page_strip_visible_cache_ = true;
+    bool preview_layout_cache_ = false;
     bool surface_cache_initialized_ = false;
     uint32_t accent_cache_color_ = 0;
     lv_opa_t accent_cache_opa_ = LV_OPA_TRANSP;

@@ -375,6 +375,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/sequencer/SequencerLeftActionStripViewModelBuilder.cpp
     src/ui/sequencer/SequencerPatternEditorOverlay.cpp
     src/ui/sequencer/SequencerPatternPresetPresentation.cpp
+    src/ui/sequencer/SequencerPatternPresetPreview.cpp
     src/ui/sequencer/SequencerPatternTimelineModel.cpp
     src/ui/sequencer/SequencerPresetLibraryPresentation.cpp
     src/ui/sequencer/SequencerPropertyOverlayViewModelBuilder.cpp

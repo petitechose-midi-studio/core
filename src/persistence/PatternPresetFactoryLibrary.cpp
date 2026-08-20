@@ -15,6 +15,7 @@ namespace codec = core::persistence::sequencer_pattern_preset_codec;
 struct FactoryDefinition {
     char id[40]{};
     char name[32]{};
+    char category[20]{};
     seq::SequencerTrackKind kind = seq::SequencerTrackKind::INSTRUMENT;
     uint8_t length = 16U;
     uint8_t stepsPerBeat = 4U;
@@ -28,6 +29,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-drum-breakbeat",
         "Broken beat",
+        "Breaks",
         seq::SequencerTrackKind::DRUM,
         16U,
         4U,
@@ -39,6 +41,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-drum-four-floor",
         "Four on the floor",
+        "House",
         seq::SequencerTrackKind::DRUM,
         16U,
         4U,
@@ -50,6 +53,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-drum-half-time",
         "Half time",
+        "Breaks",
         seq::SequencerTrackKind::DRUM,
         16U,
         4U,
@@ -61,6 +65,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-drum-polymeter",
         "Small polymeter",
+        "Experimental",
         seq::SequencerTrackKind::DRUM,
         16U,
         4U,
@@ -72,6 +77,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-instrument-bass-offbeat",
         "Bass offbeat",
+        "Bass",
         seq::SequencerTrackKind::INSTRUMENT,
         16U,
         4U,
@@ -84,6 +90,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-instrument-euclid-five",
         "Euclid five",
+        "Rhythmic",
         seq::SequencerTrackKind::INSTRUMENT,
         16U,
         4U,
@@ -96,6 +103,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-instrument-pulse-eighths",
         "Eighth-note pulse",
+        "Rhythmic",
         seq::SequencerTrackKind::INSTRUMENT,
         16U,
         4U,
@@ -108,6 +116,7 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
     {
         "factory-instrument-rising",
         "Rising sequence",
+        "Melodic",
         seq::SequencerTrackKind::INSTRUMENT,
         16U,
         4U,
@@ -117,6 +126,13 @@ const FactoryDefinition FACTORY_PRESETS[] PROGMEM = {
         {},
         {},
     },
+};
+
+constexpr const char* DRUM_CATEGORIES[] = {
+    "House", "Breaks", "Experimental"
+};
+constexpr const char* INSTRUMENT_CATEGORIES[] = {
+    "Bass", "Rhythmic", "Melodic"
 };
 
 FLASHMEM const FactoryDefinition* findDefinition(const char* presetId) {
@@ -195,11 +211,16 @@ FLASHMEM void authorDrum(
 }  // namespace
 
 FLASHMEM uint8_t PatternPresetFactoryLibrary::count(
-    seq::SequencerTrackKind trackKind
+    seq::SequencerTrackKind trackKind,
+    const char* category
 ) {
     uint8_t result = 0U;
     for (const auto& definition : FACTORY_PRESETS) {
-        if (definition.kind == trackKind) ++result;
+        if (definition.kind == trackKind &&
+            (category == nullptr || category[0] == '\0' ||
+             std::strcmp(definition.category, category) == 0)) {
+            ++result;
+        }
     }
     return result;
 }
@@ -207,16 +228,54 @@ FLASHMEM uint8_t PatternPresetFactoryLibrary::count(
 FLASHMEM bool PatternPresetFactoryLibrary::descriptorAt(
     seq::SequencerTrackKind trackKind,
     uint8_t index,
-    PatternPresetFactoryDescriptor& out
+    PatternPresetFactoryDescriptor& out,
+    const char* category
 ) {
     for (const auto& definition : FACTORY_PRESETS) {
-        if (definition.kind != trackKind) continue;
+        if (definition.kind != trackKind ||
+            (category != nullptr && category[0] != '\0' &&
+             std::strcmp(definition.category, category) != 0)) {
+            continue;
+        }
         if (index-- != 0U) continue;
-        out = {definition.id, definition.name, definition.kind};
+        out = {
+            definition.id,
+            definition.name,
+            definition.category,
+            definition.kind,
+            definition.length,
+            static_cast<uint8_t>(
+                definition.kind == seq::SequencerTrackKind::DRUM
+                    ? seq::DRUM_DEFAULT_LANE_COUNT
+                    : 0U
+            ),
+        };
         return true;
     }
     out = {};
     return false;
+}
+
+FLASHMEM uint8_t PatternPresetFactoryLibrary::categoryCount(
+    seq::SequencerTrackKind trackKind
+) {
+    return trackKind == seq::SequencerTrackKind::DRUM
+        ? static_cast<uint8_t>(std::size(DRUM_CATEGORIES))
+        : static_cast<uint8_t>(std::size(INSTRUMENT_CATEGORIES));
+}
+
+FLASHMEM const char* PatternPresetFactoryLibrary::categoryAt(
+    seq::SequencerTrackKind trackKind,
+    uint8_t index
+) {
+    if (trackKind == seq::SequencerTrackKind::DRUM) {
+        return index < std::size(DRUM_CATEGORIES)
+            ? DRUM_CATEGORIES[index]
+            : nullptr;
+    }
+    return index < std::size(INSTRUMENT_CATEGORIES)
+        ? INSTRUMENT_CATEGORIES[index]
+        : nullptr;
 }
 
 FLASHMEM bool PatternPresetFactoryLibrary::describe(
@@ -228,7 +287,18 @@ FLASHMEM bool PatternPresetFactoryLibrary::describe(
         out = {};
         return false;
     }
-    out = {definition->id, definition->name, definition->kind};
+    out = {
+        definition->id,
+        definition->name,
+        definition->category,
+        definition->kind,
+        definition->length,
+        static_cast<uint8_t>(
+            definition->kind == seq::SequencerTrackKind::DRUM
+                ? seq::DRUM_DEFAULT_LANE_COUNT
+                : 0U
+        ),
+    };
     return true;
 }
 

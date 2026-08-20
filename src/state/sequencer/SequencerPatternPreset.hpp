@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "state/contextual/ContextActionSpec.hpp"
@@ -38,6 +40,35 @@ enum class SequencerPatternPresetSourceFilter : uint8_t {
     USER,
 };
 
+/**
+ * User-library location, deliberately separate from the preset technical id.
+ *
+ * The path is relative to `library/pattern-presets`, contains only validated
+ * folder segments and is bounded for the controller filesystem contract.
+ */
+struct SequencerPatternPresetLocation {
+    static constexpr uint8_t MAX_DEPTH = 4U;
+    static constexpr size_t MAX_FOLDER_NAME_SIZE = 32U;
+    static constexpr size_t PATH_SIZE = 128U;
+
+    std::array<char, PATH_SIZE> relativeDirectory{};
+    uint8_t depth = 0U;
+
+    [[nodiscard]] bool root() const {
+        return depth == 0U || relativeDirectory[0] == '\0';
+    }
+    void reset();
+    bool enter(const char* folderName);
+    bool leave();
+};
+
+bool sequencerPatternPresetFolderNameIsValid(const char* folderName);
+bool formatSequencerPatternPresetDirectory(
+    const SequencerPatternPresetLocation& location,
+    char* out,
+    size_t outSize
+);
+
 struct SequencerPatternPresetMetadata {
     static constexpr uint8_t CURRENT_FORMAT_VERSION = 1U;
 
@@ -63,6 +94,40 @@ struct SequencerPatternPresetPreviewKey {
         return assetHash != 0U && targetHash != 0U;
     }
 };
+
+/**
+ * Bounded, presentation-only thumbnail extracted during preset inspection.
+ *
+ * The full decoded Pattern is already available on the cold inspect path. A
+ * compact projection lets the controller show musical content after that
+ * temporary object is released, without retaining another graph or touching
+ * live authored state.
+ */
+struct SequencerPatternPresetVisualSummary {
+    static constexpr uint8_t STEP_CAPACITY = 16U;
+    static constexpr uint8_t LANE_CAPACITY = 8U;
+
+    bool valid = false;
+    uint8_t visibleStepCount = 0U;
+    uint8_t laneCount = 0U;
+    uint16_t melodicEnabledMask = 0U;
+    std::array<uint8_t, STEP_CAPACITY> notes{};
+    std::array<uint8_t, STEP_CAPACITY> velocities{};
+    std::array<uint16_t, LANE_CAPACITY> drumEnabledMasks{};
+    std::array<DrumLaneIcon, LANE_CAPACITY> drumIcons{};
+    std::array<uint8_t, LANE_CAPACITY> drumColorIndices{};
+    std::array<
+        std::array<char, DRUM_LANE_NAME_MAX_LENGTH + 1U>,
+        LANE_CAPACITY> drumNames{};
+    uint8_t microSequenceCount = 0U;
+    uint8_t cycleStateCount = 0U;
+    uint8_t ccLaneCount = 0U;
+};
+
+static_assert(
+    sizeof(SequencerPatternPresetVisualSummary) <= 160U,
+    "Pattern preset thumbnail must remain a compact cold projection"
+);
 
 constexpr bool operator==(
     const SequencerPatternPresetPreviewKey& lhs,
@@ -90,6 +155,7 @@ struct SequencerPatternPresetDescriptor {
     uint8_t patternLength = 0U;
     uint8_t stepsPerBeat = 0U;
     uint8_t drumLaneCount = 0U;
+    SequencerPatternPresetVisualSummary visual{};
 };
 
 bool setSequencerPatternPresetMetadata(
