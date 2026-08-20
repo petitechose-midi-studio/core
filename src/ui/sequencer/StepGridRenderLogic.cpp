@@ -20,7 +20,7 @@ constexpr lv_coord_t PITCH_VIEW_TOP_PAD = 14;
 // Keep pitch rails above that band so musical pitch and temporal phase never
 // become visually ambiguous.
 constexpr lv_coord_t PITCH_VIEW_BOTTOM_PAD = 14;
-constexpr uint8_t EVENT_COLOR_FLOOR_MIX = 96U;
+constexpr uint8_t EVENT_COLOR_FLOOR_MIX = 24U;
 
 FLASHMEM uint8_t chromaIndexForNote(uint8_t note) {
     return static_cast<uint8_t>(note % CHROMATIC_NOTE_COUNT);
@@ -168,9 +168,10 @@ FLASHMEM lv_coord_t stepPitchY(
 }
 
 FLASHMEM uint8_t stepEventHeadHeight(uint8_t velocity) {
-    if (velocity < 43U) return 3U;
-    if (velocity < 86U) return 4U;
-    return 5U;
+    return static_cast<uint8_t>(
+        2U + (static_cast<uint16_t>(velocity) * 4U + VELOCITY_MAX / 2U) /
+            VELOCITY_MAX
+    );
 }
 
 FLASHMEM int scaleDegreeIndexForNote(oc::note::sequencer::StepSequencerScaleSettings settings,

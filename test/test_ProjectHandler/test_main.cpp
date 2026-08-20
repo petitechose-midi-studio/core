@@ -1740,6 +1740,7 @@ void test_project_modulator_creation_and_destination_workflow() {
     assert(graph.outputBindings[0].amountQ15 == 16384);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATIONS);
+    assert(!h.state.projectNavigation.creatingModulatorSource);
     assert(h.state.macroHistory.undoCount() == 1U);
 
     h.turn(Config::EncoderID::NAV, 1.0f);  // + Destination

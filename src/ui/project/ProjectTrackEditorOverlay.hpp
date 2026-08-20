@@ -24,6 +24,7 @@ struct ProjectTrackEditorOverlayProps {
     core::state::project::ProjectTrackEditorProperty selectedProperty =
         core::state::project::ProjectTrackEditorProperty::CHANNEL;
     bool trackEnabled = false;
+    bool drum = false;
 };
 
 /**
@@ -57,6 +58,7 @@ private:
         core::state::project::ProjectTrackEditorProperty selectedProperty =
             core::state::project::ProjectTrackEditorProperty::CHANNEL;
         bool trackEnabled = false;
+        bool drum = false;
 
         friend bool operator==(const RenderCache& left, const RenderCache& right) {
             return left.title == right.title && left.route == right.route &&
@@ -66,7 +68,8 @@ private:
                 left.trackColor == right.trackColor &&
                 left.statusColor == right.statusColor &&
                 left.selectedProperty == right.selectedProperty &&
-                left.trackEnabled == right.trackEnabled;
+                left.trackEnabled == right.trackEnabled &&
+                left.drum == right.drum;
         }
     };
 

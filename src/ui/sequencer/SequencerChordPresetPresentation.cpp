@@ -10,6 +10,8 @@
 #include "state/sequencer/SequencerScaleCatalog.hpp"
 #include "ui/sequencer/SequencerPresetLibraryPresentationCommon.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
+#include "ui/font/StandaloneIcons.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::sequencer {
 namespace {
@@ -285,9 +287,12 @@ buildSequencerChordPresetPresentation(
             saveMode,
             {
                 .kindLabel = "Chord",
+                .itemIcon = ::standalone::icons::CHORD,
+                .newItemIcon = ::standalone::icons::ACTION_CREATE,
+                .itemIconColor = ::standalone::theme::color::STEP_CHORD,
+                .newItemIconColor = ::standalone::theme::color::FOCUS_EDIT,
                 .loadedFeedback = "Loaded into draft",
                 .queuedFeedback = "Queued",
-                .warningFeedback = "Adapted preview",
                 .compatibility = chord.descriptor.valid
                     ? seq::sequencerChordPresetCompatibilityLabel(
                           chord.descriptor.compatibility

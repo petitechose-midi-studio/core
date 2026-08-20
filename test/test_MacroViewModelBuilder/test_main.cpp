@@ -280,12 +280,30 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     state.pages.setMacroSlotActive(2, true);
 
     auto strip = core::ui::buildMacroLeftActionStripProps(sourceFor(state));
-    assert(strip.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(strip.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(strip.slots[0].icon == standalone::icons::ACTION_PLACE_TARGET);
     assert(strip.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
     assert(strip.slots[1].icon == standalone::icons::AUTOMATION);
     assert(strip.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
     assert(strip.slots[2].icon == standalone::icons::KNOB);
 
+    state.macroUi.performanceOverlayMode.set(
+        core::state::macro::MacroPerformanceOverlayMode::EDIT
+    );
+    strip = core::ui::buildMacroLeftActionStripProps(sourceFor(state));
+    assert(strip.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(strip.slots[0].icon == standalone::icons::ACTION_CANCEL);
+
+    state.macroUi.performanceOverlayMode.set(
+        core::state::macro::MacroPerformanceOverlayMode::NONE
+    );
+    state.macroUi.slotSelection.active.set(true);
+    strip = core::ui::buildMacroLeftActionStripProps(sourceFor(state));
+    assert(strip.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(strip.slots[0].icon == standalone::icons::ACTION_CANCEL);
+    assert(strip.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(strip.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
+    state.macroUi.slotSelection.active.set(false);
     state.macroUi.performanceOverlayMode.set(
         core::state::macro::MacroPerformanceOverlayMode::EDIT
     );

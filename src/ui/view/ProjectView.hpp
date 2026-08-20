@@ -63,7 +63,7 @@ private:
     void render();
     void renderModulatorCapture();
     void renderTabs(bool visible);
-    void renderKeyboardActionStrips(bool visible);
+    void renderProjectActionStrips(bool keyboardActive);
     void renderModulators();
     void renderModulatorActionStrips(
         const core::state::modulation::ModulatorSourceState* source

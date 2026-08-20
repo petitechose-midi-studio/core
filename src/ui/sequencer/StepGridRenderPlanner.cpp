@@ -51,14 +51,15 @@ FrameRenderPlan buildFrameRenderPlan(const std::array<TileRenderCache, 8>& cache
     }
 
     for (uint8_t i = 0; i < frameState.tiles.size(); ++i) {
-        plan.tileDirty[i] =
+        const bool nonPlayheadDirty =
             plan.diffs[i].dataChanged ||
             plan.diffs[i].probabilityMaskChanged ||
-            plan.diffs[i].playheadChanged ||
             plan.diffs[i].contentBadgesChanged ||
             plan.propertyVisualChanged ||
             plan.feedbackChanged[i] ||
             (noteLayerDirtyMask & static_cast<uint8_t>(1U << i)) != 0U;
+        plan.tileDirty[i] = nonPlayheadDirty || plan.diffs[i].playheadChanged;
+        plan.playheadOnly[i] = plan.diffs[i].playheadChanged && !nonPlayheadDirty;
         plan.anyDirty = plan.anyDirty || plan.tileDirty[i];
     }
 

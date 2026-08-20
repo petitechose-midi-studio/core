@@ -13,6 +13,7 @@
 #include "state/MidiSyncState.hpp"
 #include "state/settings/DeviceSettingsMenuModel.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
 
 namespace core::ui {
@@ -50,6 +51,10 @@ private:
     core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;
+    lv_obj_t* interaction_container_ = nullptr;
+    lv_obj_t* center_column_ = nullptr;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
+        left_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::MenuListView> menu_;
     std::array<ms::ui::MenuRow, core::state::settings::DeviceSettingsMenuPage::MAX_ROWS> rows_{};
     bool initialized_ = false;

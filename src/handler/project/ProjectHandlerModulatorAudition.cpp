@@ -323,6 +323,7 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
         navigation_.setLifecycleFeedback(FEEDBACK_APPLY_FAILED);
         return;
     }
+    navigation_.creatingModulatorSource = false;
 
     (void)macro_edit_services_.synchronizeSharedTrackState();
 

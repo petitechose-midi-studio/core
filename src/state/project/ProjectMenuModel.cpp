@@ -577,6 +577,7 @@ FLASHMEM void buildLoadProjectRows(ProjectMenuPage& page,
             "Please wait",
             ProjectMenuRowKind::Disabled,
             ProjectNodeId::LOAD_PROJECT,
+            ProjectMenuIcon::STATUS_QUEUED,
             false,
             false
         ));
@@ -588,6 +589,7 @@ FLASHMEM void buildLoadProjectRows(ProjectMenuPage& page,
             "Save first",
             ProjectMenuRowKind::Disabled,
             ProjectNodeId::LOAD_PROJECT,
+            ProjectMenuIcon::STATUS_WARNING,
             false,
             false
         ));
