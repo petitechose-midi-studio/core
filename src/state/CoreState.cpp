@@ -148,6 +148,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
       sequencerTracks(*sequencerDomain_.tracks), sequencerClips(*sequencerDomain_.clips),
       sequencerHistory(*sequencerDomain_.history),
       sequencerTrackActivations(sequencerDomain_.trackActivations),
+      sequencerClipLaunches(sequencerDomain_.clipLaunches),
       sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision), project(project_),
       projectTracks(*projectTracks_), projectTrackHistory(*projectTrackHistory_),
       projectSettingsHistory(*projectSettingsHistory_), projectHistory(*projectHistory_),
@@ -223,6 +224,9 @@ FLASHMEM void CoreState::requestMacroRuntimeOwnerActivation() {
 
 FLASHMEM void CoreState::requestSequencerRuntimeProjectReset() {
     sequencerTrackActivations.reset();
+    sequencerClipLaunches.reset(
+        sequencerClips,
+        sequencerTracks.currentEnabledMask());
     sequencerRuntimeProjectRevision.set(
         nextNonZeroRuntimeRevision(sequencerRuntimeProjectRevision.get()));
 }

@@ -15,10 +15,13 @@ namespace core::sequencer {
 // Realtime playback only dereferences the already-published graph pointers.
 FLASHMEM bool SequencerRuntimeGraphBank::prepare(
     const core::state::sequencer::SequencerState& sequencer,
-    const core::state::sequencer::SequencerTrackBankState& trackBank
+    const core::state::sequencer::SequencerTrackBankState& trackBank,
+    const core::state::sequencer::SequencerClipRuntimeSources& sources,
+    uint16_t retainActiveMask
 ) {
     static_assert(TRACK_COUNT <= 16, "prepared graph mask capacity exceeded");
     discardPrepared_();
+    retain_active_mask_ = retainActiveMask;
 
     const uint8_t activeTrack =
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
@@ -29,25 +32,31 @@ FLASHMEM bool SequencerRuntimeGraphBank::prepare(
 
     for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
         const bool active = track == activeTrack;
-        const auto& sourceState = active && quickControlsPattern != nullptr
+        const auto& clipSource = sources[track];
+        const bool inactiveClip = clipSource.document != nullptr;
+        const auto& residentState = active && quickControlsPattern != nullptr
             ? *quickControlsPattern
             : core::state::sequencer::canonicalTrackPattern(
-                  trackBank,
-                  sequencer,
-                  track
-              );
-        const auto* sourceGraph = core::state::sequencer::graphView(sourceState);
-        const bool quickControlsPreview = active && quickControlsPattern != nullptr;
-        const bool stepDraftProjection = active && !quickControlsPreview &&
-            sequencer.stepContentDraft.active.get();
+                  trackBank, sequencer, track);
+        const auto* sourceGraph = inactiveClip
+            ? clipSource.document->graph.get()
+            : core::state::sequencer::graphView(residentState);
+        const bool quickControlsPreview = !inactiveClip && active &&
+            quickControlsPattern != nullptr;
+        const bool stepDraftProjection = !inactiveClip && active &&
+            !quickControlsPreview && sequencer.stepContentDraft.active.get();
         const SourceSignature signature{
             .source = sourceGraph,
-            .revision = sourceState.graphRevision.get(),
+            .revision = inactiveClip
+                ? clipSource.document->pattern.graphRevision
+                : residentState.graphRevision.get(),
             .draftRevision = quickControlsPreview
                 ? sequencer.patternQuickControls.previewRevision.get()
                 : (stepDraftProjection
                     ? sequencer.stepContentDraft.revision.get()
                     : 0U),
+            .clipGeneration = clipSource.generation,
+            .clipSlot = clipSource.address.slot,
         };
         if (source_signatures_[track].matches(signature)) continue;
 
@@ -103,17 +112,23 @@ FLASHMEM void SequencerRuntimeGraphBank::finishPublication_() {
 
         source_signatures_[track] = prepared_signatures_[track];
         prepared_signatures_[track] = {};
-        if (!staging_graph_ && prepared_graphs_[track]) {
+        if ((retain_active_mask_ & trackBit) != 0U) {
+            retired_graphs_[track] = std::move(prepared_graphs_[track]);
+        } else if (!staging_graph_ && prepared_graphs_[track]) {
             staging_graph_ = std::move(prepared_graphs_[track]);
         } else {
             prepared_graphs_[track].reset();
         }
     }
     prepared_mask_ = 0;
+    retain_active_mask_ = 0U;
 }
 
 FLASHMEM void SequencerRuntimeGraphBank::discardPrepared_() {
-    if (prepared_mask_ == 0) return;
+    if (prepared_mask_ == 0) {
+        retain_active_mask_ = 0U;
+        return;
+    }
     for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
         const uint16_t trackBit = static_cast<uint16_t>(1U << track);
         if ((prepared_mask_ & trackBit) == 0) continue;
@@ -126,12 +141,33 @@ FLASHMEM void SequencerRuntimeGraphBank::discardPrepared_() {
         }
     }
     prepared_mask_ = 0;
+    retain_active_mask_ = 0U;
 }
 
 const oc::note::sequencer::StepSequencerGraph*
 SequencerRuntimeGraphBank::graphForTrack(uint8_t trackIndex) const {
     if (trackIndex >= TRACK_COUNT) return nullptr;
     return active_graphs_[trackIndex].get();
+}
+
+const oc::note::sequencer::StepSequencerGraph*
+SequencerRuntimeGraphBank::graphBeforeRetainedLaunch(uint8_t trackIndex) const {
+    if (trackIndex >= TRACK_COUNT) return nullptr;
+    return retired_graphs_[trackIndex]
+        ? retired_graphs_[trackIndex].get()
+        : active_graphs_[trackIndex].get();
+}
+
+FLASHMEM void SequencerRuntimeGraphBank::releaseRetired(uint16_t trackMask) {
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        if ((trackMask & static_cast<uint16_t>(1U << track)) != 0U) {
+            retired_graphs_[track].reset();
+        }
+    }
+}
+
+FLASHMEM void SequencerRuntimeGraphBank::releaseAllRetired() {
+    for (auto& graph : retired_graphs_) graph.reset();
 }
 
 }  // namespace core::sequencer

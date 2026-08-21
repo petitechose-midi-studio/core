@@ -111,6 +111,24 @@ FLASHMEM bool CoreState::switchSequencerClipForEditing(
     return true;
 }
 
+FLASHMEM bool CoreState::requestSequencerClipLaunch(
+    sequencer::SequencerClipAddress target,
+    sequencer::SequencerClipLaunchQuantization quantization
+) {
+    if (!sequencer::SequencerClipGridState::validAddress(target)) {
+        return false;
+    }
+    const uint16_t bit = static_cast<uint16_t>(1U << target.track);
+    if ((sequencerTrackActivations.pendingTrackMask() & bit) != 0U) {
+        return false;
+    }
+    return sequencerClipLaunches.request(
+        target,
+        sequencerClips,
+        statusBar.playing.get(),
+        quantization);
+}
+
 FLASHMEM bool CoreState::installSequencerClip(
     sequencer::SequencerClipAddress target,
     sequencer::SequencerClipDocumentPtr document,
@@ -142,7 +160,8 @@ FLASHMEM bool CoreState::deleteSequencerClip(
     sequencer::SequencerClipAddress target
 ) {
     if (!closeClipMutationBoundary(*this) ||
-        sequencerClips.isResident(target)) {
+        sequencerClips.isResident(target) ||
+        sequencerClipLaunches.references(target)) {
         return false;
     }
     auto change = sequencer::prepareSequencerClipDeleteChange(
@@ -161,7 +180,8 @@ FLASHMEM bool CoreState::moveSequencerClip(
     sequencer::SequencerClipAddress source,
     sequencer::SequencerClipAddress destination
 ) {
-    if (!closeClipMutationBoundary(*this)) return false;
+    if (!closeClipMutationBoundary(*this) ||
+        sequencerClipLaunches.references(source)) return false;
     auto change = sequencer::prepareSequencerClipMoveChange(
         sequencerClips, source, destination);
     if (!change || !sequencerHistory.canRecordClipStructure(*change) ||

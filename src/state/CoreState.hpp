@@ -55,6 +55,7 @@
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerClipGridState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
@@ -253,6 +254,7 @@ struct SequencerDomainState {
     core::app::ExtmemUniquePtr<sequencer::SequencerClipGridState> clips;
     core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;
+    sequencer::SequencerClipLaunchQueue clipLaunches;
     oc::state::Signal<uint32_t> runtimeProjectRevision{1};
     CoalescedPatternHistory coalescedPatternHistory;
     CoalescedDrumHistory coalescedDrumHistory;
@@ -342,6 +344,7 @@ public:
     sequencer::SequencerClipGridState& sequencerClips;
     sequencer::SequencerHistoryService& sequencerHistory;
     sequencer::SequencerTrackActivationQueue& sequencerTrackActivations;
+    sequencer::SequencerClipLaunchQueue& sequencerClipLaunches;
     oc::state::Signal<uint32_t>& sequencerRuntimeProjectRevision;
     // Published by the singular SequencerRuntimeService. Feature modules may
     // produce immutable CC author frames through this non-owning handle, but
@@ -525,6 +528,10 @@ public:
     /** Cold authoring selection; performance launch uses its own runtime queue. */
     [[nodiscard]] bool switchSequencerClipForEditing(
         sequencer::SequencerClipAddress target);
+    [[nodiscard]] bool requestSequencerClipLaunch(
+        sequencer::SequencerClipAddress target,
+        sequencer::SequencerClipLaunchQuantization quantization =
+            sequencer::SequencerClipLaunchQuantization::BAR);
     [[nodiscard]] bool installSequencerClip(
         sequencer::SequencerClipAddress target,
         sequencer::SequencerClipDocumentPtr document,

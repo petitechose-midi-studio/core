@@ -7,6 +7,7 @@
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/DrumPatternState.hpp"
@@ -52,6 +53,8 @@ struct SequencerDrumRuntimeProjectSnapshot {
 
     uint16_t presentMask = 0U;
     std::array<uint32_t, TRACK_COUNT> sourceRevisions{};
+    std::array<uint8_t, TRACK_COUNT> sourceSlots{};
+    std::array<uint32_t, TRACK_COUNT> sourceGenerations{};
     std::array<
         core::state::sequencer::DrumPatternRuntimeSnapshot,
         TRACK_COUNT
@@ -82,7 +85,13 @@ public:
                                  core::state::sequencer::SequencerTrackBankState& trackBank,
                                  core::state::project::ProjectNavigationState& projectNavigation);
 
-    uint8_t refresh();
+    uint8_t refresh(
+        const core::state::sequencer::SequencerClipRuntimeSources& sources
+    );
+    uint8_t refresh() {
+        core::state::sequencer::SequencerClipRuntimeSources sources{};
+        return refresh(sources);
+    }
     void commit(uint8_t snapshotIndex);
 
     const Snapshot& snapshot(uint8_t snapshotIndex) const;
@@ -122,18 +131,36 @@ private:
         LaneSourceSignature,
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>;
 
+    struct ClipSourceSignature {
+        uint8_t slot = core::state::sequencer::SequencerClipGridState::INVALID_SLOT;
+        uint32_t generation = 0U;
+
+        [[nodiscard]] bool matches(
+            const core::state::sequencer::SequencerClipRuntimeSource& source
+        ) const noexcept {
+            return slot == source.address.slot && generation == source.generation;
+        }
+    };
+    using ClipSourceSignatures = std::array<
+        ClipSourceSignature,
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>;
+
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::project::ProjectNavigationState& project_navigation_;
     std::array<Snapshot, 2> snapshots_{};
     // Each double-buffer slot can lag independently; signatures are per slot.
     std::array<TrackSignatures, 2> track_signatures_{};
+    std::array<ClipSourceSignatures, 2> clip_source_signatures_{};
     std::array<LaneSourceSignatures, 2> lane_source_signatures_{};
     std::array<
         core::app::ExtmemUniquePtr<SequencerCcLaneRuntimeProjectSnapshot>,
         2
     > lane_snapshots_{};
-    bool refreshDrumTracks_(uint8_t writeIndex);
+    bool refreshDrumTracks_(
+        uint8_t writeIndex,
+        const core::state::sequencer::SequencerClipRuntimeSources& sources
+    );
     std::array<
         core::app::ExtmemUniquePtr<SequencerDrumRuntimeProjectSnapshot>,
         2

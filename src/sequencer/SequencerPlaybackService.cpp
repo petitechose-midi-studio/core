@@ -137,13 +137,17 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     core::state::sequencer::SequencerTrackActivationQueue* trackActivations,
     SequencerCcLaneRuntime* ccLaneRuntime,
     MidiCcGlobalFrameCoordinator* ccCoordinator,
-    SequencerCcLaneRuntime* ccPredictiveLaneRuntime
+    SequencerCcLaneRuntime* ccPredictiveLaneRuntime,
+    const SequencerRuntimeSnapshotBank* runtimeSnapshotBank,
+    core::state::sequencer::SequencerClipLaunchQueue* clipLaunches
 )
     : sequencer_(sequencer)
     , status_bar_(statusBar)
     , midi_queue_(midiQueue)
     , runtime_graph_bank_(runtimeGraphBank)
+    , runtime_snapshot_bank_(runtimeSnapshotBank)
     , track_activations_(trackActivations)
+    , clip_launches_(clipLaunches)
     , cc_lane_runtime_(ccLaneRuntime)
     , cc_predictive_lane_runtime_(ccPredictiveLaneRuntime)
     , cc_coordinator_(ccCoordinator)
@@ -321,13 +325,25 @@ void SequencerPlaybackService::update(
         const bool trackPlaying =
             (runtime_audible_mask_ & trackBit) != 0 &&
             track_runtime_states_[i].midiChannel <= 15U;
-        const auto* drumPattern = drumSnapshot != nullptr
-            ? drumSnapshot->patternForTrack(i)
+        const auto clipLaunch = clip_launches_ != nullptr
+            ? clip_launches_->realtimeView(i)
+            : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+        const bool clipFrozen = clipLaunch.disposition !=
+            core::state::sequencer::SequencerClipLaunchRealtimeView::
+                Disposition::NORMAL;
+        const auto* trackDrumSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+            ? runtime_snapshot_bank_->drumSnapshot(
+                  clipLaunch.previousSnapshotIndex)
+            : drumSnapshot;
+        const auto* drumPattern = trackDrumSnapshot != nullptr
+            ? trackDrumSnapshot->patternForTrack(i)
             : nullptr;
         if (drumPattern != nullptr && drumEngine != nullptr) {
             drumEngine->setPattern(
                 drumPattern,
-                runtime_graph_bank_.graphForTrack(i),
+                clipFrozen
+                    ? runtime_graph_bank_.graphBeforeRetainedLaunch(i)
+                    : runtime_graph_bank_.graphForTrack(i),
                 projectTrackChannel(projectTracks, i)
             );
             drumEngine->update(tick, trackPlaying, nowUs, tickPeriodUs);
@@ -481,11 +497,25 @@ void SequencerPlaybackService::processCcRuntime_(
         auto& inputs = scratch.currentInputs;
         if (playing) {
             for (uint8_t track = 0; track < inputs.size(); ++track) {
-                const auto& pattern = snapshot.tracks[track];
+                const auto clipLaunch = clip_launches_ != nullptr
+                    ? clip_launches_->realtimeView(track)
+                    : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+                const bool clipFrozen = clipLaunch.disposition !=
+                    core::state::sequencer::SequencerClipLaunchRealtimeView::
+                        Disposition::NORMAL;
+                const auto& trackSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+                    ? runtime_snapshot_bank_->snapshot(
+                          clipLaunch.previousSnapshotIndex)
+                    : snapshot;
+                const auto* trackLaneSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+                    ? runtime_snapshot_bank_->laneSnapshot(
+                          clipLaunch.previousSnapshotIndex)
+                    : laneSnapshot;
+                const auto& pattern = trackSnapshot.tracks[track];
                 const uint8_t ticksPerStep = ccTicksPerStep_(pattern);
                 const auto region = runtimePlaybackRegion(
                     pattern,
-                    snapshot.clips[track]
+                    trackSnapshot.clips[track]
                 );
                 oc::note::sequencer::StepSequencerPlaybackTickPosition position{};
                 const bool positionValid =
@@ -499,7 +529,9 @@ void SequencerPlaybackService::processCcRuntime_(
                     ? track_activations_->realtimeView(track)
                     : core::state::sequencer::SequencerTrackActivationRealtimeView{};
                 inputs[track] = {
-                    .lanes = laneSnapshot ? laneSnapshot->lanesForTrack(track) : nullptr,
+                    .lanes = trackLaneSnapshot
+                        ? trackLaneSnapshot->lanesForTrack(track)
+                        : nullptr,
                     .route = core::state::sequencer::makeSequencerCcTrackRoute(
                         MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
                         projectTrackChannel(projectTracks, track)
@@ -519,7 +551,7 @@ void SequencerPlaybackService::processCcRuntime_(
                     .muted = (projectTrackAudibleMask(projectTracks) &
                               static_cast<uint16_t>(1U << track)) == 0,
                     .stepTriggered = positionValid && position.atStepBoundary,
-                    .frozen = activation.disposition !=
+                    .frozen = clipFrozen || activation.disposition !=
                         core::state::sequencer::SequencerTrackActivationRealtimeView::
                             Disposition::NORMAL,
                 };
@@ -561,11 +593,21 @@ void SequencerPlaybackService::processCcRuntime_(
                         (static_cast<uint64_t>(advanceUs) + tickPeriodUs - 1U) /
                         tickPeriodUs
                     );
-                    const auto& pattern = snapshot.tracks[track];
+                    const auto clipLaunch = clip_launches_ != nullptr
+                        ? clip_launches_->realtimeView(track)
+                        : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+                    const bool clipFrozen = clipLaunch.disposition !=
+                        core::state::sequencer::SequencerClipLaunchRealtimeView::
+                            Disposition::NORMAL;
+                    const auto& trackSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+                        ? runtime_snapshot_bank_->snapshot(
+                              clipLaunch.previousSnapshotIndex)
+                        : snapshot;
+                    const auto& pattern = trackSnapshot.tracks[track];
                     const uint8_t ticksPerStep = ccTicksPerStep_(pattern);
                     const auto region = runtimePlaybackRegion(
                         pattern,
-                        snapshot.clips[track]
+                        trackSnapshot.clips[track]
                     );
                     const uint64_t futurePhaseTicks =
                         static_cast<uint64_t>(inputs[track].tickInStep) +
@@ -704,6 +746,31 @@ void SequencerPlaybackService::syncRuntimeStates_(
                     projectTracks,
                     i,
                     activation.generation,
+                    tick,
+                    playing
+                );
+                continue;
+            }
+        }
+        if (clip_launches_ != nullptr) {
+            const auto launch = clip_launches_->realtimeView(i);
+            if (launch.disposition ==
+                core::state::sequencer::SequencerClipLaunchRealtimeView::
+                    Disposition::FROZEN) {
+                continue;
+            }
+            if (launch.disposition ==
+                core::state::sequencer::SequencerClipLaunchRealtimeView::
+                    Disposition::STAGED) {
+                if (!isClipLaunchBoundary_(
+                        launch.quantization, tick, playing)) {
+                    continue;
+                }
+                applyStagedClip_(
+                    snapshot,
+                    projectTracks,
+                    i,
+                    launch.generation,
                     tick,
                     playing
                 );
@@ -849,6 +916,23 @@ bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
            position.playback.atLoopStart;
 }
 
+bool SequencerPlaybackService::isClipLaunchBoundary_(
+    core::state::sequencer::SequencerClipLaunchQuantization quantization,
+    uint32_t tick,
+    bool playing
+) {
+    if (!playing ||
+        quantization ==
+            core::state::sequencer::SequencerClipLaunchQuantization::IMMEDIATE) {
+        return true;
+    }
+    const uint32_t ticks = quantization ==
+        core::state::sequencer::SequencerClipLaunchQuantization::BEAT
+            ? oc::note::clock::PPQN
+            : 4U * oc::note::clock::PPQN;
+    return ticks != 0U && tick % ticks == 0U;
+}
+
 void SequencerPlaybackService::syncRuntimeMasksForTrack_(
     const ProjectTrackRuntimeSnapshot& projectTracks,
     uint8_t trackIndex
@@ -870,10 +954,37 @@ void SequencerPlaybackService::applyStagedTrack_(
     uint32_t tick,
     bool playing
 ) {
-    if (trackIndex >= TRACK_COUNT || track_activations_ == nullptr ||
+    if (track_activations_ == nullptr ||
+        !applyStagedTrackContent_(
+            snapshot, projectTracks, trackIndex, tick, playing)) return;
+    track_activations_->markAppliedFromRealtime(trackIndex, generation);
+}
+
+void SequencerPlaybackService::applyStagedClip_(
+    const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+    const ProjectTrackRuntimeSnapshot& projectTracks,
+    uint8_t trackIndex,
+    uint32_t generation,
+    uint32_t tick,
+    bool playing
+) {
+    if (clip_launches_ == nullptr ||
+        !applyStagedTrackContent_(
+            snapshot, projectTracks, trackIndex, tick, playing)) return;
+    (void)clip_launches_->markAppliedFromRealtime(trackIndex, generation);
+}
+
+bool SequencerPlaybackService::applyStagedTrackContent_(
+    const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+    const ProjectTrackRuntimeSnapshot& projectTracks,
+    uint8_t trackIndex,
+    uint32_t tick,
+    bool playing
+) {
+    if (trackIndex >= TRACK_COUNT ||
         (melodicEngine_(trackIndex) == nullptr &&
          drumEngine_(trackIndex) == nullptr)) {
-        return;
+        return false;
     }
 
     auto* const engine = melodicEngine_(trackIndex);
@@ -887,7 +998,7 @@ void SequencerPlaybackService::applyStagedTrack_(
     );
     if (!region.isValid() ||
         (engine != nullptr && !engine->setPlaybackRegion(region))) {
-        return;
+        return false;
     }
     syncRuntimeState(track_runtime_states_[trackIndex], snapshot.tracks[trackIndex]);
     track_playback_regions_[trackIndex] = region;
@@ -919,7 +1030,7 @@ void SequencerPlaybackService::applyStagedTrack_(
             engine->resyncToTick(tick - 1U);
         }
     }
-    track_activations_->markAppliedFromRealtime(trackIndex, generation);
+    return true;
 }
 
 FLASHMEM void SequencerPlaybackService::publishUiState(uint32_t nowMs) {

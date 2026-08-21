@@ -127,6 +127,9 @@ FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
         state.pages.currentTrackEnabledMask(),
         state.pages.currentActiveTrack()
     );
+    state.sequencerClipLaunches.reset(
+        state.sequencerClips,
+        state.sequencerTracks.currentEnabledMask());
 }
 
 FLASHMEM void CoreStateBootstrap::setupMutationCoalescing_(CoreState& state) {

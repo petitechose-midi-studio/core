@@ -9,6 +9,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::sequencer {
@@ -28,7 +29,16 @@ public:
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 
     bool prepare(const core::state::sequencer::SequencerState& sequencer,
-                 const core::state::sequencer::SequencerTrackBankState& trackBank);
+                 const core::state::sequencer::SequencerTrackBankState& trackBank,
+                 const core::state::sequencer::SequencerClipRuntimeSources& sources,
+                 uint16_t retainActiveMask = 0U);
+    bool prepare(
+        const core::state::sequencer::SequencerState& sequencer,
+        const core::state::sequencer::SequencerTrackBankState& trackBank
+    ) {
+        core::state::sequencer::SequencerClipRuntimeSources sources{};
+        return prepare(sequencer, trackBank, sources);
+    }
 
     template <typename CompanionPublisher>
     void publishPrepared(CompanionPublisher&& publishCompanion) {
@@ -50,6 +60,11 @@ public:
     const oc::note::sequencer::StepSequencerGraph* graphForTrack(
         uint8_t trackIndex
     ) const;
+    const oc::note::sequencer::StepSequencerGraph* graphBeforeRetainedLaunch(
+        uint8_t trackIndex
+    ) const;
+    void releaseRetired(uint16_t trackMask);
+    void releaseAllRetired();
 
 private:
     using Graph = oc::note::sequencer::StepSequencerGraph;
@@ -59,10 +74,15 @@ private:
         const Graph* source = nullptr;
         uint32_t revision = 0;
         uint32_t draftRevision = 0;
+        uint32_t clipGeneration = 0;
+        uint8_t clipSlot =
+            core::state::sequencer::SequencerClipGridState::INVALID_SLOT;
 
         bool matches(const SourceSignature& other) const {
             return source == other.source && revision == other.revision &&
-                   draftRevision == other.draftRevision;
+                   draftRevision == other.draftRevision &&
+                   clipGeneration == other.clipGeneration &&
+                   clipSlot == other.clipSlot;
         }
     };
 
@@ -73,9 +93,11 @@ private:
     std::array<GraphPtr, TRACK_COUNT> active_graphs_{};
     std::array<SourceSignature, TRACK_COUNT> source_signatures_{};
     std::array<GraphPtr, TRACK_COUNT> prepared_graphs_{};
+    std::array<GraphPtr, TRACK_COUNT> retired_graphs_{};
     std::array<SourceSignature, TRACK_COUNT> prepared_signatures_{};
     GraphPtr staging_graph_{};
     uint16_t prepared_mask_ = 0;
+    uint16_t retain_active_mask_ = 0;
     bool allocation_failure_reported_ = false;
 };
 

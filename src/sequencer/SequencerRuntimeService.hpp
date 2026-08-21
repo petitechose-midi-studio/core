@@ -19,6 +19,8 @@
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -43,11 +45,13 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
+        core::state::sequencer::SequencerClipGridState& clips;
         const core::state::project::ProjectTrackState& projectTracks;
         core::state::project::ProjectNavigationState& projectNavigation;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
         core::state::sequencer::SequencerTrackActivationQueue& trackActivations;
+        core::state::sequencer::SequencerClipLaunchQueue& clipLaunches;
         MidiCcGlobalFrameCoordinator** ccCoordinatorPublication = nullptr;
         const oc::state::Signal<uint32_t>* runtimeProjectRevision = nullptr;
     };
@@ -91,10 +95,12 @@ private:
     oc::api::MidiAPI& midi_;
     core::state::sequencer::SequencerState& sequencer_state_;
     core::state::sequencer::SequencerTrackBankState& track_bank_state_;
+    core::state::sequencer::SequencerClipGridState& clip_grid_state_;
     const core::state::project::ProjectTrackState& project_track_state_;
     core::state::StatusBarState& status_bar_state_;
     core::state::MidiSyncState& midi_sync_state_;
     core::state::sequencer::SequencerTrackActivationQueue& track_activations_;
+    core::state::sequencer::SequencerClipLaunchQueue& clip_launches_;
     MidiCcGlobalFrameCoordinator** cc_coordinator_publication_ = nullptr;
     const oc::state::Signal<uint32_t>* runtime_project_revision_ = nullptr;
     uint32_t consumed_runtime_project_revision_ = 0;

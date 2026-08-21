@@ -739,17 +739,19 @@ static FLASHMEM void initApp() {
             core::sequencer::SequencerRuntimeService::StateRefs{
                 coreState->sequencer,
                 coreState->sequencerTracks,
+                coreState->sequencerClips,
                 coreState->projectTracks,
                 coreState->projectNavigation,
-            coreState->statusBar,
-            coreState->midiSync,
-            coreState->sequencerTrackActivations,
-            &coreState->midiCcCoordinator,
-            &coreState->sequencerRuntimeProjectRevision,
-        },
-        *app->midiAPI(),
-        app->eventBus()
-    );
+                coreState->statusBar,
+                coreState->midiSync,
+                coreState->sequencerTrackActivations,
+                coreState->sequencerClipLaunches,
+                &coreState->midiCcCoordinator,
+                &coreState->sequencerRuntimeProjectRevision,
+            },
+            *app->midiAPI(),
+            app->eventBus()
+        );
     if (!standaloneSequencerRuntime) {
         OC_LOG_ERROR("Sequencer runtime init failed: EXTMEM allocation failed");
         while (true) {}

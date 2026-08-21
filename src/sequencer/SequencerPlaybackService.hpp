@@ -15,6 +15,7 @@
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 
@@ -24,6 +25,7 @@ struct SequencerCcLaneRuntimeProjectSnapshot;
 struct SequencerDrumRuntimeProjectSnapshot;
 struct ProjectTrackRuntimeSnapshot;
 class MidiCcGlobalFrameCoordinator;
+class SequencerRuntimeSnapshotBank;
 
 /** Fixed tick scratch; production ownership is one PSRAM allocation. */
 struct SequencerCcTemporalRuntimeScratch {
@@ -99,7 +101,10 @@ public:
                              SequencerCcLaneRuntime* ccLaneRuntime = nullptr,
                              MidiCcGlobalFrameCoordinator* ccCoordinator =
                                  nullptr,
-                             SequencerCcLaneRuntime* ccPredictiveLaneRuntime = nullptr);
+                             SequencerCcLaneRuntime* ccPredictiveLaneRuntime = nullptr,
+                             const SequencerRuntimeSnapshotBank* runtimeSnapshotBank = nullptr,
+                             core::state::sequencer::SequencerClipLaunchQueue*
+                                 clipLaunches = nullptr);
 
     /**
      * Advances playback against one coherent publication generation.
@@ -179,6 +184,11 @@ private:
         bool allowPredictiveLookahead
     );
     bool isLocalLoopBoundary_(uint8_t trackIndex, uint32_t tick) const;
+    static bool isClipLaunchBoundary_(
+        core::state::sequencer::SequencerClipLaunchQuantization quantization,
+        uint32_t tick,
+        bool playing
+    );
     void syncRuntimeMasksForTrack_(
         const ProjectTrackRuntimeSnapshot& projectTracks,
         uint8_t trackIndex
@@ -188,6 +198,21 @@ private:
         const ProjectTrackRuntimeSnapshot& projectTracks,
         uint8_t trackIndex,
         uint32_t generation,
+        uint32_t tick,
+        bool playing
+    );
+    void applyStagedClip_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
+        uint8_t trackIndex,
+        uint32_t generation,
+        uint32_t tick,
+        bool playing
+    );
+    bool applyStagedTrackContent_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
+        uint8_t trackIndex,
         uint32_t tick,
         bool playing
     );
@@ -209,7 +234,9 @@ private:
     core::state::StatusBarState& status_bar_;
     RealtimeMidiQueue& midi_queue_;
     const SequencerRuntimeGraphBank& runtime_graph_bank_;
+    const SequencerRuntimeSnapshotBank* runtime_snapshot_bank_ = nullptr;
     core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
+    core::state::sequencer::SequencerClipLaunchQueue* clip_launches_ = nullptr;
     SequencerCcLaneRuntime* cc_lane_runtime_ = nullptr;
     SequencerCcLaneRuntime* cc_predictive_lane_runtime_ = nullptr;
     MidiCcGlobalFrameCoordinator* cc_coordinator_ = nullptr;
