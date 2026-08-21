@@ -10,6 +10,13 @@ FLASHMEM ProjectSnapshot::ProjectSnapshot()
               core::state::modulation::ProjectControlDomainState
           >()
       ) {
+    for (uint8_t track = 0U;
+         track < core::state::sequencer::SequencerClipGridState::TRACK_COUNT;
+         ++track) {
+        if ((sequencer.flat.enabledMask & static_cast<uint16_t>(1U << track)) != 0U) {
+            clips.residentSlots[track] = 0U;
+        }
+    }
     for (uint8_t i = 0; i < macroTracks.size(); ++i) {
         macroTracks[i].initDefaults(i);
     }

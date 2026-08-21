@@ -16,6 +16,9 @@ namespace core::persistence::sequencer_codec {
 bool fillPatternPayload(const state::sequencer::SequencerPatternState& source,
                         uint8_t* out,
                         uint16_t capacity);
+bool fillPatternPayload(const state::sequencer::SequencerPatternSnapshot& source,
+                        uint8_t* out,
+                        uint16_t capacity);
 bool applyPatternPayload(const uint8_t* data,
                          uint16_t size,
                          state::sequencer::SequencerPatternState& target);

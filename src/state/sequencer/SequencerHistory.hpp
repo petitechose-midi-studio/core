@@ -11,6 +11,7 @@
 #include "state/project/ProjectHistoryEventSink.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerChordContextProjection.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
 #include "state/sequencer/SequencerHistoryOutcomes.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -95,6 +96,7 @@ enum class SequencerHistoryScope : uint8_t {
     Structure,
     FullBank,
     Drum,
+    ClipStructure,
 };
 
 enum class SequencerHistoryPatternStorage : uint8_t {
@@ -267,6 +269,10 @@ enum class SequencerHistoryActionKind : uint8_t {
     DrumAdvancedContent,
     DrumLaneContent,
     PatternPreset,
+    ClipCreate,
+    ClipDelete,
+    ClipMove,
+    ClipDuplicate,
 };
 
 struct SequencerHistoryDescriptor {
@@ -276,6 +282,7 @@ struct SequencerHistoryDescriptor {
     uint8_t trackIndex = INVALID_INDEX;
     uint8_t laneIndex = INVALID_INDEX;
     uint8_t stepIndex = INVALID_INDEX;
+    uint8_t clipIndex = INVALID_INDEX;
     StepProperty property = StepProperty::NOTE;
     bool hasValue = false;
     int32_t beforeValue = 0;
@@ -489,6 +496,7 @@ struct SequencerHistoryEntry {
     SequencerHistoryTrackStructureChangePtr structure;
     core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange> fullBank;
     SequencerHistoryDrumChangePtr drum;
+    SequencerClipStructureChangePtr clipStructure;
 
     SequencerHistoryEntry();
     ~SequencerHistoryEntry();
@@ -501,7 +509,9 @@ struct SequencerHistoryEntry {
         return (scope == SequencerHistoryScope::PatternOnly && pattern.get() != nullptr) ||
                (scope == SequencerHistoryScope::Structure && structure.get() != nullptr) ||
                (scope == SequencerHistoryScope::FullBank && fullBank.get() != nullptr) ||
-               (scope == SequencerHistoryScope::Drum && drum.get() != nullptr);
+               (scope == SequencerHistoryScope::Drum && drum.get() != nullptr) ||
+               (scope == SequencerHistoryScope::ClipStructure &&
+                clipStructure.get() != nullptr);
     }
 };
 
@@ -679,6 +689,9 @@ public:
     static constexpr uint8_t STRUCTURE_ENTRY_LIMIT = 8;
     static constexpr uint8_t FULL_BANK_ENTRY_LIMIT = 4;
     static constexpr uint8_t DRUM_ENTRY_LIMIT = 24;
+    static constexpr uint8_t CLIP_STRUCTURE_ENTRY_LIMIT = 16;
+    // Clip Structure shares the existing global Sequencer chronology budget;
+    // it does not reserve another dense block of empty entry slots.
     static constexpr uint8_t ENTRY_LIMIT =
         PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT +
         DRUM_ENTRY_LIMIT;
@@ -702,6 +715,9 @@ public:
     bool canRecordDrum(const SequencerHistoryDrumChange& change) const;
     void recordPreparedDrum(SequencerHistoryDrumChangePtr change);
 
+    bool canRecordClipStructure(const SequencerClipStructureChange& change) const;
+    void commitAdmittedClipStructure(SequencerClipStructureChangePtr change) noexcept;
+
     bool canRecordFullBank(const SequencerHistoryFullBankChange& change) const;
     // Internal no-fail tail for a FullBank change whose immutable payload and
     // retained-byte admission were proven before the first live write. This
@@ -724,6 +740,12 @@ public:
                                                SequencerState& active);
     SequencerHistoryApplyResult redoWithResult(SequencerTrackBankState& bank,
                                                SequencerState& active);
+    SequencerHistoryApplyResult undoWithResult(SequencerTrackBankState& bank,
+                                               SequencerState& active,
+                                               SequencerClipGridState& clips);
+    SequencerHistoryApplyResult redoWithResult(SequencerTrackBankState& bank,
+                                               SequencerState& active,
+                                               SequencerClipGridState& clips);
     SequencerStructureHistoryReplayPrepareOutcome prepareStructureHistoryReplay(
         SequencerHistoryDirection direction,
         const SequencerTrackBankState& bank,
@@ -739,7 +761,6 @@ public:
     ) noexcept;
     bool peekUndoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
     bool peekRedoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
-
     void clear();
     void discardRedoBranch();
 
@@ -761,6 +782,11 @@ private:
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);
     void commitPreparedEntry(SequencerHistoryEntry entry);
+    SequencerHistoryApplyResult applyWithResult_(
+        SequencerHistoryDirection direction,
+        SequencerTrackBankState& bank,
+        SequencerState& active,
+        SequencerClipGridState* clips);
     [[nodiscard]] core::state::project::ProjectHistoryRetainedUsage
         retainedUsage_() const;
     void publishRetainedUsage_() const;

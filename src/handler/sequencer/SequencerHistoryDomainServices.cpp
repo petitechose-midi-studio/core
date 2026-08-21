@@ -33,6 +33,11 @@ FLASHMEM void recordPreparedPatternFromCoreState(
     // their no-fail ownership transfer. The sealed Core coalescer publishes
     // through its direct trusted path.
     if (!state->sequencerHistory.canRecordPattern(*change)) return;
+    if (change->descriptor.clipIndex ==
+        core::state::sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+        change->descriptor.clipIndex = state->sequencerClips.residentSlot(
+            change->trackIndex);
+    }
     state->sequencerHistory.recordPreparedPattern(std::move(change));
     state->markProjectMutated();
 }

@@ -95,6 +95,13 @@ createSequencerTrackBankState() {
     return state;
 }
 
+FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerClipGridState>
+createSequencerClipGridState() {
+    auto state = core::app::makeExtmemUnique<sequencer::SequencerClipGridState>();
+    if (!state) failCoreStateAllocation("sequencer clip grid");
+    return state;
+}
+
 FLASHMEM void discardGlobalRedoBranches(void* context) {
     if (context == nullptr) return;
     auto& state = *static_cast<CoreState*>(context);
@@ -122,6 +129,7 @@ FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
 FLASHMEM SequencerDomainState::SequencerDomainState()
     : editor(createSequencerEditorState()), tracks(createSequencerTrackBankState()),
+      clips(createSequencerClipGridState()),
       history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>()) {
     if (!history) failCoreStateAllocation("sequencer history service");
 }
@@ -137,7 +145,8 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
       pages(*macroDomain_.pages), macroHistory(macroDomain_.history),
       macroRuntimeOwnerRevision(macroDomain_.runtimeOwnerRevision),
       configRevision(macroDomain_.configRevision), sequencer(*sequencerDomain_.editor),
-      sequencerTracks(*sequencerDomain_.tracks), sequencerHistory(*sequencerDomain_.history),
+      sequencerTracks(*sequencerDomain_.tracks), sequencerClips(*sequencerDomain_.clips),
+      sequencerHistory(*sequencerDomain_.history),
       sequencerTrackActivations(sequencerDomain_.trackActivations),
       sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision), project(project_),
       projectTracks(*projectTracks_), projectTrackHistory(*projectTrackHistory_),

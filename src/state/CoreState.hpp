@@ -54,6 +54,7 @@
 #include "state/project/ProjectTrackHistory.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
@@ -134,6 +135,7 @@ struct MacroDomainState {
 
 /** Owns the editable sequencer state, per-track bank, and history. */
 struct SequencerDomainState {
+    static constexpr size_t MUTATION_COALESCER_SUBSCRIPTION_COUNT = 17U;
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_JOIN_MS = 32;
     static constexpr uint32_t COALESCED_CC_LANE_HISTORY_IDLE_MS = 320;
@@ -231,6 +233,7 @@ struct SequencerDomainState {
                 key.kind == sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit;
             return pending && key.kind == next.kind &&
                 key.trackIndex == next.trackIndex &&
+                key.clipIndex == next.clipIndex &&
                 key.laneIndex == next.laneIndex &&
                 sameGestureStep && key.property == next.property;
         }
@@ -247,12 +250,14 @@ struct SequencerDomainState {
 
     core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
+    core::app::ExtmemUniquePtr<sequencer::SequencerClipGridState> clips;
     core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;
     oc::state::Signal<uint32_t> runtimeProjectRevision{1};
     CoalescedPatternHistory coalescedPatternHistory;
     CoalescedDrumHistory coalescedDrumHistory;
-    std::unique_ptr<oc::state::ChangeCoalescer<16>> mutationCoalescer;
+    std::unique_ptr<oc::state::ChangeCoalescer<MUTATION_COALESCER_SUBSCRIPTION_COUNT>>
+        mutationCoalescer;
 
     SequencerDomainState();
     ~SequencerDomainState();
@@ -334,6 +339,7 @@ public:
     /// Sequencer domain aliases
     sequencer::SequencerState& sequencer;
     sequencer::SequencerTrackBankState& sequencerTracks;
+    sequencer::SequencerClipGridState& sequencerClips;
     sequencer::SequencerHistoryService& sequencerHistory;
     sequencer::SequencerTrackActivationQueue& sequencerTrackActivations;
     oc::state::Signal<uint32_t>& sequencerRuntimeProjectRevision;
@@ -516,6 +522,21 @@ public:
     bool undoSequencerHistory();
     bool redoSequencerHistory();
     [[nodiscard]] bool clearSequencerHistory();
+    /** Cold authoring selection; performance launch uses its own runtime queue. */
+    [[nodiscard]] bool switchSequencerClipForEditing(
+        sequencer::SequencerClipAddress target);
+    [[nodiscard]] bool installSequencerClip(
+        sequencer::SequencerClipAddress target,
+        sequencer::SequencerClipDocumentPtr document,
+        bool duplicate);
+    [[nodiscard]] bool deleteSequencerClip(
+        sequencer::SequencerClipAddress target);
+    [[nodiscard]] bool moveSequencerClip(
+        sequencer::SequencerClipAddress source,
+        sequencer::SequencerClipAddress destination);
+    [[nodiscard]] bool duplicateSequencerClip(
+        sequencer::SequencerClipAddress source,
+        sequencer::SequencerClipAddress destination);
     [[nodiscard]] bool prepareProjectHistoryInteraction();
     bool undoProjectHistory();
     bool redoProjectHistory();

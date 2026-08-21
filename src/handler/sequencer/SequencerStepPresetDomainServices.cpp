@@ -1227,6 +1227,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
         .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
         .trackIndex = target.trackIndex,
         .stepIndex = target.stepIndex,
+        .clipIndex = state_->sequencerClips.residentSlot(target.trackIndex),
         .property = core::state::sequencer::StepProperty::NOTE,
         .hasValue = false,
     };

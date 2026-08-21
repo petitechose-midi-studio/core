@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
 #include "state/sequencer/SequencerChordState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -703,6 +704,8 @@ FLASHMEM uint8_t scopeLimit(SequencerHistoryScope scope) {
             return SequencerHistoryService::FULL_BANK_ENTRY_LIMIT;
         case SequencerHistoryScope::Drum:
             return SequencerHistoryService::DRUM_ENTRY_LIMIT;
+        case SequencerHistoryScope::ClipStructure:
+            return SequencerHistoryService::CLIP_STRUCTURE_ENTRY_LIMIT;
         default: return 0U;
     }
 }
@@ -898,6 +901,18 @@ FLASHMEM uint16_t patternChangeRetainedSpans(
     );
 }
 
+FLASHMEM size_t clipStructureChangeRetainedBytes(
+    const SequencerClipStructureChange& change
+) {
+    return change.retainedBytes;
+}
+
+FLASHMEM uint16_t clipStructureChangeRetainedSpans(
+    const SequencerClipStructureChange& change
+) {
+    return change.retainedSpans;
+}
+
 FLASHMEM size_t patternChangeAdmissionBytes(const SequencerHistoryPatternChange& change) {
     // FlatOnly payload owners are discarded before the entry is retained. Its
     // admission cost is therefore the normalized fixed-size change, while
@@ -937,6 +952,10 @@ FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
             return fullBankChangeRetainedBytes(*entry.fullBank);
         case SequencerHistoryScope::Drum:
             return entry.drum ? drumChangeRetainedBytes(*entry.drum) : 0U;
+        case SequencerHistoryScope::ClipStructure:
+            return entry.clipStructure
+                ? clipStructureChangeRetainedBytes(*entry.clipStructure)
+                : 0U;
         default: return 0;
     }
 }
@@ -957,6 +976,10 @@ FLASHMEM uint16_t entryRetainedSpans(const SequencerHistoryEntry& entry) {
                 : 0U;
         case SequencerHistoryScope::Drum:
             return entry.drum ? drumChangeRetainedSpans(*entry.drum) : 0U;
+        case SequencerHistoryScope::ClipStructure:
+            return entry.clipStructure
+                ? clipStructureChangeRetainedSpans(*entry.clipStructure)
+                : 0U;
         default:
             return 0U;
     }
@@ -1003,6 +1026,8 @@ FLASHMEM uintptr_t projectHistoryIdentity(const SequencerHistoryEntry& entry) {
             return reinterpret_cast<uintptr_t>(entry.fullBank.get());
         case SequencerHistoryScope::Drum:
             return reinterpret_cast<uintptr_t>(entry.drum.get());
+        case SequencerHistoryScope::ClipStructure:
+            return reinterpret_cast<uintptr_t>(entry.clipStructure.get());
         default: return 0U;
     }
 }
@@ -1116,8 +1141,68 @@ FLASHMEM bool applyFlatHistorySnapshotToTrack(SequencerTrackBankState& bank, Seq
     return true;
 }
 
+FLASHMEM bool applyPatternSnapshotToInactiveClip(
+    SequencerClipGridState& clips,
+    SequencerClipAddress address,
+    const SequencerHistoryPatternSnapshot& snapshot,
+    SequencerHistoryPatternStorage storage
+) {
+    auto* document = clips.inactiveDocument(address);
+    if (document == nullptr) return false;
+
+    if (storage == SequencerHistoryPatternStorage::FlatOnly) {
+        document->pattern = snapshot.flat;
+        document->clip = snapshot.clip;
+        document->ccLaneRevision = snapshot.ccLaneRevision;
+        return clips.markInactiveDocumentMutated(address);
+    }
+
+    SequencerHistoryGraphPtr graph;
+    SequencerHistoryCcLanePtr ccLanes;
+    if (!cloneGraph(snapshot.graph, graph) ||
+        (snapshot.ccLanesCaptured &&
+         !cloneSequencerCcLaneBank(ccLanes, snapshot.ccLanes.get()))) {
+        return false;
+    }
+    document->pattern = snapshot.flat;
+    document->clip = snapshot.clip;
+    document->ccLaneRevision = snapshot.ccLaneRevision;
+    document->graph = std::move(graph);
+    if (snapshot.ccLanesCaptured) {
+        document->ccLanes = std::move(ccLanes);
+    }
+    return clips.markInactiveDocumentMutated(address);
+}
+
+FLASHMEM bool applyDrumSnapshotToInactiveClip(
+    SequencerClipGridState& clips,
+    SequencerClipAddress address,
+    const SequencerHistoryDrumChange& change,
+    bool after
+) {
+    auto* document = clips.inactiveDocument(address);
+    if (document == nullptr || document->trackKind != SequencerTrackKind::DRUM ||
+        document->drum == nullptr) {
+        return false;
+    }
+
+    SequencerHistoryGraphPtr graph;
+    const auto* sourceGraph = after ? change.afterGraph.get() : change.beforeGraph.get();
+    if (change.capturesGraph && !cloneGraph(sourceGraph, graph)) return false;
+
+    *document->drum = after ? change.after : change.before;
+    if (change.capturesGraph) {
+        document->graph = std::move(graph);
+        document->pattern.graphRevision = after
+            ? change.afterGraphRevision
+            : change.beforeGraphRevision;
+    }
+    return clips.markInactiveDocumentMutated(address);
+}
+
 FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
-                                 SequencerTrackBankState& bank, SequencerState& active) {
+                                 SequencerTrackBankState& bank, SequencerState& active,
+                                 SequencerClipGridState* clips) {
     if (active.stepContentDraft.rejectTransitionIfActive(
             SequencerStepContentDraftBlockedTransition::HISTORY)) {
         return false;
@@ -1126,6 +1211,15 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
     if (entry.scope == SequencerHistoryScope::PatternOnly) {
         if (!entry.pattern) return false;
         const auto& snapshot = after ? entry.pattern->after : entry.pattern->before;
+        const SequencerClipAddress address{
+            entry.pattern->trackIndex,
+            entry.pattern->descriptor.clipIndex,
+        };
+        if (clips != nullptr && SequencerClipGridState::validAddress(address) &&
+            !clips->isResident(address)) {
+            return applyPatternSnapshotToInactiveClip(
+                *clips, address, snapshot, entry.pattern->storage);
+        }
         if (entry.pattern->storage == SequencerHistoryPatternStorage::FlatOnly) {
             return applyFlatHistorySnapshotToTrack(bank, active, entry.pattern->trackIndex,
                                                    snapshot);
@@ -1140,6 +1234,14 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
     if (entry.scope == SequencerHistoryScope::Drum) {
         if (!entry.drum) return false;
         const auto& change = *entry.drum;
+        const SequencerClipAddress address{
+            change.trackIndex,
+            change.descriptor.clipIndex,
+        };
+        if (clips != nullptr && SequencerClipGridState::validAddress(address) &&
+            !clips->isResident(address)) {
+            return applyDrumSnapshotToInactiveClip(*clips, address, change, after);
+        }
         const auto* graph = after
             ? change.afterGraph.get()
             : change.beforeGraph.get();
@@ -1178,6 +1280,12 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
         return true;
     }
 
+    if (entry.scope == SequencerHistoryScope::ClipStructure) {
+        return clips != nullptr && entry.clipStructure != nullptr &&
+            applySequencerClipStructureChange(
+                *clips, *entry.clipStructure, after);
+    }
+
     if (!entry.fullBank) return false;
     return applyHistorySnapshot(bank, active,
                                 after ? entry.fullBank->after : entry.fullBank->before);
@@ -1204,6 +1312,31 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(const SequencerHistoryEnt
     if (entry.scope == SequencerHistoryScope::Drum && entry.drum) {
         descriptor = entry.drum->descriptor;
         descriptor.trackIndex = entry.drum->trackIndex;
+        return descriptor;
+    }
+
+    if (entry.scope == SequencerHistoryScope::ClipStructure &&
+        entry.clipStructure) {
+        const auto& change = *entry.clipStructure;
+        switch (change.action) {
+            case SequencerClipStructureAction::CREATE:
+                descriptor.kind = SequencerHistoryActionKind::ClipCreate;
+                break;
+            case SequencerClipStructureAction::DELETE:
+                descriptor.kind = SequencerHistoryActionKind::ClipDelete;
+                break;
+            case SequencerClipStructureAction::MOVE:
+                descriptor.kind = SequencerHistoryActionKind::ClipMove;
+                break;
+            case SequencerClipStructureAction::DUPLICATE:
+                descriptor.kind = SequencerHistoryActionKind::ClipDuplicate;
+                break;
+        }
+        descriptor.trackIndex = change.source.track;
+        descriptor.clipIndex = change.action == SequencerClipStructureAction::CREATE ||
+                change.action == SequencerClipStructureAction::DUPLICATE
+            ? change.destination.slot
+            : change.source.slot;
         return descriptor;
     }
 
@@ -2436,6 +2569,31 @@ FLASHMEM void SequencerHistoryService::recordPreparedDrum(
     commitPreparedEntry(std::move(entry));
 }
 
+FLASHMEM bool SequencerHistoryService::canRecordClipStructure(
+    const SequencerClipStructureChange& change
+) const {
+    const RetainedUsage incoming{
+        .bytes = change.retainedBytes,
+        .spans = change.retainedSpans,
+    };
+    return change.retainedBytes >= sizeof(SequencerClipStructureChange) &&
+        change.retainedSpans > 0U && incomingEntryFitsRetainedBudget(incoming) &&
+        (project_history_sink_ == nullptr ||
+         project_history_sink_->admitsRetainedUsage(
+             core::state::project::ProjectHistoryDomain::Sequencer,
+             incoming));
+}
+
+FLASHMEM void SequencerHistoryService::commitAdmittedClipStructure(
+    SequencerClipStructureChangePtr change
+) noexcept {
+    if (!change || !change->afterApplied) failSequencerHistoryInvariant();
+    SequencerHistoryEntry entry;
+    entry.scope = SequencerHistoryScope::ClipStructure;
+    entry.clipStructure = std::move(change);
+    commitPreparedEntry(std::move(entry));
+}
+
 FLASHMEM bool SequencerHistoryService::canRecordFullBank(
     const SequencerHistoryFullBankChange& change) const {
     const RetainedUsage incoming{
@@ -2507,24 +2665,14 @@ FLASHMEM bool SequencerHistoryService::undo(SequencerTrackBankState& bank, Seque
 
 FLASHMEM SequencerHistoryApplyResult
 SequencerHistoryService::undoWithResult(SequencerTrackBankState& bank, SequencerState& active) {
-    SequencerHistoryApplyResult result;
-    result.direction = SequencerHistoryDirection::Undo;
+    return applyWithResult_(SequencerHistoryDirection::Undo, bank, active, nullptr);
+}
 
-    if (undo_count_ == 0) { return result; }
-
-    SequencerHistoryEntry& entry = undo_[undo_count_ - 1U];
-    const uintptr_t projectHistoryEntryIdentity = projectHistoryIdentity(entry);
-    result.descriptor = descriptorForEntry(entry);
-    if (!applyEntrySnapshot(entry, false, bank, active)) { return result; }
-
-    auto moved = popBack(undo_, undo_count_);
-    result.applied = pushRedo(std::move(moved));
-    if (result.applied && project_history_sink_ != nullptr) {
-        project_history_sink_->notifyApplied(core::state::project::ProjectHistoryDomain::Sequencer,
-                                             projectHistoryEntryIdentity,
-                                             core::state::project::ProjectHistoryDirection::Undo);
-    }
-    return result;
+FLASHMEM SequencerHistoryApplyResult
+SequencerHistoryService::undoWithResult(SequencerTrackBankState& bank,
+                                        SequencerState& active,
+                                        SequencerClipGridState& clips) {
+    return applyWithResult_(SequencerHistoryDirection::Undo, bank, active, &clips);
 }
 
 FLASHMEM bool SequencerHistoryService::redo(SequencerTrackBankState& bank, SequencerState& active) {
@@ -2533,22 +2681,45 @@ FLASHMEM bool SequencerHistoryService::redo(SequencerTrackBankState& bank, Seque
 
 FLASHMEM SequencerHistoryApplyResult
 SequencerHistoryService::redoWithResult(SequencerTrackBankState& bank, SequencerState& active) {
+    return applyWithResult_(SequencerHistoryDirection::Redo, bank, active, nullptr);
+}
+
+FLASHMEM SequencerHistoryApplyResult
+SequencerHistoryService::redoWithResult(SequencerTrackBankState& bank,
+                                        SequencerState& active,
+                                        SequencerClipGridState& clips) {
+    return applyWithResult_(SequencerHistoryDirection::Redo, bank, active, &clips);
+}
+
+FLASHMEM SequencerHistoryApplyResult SequencerHistoryService::applyWithResult_(
+    SequencerHistoryDirection direction,
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    SequencerClipGridState* clips
+) {
     SequencerHistoryApplyResult result;
-    result.direction = SequencerHistoryDirection::Redo;
+    result.direction = direction;
 
-    if (redo_count_ == 0) { return result; }
+    const bool redo = direction == SequencerHistoryDirection::Redo;
+    auto& entries = redo ? redo_ : undo_;
+    uint8_t& count = redo ? redo_count_ : undo_count_;
+    if (count == 0U) return result;
 
-    SequencerHistoryEntry& entry = redo_[redo_count_ - 1U];
-    const uintptr_t projectHistoryEntryIdentity = projectHistoryIdentity(entry);
+    SequencerHistoryEntry& entry = entries[count - 1U];
+    const uintptr_t identity = projectHistoryIdentity(entry);
     result.descriptor = descriptorForEntry(entry);
-    if (!applyEntrySnapshot(entry, true, bank, active)) { return result; }
+    if (!applyEntrySnapshot(entry, redo, bank, active, clips)) return result;
 
-    auto moved = popBack(redo_, redo_count_);
-    result.applied = pushUndo(std::move(moved));
+    auto moved = popBack(entries, count);
+    result.applied = redo
+        ? pushUndo(std::move(moved))
+        : pushRedo(std::move(moved));
     if (result.applied && project_history_sink_ != nullptr) {
-        project_history_sink_->notifyApplied(core::state::project::ProjectHistoryDomain::Sequencer,
-                                             projectHistoryEntryIdentity,
-                                             core::state::project::ProjectHistoryDirection::Redo);
+        project_history_sink_->notifyApplied(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            identity,
+            redo ? core::state::project::ProjectHistoryDirection::Redo
+                 : core::state::project::ProjectHistoryDirection::Undo);
     }
     return result;
 }

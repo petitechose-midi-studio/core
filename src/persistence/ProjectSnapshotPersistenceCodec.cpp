@@ -38,7 +38,7 @@ ProjectSnapshotCodecWorkspace& ProjectSnapshotCodecWorkspace::operator=(
 ) noexcept = default;
 
 FLASHMEM bool ProjectSnapshotCodecWorkspace::prepare() {
-    static_assert(sizeof(Storage) == 600295U, "project encode scratch ABI drift");
+    static_assert(sizeof(Storage) == 698280U, "project encode scratch ABI drift");
     if (!storage_) {
         storage_ = core::app::makeExtmemUniqueForOverwrite<Storage>();
     }
@@ -368,6 +368,7 @@ FLASHMEM bool buildSequencerEnvelope(
     sequencer_codec::ProjectSequencerSnapshotEncodeSource source{};
     source.flat = &snapshot.sequencer.flat;
     source.drums = snapshot.drumTracks.get();
+    source.clips = &snapshot.clips;
     source.focusedStep = snapshot.sequencer.focusedStep;
     source.activeStepProperty = snapshot.sequencer.activeStepProperty;
     const uint8_t activeTrack = snapshot.sequencer.flat.activeTrack;
@@ -439,7 +440,9 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
 
     auto bank = core::app::makeExtmemUnique<core::state::sequencer::SequencerTrackBankState>();
     auto active = core::app::makeExtmemUnique<core::state::sequencer::SequencerState>();
-    if (!bank || !active) {
+    auto clips = core::app::makeExtmemUnique<
+        core::state::sequencer::SequencerClipGridState>();
+    if (!bank || !active || !clips) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
                   project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
@@ -455,7 +458,8 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
             chunk->data,
             chunk->size,
             *bank,
-            *active
+            *active,
+            *clips
         ) ||
         !core::state::sequencer::captureHistorySnapshot(*bank, *active, target.sequencer)) {
         addReport(report,
@@ -466,6 +470,10 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
                   chunk->versionMinor);
         return false;
     }
+    core::state::sequencer::extractSequencerClipGridSnapshot(
+        *clips,
+        target.clips
+    );
 
     if (bank->drumTrackMask() != 0U) {
         if (!target.drumTracks) {

@@ -279,8 +279,15 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     assert(drums);
     bank.captureDrumTrackBank(*drums);
     codec::ProjectSequencerSnapshotEncodeSource projectSource{};
+    seq::SequencerClipGridSnapshot projectClips{};
+    for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
+        if ((flat.enabledMask & static_cast<uint16_t>(1U << track)) != 0U) {
+            projectClips.residentSlots[track] = 0U;
+        }
+    }
     projectSource.flat = &flat;
     projectSource.drums = drums.get();
+    projectSource.clips = &projectClips;
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -299,13 +306,15 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     assert(projectEncoded.ok);
     seq::SequencerState projectLoaded{};
     seq::SequencerTrackBankState projectBank{};
+    seq::SequencerClipGridState projectGrid{};
     projectLoaded.reset();
     projectBank.reset();
     assert(codec::applyProjectSequencerEnvelope(
         projectBytes.bytes.data(),
         projectEncoded.size,
         projectBank,
-        projectLoaded
+        projectLoaded,
+        projectGrid
     ));
     assertTwoLanes(projectLoaded.pattern);
     assert(seq::sequencerCcLaneView(projectBank.track(1U))->lanes[3].values[64] == 42U);
@@ -352,7 +361,10 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
     seq::SequencerTrackBankSnapshot flat{};
     seq::captureTrackBankSnapshot(bank, source, flat);
     codec::ProjectSequencerSnapshotEncodeSource projectSource{};
+    seq::SequencerClipGridSnapshot projectClips{};
+    projectClips.residentSlots[0U] = 0U;
     projectSource.flat = &flat;
+    projectSource.clips = &projectClips;
 
     codec::EnvelopeBuffer projectBytes{};
     const auto projectEncoded = codec::fillProjectSequencerEnvelope(
@@ -364,6 +376,7 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
 
     seq::SequencerState loaded{};
     seq::SequencerTrackBankState loadedBank{};
+    seq::SequencerClipGridState loadedGrid{};
     loaded.reset();
     loadedBank.reset();
     assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
@@ -372,7 +385,8 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
         projectBytes.bytes.data(),
         projectEncoded.size,
         loadedBank,
-        loaded
+        loaded,
+        loadedGrid
     ));
     assert(loadedBank.drumTrackMask() == 0U);
 

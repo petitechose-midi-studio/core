@@ -19,7 +19,6 @@ namespace {
 // continuously enqueue session saves.
 constexpr uint32_t MACRO_VALUE_PROJECT_SAVE_DELAY_MS = 5000;
 constexpr uint32_t SEQUENCER_PROJECT_SAVE_DELAY_MS = 300;
-constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 16;
 
 [[noreturn]] FLASHMEM void failSequencerCoalescerSetup() {
     OC_LOG_ERROR("{}", "[CoreState] Sequencer mutation coalescer setup failed");
@@ -38,7 +37,8 @@ FLASHMEM void CoreStateBootstrap::configureMacroMutationCoalescing_(CoreState& s
 
 FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreState& state) {
     state.sequencerDomain_.mutationCoalescer =
-        std::make_unique<oc::state::ChangeCoalescer<SEQUENCER_COALESCER_SUBSCRIPTION_COUNT>>(
+        std::make_unique<oc::state::ChangeCoalescer<
+            SequencerDomainState::MUTATION_COALESCER_SUBSCRIPTION_COUNT>>(
             [&state]() {
                 state.markSequencerProjectMutated_();
             },
@@ -62,12 +62,14 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
     coalescer.watch(state.sequencer.pattern.swingOffsetPercent);
     coalescer.watch(state.sequencer.pattern.patternNudgePercent);
     coalescer.watch(state.sequencerTracks.drumRevisionSignal());
+    coalescer.watch(state.sequencerClips.revisionSignal());
     // Project Track channel/mute mirrors are intentionally absent: their
     // canonical service already publishes dirty and runtime revisions once at
     // gesture commit. Watching the projected mirrors would duplicate it.
 
     if (!coalescer.valid() ||
-        coalescer.subscriptionCount() != SEQUENCER_COALESCER_SUBSCRIPTION_COUNT) {
+        coalescer.subscriptionCount() !=
+            SequencerDomainState::MUTATION_COALESCER_SUBSCRIPTION_COUNT) {
         failSequencerCoalescerSetup();
     }
 }
@@ -110,6 +112,7 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
+    state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     if (!state.deviceSettingsStore.load(
             state.midiSync,
             state.midiNoteDisplay

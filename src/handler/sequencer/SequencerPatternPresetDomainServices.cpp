@@ -1535,6 +1535,7 @@ SequencerPatternPresetDomainServices::previewPreset(
     const seq::SequencerHistoryDescriptor descriptor{
         .kind = seq::SequencerHistoryActionKind::PatternPreset,
         .trackIndex = target.trackIndex,
+        .clipIndex = state_->sequencerClips.residentSlot(target.trackIndex),
     };
     uint16_t enabledMask = 0U;
     uint16_t audibleMask = 0U;

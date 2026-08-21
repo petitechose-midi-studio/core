@@ -523,6 +523,7 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     descriptor.trackIndex = activeTrack;
+    descriptor.clipIndex = sequencerClips.residentSlot(activeTrack);
 
     if (pending.matchesPreparedFamily(activeTrack, owner, key) &&
         pending.payloadPlan == payloadPlan &&
@@ -722,6 +723,7 @@ FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(bool mutationChan
                                              change.after)
             : makeStepPropertyHistoryDescriptor(pending.activeTrack, pending.step, pending.property,
                                                 change.before, change.after);
+    change.descriptor.clipIndex = sequencerClips.residentSlot(pending.activeTrack);
     if (pending.multiStep) {
         change.descriptor.stepIndex =
             sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
@@ -924,6 +926,7 @@ CoreState::finishSequencerPreparedPatternEdit_(
     }
 
     descriptor.trackIndex = pending.activeTrack;
+    descriptor.clipIndex = sequencerClips.residentSlot(pending.activeTrack);
     change.descriptor = descriptor;
 
     if (sequencer::sameMusicalHistorySnapshot(change.before, change.after)) {
@@ -1071,6 +1074,7 @@ CoreState::beginOrContinueSequencerDrumHistory(
         return Outcome::Blocked;
     }
     descriptor.trackIndex = track;
+    descriptor.clipIndex = sequencerClips.residentSlot(track);
 
     auto& pending = sequencerDomain_.coalescedDrumHistory;
     if (pending.matches(descriptor)) {
@@ -1114,11 +1118,13 @@ FLASHMEM bool CoreState::sealSequencerDrumHistory(
     sequencer::SequencerHistoryDescriptor descriptor
 ) {
     auto& pending = sequencerDomain_.coalescedDrumHistory;
+    descriptor.clipIndex = pending.key.clipIndex;
     if (!pending.pending || pending.sealed || !pending.change ||
         !pending.matches(descriptor)) {
         return false;
     }
     descriptor.trackIndex = pending.change->trackIndex;
+    descriptor.clipIndex = pending.key.clipIndex;
     if (pending.key.kind ==
             sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit &&
         pending.key.stepIndex != descriptor.stepIndex) {
@@ -1232,6 +1238,7 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
                             : abandonUnsafeSequencerPatternHistory_("CC Lane rollback failed");
         }
 
+        change->descriptor.clipIndex = sequencerClips.residentSlot(targetTrack);
         pending.clear();
         sequencerHistory.recordPreparedPattern(std::move(change));
         markSequencerProjectMutated_();
@@ -1268,6 +1275,7 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
     auto synchronization = std::move(pending.synchronization);
     pending.clear();
     change->clearPreparedPayloadOwnerProof();
+    change->descriptor.clipIndex = sequencerClips.residentSlot(targetTrack);
 
     if (activeTarget) {
         sequencer::publishPreparedActiveTrackSynchronization(
@@ -1391,6 +1399,7 @@ CoreState::applySequencerPreparedQuickControlsEdit(
     }
 
     descriptor.trackIndex = activeTrack;
+    descriptor.clipIndex = sequencerClips.residentSlot(activeTrack);
     change.descriptor = descriptor;
     if (sequencer::sameMusicalHistorySnapshot(change.before, change.after)) {
         clearPreparedSequencerPatternEditWithoutLiveRestore_();

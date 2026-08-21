@@ -10,6 +10,7 @@
 #include "state/project/ProjectState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
 
 namespace core::state {
 struct CoreState;
@@ -28,6 +29,7 @@ struct ProjectSnapshot {
         core::state::modulation::ProjectControlDomainState
     > projectControl;
     core::state::sequencer::SequencerHistoryTrackBankSnapshot sequencer{};
+    core::state::sequencer::SequencerClipGridSnapshot clips{};
     core::app::ExtmemUniquePtr<
         core::state::sequencer::DrumTrackBankSnapshot
     > drumTracks;
@@ -88,6 +90,7 @@ private:
         AUTOMATION,
         SEQUENCER_GRAPH,
         SEQUENCER_DATA,
+        SEQUENCER_CLIPS,
         COMPLETE,
     };
 
@@ -122,6 +125,7 @@ private:
     uint32_t automation_offset_ = 0U;
     uint8_t macro_track_ = 0U;
     uint8_t sequencer_track_ = 0U;
+    uint16_t sequencer_clip_cell_ = 0U;
     uint8_t frozen_active_track_ = 0U;
     uint16_t frozen_drum_track_mask_ = 0U;
     uint8_t frozen_focused_step_ = 0U;

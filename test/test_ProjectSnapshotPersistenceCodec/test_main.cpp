@@ -91,6 +91,13 @@ project::ProjectSnapshot makeSnapshot() {
 
     snapshot.sequencer.flat.enabledMask = snapshot.sharedTrackEnabledMask;
     snapshot.sequencer.flat.activeTrack = snapshot.sharedTrackActive;
+    for (uint8_t track = 0U;
+         track < sequencer::SequencerClipGridState::TRACK_COUNT;
+         ++track) {
+        if ((snapshot.sharedTrackEnabledMask & static_cast<uint16_t>(1U << track)) != 0U) {
+            snapshot.clips.residentSlots[track] = 0U;
+        }
+    }
     snapshot.sequencer.flat.tracks[6].note[0] = 64U;
     snapshot.sequencer.flat.tracks[6].velocity[0] = 103U;
     snapshot.drumTracks = core::app::makeExtmemUnique<
@@ -151,6 +158,47 @@ project::ProjectSnapshot makeSnapshot() {
         snapshot.sequencer.flat.tracks[6U]
     );
     snapshot.sequencer.editorGraph = std::move(advanced.pattern.graph);
+
+    sequencer::SequencerPatternState inactiveInstrument{};
+    inactiveInstrument.reset();
+    assert(inactiveInstrument.setStepNoteAt(0U, 71U));
+    inactiveInstrument.setEnabled(0U, true);
+    assert(sequencer::createMicroSequence(
+        inactiveInstrument,
+        sequencer::rootStepNodeId(0U),
+        2U
+    ).ok);
+    sequencer::SequencerClipState inactiveInstrumentClip{};
+    sequencer::SequencerClipDocumentPtr inactiveInstrumentDocument;
+    assert(sequencer::captureSequencerClipDocument(
+        inactiveInstrument,
+        inactiveInstrumentClip,
+        sequencer::SequencerTrackKind::INSTRUMENT,
+        nullptr,
+        inactiveInstrumentDocument
+    ));
+    snapshot.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ] = std::move(inactiveInstrumentDocument);
+
+    sequencer::SequencerPatternState inactiveDrumPattern{};
+    inactiveDrumPattern.reset();
+    sequencer::DrumTrackState inactiveDrum{};
+    inactiveDrum.reset();
+    assert(inactiveDrum.pattern.setStepEnabled(0U, 2U, true));
+    assert(inactiveDrum.pattern.setStepVelocity(0U, 2U, 117U));
+    sequencer::SequencerClipState inactiveDrumClip{};
+    sequencer::SequencerClipDocumentPtr inactiveDrumDocument;
+    assert(sequencer::captureSequencerClipDocument(
+        inactiveDrumPattern,
+        inactiveDrumClip,
+        sequencer::SequencerTrackKind::DRUM,
+        &inactiveDrum,
+        inactiveDrumDocument
+    ));
+    snapshot.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({6U, 2U})
+    ] = std::move(inactiveDrumDocument);
     return snapshot;
 }
 
@@ -324,6 +372,19 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     );
     assert(cycleNode != nullptr);
     assert(cycleNode->gateOffset == 17);
+    assert(loaded.clips.residentSlots[6U] == 0U);
+    const auto* loadedInstrumentClip = loaded.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ].get();
+    assert(loadedInstrumentClip != nullptr);
+    assert(loadedInstrumentClip->pattern.note[0U] == 71U);
+    assert(loadedInstrumentClip->graph != nullptr);
+    const auto* loadedDrumClip = loaded.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({6U, 2U})
+    ].get();
+    assert(loadedDrumClip != nullptr && loadedDrumClip->drum != nullptr);
+    assert(loadedDrumClip->drum->pattern.stepEnabled(0U, 2U));
+    assert(loadedDrumClip->drum->pattern.lanes[0U].velocity[2U] == 117U);
     assert(sameTracks(loaded.projectTracks, source.projectTracks));
 
     std::cout << "[PASS] current snapshot round-trip is deterministic\n";

@@ -571,6 +571,17 @@ FLASHMEM bool fillPatternPayload(const sequencer::SequencerPatternState& source,
            writer.offset() == PATTERN_PAYLOAD_SIZE;
 }
 
+FLASHMEM bool fillPatternPayload(
+    const sequencer::SequencerPatternSnapshot& source,
+    uint8_t* out,
+    uint16_t capacity
+) {
+    if (capacity != PATTERN_PAYLOAD_SIZE) return false;
+    binary::Writer writer(out, capacity);
+    return writePattern(writer, patternEncodeView(source)) &&
+           writer.ok() && writer.offset() == PATTERN_PAYLOAD_SIZE;
+}
+
 FLASHMEM bool applyPatternPayload(const uint8_t* data,
                                   uint16_t size,
                                   sequencer::SequencerPatternState& target) {

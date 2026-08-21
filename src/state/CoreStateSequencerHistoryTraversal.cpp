@@ -69,6 +69,13 @@ FLASHMEM const char* historyActionLabel(sequencer::SequencerHistoryActionKind ki
             return "Drum Step Content";
         case sequencer::SequencerHistoryActionKind::DrumLaneContent:
             return "Drum Lane Content";
+        case sequencer::SequencerHistoryActionKind::PatternPreset:
+            return "Pattern Preset";
+        case sequencer::SequencerHistoryActionKind::ClipCreate: return "Create Clip";
+        case sequencer::SequencerHistoryActionKind::ClipDelete: return "Remove Clip";
+        case sequencer::SequencerHistoryActionKind::ClipMove: return "Move Clip";
+        case sequencer::SequencerHistoryActionKind::ClipDuplicate:
+            return "Duplicate Clip";
         case sequencer::SequencerHistoryActionKind::PatternEdit:
         default: return "Pattern Edit";
     }
@@ -342,6 +349,7 @@ FLASHMEM bool CoreState::traversePreparedSequencerStructureHistory_(
         sequencer,
         pages,
         std::move(prepared));
+    sequencerClips.synchronizeEnabledTracks(sequencerTracks.currentEnabledMask());
     if (hasActivation) {
         sequencerTrackActivations.commitHistoryTransition(transition);
     }
@@ -378,8 +386,8 @@ FLASHMEM bool CoreState::traverseGenericSequencerHistory_(
 
     const uint8_t activeTrackBefore = sequencerTracks.activeTrackIndex();
     const auto result = direction == sequencer::SequencerHistoryDirection::Undo
-        ? sequencerHistory.undoWithResult(sequencerTracks, sequencer)
-        : sequencerHistory.redoWithResult(sequencerTracks, sequencer);
+        ? sequencerHistory.undoWithResult(sequencerTracks, sequencer, sequencerClips)
+        : sequencerHistory.redoWithResult(sequencerTracks, sequencer, sequencerClips);
     if (!result.applied) {
         if (hasActivation) {
             sequencerTrackActivations.rollbackHistoryTransition(transition);

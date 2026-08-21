@@ -82,6 +82,7 @@ FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
 FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
+    state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     if (!sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer)) {
         OC_LOG_ERROR("[CoreState] Failed to initialize sequencer track bank");
     }
@@ -167,6 +168,7 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
 
     state.sequencer.reset();
     state.sequencerTracks.reset();
+    state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     if (!sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer)) {
         OC_LOG_ERROR("[CoreState] Failed to initialize sequencer track bank");
     }
