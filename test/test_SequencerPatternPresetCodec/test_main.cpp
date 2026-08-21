@@ -227,7 +227,9 @@ void testStrictEnvelopeAndIntegrity() {
     assert(status == seq::SequencerPatternPresetStatus::INVALID_FORMAT);
 
     corrupt = bytes;
-    corrupt[4] = 0U;
+    corrupt[4] = static_cast<uint8_t>(
+        seq::SequencerPatternPresetMetadata::CURRENT_FORMAT_VERSION - 1U
+    );
     assert(!codec::decode(
         corrupt.data(),
         encoded.bytesWritten,

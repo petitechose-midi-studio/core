@@ -45,6 +45,16 @@ uint16_t pageBit(uint8_t page) {
     return static_cast<uint16_t>(1U << page);
 }
 
+template <size_t Size>
+void copyText(std::array<char, Size>& destination, const char* source) {
+    static_assert(Size > 0U);
+    destination.fill('\0');
+    if (source == nullptr) return;
+    size_t length = 0U;
+    while (length + 1U < Size && source[length] != '\0') ++length;
+    std::memcpy(destination.data(), source, length);
+}
+
 FLASHMEM bool inlinePitchFeedbackStep(
     const core::state::sequencer::SequencerState& sequencer,
     uint8_t& step
@@ -358,10 +368,8 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                    drumUi.drumTrack->kit.laneCount &&
                sequencer.contentView.drumOwnerLane <
                    core::state::sequencer::DRUM_MAX_LANES) {
-        std::snprintf(
-            badgeText.data(),
-            badgeText.size(),
-            "%s",
+        copyText(
+            badgeText,
             core::state::sequencer::drumLaneDisplayName(
                 drumUi.drumTrack->kit.lanes[
                     sequencer.contentView.drumOwnerLane]
@@ -386,18 +394,11 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         }
     } else if (focusingStep) {
         if (tonalPitchText[0] != '\0') {
-            std::snprintf(
-                badgeText.data(),
-                badgeText.size(),
-                "%s",
-                tonalPitchText.data()
-            );
+            copyText(badgeText, tonalPitchText.data());
         }
     } else if (trackPasteDetailsAvailable) {
-        std::snprintf(
-            badgeText.data(),
-            badgeText.size(),
-            "%s",
+        copyText(
+            badgeText,
             trackPaste.detailVisible ? "LC Close" : "LC Details"
         );
     } else if (!anySelection) {
@@ -405,12 +406,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         if (badge[0] != '\0' && std::strcmp(badge, leftText) == 0) {
             badge = "Copied";
         }
-        std::snprintf(
-            badgeText.data(),
-            badgeText.size(),
-            "%s",
-            badge
-        );
+        copyText(badgeText, badge);
     }
 
     if (inlinePitchFeedback && tonalPitchText[0] != '\0') {
@@ -426,12 +422,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
 
     if (sequencer.patternPresetPreview.active()) {
         const bool queued = sequencer.patternPresetPreview.queued();
-        std::snprintf(
-            badgeText.data(),
-            badgeText.size(),
-            "%s",
-            sequencer.patternPresetPreview.name.data()
-        );
+        copyText(badgeText, sequencer.patternPresetPreview.name.data());
         std::snprintf(
             pageText.data(),
             pageText.size(),

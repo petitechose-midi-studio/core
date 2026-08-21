@@ -63,6 +63,11 @@ struct SequencerPatternPresetLocation {
 };
 
 bool sequencerPatternPresetFolderNameIsValid(const char* folderName);
+bool formatSequencerPatternPresetFolderId(
+    const char* folderName,
+    char* out,
+    size_t outSize
+);
 bool formatSequencerPatternPresetDirectory(
     const SequencerPatternPresetLocation& location,
     char* out,
@@ -70,7 +75,8 @@ bool formatSequencerPatternPresetDirectory(
 );
 
 struct SequencerPatternPresetMetadata {
-    static constexpr uint8_t CURRENT_FORMAT_VERSION = 1U;
+    // V2 is content-only: playback placement belongs to the destination Clip.
+    static constexpr uint8_t CURRENT_FORMAT_VERSION = 2U;
 
     uint8_t formatVersion = CURRENT_FORMAT_VERSION;
     SequencerTrackKind trackKind = SequencerTrackKind::INSTRUMENT;

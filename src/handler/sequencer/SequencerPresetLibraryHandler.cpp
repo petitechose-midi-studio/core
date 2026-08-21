@@ -144,7 +144,13 @@ FLASHMEM void SequencerStepEditHandler::handlePresetLibraryResult(
         char savedName[
             core::state::sequencer::SEQUENCER_PRESET_SEMANTIC_NAME_SIZE
         ]{};
-        std::snprintf(savedName, sizeof(savedName), "%s", name ? name : "Pattern");
+        const char* sourceName = name != nullptr ? name : "Pattern";
+        size_t nameLength = 0U;
+        while (nameLength + 1U < sizeof(savedName) &&
+               sourceName[nameLength] != '\0') {
+            savedName[nameLength] = sourceName[nameLength];
+            ++nameLength;
+        }
         returnPatternPresetWorkflowToGrid();
         sequencer_.historyFeedback.show(
             "Saved",

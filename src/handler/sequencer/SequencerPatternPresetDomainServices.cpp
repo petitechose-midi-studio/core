@@ -595,7 +595,14 @@ FLASHMEM bool copyFactoryCategoryEntry(
         );
     if (category == nullptr) return false;
     out = {};
-    std::snprintf(out.id, sizeof(out.id), "@%s", category);
+    if (!seq::formatSequencerPatternPresetFolderId(
+            category,
+            out.id,
+            sizeof(out.id)
+        )) {
+        out = {};
+        return false;
+    }
     copyText(out.semanticName, sizeof(out.semanticName), category);
     std::snprintf(
         out.displayValue,

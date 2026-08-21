@@ -30,6 +30,21 @@ FLASHMEM bool sequencerPatternPresetFolderNameIsValid(
     return true;
 }
 
+FLASHMEM bool formatSequencerPatternPresetFolderId(
+    const char* folderName,
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0U) return false;
+    out[0] = '\0';
+    if (!sequencerPatternPresetFolderNameIsValid(folderName)) return false;
+    const size_t length = std::strlen(folderName);
+    if (length + 2U > outSize) return false;
+    out[0] = '@';
+    std::memcpy(out + 1U, folderName, length + 1U);
+    return true;
+}
+
 FLASHMEM void SequencerPatternPresetLocation::reset() {
     relativeDirectory.fill('\0');
     depth = 0U;

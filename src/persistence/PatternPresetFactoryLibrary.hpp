@@ -16,7 +16,7 @@ struct PatternPresetFactoryDescriptor {
     uint8_t laneCount = 0U;
 };
 
-/** Small immutable V1 factory pack authored in Flash. */
+/** Small immutable factory pack authored in Flash and encoded on demand. */
 class PatternPresetFactoryLibrary {
 public:
     static uint8_t count(
