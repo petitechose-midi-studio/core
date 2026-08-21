@@ -222,6 +222,8 @@ const char* sequencerContextLabel(core::state::StructureNavigationFocus focus) {
             return "Track";
         case core::state::StructureNavigationFocus::STEP:
             return "Step";
+        case core::state::StructureNavigationFocus::LANE:
+            return "Lane";
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return "Pattern";
@@ -234,6 +236,8 @@ const char* sequencerContextIcon(core::state::StructureNavigationFocus focus) {
             return standalone::icons::ROUTING;
         case core::state::StructureNavigationFocus::STEP:
             return standalone::icons::NOTE;
+        case core::state::StructureNavigationFocus::LANE:
+            return standalone::icons::DRUM_GENERIC;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return standalone::icons::LENGTH;

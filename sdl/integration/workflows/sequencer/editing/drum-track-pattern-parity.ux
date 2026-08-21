@@ -17,6 +17,11 @@
 2650 tap NAV 60
 3100 encoder NAV 1
 3450 tap NAV 60
+
+# Enter the explicit Lane scope before authoring or moving between Drum voices.
+4120 button NAV down
+4190 encoder NAV 1
+4260 button NAV up
 4350 tap MACRO_1 60
 4550 tap MACRO_5 60
 5000 encoder NAV 1
@@ -24,9 +29,10 @@
 5350 tap MACRO_7 60
 5650 capture screen drum_pattern_grid
 
-# The canonical held-NAV scope turn changes only Pattern -> Track semantics.
+# Two explicit scope turns cross Lane -> Pattern -> Track without changing the grid.
 5800 button NAV down
 5880 encoder NAV -1
+5920 encoder NAV -1
 5960 button NAV up
 6250 capture screen drum_track_grid
 

@@ -11,6 +11,7 @@
 #include <oc/impl/HostFileSystem.hpp>
 
 #include "../../src/handler/sequencer/SequencerPatternPresetDomainServices.hpp"
+#include "../../src/handler/sequencer/SequencerPatternPresetLibraryAdapter.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
@@ -525,6 +526,32 @@ void testFactoryAndUserLibrarySources() {
     std::cout << "[PASS] Factory/User sources merge and Factory stays read-only\n";
 }
 
+void testDrumPatternLibraryEntryBelongsToPatternNotLane() {
+    Harness h;
+    auto& sequencer = h.state.sequencer;
+    core::handler::SequencerPatternPresetLibraryAdapter adapter(
+        sequencer,
+        h.presets
+    );
+    const auto operations = adapter.operations();
+
+    sequencer.presetLibrary.open(
+        seq::SequencerPresetLibraryMode::LOAD,
+        seq::SequencerPresetLibraryKind::PATTERN
+    );
+    sequencer.drumSequencer.selector = seq::DrumSequencerSelector::LANE_EDITOR;
+    sequencer.drumSequencer.laneEditor.active = true;
+    assert(!operations.beginSession(operations.context));
+
+    sequencer.drumSequencer.laneEditor.active = false;
+    sequencer.drumSequencer.selector =
+        seq::DrumSequencerSelector::PATTERN_DEFAULTS;
+    assert(operations.beginSession(operations.context));
+    assert(sequencer.presetLibrary.pattern().target.valid);
+
+    std::cout << "[PASS] Drum Pattern library entry is Pattern-owned\n";
+}
+
 }  // namespace
 
 int main() {
@@ -532,6 +559,7 @@ int main() {
     testDrumApplyPreservesKitAndQueuesAtLoop();
     testDrumCompatibilityRejectsDifferentRoles();
     testFactoryAndUserLibrarySources();
+    testDrumPatternLibraryEntryBelongsToPatternNotLane();
     std::cout << "\nAll SequencerPatternPresetDomainServices tests passed.\n";
     return 0;
 }

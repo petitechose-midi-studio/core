@@ -32,18 +32,10 @@ FLASHMEM void SequencerStepEditHandler::openChordPresetLibrary() {
 }
 
 FLASHMEM void SequencerStepEditHandler::openPatternPresetLibrary() {
-    if (!sequencer_.patternEditor.active.get() &&
-        !sequencer_.drumSequencer.laneEditor.active) {
-        return;
-    }
-    if (sequencer_.drumSequencer.laneEditor.active &&
-        sequencer_.drumSequencer.laneEditor.dirty) {
-        sequencer_.historyFeedback.show(
-            "Pattern presets",
-            "Apply lane first",
-            "Draft unchanged",
-            time_provider_()
-        );
+    const bool drumPatternEditor =
+        sequencer_.drumSequencer.selector ==
+            core::state::sequencer::DrumSequencerSelector::PATTERN_DEFAULTS;
+    if (!sequencer_.patternEditor.active.get() && !drumPatternEditor) {
         return;
     }
     preset_library_auto_close_pending_ = false;
@@ -217,15 +209,13 @@ FLASHMEM void SequencerStepEditHandler::cancelPatternPresetPreview() {
 }
 
 FLASHMEM void SequencerStepEditHandler::returnPatternPresetWorkflowToGrid() {
+    const bool drumPatternEditor =
+        sequencer_.drumSequencer.selector ==
+            core::state::sequencer::DrumSequencerSelector::PATTERN_DEFAULTS;
     closePresetLibrary();
     core::state::sequencer::closePatternEditor(sequencer_);
-    if (sequencer_.drumSequencer.laneEditor.active) {
-        sequencer_.drumSequencer.cancelLaneEditor();
-    }
+    if (drumPatternEditor) sequencer_.drumSequencer.applySelector();
     if (overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) {
-        overlays_.hide();
-    }
-    if (overlays_.isCurrent(core::ui::OverlayType::SEQ_DRUM_LANE_EDIT)) {
         overlays_.hide();
     }
     navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);

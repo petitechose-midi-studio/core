@@ -216,7 +216,7 @@ SequencerStructureEditWorkflow::canPasteDrumLaneSelection() const {
     const auto& selection = drumUi.laneSelection;
     if (!drumUi.gridVisible() || drumUi.drumTrack == nullptr ||
         navigation_focus_.get() !=
-            core::state::StructureNavigationFocus::PAGE ||
+            core::state::StructureNavigationFocus::LANE ||
         !selection.placementActive() || selection.pasteBlocked ||
         selection.clipboardRevision != structure_clipboard_.revision.get() ||
         !structure_clipboard_.hasSequencerDrumLaneSelection() ||
@@ -738,6 +738,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const 
         return sequencer_.focusedStep.get() <
                core::state::sequencer::activeContentLength(sequencer_);
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return false;
+    }
     return sequencer_.activePageCount() > 1U;
 }
 
@@ -750,6 +753,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::canPasteCurrentStructure() const {
             return canPasteDrumFocusedStep();
         }
         return canPasteFocusedStep();
+    }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return false;
     }
     return structure_clipboard_.hasSequencerPage();
 }
@@ -1616,6 +1622,9 @@ FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureShortPress() 
         resetFocusedStep(StepResetDepth::Shallow);
         return;
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return;
+    }
 
     using Action = SequencerPreparedPageStructureAction;
     constexpr auto action = Action::PageClear;
@@ -1701,6 +1710,9 @@ FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureLongPress() {
         resetFocusedStep(StepResetDepth::Deep);
         return;
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return;
+    }
 
     using Action = SequencerPreparedPageStructureAction;
     constexpr auto action = Action::PageDelete;
@@ -1768,6 +1780,9 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
             return;
         }
         copyFocusedStep();
+        return;
+    }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
         return;
     }
 

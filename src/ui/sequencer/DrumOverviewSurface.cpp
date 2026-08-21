@@ -424,6 +424,11 @@ struct DrumGridRenderContext {
     uint8_t focusedLaneNameLane = 0xFFU;
 };
 
+FLASHMEM bool laneScopeFocused(StructureNavigationFocus focus) {
+    return focus == StructureNavigationFocus::LANE ||
+        focus == StructureNavigationFocus::STEP;
+}
+
 FLASHMEM void drawLaneFocusMarker(
     const DrumGridRenderContext& context,
     lv_coord_t rowY,
@@ -1034,10 +1039,11 @@ FLASHMEM void drawDrumLaneRow(
     );
     const bool addRow = lane >= context.laneCount;
     const bool selected = addRow
-        ? addSlotFocused
+        ? addSlotFocused && laneScopeFocused(context.focus)
         : laneSelection.active
             ? lane == laneSelection.cursorLane
-            : lane == drumUi.selectedLane && !addSlotFocused;
+            : laneScopeFocused(context.focus) &&
+                lane == drumUi.selectedLane && !addSlotFocused;
     const lv_area_t& clip = context.layer->_clip_area;
     const bool headerVisible = clip.x1 < context.gridStart;
     if (headerVisible) {
@@ -1229,8 +1235,7 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
     const DrumOverviewSurfaceProps& props
 ) {
     if (!focused_lane_name_ || !props.projection ||
-        (props.navigationFocus != core::state::StructureNavigationFocus::PAGE &&
-         props.navigationFocus != core::state::StructureNavigationFocus::TRACK)) {
+        !laneScopeFocused(props.navigationFocus)) {
         hideFocusedLaneName();
         return;
     }
@@ -1380,7 +1385,12 @@ DrumOverviewSurface::captureStaticRows(
         const uint8_t lane = drumUi.visibleLane(row);
         if (lane >= laneCount) {
             hashByte(hash, 1U);
-            hashByte(hash, addSlotFocused ? SELECTED : 0U);
+            hashByte(
+                hash,
+                addSlotFocused && laneScopeFocused(props.navigationFocus)
+                    ? SELECTED
+                    : 0U
+            );
             rows[row] = hash == 0U ? 1U : hash;
             continue;
         }
@@ -1412,7 +1422,8 @@ DrumOverviewSurface::captureStaticRows(
         const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
         const bool selected = selection.active
             ? lane == selection.cursorLane
-            : lane == drumUi.selectedLane && !addSlotFocused;
+            : laneScopeFocused(props.navigationFocus) &&
+                lane == drumUi.selectedLane && !addSlotFocused;
         const bool destination =
             (selection.placementActive() || selection.moveActive()) &&
             (selection.destinationMask & laneBit) != 0U;

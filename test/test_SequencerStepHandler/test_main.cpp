@@ -8416,15 +8416,39 @@ void test_drum_track_creation_navigation_and_owners_are_independent() {
     auto& first = h.state.sequencerTracks.drumTrack(1U);
     assert(first.kit.laneCount == 0U);
 
-    // A short NAV press at Pattern is the Lane editor entry point. Empty kits
-    // create their first lane; no alternate Drum-only navigation is required.
+    // Pattern owns its defaults and Lane owns Lane creation/editing.
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::NAV);
+    assert(drumUi.selector == seq::DrumSequencerSelector::PATTERN_DEFAULTS);
+
+    // The Pattern-library hold belongs to Pattern defaults and must not expose
+    // or rotate the root context selector behind that retained editor.
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
+    assert(!h.state.sequencer.contextSelector.visible);
+    h.release(Config::ButtonID::NAV);
+    // This harness deliberately has no file-library services, so the opener
+    // stops after consuming the gesture. Close Pattern defaults, then verify
+    // that structural Back still ascends Pattern -> Track.
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(drumUi.selector == seq::DrumSequencerSelector::NONE);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     h.tap(Config::ButtonID::NAV);
     assert(drumUi.selector == seq::DrumSequencerSelector::LANE_EDITOR);
     assert(drumUi.laneEditor.mode == seq::DrumLaneEditorMode::CREATE);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(first.kit.laneCount == 1U);
     assert(drumUi.selector == seq::DrumSequencerSelector::NONE);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::LANE);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
 
     assert(drumUi.setStepEnabled(0U, 0U, true));
     assert(drumUi.setStepVelocity(0U, 0U, 91U));
@@ -8456,7 +8480,7 @@ void test_drum_lane_add_slot_is_direct_and_reorder_is_transactional() {
 
     auto& drumUi = h.state.sequencer.drumSequencer;
     auto& track = h.state.sequencerTracks.drumTrack(1U);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
 
     assert(track.kit.laneCount == 0U);
     assert(drumUi.laneAddSlotVisible());
@@ -8545,7 +8569,7 @@ void test_drum_lane_editor_draft_retarget_cancel_and_history() {
 
     auto& drumUi = h.state.sequencer.drumSequencer;
     auto& track = h.state.sequencerTracks.drumTrack(1U);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     h.tap(Config::ButtonID::NAV);
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_DRUM_LANE_EDIT);
     assert(drumUi.laneEditor.active);
@@ -8605,7 +8629,7 @@ void test_drum_lane_name_keyboard_restores_opt_normalized_contract() {
 
     auto& drumUi = h.state.sequencer.drumSequencer;
     const auto optId = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     h.tap(Config::ButtonID::NAV);
     assert(drumUi.laneEditor.active);
     assert(!seq::isDrumLaneIdentityEditorField(drumUi.laneEditor.field));
@@ -8675,7 +8699,7 @@ void test_drum_lane_identity_is_nested_resettable_and_transactional() {
 
     auto& drumUi = h.state.sequencer.drumSequencer;
     auto& lane = h.state.sequencerTracks.drumTrack(1U).kit.lanes[0U];
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     const uint8_t originalNote = lane.midiNote;
     const auto originalRole = lane.role;
     const uint8_t historyBefore = h.state.sequencerHistory.undoCount();
@@ -8733,7 +8757,7 @@ void test_drum_lane_note_audition_is_bounded_latest_wins_and_stops() {
 
     auto& drumUi = h.state.sequencer.drumSequencer;
     h.state.projectTracks.authored.midiChannels[1U] = 9U;
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     h.tap(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(drumUi.laneEditor.field == seq::DrumLaneEditorField::NOTE);
@@ -8797,7 +8821,7 @@ void test_drum_lane_rhythm_is_live_coalesced_and_cancelable() {
 
     auto& drumUi = h.state.sequencer.drumSequencer;
     auto& track = h.state.sequencerTracks.drumTrack(1U);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     assert(track.pattern.effectiveLength(0U) == 8U);
     assert(
         track.pattern.lanes[0U].timing.mode ==
@@ -8915,7 +8939,7 @@ void test_drum_overview_multi_step_property_edit_is_one_history_gesture() {
 
     auto& drumUi = h.state.sequencer.drumSequencer;
     auto& track = h.state.sequencerTracks.drumTrack(1U);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     drumUi.property = seq::DrumSequencerProperty::PROBABILITY;
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
@@ -9383,7 +9407,7 @@ void test_drum_pattern_lane_content_selection_preserves_lane_identity() {
     const auto destinationDescriptor4 = track.kit.lanes[4U];
     const auto destinationDescriptor5 = track.kit.lanes[5U];
 
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(drumUi.selectedLane == 1U);
     h.press(Config::ButtonID::NAV);
@@ -9497,7 +9521,7 @@ void test_drum_pattern_lane_move_is_direct_cancelable_and_undoable() {
     const auto movedDescriptor = track.kit.lanes[1U];
     const auto displacedDescriptor = track.kit.lanes[3U];
 
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     drumUi.moveLane(1.0f);
     assert(drumUi.selectedLane == 1U);
     h.press(Config::ButtonID::NAV);

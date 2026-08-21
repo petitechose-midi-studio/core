@@ -14,7 +14,7 @@
 # Expect: semantic:lane_identity_reset_action:property=preset_defaults, semantic:lane_identity_reset:effect=reset_drum_lane_identity, semantic:lane_identity_reset:dirty=true
 # Expect: semantic:lane_editor_root_after_reset:property=identity, semantic:lane_editor_root_after_reset:effect=leave_drum_lane_identity
 # Expect: semantic:pattern_overview:view=sequencer, semantic:pattern_overview:overlay=none, semantic:pattern_overview:shared_track=1
-# Expect: semantic:step_focus:mode=sequencer.step, semantic:step_focus:target=step, semantic:step_focus:target_index=0
+# Expect: semantic:step_focus:mode=sequencer.context_selector, semantic:step_focus:target=step, semantic:step_focus:effect=apply_context
 # Expect: semantic:per_lane_playheads:playing=true, semantic:per_lane_playheads:effect=transport_start
 # Expect: capture_changed:step_focus=step_two_focused, capture_changed:step_editor_state=micro_action, capture_changed:micro_action=micro_child
 # Expect: capture_changed:micro_child=micro_child_edited, capture_changed:advanced_root=overview_advanced_marker
@@ -48,17 +48,20 @@
 3450 tap NAV 60
 4200 capture screen pattern_overview
 
-# The new Drum Track enters Pattern focus. NAV changes lane and the eight
-# macro buttons author visible hits without opening another screen.
-4350 tap MACRO_1 60
-4550 tap MACRO_5 60
+# The new Drum Track enters Pattern focus. One explicit scope turn enters Lane;
+# NAV then changes Lane and the eight macro buttons author visible hits.
+4250 button NAV down
+4310 encoder NAV 1
+4370 button NAV up
+4450 tap MACRO_1 60
+4650 tap MACRO_5 60
 4850 capture screen kick_programmed
 5000 encoder NAV 1
 5150 tap MACRO_3 60
 5350 tap MACRO_7 60
 5650 capture screen snare_programmed
 
-# A short NAV at Pattern opens the compact root. Identity is an explicit child;
+# A short NAV at Lane opens the compact root. Identity is an explicit child;
 # Name reuses the shared keyboard and Color remains a draft until Apply.
 5800 tap NAV 60
 6150 capture screen lane_editor_root
@@ -134,7 +137,7 @@
 17900 tap LEFT_TOP 60
 18300 capture screen overview_advanced_marker
 
-# Re-open the same root Step and enter Cycle through the adjacent shared row.
+# Return from Lane to the same root Step and enter Cycle through the adjacent shared row.
 # The child uses the same Drum-lane presentation as Micro: fixed lane pitch,
 # compact rhythm geometry and no melodic Pitch/Chord detour.
 18500 button NAV down

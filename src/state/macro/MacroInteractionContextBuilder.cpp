@@ -11,9 +11,11 @@ namespace structure_slots = core::state::shared;
 FLASHMEM core::state::StructureNavigationFocus effectiveMacroNavigationFocus(
     core::state::StructureNavigationFocus requestedFocus
 ) {
-    // Track, Page and Macro are first-class hot-surface contexts selected by
-    // the shared press/hold/turn/release gesture.
-    return requestedFocus;
+    // Lane exists only in the Drum Pattern workspace. Macro shares the focus
+    // signal but keeps its own Track/Page/Slot vocabulary.
+    return requestedFocus == core::state::StructureNavigationFocus::LANE
+        ? core::state::StructureNavigationFocus::PAGE
+        : requestedFocus;
 }
 
 namespace {

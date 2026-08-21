@@ -67,6 +67,10 @@ const char* iconForLeftAction(
         case InteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR:
         case InteractionAction::APPLY_PATTERN_DIMENSION_SELECTOR:
             return patternIcon;
+        case InteractionAction::OPEN_LANE_DIMENSION_SELECTOR:
+            return patternIcon;
+        case InteractionAction::OPEN_LANE_PROPERTY_SELECTOR:
+            return propertyIcon;
         case InteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
         case InteractionAction::APPLY_MUSICAL_PROPERTY_SELECTOR:
             return propertyIcon;
@@ -166,6 +170,10 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
 
         const bool stepFocus = focus ==
             core::state::StructureNavigationFocus::STEP;
+        const bool laneFocus = focus ==
+            core::state::StructureNavigationFocus::LANE;
+        const bool patternFocus = focus ==
+            core::state::StructureNavigationFocus::PAGE;
         const bool trackFocus = focus ==
             core::state::StructureNavigationFocus::TRACK;
         if (drumUi.selector == core::state::sequencer::
@@ -214,10 +222,7 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                 visual::buildDrumPropertyVisual(drumUi.property).icon,
                 Visual::ACTIVE
             );
-        } else if (trackFocus) {
-            // Pattern defaults remain reachable until their dedicated Track
-            // editor row lands, but the strip must describe the actual action
-            // instead of advertising lane dimensions and a dead third slot.
+        } else if (patternFocus) {
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
                 drumUi.patternDefaultField == core::state::sequencer::
                         DrumPatternDefaultField::DIVISION
@@ -225,7 +230,7 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                     : standalone::icons::LENGTH,
                 Visual::ACTIVE
             );
-        } else {
+        } else if (laneFocus) {
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
                 drumDimensionIcon(drumUi.dimension),
                 Visual::ACTIVE
@@ -234,6 +239,9 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                 visual::buildDrumPropertyVisual(drumUi.property).icon,
                 Visual::ACTIVE
             );
+        } else if (trackFocus) {
+            props.slots[1].visualState = Visual::HIDDEN;
+            props.slots[2].visualState = Visual::HIDDEN;
         }
         return props;
     }

@@ -1,13 +1,13 @@
-# Drum lane structure acceptance path: a visible Pattern-level add target,
+# Drum lane structure acceptance path: a visible Lane-level add target,
 # direct creation and an explicit, transactional reorder preview.
 # Expect: capture_changed:kit_empty=empty_pattern_add_lane, capture_changed:empty_pattern_add_lane=lane_create_first
 # Expect: capture_changed:lane_create_first=first_lane, capture_changed:first_lane=add_lane_focused
 # Expect: capture_changed:add_lane_focused=lane_create_second, capture_changed:lane_create_second=two_lanes
 # Expect: capture_changed:two_lanes=reorder_preview, capture_changed:reorder_preview=reordered_overview
-# Expect: semantic:empty_pattern_add_lane:mode=sequencer.drum_pattern, semantic:empty_pattern_add_lane:target=drum_lane, semantic:empty_pattern_add_lane:target_index=0, semantic:empty_pattern_add_lane:target_count=0, semantic:empty_pattern_add_lane:property=add_slot
+# Expect: semantic:empty_pattern_add_lane:mode=sequencer.context_selector, semantic:empty_pattern_add_lane:target=lane, semantic:empty_pattern_add_lane:effect=apply_context, semantic:empty_pattern_add_lane:property=context
 # Expect: semantic:lane_create_first:mode=sequencer.drum_lane_edit, semantic:lane_create_first:draft_kind=drum_lane_create, semantic:lane_create_first:target_index=0, semantic:lane_create_first:draft_active=true
 # Expect: semantic:first_lane:effect=apply_drum_lane_draft, semantic:first_lane:intent=apply, semantic:first_lane:published=true
-# Expect: semantic:add_lane_focused:mode=sequencer.drum_pattern, semantic:add_lane_focused:target_index=1, semantic:add_lane_focused:target_count=1, semantic:add_lane_focused:property=add_slot
+# Expect: semantic:add_lane_focused:mode=sequencer.drum_lane, semantic:add_lane_focused:target_index=1, semantic:add_lane_focused:target_count=1, semantic:add_lane_focused:property=add_slot
 # Expect: semantic:lane_create_second:draft_kind=drum_lane_create, semantic:lane_create_second:target_index=1, semantic:lane_create_second:draft_active=true
 # Expect: semantic:reorder_preview:mode=sequencer.drum_lane_edit, semantic:reorder_preview:property=position, semantic:reorder_preview:target_index=0, semantic:reorder_preview:dirty=true
 # Expect: semantic:reordered_overview:effect=apply_drum_lane_draft, semantic:reordered_overview:intent=apply, semantic:reordered_overview:published=true
@@ -30,7 +30,12 @@
 2650 tap NAV 60
 2950 capture screen kit_empty
 3100 tap NAV 60
-3500 encoder NAV 1
+
+# Pattern and Lane are distinct scopes. Enter Lane explicitly before operating
+# on authored Lanes or the virtual add slot.
+3400 button NAV down
+3470 encoder NAV 1
+3540 button NAV up
 3900 capture screen empty_pattern_add_lane
 
 # The visible plus is the only creation affordance. Short NAV opens Create and

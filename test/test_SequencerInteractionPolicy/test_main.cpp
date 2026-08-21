@@ -48,6 +48,17 @@ void expectsRootFocusMatrix() {
     assert(pattern.leftCenterVisibility == Visibility::ACTIVE);
     assert(pattern.leftBottomVisibility == Visibility::ACTIVE);
 
+    auto lane = buildSequencerInteractionPolicy(baseContext(Focus::LANE));
+    assert(lane.scope == Scope::LANE);
+    assert(lane.navTurn == Action::MOVE_LANE);
+    assert(lane.navTap == Action::OPEN_LANE_EDITOR);
+    assert(lane.navLongPress == Action::ENTER_SELECTION);
+    assert(lane.optTurn == Action::EDIT_LANE_DIMENSION);
+    assert(lane.leftCenterPress == Action::OPEN_LANE_DIMENSION_SELECTOR);
+    assert(lane.leftBottomPress == Action::OPEN_LANE_PROPERTY_SELECTOR);
+    assert(lane.bottomLeftVisibility == Visibility::HIDDEN);
+    assert(lane.bottomRightVisibility == Visibility::HIDDEN);
+
     auto step = buildSequencerInteractionPolicy(baseContext(Focus::STEP));
     assert(step.scope == Scope::STEP);
     assert(step.navTurn == Action::MOVE_STEP);

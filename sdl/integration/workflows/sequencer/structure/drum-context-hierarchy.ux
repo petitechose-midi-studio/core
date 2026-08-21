@@ -1,0 +1,74 @@
+# Canonical Drum root hierarchy: Track -> Pattern -> Lane -> Step.
+# Purpose: proves that each semantic owner has one explicit scope, its own
+# editor entry, and one-level Back behavior. Pattern Presets are reachable only
+# from Pattern; Lane edit and Step edit remain local to their respective scopes.
+# Expect: capture_changed:pattern_context=lane_context, capture_changed:lane_context=lane_editor
+# Expect: capture_changed:lane_editor=lane_restored, capture_changed:lane_restored=step_context
+# Expect: capture_changed:step_context=step_editor, capture_changed:step_editor=step_restored
+# Expect: capture_changed:step_restored=lane_back, capture_changed:lane_back=pattern_back
+# Expect: capture_changed:pattern_editor=pattern_library, capture_match:pattern_editor=pattern_editor_returned
+# Expect: capture_changed:pattern_editor_returned=pattern_returned, capture_changed:pattern_returned=track_back
+# Expect: semantic:lane_context:mode=sequencer.context_selector, semantic:lane_context:target=lane, semantic:lane_context:effect=apply_context
+# Expect: semantic:lane_editor:mode=sequencer.drum_lane_edit, semantic:lane_editor:target=drum_lane
+# Expect: semantic:step_context:mode=sequencer.context_selector, semantic:step_context:target=step, semantic:step_context:effect=apply_context
+# Expect: semantic:step_editor:mode=sequencer.step_edit, semantic:step_editor:target=step
+# Expect: semantic:pattern_library:mode=sequencer.pattern_preset.load, semantic:pattern_library:target=pattern
+# Expect: semantic:track_back:mode=sequencer.context_selector, semantic:track_back:target=track, semantic:track_back:effect=show_context
+
+0 scenario drum-sequencer
+
+# Create Track 2 as a General MIDI Drum Track. Creation returns to Pattern.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1530 encoder NAV 1
+1830 tap NAV 60
+2300 encoder NAV 1
+2650 tap NAV 60
+3100 encoder NAV 1
+3450 tap NAV 60
+4100 capture screen pattern_context
+
+# Pattern -> Lane. A short NAV opens Lane edit; Back returns to Lane.
+4250 button NAV down
+4320 encoder NAV 1
+4390 button NAV up
+4650 capture screen lane_context
+4800 tap NAV 60
+5200 capture screen lane_editor
+5350 tap LEFT_TOP 60
+5700 capture screen lane_restored
+
+# Lane -> Step. A short NAV opens the shared Step Editor; Back restores Step.
+5850 button NAV down
+5920 encoder NAV 1
+5990 button NAV up
+6250 capture screen step_context
+6400 tap NAV 60
+6800 capture screen step_editor
+6950 tap LEFT_TOP 60
+7300 capture screen step_restored
+
+# Grid Back ascends one owner at a time: Step -> Lane -> Pattern.
+7450 tap LEFT_TOP 60
+7750 capture screen lane_back
+7900 tap LEFT_TOP 60
+8200 capture screen pattern_back
+
+# Pattern owns its editor and Pattern Preset Library. Back unwinds each modal
+# owner before structural navigation resumes: Library -> Editor -> Pattern.
+8350 tap NAV 60
+8700 capture screen pattern_editor
+8850 button NAV down
+9950 tick
+10050 capture screen pattern_library
+10120 button NAV up
+10400 tap LEFT_TOP 60
+10800 capture screen pattern_editor_returned
+10950 tap LEFT_TOP 60
+11300 capture screen pattern_returned
+11450 tap LEFT_TOP 60
+11800 button NAV down
+11900 capture screen track_back
+12000 button NAV up

@@ -13,6 +13,7 @@ enum class SequencerContextSelectorAction : uint8_t {
     APPLY_CONTEXT,
     OPEN_TRACK_EDITOR,
     OPEN_PATTERN_EDITOR,
+    OPEN_LANE_EDITOR,
     OPEN_STEP_EDITOR,
 };
 
@@ -27,9 +28,10 @@ struct SequencerContextSelectorOutcome {
 /**
  * Allocation-free NAV gesture state machine for Sequencer contexts.
  *
- * Press reveals the current context, rotation previews Track/Pattern/Step at
- * root or Pattern/Step inside child content, and a long-press without rotation
- * transfers ownership to context-local selection.
+ * Press reveals the current context. Rotation previews Track/Pattern/Step for
+ * Instrument, Track/Pattern/Lane/Step for Drum, or Pattern/Step inside child
+ * content. A long-press without rotation transfers ownership to context-local
+ * selection.
  */
 class SequencerContextSelectorWorkflow {
 public:
@@ -40,7 +42,8 @@ public:
     void press(core::state::StructureNavigationFocus current,
                bool includeTrack = true,
                uint8_t previewTarget = 0U,
-               bool previewAddSlot = false);
+               bool previewAddSlot = false,
+               bool includeLane = false);
     /**
      * Claims an unrotated hold for context-local selection.
      *
@@ -68,14 +71,15 @@ private:
     static core::state::StructureNavigationFocus adjacent(
         core::state::StructureNavigationFocus current,
         int direction,
-        bool includeTrack
+        bool includeTrack,
+        bool includeLane
     );
 
     core::state::sequencer::SequencerContextSelectorState& state_;
     PressHoldTurnReleaseGesture gesture_{};
     // Two compact bytes preserve exact press provenance without growing the
     // ARM workflow: origin focus[0..1], add intent[2], Track availability[3],
-    // plus the complete Track/Page/Step target.
+    // Lane availability[4], plus the complete target.
     uint8_t press_context_ = 0U;
     uint8_t press_target_ = 0U;
 };

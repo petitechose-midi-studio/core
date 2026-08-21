@@ -147,12 +147,28 @@ void test_step_focus_requires_typed_slot_clipboard() {
     std::cout << "[PASS] test_step_focus_requires_typed_slot_clipboard\n";
 }
 
+void test_drum_lane_focus_normalizes_to_macro_page() {
+    Harness h;
+    h.pages.setPageEnabled(1, true);
+    h.clipboard.kind.set(core::state::StructureClipboardKind::MACRO_PAGE);
+
+    const auto context = core::state::macro::buildMacroInteractionContext(
+        h.source(StructureNavigationFocus::LANE)
+    );
+    assert(context.navigationFocus == StructureNavigationFocus::PAGE);
+    assert(context.compatibleClipboardAvailable);
+    assert(context.canRemoveStructure);
+
+    std::cout << "[PASS] test_drum_lane_focus_normalizes_to_macro_page\n";
+}
+
 }  // namespace
 
 int main() {
     test_track_focus_uses_shared_track_mask_and_clipboard();
     test_track_focus_remains_first_class_on_hot_surface();
     test_step_focus_requires_typed_slot_clipboard();
+    test_drum_lane_focus_normalizes_to_macro_page();
     std::cout << "\nAll MacroInteractionContextBuilder tests passed.\n";
     return 0;
 }

@@ -80,6 +80,13 @@ void test_tap_opens_the_editor_for_each_root_context() {
     assert(result.action == Action::OPEN_TRACK_EDITOR);
     assert(result.focus == Focus::TRACK);
     assert(!state.visible);
+
+    workflow.press(Focus::LANE, true, 3U, false, true);
+    result = workflow.release();
+    assert(result.action == Action::OPEN_LANE_EDITOR);
+    assert(result.focus == Focus::LANE);
+    assert(result.previewTarget == 3U);
+    assert(!state.visible);
 }
 
 void test_tap_preserves_preview_intent_and_rejects_external_focus_drift() {
@@ -165,6 +172,32 @@ void test_child_selector_cycles_pattern_and_step_without_track() {
     workflow.press(Focus::TRACK, false);
     assert(state.previewFocus == Focus::PAGE);
     workflow.cancel();
+
+    // Lane is Drum-root-only and is normalized out of child content.
+    workflow.press(Focus::LANE, false, 0U, false, true);
+    assert(state.previewFocus == Focus::PAGE);
+    workflow.cancel();
+}
+
+void test_drum_root_selector_cycles_all_four_contexts() {
+    core::state::sequencer::SequencerContextSelectorState state;
+    core::handler::SequencerContextSelectorWorkflow workflow(state);
+
+    workflow.press(Focus::TRACK, true, 0U, false, true);
+    assert(workflow.turn(1.0f));
+    assert(state.previewFocus == Focus::PAGE);
+    assert(workflow.turn(1.0f));
+    assert(state.previewFocus == Focus::LANE);
+    assert(workflow.turn(1.0f));
+    assert(state.previewFocus == Focus::STEP);
+    assert(workflow.turn(1.0f));
+    assert(state.previewFocus == Focus::TRACK);
+    workflow.cancel();
+
+    // Instrument roots never expose a stale Drum Lane focus.
+    workflow.press(Focus::LANE);
+    assert(state.previewFocus == Focus::PAGE);
+    assert(workflow.release().action == Action::OPEN_PATTERN_EDITOR);
 }
 
 }  // namespace
@@ -177,6 +210,7 @@ int main() {
     test_tap_preserves_preview_intent_and_rejects_external_focus_drift();
     test_exact_target_and_hidden_state_fail_closed();
     test_child_selector_cycles_pattern_and_step_without_track();
+    test_drum_root_selector_cycles_all_four_contexts();
     std::cout << "All SequencerContextSelectorWorkflow tests passed.\n";
     return 0;
 }

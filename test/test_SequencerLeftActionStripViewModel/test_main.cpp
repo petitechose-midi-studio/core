@@ -82,10 +82,46 @@ void test_selector_strip_projection_contract() {
     std::cout << "[PASS] Left selector strip projection contract\n";
 }
 
+void test_drum_pattern_lane_and_step_actions_are_distinct() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    assert(state.sequencerTracks.setTrackKind(
+        0U,
+        core::state::sequencer::SequencerTrackKind::DRUM,
+        true,
+        core::state::sequencer::DrumKitPreset::GENERAL_MIDI
+    ));
+    auto& drum = state.sequencer.drumSequencer;
+    drum.bindTrack(0U, state.sequencerTracks.drumTrack(0U), state.sequencerTracks);
+    drum.enterGrid();
+
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    auto props = core::ui::sequencer::buildSequencerLeftActionStripProps(
+        sourceFor(state)
+    );
+    assert(props.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[1].icon == standalone::icons::LENGTH);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
+
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::LANE);
+    props = core::ui::sequencer::buildSequencerLeftActionStripProps(sourceFor(state));
+    assert(props.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[1].icon == standalone::icons::LENGTH);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    props = core::ui::sequencer::buildSequencerLeftActionStripProps(sourceFor(state));
+    assert(props.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
+
+    std::cout << "[PASS] Drum Pattern/Lane/Step action strips are distinct\n";
+}
+
 }  // namespace
 
 int main() {
     test_selector_strip_projection_contract();
+    test_drum_pattern_lane_and_step_actions_are_distinct();
     std::cout << "\nAll Sequencer left-action-strip tests passed.\n";
     return 0;
 }

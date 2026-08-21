@@ -327,6 +327,25 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
             policy.bottomLeftTap = Action::MUTE_CURRENT_TRACK;
             break;
 
+        case Focus::LANE:
+            policy.scope = Scope::LANE;
+            policy.navTurn = Action::MOVE_LANE;
+            policy.navTap = Action::OPEN_LANE_EDITOR;
+            policy.navLongPress = Action::ENTER_SELECTION;
+            policy.optTurn = Action::EDIT_LANE_DIMENSION;
+            policy.leftTopTap = Action::NONE;
+            policy.leftCenterPress = Action::OPEN_LANE_DIMENSION_SELECTOR;
+            policy.leftBottomPress = Action::OPEN_LANE_PROPERTY_SELECTOR;
+            policy.leftCenterVisibility = Visibility::ACTIVE;
+            policy.leftBottomVisibility = Visibility::ACTIVE;
+            policy.bottomLeftTap = Action::NONE;
+            policy.bottomLeftHold = Action::NONE;
+            policy.bottomRightTap = Action::NONE;
+            policy.bottomRightHold = Action::NONE;
+            policy.bottomLeftVisibility = Visibility::HIDDEN;
+            policy.bottomRightVisibility = Visibility::HIDDEN;
+            break;
+
         case Focus::PAGE:
         default:
             policy.scope = childContentView ? Scope::CHILD_PATTERN : Scope::PATTERN;
@@ -408,6 +427,7 @@ FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
             return Intent::NONE;
         case SequencerInteractionAction::MOVE_TRACK:
         case SequencerInteractionAction::MOVE_PATTERN:
+        case SequencerInteractionAction::MOVE_LANE:
         case SequencerInteractionAction::MOVE_STEP:
         case SequencerInteractionAction::MOVE_SELECTION_CURSOR:
         case SequencerInteractionAction::SELECT_PATTERN_DIMENSION:
@@ -421,10 +441,13 @@ FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
         case SequencerInteractionAction::APPLY_STEP_EDITOR:
         case SequencerInteractionAction::OPEN_TRACK_EDITOR:
         case SequencerInteractionAction::OPEN_PATTERN_EDITOR:
+        case SequencerInteractionAction::OPEN_LANE_EDITOR:
         case SequencerInteractionAction::OPEN_STEP_EDITOR:
         case SequencerInteractionAction::TOGGLE_VISIBLE_STEP:
             return Intent::ACTIVATE;
         case SequencerInteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR:
+        case SequencerInteractionAction::OPEN_LANE_DIMENSION_SELECTOR:
+        case SequencerInteractionAction::OPEN_LANE_PROPERTY_SELECTOR:
         case SequencerInteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
         case SequencerInteractionAction::OPEN_STEP_CONTENT_SELECTOR:
             return Intent::OPEN_ADVANCED;
@@ -435,6 +458,7 @@ FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
         case SequencerInteractionAction::CANCEL_TRANSIENT_CONTEXT:
             return Intent::CANCEL;
         case SequencerInteractionAction::EDIT_PATTERN_DIMENSION:
+        case SequencerInteractionAction::EDIT_LANE_DIMENSION:
         case SequencerInteractionAction::EDIT_MUSICAL_PROPERTY_VARIATION:
         case SequencerInteractionAction::EDIT_STEP_PROPERTY:
         case SequencerInteractionAction::EDIT_STEP_LOCAL_RANDOM:

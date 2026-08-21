@@ -16,7 +16,7 @@ namespace core::handler {
  * Owns sequencer page/track navigation and contextual selection state.
  *
  * It previews Track add slots, switches page/track focus and enters
- * Track/Page/Step selection. Creation and destructive edits live in the
+ * Track/Pattern/Lane/Step selection. Creation and destructive edits live in the
  * corresponding edit workflows.
  */
 class SequencerStructureNavigationWorkflow {
@@ -56,6 +56,7 @@ private:
     void bindStateSync();
     void syncTrackPreviewFromActive(uint8_t activeTrack);
     void movePage(float delta);
+    void moveLane(float delta);
     void moveTrack(float delta);
     void moveStep(float delta);
     void setPagePreview(uint8_t pageIndex);

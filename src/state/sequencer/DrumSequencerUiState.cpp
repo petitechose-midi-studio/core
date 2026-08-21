@@ -355,8 +355,7 @@ FLASHMEM void DrumSequencerState::moveFocusedStep(float delta) {
 }
 
 FLASHMEM void DrumSequencerState::movePage(int direction) {
-    if (!gridVisible() || !drumTrack || laneAddSlotFocused() ||
-        direction == 0) return;
+    if (!gridVisible() || !drumTrack || direction == 0) return;
     const uint8_t pageCount = overviewPageCount();
     const int next = static_cast<int>(page) + (direction > 0 ? 1 : -1);
     page = static_cast<uint8_t>(

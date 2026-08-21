@@ -133,9 +133,13 @@ FLASHMEM void SequencerStructureNavigationWorkflow::moveByFocus(float delta) {
         case core::state::StructureNavigationFocus::STEP:
             moveStep(delta);
             return;
+        case core::state::StructureNavigationFocus::LANE:
+            moveLane(delta);
+            return;
         case core::state::StructureNavigationFocus::PAGE:
-        default:
             movePage(delta);
+            return;
+        default:
             return;
     }
 }
@@ -161,7 +165,7 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
             selection.active.set(true);
             return;
         }
-        case core::state::StructureNavigationFocus::PAGE: {
+        case core::state::StructureNavigationFocus::LANE: {
             auto& drumUi = sequencer_.drumSequencer;
             if (core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                 drumUi.drumTrack != nullptr &&
@@ -173,6 +177,9 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
                 drumUi.bump();
                 return;
             }
+            return;
+        }
+        case core::state::StructureNavigationFocus::PAGE: {
             auto& selection = sequencer_.structureUi.pageSelection;
             const uint8_t cursor = currentActiveContentPage(sequencer_);
             selection.reset(core::state::StructureSelectionScope::PAGE, cursor);
@@ -497,6 +504,11 @@ FLASHMEM void SequencerStructureNavigationWorkflow::movePage(float delta) {
         pageCount
     );
     setPagePreview(next);
+}
+
+FLASHMEM void SequencerStructureNavigationWorkflow::moveLane(float delta) {
+    if (!core::state::sequencer::isDrumOverviewActive(sequencer_)) return;
+    sequencer_.drumSequencer.moveLane(delta);
 }
 
 FLASHMEM void SequencerStructureNavigationWorkflow::moveTrack(float delta) {

@@ -492,16 +492,14 @@ FLASHMEM bool projectDrumBottomActionStrip(
         applyHoldProgress(props.slots[2], hold, pasteHold);
         return true;
     }
+    if (focus == core::state::StructureNavigationFocus::LANE) {
+        // Lane structure actions are deliberately entered through NAV hold so
+        // the same selection grammar owns copy, move and clear.
+        return true;
+    }
+    if (focus != core::state::StructureNavigationFocus::PAGE) return true;
 
-    const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(
-        drumUi.selectedLane
-    );
-    const uint8_t pageCount = std::max<uint8_t>(
-        1U,
-        static_cast<uint8_t>(
-            (length + drumUi.STEPS_PER_PAGE - 1U) / drumUi.STEPS_PER_PAGE
-        )
-    );
+    const uint8_t pageCount = drumUi.overviewPageCount();
     const Visual pagingVisual = pageCount > 1U
         ? Visual::ACTIVE
         : Visual::DISABLED;

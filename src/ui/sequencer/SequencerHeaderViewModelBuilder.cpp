@@ -105,6 +105,9 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const bool focusingStep =
         !anySelection &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP;
+    const bool focusingLane =
+        !anySelection &&
+        source.navigationFocus.get() == core::state::StructureNavigationFocus::LANE;
     const auto& trackPaste = sequencer.structureUi.trackPaste;
     const bool trackPasteDetailsAvailable =
         focusingTrack && trackPaste.inspectable() &&
@@ -195,6 +198,8 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                ? "Lanes"
                : (selectingStep || focusingStep)
                ? "Step"
+               : focusingLane
+               ? "Lane"
                : ((selectingTrack || focusingTrack) ? "Track" : "Pattern"))
         : ccLaneGrid
             ? "CC lane"
@@ -265,18 +270,24 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 drumUi.selectedLane,
                 static_cast<uint8_t>(laneCount - 1U)
             );
-            const auto& lanePattern = drumUi.drumTrack->pattern.lanes[lane];
-            headerLength = drumUi.drumTrack->pattern.effectiveLength(lane);
-            const uint8_t stepsPerBeat =
-                drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane);
-            // Length/division describe the focused Lane; pagination describes
+            const auto& pattern = drumUi.drumTrack->pattern;
+            const auto& lanePattern = pattern.lanes[lane];
+            const bool laneMetrics = focusingLane || focusingStep ||
+                selectingDrumLanes || selectingStep;
+            headerLength = laneMetrics
+                ? pattern.effectiveLength(lane)
+                : pattern.defaultLength;
+            const uint8_t stepsPerBeat = laneMetrics
+                ? pattern.effectiveStepsPerBeat(lane)
+                : pattern.defaultStepsPerBeat;
+            // Metrics follow their semantic owner; pagination always describes
             // the complete polymetric Pattern shared by every Lane row.
             const uint8_t pageCount = drumUi.overviewPageCount();
             headerActivePage = std::min<uint8_t>(
                 drumUi.page,
                 static_cast<uint8_t>(pageCount - 1U)
             );
-            if (!drumUi.laneAddSlotFocused()) {
+            if (!drumUi.laneAddSlotFocused() || !laneMetrics) {
                 std::snprintf(
                     metrics[0].value.data(),
                     metrics[0].value.size(),
@@ -289,16 +300,18 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                     metrics[1].value.size(),
                     "1/%u%s",
                     static_cast<unsigned>(stepsPerBeat * 4U),
-                    lanePattern.timing.mode == core::state::sequencer::
+                    laneMetrics && lanePattern.timing.mode == core::state::sequencer::
                             DrumLaneTimingMode::CUSTOM
                         ? "*"
                         : ""
                 );
                 metrics[1].icon = standalone::icons::DIVISION;
-                const auto propertyVisual =
-                    visual::buildDrumPropertyVisual(drumUi.property);
-                contextIcon = propertyVisual.icon;
-                contextIconColor = propertyVisual.color;
+                if (focusingLane || focusingStep) {
+                    const auto propertyVisual =
+                        visual::buildDrumPropertyVisual(drumUi.property);
+                    contextIcon = propertyVisual.icon;
+                    contextIconColor = propertyVisual.color;
+                }
                 std::snprintf(
                     pageText.data(),
                     pageText.size(),
@@ -331,7 +344,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             contextIcon = "";
             contextIconColor = 0U;
             pageText.fill('\0');
-        } else if (drumUi.laneAddSlotFocused()) {
+        } else if (focusingLane && drumUi.laneAddSlotFocused()) {
             std::snprintf(
                 badgeText.data(), badgeText.size(), "%s", "Add lane"
             );

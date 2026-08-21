@@ -187,6 +187,10 @@ FLASHMEM void SequencerStepHandler::syncDrumSequencerToActiveTrack() {
     const uint8_t activeTrack = tracks_.activeTrackIndex();
     if (!tracks_.isDrumTrack(activeTrack)) {
         drumUi.unbindTrack();
+        if (navigation_focus_.get() ==
+            core::state::StructureNavigationFocus::LANE) {
+            navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
+        }
         return;
     }
 
@@ -269,9 +273,13 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavTurn(
         case core::state::StructureNavigationFocus::STEP:
             drumUi.moveFocusedStep(delta);
             return;
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
+        case core::state::StructureNavigationFocus::LANE:
             drumUi.moveLane(delta);
+            return;
+        case core::state::StructureNavigationFocus::PAGE:
+            drumUi.movePage(delta > 0.0f ? 1 : -1);
+            return;
+        default:
             return;
     }
 }
@@ -287,16 +295,19 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavPress() {
     const bool trackFocus = focus == core::state::StructureNavigationFocus::TRACK;
     const uint8_t previewTarget = trackFocus
         ? track_ui_.previewTrackIndex.get()
-        : (focus == core::state::StructureNavigationFocus::STEP
+        : focus == core::state::StructureNavigationFocus::STEP
             ? drumUi.focusedStep
-            : (drumUi.laneAddSlotFocused()
-                ? drumUi.drumTrack->kit.laneCount
-                : drumUi.selectedLane));
+            : focus == core::state::StructureNavigationFocus::LANE
+                ? (drumUi.laneAddSlotFocused()
+                    ? drumUi.drumTrack->kit.laneCount
+                    : drumUi.selectedLane)
+                : drumUi.page;
     context_selector_workflow_.press(
         focus,
         true,
         previewTarget,
-        trackFocus && track_ui_.previewAddSlot.get()
+        trackFocus && track_ui_.previewAddSlot.get(),
+        true
     );
 }
 
@@ -319,6 +330,14 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavRelease() {
         return;
     }
     if (outcome.action == SequencerContextSelectorAction::OPEN_PATTERN_EDITOR) {
+        if (history_.commitCoalescedDrumEditOutcome() ==
+            seq::SequencerPatternHistoryCommitOutcome::Failed) {
+            return;
+        }
+        drumUi.openPatternDefaults();
+        return;
+    }
+    if (outcome.action == SequencerContextSelectorAction::OPEN_LANE_EDITOR) {
         if (drum_lane_editor_handler_ == nullptr) return;
         (void)drum_lane_editor_handler_->open(drumUi.laneAddSlotFocused());
         return;
@@ -398,6 +417,11 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerBack() {
     }
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::STEP:
+            navigation_workflow_.setNavigationFocus(
+                core::state::StructureNavigationFocus::LANE
+            );
+            break;
+        case core::state::StructureNavigationFocus::LANE:
             navigation_workflow_.setNavigationFocus(
                 core::state::StructureNavigationFocus::PAGE
             );
@@ -560,6 +584,10 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
         );
         return;
     }
+    if (navigation_focus_.get() !=
+        core::state::StructureNavigationFocus::LANE) {
+        return;
+    }
 
     switch (drumUi.dimension) {
         case seq::DrumSequencerDimension::MODE: {
@@ -708,6 +736,9 @@ FLASHMEM void SequencerStepHandler::handleContextSelectorRelease() {
                 (void)track_editor_handler_->openActiveTrack();
             }
             return;
+        case SequencerContextSelectorAction::OPEN_LANE_EDITOR:
+            // Lane is owned by the Drum-root release path.
+            return;
         case SequencerContextSelectorAction::NONE:
         default: return;
     }
@@ -736,9 +767,8 @@ FLASHMEM void SequencerStepHandler::enterSelectionModeForCurrentFocus() {
 }
 
 FLASHMEM void SequencerStepHandler::setupDrumBindings() {
-    // Drum owns its lane navigation and momentary property surfaces. Track and
-    // Step structure actions deliberately fall through to the common workflow
-    // registered below; only Pattern paging remains a prioritized exception.
+    // Drum owns its Pattern/Lane/Step navigation and momentary property
+    // surfaces. Track structure actions still delegate to the common workflow.
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
@@ -820,12 +850,12 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                 !drumUi.laneAddSlotFocused() &&
                 context_selector_workflow_.ownsGesture() &&
                 navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::PAGE;
+                    core::state::StructureNavigationFocus::LANE;
         })
         .then([this]() {
             const auto& drumUi = sequencer_.drumSequencer;
             if (!context_selector_workflow_.holdForSelection(
-                    core::state::StructureNavigationFocus::PAGE,
+                    core::state::StructureNavigationFocus::LANE,
                     drumUi.selectedLane,
                     false)) {
                 return;
@@ -865,21 +895,40 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                 core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                 !drumUi.selectorVisible() &&
                 !drumUi.laneSelection.active &&
-                !context_selector_workflow_.ownsGesture();
+                !context_selector_workflow_.ownsGesture() &&
+                navigation_focus_.get() !=
+                    core::state::StructureNavigationFocus::TRACK;
         })
         .then([this]() {
             auto& drumUi = sequencer_.drumSequencer;
             const auto focus = navigation_focus_.get();
             if (focus == core::state::StructureNavigationFocus::STEP) {
                 drumUi.openPropertySelector();
-            } else if (focus == core::state::StructureNavigationFocus::TRACK) {
+            } else if (focus == core::state::StructureNavigationFocus::PAGE) {
                 if (history_.commitCoalescedDrumEditOutcome() ==
                     seq::SequencerPatternHistoryCommitOutcome::Failed) {
                     return;
                 }
                 drumUi.openPatternDefaults();
-            } else {
+            } else if (focus ==
+                       core::state::StructureNavigationFocus::LANE) {
                 drumUi.openDimensionSelector();
+            }
+        });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .priority(120)
+        .when([this]() {
+            return step_edit_handler_ != nullptr &&
+                sequencer_.drumSequencer.selector ==
+                    seq::DrumSequencerSelector::PATTERN_DEFAULTS;
+        })
+        .then([this]() {
+            if (history_.commitCoalescedDrumEditOutcome() !=
+                seq::SequencerPatternHistoryCommitOutcome::Failed) {
+                step_edit_handler_->openPatternPresetLibrary();
             }
         });
 
@@ -910,7 +959,7 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                 !drumUi.laneSelection.active &&
                 !context_selector_workflow_.ownsGesture() &&
                 navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::PAGE;
+                    core::state::StructureNavigationFocus::LANE;
         })
         .then([this]() {
             sequencer_.drumSequencer.openPropertySelector();
@@ -924,7 +973,7 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
             return sequencer_.drumSequencer.selector ==
                     seq::DrumSequencerSelector::PROPERTY &&
                 navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::PAGE;
+                    core::state::StructureNavigationFocus::LANE;
         })
         .then([this]() { applyDrumSelector(); });
 

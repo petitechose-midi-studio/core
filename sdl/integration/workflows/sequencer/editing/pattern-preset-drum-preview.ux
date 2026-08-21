@@ -1,6 +1,6 @@
-# UX workflow: Drum Pattern Preset library from the retained Lane Editor.
-# Purpose: proves the shared Pattern library is reachable without changing the
-# short-NAV lane-edit gesture, filters Factory assets by Drum kind, and keeps
+# UX workflow: Drum Pattern Preset library from the Pattern Editor.
+# Purpose: proves the shared Pattern library is owned by Pattern rather than
+# Lane, filters Factory assets by Drum kind, and keeps
 # stopped preview reversible before one explicit confirmation.
 # Expect: capture_changed:drum_pattern_preset_all=drum_pattern_preset_factory, capture_changed:drum_pattern_preset_factory=drum_pattern_preset_factory_category, capture_changed:drum_pattern_preset_factory_category=drum_pattern_preset_detail, capture_changed:drum_pattern_preset_detail=drum_pattern_preset_preview, capture_changed:drum_pattern_preset_preview=drum_pattern_preset_confirmed
 # Expect: semantic:drum_pattern_preset_detail:mode=sequencer.pattern_preset.load.detail, semantic:drum_pattern_preset_detail:target=pattern
@@ -20,13 +20,21 @@
 2650 tap NAV 60
 3100 encoder NAV 1
 3450 tap NAV 60
+
+# Lane scope owns authoring and Lane movement.
+4100 button NAV down
+4160 encoder NAV 1
+4220 button NAV up
 4350 tap MACRO_1 60
 4550 tap MACRO_5 60
 5000 encoder NAV 1
 5150 tap MACRO_3 60
 5350 tap MACRO_7 60
 
-# Short NAV opens the Lane Editor; held NAV opens the shared Pattern library.
+# Return to Pattern, open its editor, then hold NAV for the shared Pattern library.
+5450 button NAV down
+5510 encoder NAV -1
+5570 button NAV up
 5650 tap NAV 60
 5900 button NAV down
 7000 tick

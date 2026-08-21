@@ -218,6 +218,8 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "move_track";
         case SequencerAction::MOVE_PATTERN:
             return "move_pattern";
+        case SequencerAction::MOVE_LANE:
+            return "move_lane";
         case SequencerAction::MOVE_STEP:
             return "move_step";
         case SequencerAction::MOVE_SELECTION_CURSOR:
@@ -236,6 +238,10 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "toggle_selection";
         case SequencerAction::OPEN_PATTERN_DIMENSION_SELECTOR:
             return "open_pattern_dimension_selector";
+        case SequencerAction::OPEN_LANE_DIMENSION_SELECTOR:
+            return "open_lane_dimension_selector";
+        case SequencerAction::OPEN_LANE_PROPERTY_SELECTOR:
+            return "open_lane_property_selector";
         case SequencerAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
             return "open_musical_property_selector";
         case SequencerAction::OPEN_STEP_CONTENT_SELECTOR:
@@ -252,6 +258,8 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "cancel_transient_context";
         case SequencerAction::EDIT_PATTERN_DIMENSION:
             return "edit_pattern_dimension";
+        case SequencerAction::EDIT_LANE_DIMENSION:
+            return "edit_lane_dimension";
         case SequencerAction::EDIT_MUSICAL_PROPERTY_VARIATION:
             return "edit_musical_property_variation";
         case SequencerAction::EDIT_STEP_PROPERTY:
@@ -264,6 +272,12 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "retarget_step_editor";
         case SequencerAction::RETARGET_STEP_EDITOR_LANE:
             return "retarget_step_editor_lane";
+        case SequencerAction::OPEN_TRACK_EDITOR:
+            return "open_track_editor";
+        case SequencerAction::OPEN_PATTERN_EDITOR:
+            return "open_pattern_editor";
+        case SequencerAction::OPEN_LANE_EDITOR:
+            return "open_lane_editor";
         case SequencerAction::OPEN_STEP_EDITOR:
             return "open_step_editor";
         case SequencerAction::TOGGLE_VISIBLE_STEP:
@@ -480,6 +494,8 @@ FLASHMEM const char* modeForScope(SequencerScope scope) {
             return "sequencer.track";
         case SequencerScope::PATTERN:
             return "sequencer.pattern";
+        case SequencerScope::LANE:
+            return "sequencer.lane";
         case SequencerScope::STEP:
             return "sequencer.step";
         case SequencerScope::CHILD_PATTERN:
@@ -516,6 +532,7 @@ FLASHMEM bool policyScopeTargetsStep(SequencerScope scope) {
 FLASHMEM const char* targetForPolicyScope(SequencerScope scope) {
     if (policyScopeTargetsTrack(scope)) return "track";
     if (policyScopeTargetsStep(scope)) return "step";
+    if (scope == SequencerScope::LANE) return "lane";
     return "pattern";
 }
 
@@ -525,6 +542,7 @@ FLASHMEM const char* sequencerContextTarget(
     switch (focus) {
         case core::state::StructureNavigationFocus::TRACK: return "track";
         case core::state::StructureNavigationFocus::STEP: return "step";
+        case core::state::StructureNavigationFocus::LANE: return "lane";
         case core::state::StructureNavigationFocus::PAGE:
         default: return "pattern";
     }
@@ -749,21 +767,6 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     const bool navRelease = isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE);
     const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
     const bool contextSelectorEvent = navPress || navHold || navRelease || navTurn;
-    const bool drumPatternStructure =
-        core::state::sequencer::isDrumOverviewActive(sequencer_) &&
-        !sequencer_.drumSequencer.selectorVisible() &&
-        navigation_focus_.get() ==
-            core::state::StructureNavigationFocus::PAGE;
-    if (drumPatternStructure && contextSelectorEvent) {
-        // Drum Pattern owns NAV as Lane/+ structure navigation. Retire any
-        // cached melodic context-selector gesture so the lower Structure
-        // surface records the actual Drum target rather than stale context.
-        context_selector_seen_ = false;
-        context_selector_release_cached_ = false;
-        context_selector_rotated_ = false;
-        context_selector_held_ = false;
-        return false;
-    }
     const bool mainContextAvailable =
         !sequencer_.structureUi.stepSelection.active.get() &&
         !sequencer_.stepEdit.visible.get() &&
@@ -794,6 +797,11 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
         } else if (context_selector_target_ ==
                    core::state::StructureNavigationFocus::PAGE) {
             out.effect = "open_pattern_editor";
+            out.projection = "applied";
+            out.outcome = "applied";
+        } else if (context_selector_target_ ==
+                   core::state::StructureNavigationFocus::LANE) {
+            out.effect = "open_lane_editor";
             out.projection = "applied";
             out.outcome = "applied";
         } else {
@@ -1789,7 +1797,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
     if (core::state::sequencer::isDrumOverviewActive(sequencer_) &&
         !drumUi.selectorVisible() &&
         navigation_focus_.get() ==
-            core::state::StructureNavigationFocus::PAGE) {
+            core::state::StructureNavigationFocus::LANE) {
         const uint8_t laneCount = std::min<uint8_t>(
             drumUi.drumTrack->kit.laneCount,
             core::state::sequencer::DRUM_MAX_LANES
@@ -1835,7 +1843,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
             return true;
         }
         const bool addSlot = drumUi.laneAddSlotFocused();
-        out.mode = "sequencer.drum_pattern";
+        out.mode = "sequencer.drum_lane";
         out.target = "drum_lane";
         out.targetIndex = static_cast<int16_t>(
             addSlot ? laneCount : drumUi.selectedLane

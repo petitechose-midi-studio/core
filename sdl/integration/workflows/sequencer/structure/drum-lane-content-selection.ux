@@ -1,5 +1,5 @@
-# Drum Pattern content-selection acceptance path.
-# Purpose: proves that Pattern selection targets musical Lane content, supports
+# Drum Lane content-selection acceptance path.
+# Purpose: proves that Lane selection targets musical Lane content, supports
 # sparse source selection and contiguous placement, and never exposes Lane
 # creation/reorder semantics inside the selection workflow.
 # Expect: capture_changed:lane_selection_entered=lanes_2_4_selected, capture_changed:lanes_2_4_selected=lane_selection_placing
@@ -29,7 +29,12 @@
 3100 encoder NAV 1
 3300 capture screen kit_general_midi
 3450 tap NAV 60
-4200 capture screen pattern_overview
+3900 capture screen pattern_overview
+
+# Pattern owns the Pattern as a whole; Lane owns Lane movement and selection.
+4050 button NAV down
+4110 encoder NAV 1
+4170 button NAV up
 
 # Author distinct source rhythms on Lane 2 and Lane 4.
 4350 encoder NAV 1
@@ -41,7 +46,7 @@
 5250 encoder NAV -2
 5500 capture screen source_lanes_programmed
 
-# A stationary NAV hold enters selection at Lane 2. The paired release must
+# A stationary NAV hold in Lane scope enters selection at Lane 2. The paired release must
 # not select anything; the following short press is the first real toggle.
 5600 button NAV down
 6680 tick

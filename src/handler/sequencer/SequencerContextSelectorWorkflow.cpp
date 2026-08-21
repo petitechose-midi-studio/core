@@ -14,17 +14,21 @@ FLASHMEM void SequencerContextSelectorWorkflow::press(
     Focus current,
     bool includeTrack,
     uint8_t previewTarget,
-    bool previewAddSlot
+    bool previewAddSlot,
+    bool includeLane
 ) {
     gesture_.press();
-    state_.previewFocus = !includeTrack && current == Focus::TRACK
+    state_.previewFocus =
+        (!includeTrack && current == Focus::TRACK) ||
+            ((!includeLane || !includeTrack) && current == Focus::LANE)
         ? Focus::PAGE
         : current;
     press_target_ = previewTarget;
     press_context_ = static_cast<uint8_t>(
         (static_cast<uint8_t>(state_.previewFocus) & 0x03U) |
         (previewAddSlot ? 0x04U : 0U) |
-        (includeTrack ? 0x08U : 0U)
+        (includeTrack ? 0x08U : 0U) |
+        (includeLane ? 0x10U : 0U)
     );
     state_.visible = true;
     state_.bump();
@@ -70,7 +74,8 @@ FLASHMEM bool SequencerContextSelectorWorkflow::turn(float delta) {
     state_.previewFocus = adjacent(
         state_.previewFocus,
         direction,
-        (press_context_ & 0x08U) != 0U
+        (press_context_ & 0x08U) != 0U,
+        (press_context_ & 0x10U) != 0U
     );
     state_.bump();
     return true;
@@ -123,6 +128,16 @@ FLASHMEM SequencerContextSelectorOutcome SequencerContextSelectorWorkflow::relea
             previewAddSlot,
         };
     }
+    if (selected == Focus::LANE) {
+        state_.visible = false;
+        state_.bump();
+        return {
+            SequencerContextSelectorAction::OPEN_LANE_EDITOR,
+            selected,
+            previewTarget,
+            previewAddSlot,
+        };
+    }
 
     state_.visible = false;
     state_.bump();
@@ -152,22 +167,30 @@ FLASHMEM void SequencerContextSelectorWorkflow::cancel() {
 FLASHMEM Focus SequencerContextSelectorWorkflow::adjacent(
     Focus current,
     int direction,
-    bool includeTrack
+    bool includeTrack,
+    bool includeLane
 ) {
     if (!includeTrack) {
         return current == Focus::STEP ? Focus::PAGE : Focus::STEP;
     }
-    // Musical order is Track -> Pattern(PAGE) -> Step, with wrap.
-    constexpr Focus order[] = {Focus::TRACK, Focus::PAGE, Focus::STEP};
+    // Musical order is Track -> Pattern(PAGE) -> [Lane] -> Step, with wrap.
+    constexpr Focus order[] = {
+        Focus::TRACK,
+        Focus::PAGE,
+        Focus::LANE,
+        Focus::STEP,
+    };
+    const int count = includeLane ? 4 : 3;
     int index = 1;
-    for (int i = 0; i < 3; ++i) {
-        if (order[i] == current) {
+    for (int i = 0; i < count; ++i) {
+        const Focus candidate = includeLane || i < 2 ? order[i] : order[i + 1];
+        if (candidate == current) {
             index = i;
             break;
         }
     }
-    const int next = (index + (direction > 0 ? 1 : 2)) % 3;
-    return order[next];
+    const int next = (index + (direction > 0 ? 1 : count - 1)) % count;
+    return includeLane || next < 2 ? order[next] : order[next + 1];
 }
 
 }  // namespace core::handler

@@ -125,6 +125,12 @@ void test_selection_strip_projection_contract() {
     assert(!props.slots[2].holdActive);
 
     drum.laneSelection.reset();
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::LANE);
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(sourceFor(state));
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
+
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(sourceFor(state));
     assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);

@@ -181,7 +181,7 @@ void expects_overlay_release_to_reapply_the_main_opt_contract() {
 
 void expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid() {
     SequencerEncoderSyncHarness h;
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     assert(h.state.sequencerTracks.setTrackKind(
         0U,
         core::state::sequencer::SequencerTrackKind::DRUM,
@@ -228,6 +228,41 @@ void expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid() {
         "[PASS] expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid\n";
 }
 
+void expects_drum_pattern_defaults_to_own_opt_only_while_open() {
+    SequencerEncoderSyncHarness h;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    assert(h.state.sequencerTracks.setTrackKind(
+        0U,
+        core::state::sequencer::SequencerTrackKind::DRUM,
+        true,
+        core::state::sequencer::DrumKitPreset::GENERAL_MIDI
+    ));
+    auto& drumUi = h.state.sequencer.drumSequencer;
+    drumUi.bindTrack(
+        0U,
+        h.state.sequencerTracks.drumTrack(0U),
+        h.state.sequencerTracks
+    );
+    drumUi.enterGrid();
+    drumUi.openPatternDefaults();
+    drumUi.patternDefaultField =
+        core::state::sequencer::DrumPatternDefaultField::DIVISION;
+
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) ==
+           input_utils::STEPS_PER_BEAT_CHOICES.size());
+
+    drumUi.cancelSelector();
+    h.encoderHw.setDiscreteSteps(OPT_ENCODER_ID, 7U);
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) == 7U);
+
+    std::cout <<
+        "[PASS] expects_drum_pattern_defaults_to_own_opt_only_while_open\n";
+}
+
 }  // namespace
 
 int main() {
@@ -236,6 +271,7 @@ int main() {
     expects_pattern_focus_to_replace_the_two_state_opt_contract();
     expects_overlay_release_to_reapply_the_main_opt_contract();
     expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid();
+    expects_drum_pattern_defaults_to_own_opt_only_while_open();
 
     std::cout << "SequencerEncoderSyncCoordinator tests passed\n";
     return 0;

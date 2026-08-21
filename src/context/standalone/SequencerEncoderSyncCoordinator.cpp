@@ -154,6 +154,37 @@ FLASHMEM float drumDimensionToNormalized(
     }
 }
 
+FLASHMEM input_utils::StepPropertyEncoderConfig drumPatternDefaultEncoderConfig(
+    core::state::sequencer::DrumPatternDefaultField field
+) {
+    input_utils::StepPropertyEncoderConfig config;
+    config.discreteSteps = field ==
+            core::state::sequencer::DrumPatternDefaultField::DIVISION
+        ? static_cast<uint8_t>(input_utils::STEPS_PER_BEAT_CHOICES.size())
+        : core::state::sequencer::DRUM_MAX_STEPS;
+    return config;
+}
+
+FLASHMEM float drumPatternDefaultToNormalized(
+    const core::state::sequencer::DrumSequencerState& drumUi
+) {
+    if (!drumUi.drumTrack) return 0.0f;
+    const auto& pattern = drumUi.drumTrack->pattern;
+    if (drumUi.patternDefaultField ==
+        core::state::sequencer::DrumPatternDefaultField::DIVISION) {
+        return input_utils::indexToNormalized(
+            input_utils::findStepsPerBeatChoiceIndex(
+                pattern.defaultStepsPerBeat
+            ),
+            static_cast<int>(input_utils::STEPS_PER_BEAT_CHOICES.size())
+        );
+    }
+    return input_utils::indexToNormalized(
+        static_cast<int>(pattern.defaultLength - 1U),
+        core::state::sequencer::DRUM_MAX_STEPS
+    );
+}
+
 FLASHMEM QuickItem validQuickItemForContext(
     const core::state::sequencer::SequencerState& sequencer
 ) {
@@ -492,6 +523,14 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumSequencerValues() {
         invalidateOptEncoderCache();
         return;
     }
+    if (drumUi.selector ==
+        core::state::sequencer::DrumSequencerSelector::PATTERN_DEFAULTS) {
+        ensureOptEncoderConfig(
+            drumPatternDefaultEncoderConfig(drumUi.patternDefaultField)
+        );
+        syncOptPosition(drumPatternDefaultToNormalized(drumUi));
+        return;
+    }
     if (navigation_focus_.get() ==
             core::state::StructureNavigationFocus::STEP &&
         !drumUi.selectorVisible()) {
@@ -508,8 +547,13 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumSequencerValues() {
         );
         return;
     }
-    ensureOptEncoderConfig(drumDimensionEncoderConfig(drumUi.dimension));
-    syncOptPosition(drumDimensionToNormalized(drumUi));
+    if (navigation_focus_.get() ==
+        core::state::StructureNavigationFocus::LANE) {
+        ensureOptEncoderConfig(drumDimensionEncoderConfig(drumUi.dimension));
+        syncOptPosition(drumDimensionToNormalized(drumUi));
+        return;
+    }
+    invalidateOptEncoderCache();
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {

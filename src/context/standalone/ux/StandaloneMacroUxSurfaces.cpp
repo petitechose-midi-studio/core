@@ -201,6 +201,7 @@ FLASHMEM const char* structureTarget(core::state::StructureNavigationFocus focus
             return "track";
         case core::state::StructureNavigationFocus::STEP:
             return "macro";
+        case core::state::StructureNavigationFocus::LANE:
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return "page";

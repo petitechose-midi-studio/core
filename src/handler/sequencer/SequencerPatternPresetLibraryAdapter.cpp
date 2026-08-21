@@ -114,7 +114,8 @@ SequencerPatternPresetLibraryAdapter::operations() {
 
 FLASHMEM bool SequencerPatternPresetLibraryAdapter::beginSession() {
     const bool editorActive = sequencer_.patternEditor.active.get() ||
-        sequencer_.drumSequencer.laneEditor.active;
+        sequencer_.drumSequencer.selector ==
+            sequencer::DrumSequencerSelector::PATTERN_DEFAULTS;
     if (!editorActive || preview_session_.active()) {
         return false;
     }
