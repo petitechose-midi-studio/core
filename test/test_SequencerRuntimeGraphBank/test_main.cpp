@@ -180,6 +180,7 @@ void test_quick_controls_draft_publishes_only_immutable_runtime_copies() {
     const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
     assert(sequencer.quickControlsDraft.begin(
         sequencer.pattern,
+        sequencer.clip,
         openingPath,
         sequencer.page.get(),
         sequencer.focusedStep.get()));
@@ -228,6 +229,7 @@ void test_nested_quick_controls_preview_overrides_step_draft_projection() {
     const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
     assert(sequencer.quickControlsDraft.begin(
         parent,
+        seq::authoringClip(sequencer),
         openingPath,
         sequencer.page.get(),
         sequencer.focusedStep.get()));

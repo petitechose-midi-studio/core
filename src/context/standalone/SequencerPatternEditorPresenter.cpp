@@ -232,14 +232,19 @@ FLASHMEM bool SequencerPatternEditorPresenter::ensureGeometry() {
         .ccLaneMask = 0x0FU,
     };
     const bool preview = state_.randomize.active;
+    const seq::SequencerClipSnapshot clipSnapshot{
+        .playStartTick = state_.sequencer.clip.playStartTick,
+        .loopStartTick = state_.sequencer.clip.loopStartTick,
+        .loopEndTick = state_.sequencer.clip.loopEndTick,
+    };
     const auto previousKey = geometry_->key;
     const bool hadGeometry = geometry_revision_ != 0U;
     const bool rebuilt = preview
         ? timeline::rebuildSequencerPatternTimelineGeometry(
-              state_.randomize.preview, ccLanes, viewport, *geometry_
+              state_.randomize.preview, clipSnapshot, ccLanes, viewport, *geometry_
           )
         : timeline::rebuildSequencerPatternTimelineGeometry(
-              pattern, ccLanes, viewport, *geometry_
+              pattern, state_.sequencer.clip, ccLanes, viewport, *geometry_
           );
     if (!rebuilt) {
         return false;

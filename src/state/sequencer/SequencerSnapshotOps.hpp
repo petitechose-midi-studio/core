@@ -23,10 +23,10 @@ struct SequencerSnapshotBatchDomains {
     bool stepData = false;
     bool graph = false;
     bool ccLanes = false;
-    bool timing = false;
+    bool clip = false;
 
     [[nodiscard]] bool any() const noexcept {
-        return stepData || graph || ccLanes || timing;
+        return stepData || graph || ccLanes || clip;
     }
 };
 
@@ -59,8 +59,10 @@ static_assert(sizeof(SequencerSnapshotBatchMutationResult) <= 8U);
 oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length);
 
 void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out);
+void captureSnapshot(const SequencerClipState& source, SequencerClipSnapshot& out);
 
 void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot);
+void applySnapshot(SequencerClipState& target, const SequencerClipSnapshot& snapshot);
 
 // Applies scalar pattern state without replacing the graph allocation.
 void applySnapshotPreservingGraph(
@@ -88,14 +90,18 @@ void copySequencerCcLaneRevision(
 /** Applies copied Track musical content and graph. Routing is Project-owned. */
 [[nodiscard]] bool applyTrackContentSnapshotWithGraph(
     SequencerPatternState& target,
+    SequencerClipState& targetClip,
     const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clipSnapshot,
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
 /** Installs already-cloned Track content without allocating. */
 void installTrackContentSnapshotWithOwnedGraph(
     SequencerPatternState& target,
+    SequencerClipState& targetClip,
     const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 );
 
@@ -108,7 +114,9 @@ void installTrackContentSnapshotWithOwnedGraph(
 /** Installs a complete copied Track payload, including Pattern-owned CC lanes. */
 void installTrackContentSnapshotWithOwnedPayload(
     SequencerPatternState& target,
+    SequencerClipState& targetClip,
     const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes
 );
@@ -130,18 +138,21 @@ void applySnapshotToEditorPreservingGraph(
 [[nodiscard]] bool applyTrackContentSnapshotToEditorWithGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clipSnapshot,
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
 void installTrackContentSnapshotToEditorWithOwnedGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 );
 
 void installTrackContentSnapshotToEditorWithOwnedPayload(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes
 );
@@ -149,16 +160,22 @@ void installTrackContentSnapshotToEditorWithOwnedPayload(
 // Installs a decoded/staged pattern without allocating another graph copy.
 void installPatternStateToEditor(
     SequencerState& target,
-    SequencerPatternState& staged
+    SequencerPatternState& staged,
+    const SequencerClipState& stagedClip
 );
 
 // Merges staged flat data and transfers its graph ownership into the editor.
 void mergePatternStateIntoCurrent(
     SequencerState& target,
-    SequencerPatternState& staged
+    SequencerPatternState& staged,
+    const SequencerClipState& stagedClip
 );
 
-void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnapshot& snapshot);
+void mergeSnapshotIntoCurrent(
+    SequencerState& target,
+    const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clipSnapshot
+);
 
 bool duplicatePatternForward(SequencerState& target);
 
@@ -215,7 +232,7 @@ deleteSequencerRootPagesUnversioned(
 
 /** Publish each dirty content revision at most once after a successful batch. */
 void publishSequencerSnapshotBatchRevisions(
-    SequencerPatternState& pattern,
+    SequencerState& sequencer,
     const SequencerSnapshotBatchDomains& domains
 ) noexcept;
 

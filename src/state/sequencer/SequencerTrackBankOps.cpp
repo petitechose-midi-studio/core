@@ -7,6 +7,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace core::state::sequencer {
@@ -39,15 +40,11 @@ FLASHMEM bool sameScaleSettingsExact(
 }
 
 FLASHMEM bool flatSnapshotIsCanonical(
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternSnapshot& snapshot,
+    const SequencerClipSnapshot& clip
 ) noexcept {
     if (snapshot.length == 0U ||
         snapshot.length > SequencerPatternState::MAX_STEPS ||
-        snapshot.playStart >= snapshot.length ||
-        snapshot.loopStart < snapshot.playStart ||
-        snapshot.loopStart >= snapshot.length ||
-        snapshot.loopEnd <= snapshot.loopStart ||
-        snapshot.loopEnd > snapshot.length ||
         snapshot.stepsPerBeat == 0U ||
         !((snapshot.enabledMask & lengthMask(snapshot.length)) == snapshot.enabledMask) ||
         snapshot.swingOffsetPercent != SequencerPatternState::clampPatternSwingOffsetPercent(
@@ -59,6 +56,18 @@ FLASHMEM bool flatSnapshotIsCanonical(
         static_cast<uint8_t>(snapshot.scalePolicy) >
             static_cast<uint8_t>(SequencerPatternScalePolicy::OVERRIDE) ||
         !validPitchEditMode(static_cast<uint8_t>(snapshot.pitchEditMode))) {
+        return false;
+    }
+    const uint16_t ticksPerStep = sequencerTicksPerStep(snapshot.stepsPerBeat);
+    const uint16_t contentEnd = static_cast<uint16_t>(
+        snapshot.length * ticksPerStep
+    );
+    if (ticksPerStep == 0U || clip.playStartTick % ticksPerStep != 0U ||
+        clip.loopStartTick % ticksPerStep != 0U ||
+        clip.loopEndTick % ticksPerStep != 0U ||
+        clip.playStartTick > clip.loopStartTick ||
+        clip.loopStartTick >= clip.loopEndTick ||
+        clip.loopEndTick > contentEnd) {
         return false;
     }
 
@@ -109,9 +118,13 @@ FLASHMEM bool distinctNonNullOwners(const T* first, const T* second, const T* th
 
 FLASHMEM void installPreparedFlat(
     SequencerPatternState& target,
+    SequencerClipState& targetClip,
     SequencerTrackFlatSnapshotView prepared
 ) noexcept {
-    if (prepared.snapshot == nullptr) failPreparedTrackRotationInvariant();
+    if (prepared.snapshot == nullptr || prepared.clip == nullptr) {
+        failPreparedTrackRotationInvariant();
+    }
+    applySnapshot(targetClip, *prepared.clip);
     applySnapshotPreservingGraph(target, *prepared.snapshot);
 
     // Snapshot projection setters intentionally maintain their own live
@@ -128,11 +141,13 @@ FLASHMEM void installPreparedFlat(
 
 FLASHMEM void copyFlatPatternToEditor(
     SequencerState& target,
-    const SequencerPatternState& source
+    const SequencerPatternState& source,
+    const SequencerClipState& sourceClip
 ) {
     const uint8_t focusedBefore = target.focusedStep.get();
     SequencerPatternSnapshot snapshot;
     captureSnapshot(source, snapshot);
+    target.clip = sourceClip;
     applySnapshotToEditorPreservingGraph(target, snapshot);
     target.pattern.ccLaneRevision.set(source.ccLaneRevision.get());
 
@@ -141,19 +156,28 @@ FLASHMEM void copyFlatPatternToEditor(
         (focusedBefore >= length) ? static_cast<uint8_t>(length - 1U) : focusedBefore;
     target.focusedStep.set(focused);
     target.page.set(target.pageForStep(focused));
+    target.bumpClipRevision();
 }
 
-FLASHMEM bool copyEditorToPattern(SequencerPatternState& target, const SequencerState& source) {
-    return copyPatternState(target, source.pattern);
+FLASHMEM bool copyEditorToPattern(
+    SequencerPatternState& target,
+    SequencerClipState& targetClip,
+    const SequencerState& source
+) {
+    if (!copyPatternState(target, source.pattern)) return false;
+    targetClip = source.clip;
+    return true;
 }
 
 FLASHMEM void copyFlatEditorToPattern(
     SequencerPatternState& target,
+    SequencerClipState& targetClip,
     const SequencerState& source
 ) {
     SequencerPatternSnapshot snapshot;
     captureSnapshot(source.pattern, snapshot);
     applySnapshotPreservingGraph(target, snapshot);
+    targetClip = source.clip;
     target.ccLaneRevision.set(source.pattern.ccLaneRevision.get());
 }
 
@@ -186,19 +210,39 @@ FLASHMEM SequencerPatternState& mutableCanonicalTrackPattern(
     return target == bank.activeTrackIndex() ? active.pattern : bank.track(target);
 }
 
+FLASHMEM const SequencerClipState& canonicalTrackClip(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex
+) noexcept {
+    const uint8_t target = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    return target == bank.activeTrackIndex() ? active.clip : bank.clip(target);
+}
+
+FLASHMEM SequencerClipState& mutableCanonicalTrackClip(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex
+) noexcept {
+    const uint8_t target = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    return target == bank.activeTrackIndex() ? active.clip : bank.clip(target);
+}
+
 FLASHMEM bool sequencerPatternMatchesFlatSnapshot(
     const SequencerPatternState& pattern,
+    const SequencerClipState& clip,
     SequencerTrackFlatSnapshotView expected
 ) noexcept {
-    if (expected.snapshot == nullptr || !flatSnapshotIsCanonical(*expected.snapshot)) {
+    if (expected.snapshot == nullptr || expected.clip == nullptr ||
+        !flatSnapshotIsCanonical(*expected.snapshot, *expected.clip)) {
         return false;
     }
 
     const auto& snapshot = *expected.snapshot;
     return pattern.length.get() == snapshot.length &&
-           pattern.playStart == snapshot.playStart &&
-           pattern.loopStart == snapshot.loopStart &&
-           pattern.loopEnd == snapshot.loopEnd &&
+           clip.playStartTick == expected.clip->playStartTick &&
+           clip.loopStartTick == expected.clip->loopStartTick &&
+           clip.loopEndTick == expected.clip->loopEndTick &&
            pattern.stepsPerBeat.get() == snapshot.stepsPerBeat &&
            pattern.enabledMask.get() == snapshot.enabledMask &&
            pattern.stepDataRevision.get() == snapshot.stepDataRevision &&
@@ -232,11 +276,21 @@ FLASHMEM bool preparedActiveTrackOwnerRotationMatches(
         bank.currentEnabledMask() != prepared.expectedEnabledMask ||
         active.stepContentDraft.active.get() ||
         prepared.expectedOutgoing.snapshot == nullptr ||
+        prepared.expectedOutgoing.clip == nullptr ||
         prepared.expectedIncoming.snapshot == nullptr ||
+        prepared.expectedIncoming.clip == nullptr ||
         prepared.finalOutgoing.snapshot == nullptr ||
+        prepared.finalOutgoing.clip == nullptr ||
         prepared.finalIncoming.snapshot == nullptr ||
-        !flatSnapshotIsCanonical(*prepared.finalOutgoing.snapshot) ||
-        !flatSnapshotIsCanonical(*prepared.finalIncoming.snapshot)) {
+        prepared.finalIncoming.clip == nullptr ||
+        !flatSnapshotIsCanonical(
+            *prepared.finalOutgoing.snapshot,
+            *prepared.finalOutgoing.clip
+        ) ||
+        !flatSnapshotIsCanonical(
+            *prepared.finalIncoming.snapshot,
+            *prepared.finalIncoming.clip
+        )) {
         return false;
     }
 
@@ -252,25 +306,29 @@ FLASHMEM bool preparedActiveTrackOwnerRotationMatches(
     const auto& incoming = bank.track(prepared.incomingTrack);
     if (active.pattern.graph.get() != prepared.expectedEditorGraphOwner ||
         active.pattern.ccLanes.get() != prepared.expectedEditorCcLaneOwner ||
-        outgoing.graph.get() != prepared.expectedOutgoingGraphOwner ||
-        outgoing.ccLanes.get() != prepared.expectedOutgoingCcLaneOwner ||
-        incoming.graph.get() != prepared.expectedIncomingGraphOwner ||
-        incoming.ccLanes.get() != prepared.expectedIncomingCcLaneOwner ||
         !distinctNonNullOwners(
             prepared.expectedEditorGraphOwner,
-            prepared.expectedOutgoingGraphOwner,
-            prepared.expectedIncomingGraphOwner
+            outgoing.graph.get(),
+            incoming.graph.get()
         ) ||
         !distinctNonNullOwners(
             prepared.expectedEditorCcLaneOwner,
-            prepared.expectedOutgoingCcLaneOwner,
-            prepared.expectedIncomingCcLaneOwner
+            outgoing.ccLanes.get(),
+            incoming.ccLanes.get()
         )) {
         return false;
     }
 
-    return sequencerPatternMatchesFlatSnapshot(active.pattern, prepared.expectedOutgoing) &&
-           sequencerPatternMatchesFlatSnapshot(incoming, prepared.expectedIncoming);
+    return sequencerPatternMatchesFlatSnapshot(
+               active.pattern,
+               active.clip,
+               prepared.expectedOutgoing
+           ) &&
+           sequencerPatternMatchesFlatSnapshot(
+               incoming,
+               bank.clip(prepared.incomingTrack),
+               prepared.expectedIncoming
+           );
 }
 
 FLASHMEM bool prepareActiveTrackOwnerRotation(
@@ -289,23 +347,17 @@ FLASHMEM bool prepareActiveTrackOwnerRotation(
     if (outgoingTrack >= SequencerTrackBankState::TRACK_COUNT ||
         incomingTrack >= SequencerTrackBankState::TRACK_COUNT ||
         outgoingTrack == incomingTrack ||
-        finalOutgoing.snapshot == nullptr ||
-        finalIncoming.snapshot == nullptr) {
+        finalOutgoing.snapshot == nullptr || finalOutgoing.clip == nullptr ||
+        finalIncoming.snapshot == nullptr || finalIncoming.clip == nullptr) {
         return false;
     }
 
-    const auto& outgoing = bank.track(outgoingTrack);
-    const auto& incoming = bank.track(incomingTrack);
     out.expectedOutgoing = expectedOutgoing;
     out.expectedIncoming = expectedIncoming;
     out.finalOutgoing = finalOutgoing;
     out.finalIncoming = finalIncoming;
     out.expectedEditorGraphOwner = active.pattern.graph.get();
     out.expectedEditorCcLaneOwner = active.pattern.ccLanes.get();
-    out.expectedOutgoingGraphOwner = outgoing.graph.get();
-    out.expectedOutgoingCcLaneOwner = outgoing.ccLanes.get();
-    out.expectedIncomingGraphOwner = incoming.graph.get();
-    out.expectedIncomingCcLaneOwner = incoming.ccLanes.get();
     out.expectedEnabledMask = bank.currentEnabledMask();
     out.outgoingTrack = outgoingTrack;
     out.incomingTrack = incomingTrack;
@@ -329,6 +381,7 @@ FLASHMEM void rotateActiveTrackOwnersNoPublish(
 
     auto& outgoing = bank.track(prepared.outgoingTrack);
     auto& incoming = bank.track(prepared.incomingTrack);
+    auto& outgoingClip = bank.clip(prepared.outgoingTrack);
     if (prepared.incomingOwnerPolicy ==
         SequencerActiveTrackIncomingOwnerPolicy::Reset) {
         incoming.graph.reset();
@@ -337,8 +390,9 @@ FLASHMEM void rotateActiveTrackOwnersNoPublish(
 
     exchangeColdPayload(active.pattern, outgoing);
     exchangeColdPayload(active.pattern, incoming);
-    installPreparedFlat(outgoing, prepared.finalOutgoing);
-    installPreparedFlat(active.pattern, prepared.finalIncoming);
+    installPreparedFlat(outgoing, outgoingClip, prepared.finalOutgoing);
+    installPreparedFlat(active.pattern, active.clip, prepared.finalIncoming);
+    active.bumpClipRevision();
     resetTransientTrackState(active);
 }
 
@@ -364,13 +418,14 @@ FLASHMEM bool initializeTrackBankFromActive(
     const SequencerState& active
 ) {
     bank.reset();
-    if (!copyEditorToPattern(bank.track(0), active)) return false;
+    if (!copyEditorToPattern(bank.track(0), bank.clip(0), active)) return false;
     bank.syncSharedTrackState(0x0001, 0);
     return true;
 }
 
 FLASHMEM bool storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active) {
-    return copyEditorToPattern(bank.track(bank.activeTrackIndex()), active);
+    const uint8_t track = bank.activeTrackIndex();
+    return copyEditorToPattern(bank.track(track), bank.clip(track), active);
 }
 
 FLASHMEM bool storeActiveTrackPreservingGraph(
@@ -385,10 +440,15 @@ FLASHMEM bool storeActiveTrackPreservingGraph(
         target.graphRevision.get() == active.pattern.graphRevision.get();
 
     if (!graphSynchronized) {
-        return copyEditorToPattern(target, active);
+        return copyEditorToPattern(
+            target,
+            bank.clip(bank.activeTrackIndex()),
+            active
+        );
     }
-
-    return copyPatternStatePreservingGraph(target, active.pattern);
+    if (!copyPatternStatePreservingGraph(target, active.pattern)) return false;
+    bank.clip(bank.activeTrackIndex()) = active.clip;
+    return true;
 }
 
 FLASHMEM bool switchActiveTrack(
@@ -410,15 +470,17 @@ FLASHMEM bool switchActiveTrack(
 
     auto& outgoing = bank.track(current);
     auto& incoming = bank.track(clampedNext);
+    auto& outgoingClip = bank.clip(current);
+    auto& incomingClip = bank.clip(clampedNext);
 
     // Signals in the retained editor must keep their addresses because UI
     // bindings subscribe to them. Copy only the flat values, then rotate the
     // two PSRAM-owned payload pointers through the editor. The active bank slot
     // is intentionally a spare while that Track is edited, as it already was
     // for flat values before this refactor.
-    copyFlatEditorToPattern(outgoing, active);
+    copyFlatEditorToPattern(outgoing, outgoingClip, active);
     exchangeColdPayload(active.pattern, outgoing);
-    copyFlatPatternToEditor(active, incoming);
+    copyFlatPatternToEditor(active, incoming, incomingClip);
     exchangeColdPayload(active.pattern, incoming);
     resetTransientTrackState(active);
 
@@ -439,6 +501,7 @@ FLASHMEM void captureTrackBankSnapshot(
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         captureSnapshot(canonicalTrackPattern(bank, active, i), out.tracks[i]);
+        captureSnapshot(canonicalTrackClip(bank, active, i), out.clips[i]);
     }
 }
 
@@ -460,10 +523,13 @@ FLASHMEM void applyTrackBankSnapshot(
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         applySnapshot(bank.track(i), snapshot.tracks[i]);
+        applySnapshot(bank.clip(i), snapshot.clips[i]);
     }
 
     const uint8_t activeTrack = bank.activeTrackIndex();
+    applySnapshot(active.clip, snapshot.clips[activeTrack]);
     applySnapshotToEditor(active, snapshot.tracks[activeTrack]);
+    active.bumpClipRevision();
     resetTransientTrackState(active);
 }
 

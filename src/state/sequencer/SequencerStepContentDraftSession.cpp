@@ -77,6 +77,7 @@ FLASHMEM bool SequencerStepChordDraftState::modified() const {
 
 FLASHMEM bool SequencerStepContentDraftSession::begin(
     const SequencerPatternState& published,
+    const SequencerClipState& publishedClip,
     SequencerStepContentDraftKind nextKind,
     uint8_t nextOwnerStep,
     uint16_t nextOwnerNodeId
@@ -147,6 +148,7 @@ FLASHMEM bool SequencerStepContentDraftSession::begin(
     // allocation left by any future scratch reuse path.
     scratch->ccLanes.reset();
     scratch->ccLaneRevision.set(0);
+    scratchClip = publishedClip;
 
     pristineGraphRevision = scratch->graphRevision.get();
     pristineGraphFingerprint = graphFingerprint(*scratch);
@@ -175,6 +177,14 @@ FLASHMEM const SequencerPatternState* SequencerStepContentDraftSession::pattern(
     return active.get() && kind.get() != SequencerStepContentDraftKind::CHORD
         ? scratch.get()
         : nullptr;
+}
+
+FLASHMEM SequencerClipState* SequencerStepContentDraftSession::clip() {
+    return pattern() != nullptr ? &scratchClip : nullptr;
+}
+
+FLASHMEM const SequencerClipState* SequencerStepContentDraftSession::clip() const {
+    return pattern() != nullptr ? &scratchClip : nullptr;
 }
 
 FLASHMEM void SequencerStepContentDraftSession::markPristine() {
@@ -256,6 +266,7 @@ FLASHMEM void SequencerStepContentDraftSession::resetSession() {
     pristineGraphRevision = 0;
     pristineGraphFingerprint = 0;
     ownerStep = 0;
+    scratchClip.reset();
     chord.reset();
     failure = SequencerStepContentDraftFailure::NONE;
     blockedTransition = SequencerStepContentDraftBlockedTransition::NONE;

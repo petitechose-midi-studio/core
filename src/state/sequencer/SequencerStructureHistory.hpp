@@ -139,7 +139,7 @@ struct SequencerPreparedStructureHistoryReplay {
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 static_assert(
-    sizeof(SequencerHistoryTrackStructureSnapshot) == 13648U,
+    sizeof(SequencerHistoryTrackStructureSnapshot) == 13776U,
     "LOCK-P: ARM Structure snapshot ABI changed"
 );
 static_assert(
@@ -147,7 +147,7 @@ static_assert(
     "LOCK-P: ARM Macro Structure payload ABI changed"
 );
 static_assert(
-    sizeof(SequencerHistoryTrackStructureChange) == 27336U,
+    sizeof(SequencerHistoryTrackStructureChange) == 27592U,
     "LOCK-P: ARM Structure History transaction ABI changed"
 );
 static_assert(

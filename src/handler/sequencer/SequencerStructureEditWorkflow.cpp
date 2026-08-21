@@ -1761,9 +1761,12 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         core::state::sequencer::SequencerPatternSnapshot snapshot;
+        core::state::sequencer::SequencerClipSnapshot clip;
         core::state::sequencer::captureSnapshot(sequencer_.pattern, snapshot);
+        core::state::sequencer::captureSnapshot(sequencer_.clip, clip);
         if (!structure_clipboard_.storeSequencerTrack(
-                snapshot, core::state::sequencer::graphView(sequencer_.pattern),
+                snapshot, clip,
+                core::state::sequencer::graphView(sequencer_.pattern),
                 currentActiveTrack(),
                 core::state::sequencer::sequencerCcLaneView(sequencer_.pattern),
                 tracks_.isDrumTrack(currentActiveTrack())

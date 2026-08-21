@@ -6,7 +6,7 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "ui/sequencer/SequencerCcLaneGridProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -22,6 +22,7 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID) return {};
 
     const auto& pattern = seq::authoringPattern(source.sequencer);
+    const auto& clip = seq::authoringClip(source.sequencer);
     const auto* bank = seq::sequencerCcLaneView(pattern);
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return {};
     const auto& lane = bank->lanes[ui.focusedLane];
@@ -43,7 +44,7 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
         1U,
         pattern.length.get()
     );
-    const auto region = seq::patternPlaybackRegion(pattern);
+    const auto region = seq::clipPlaybackRegion(pattern, clip);
     const uint8_t start = static_cast<uint8_t>(
         (ui.focusedStep / seq::SequencerPatternState::STEPS_PER_PAGE) *
         seq::SequencerPatternState::STEPS_PER_PAGE

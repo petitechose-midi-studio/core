@@ -483,7 +483,10 @@ void SequencerPlaybackService::processCcRuntime_(
             for (uint8_t track = 0; track < inputs.size(); ++track) {
                 const auto& pattern = snapshot.tracks[track];
                 const uint8_t ticksPerStep = ccTicksPerStep_(pattern);
-                const auto region = runtimePlaybackRegion(pattern);
+                const auto region = runtimePlaybackRegion(
+                    pattern,
+                    snapshot.clips[track]
+                );
                 oc::note::sequencer::StepSequencerPlaybackTickPosition position{};
                 const bool positionValid =
                     oc::note::sequencer::tryResolvePlaybackTick(
@@ -560,7 +563,10 @@ void SequencerPlaybackService::processCcRuntime_(
                     );
                     const auto& pattern = snapshot.tracks[track];
                     const uint8_t ticksPerStep = ccTicksPerStep_(pattern);
-                    const auto region = runtimePlaybackRegion(pattern);
+                    const auto region = runtimePlaybackRegion(
+                        pattern,
+                        snapshot.clips[track]
+                    );
                     const uint64_t futurePhaseTicks =
                         static_cast<uint64_t>(inputs[track].tickInStep) +
                         leadTicks;
@@ -711,9 +717,15 @@ void SequencerPlaybackService::syncRuntimeStates_(
             trackEngine->setGraph(runtime_graph_bank_.graphForTrack(i));
         }
 
-        const auto trackSignature = captureRuntimeStateSignature(snapshot.tracks[i]);
+        const auto trackSignature = captureRuntimeStateSignature(
+            snapshot.tracks[i],
+            snapshot.clips[i]
+        );
         if (!track_runtime_signatures_[i].matches(trackSignature)) {
-            const auto region = runtimePlaybackRegion(snapshot.tracks[i]);
+            const auto region = runtimePlaybackRegion(
+                snapshot.tracks[i],
+                snapshot.clips[i]
+            );
             if (!region.isValid() ||
                 (trackEngine != nullptr &&
                  !trackEngine->setPlaybackRegion(region))) {
@@ -869,7 +881,10 @@ void SequencerPlaybackService::applyStagedTrack_(
     resetTrackEngine_(trackIndex);
 
     syncRuntimeMasksForTrack_(projectTracks, trackIndex);
-    const auto region = runtimePlaybackRegion(snapshot.tracks[trackIndex]);
+    const auto region = runtimePlaybackRegion(
+        snapshot.tracks[trackIndex],
+        snapshot.clips[trackIndex]
+    );
     if (!region.isValid() ||
         (engine != nullptr && !engine->setPlaybackRegion(region))) {
         return;
@@ -882,7 +897,10 @@ void SequencerPlaybackService::applyStagedTrack_(
         engine->setGraph(runtime_graph_bank_.graphForTrack(trackIndex));
     }
     track_runtime_signatures_[trackIndex] =
-        captureRuntimeStateSignature(snapshot.tracks[trackIndex]);
+        captureRuntimeStateSignature(
+            snapshot.tracks[trackIndex],
+            snapshot.clips[trackIndex]
+        );
     runtime_resync_mask_ = static_cast<uint16_t>(
         runtime_resync_mask_ &
         static_cast<uint16_t>(~static_cast<uint16_t>(1U << trackIndex))

@@ -17,7 +17,13 @@ void storeSingleTrackClipboard(
     uint8_t sourceTrack
 ) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    assert(clipboard.storeSequencerTrack(snapshot, nullptr, sourceTrack));
+    core::state::sequencer::SequencerClipSnapshot clip;
+    assert(clipboard.storeSequencerTrack(
+        snapshot,
+        clip,
+        nullptr,
+        sourceTrack
+    ));
 }
 
 void test_single_track_plan_exposes_source_and_destination_owned_bindings() {

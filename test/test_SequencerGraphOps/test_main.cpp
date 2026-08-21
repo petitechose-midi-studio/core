@@ -237,9 +237,13 @@ void test_pattern_copy_preserves_graph() {
 
 void test_runtime_signature_tracks_graph_revision() {
     SequencerState state;
+    const seq::SequencerClipSnapshot clip{};
     SequencerPatternSnapshot before;
     core::state::sequencer::captureSnapshot(state.pattern, before);
-    auto beforeSignature = core::sequencer::captureRuntimeStateSignature(before);
+    auto beforeSignature = core::sequencer::captureRuntimeStateSignature(
+        before,
+        clip
+    );
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto sequence = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 2);
@@ -247,7 +251,10 @@ void test_runtime_signature_tracks_graph_revision() {
 
     SequencerPatternSnapshot after;
     core::state::sequencer::captureSnapshot(state.pattern, after);
-    auto afterSignature = core::sequencer::captureRuntimeStateSignature(after);
+    auto afterSignature = core::sequencer::captureRuntimeStateSignature(
+        after,
+        clip
+    );
 
     assert(!beforeSignature.matches(afterSignature));
     assert(afterSignature.graphRevision == state.pattern.graphRevision.get());
@@ -257,12 +264,16 @@ void test_runtime_signature_tracks_graph_revision() {
 
 void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
     SequencerState state;
+    const seq::SequencerClipSnapshot clip{};
     assert(core::state::sequencer::ensureGraphRoot(state.pattern));
     const uint32_t graphRevision = state.pattern.graphRevision.get();
 
     SequencerPatternSnapshot followSnapshot;
     core::state::sequencer::captureSnapshot(state.pattern, followSnapshot);
-    auto followSignature = core::sequencer::captureRuntimeStateSignature(followSnapshot);
+    auto followSignature = core::sequencer::captureRuntimeStateSignature(
+        followSnapshot,
+        clip
+    );
     auto runtime = makeRuntime(followSnapshot);
     assert(followSignature.pitchFollowsScale);
     assert(runtime.pitchFollowsScale);
@@ -273,7 +284,7 @@ void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
     SequencerPatternSnapshot chromaticSnapshot;
     core::state::sequencer::captureSnapshot(state.pattern, chromaticSnapshot);
     const auto chromaticSignature =
-        core::sequencer::captureRuntimeStateSignature(chromaticSnapshot);
+        core::sequencer::captureRuntimeStateSignature(chromaticSnapshot, clip);
     runtime = makeRuntime(chromaticSnapshot);
 
     assert(!chromaticSignature.pitchFollowsScale);

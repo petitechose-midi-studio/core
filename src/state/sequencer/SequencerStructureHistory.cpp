@@ -133,9 +133,7 @@ FLASHMEM void resetHistoryPatternSnapshotFromBefore(
     out.reset();
     auto& flat = out.flat;
     flat.length = SequencerPatternState::DEFAULT_LENGTH;
-    flat.playStart = 0U;
-    flat.loopStart = 0U;
-    flat.loopEnd = SequencerPatternState::DEFAULT_LENGTH;
+    out.clip = {};
     flat.stepsPerBeat = SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
     flat.enabledMask = {};
     flat.stepDataRevision = before.flat.stepDataRevision + 1U;
@@ -168,6 +166,7 @@ FLASHMEM bool cloneHistoryPatternSnapshotFromBefore(
 ) {
     out.reset();
     out.flat = before.flat;
+    out.clip = before.clip;
     out.ccLaneRevision = before.ccLaneRevision;
     out.focusedStep = focusedStep;
     out.ccLanesCaptured = true;
@@ -501,7 +500,11 @@ FLASHMEM bool liveHistoryStructureSnapshotMatches(
             continue;
         }
         const auto& live = canonicalTrackPattern(bank, active, track);
-        if (!liveHistoryPatternSnapshotMatches(live, snapshot.tracks[track])) {
+        if (!liveHistoryPatternSnapshotMatches(
+                live,
+                canonicalTrackClip(bank, active, track),
+                snapshot.tracks[track]
+            )) {
             return false;
         }
         const bool expectedDrum = (snapshot.drumTrackMask &
@@ -576,7 +579,9 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
         if ((replay.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0U) continue;
         installTrackContentSnapshotWithOwnedPayload(
             bank.track(i),
+            bank.clip(i),
             snapshot->tracks[i].flat,
+            snapshot->tracks[i].clip,
             std::move(replay.bankGraphs[i]),
             std::move(replay.bankCcLanes[i])
         );
@@ -586,6 +591,7 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
     installTrackContentSnapshotToEditorWithOwnedPayload(
         active,
         snapshot->tracks[targetActive].flat,
+        snapshot->tracks[targetActive].clip,
         std::move(replay.editorGraph),
         std::move(replay.editorCcLanes)
     );

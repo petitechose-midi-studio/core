@@ -198,8 +198,13 @@ FLASHMEM void SequencerPatternQuickControlsHandler::open() {
     const auto& openingPattern = nested_step_draft_
         ? *parentStepDraft
         : sequencer_.pattern;
+    const auto* parentStepClip = sequencer_.stepContentDraft.clip();
+    const auto& openingClip = nested_step_draft_ && parentStepClip != nullptr
+        ? *parentStepClip
+        : sequencer_.clip;
     if (!sequencer_.quickControlsDraft.begin(
             openingPattern,
+            openingClip,
             openingPath,
             sequencer_.page.get(),
             sequencer_.focusedStep.get())) {
@@ -508,9 +513,15 @@ FLASHMEM bool SequencerPatternQuickControlsHandler::ensurePreparedQuickControlsH
 FLASHMEM PreparedCommitOutcome
 SequencerPatternQuickControlsHandler::applyNestedStepDraftQuickControls() {
     auto* parent = sequencer_.stepContentDraft.pattern();
-    if (parent == nullptr) return PreparedCommitOutcome::Failed;
+    auto* parentClip = sequencer_.stepContentDraft.clip();
+    if (parent == nullptr || parentClip == nullptr) {
+        return PreparedCommitOutcome::Failed;
+    }
     const auto outcome =
-        sequencer_.quickControlsDraft.publishToDetachedParent(*parent);
+        sequencer_.quickControlsDraft.publishToDetachedParent(
+            *parent,
+            *parentClip
+        );
     if (outcome == core::state::sequencer::
             SequencerQuickControlsNestedPublishOutcome::Failed) {
         return PreparedCommitOutcome::Failed;

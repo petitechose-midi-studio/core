@@ -168,6 +168,7 @@ FLASHMEM void SequencerTrackBankState::reset() {
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
         auto& seq = tracks_[i];
         seq.reset();
+        clips_[i].reset();
     }
     clearDrumTrackBank();
 }

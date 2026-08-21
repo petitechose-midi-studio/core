@@ -287,6 +287,7 @@ void assertLivePatternMatchesWithoutAllocation(
 ) {
     assert(seq::liveHistoryPatternSnapshotMatches(
         h.state.sequencer.pattern,
+        h.state.sequencer.clip,
         expected));
 }
 

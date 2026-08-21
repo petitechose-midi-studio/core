@@ -11,6 +11,7 @@
 #include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
 #include "SequencerPatternState.hpp"
+#include "SequencerClipState.hpp"
 #include "SequencerPatternEditorState.hpp"
 #include "SequencerQuickControlsDraft.hpp"
 #include "SequencerStepContentDraftSession.hpp"
@@ -31,6 +32,14 @@ struct SequencerState {
     static constexpr uint8_t DEFAULT_PROBABILITY = SequencerPatternState::DEFAULT_PROBABILITY;
 
     SequencerPatternState pattern;
+    SequencerClipState clip;
+
+    /// Bumps when the active Track's implicit Clip boundaries change.
+    Signal<uint32_t, 4> clipRevision{0};
+
+    void bumpClipRevision() {
+        clipRevision.set(clipRevision.get() + 1U);
+    }
 
     /// Visible page index [0..PAGE_COUNT-1].
     /// May temporarily point beyond the current pattern length during paste target selection.

@@ -1279,14 +1279,23 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     // receive the same prepared generation.
     auto editorGraph = std::move(staged->pattern.graph);
     core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedGraph(
-        state_->sequencer, stagedFlat, std::move(editorGraph));
+        state_->sequencer,
+        stagedFlat,
+        change->after.clip,
+        std::move(editorGraph)
+    );
     state_->sequencer.page.set(staged->page.get());
     state_->sequencer.focusedStep.set(staged->focusedStep.get());
     copyContentViewState(state_->sequencer.contentView, staged->contentView);
     state_->sequencer.invalidateVariationTelemetry();
 
     core::state::sequencer::installTrackContentSnapshotWithOwnedGraph(
-        state_->sequencerTracks.track(target.trackIndex), stagedFlat, std::move(bankGraph));
+        state_->sequencerTracks.track(target.trackIndex),
+        state_->sequencerTracks.clip(target.trackIndex),
+        stagedFlat,
+        change->after.clip,
+        std::move(bankGraph)
+    );
     state_->sequencerHistory.recordPreparedPattern(std::move(change));
     state_->publishPreparedSequencerMutation();
     state_->sequencerTrackActivations.publishPrepared(activationBatch);

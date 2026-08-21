@@ -6,7 +6,7 @@
 #include <oc/util/Index.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
@@ -36,7 +36,7 @@ FLASHMEM uint8_t normalizedWindowStart(
 }
 
 FLASHMEM bool launchStartDistinct(const SequencerState& sequencer) {
-    const auto region = patternPlaybackRegion(sequencer.pattern);
+    const auto region = clipPlaybackRegion(sequencer.pattern, sequencer.clip);
     return region.playStart != region.loopStart;
 }
 
@@ -56,11 +56,11 @@ FLASHMEM Enum wrappedEnum(Enum current, int direction, uint8_t count) {
 }
 
 FLASHMEM bool setRegionValue(
-    SequencerPatternState& pattern,
+    SequencerState& sequencer,
     SequencerPatternEditorField field,
     int16_t value
 ) {
-    auto region = patternPlaybackRegion(pattern);
+    auto region = clipPlaybackRegion(sequencer.pattern, sequencer.clip);
     switch (field) {
         case SequencerPatternEditorField::PLAY_START:
             region.playStart = static_cast<uint8_t>(std::clamp<int>(
@@ -86,7 +86,7 @@ FLASHMEM bool setRegionValue(
         default:
             return false;
     }
-    return setPatternPlaybackRegion(pattern, region);
+    return setClipPlaybackRegion(sequencer, region);
 }
 
 }  // namespace
@@ -298,7 +298,7 @@ FLASHMEM SequencerPatternEditorValueRange patternEditorValueRange(
     const SequencerState& sequencer,
     SequencerPatternEditorField field
 ) {
-    const auto region = patternPlaybackRegion(sequencer.pattern);
+    const auto region = clipPlaybackRegion(sequencer.pattern, sequencer.clip);
     switch (field) {
         case SequencerPatternEditorField::LENGTH:
             return {1, SequencerState::MAX_STEPS};
@@ -339,7 +339,7 @@ FLASHMEM int16_t patternEditorFieldValue(
     const SequencerState& sequencer,
     SequencerPatternEditorField field
 ) {
-    const auto region = patternPlaybackRegion(sequencer.pattern);
+    const auto region = clipPlaybackRegion(sequencer.pattern, sequencer.clip);
     switch (field) {
         case SequencerPatternEditorField::LENGTH:
             return region.contentLength;
@@ -384,8 +384,8 @@ FLASHMEM bool setPatternEditorFieldValue(
 
     switch (field) {
         case SequencerPatternEditorField::LENGTH:
-            changed = resizePatternContent(
-                sequencer.pattern,
+            changed = resizeClipPatternContent(
+                sequencer,
                 static_cast<uint8_t>(clamped)
             );
             if (changed) {
@@ -405,10 +405,7 @@ FLASHMEM bool setPatternEditorFieldValue(
             const uint8_t next = PATTERN_STEPS_PER_BEAT_CHOICES[
                 static_cast<uint8_t>(clamped)
             ];
-            if (sequencer.pattern.stepsPerBeat.get() != next) {
-                sequencer.pattern.stepsPerBeat.set(next);
-                changed = true;
-            }
+            changed = setClipPatternStepsPerBeat(sequencer, next);
             break;
         }
         case SequencerPatternEditorField::SWING:
@@ -420,7 +417,7 @@ FLASHMEM bool setPatternEditorFieldValue(
         case SequencerPatternEditorField::PLAY_START:
         case SequencerPatternEditorField::LOOP_START:
         case SequencerPatternEditorField::LOOP_END:
-            changed = setRegionValue(sequencer.pattern, field, clamped);
+            changed = setRegionValue(sequencer, field, clamped);
             break;
         case SequencerPatternEditorField::COUNT:
         default:

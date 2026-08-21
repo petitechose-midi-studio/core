@@ -24,8 +24,8 @@
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerCcLaneRouting.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "support/SequencerHistoryTransactionAssertions.hpp"
 
@@ -95,9 +95,16 @@ constexpr core::handler::SequencerHistoryDomainServices::Operations kPreparedHis
 void storeSourceClipboard(core::state::StructureClipboardState& clipboard,
                           const core::state::sequencer::SequencerState& editor) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
+    core::state::sequencer::SequencerClipSnapshot clip;
     core::state::sequencer::captureSnapshot(editor.pattern, snapshot);
+    core::state::sequencer::captureSnapshot(editor.clip, clip);
     assert(clipboard.storeSequencerTrack(
-        snapshot, nullptr, 0, core::state::sequencer::sequencerCcLaneView(editor.pattern)));
+        snapshot,
+        clip,
+        nullptr,
+        0,
+        core::state::sequencer::sequencerCcLaneView(editor.pattern)
+    ));
 }
 
 void seedMaximumSelectionTransfer(core::state::CoreState& state) {
@@ -497,7 +504,11 @@ void test_track_transfer_refuses_an_active_step_draft_before_mutation() {
                                                                  clipboard, shared, history, 1);
     assert(prepared.ready());
     assert(editor.stepContentDraft.begin(
-        editor.pattern, core::state::sequencer::SequencerStepContentDraftKind::MICRO_SEQUENCE, 0));
+        editor.pattern,
+        editor.clip,
+        core::state::sequencer::SequencerStepContentDraftKind::MICRO_SEQUENCE,
+        0
+    ));
 
     const auto result = core::handler::commitPreparedSequencerTrackTransfer(
         tracks, projectTracks, editor, clipboard, shared, history, std::move(prepared));
@@ -756,7 +767,7 @@ void test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history()
     core::state::CoreState state(storages.settings);
 
     assert(core::state::project::setProjectTrackMidiChannel(state.projectTracks, 0, 1).changed());
-    assert(seq::setPatternPlaybackRegion(state.sequencer.pattern, {16, 2, 6, 14}));
+    assert(seq::setClipPlaybackRegion(state.sequencer, {16, 2, 6, 14}));
     assert(core::state::project::setProjectTrackMidiChannel(state.projectTracks, 1, 10).changed());
     authorInheritedAndPinnedLanes(state.sequencer.pattern);
     storeSourceClipboard(state.structureClipboard, state.sequencer);
@@ -777,7 +788,10 @@ void test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history()
 
     assert(state.sequencerTracks.activeTrackIndex() == 1);
     assert(state.projectTracks.authored.midiChannels[1] == 10);
-    auto pastedRegion = seq::patternPlaybackRegion(state.sequencer.pattern);
+    auto pastedRegion = seq::clipPlaybackRegion(
+        state.sequencer.pattern,
+        state.sequencer.clip
+    );
     assert(pastedRegion.contentLength == 16);
     assert(pastedRegion.playStart == 2);
     assert(pastedRegion.loopStart == 6);
@@ -802,7 +816,10 @@ void test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history()
     assert(state.sequencerTracks.activeTrackIndex() == 0);
     assert(seq::sequencerCcLaneView(state.sequencerTracks.track(1)) == nullptr);
     const auto restoredDestinationRegion =
-        seq::patternPlaybackRegion(state.sequencerTracks.track(1));
+        seq::clipPlaybackRegion(
+            state.sequencerTracks.track(1),
+            state.sequencerTracks.clip(1)
+        );
     assert(restoredDestinationRegion.contentLength == 8);
     assert(restoredDestinationRegion.playStart == 0);
     assert(restoredDestinationRegion.loopStart == 0);
@@ -810,7 +827,10 @@ void test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history()
 
     assert(state.redoSequencerHistory());
     assert(state.sequencerTracks.activeTrackIndex() == 1);
-    pastedRegion = seq::patternPlaybackRegion(state.sequencer.pattern);
+    pastedRegion = seq::clipPlaybackRegion(
+        state.sequencer.pattern,
+        state.sequencer.clip
+    );
     assert(pastedRegion.contentLength == 16);
     assert(pastedRegion.playStart == 2);
     assert(pastedRegion.loopStart == 6);
@@ -950,9 +970,12 @@ void test_drum_track_copy_paste_is_detached_and_history_exact() {
     const seq::DrumTrackState expected = source;
 
     seq::SequencerPatternSnapshot snapshot{};
+    seq::SequencerClipSnapshot clip{};
     seq::captureSnapshot(state.sequencer.pattern, snapshot);
+    seq::captureSnapshot(state.sequencer.clip, clip);
     assert(state.structureClipboard.storeSequencerTrack(
         snapshot,
+        clip,
         seq::graphView(state.sequencer.pattern),
         sourceTrack,
         seq::sequencerCcLaneView(state.sequencer.pattern),

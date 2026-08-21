@@ -1335,6 +1335,7 @@ CoreState::applySequencerPreparedQuickControlsEdit(
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
     auto* draft = sequencer.quickControlsDraft.pattern();
+    auto* draftClip = sequencer.quickControlsDraft.clip();
     if (!pending.pending ||
         pending.kind !=
             SequencerDomainState::CoalescedPatternHistory::Kind::PreparedFamily ||
@@ -1344,7 +1345,7 @@ CoreState::applySequencerPreparedQuickControlsEdit(
         pending.payloadPlan !=
             sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload ||
         pending.graphCompactionRequested() || pending.prospectiveGraphInstalled ||
-        !pending.preparedPatternChange || draft == nullptr) {
+        !pending.preparedPatternChange || draft == nullptr || draftClip == nullptr) {
         return CommitOutcome::Failed;
     }
 
@@ -1360,6 +1361,7 @@ CoreState::applySequencerPreparedQuickControlsEdit(
         change.preparedPayloadOwnerProofMatches(sequencer.pattern) &&
         sequencer::liveHistoryPatternSnapshotMatches(
             sequencer.pattern,
+            sequencer.clip,
             change.before
         );
     const bool candidateOwnerShapeMatches =
@@ -1373,6 +1375,7 @@ CoreState::applySequencerPreparedQuickControlsEdit(
     const bool afterCaptured =
         sequencer::captureDetachedHistorySnapshotUsingReservedStorage(
             *draft,
+            *draftClip,
             sequencer.focusedStep.get(),
             change.after
         );
@@ -1402,11 +1405,14 @@ CoreState::applySequencerPreparedQuickControlsEdit(
     // been captured and admitted. The draft takes the obsolete live payload so
     // both publication and any invariant unwind remain allocation-free.
     const sequencer::SequencerPatternSnapshot beforeFlat = change.before.flat;
+    const sequencer::SequencerClipSnapshot beforeClip = change.before.clip;
     const uint32_t beforeCcLaneRevision = change.before.ccLaneRevision;
     sequencer.quickControlsDraft.suspendPreview();
     std::swap(sequencer.pattern.graph, draft->graph);
     std::swap(sequencer.pattern.ccLanes, draft->ccLanes);
+    sequencer::applySnapshot(sequencer.clip, change.after.clip);
     sequencer::applySnapshotToEditorPreservingGraph(sequencer, change.after.flat);
+    sequencer.bumpClipRevision();
     sequencer::synchronizeHistoryPatternRevisionSignals(
         sequencer.pattern,
         change.after.flat,
@@ -1422,7 +1428,9 @@ CoreState::applySequencerPreparedQuickControlsEdit(
 
     std::swap(sequencer.pattern.graph, draft->graph);
     std::swap(sequencer.pattern.ccLanes, draft->ccLanes);
+    sequencer::applySnapshot(sequencer.clip, beforeClip);
     sequencer::applySnapshotToEditorPreservingGraph(sequencer, beforeFlat);
+    sequencer.bumpClipRevision();
     sequencer::synchronizeHistoryPatternRevisionSignals(
         sequencer.pattern,
         beforeFlat,
@@ -1458,6 +1466,7 @@ CoreState::abortSequencerPreparedPatternEdit(
             sequencer.pattern) &&
         sequencer::liveHistoryPatternSnapshotMatches(
             sequencer.pattern,
+            sequencer.clip,
             pending.preparedPatternChange->before)) {
         clearPreparedSequencerPatternEditWithoutLiveRestore_();
         return Outcome::Aborted;

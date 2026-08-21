@@ -6,6 +6,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/sequencer/DrumPatternState.hpp"
+#include "state/sequencer/SequencerClipState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 
 namespace core::state::sequencer {
@@ -49,6 +50,14 @@ struct SequencerTrackBankState {
 
     const SequencerPatternState& track(uint8_t index) const {
         return tracks_[clampTrackIndex(index)];
+    }
+
+    SequencerClipState& clip(uint8_t index) {
+        return clips_[clampTrackIndex(index)];
+    }
+
+    const SequencerClipState& clip(uint8_t index) const {
+        return clips_[clampTrackIndex(index)];
     }
 
     [[nodiscard]] SequencerTrackKind trackKind(uint8_t index) const {
@@ -132,6 +141,7 @@ private:
     uint16_t drum_track_mask_ = 0U;
     std::array<uint32_t, TRACK_COUNT> drum_track_revisions_{};
     std::array<SequencerPatternState, TRACK_COUNT> tracks_{};
+    std::array<SequencerClipState, TRACK_COUNT> clips_{};
     std::array<DrumTrackState, TRACK_COUNT> drum_tracks_{};
 };
 

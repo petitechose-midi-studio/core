@@ -12,6 +12,7 @@
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectSnapshot.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 
 namespace core::validation::project {
 namespace {
@@ -49,7 +50,10 @@ FLASHMEM void configureProjectStoreSmokeState(core::state::CoreState& state,
     page.values[2] = 0.42f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.setContentLength(12);
+    (void)core::state::sequencer::resizeClipPatternContent(
+        state.sequencer,
+        12U
+    );
     state.sequencer.pattern.stepsPerBeat.set(4);
     state.sequencer.setStepDataAt(3, 65, 111, 72);
     if (!state.sequencer.pattern.isEnabled(3)) {

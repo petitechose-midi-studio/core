@@ -16,7 +16,7 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphCanonicalPolicy.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::persistence::sequencer_codec {
@@ -53,7 +53,7 @@ enum class SectionId : uint16_t {
     GraphStepNodes = 17,
     GraphCycleSets = 18,
     CcLaneBank = 19,
-    PatternRegion = 20,
+    ClipRegion = 20,
     DrumTrack = 21,
 };
 
@@ -92,7 +92,7 @@ struct GraphSectionViews {
     SectionView stepNodes{};
     SectionView cycleSets{};
     SectionView ccLaneBank{};
-    SectionView patternRegion{};
+    SectionView clipRegion{};
     SectionView drumTrack{};
 };
 
@@ -270,20 +270,20 @@ FLASHMEM bool addDrumTrackSection(
     return encodeDrumTrackRecord(track, data, DRUM_TRACK_RECORD_SIZE);
 }
 
-FLASHMEM bool addPatternRegionSection(
+FLASHMEM bool addClipRegionSection(
     EnvelopeWriter& writer,
-    const state::sequencer::SequencerPatternPlaybackRegion& region,
+    const state::sequencer::SequencerClipPlaybackRegion& region,
     uint8_t track
 ) {
     if (!region.isValid()) return false;
 
     uint8_t* data = nullptr;
     if (!writer.reserveSection(
-            SectionId::PatternRegion,
+            SectionId::ClipRegion,
             track,
-            PATTERN_REGION_RECORD_SIZE,
+            CLIP_REGION_RECORD_SIZE,
             1,
-            PATTERN_REGION_RECORD_SIZE,
+            CLIP_REGION_RECORD_SIZE,
             data
         )) {
         return false;
@@ -294,15 +294,24 @@ FLASHMEM bool addPatternRegionSection(
     return true;
 }
 
-FLASHMEM state::sequencer::SequencerPatternPlaybackRegion snapshotPlaybackRegion(
-    const state::sequencer::SequencerPatternSnapshot& snapshot
+FLASHMEM state::sequencer::SequencerClipPlaybackRegion snapshotPlaybackRegion(
+    const state::sequencer::SequencerPatternSnapshot& snapshot,
+    const state::sequencer::SequencerClipSnapshot& clip
 ) {
-    return {
+    const uint16_t ticksPerStep = state::sequencer::sequencerTicksPerStep(
+        snapshot.stepsPerBeat
+    );
+    const state::sequencer::SequencerClipPlaybackRegion region{
         snapshot.length,
-        snapshot.playStart,
-        snapshot.loopStart,
-        snapshot.loopEnd,
+        static_cast<uint8_t>(clip.playStartTick / ticksPerStep),
+        static_cast<uint8_t>(clip.loopStartTick / ticksPerStep),
+        static_cast<uint8_t>(clip.loopEndTick / ticksPerStep),
     };
+    return region.isValid()
+        ? region
+        : state::sequencer::SequencerClipPlaybackRegion::fullLength(
+              snapshot.length
+          );
 }
 
 FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
@@ -458,8 +467,8 @@ FLASHMEM bool findSections(const uint8_t* data,
                         return false;
                     }
                     break;
-                case SectionId::PatternRegion:
-                    if (!assignSectionView(graph.patternRegion, view)) {
+                case SectionId::ClipRegion:
+                    if (!assignSectionView(graph.clipRegion, view)) {
                         return false;
                     }
                     break;
@@ -489,8 +498,8 @@ FLASHMEM bool sectionHasExactRecordShape(const SectionView& section, uint16_t re
            section.byteSize == static_cast<uint16_t>(section.count * recordSize);
 }
 
-using PatternRegionArray = std::array<
-    state::sequencer::SequencerPatternPlaybackRegion,
+using ClipRegionArray = std::array<
+    state::sequencer::SequencerClipPlaybackRegion,
     PERSISTED_TRACK_COUNT>;
 
 FLASHMEM bool flatPatternContentLength(
@@ -517,17 +526,17 @@ FLASHMEM bool flatPatternContentLength(
     return true;
 }
 
-FLASHMEM bool decodePatternRegions(
+FLASHMEM bool decodeClipRegions(
     const SectionView& flat,
     const std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>& sections,
     EnvelopeKind kind,
-    PatternRegionArray& out
+    ClipRegionArray& out
 ) {
     const uint8_t ownerCount = kind == EnvelopeKind::Pattern
         ? 1U
         : PERSISTED_TRACK_COUNT;
     for (uint8_t track = 0; track < PERSISTED_TRACK_COUNT; ++track) {
-        const auto& section = sections[track].patternRegion;
+        const auto& section = sections[track].clipRegion;
         if (track >= ownerCount) {
             if (section.data != nullptr) return false;
             continue;
@@ -536,10 +545,10 @@ FLASHMEM bool decodePatternRegions(
         uint8_t contentLength = 0;
         if (!flatPatternContentLength(flat, kind, track, contentLength)) return false;
         if (section.data == nullptr || section.count != 1U ||
-            !sectionHasExactRecordShape(section, PATTERN_REGION_RECORD_SIZE)) {
+            !sectionHasExactRecordShape(section, CLIP_REGION_RECORD_SIZE)) {
             return false;
         }
-        const state::sequencer::SequencerPatternPlaybackRegion region{
+        const state::sequencer::SequencerClipPlaybackRegion region{
             contentLength,
             section.data[0],
             section.data[1],
@@ -551,23 +560,29 @@ FLASHMEM bool decodePatternRegions(
     return true;
 }
 
-FLASHMEM void installPatternRegion(
+FLASHMEM void installClipRegion(
     state::sequencer::SequencerPatternState& target,
-    const state::sequencer::SequencerPatternPlaybackRegion& region
+    state::sequencer::SequencerClipState& clip,
+    const state::sequencer::SequencerClipPlaybackRegion& region
 ) {
-    (void)state::sequencer::setPatternPlaybackRegion(target, region);
+    (void)state::sequencer::setClipPlaybackRegion(target, clip, region);
 }
 
-FLASHMEM void installTrackPatternRegions(
-    const PatternRegionArray& regions,
+FLASHMEM void installTrackClipRegions(
+    const ClipRegionArray& regions,
     uint8_t activeTrack,
     state::sequencer::SequencerTrackBankState& trackBank,
     state::sequencer::SequencerState& active
 ) {
     for (uint8_t track = 0; track < PERSISTED_TRACK_COUNT; ++track) {
-        installPatternRegion(trackBank.track(track), regions[track]);
+        installClipRegion(
+            trackBank.track(track),
+            trackBank.clip(track),
+            regions[track]
+        );
     }
-    installPatternRegion(active.pattern, regions[activeTrack]);
+    installClipRegion(active.pattern, active.clip, regions[activeTrack]);
+    active.bumpClipRevision();
 }
 
 FLASHMEM bool linkSequenceValid(const StepSequencerGraph& graph, uint16_t id) {
@@ -948,12 +963,7 @@ FLASHMEM EnvelopeEncodeResult fillPatternEnvelope(
         return {};
     }
     if (!addGraphSections(writer, graph, 0) ||
-        !addCcLaneSection(writer, lanes, 0) ||
-        !addPatternRegionSection(
-            writer,
-            state::sequencer::patternPlaybackRegion(source),
-            0
-        )) {
+        !addCcLaneSection(writer, lanes, 0)) {
         return {};
     }
     return writer.finish();
@@ -978,21 +988,13 @@ FLASHMEM bool applyPatternEnvelope(const uint8_t* data,
         return false;
     }
 
-    PatternRegionArray regions{};
     GraphPtr graph;
     CcLanePtr lanes;
-    if (!decodePatternRegions(
-            flat,
-            graphs,
-            EnvelopeKind::Pattern,
-            regions
-        ) ||
-        !decodeGraphSections(graphs[0], graph) ||
+    if (!decodeGraphSections(graphs[0], graph) ||
         !decodeCcLaneSection(graphs[0], lanes)) {
         return false;
     }
     if (!applyPatternPayload(flat.data, flat.byteSize, target)) return false;
-    installPatternRegion(target, regions[0]);
     installDecodedGraph(target, std::move(graph));
     state::sequencer::installSequencerCcLaneBank(target, std::move(lanes));
     return true;
@@ -1044,9 +1046,12 @@ FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
         }
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        if (!addPatternRegionSection(
+        if (!addClipRegionSection(
                 writer,
-                snapshotPlaybackRegion(source.flat->tracks[i]),
+                snapshotPlaybackRegion(
+                    source.flat->tracks[i],
+                    source.flat->clips[i]
+                ),
                 i
             )) {
             return {};
@@ -1075,13 +1080,13 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
 
     std::array<GraphPtr, PERSISTED_TRACK_COUNT> decodedGraphs{};
     std::array<CcLanePtr, PERSISTED_TRACK_COUNT> decodedLanes{};
-    PatternRegionArray regions{};
+    ClipRegionArray regions{};
     DrumBankPtr decodedDrums;
     GraphPtr activeGraph;
     CcLanePtr activeLanes;
     uint8_t activeTrack = 0U;
     if (!projectActiveTrack(flat, activeTrack) ||
-        !decodePatternRegions(
+        !decodeClipRegions(
             flat,
             graphs,
             EnvelopeKind::ProjectSequencer,
@@ -1104,7 +1109,7 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
     }
     installTrackGraphs(decodedGraphs, std::move(activeGraph), trackBank, active);
     installTrackCcLanes(decodedLanes, std::move(activeLanes), trackBank, active);
-    installTrackPatternRegions(regions, activeTrack, trackBank, active);
+    installTrackClipRegions(regions, activeTrack, trackBank, active);
     if (decodedDrums) {
         if (!trackBank.applyDrumTrackBank(*decodedDrums)) return false;
     } else {
@@ -1163,10 +1168,11 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
         }
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        if (!addPatternRegionSection(
+        if (!addClipRegionSection(
                 writer,
-                state::sequencer::patternPlaybackRegion(
-                    state::sequencer::canonicalTrackPattern(trackBank, active, i)
+                state::sequencer::clipPlaybackRegion(
+                    state::sequencer::canonicalTrackPattern(trackBank, active, i),
+                    state::sequencer::canonicalTrackClip(trackBank, active, i)
                 ),
                 i
             )) {
@@ -1198,13 +1204,13 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
 
     std::array<GraphPtr, PERSISTED_TRACK_COUNT> decodedGraphs{};
     std::array<CcLanePtr, PERSISTED_TRACK_COUNT> decodedLanes{};
-    PatternRegionArray regions{};
+    ClipRegionArray regions{};
     DrumBankPtr decodedDrums;
     GraphPtr activeGraph;
     CcLanePtr activeLanes;
     uint8_t activeTrack = 0U;
     if (!setActiveTrack(flat, activeTrack) ||
-        !decodePatternRegions(
+        !decodeClipRegions(
             flat,
             graphs,
             EnvelopeKind::Set,
@@ -1227,7 +1233,7 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
     }
     installTrackGraphs(decodedGraphs, std::move(activeGraph), trackBank, active);
     installTrackCcLanes(decodedLanes, std::move(activeLanes), trackBank, active);
-    installTrackPatternRegions(regions, activeTrack, trackBank, active);
+    installTrackClipRegions(regions, activeTrack, trackBank, active);
     if (decodedDrums) {
         if (!trackBank.applyDrumTrackBank(*decodedDrums)) return false;
     } else {

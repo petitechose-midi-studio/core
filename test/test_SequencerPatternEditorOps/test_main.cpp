@@ -3,7 +3,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerPatternEditorOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace {
@@ -14,7 +14,7 @@ static_assert(sizeof(seq::SequencerPatternEditorState) <= 128U);
 
 void test_open_retains_exact_owner_page_and_wrapped_navigation() {
     seq::SequencerState state;
-    assert(state.pattern.setContentLength(20));
+    assert(seq::resizeClipPatternContent(state, 20));
     state.page.set(2);
     state.focusedStep.set(17);
 
@@ -62,22 +62,22 @@ void test_fields_use_canonical_pattern_authorities_and_exact_marker_ranges() {
         12
     ));
     assert(state.pattern.length.get() == 12);
-    assert(state.pattern.loopEnd == 12);
+    assert(seq::clipPlaybackRegion(state.pattern, state.clip).loopEnd == 12);
 
-    assert(seq::setPatternPlaybackRegion(state.pattern, {12, 2, 4, 10}));
+    assert(seq::setClipPlaybackRegion(state, {12, 2, 4, 10}));
     assert(seq::setPatternEditorFieldValue(
         state,
         seq::SequencerPatternEditorField::PLAY_START,
         3
     ));
-    assert(seq::patternPlaybackRegion(state.pattern).playStart == 3);
+    assert(seq::clipPlaybackRegion(state.pattern, state.clip).playStart == 3);
 
     assert(seq::setPatternEditorFieldValue(
         state,
         seq::SequencerPatternEditorField::LOOP_START,
         8
     ));
-    auto region = seq::patternPlaybackRegion(state.pattern);
+    auto region = seq::clipPlaybackRegion(state.pattern, state.clip);
     assert(region.loopStart == 8);
     assert(region.loopEnd == 10);
 
@@ -86,7 +86,7 @@ void test_fields_use_canonical_pattern_authorities_and_exact_marker_ranges() {
         seq::SequencerPatternEditorField::LOOP_END,
         7
     ));
-    region = seq::patternPlaybackRegion(state.pattern);
+    region = seq::clipPlaybackRegion(state.pattern, state.clip);
     assert(region.loopEnd == 9);
 
     assert(seq::setPatternEditorFieldValue(
@@ -118,8 +118,8 @@ void test_fields_use_canonical_pattern_authorities_and_exact_marker_ranges() {
 
 void test_division_is_direct_and_length_repairs_window() {
     seq::SequencerState state;
-    assert(state.pattern.setContentLength(20));
-    assert(seq::setPatternPlaybackRegion(state.pattern, {20, 2, 5, 18}));
+    assert(seq::resizeClipPatternContent(state, 20));
+    assert(seq::setClipPlaybackRegion(state, {20, 2, 5, 18}));
     state.page.set(2);
     assert(seq::openPatternEditor(state, 0));
     assert(state.patternEditor.windowStart == 16);
@@ -139,7 +139,7 @@ void test_division_is_direct_and_length_repairs_window() {
     assert(state.patternEditor.windowStart == 0);
     assert(state.page.get() == 0);
     assert(state.focusedStep.get() < 8);
-    assert(seq::patternPlaybackRegion(state.pattern).isValid());
+    assert(seq::clipPlaybackRegion(state.pattern, state.clip).isValid());
 }
 
 void test_layers_are_dense_and_offer_only_first_free_lane_before_region() {

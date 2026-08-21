@@ -152,9 +152,6 @@ bool samePatternSnapshot(
     const seq::SequencerPatternSnapshot& rhs
 ) {
     return lhs.length == rhs.length &&
-           lhs.playStart == rhs.playStart &&
-           lhs.loopStart == rhs.loopStart &&
-           lhs.loopEnd == rhs.loopEnd &&
            lhs.stepsPerBeat == rhs.stepsPerBeat &&
            lhs.enabledMask == rhs.enabledMask &&
            lhs.stepDataRevision == rhs.stepDataRevision &&
@@ -177,6 +174,15 @@ bool samePatternSnapshot(
            lhs.probability == rhs.probability;
 }
 
+bool sameClipSnapshot(
+    const seq::SequencerClipSnapshot& lhs,
+    const seq::SequencerClipSnapshot& rhs
+) {
+    return lhs.playStartTick == rhs.playStartTick &&
+           lhs.loopStartTick == rhs.loopStartTick &&
+           lhs.loopEndTick == rhs.loopEndTick;
+}
+
 bool sameBankSnapshot(
     const seq::SequencerTrackBankSnapshot& lhs,
     const seq::SequencerTrackBankSnapshot& rhs
@@ -189,7 +195,10 @@ bool sameBankSnapshot(
     }
     for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
-        if (!samePatternSnapshot(lhs.tracks[track], rhs.tracks[track])) return false;
+        if (!samePatternSnapshot(lhs.tracks[track], rhs.tracks[track]) ||
+            !sameClipSnapshot(lhs.clips[track], rhs.clips[track])) {
+            return false;
+        }
     }
     return true;
 }

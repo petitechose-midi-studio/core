@@ -134,6 +134,7 @@ struct SequencerTrackSelectionClipboardEntry {
     uint8_t sourceTrack =
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     core::state::sequencer::SequencerPatternSnapshot snapshot{};
+    core::state::sequencer::SequencerClipSnapshot clip{};
     core::app::ExtmemUniquePtr<
         oc::note::sequencer::StepSequencerGraph
     > graph;
@@ -244,7 +245,7 @@ struct MacroAutomationClipboard {
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 static_assert(
-    sizeof(SequencerTrackSelectionClipboard) == 29072U,
+    sizeof(SequencerTrackSelectionClipboard) == 29200U,
     "LOCK-P: ARM Track-selection clipboard ABI changed"
 );
 static_assert(
@@ -294,6 +295,7 @@ struct StructureClipboardState {
     core::state::SequencerStepsClipboard sequencerSteps{};
     core::state::SequencerPageSelectionClipboard sequencerPageSelection{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
+    core::state::sequencer::SequencerClipSnapshot sequencerTrackClip{};
     uint8_t sequencerTrackSource =
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
@@ -389,6 +391,7 @@ struct StructureClipboardState {
 
     [[nodiscard]] bool storeSequencerTrack(
         const core::state::sequencer::SequencerPatternSnapshot& track,
+        const core::state::sequencer::SequencerClipSnapshot& clip,
         const oc::note::sequencer::StepSequencerGraph* graph,
         uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
         const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr,

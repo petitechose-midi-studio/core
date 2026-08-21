@@ -11,7 +11,6 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace {
@@ -56,7 +55,6 @@ void testInstrumentRoundTrip() {
         "Chromatic pulse"
     ));
     assert(source.pattern.setContentLength(32U));
-    assert(seq::setPatternPlaybackRegion(source.pattern, {32U, 2U, 5U, 27U}));
     auto enabled = source.pattern.enabledMask.get();
     enabled.setBit(3U, true);
     source.pattern.enabledMask.set(enabled);
@@ -91,6 +89,8 @@ void testInstrumentRoundTrip() {
 
     seq::SequencerState decoded{};
     decoded.reset();
+    decoded.clip = {12U, 24U, 84U};
+    const auto destinationClip = decoded.clip;
     seq::SequencerPatternPresetMetadata decodedMetadata{};
     assert(codec::decode(
         bytes.data(),
@@ -101,6 +101,11 @@ void testInstrumentRoundTrip() {
     ));
     assert(std::strcmp(decodedMetadata.technicalId, "instrument-pattern-001") == 0);
     assert(seq::sameMusicalPatternState(source.pattern, decoded.pattern));
+    assert(std::memcmp(
+        &decoded.clip,
+        &destinationClip,
+        sizeof(destinationClip)
+    ) == 0);
 
     std::cout << "[PASS] instrument Pattern Preset round-trip: "
               << encoded.bytesWritten << " bytes\n";

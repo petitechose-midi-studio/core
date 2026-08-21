@@ -115,7 +115,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphPropertyOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternPreset.cpp"
-    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRegionOps.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerClipRegionOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRandomizeOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRandomizeSession.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternEditorState.cpp"

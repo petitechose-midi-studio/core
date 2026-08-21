@@ -14,6 +14,7 @@
 #include "../../src/handler/sequencer/SequencerPatternPresetLibraryAdapter.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
@@ -132,6 +133,7 @@ void setInstrumentPattern(
 void testInstrumentLifecycleAndSingleUndo() {
     Harness h;
     setInstrumentPattern(h.state, 67U, true);
+    assert(seq::setClipPlaybackRegion(h.state.sequencer, {8U, 1U, 2U, 7U}));
     const auto saveTarget = h.presets.captureTarget();
     const auto saved = h.presets.savePreset(
         "pattern-preset-0001",
@@ -141,6 +143,8 @@ void testInstrumentLifecycleAndSingleUndo() {
     assert(saved.ok());
 
     setInstrumentPattern(h.state, 48U, false);
+    assert(seq::setClipPlaybackRegion(h.state.sequencer, {8U, 0U, 3U, 6U}));
+    const auto destinationClip = h.state.sequencer.clip;
     const auto target = h.presets.captureTarget();
     const auto inspected = h.presets.inspectPreset(
         "pattern-preset-0001",
@@ -164,6 +168,11 @@ void testInstrumentLifecycleAndSingleUndo() {
     assert(cancelledPreview.active());
     assert(h.state.sequencer.pattern.note[2U] == 67U);
     assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
+    assert(std::memcmp(
+        &h.state.sequencer.clip,
+        &destinationClip,
+        sizeof(destinationClip)
+    ) == 0);
     assert(h.state.sequencerTracks.track(0U).note[2U] == 67U);
     assert(h.state.sequencerHistory.undoCount() == undoBefore);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
@@ -173,6 +182,11 @@ void testInstrumentLifecycleAndSingleUndo() {
     assert(!cancelledPreview.active());
     assert(h.state.sequencer.pattern.note[2U] == 48U);
     assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(std::memcmp(
+        &h.state.sequencer.clip,
+        &destinationClip,
+        sizeof(destinationClip)
+    ) == 0);
     assert(h.state.sequencerTracks.track(0U).note[2U] == 48U);
     assert(h.state.sequencerHistory.undoCount() == undoBefore);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
@@ -190,14 +204,29 @@ void testInstrumentLifecycleAndSingleUndo() {
     assert(!confirmedPreview.active());
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);
+    assert(std::memcmp(
+        &h.state.sequencer.clip,
+        &destinationClip,
+        sizeof(destinationClip)
+    ) == 0);
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.note[2U] == 48U);
     assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(std::memcmp(
+        &h.state.sequencer.clip,
+        &destinationClip,
+        sizeof(destinationClip)
+    ) == 0);
     assert(h.state.sequencerHistory.undoCount() == undoBefore);
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencer.pattern.note[2U] == 67U);
     assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
+    assert(std::memcmp(
+        &h.state.sequencer.clip,
+        &destinationClip,
+        sizeof(destinationClip)
+    ) == 0);
 
     const auto renamed = h.presets.renamePreset(
         "pattern-preset-0001",

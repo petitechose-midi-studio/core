@@ -66,13 +66,6 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     /// Bumps when pattern timing context changes.
     Signal<uint32_t> patternTimingRevision{0};
 
-    // Persistent half-open playback region. Content length remains owned by
-    // StepSequencerState::length; mutations go through SequencerPatternRegionOps
-    // so these three bytes cannot diverge from it.
-    uint8_t playStart = 0;
-    uint8_t loopStart = 0;
-    uint8_t loopEnd = DEFAULT_LENGTH;
-
     SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
     SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;

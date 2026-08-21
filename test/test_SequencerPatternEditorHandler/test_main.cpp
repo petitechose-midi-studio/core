@@ -14,6 +14,7 @@
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "support/CoreStorages.hpp"
 #include "support/InputTestHardware.hpp"
@@ -100,7 +101,8 @@ void assertHistoryRejection(const Harness& h, const char* expectedDetail,
 
 void test_retained_navigation_uses_modifier_grammar_without_history() {
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(24));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 24));
     assert(h.handler.openFromCurrentPage());
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_PATTERN_EDIT);
     assert(h.overlays.currentScope() == Harness::OVERLAY_SCOPE);
@@ -132,15 +134,18 @@ void test_retained_navigation_uses_modifier_grammar_without_history() {
 
 void test_opt_edits_coalesce_per_field_and_restore_exact_region() {
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     assert(h.handler.openFromCurrentPage());
     assert(h.state.sequencer.pattern.length.get() == 16);
-    assert(h.state.sequencer.pattern.loopEnd == 16);
+    assert(core::state::sequencer::clipPlaybackRegion(
+        h.state.sequencer.pattern, h.state.sequencer.clip).loopEnd == 16);
 
     h.turn(Config::EncoderID::OPT, 11.0f / 127.0f);
     h.turn(Config::EncoderID::OPT, 7.0f / 127.0f);
     assert(h.state.sequencer.pattern.length.get() == 8);
-    assert(h.state.sequencer.pattern.loopEnd == 8);
+    assert(core::state::sequencer::clipPlaybackRegion(
+        h.state.sequencer.pattern, h.state.sequencer.clip).loopEnd == 8);
     assert(h.state.sequencerHistory.undoCount() == 0);
 
     // Changing field closes exactly one contiguous OPT gesture.
@@ -150,17 +155,21 @@ void test_opt_edits_coalesce_per_field_and_restore_exact_region() {
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.length.get() == 16);
-    assert(h.state.sequencer.pattern.playStart == 0);
-    assert(h.state.sequencer.pattern.loopStart == 0);
-    assert(h.state.sequencer.pattern.loopEnd == 16);
+    auto region = core::state::sequencer::clipPlaybackRegion(
+        h.state.sequencer.pattern, h.state.sequencer.clip);
+    assert(region.playStart == 0);
+    assert(region.loopStart == 0);
+    assert(region.loopEnd == 16);
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencer.pattern.length.get() == 8);
-    assert(h.state.sequencer.pattern.loopEnd == 8);
+    assert(core::state::sequencer::clipPlaybackRegion(
+        h.state.sequencer.pattern, h.state.sequencer.clip).loopEnd == 8);
 }
 
 void test_external_track_switch_commits_old_owner_then_closes() {
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     assert(h.handler.openFromCurrentPage());
     h.turn(Config::EncoderID::OPT, 7.0f / 127.0f);
     assert(h.state.sequencer.pattern.length.get() == 8);
@@ -238,7 +247,8 @@ void test_inactive_editor_does_not_fragment_foreign_coalesced_gesture() {
 
 void test_randomize_preview_reroll_and_cancel_never_publish() {
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
     const auto before = h.state.sequencer.pattern.note;
     assert(h.handler.openFromCurrentPage());
@@ -264,7 +274,8 @@ void test_randomize_preview_reroll_and_cancel_never_publish() {
 
 void test_randomize_apply_is_one_exact_flat_history_entry() {
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
     const auto before = h.state.sequencer.pattern.note;
     assert(h.handler.openFromCurrentPage());
@@ -289,7 +300,8 @@ void test_randomize_apply_is_one_exact_flat_history_entry() {
 void test_randomize_apply_stops_at_failed_history_barrier() {
     namespace seq = core::state::sequencer;
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
     const auto before = h.state.sequencer.pattern.note;
     assert(h.handler.openFromCurrentPage());
@@ -338,7 +350,8 @@ void test_randomize_apply_stops_at_failed_history_barrier() {
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
 void test_randomize_apply_allocation_failure_keeps_preview_retryable() {
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
     const auto before = h.state.sequencer.pattern.note;
     assert(h.handler.openFromCurrentPage());
@@ -374,7 +387,8 @@ void test_randomize_apply_allocation_failure_keeps_preview_retryable() {
 
 void test_add_page_extends_to_next_window_and_is_one_undoable_action() {
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     assert(h.handler.openFromCurrentPage());
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -389,7 +403,8 @@ void test_add_page_extends_to_next_window_and_is_one_undoable_action() {
 void test_add_page_begin_failure_preserves_ui_and_pattern() {
     namespace seq = core::state::sequencer;
     Harness h;
-    assert(h.state.sequencer.pattern.setContentLength(16));
+    assert(core::state::sequencer::resizeClipPatternContent(
+        h.state.sequencer, 16));
     assert(h.handler.openFromCurrentPage());
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.patternEditor.focusedField ==

@@ -1648,6 +1648,9 @@ SequencerPatternPresetDomainServices::previewPreset(
                 seq::SequencerPatternPresetStatus::RESOURCE_EXHAUSTED;
             return result;
         }
+        // Pattern Presets own authored content only. Keep the target Clip's
+        // playback placement across preview, commit, cancel, Undo, and Redo.
+        change->after.clip = change->before.clip;
         change->trackIndex = target.trackIndex;
         change->descriptor = descriptor;
         change->storage = seq::SequencerHistoryPatternStorage::FullGraph;
@@ -1714,12 +1717,15 @@ SequencerPatternPresetDomainServices::previewPreset(
         seq::installTrackContentSnapshotToEditorWithOwnedPayload(
             state_->sequencer,
             flat,
+            change->after.clip,
             std::move(editorGraph),
             std::move(editorCcLanes)
         );
         seq::installTrackContentSnapshotWithOwnedPayload(
             state_->sequencerTracks.track(target.trackIndex),
+            state_->sequencerTracks.clip(target.trackIndex),
             flat,
+            change->after.clip,
             std::move(bankGraph),
             std::move(bankCcLanes)
         );

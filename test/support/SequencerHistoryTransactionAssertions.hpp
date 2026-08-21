@@ -199,9 +199,6 @@ inline uint64_t flatPatternFingerprint(
     seq::captureSnapshot(pattern, snapshot);
     uint64_t hash = 1469598103934665603ULL;
     mixFingerprintValue(hash, snapshot.length);
-    mixFingerprintValue(hash, snapshot.playStart);
-    mixFingerprintValue(hash, snapshot.loopStart);
-    mixFingerprintValue(hash, snapshot.loopEnd);
     mixFingerprintValue(hash, snapshot.stepsPerBeat);
     mixFingerprintValue(hash, snapshot.enabledMask.low);
     mixFingerprintValue(hash, snapshot.enabledMask.high);

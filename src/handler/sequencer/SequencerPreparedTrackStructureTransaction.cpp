@@ -77,7 +77,7 @@ FLASHMEM Status statusForChronology(
 FLASHMEM core::state::sequencer::SequencerTrackFlatSnapshotView flatView(
     const core::state::sequencer::SequencerHistoryPatternSnapshot& snapshot
 ) noexcept {
-    return {&snapshot.flat, snapshot.ccLaneRevision};
+    return {&snapshot.flat, &snapshot.clip, snapshot.ccLaneRevision};
 }
 
 FLASHMEM bool macroAfterRespectsAction(

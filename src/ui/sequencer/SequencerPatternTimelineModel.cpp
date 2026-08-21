@@ -6,7 +6,7 @@
 #include <oc/note/sequencer/StepSequencerPlaybackRegion.hpp>
 
 #include "state/sequencer/SequencerCcLaneProjectionOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 
@@ -16,7 +16,7 @@ namespace {
 namespace seq = core::state::sequencer;
 
 struct TimelinePatternSource {
-    seq::SequencerPatternPlaybackRegion region{};
+    seq::SequencerClipPlaybackRegion region{};
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0U;
     uint32_t patternTimingRevision = 0U;
@@ -30,10 +30,11 @@ struct TimelinePatternSource {
 };
 
 [[nodiscard]] TimelinePatternSource timelineSource(
-    const seq::SequencerPatternState& pattern
+    const seq::SequencerPatternState& pattern,
+    const seq::SequencerClipState& clip
 ) {
     return {
-        .region = seq::patternPlaybackRegion(pattern),
+        .region = seq::clipPlaybackRegion(pattern, clip),
         .enabledMask = pattern.enabledMask.get(),
         .stepDataRevision = pattern.stepDataRevision.get(),
         .patternTimingRevision = pattern.patternTimingRevision.get(),
@@ -86,15 +87,28 @@ void hashU64(uint32_t& hash, uint64_t value) {
 }
 
 [[nodiscard]] TimelinePatternSource timelineSource(
-    const seq::SequencerPatternSnapshot& snapshot
+    const seq::SequencerPatternSnapshot& snapshot,
+    const seq::SequencerClipSnapshot& clip
 ) {
+    const uint16_t ticksPerStep = seq::sequencerTicksPerStep(
+        snapshot.stepsPerBeat
+    );
+    const seq::SequencerClipPlaybackRegion region{
+        snapshot.length,
+        static_cast<uint8_t>(ticksPerStep == 0U
+            ? 0U
+            : clip.playStartTick / ticksPerStep),
+        static_cast<uint8_t>(ticksPerStep == 0U
+            ? 0U
+            : clip.loopStartTick / ticksPerStep),
+        static_cast<uint8_t>(ticksPerStep == 0U
+            ? 0U
+            : clip.loopEndTick / ticksPerStep),
+    };
     return {
-        .region = {
-            snapshot.length,
-            snapshot.playStart,
-            snapshot.loopStart,
-            snapshot.loopEnd,
-        },
+        .region = region.isValid()
+            ? region
+            : seq::SequencerClipPlaybackRegion::fullLength(snapshot.length),
         .enabledMask = snapshot.enabledMask,
         .stepDataRevision = snapshot.stepDataRevision,
         .patternTimingRevision = snapshot.patternTimingRevision,
@@ -184,7 +198,7 @@ void setCcValid(
     const TimelinePatternSource& source,
     const seq::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
-    seq::SequencerPatternPlaybackRegion& region,
+    seq::SequencerClipPlaybackRegion& region,
     uint8_t& clippedWindowCount
 ) {
     if (viewport.width == 0U ||
@@ -214,7 +228,7 @@ void setCcValid(
 
 [[nodiscard]] bool sampleCcAtColumn(
     const seq::SequencerCcLane& lane,
-    const seq::SequencerPatternPlaybackRegion& region,
+    const seq::SequencerClipPlaybackRegion& region,
     uint16_t width,
     uint16_t x,
     uint8_t& outValue
@@ -320,7 +334,7 @@ FLASHMEM bool makeRebuildKeyFromSource(
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineRebuildKey& out
 ) {
-    seq::SequencerPatternPlaybackRegion region{};
+    seq::SequencerClipPlaybackRegion region{};
     uint8_t clippedWindowCount = 0U;
     if (!validateTimelineInput(
             source,
@@ -466,7 +480,7 @@ FLASHMEM bool rebuildFromSource(
         )) {
         return true;
     }
-    const seq::SequencerPatternPlaybackRegion region{
+    const seq::SequencerClipPlaybackRegion region{
         key.contentLength,
         key.playStart,
         key.loopStart,
@@ -497,12 +511,13 @@ FLASHMEM bool rebuildFromSource(
 
 FLASHMEM bool makeSequencerPatternTimelineRebuildKey(
     const seq::SequencerPatternState& pattern,
+    const seq::SequencerClipState& clip,
     const seq::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineRebuildKey& out
 ) {
     return makeRebuildKeyFromSource(
-        timelineSource(pattern),
+        timelineSource(pattern, clip),
         ccLanes,
         viewport,
         out
@@ -511,12 +526,13 @@ FLASHMEM bool makeSequencerPatternTimelineRebuildKey(
 
 FLASHMEM bool makeSequencerPatternTimelineRebuildKey(
     const seq::SequencerPatternSnapshot& snapshot,
+    const seq::SequencerClipSnapshot& clip,
     const seq::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineRebuildKey& out
 ) {
     return makeRebuildKeyFromSource(
-        timelineSource(snapshot),
+        timelineSource(snapshot, clip),
         ccLanes,
         viewport,
         out
@@ -525,12 +541,13 @@ FLASHMEM bool makeSequencerPatternTimelineRebuildKey(
 
 FLASHMEM bool rebuildSequencerPatternTimelineGeometry(
     const seq::SequencerPatternState& pattern,
+    const seq::SequencerClipState& clip,
     const seq::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineGeometry& out
 ) {
     return rebuildFromSource(
-        timelineSource(pattern),
+        timelineSource(pattern, clip),
         ccLanes,
         viewport,
         out
@@ -539,12 +556,13 @@ FLASHMEM bool rebuildSequencerPatternTimelineGeometry(
 
 FLASHMEM bool rebuildSequencerPatternTimelineGeometry(
     const seq::SequencerPatternSnapshot& snapshot,
+    const seq::SequencerClipSnapshot& clip,
     const seq::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineGeometry& out
 ) {
     return rebuildFromSource(
-        timelineSource(snapshot),
+        timelineSource(snapshot, clip),
         ccLanes,
         viewport,
         out

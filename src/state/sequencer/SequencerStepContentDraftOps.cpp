@@ -60,9 +60,6 @@ FLASHMEM bool samePublishableFlatPattern(
     const SequencerPatternSnapshot& rhs
 ) {
     return lhs.length == rhs.length &&
-           lhs.playStart == rhs.playStart &&
-           lhs.loopStart == rhs.loopStart &&
-           lhs.loopEnd == rhs.loopEnd &&
            lhs.stepsPerBeat == rhs.stepsPerBeat &&
            lhs.enabledMask == rhs.enabledMask &&
            lhs.swingOffsetPercent == rhs.swingOffsetPercent &&
@@ -162,6 +159,24 @@ FLASHMEM const SequencerPatternState& authoringPattern(
     return draft != nullptr ? *draft : sequencer.pattern;
 }
 
+FLASHMEM SequencerClipState& authoringClip(SequencerState& sequencer) {
+    if (auto* quickControls = sequencer.quickControlsDraft.previewClip()) {
+        return *quickControls;
+    }
+    auto* draft = sequencer.stepContentDraft.clip();
+    return draft != nullptr ? *draft : sequencer.clip;
+}
+
+FLASHMEM const SequencerClipState& authoringClip(
+    const SequencerState& sequencer
+) {
+    if (const auto* quickControls = sequencer.quickControlsDraft.previewClip()) {
+        return *quickControls;
+    }
+    const auto* draft = sequencer.stepContentDraft.clip();
+    return draft != nullptr ? *draft : sequencer.clip;
+}
+
 FLASHMEM bool beginStepContentDraft(
     SequencerState& sequencer,
     SequencerStepContentDraftKind kind,
@@ -170,6 +185,7 @@ FLASHMEM bool beginStepContentDraft(
 ) {
     return sequencer.stepContentDraft.begin(
         sequencer.pattern,
+        sequencer.clip,
         kind,
         ownerStep,
         ownerNodeId
@@ -276,7 +292,12 @@ FLASHMEM bool stepContentDraftHasPublishableSubset(
     SequencerPatternSnapshot authored{};
     captureSnapshot(sequencer.pattern, published);
     captureSnapshot(*draft, authored);
-    return samePublishableFlatPattern(published, authored);
+    const auto* draftClip = sequencer.stepContentDraft.clip();
+    return draftClip != nullptr &&
+           samePublishableFlatPattern(published, authored) &&
+           sequencer.clip.playStartTick == draftClip->playStartTick &&
+           sequencer.clip.loopStartTick == draftClip->loopStartTick &&
+           sequencer.clip.loopEndTick == draftClip->loopEndTick;
 }
 
 FLASHMEM bool captureStepContentDraftAfterSnapshot(
@@ -286,6 +307,7 @@ FLASHMEM bool captureStepContentDraftAfterSnapshot(
     if (!sequencer.stepContentDraft.active.get()) return false;
 
     captureSnapshot(sequencer.pattern, out.flat);
+    captureSnapshot(sequencer.clip, out.clip);
     out.flat.graphRevision = publishedRevisionFor(sequencer);
     out.focusedStep = sequencer.focusedStep.get();
     if (!reserveHistorySnapshotGraphStorage(out)) return false;
@@ -306,6 +328,9 @@ FLASHMEM bool captureStepContentDraftAfterSnapshot(
 
     const auto* draft = sequencer.stepContentDraft.pattern();
     if (draft == nullptr) return false;
+    const auto* draftClip = sequencer.stepContentDraft.clip();
+    if (draftClip == nullptr) return false;
+    captureSnapshot(*draftClip, out.clip);
     const auto* graph = graphView(*draft);
     if (graph != nullptr) {
         *out.graph = *graph;
@@ -406,6 +431,14 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
         *sequencer.pattern.graph = *source;
     } else {
         sequencer.pattern.graph = std::move(prepared);
+    }
+    if (const auto* draftClip = sequencer.stepContentDraft.clip()) {
+        if (sequencer.clip.playStartTick != draftClip->playStartTick ||
+            sequencer.clip.loopStartTick != draftClip->loopStartTick ||
+            sequencer.clip.loopEndTick != draftClip->loopEndTick) {
+            sequencer.clip = *draftClip;
+            sequencer.bumpClipRevision();
+        }
     }
     sequencer.pattern.graphRevision.set(revision);
     sequencer.invalidateVariationTelemetry();

@@ -324,7 +324,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/sequencer/SequencerPatternPreset.cpp
     src/state/sequencer/SequencerPatternRandomizeOps.cpp
     src/state/sequencer/SequencerPatternRandomizeSession.cpp
-    src/state/sequencer/SequencerPatternRegionOps.cpp
+    src/state/sequencer/SequencerClipRegionOps.cpp
     src/state/sequencer/SequencerPitchEditAuthority.cpp
     src/state/sequencer/SequencerPresetMetadata.cpp
     src/state/sequencer/SequencerProjectScaleOps.cpp

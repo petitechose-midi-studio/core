@@ -22,6 +22,10 @@ struct SequencerState;
 [[nodiscard]] const SequencerPatternState& authoringPattern(
     const SequencerState& sequencer
 );
+[[nodiscard]] SequencerClipState& authoringClip(SequencerState& sequencer);
+[[nodiscard]] const SequencerClipState& authoringClip(
+    const SequencerState& sequencer
+);
 
 [[nodiscard]] bool beginStepContentDraft(
     SequencerState& sequencer,

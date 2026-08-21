@@ -31,6 +31,7 @@ constexpr uint64_t kClipboardFingerprintPrime = 1099511628211ULL;
 
 struct SourcePayload {
     const PatternSnapshot* snapshot = nullptr;
+    const core::state::sequencer::SequencerClipSnapshot* clip = nullptr;
     const Graph* graph = nullptr;
     const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr;
     const core::state::sequencer::DrumTrackState* drumTrack = nullptr;
@@ -47,6 +48,7 @@ FLASHMEM SourcePayload sourcePayload(
         }
         return {
             &clipboard.sequencerTrack,
+            &clipboard.sequencerTrackClip,
             clipboard.sequencerGraph.get(),
             clipboard.sequencerCcLanes.get(),
             clipboard.sequencerDrumTrack.get(),
@@ -69,6 +71,7 @@ FLASHMEM SourcePayload sourcePayload(
     }
     return {
         &source.snapshot,
+        &source.clip,
         source.graph.get(),
         source.ccLanes.get(),
         source.drumTrack.get(),
@@ -149,6 +152,11 @@ FLASHMEM uint64_t clipboardPayloadFingerprint(
             hash,
             source.snapshot,
             source.snapshot == nullptr ? 0U : sizeof(*source.snapshot)
+        );
+        hash = appendFingerprint(
+            hash,
+            source.clip,
+            source.clip == nullptr ? 0U : sizeof(*source.clip)
         );
         hash = appendFingerprint(
             hash,
@@ -485,7 +493,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
 
     const SourcePayload firstSource =
         sourcePayload(clipboard, prepared.plan.entries[0]);
-    if (firstSource.snapshot == nullptr) {
+    if (firstSource.snapshot == nullptr || firstSource.clip == nullptr) {
         prepared.status = SequencerTrackTransferStatus::STALE;
         return prepared;
     }
@@ -553,7 +561,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         const auto& destination = prepared.plan.entries[index];
         const SourcePayload source =
             sourcePayload(clipboard, destination);
-        if (source.snapshot == nullptr) {
+        if (source.snapshot == nullptr || source.clip == nullptr) {
             prepared.status = SequencerTrackTransferStatus::STALE;
             return prepared;
         }
@@ -588,6 +596,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         const auto* destinationCcLanes = prepared.history->before
             .tracks[destination.targetTrack].ccLanes.get();
         afterTrack.flat = *source.snapshot;
+        afterTrack.clip = *source.clip;
         afterTrack.focusedStep = after.focusedStep;
         afterTrack.ccLanesCaptured = true;
         if (!copyGraphIntoReservedStorage(
@@ -812,7 +821,9 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
         auto& outgoing = tracks.track(prepared.previousActiveTrack);
         core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
             outgoing,
+            tracks.clip(prepared.previousActiveTrack),
             prepared.history->before.tracks[prepared.previousActiveTrack].flat,
+            prepared.history->before.tracks[prepared.previousActiveTrack].clip,
             std::move(prepared.outgoingActiveGraph),
             std::move(prepared.outgoingActiveCcLanes)
         );
@@ -825,7 +836,9 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             prepared.history->after.tracks[destination.targetTrack];
         core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
             target,
+            tracks.clip(destination.targetTrack),
             afterTrack.flat,
+            afterTrack.clip,
             std::move(prepared.bankGraphAt(index)),
             std::move(prepared.bankCcLanesAt(index))
         );
@@ -837,6 +850,7 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedPayload(
         sequencer,
         firstAfter.flat,
+        firstAfter.clip,
         std::move(prepared.editorGraph),
         std::move(prepared.editorCcLanes)
     );

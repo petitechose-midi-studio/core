@@ -18,6 +18,7 @@
 #include "state/CoreState.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
@@ -613,6 +614,26 @@ void test_rejected_and_semantic_no_change_preflights() {
 }
 
 void test_pattern_clipboard_and_content_path_staleness() {
+    {
+        seq::SequencerState sequencer;
+        setLength(sequencer, 8U);
+        dirtyRootStep(sequencer);
+        MutationPlan plan;
+        assertReady(
+            core::handler::buildSequencerPageClearMutationPlan(
+                sequencer, 0U, 0U, plan),
+            plan,
+            Action::PageClear);
+        const Execution execution =
+            core::handler::makeSequencerPreparedPageStructureExecution(plan);
+        assert(seq::setClipPlaybackRegion(
+            sequencer,
+            {.contentLength = 8U,
+             .playStart = 1U,
+             .loopStart = 2U,
+             .loopEnd = 6U}));
+        assert(execution.revalidate(execution.mutationContext, sequencer));
+    }
     {
         seq::SequencerState sequencer;
         setLength(sequencer, 8U);

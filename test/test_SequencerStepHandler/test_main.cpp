@@ -33,8 +33,8 @@
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerCcLaneDomain.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
+#include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
-#include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../../src/state/sequencer/SequencerStepEditRows.hpp"
@@ -1856,10 +1856,17 @@ DirectTrackFixture configureDirectTrackFixture(
     const uint8_t target = kind == DirectTrackFixtureKind::Create
         ? kDirectTrackCreateTarget
         : kDirectTrackIncoming;
-    state.sequencer.pattern.setContentLength(40U);
-    state.sequencerTracks.track(kDirectTrackOldActive).setContentLength(11U);
-    state.sequencerTracks.track(target).setContentLength(
-        kind == DirectTrackFixtureKind::Create ? 24U : 5U);
+    assert(seq::resizeClipPatternContent(state.sequencer, 40U));
+    assert(seq::resizeClipPatternContent(
+        state.sequencerTracks.track(kDirectTrackOldActive),
+        state.sequencerTracks.clip(kDirectTrackOldActive),
+        11U
+    ));
+    assert(seq::resizeClipPatternContent(
+        state.sequencerTracks.track(target),
+        state.sequencerTracks.clip(target),
+        kind == DirectTrackFixtureKind::Create ? 24U : 5U
+    ));
     installTrackColdOwners(state.sequencer.pattern, 1U);
     installTrackColdOwners(
         state.sequencerTracks.track(kDirectTrackOldActive), 2U);
@@ -2749,8 +2756,8 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     assert(seq::createSequencerCcLane(*cc, 0U, ccDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 2U, 45U).changed());
     h.state.sequencer.pattern.bumpCcLaneRevision();
-    assert(seq::setPatternPlaybackRegion(
-        h.state.sequencer.pattern, {24U, 1U, 4U, 20U}));
+    assert(seq::setClipPlaybackRegion(
+        h.state.sequencer, {24U, 1U, 4U, 20U}));
     const void* const ccOwner = h.state.sequencer.pattern.ccLanes.get();
     const uint64_t ccHash = byteHash(
         ccOwner, sizeof(*h.state.sequencer.pattern.ccLanes));
@@ -2821,8 +2828,10 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
                sizeof(*h.state.sequencer.pattern.ccLanes)) == ccHash);
     assert(h.state.sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
     assert(h.state.sequencer.pattern.ccLanes->lanes[0U].values[2U] == 45U);
-    const auto committedRegion = seq::patternPlaybackRegion(
-        h.state.sequencer.pattern);
+    const auto committedRegion = seq::clipPlaybackRegion(
+        h.state.sequencer.pattern,
+        h.state.sequencer.clip
+    );
     assert(committedRegion.contentLength == 56U);
     assert(committedRegion.playStart == 1U);
     assert(committedRegion.loopStart == 4U);
@@ -2881,7 +2890,10 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
                h.state.sequencer.pattern.ccLanes.get(),
                sizeof(*h.state.sequencer.pattern.ccLanes)) == ccHash);
     assert(h.state.sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-    const auto undoRegion = seq::patternPlaybackRegion(h.state.sequencer.pattern);
+    const auto undoRegion = seq::clipPlaybackRegion(
+        h.state.sequencer.pattern,
+        h.state.sequencer.clip
+    );
     assert(undoRegion.contentLength == 24U);
     assert(undoRegion.playStart == 1U);
     assert(undoRegion.loopStart == 4U);
@@ -3186,8 +3198,10 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
     assert(seq::createSequencerCcLane(*cc, 0U, draft).changed());
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 2U, 55U).changed());
     sequencer.pattern.bumpCcLaneRevision();
-    assert(seq::setPatternPlaybackRegion(
-        sequencer.pattern, {16U, 1U, 2U, 6U}));
+    assert(seq::setClipPlaybackRegion(
+        sequencer,
+        {16U, 1U, 2U, 6U}
+    ));
     const void* const ccOwner = sequencer.pattern.ccLanes.get();
     const uint64_t ccHash = byteHash(
         ccOwner, sizeof(*sequencer.pattern.ccLanes));
@@ -3262,7 +3276,10 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
                sizeof(*sequencer.pattern.ccLanes)) == ccHash);
     assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
     assert(sequencer.pattern.ccLanes->lanes[0U].values[2U] == 55U);
-    const auto committedRegion = seq::patternPlaybackRegion(sequencer.pattern);
+    const auto committedRegion = seq::clipPlaybackRegion(
+        sequencer.pattern,
+        sequencer.clip
+    );
     assert(committedRegion.contentLength == 16U);
     assert(committedRegion.playStart == 1U);
     assert(committedRegion.loopStart == 2U);
@@ -3286,7 +3303,10 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
     assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
-    const auto undoRegion = seq::patternPlaybackRegion(sequencer.pattern);
+    const auto undoRegion = seq::clipPlaybackRegion(
+        sequencer.pattern,
+        sequencer.clip
+    );
     assert(undoRegion.contentLength == 16U);
     assert(undoRegion.playStart == 1U);
     assert(undoRegion.loopStart == 2U);
@@ -5899,6 +5919,7 @@ void test_direct_track_draft_priority_precedes_adapter_validation() {
     configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
     assert(h.state.sequencer.stepContentDraft.begin(
         h.state.sequencer.pattern,
+        h.state.sequencer.clip,
         seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
         0U
     ));
@@ -5944,6 +5965,7 @@ void test_direct_track_draft_priority_precedes_adapter_validation() {
         );
         assert(selectionHarness.state.sequencer.stepContentDraft.begin(
             selectionHarness.state.sequencer.pattern,
+            selectionHarness.state.sequencer.clip,
             seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
             0U
         ));

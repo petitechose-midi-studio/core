@@ -36,6 +36,8 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
         );
     const auto& activePattern =
         core::state::sequencer::authoringPattern(sequencer_);
+    const auto& activeClip =
+        core::state::sequencer::authoringClip(sequencer_);
 
     uint16_t lanePresentMask = 0;
     for (uint8_t i = 0;
@@ -101,9 +103,13 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
         const auto& source = (i == activeTrack)
             ? activePattern
             : track_bank_.track(i);
+        const auto& sourceClip = (i == activeTrack)
+            ? activeClip
+            : track_bank_.clip(i);
         const auto signature =
             captureRuntimeStateSignature(
                 source,
+                sourceClip,
                 runtimeSnapshot.projectScaleSettings,
                 projectTiming
             );
@@ -112,6 +118,10 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
         }
 
         core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
+        core::state::sequencer::captureSnapshot(
+            sourceClip,
+            runtimeSnapshot.clips[i]
+        );
         runtimeSnapshot.tracks[i].effectiveScaleSettings =
             core::state::sequencer::resolveEffectiveScaleSettings(
                 runtimeSnapshot.projectScaleSettings,

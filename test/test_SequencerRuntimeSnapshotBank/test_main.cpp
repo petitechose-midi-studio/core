@@ -4,6 +4,7 @@
 #include "../../src/sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "../../src/state/project/ProjectNavigationState.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
@@ -27,7 +28,7 @@ void test_refresh_captures_active_editor_state() {
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.setContentLength(12);
+    assert(core::state::sequencer::resizeClipPatternContent(sequencer, 12));
     sequencer.pattern.note[0] = 67;
     sequencer.pattern.bumpStepDataRevision();
 
@@ -52,7 +53,7 @@ void test_refresh_preserves_active_snapshot_until_commit() {
     uint8_t index = bank.refresh();
     bank.commit(index);
 
-    sequencer.pattern.setContentLength(16);
+    assert(core::state::sequencer::resizeClipPatternContent(sequencer, 16));
     index = bank.refresh();
 
     assert(bank.activeSnapshot().tracks[0].length == 8);
@@ -106,38 +107,49 @@ void test_region_markers_invalidate_both_flat_runtime_buffers() {
 
     const auto before = core::sequencer::captureRuntimeStateSignature(
         sequencer.pattern,
+        sequencer.clip,
         {},
         {}
     );
     const uint32_t unchangedRevision = sequencer.pattern.patternTimingRevision.get();
     // Reproduce a snapshot restore where the historical revision can be equal
     // even though the persisted region changed.
-    sequencer.pattern.playStart = 1;
-    sequencer.pattern.loopStart = 2;
-    sequencer.pattern.loopEnd = 6;
+    assert(core::state::sequencer::setClipPlaybackRegion(
+        sequencer.pattern,
+        sequencer.clip,
+        {8U, 1U, 2U, 6U}
+    ));
     assert(sequencer.pattern.patternTimingRevision.get() == unchangedRevision);
     const auto after = core::sequencer::captureRuntimeStateSignature(
         sequencer.pattern,
+        sequencer.clip,
         {},
         {}
     );
     assert(!before.matches(after));
     assert(after.matches(core::sequencer::captureRuntimeStateSignature(
         sequencer.pattern,
+        sequencer.clip,
         {},
         {}
     )));
 
     index = bank.refresh();
     bank.commit(index);
-    assert(bank.activeSnapshot().tracks[0].playStart == 1);
-    assert(bank.activeSnapshot().tracks[0].loopStart == 2);
-    assert(bank.activeSnapshot().tracks[0].loopEnd == 6);
+    assert(bank.activeSnapshot().clips[0].playStartTick ==
+           sequencer.clip.playStartTick);
+    assert(bank.activeSnapshot().clips[0].loopStartTick ==
+           sequencer.clip.loopStartTick);
+    assert(bank.activeSnapshot().clips[0].loopEndTick ==
+           sequencer.clip.loopEndTick);
     index = bank.refresh();
     bank.commit(index);
-    assert(bank.activeSnapshot().tracks[0].playStart == 1);
-    assert(bank.activeSnapshot().tracks[0].loopStart == 2);
-    assert(bank.activeSnapshot().tracks[0].loopEnd == 6);
+    assert(bank.activeSnapshot().clips[0].playStartTick ==
+           sequencer.clip.playStartTick);
+    assert(bank.activeSnapshot().clips[0].loopStartTick ==
+           sequencer.clip.loopStartTick);
+    assert(bank.activeSnapshot().clips[0].loopEndTick ==
+           sequencer.clip.loopEndTick);
 
     std::cout << "[PASS] test_region_markers_invalidate_both_flat_runtime_buffers\n";
 }
@@ -218,7 +230,11 @@ void test_refresh_captures_inactive_bank_track() {
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     auto& inactiveTrack = trackBank.track(2);
-    inactiveTrack.setContentLength(24);
+    assert(core::state::sequencer::resizeClipPatternContent(
+        inactiveTrack,
+        trackBank.clip(2),
+        24
+    ));
     inactiveTrack.note[0] = 72;
     inactiveTrack.bumpStepDataRevision();
 
@@ -240,7 +256,7 @@ void test_refresh_switches_active_track_sources() {
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.setContentLength(12);
+    assert(core::state::sequencer::resizeClipPatternContent(sequencer, 12));
     sequencer.pattern.note[0] = 67;
     sequencer.pattern.bumpStepDataRevision();
 
@@ -250,10 +266,11 @@ void test_refresh_switches_active_track_sources() {
 
     auto& inactiveTrack0 = trackBank.track(0);
     inactiveTrack0.setContentLength(8);
+    core::state::sequencer::resetClipToPattern(trackBank.clip(0), inactiveTrack0);
     inactiveTrack0.note[0] = 60;
     inactiveTrack0.bumpStepDataRevision();
 
-    sequencer.pattern.setContentLength(32);
+    assert(core::state::sequencer::resizeClipPatternContent(sequencer, 32));
     sequencer.pattern.note[0] = 80;
     sequencer.pattern.bumpStepDataRevision();
 
@@ -280,7 +297,11 @@ void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
 
     trackBank.syncSharedTrackState(0x0003, 0);
     auto& staleTrack = trackBank.track(1);
-    staleTrack.setContentLength(16);
+    assert(core::state::sequencer::resizeClipPatternContent(
+        staleTrack,
+        trackBank.clip(1),
+        16
+    ));
     staleTrack.setStepDataAt(0, 99, 111, 80);
     staleTrack.setEnabled(0, true);
 
@@ -425,11 +446,13 @@ void test_quick_controls_preview_round_trips_through_inactive_runtime_buffers() 
     const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
     assert(sequencer.quickControlsDraft.begin(
         sequencer.pattern,
+        sequencer.clip,
         openingPath,
         sequencer.page.get(),
         sequencer.focusedStep.get()));
     auto& draft = seq::authoringPattern(sequencer);
-    draft.setContentLength(12U);
+    auto& draftClip = seq::authoringClip(sequencer);
+    assert(seq::resizeClipPatternContent(draft, draftClip, 12U));
     assert(draft.setStepNoteAt(0U, 72U));
     assert(draft.ccLanes != nullptr);
     assert(seq::setSequencerCcLaneEvent(*draft.ccLanes, 0U, 3U, 96U).changed());

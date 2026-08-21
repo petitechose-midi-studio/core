@@ -47,6 +47,7 @@ struct SequencerHistoryPatternPayloadStorage {
 
 struct SequencerHistoryPatternSnapshot {
     SequencerPatternSnapshot flat{};
+    SequencerClipSnapshot clip{};
     // FlatOnly does not retain a CC payload. Prepared Page FullGraph also sets
     // ccLanesCaptured=false for an already-allocated, musically empty owner so
     // commit/rollback/traversal preserve that live owner instead of replaying
@@ -355,9 +356,9 @@ struct SequencerHistoryFullBankChange {
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(SequencerHistoryPatternChange) == 1736U,
+static_assert(sizeof(SequencerHistoryPatternChange) == 1752U,
               "LOCK-P: ARM Pattern History transaction ABI changed");
-static_assert(sizeof(SequencerHistoryFullBankChange) == 26960U,
+static_assert(sizeof(SequencerHistoryFullBankChange) == 27152U,
               "LOCK-P: ARM FullBank History transaction ABI changed");
 static_assert(sizeof(oc::note::sequencer::StepSequencerGraph) == 14792U,
               "LOCK-P: ARM Sequencer Graph allocation span changed");
@@ -524,6 +525,7 @@ bool captureHistorySnapshotUsingReservedStorage(const SequencerState& source,
 // bytes after validating the candidate payload shape.
 bool captureDetachedHistorySnapshotUsingReservedStorage(
     const SequencerPatternState& source,
+    const SequencerClipState& clip,
     uint8_t focusedStep,
     SequencerHistoryPatternSnapshot& out);
 bool reserveHistorySnapshotGraphStorage(SequencerHistoryPatternSnapshot& snapshot);
@@ -657,6 +659,7 @@ bool sameMusicalPatternState(
 // intentionally excluded here.
 bool liveHistoryPatternSnapshotMatches(
     const SequencerPatternState& live,
+    const SequencerClipState& clip,
     const SequencerHistoryPatternSnapshot& snapshot
 );
 

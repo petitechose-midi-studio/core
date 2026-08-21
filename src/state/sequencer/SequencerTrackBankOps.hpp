@@ -17,6 +17,7 @@ namespace core::state::sequencer {
  */
 struct SequencerTrackFlatSnapshotView {
     const SequencerPatternSnapshot* snapshot = nullptr;
+    const SequencerClipSnapshot* clip = nullptr;
     uint32_t ccLaneRevision = 0U;
 };
 
@@ -39,11 +40,6 @@ struct SequencerPreparedActiveTrackRotation {
 
     const oc::note::sequencer::StepSequencerGraph* expectedEditorGraphOwner = nullptr;
     const SequencerCcLaneBank* expectedEditorCcLaneOwner = nullptr;
-    const oc::note::sequencer::StepSequencerGraph* expectedOutgoingGraphOwner = nullptr;
-    const SequencerCcLaneBank* expectedOutgoingCcLaneOwner = nullptr;
-    const oc::note::sequencer::StepSequencerGraph* expectedIncomingGraphOwner = nullptr;
-    const SequencerCcLaneBank* expectedIncomingCcLaneOwner = nullptr;
-
     uint16_t expectedEnabledMask = 0U;
     uint8_t outgoingTrack = SequencerTrackBankState::TRACK_COUNT;
     uint8_t incomingTrack = SequencerTrackBankState::TRACK_COUNT;
@@ -82,9 +78,22 @@ static_assert(
     uint8_t trackIndex
 ) noexcept;
 
+[[nodiscard]] const SequencerClipState& canonicalTrackClip(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex
+) noexcept;
+
+[[nodiscard]] SequencerClipState& mutableCanonicalTrackClip(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    uint8_t trackIndex
+) noexcept;
+
 /** Exact allocation-free comparison of persisted flat bytes and revisions. */
 [[nodiscard]] bool sequencerPatternMatchesFlatSnapshot(
     const SequencerPatternState& pattern,
+    const SequencerClipState& clip,
     SequencerTrackFlatSnapshotView expected
 ) noexcept;
 

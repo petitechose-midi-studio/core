@@ -327,9 +327,6 @@ FLASHMEM bool SequencerState::setStepDataAt(
 }
 
 FLASHMEM void SequencerPatternState::reset() {
-    playStart = 0;
-    loopStart = 0;
-    loopEnd = DEFAULT_LENGTH;
     oc::note::sequencer::StepSequencerState::reset();
     bumpStepDataRevision();
     variationRanges = {};
@@ -356,6 +353,8 @@ FLASHMEM void SequencerState::reset() {
     }
     quickControlsDraft.reset();
     pattern.reset();
+    clip.reset();
+    bumpClipRevision();
     page.set(0);
     focusedStep.set(0);
     playheadStep.set(-1);

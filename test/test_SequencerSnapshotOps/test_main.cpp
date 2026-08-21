@@ -10,7 +10,7 @@
 #include <new>
 
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
-#include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
+#include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace allocation_trace {
@@ -160,20 +160,20 @@ void assertBatchRevisions(
     uint32_t step,
     uint32_t graph,
     uint32_t cc,
-    uint32_t timing,
+    uint32_t clip,
     uint32_t bank
 ) {
     assert(sequencer.pattern.stepDataRevision.get() == step);
     assert(sequencer.pattern.graphRevision.get() == graph);
     assert(sequencer.pattern.ccLaneRevision.get() == cc);
-    assert(sequencer.pattern.patternTimingRevision.get() == timing);
+    assert(sequencer.clipRevision.get() == clip);
     assert(sequencer.pattern.ccLanes);
     assert(sequencer.pattern.ccLanes->revision == bank);
 }
 
 void test_clear_step_range_resets_payload_and_mask() {
     SequencerState sequencer;
-    sequencer.pattern.setContentLength(16);
+    assert(seq::resizeClipPatternContent(sequencer, 16));
     setStep(sequencer, 2, 62, 90, 70, -3, 55, true);
     setStep(sequencer, 3, 63, 91, 71, 4, 56, true);
 
@@ -191,7 +191,7 @@ void test_clear_step_range_resets_payload_and_mask() {
 
 void test_clear_step_range_clears_child_content() {
     SequencerState sequencer;
-    sequencer.pattern.setContentLength(16);
+    assert(seq::resizeClipPatternContent(sequencer, 16));
     createRootMicroSequence(sequencer, 2, 2);
     assert(rootStepHasMicroSequence(sequencer, 2));
 
@@ -204,7 +204,7 @@ void test_clear_step_range_clears_child_content() {
 
 void test_insert_page_shifts_payloads_and_clears_inserted_page() {
     SequencerState sequencer;
-    sequencer.pattern.setContentLength(16);
+    assert(seq::resizeClipPatternContent(sequencer, 16));
     setStep(sequencer, 8, 70, 110, 90, 5, 60, true);
 
     assert(core::state::sequencer::insertPage(sequencer, 1));
@@ -220,7 +220,7 @@ void test_insert_page_shifts_payloads_and_clears_inserted_page() {
 
 void test_insert_page_shifts_child_content() {
     SequencerState sequencer;
-    sequencer.pattern.setContentLength(16);
+    assert(seq::resizeClipPatternContent(sequencer, 16));
     createRootMicroSequence(sequencer, 8, 2);
 
     assert(core::state::sequencer::insertPage(sequencer, 1));
@@ -233,7 +233,7 @@ void test_insert_page_shifts_child_content() {
 
 void test_remove_page_shifts_following_payloads() {
     SequencerState sequencer;
-    sequencer.pattern.setContentLength(24);
+    assert(seq::resizeClipPatternContent(sequencer, 24));
     setStep(sequencer, 16, 72, 111, 91, -4, 61, true);
 
     assert(core::state::sequencer::deletePage(sequencer, 1));
@@ -249,7 +249,7 @@ void test_remove_page_shifts_following_payloads() {
 
 void test_remove_page_shifts_child_content() {
     SequencerState sequencer;
-    sequencer.pattern.setContentLength(24);
+    assert(seq::resizeClipPatternContent(sequencer, 24));
     createRootMicroSequence(sequencer, 16, 2);
 
     assert(core::state::sequencer::deletePage(sequencer, 1));
@@ -262,7 +262,7 @@ void test_remove_page_shifts_child_content() {
 
 void test_rotate_pattern_moves_payload_and_mask() {
     SequencerState sequencer;
-    sequencer.pattern.setContentLength(4);
+    assert(seq::resizeClipPatternContent(sequencer, 4));
     sequencer.pattern.enabledMask.set(StepBitMask128{});
     setStep(sequencer, 0, 60, 90, 50, 0, 100, true);
     setStep(sequencer, 1, 61, 91, 51, 1, 80, false);
@@ -283,7 +283,9 @@ void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
     assert(core::state::sequencer::createMicroSequence(source.pattern, sourceNode, 2).ok);
 
     core::state::sequencer::SequencerPatternSnapshot snapshot;
+    core::state::sequencer::SequencerClipSnapshot clipSnapshot;
     core::state::sequencer::captureSnapshot(source.pattern, snapshot);
+    core::state::sequencer::captureSnapshot(source.clip, clipSnapshot);
     assert(snapshot.graphRevision == source.pattern.graphRevision.get());
 
     SequencerState applied;
@@ -294,7 +296,11 @@ void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
 
     SequencerState merged;
     assert(core::state::sequencer::createCycleStateSet(merged.pattern, sourceNode, 2).ok);
-    core::state::sequencer::mergeSnapshotIntoCurrent(merged, snapshot);
+    core::state::sequencer::mergeSnapshotIntoCurrent(
+        merged,
+        snapshot,
+        clipSnapshot
+    );
     assert(merged.pattern.graph.get() == nullptr);
     assert(merged.pattern.graphRevision.get() == snapshot.graphRevision);
 
@@ -307,14 +313,18 @@ void test_track_content_snapshot_preserves_destination_midi_channel() {
     createRootMicroSequence(source, 0, 2);
 
     core::state::sequencer::SequencerPatternSnapshot snapshot;
+    core::state::sequencer::SequencerClipSnapshot clipSnapshot;
     core::state::sequencer::captureSnapshot(source.pattern, snapshot);
+    core::state::sequencer::captureSnapshot(source.clip, clipSnapshot);
     const auto* sourceGraph = core::state::sequencer::graphView(source.pattern);
     assert(sourceGraph != nullptr);
 
     SequencerState bankTarget;
     assert(core::state::sequencer::applyTrackContentSnapshotWithGraph(
         bankTarget.pattern,
+        bankTarget.clip,
         snapshot,
+        clipSnapshot,
         sourceGraph
     ));
     assertStep(bankTarget, 0, 74, 103, 88, -2, 79, true);
@@ -324,6 +334,7 @@ void test_track_content_snapshot_preserves_destination_midi_channel() {
     assert(core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
         editorTarget,
         snapshot,
+        clipSnapshot,
         sourceGraph
     ));
     assertStep(editorTarget, 0, 74, 103, 88, -2, 79, true);
@@ -342,7 +353,8 @@ void test_track_content_snapshot_preserves_destination_midi_channel() {
 
 void test_full_128_step_snapshot_and_rotation_contract() {
     SequencerState source;
-    const bool resized = source.pattern.setContentLength(
+    const bool resized = seq::resizeClipPatternContent(
+        source,
         SequencerState::MAX_STEPS
     );
     assert(resized);
@@ -366,12 +378,12 @@ void test_full_128_step_snapshot_and_rotation_contract() {
 
 void test_batch_invalid_and_no_change_are_failure_atomic() {
     SequencerState sequencer;
-    assert(sequencer.pattern.setContentLength(16U));
+    assert(seq::resizeClipPatternContent(sequencer, 16U));
     const uint8_t length = sequencer.pattern.length.get();
     const auto mask = sequencer.pattern.enabledMask.get();
     const uint32_t stepRevision = sequencer.pattern.stepDataRevision.get();
     const uint32_t graphRevision = sequencer.pattern.graphRevision.get();
-    const uint32_t timingRevision = sequencer.pattern.patternTimingRevision.get();
+    const uint32_t clipRevision = sequencer.clipRevision.get();
 
     const auto invalidClear = seq::clearSequencerRootStepSpanUnversioned(
         sequencer,
@@ -406,7 +418,7 @@ void test_batch_invalid_and_no_change_are_failure_atomic() {
     assert(sequencer.pattern.enabledMask.get() == mask);
     assert(sequencer.pattern.stepDataRevision.get() == stepRevision);
     assert(sequencer.pattern.graphRevision.get() == graphRevision);
-    assert(sequencer.pattern.patternTimingRevision.get() == timingRevision);
+    assert(sequencer.clipRevision.get() == clipRevision);
 
     auto& invalidBank = createCcLane(sequencer);
     invalidBank.formatVersion = 0U;
@@ -427,7 +439,7 @@ void test_batch_exact_length_extension_contract() {
     const uint8_t oldLength = sequencer.pattern.length.get();
     const uint8_t requiredLength = static_cast<uint8_t>(oldLength + 3U);
     const uint32_t stepRevision = sequencer.pattern.stepDataRevision.get();
-    const uint32_t timingRevision = sequencer.pattern.patternTimingRevision.get();
+    const uint32_t clipRevision = sequencer.clipRevision.get();
 
     const auto result = seq::resizeSequencerRootContentUnversioned(
         sequencer,
@@ -437,20 +449,23 @@ void test_batch_exact_length_extension_contract() {
     assert(result.previousLength == oldLength);
     assert(result.resultingLength == requiredLength);
     assert(result.domains.stepData);
-    assert(result.domains.timing);
+    assert(result.domains.clip);
     assert(!result.domains.graph);
     assert(!result.domains.ccLanes);
     assert(sequencer.pattern.length.get() == requiredLength);
-    assert(sequencer.pattern.loopEnd == requiredLength);
+    assert(seq::clipPlaybackRegion(
+        sequencer.pattern,
+        sequencer.clip
+    ).loopEnd == requiredLength);
     for (uint16_t step = oldLength; step < requiredLength; ++step) {
         assertDefaultStep(sequencer, static_cast<uint8_t>(step));
     }
     assert(sequencer.pattern.stepDataRevision.get() == stepRevision);
-    assert(sequencer.pattern.patternTimingRevision.get() == timingRevision);
+    assert(sequencer.clipRevision.get() == clipRevision);
 
-    seq::publishSequencerSnapshotBatchRevisions(sequencer.pattern, result.domains);
+    seq::publishSequencerSnapshotBatchRevisions(sequencer, result.domains);
     assert(sequencer.pattern.stepDataRevision.get() == stepRevision + 1U);
-    assert(sequencer.pattern.patternTimingRevision.get() == timingRevision + 1U);
+    assert(sequencer.clipRevision.get() == clipRevision + 1U);
 
     const auto noChange = seq::resizeSequencerRootContentUnversioned(
         sequencer,
@@ -464,7 +479,7 @@ void test_batch_exact_length_extension_contract() {
 
 void test_batch_malformed_graph_rejects_before_entry_zero() {
     SequencerState sequencer;
-    assert(sequencer.pattern.setContentLength(16U));
+    assert(seq::resizeClipPatternContent(sequencer, 16U));
     setStep(sequencer, 8U, 91U, 108U, 83U, -7, 39U, true);
     createRootMicroSequence(sequencer, 0U, 2U);
     auto& bank = createCcLane(sequencer);
@@ -498,7 +513,10 @@ void test_batch_malformed_graph_rejects_before_entry_zero() {
         sizeof(sequencer.pattern.probability)
     );
     const auto enabledMask = sequencer.pattern.enabledMask.get();
-    const auto region = seq::patternPlaybackRegion(sequencer.pattern);
+    const auto region = seq::clipPlaybackRegion(
+        sequencer.pattern,
+        sequencer.clip
+    );
     const uint8_t note = sequencer.pattern.note[8];
     const uint8_t velocity = sequencer.pattern.velocity[8];
     const uint16_t gate = sequencer.pattern.gate[8];
@@ -507,7 +525,7 @@ void test_batch_malformed_graph_rejects_before_entry_zero() {
     const uint32_t stepRevision = sequencer.pattern.stepDataRevision.get();
     const uint32_t graphRevision = sequencer.pattern.graphRevision.get();
     const uint32_t ccRevision = sequencer.pattern.ccLaneRevision.get();
-    const uint32_t timingRevision = sequencer.pattern.patternTimingRevision.get();
+    const uint32_t clipRevision = sequencer.clipRevision.get();
     const uint32_t bankRevision = bank.revision;
 
     const auto result = seq::deleteSequencerRootPagesUnversioned(
@@ -535,11 +553,14 @@ void test_batch_malformed_graph_rejects_before_entry_zero() {
                sizeof(sequencer.pattern.probability)
            ) == probabilityHash);
     assert(sequencer.pattern.enabledMask.get() == enabledMask);
-    assert(seq::patternPlaybackRegion(sequencer.pattern).contentLength ==
+    assert(seq::clipPlaybackRegion(sequencer.pattern, sequencer.clip).contentLength ==
            region.contentLength);
-    assert(seq::patternPlaybackRegion(sequencer.pattern).playStart == region.playStart);
-    assert(seq::patternPlaybackRegion(sequencer.pattern).loopStart == region.loopStart);
-    assert(seq::patternPlaybackRegion(sequencer.pattern).loopEnd == region.loopEnd);
+    assert(seq::clipPlaybackRegion(sequencer.pattern, sequencer.clip).playStart ==
+           region.playStart);
+    assert(seq::clipPlaybackRegion(sequencer.pattern, sequencer.clip).loopStart ==
+           region.loopStart);
+    assert(seq::clipPlaybackRegion(sequencer.pattern, sequencer.clip).loopEnd ==
+           region.loopEnd);
     assert(sequencer.pattern.note[8] == note);
     assert(sequencer.pattern.velocity[8] == velocity);
     assert(sequencer.pattern.gate[8] == gate);
@@ -550,7 +571,7 @@ void test_batch_malformed_graph_rejects_before_entry_zero() {
         stepRevision,
         graphRevision,
         ccRevision,
-        timingRevision,
+        clipRevision,
         bankRevision
     );
 
@@ -568,7 +589,7 @@ void test_batch_page_extension_is_unversioned_and_allocation_free() {
     const uint32_t stepRevision = sequencer.pattern.stepDataRevision.get();
     const uint32_t graphRevision = sequencer.pattern.graphRevision.get();
     const uint32_t ccRevision = sequencer.pattern.ccLaneRevision.get();
-    const uint32_t timingRevision = sequencer.pattern.patternTimingRevision.get();
+    const uint32_t clipRevision = sequencer.clipRevision.get();
     const uint32_t bankRevision = bank.revision;
 
     seq::SequencerSnapshotBatchMutationResult result{};
@@ -583,7 +604,7 @@ void test_batch_page_extension_is_unversioned_and_allocation_free() {
     assert(result.domains.stepData);
     assert(result.domains.graph);
     assert(!result.domains.ccLanes);
-    assert(result.domains.timing);
+    assert(result.domains.clip);
     assert(sequencer.pattern.length.get() == 16U);
     assertDefaultStep(sequencer, 12U);
     assert(!rootStepHasMicroSequence(sequencer, 12U));
@@ -593,17 +614,17 @@ void test_batch_page_extension_is_unversioned_and_allocation_free() {
         stepRevision,
         graphRevision,
         ccRevision,
-        timingRevision,
+        clipRevision,
         bankRevision
     );
 
-    seq::publishSequencerSnapshotBatchRevisions(sequencer.pattern, result.domains);
+    seq::publishSequencerSnapshotBatchRevisions(sequencer, result.domains);
     assertBatchRevisions(
         sequencer,
         stepRevision + 1U,
         graphRevision + 1U,
         ccRevision,
-        timingRevision + 1U,
+        clipRevision + 1U,
         bankRevision
     );
 
@@ -612,7 +633,7 @@ void test_batch_page_extension_is_unversioned_and_allocation_free() {
 
 void test_batch_clear_preserves_cc_and_publishes_exact_domains() {
     SequencerState sequencer;
-    assert(sequencer.pattern.setContentLength(16U));
+    assert(seq::resizeClipPatternContent(sequencer, 16U));
     setStep(sequencer, 8U, 81U, 99U, 68U, 3, 72U, true);
     createRootMicroSequence(sequencer, 8U, 2U);
     auto& bank = createCcLane(sequencer);
@@ -622,7 +643,7 @@ void test_batch_clear_preserves_cc_and_publishes_exact_domains() {
     const uint32_t stepRevision = sequencer.pattern.stepDataRevision.get();
     const uint32_t graphRevision = sequencer.pattern.graphRevision.get();
     const uint32_t ccRevision = sequencer.pattern.ccLaneRevision.get();
-    const uint32_t timingRevision = sequencer.pattern.patternTimingRevision.get();
+    const uint32_t clipRevision = sequencer.clipRevision.get();
     const uint32_t bankRevision = bank.revision;
 
     seq::SequencerSnapshotBatchMutationResult result{};
@@ -635,7 +656,7 @@ void test_batch_clear_preserves_cc_and_publishes_exact_domains() {
     assert(result.domains.stepData);
     assert(result.domains.graph);
     assert(!result.domains.ccLanes);
-    assert(!result.domains.timing);
+    assert(!result.domains.clip);
     assertDefaultStep(sequencer, 8U);
     assert(!rootStepHasMicroSequence(sequencer, 8U));
     assert(seq::sameSequencerCcLaneBankMusicalData(bank, bankBefore));
@@ -645,17 +666,17 @@ void test_batch_clear_preserves_cc_and_publishes_exact_domains() {
         stepRevision,
         graphRevision,
         ccRevision,
-        timingRevision,
+        clipRevision,
         bankRevision
     );
 
-    seq::publishSequencerSnapshotBatchRevisions(sequencer.pattern, result.domains);
+    seq::publishSequencerSnapshotBatchRevisions(sequencer, result.domains);
     assertBatchRevisions(
         sequencer,
         stepRevision + 1U,
         graphRevision + 1U,
         ccRevision,
-        timingRevision,
+        clipRevision,
         bankRevision
     );
 
@@ -672,7 +693,7 @@ void test_batch_clear_preserves_cc_and_publishes_exact_domains() {
 
 void test_batch_sparse_page_delete_shifts_all_domains_without_compaction() {
     SequencerState sequencer;
-    assert(sequencer.pattern.setContentLength(40U));
+    assert(seq::resizeClipPatternContent(sequencer, 40U));
     for (uint8_t page = 0U; page < 5U; ++page) {
         const uint8_t step = static_cast<uint8_t>(page * SequencerState::STEPS_PER_PAGE);
         setStep(
@@ -702,8 +723,8 @@ void test_batch_sparse_page_delete_shifts_all_domains_without_compaction() {
         100U,
         seq::SequencerCcLaneTransition::EASE_IN_OUT
     ).changed());
-    assert(seq::setPatternPlaybackRegion(
-        sequencer.pattern,
+    assert(seq::setClipPlaybackRegion(
+        sequencer,
         {.contentLength = 40U, .playStart = 9U, .loopStart = 17U, .loopEnd = 39U}
     ));
 
@@ -715,7 +736,7 @@ void test_batch_sparse_page_delete_shifts_all_domains_without_compaction() {
     const uint32_t stepRevision = sequencer.pattern.stepDataRevision.get();
     const uint32_t graphRevision = sequencer.pattern.graphRevision.get();
     const uint32_t ccRevision = sequencer.pattern.ccLaneRevision.get();
-    const uint32_t timingRevision = sequencer.pattern.patternTimingRevision.get();
+    const uint32_t clipRevision = sequencer.clipRevision.get();
     const uint32_t bankRevision = bank.revision;
 
     seq::SequencerSnapshotBatchMutationResult result{};
@@ -733,7 +754,7 @@ void test_batch_sparse_page_delete_shifts_all_domains_without_compaction() {
     assert(result.domains.stepData);
     assert(result.domains.graph);
     assert(result.domains.ccLanes);
-    assert(result.domains.timing);
+    assert(result.domains.clip);
 
     assertStep(sequencer, 0U, 60U, 90U, 70U, 0, 80U, true);
     assertStep(sequencer, 8U, 62U, 92U, 72U, 2, 82U, true);
@@ -750,7 +771,10 @@ void test_batch_sparse_page_delete_shifts_all_domains_without_compaction() {
     assert(bank.lanes[0].values[100U] == 99U);
     assert(seq::sequencerCcLaneTransition(bank.lanes[0], 100U) ==
            seq::SequencerCcLaneTransition::EASE_IN_OUT);
-    const auto region = seq::patternPlaybackRegion(sequencer.pattern);
+    const auto region = seq::clipPlaybackRegion(
+        sequencer.pattern,
+        sequencer.clip
+    );
     assert(region.contentLength == 24U);
     assert(region.playStart == 8U);
     assert(region.loopStart == 9U);
@@ -766,17 +790,17 @@ void test_batch_sparse_page_delete_shifts_all_domains_without_compaction() {
         stepRevision,
         graphRevision,
         ccRevision,
-        timingRevision,
+        clipRevision,
         bankRevision
     );
 
-    seq::publishSequencerSnapshotBatchRevisions(sequencer.pattern, result.domains);
+    seq::publishSequencerSnapshotBatchRevisions(sequencer, result.domains);
     assertBatchRevisions(
         sequencer,
         stepRevision + 1U,
         graphRevision + 1U,
         ccRevision + 1U,
-        timingRevision + 1U,
+        clipRevision + 1U,
         bankRevision + 1U
     );
 

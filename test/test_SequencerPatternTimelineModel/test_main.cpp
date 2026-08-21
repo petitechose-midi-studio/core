@@ -9,7 +9,7 @@
 #include <type_traits>
 
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "ui/sequencer/SequencerPatternTimelineModel.hpp"
@@ -18,6 +18,16 @@ namespace {
 
 namespace seq = core::state::sequencer;
 namespace timeline = core::ui::sequencer;
+
+seq::SequencerClipSnapshot fullClip(
+    const seq::SequencerPatternSnapshot& pattern
+) {
+    return {
+        .loopEndTick = static_cast<uint16_t>(
+            pattern.length * seq::sequencerTicksPerStep(pattern.stepsPerBeat)
+        ),
+    };
+}
 
 timeline::SequencerPatternTimelineViewport viewport(
     uint16_t width,
@@ -67,10 +77,12 @@ void testFootprintAndZeroOneFourLaneSampling() {
     );
 
     seq::SequencerPatternState pattern{};
+    seq::SequencerClipState clip{};
     assert(pattern.setContentLength(8U) == false);
     timeline::SequencerPatternTimelineGeometry geometry{};
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         nullptr,
         viewport(32U, 128U),
         geometry
@@ -83,6 +95,7 @@ void testFootprintAndZeroOneFourLaneSampling() {
     createConstantLane(bank, 0U, 32U);
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         &bank,
         viewport(32U, 128U),
         geometry
@@ -103,6 +116,7 @@ void testFootprintAndZeroOneFourLaneSampling() {
     createConstantLane(bank, 3U, 127U);
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         &bank,
         viewport(32U, 128U),
         geometry
@@ -122,6 +136,7 @@ void testFootprintAndZeroOneFourLaneSampling() {
     // Reusing the retained owner with no lane clears every previous sample.
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         nullptr,
         viewport(32U, 128U),
         geometry
@@ -136,6 +151,7 @@ void testFootprintAndZeroOneFourLaneSampling() {
 
 void testNotesUseImplicitXAndPixelY() {
     seq::SequencerPatternState pattern{};
+    seq::SequencerClipState clip{};
     pattern.setEnabled(2U, true);
     assert(pattern.setStepNoteAt(2U, 127U));
     assert(pattern.setStepVelocityAt(2U, 0U));
@@ -147,6 +163,7 @@ void testNotesUseImplicitXAndPixelY() {
     timeline::SequencerPatternTimelineGeometry geometry{};
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         nullptr,
         viewport(80U, 128U),
         geometry
@@ -165,7 +182,8 @@ void testNotesUseImplicitXAndPixelY() {
 
 void testRegionWindowAndProjectionValidity() {
     seq::SequencerPatternState pattern{};
-    assert(seq::setPatternPlaybackRegion(pattern, {8U, 2U, 4U, 7U}));
+    seq::SequencerClipState clip{};
+    assert(seq::setClipPlaybackRegion(pattern, clip, {8U, 2U, 4U, 7U}));
     seq::SequencerCcLaneBank bank{};
     assert(seq::createSequencerCcLane(bank, 0U, laneDraft(74U)).changed());
     assert(seq::setSequencerCcLaneEvent(bank, 0U, 2U, 10U).changed());
@@ -173,6 +191,7 @@ void testRegionWindowAndProjectionValidity() {
     timeline::SequencerPatternTimelineGeometry geometry{};
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         &bank,
         viewport(8U, 128U, 4U, 8U),
         geometry
@@ -206,9 +225,10 @@ void testRegionWindowAndProjectionValidity() {
         7U
     ));
 
-    assert(seq::setPatternPlaybackRegion(pattern, {128U, 16U, 32U, 96U}));
+    assert(seq::setClipPlaybackRegion(pattern, clip, {128U, 16U, 32U, 96U}));
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         nullptr,
         viewport(320U, 200U, 64U, 8U),
         geometry
@@ -222,12 +242,14 @@ void testRegionWindowAndProjectionValidity() {
 
 void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
     seq::SequencerPatternState pattern{};
+    seq::SequencerClipState clip{};
     seq::SequencerCcLaneBank bank{};
     createConstantLane(bank, 0U, 64U);
     auto view = viewport(80U, 120U);
     timeline::SequencerPatternTimelineRebuildKey initial{};
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         pattern,
+        clip,
         &bank,
         view,
         initial
@@ -238,6 +260,7 @@ void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
     timeline::SequencerPatternTimelineRebuildKey changed{};
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         pattern,
+        clip,
         &bank,
         changedView,
         changed
@@ -249,6 +272,7 @@ void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
     changedView.windowStepCount = 4U;
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         pattern,
+        clip,
         &bank,
         changedView,
         changed
@@ -261,6 +285,7 @@ void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
     );
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         pattern,
+        clip,
         &bank,
         changedView,
         changed
@@ -270,6 +295,7 @@ void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
     pattern.setEnabled(7U, true);
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         pattern,
+        clip,
         &bank,
         view,
         changed
@@ -280,6 +306,7 @@ void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
     assert(pattern.setStepVelocityAt(0U, 100U));
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         pattern,
+        clip,
         &bank,
         view,
         changed
@@ -291,6 +318,7 @@ void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
     assert(bank.revision != beforeBankRevision);
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         pattern,
+        clip,
         &bank,
         view,
         changed
@@ -301,9 +329,11 @@ void testRebuildKeyCoversRevisionsDimensionsWindowAndLayers() {
 
 void testInvalidInputLeavesRetainedGeometryUntouched() {
     seq::SequencerPatternState pattern{};
+    seq::SequencerClipState clip{};
     timeline::SequencerPatternTimelineGeometry geometry{};
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         nullptr,
         viewport(80U, 120U),
         geometry
@@ -312,6 +342,7 @@ void testInvalidInputLeavesRetainedGeometryUntouched() {
     auto invalid = viewport(321U, 120U);
     assert(!timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         nullptr,
         invalid,
         geometry
@@ -322,9 +353,7 @@ void testInvalidInputLeavesRetainedGeometryUntouched() {
 void testSnapshotPreviewHasExactIndependentRebuildIdentity() {
     seq::SequencerPatternSnapshot first{};
     first.length = 8U;
-    first.playStart = 0U;
-    first.loopStart = 0U;
-    first.loopEnd = 8U;
+    const auto clip = fullClip(first);
     first.stepDataRevision = 9U;
     first.note[1] = 12U;
     first.velocity[1] = 64U;
@@ -339,12 +368,14 @@ void testSnapshotPreviewHasExactIndependentRebuildIdentity() {
     const auto view = viewport(80U, 128U);
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         first,
+        clip,
         nullptr,
         view,
         firstKey
     ));
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
         second,
+        clip,
         nullptr,
         view,
         secondKey
@@ -357,12 +388,14 @@ void testSnapshotPreviewHasExactIndependentRebuildIdentity() {
     timeline::SequencerPatternTimelineGeometry secondGeometry{};
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         first,
+        clip,
         nullptr,
         view,
         firstGeometry
     ));
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         second,
+        clip,
         nullptr,
         view,
         secondGeometry
@@ -373,22 +406,24 @@ void testSnapshotPreviewHasExactIndependentRebuildIdentity() {
     chance.probability[1] = 100U;
     timeline::SequencerPatternTimelineRebuildKey chanceKey{};
     assert(timeline::makeSequencerPatternTimelineRebuildKey(
-        chance, nullptr, view, chanceKey
+        chance, clip, nullptr, view, chanceKey
     ));
     assert(chanceKey.sourceFingerprint != firstKey.sourceFingerprint);
     timeline::SequencerPatternTimelineGeometry chanceGeometry{};
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
-        chance, nullptr, view, chanceGeometry
+        chance, clip, nullptr, view, chanceGeometry
     ));
     assert(chanceGeometry.steps[1].probabilityY == 0U);
 }
 
 void testPlayheadUsesRegionAndDamagesOnlyOldAndNewBands() {
     seq::SequencerPatternState pattern{};
-    assert(seq::setPatternPlaybackRegion(pattern, {8U, 2U, 4U, 6U}));
+    seq::SequencerClipState clip{};
+    assert(seq::setClipPlaybackRegion(pattern, clip, {8U, 2U, 4U, 6U}));
     timeline::SequencerPatternTimelineGeometry geometry{};
     assert(timeline::rebuildSequencerPatternTimelineGeometry(
         pattern,
+        clip,
         nullptr,
         viewport(80U, 120U),
         geometry
@@ -473,10 +508,12 @@ void testPlayheadUsesRegionAndDamagesOnlyOldAndNewBands() {
 
 void testFull128StepPatternAndSnapshotRebuild() {
     seq::SequencerPatternState pattern{};
+    seq::SequencerClipState clip{};
     const bool resized = pattern.setContentLength(
         seq::SequencerPatternState::MAX_STEPS
     );
     assert(resized);
+    seq::resetClipToPattern(clip, pattern);
     auto mask = pattern.enabledMask.get();
     mask.setBit(127U, true);
     pattern.enabledMask.set(mask);
@@ -488,7 +525,7 @@ void testFull128StepPatternAndSnapshotRebuild() {
     timeline::SequencerPatternTimelineGeometry geometry{};
     const auto fullViewport = viewport(304U, 132U, 120U, 8U);
     const bool patternRebuilt = timeline::rebuildSequencerPatternTimelineGeometry(
-        pattern, nullptr, fullViewport, geometry
+        pattern, clip, nullptr, fullViewport, geometry
     );
     assert(patternRebuilt);
     assert(geometry.key.contentLength == 128U);
@@ -497,15 +534,13 @@ void testFull128StepPatternAndSnapshotRebuild() {
 
     seq::SequencerPatternSnapshot snapshot{};
     snapshot.length = 128U;
-    snapshot.playStart = 0U;
-    snapshot.loopStart = 0U;
-    snapshot.loopEnd = 128U;
+    const auto snapshotClip = fullClip(snapshot);
     snapshot.enabledMask.setBit(127U, true);
     snapshot.note[127] = 84U;
     snapshot.velocity[127] = 127U;
     snapshot.probability[127] = 100U;
     const bool snapshotRebuilt = timeline::rebuildSequencerPatternTimelineGeometry(
-        snapshot, nullptr, fullViewport, geometry
+        snapshot, snapshotClip, nullptr, fullViewport, geometry
     );
     assert(snapshotRebuilt);
     assert(geometry.key.contentLength == 128U);

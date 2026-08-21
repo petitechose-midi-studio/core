@@ -10,7 +10,7 @@
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerStepPastePlan.hpp"
 
@@ -68,7 +68,7 @@ struct MutationAccumulator {
         domains.stepData = domains.stepData || addition.stepData;
         domains.graph = domains.graph || addition.graph;
         domains.ccLanes = domains.ccLanes || addition.ccLanes;
-        domains.timing = domains.timing || addition.timing;
+        domains.clip = domains.clip || addition.clip;
         graphChanged = graphChanged || addition.graph;
     }
 
@@ -230,7 +230,7 @@ FLASHMEM bool validLiveGraph(const seq::SequencerPatternState& pattern) noexcept
 FLASHMEM bool validPattern(const seq::SequencerState& sequencer) noexcept {
     const uint8_t length = sequencer.pattern.length.get();
     if (length == 0U || length > seq::SequencerState::MAX_STEPS ||
-        !seq::patternPlaybackRegion(sequencer.pattern).isValid() ||
+        !seq::validClipRegion(sequencer.pattern, sequencer.clip) ||
         (sequencer.pattern.enabledMask.get() & ~seq::lengthMask(length)) !=
             oc::note::sequencer::StepBitMask128{} ||
         !validLiveGraph(sequencer.pattern)) {
@@ -1171,6 +1171,9 @@ FLASHMEM bool validatePlanShape(
     const Plan& plan,
     const seq::SequencerState& sequencer
 ) noexcept {
+    // A Clip-only playback-window edit commutes with this Pattern-content
+    // plan. Root resizes transform the live Clip at commit time; Pattern
+    // length and timing revisions guard every value the plan actually reads.
     if (!plan.ready() ||
         plan.expectedTrack >= seq::SequencerTrackBankState::TRACK_COUNT ||
         !validPattern(sequencer) ||
@@ -1532,8 +1535,7 @@ FLASHMEM void publishMutationRevisions(
 ) noexcept {
     mutation.graphChanged = mutation.graphChanged || mutation.domains.graph;
     mutation.domains.graph = false;
-    seq::publishSequencerSnapshotBatchRevisions(
-        sequencer.pattern, mutation.domains);
+    seq::publishSequencerSnapshotBatchRevisions(sequencer, mutation.domains);
     if (mutation.graphChanged && !mutation.graphRevisionPublished) {
         sequencer.pattern.bumpGraphRevision();
         mutation.graphRevisionPublished = true;

@@ -11,8 +11,8 @@
 #include "persistence/SequencerCcLanePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace {
@@ -128,7 +128,6 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
     seq::SequencerState source{};
     source.reset();
     source.pattern.setContentLength(32U);
-    assert(seq::setPatternPlaybackRegion(source.pattern, {32U, 2U, 5U, 27U}));
     authorTwoLanes(source.pattern);
     auto chord = oc::note::sequencer::StepSequencerChordSpec::semantic(
         oc::note::sequencer::StepSequencerChordHarmony::Custom,
@@ -166,11 +165,10 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         loaded.pattern
     ));
     assertTwoLanes(loaded.pattern);
-    const auto region = seq::patternPlaybackRegion(loaded.pattern);
-    assert(region.contentLength == 32U);
-    assert(region.playStart == 2U);
-    assert(region.loopStart == 5U);
-    assert(region.loopEnd == 27U);
+    assert(loaded.pattern.length.get() == 32U);
+    assert(loaded.clip.playStartTick == 0U);
+    assert(loaded.clip.loopStartTick == 0U);
+    assert(loaded.clip.loopEndTick == seq::SequencerClipState::DEFAULT_END_TICK);
     const auto* graph = seq::graphView(loaded.pattern);
     assert(graph != nullptr);
     const auto* node = graph->stepNode(seq::rootStepNodeId(0U));
@@ -218,9 +216,11 @@ void authorTrackRegions(
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
         auto& pattern = track == activeTrack ? active.pattern : bank.track(track);
-        pattern.setContentLength(128U);
-        assert(seq::setPatternPlaybackRegion(
+        auto& clip = track == activeTrack ? active.clip : bank.clip(track);
+        assert(seq::resizeClipPatternContent(pattern, clip, 128U));
+        assert(seq::setClipPlaybackRegion(
             pattern,
+            clip,
             {
                 128U,
                 track,
@@ -240,7 +240,8 @@ void assertTrackRegions(
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
         const auto& pattern = track == activeTrack ? active.pattern : bank.track(track);
-        const auto region = seq::patternPlaybackRegion(pattern);
+        const auto& clip = track == activeTrack ? active.clip : bank.clip(track);
+        const auto region = seq::clipPlaybackRegion(pattern, clip);
         assert(region.contentLength == 128U);
         assert(region.playStart == track);
         assert(region.loopStart == static_cast<uint8_t>(track + 1U));

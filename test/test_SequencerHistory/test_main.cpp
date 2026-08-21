@@ -15,7 +15,7 @@
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
-#include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
+#include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../../src/state/sequencer/SequencerStructureHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
@@ -322,7 +322,7 @@ void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
     SequencerState state;
     assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
 
-    state.pattern.setContentLength(16);
+    assert(core::state::sequencer::resizeClipPatternContent(state, 16));
     setStep(state.pattern, 0, 60);
     state.focusedStep.set(0);
     state.page.set(0);
@@ -364,8 +364,8 @@ void test_flat_pattern_history_restores_region_only_edit() {
 
     SequencerHistoryPatternSnapshot before;
     core::state::sequencer::captureFlatHistorySnapshot(state, before);
-    assert(core::state::sequencer::setPatternPlaybackRegion(
-        state.pattern,
+    assert(core::state::sequencer::setClipPlaybackRegion(
+        state,
         {8, 1, 2, 6}
     ));
     SequencerHistoryPatternSnapshot after;
@@ -380,14 +380,20 @@ void test_flat_pattern_history_restores_region_only_edit() {
         core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly
     ));
     assert(history.undo(bank, state));
-    auto region = core::state::sequencer::patternPlaybackRegion(state.pattern);
+    auto region = core::state::sequencer::clipPlaybackRegion(
+        state.pattern,
+        state.clip
+    );
     assert(region.contentLength == 8);
     assert(region.playStart == 0);
     assert(region.loopStart == 0);
     assert(region.loopEnd == 8);
 
     assert(history.redo(bank, state));
-    region = core::state::sequencer::patternPlaybackRegion(state.pattern);
+    region = core::state::sequencer::clipPlaybackRegion(
+        state.pattern,
+        state.clip
+    );
     assert(region.contentLength == 8);
     assert(region.playStart == 1);
     assert(region.loopStart == 2);
@@ -571,7 +577,7 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
     assert(state.pattern.length.get() == 8U);
-    assert(state.pattern.setContentLength(16U));
+    assert(core::state::sequencer::resizeClipPatternContent(state, 16U));
     state.pattern.setEnabled(0U, true);
     SequencerHistoryPatternSnapshot after;
     core::state::sequencer::captureFlatHistorySnapshot(state, after);

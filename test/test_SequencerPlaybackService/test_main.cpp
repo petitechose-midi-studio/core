@@ -28,7 +28,7 @@
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
-#include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
+#include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
@@ -358,9 +358,12 @@ void storeTrackClipboard(
     const core::state::sequencer::SequencerState& editor
 ) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
+    core::state::sequencer::SequencerClipSnapshot clip;
     core::state::sequencer::captureSnapshot(editor.pattern, snapshot);
+    core::state::sequencer::captureSnapshot(editor.clip, clip);
     assert(clipboard.storeSequencerTrack(
         snapshot,
+        clip,
         nullptr,
         0,
         core::state::sequencer::sequencerCcLaneView(editor.pattern)
@@ -806,8 +809,8 @@ void test_playback_service_uses_one_shot_prelude_then_internal_loop() {
 
     sequencer.pattern.setContentLength(8);
     sequencer.pattern.stepsPerBeat.set(4);
-    assert(core::state::sequencer::setPatternPlaybackRegion(
-        sequencer.pattern,
+    assert(core::state::sequencer::setClipPlaybackRegion(
+        sequencer,
         {8, 2, 4, 6}
     ));
     SequencerTrackFixturePlaybackAdapter service{
@@ -854,8 +857,8 @@ void test_staged_track_applies_at_first_region_loop_start_after_prelude() {
         projectNavigation,
     };
     setRootStep(sequencer.pattern, 60, 8);
-    assert(core::state::sequencer::setPatternPlaybackRegion(
-        sequencer.pattern,
+    assert(core::state::sequencer::setClipPlaybackRegion(
+        sequencer,
         {8, 1, 3, 6}
     ));
 

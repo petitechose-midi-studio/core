@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/DrumPatternState.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler::sequencer::input_utils {
@@ -230,7 +231,20 @@ FLASHMEM void applyNormalizedToQuickControl(
                 value,
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
-            pattern.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
+            const uint8_t stepsPerBeat =
+                STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)];
+            if (detached) {
+                (void)core::state::sequencer::setClipPatternStepsPerBeat(
+                    pattern,
+                    core::state::sequencer::authoringClip(state),
+                    stepsPerBeat
+                );
+            } else {
+                (void)core::state::sequencer::setClipPatternStepsPerBeat(
+                    state,
+                    stepsPerBeat
+                );
+            }
             return;
         }
         case core::state::sequencer::PatternQuickControlItem::SWING:
@@ -244,7 +258,19 @@ FLASHMEM void applyNormalizedToQuickControl(
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
             const int idx = normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
-            pattern.setContentLength(static_cast<uint8_t>(idx + 1));
+            const uint8_t length = static_cast<uint8_t>(idx + 1);
+            if (detached) {
+                (void)core::state::sequencer::resizeClipPatternContent(
+                    pattern,
+                    core::state::sequencer::authoringClip(state),
+                    length
+                );
+            } else {
+                (void)core::state::sequencer::resizeClipPatternContent(
+                    state,
+                    length
+                );
+            }
             return;
         }
     }
