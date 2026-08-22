@@ -9,6 +9,7 @@
 namespace core::state::sequencer {
 
 enum class SequencerInteractionScope : uint8_t {
+    CLIP_LAUNCHER,
     PATTERN,
     TRACK,
     LANE,
@@ -25,6 +26,9 @@ enum class SequencerInteractionScope : uint8_t {
 
 enum class SequencerInteractionAction : uint8_t {
     NONE,
+    MOVE_CLIP,
+    OPEN_CLIP,
+    LAUNCH_CLIP,
     MOVE_TRACK,
     MOVE_PATTERN,
     MOVE_LANE,
@@ -95,6 +99,7 @@ enum class SequencerInteractionVisibility : uint8_t {
 
 struct SequencerInteractionContext {
     StructureNavigationFocus navigationFocus = StructureNavigationFocus::PAGE;
+    bool clipLauncherActive = false;
     bool childContentView = false;
     bool overlayVisible = false;
     bool previewingAddSlot = false;

@@ -38,6 +38,7 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     createGrid();
     if (!step_grid_ || !step_grid_->getElement() ||
         !cc_lane_grid_ || !cc_lane_grid_->getElement()
+        || !clip_launcher_surface_ || !clip_launcher_surface_->getElement()
         || !drum_overview_surface_ || !drum_overview_surface_->getElement()
     ) return;
     createTrackPastePreflightCard();
@@ -52,6 +53,7 @@ FLASHMEM SequencerView::~SequencerView() {
 
     track_paste_preflight_card_.reset();
     drum_overview_surface_.reset();
+    clip_launcher_surface_.reset();
     cc_lane_grid_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
@@ -105,6 +107,8 @@ FLASHMEM void SequencerView::createGrid() {
         center_column_,
         SequencerCcLaneGridLayout::EMBEDDED
     );
+    clip_launcher_surface_ = core::app::makeExtmemUnique<
+        core::ui::sequencer::SequencerClipLauncherSurface>(center_column_);
     drum_overview_surface_ =
         core::app::makeExtmemUnique<core::ui::sequencer::DrumOverviewSurface>(
             center_column_
@@ -265,7 +269,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.patternQuickControls.previewRevision,
         state_refs_.sequencer.drumSequencer.revision,
-        state_refs_.sequencer.patternPresetPreview.revision
+        state_refs_.sequencer.patternPresetPreview.revision,
+        state_refs_.sequencer.clipLauncher.revision
     );
 }
 
@@ -351,7 +356,10 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
-        state_refs_.sequencer.patternQuickControls.previewRevision
+        state_refs_.sequencer.patternQuickControls.previewRevision,
+        state_refs_.sequencer.clipLauncher.revision,
+        state_refs_.clips.revisionSignal(),
+        state_refs_.clipLaunches.telemetryRevision()
     );
     grid_watcher_.watch(
         state_refs_.tracks.drumRevisionSignal()
@@ -434,7 +442,9 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.patternPresetPreview.revision
+        state_refs_.sequencer.patternPresetPreview.revision,
+        state_refs_.sequencer.clipLauncher.revision,
+        state_refs_.clipLaunches.telemetryRevision()
     );
     left_action_strip_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
@@ -469,7 +479,9 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.ccLaneUi.actionGuard,
         state_refs_.sequencer.ccLaneUi.operationFeedback,
-        state_refs_.sequencer.patternPresetPreview.revision
+        state_refs_.sequencer.patternPresetPreview.revision,
+        state_refs_.sequencer.clipLauncher.revision,
+        state_refs_.clipLaunches.telemetryRevision()
     );
     bottom_action_strip_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
@@ -679,7 +691,8 @@ void SequencerView::render(uint32_t flags) {
     const bool needsHeaderTop = (flags & RENDER_HEADER_TOP) != 0 && header_bar_;
     const bool needsHeaderStrip = (flags & RENDER_HEADER_STRIP) != 0 && header_bar_;
     const bool needsGrid =
-        (flags & RENDER_GRID) != 0 && step_grid_ && cc_lane_grid_;
+        (flags & RENDER_GRID) != 0 && step_grid_ && cc_lane_grid_ &&
+        clip_launcher_surface_;
     const bool needsTrackPastePreflight =
         (flags & RENDER_TRACK_PASTE_PREFLIGHT) != 0 &&
         track_paste_preflight_card_;
@@ -730,9 +743,23 @@ void SequencerView::render(uint32_t flags) {
             state_refs_.sequencer.drumSequencer;
         const bool previewEmptyTrack =
             sequencer::sequencerPreviewingEmptyTrack(source);
-        if (!previewEmptyTrack &&
+        if (state_refs_.sequencer.clipLauncher.launcherVisible()) {
+            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.clip-launcher");
+            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            cc_lane_grid_->render({.visible = false});
+            drum_overview_surface_->render({.visible = false});
+            clip_launcher_surface_->render({
+                .visible = true,
+                .ui = &state_refs_.sequencer.clipLauncher,
+                .clips = &state_refs_.clips,
+                .launches = &state_refs_.clipLaunches,
+                .tracks = &state_refs_.tracks,
+                .enabledTrackMask = state_refs_.sharedTrackEnabledMask.get(),
+            });
+        } else if (!previewEmptyTrack &&
             core::state::sequencer::isDrumOverviewActive(
                 state_refs_.sequencer)) {
+            clip_launcher_surface_->render({.visible = false});
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-overview");
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             cc_lane_grid_->render({.visible = false});
@@ -745,6 +772,7 @@ void SequencerView::render(uint32_t flags) {
                 .uiRevision = drumProjection.revision.get(),
             });
         } else {
+            clip_launcher_surface_->render({.visible = false});
             drum_overview_surface_->render({.visible = false});
             const auto ccLaneProps =
                 sequencer::buildSequencerCcLaneGridProps(source);
@@ -819,9 +847,11 @@ void SequencerView::renderHistoryToast() {
 
 sequencer::SequencerViewModelSource SequencerView::modelSource() const {
     return {
-          .sequencer = state_refs_.sequencer,
-          .tracks = state_refs_.tracks,
-          .projectTracks = state_refs_.projectTracks,
+        .sequencer = state_refs_.sequencer,
+        .clips = state_refs_.clips,
+        .clipLaunches = state_refs_.clipLaunches,
+        .tracks = state_refs_.tracks,
+        .projectTracks = state_refs_.projectTracks,
         .trackNavigation = state_refs_.trackNavigation,
         .navigationFocus = state_refs_.structureNavigationFocus,
         .sharedTrackActive = state_refs_.sharedTrackActive,

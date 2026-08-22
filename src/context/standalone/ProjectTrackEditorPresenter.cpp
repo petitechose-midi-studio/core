@@ -101,14 +101,18 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         .route = route_.data(),
         .delay = delay_.data(),
         .structureHint = viewModel.draftDrum ? "Drum" : "Instrument",
-        .status = viewModel.typeChangePending
-            ? "Type \xC2\xB7 Edited"
+        .status = viewModel.typeChangeBlocked
+            ? "Remove other clips"
+            : viewModel.typeChangePending
+                ? "Type \xC2\xB7 Edited"
             : (viewModel.selectedProperty ==
                     core::state::project::ProjectTrackEditorProperty::TYPE
                 ? "Type \xC2\xB7 Ready"
                 : "Direct"),
         .trackColor = theme::color::trackColor(viewModel.trackIndex),
-        .statusColor = viewModel.typeChangePending
+        .statusColor = viewModel.typeChangeBlocked
+            ? theme::color::DESTRUCTIVE
+            : viewModel.typeChangePending
             ? theme::color::WARNING
             : theme::color::TEXT_SECONDARY,
         .selectedProperty = viewModel.selectedProperty,
@@ -143,7 +147,8 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         core::ui::ContextActionStripVisualState::HIDDEN;
     if (viewModel.typeChangePending) {
         actions.slots[2] = {
-            .visualState = viewModel.trackEnabled
+            .visualState = viewModel.trackEnabled &&
+                    !viewModel.typeChangeBlocked
                 ? core::ui::ContextActionStripVisualState::AVAILABLE
                 : core::ui::ContextActionStripVisualState::DISABLED,
             .tone = core::ui::ContextActionStripTone::POSITIVE,

@@ -19,10 +19,13 @@
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/sequencer/SequencerHeaderBar.hpp"
 #include "ui/sequencer/SequencerCcLaneGrid.hpp"
+#include "ui/sequencer/SequencerClipLauncherSurface.hpp"
 #include "ui/sequencer/DrumOverviewSurface.hpp"
 #include "ui/sequencer/SequencerTrackPastePreflightCard.hpp"
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
@@ -39,6 +42,8 @@ class SequencerView : public oc::ui::lvgl::IView {
 public:
     struct StateRefs {
         const core::state::sequencer::SequencerState& sequencer;
+        const core::state::sequencer::SequencerClipGridState& clips;
+        const core::state::sequencer::SequencerClipLaunchQueue& clipLaunches;
         const core::state::sequencer::SequencerTrackBankState& tracks;
         const core::state::project::ProjectTrackState& projectTracks;
         const core::state::TrackNavigationState& trackNavigation;
@@ -129,17 +134,17 @@ private:
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
-    oc::state::StaticWatchGroup<16> header_watcher_;
+    oc::state::StaticWatchGroup<17> header_watcher_;
     oc::state::StaticWatchGroup<14> header_strip_watcher_;
     oc::state::StaticWatchGroup<
         2U * core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
         structure_selection_watcher_;
-    oc::state::StaticWatchGroup<45> grid_watcher_;
+    oc::state::StaticWatchGroup<48> grid_watcher_;
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
     oc::state::StaticWatchGroup<26> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<5> overlay_visibility_watcher_;
-    oc::state::StaticWatchGroup<12> left_action_strip_watcher_;
-    oc::state::StaticWatchGroup<25> bottom_action_strip_watcher_;
+    oc::state::StaticWatchGroup<14> left_action_strip_watcher_;
+    oc::state::StaticWatchGroup<27> bottom_action_strip_watcher_;
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
     oc::state::StaticWatchGroup<9> track_paste_preflight_watcher_;
@@ -161,6 +166,8 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::StepGrid> step_grid_;
     core::app::ExtmemUniquePtr<core::ui::SequencerCcLaneGrid> cc_lane_grid_;
+    core::app::ExtmemUniquePtr<core::ui::sequencer::SequencerClipLauncherSurface>
+        clip_launcher_surface_;
     core::app::ExtmemUniquePtr<core::ui::sequencer::DrumOverviewSurface>
         drum_overview_surface_;
     core::app::ExtmemUniquePtr<

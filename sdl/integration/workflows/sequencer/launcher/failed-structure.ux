@@ -1,0 +1,38 @@
+# Clip Launcher failure grammar: occupied targets stay explicit and Back
+# unwinds destination then selection without mutating either Clip.
+# Expect: capture_changed:launcher_browse=clip_selected
+# Expect: capture_changed:clip_selected=occupied_target
+# Expect: capture_changed:occupied_target=duplicate_blocked
+# Expect: capture_changed:duplicate_blocked=selection_restored
+# Expect: capture_changed:selection_restored=launcher_restored
+# Expect: semantic:occupied_target:mode=sequencer.clip_launcher, semantic:occupied_target:projection=duplicate_destination, semantic:occupied_target:property=occupied
+# Expect: semantic:duplicate_blocked:effect=duplicate_clip, semantic:duplicate_blocked:outcome=blocked
+# Expect: semantic:selection_restored:effect=cancel_clip_operation, semantic:selection_restored:projection=selected
+# Expect: semantic:launcher_restored:effect=cancel_clip_operation, semantic:launcher_restored:projection=browse
+
+0 scenario clip-launcher
+100 capture screen launcher_browse
+
+# T1/C2 is occupied and inactive.
+200 encoder NAV 1
+280 encoder NAV 1
+360 encoder NAV 1
+440 encoder NAV 1
+520 button NAV down
+1580 tick
+1640 button NAV up
+1820 capture screen clip_selected
+
+# Copy proposes C3. Moving back onto the occupied source exposes a conflict;
+# Apply must fail without leaving the destination phase.
+1920 tap BOTTOM_RIGHT 60
+2080 encoder NAV -1
+2300 capture screen occupied_target
+2400 tap BOTTOM_RIGHT 60
+2650 capture screen duplicate_blocked
+
+# One Back returns to the source selection, the next to normal browse.
+2750 tap LEFT_TOP 60
+3000 capture screen selection_restored
+3100 tap LEFT_TOP 60
+3350 capture screen launcher_restored

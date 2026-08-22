@@ -893,7 +893,11 @@ FLASHMEM void SemanticUxRecorder::writeCapture_(uint32_t nowMs,
             context.intent = last_semantic_intent_;
         }
         if (last_semantic_effect_) context.effect = last_semantic_effect_;
-        if (last_semantic_outcome_ && !context.outcome) {
+        const bool preserveTerminalCancel =
+            last_semantic_intent_ ==
+            core::state::interaction::ControllerIntent::CANCEL;
+        if (last_semantic_outcome_ &&
+            (!context.outcome || preserveTerminalCancel)) {
             context.outcome = last_semantic_outcome_;
         }
     } else if (allow_state_projection_capture_) {

@@ -35,6 +35,7 @@ class SequencerStepEditHandler;
 class SequencerPatternEditorHandler;
 class ProjectTrackEditorHandler;
 class DrumLaneEditorHandler;
+class SequencerClipLauncherWorkflow;
 
 /**
  * Sequencer view bindings:
@@ -86,6 +87,7 @@ public:
     void attachPatternEditorHandler(SequencerPatternEditorHandler& handler);
     void attachTrackEditorHandler(ProjectTrackEditorHandler& handler);
     void attachDrumLaneEditorHandler(DrumLaneEditorHandler& handler);
+    void attachClipLauncherWorkflow(SequencerClipLauncherWorkflow& workflow);
 private:
     void setupBindings();
     void setupDrumBindings();
@@ -151,23 +153,27 @@ private:
     SequencerPatternEditorHandler* pattern_editor_handler_ = nullptr;
     ProjectTrackEditorHandler* track_editor_handler_ = nullptr;
     DrumLaneEditorHandler* drum_lane_editor_handler_ = nullptr;
+    SequencerClipLauncherWorkflow* clip_launcher_workflow_ = nullptr;
 #if defined(MS_UX_RECORDER)
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif
 };
 
 inline constexpr std::size_t kSequencerStepHandlerArmDrumBytes = 4U;
+inline constexpr std::size_t kSequencerStepHandlerArmClipLauncherBytes = 4U;
 
 #if defined(MS_UX_RECORDER)
 static_assert(
     sizeof(void*) != 4U || sizeof(SequencerStepHandler) ==
-        260U + kSequencerStepHandlerArmDrumBytes,
+        260U + kSequencerStepHandlerArmDrumBytes +
+            kSequencerStepHandlerArmClipLauncherBytes,
     "Sequencer Step handler exceeds its ARM UX-recorder PSRAM contract"
 );
 #else
 static_assert(
     sizeof(void*) != 4U || sizeof(SequencerStepHandler) ==
-        256U + kSequencerStepHandlerArmDrumBytes,
+        256U + kSequencerStepHandlerArmDrumBytes +
+            kSequencerStepHandlerArmClipLauncherBytes,
     "Sequencer Step handler exceeds its ARM PSRAM contract"
 );
 #endif

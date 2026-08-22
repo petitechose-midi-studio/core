@@ -27,6 +27,8 @@
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePropertySelection.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerPatternEditorOps.hpp"
@@ -214,6 +216,12 @@ FLASHMEM const char* guardedActionOutcomeName(
 
 FLASHMEM const char* actionName(SequencerAction action) {
     switch (action) {
+        case SequencerAction::MOVE_CLIP:
+            return "focus_clip";
+        case SequencerAction::OPEN_CLIP:
+            return "open_clip";
+        case SequencerAction::LAUNCH_CLIP:
+            return "launch_clip";
         case SequencerAction::MOVE_TRACK:
             return "move_track";
         case SequencerAction::MOVE_PATTERN:
@@ -490,6 +498,8 @@ FLASHMEM bool isSelectionScope(SequencerScope scope) {
 
 FLASHMEM const char* modeForScope(SequencerScope scope) {
     switch (scope) {
+        case SequencerScope::CLIP_LAUNCHER:
+            return "sequencer.clip_launcher";
         case SequencerScope::TRACK:
             return "sequencer.track";
         case SequencerScope::PATTERN:
@@ -530,6 +540,7 @@ FLASHMEM bool policyScopeTargetsStep(SequencerScope scope) {
 }
 
 FLASHMEM const char* targetForPolicyScope(SequencerScope scope) {
+    if (scope == SequencerScope::CLIP_LAUNCHER) return "clip";
     if (policyScopeTargetsTrack(scope)) return "track";
     if (policyScopeTargetsStep(scope)) return "step";
     if (scope == SequencerScope::LANE) return "lane";
@@ -1312,6 +1323,236 @@ FLASHMEM bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
         out.effect = "cancel_quick_controls";
     } else {
         return false;
+    }
+    return true;
+}
+
+FLASHMEM SequencerClipLauncherUxSurface::SequencerClipLauncherUxSurface(
+    oc::state::Signal<core::ui::ViewType, 8>& activeView,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+    core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerTrackBankState& tracks,
+    core::state::sequencer::SequencerClipGridState& clips,
+    core::state::sequencer::SequencerClipLaunchQueue& launches
+) : active_view_(activeView),
+    navigation_focus_(navigationFocus),
+    sequencer_(sequencer),
+    tracks_(tracks),
+    clips_(clips),
+    launches_(launches) {}
+
+FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
+    const oc::core::input::InputBindingTraceEvent& event,
+    core::validation::ux::SemanticUxContext& out
+) const {
+    namespace seq = core::state::sequencer;
+    using ButtonType = oc::core::input::ButtonBindingType;
+    using Intent = core::state::interaction::ControllerIntent;
+
+    if (active_view_.get() != core::ui::ViewType::SEQUENCER) return false;
+
+    // The provisional Pattern owns Back/Apply before the Pattern-to-Launcher
+    // hierarchy. Let the structure surface preserve that pre-dispatch fact;
+    // after cancellation the retained Pattern would otherwise look like a
+    // Launcher return even though no hierarchy transition occurred.
+    if (sequencer_.patternPresetPreview.active()) return false;
+
+    const bool navRelease = isButton(
+        event, Config::ButtonID::NAV, ButtonType::RELEASE
+    );
+    const bool navHold = isButton(
+        event, Config::ButtonID::NAV, ButtonType::LONG_PRESS
+    );
+    const bool back = isButton(
+        event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE
+    );
+    const bool replayEnter =
+        (transition_replay_ == TransitionReplay::OPEN_PATTERN ||
+         transition_replay_ == TransitionReplay::CREATE_PATTERN) &&
+        navRelease && sequencer_.clipLauncher.patternVisible();
+    const bool replayReturn =
+        transition_replay_ == TransitionReplay::RETURN_LAUNCHER &&
+        back && sequencer_.clipLauncher.launcherVisible();
+    if (replayEnter || replayReturn) {
+        out.mode = replayEnter
+            ? "sequencer.pattern"
+            : "sequencer.clip_launcher";
+        out.target = "clip";
+        out.targetTrack = transition_track_;
+        out.targetIndex = transition_slot_;
+        out.effect = replayEnter
+            ? transition_replay_ == TransitionReplay::CREATE_PATTERN
+                ? "create_clip_and_open_pattern"
+                : "open_clip_pattern"
+            : "return_to_clip_launcher";
+        out.intent = Intent::BACK;
+        if (replayEnter) out.intent = Intent::ACTIVATE;
+        out.outcome = "applied";
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "T%u / C%u",
+            static_cast<unsigned>(transition_track_ + 1U),
+            static_cast<unsigned>(transition_slot_ + 1U)
+        );
+        return true;
+    }
+    transition_replay_ = TransitionReplay::NONE;
+    const bool returnToLauncher = back &&
+        sequencer_.clipLauncher.patternVisible() &&
+        seq::isRootContentView(sequencer_) &&
+        navigation_focus_.get() == core::state::StructureNavigationFocus::PAGE;
+    if (returnToLauncher) {
+        transition_replay_ = TransitionReplay::RETURN_LAUNCHER;
+        transition_track_ = sequencer_.clipLauncher.returnTrack;
+        transition_slot_ = sequencer_.clipLauncher.returnSlot;
+        out.mode = "sequencer.pattern";
+        out.target = "clip";
+        out.targetTrack = sequencer_.clipLauncher.returnTrack;
+        out.targetIndex = sequencer_.clipLauncher.returnSlot;
+        out.effect = "return_to_clip_launcher";
+        out.intent = Intent::BACK;
+        out.outcome = "applied";
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "T%u / C%u",
+            static_cast<unsigned>(sequencer_.clipLauncher.returnTrack + 1U),
+            static_cast<unsigned>(sequencer_.clipLauncher.returnSlot + 1U)
+        );
+        return true;
+    }
+
+    if (!sequencer_.clipLauncher.launcherVisible()) return false;
+
+    const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
+    const bool moveAction = isButton(
+        event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE
+    );
+    const bool structureAction = isButton(
+        event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE
+    );
+    const bool removeAction = isButton(
+        event, Config::ButtonID::BOTTOM_LEFT, ButtonType::LONG_PRESS
+    );
+    uint8_t macroIndex = 0U;
+    const bool macroRelease = isMacroButtonRelease(event, macroIndex);
+    const bool projection = isSemanticStateProjection(event);
+    if (!navTurn && !navRelease && !navHold && !back && !moveAction &&
+        !structureAction && !removeAction && !macroRelease && !projection) {
+        return false;
+    }
+
+    const auto& ui = sequencer_.clipLauncher;
+    seq::SequencerClipAddress address{ui.focusedTrack, ui.focusedSlot};
+    if (macroRelease) {
+        address = {
+            static_cast<uint8_t>(ui.firstVisibleTrack +
+                (macroIndex % seq::SequencerClipLauncherUiState::VISIBLE_TRACKS)),
+            static_cast<uint8_t>(ui.firstVisibleSlot +
+                (macroIndex / seq::SequencerClipLauncherUiState::VISIBLE_TRACKS)),
+        };
+    }
+
+    const bool occupied = clips_.isOccupied(address);
+    const auto telemetry = launches_.telemetry(address.track);
+    const bool queued = telemetry.status == seq::SequencerClipLaunchStatus::QUEUED &&
+        telemetry.queuedSlot == address.slot;
+    const bool active = telemetry.activeSlot == address.slot;
+
+    out.mode = "sequencer.clip_launcher";
+    out.target = "clip";
+    out.targetTrack = address.track;
+    out.targetIndex = address.slot;
+    out.targetCount = seq::SequencerClipGridState::SLOT_COUNT;
+    out.source = tracks_.isDrumTrack(address.track) ? "drum" : "instrument";
+    out.property = queued ? "queued" : active ? "active" : occupied ? "occupied" : "empty";
+    out.projection = ui.operation == seq::SequencerClipLauncherOperation::SELECT
+        ? "selected"
+        : ui.operation ==
+                seq::SequencerClipLauncherOperation::MOVE_DESTINATION
+            ? "move_destination"
+            : ui.operation ==
+                    seq::SequencerClipLauncherOperation::DUPLICATE_DESTINATION
+                ? "duplicate_destination"
+                : queued ? "queued" : active ? "active" : "browse";
+    std::snprintf(
+        out.valueLabel,
+        sizeof(out.valueLabel),
+        "T%u / C%u",
+        static_cast<unsigned>(address.track + 1U),
+        static_cast<unsigned>(address.slot + 1U)
+    );
+
+    if (navTurn) {
+        out.effect = "focus_clip";
+        out.intent = Intent::MOVE_FOCUS;
+    } else if (navHold) {
+        out.effect = "select_clip";
+        out.intent = Intent::ENTER_SELECTION;
+    } else if (navRelease) {
+        if (ui.selectionActive()) {
+            out.effect = "keep_clip_selection";
+            out.intent = Intent::ENTER_SELECTION;
+            return true;
+        }
+        transition_replay_ = occupied
+            ? TransitionReplay::OPEN_PATTERN
+            : TransitionReplay::CREATE_PATTERN;
+        transition_track_ = address.track;
+        transition_slot_ = address.slot;
+        out.effect = !tracks_.isTrackEnabled(address.track)
+            ? "open_track_type_picker"
+            : occupied ? "open_clip_pattern" : "create_clip_and_open_pattern";
+        out.intent = Intent::ACTIVATE;
+    } else if (macroRelease) {
+        out.effect = ui.selectionActive() ? "select_visible_clip" : "launch_clip";
+        out.intent = ui.selectionActive()
+            ? Intent::ENTER_SELECTION
+            : Intent::ACTIVATE;
+        if (!occupied) {
+            out.outcome = "noop";
+            out.reason = "empty_clip";
+        } else if (queued) {
+            out.outcome = "queued";
+            out.reason = "launch_pending";
+        } else if (telemetry.status == seq::SequencerClipLaunchStatus::APPLIED) {
+            out.outcome = "applied";
+        }
+    } else if (moveAction) {
+        out.effect = ui.operation ==
+                seq::SequencerClipLauncherOperation::SELECT
+            ? "begin_move_clip"
+            : "open_clip_region";
+        out.intent = Intent::CHANGE_SCOPE;
+    } else if (structureAction) {
+        out.effect = ui.operation ==
+                seq::SequencerClipLauncherOperation::SELECT
+            ? "begin_duplicate_clip"
+            : ui.operation ==
+                    seq::SequencerClipLauncherOperation::MOVE_DESTINATION
+                ? "move_clip"
+                : ui.operation == seq::SequencerClipLauncherOperation::
+                        DUPLICATE_DESTINATION
+                    ? "duplicate_clip"
+                    : "place_clip";
+        out.intent = Intent::APPLY;
+        out.outcome = ui.feedback == seq::SequencerClipLauncherFeedback::FAILED
+            ? "blocked"
+            : "applied";
+    } else if (removeAction) {
+        out.effect = "remove_clip";
+        out.intent = Intent::DELETE_STRUCTURE;
+        out.outcome = ui.feedback == seq::SequencerClipLauncherFeedback::REMOVED
+            ? "applied"
+            : "blocked";
+    } else if (back) {
+        out.effect = "cancel_clip_operation";
+        out.intent = Intent::BACK;
+    } else {
+        out.effect = "inspect_clip_launcher";
     }
     return true;
 }

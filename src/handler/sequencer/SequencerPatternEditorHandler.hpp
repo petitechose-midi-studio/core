@@ -37,6 +37,8 @@ public:
 
     /** Opens only the root Pattern and derives the first window from Page. */
     bool openFromCurrentPage();
+    /** Opens the existing editor directly on the focused Clip region layer. */
+    bool openRegionFromCurrentPage();
     void close();
     /** Closes a stale session as soon as another Track owns the editor. */
     void update(uint32_t nowMs);

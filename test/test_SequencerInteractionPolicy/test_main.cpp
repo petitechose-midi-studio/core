@@ -73,6 +73,25 @@ void expectsRootFocusMatrix() {
     assert(step.leftBottomVisibility == Visibility::ACTIVE);
 }
 
+void expectsClipLauncherPolicy() {
+    auto context = baseContext(Focus::PAGE);
+    context.clipLauncherActive = true;
+
+    auto policy = buildSequencerInteractionPolicy(context);
+    assert(policy.scope == Scope::CLIP_LAUNCHER);
+    assert(policy.navTurn == Action::MOVE_CLIP);
+    assert(policy.navTap == Action::OPEN_CLIP);
+    assert(policy.macroTap == Action::LAUNCH_CLIP);
+    assert(!sequencerInteractionMainSurfaceAvailable(context));
+
+    context.overlayVisible = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.scope == Scope::CLIP_LAUNCHER);
+    assert(policy.navTurn == Action::NONE);
+    assert(policy.navTap == Action::NONE);
+    assert(policy.macroTap == Action::NONE);
+}
+
 void expectsStepContentPolicy() {
     auto selector = baseContext(Focus::STEP);
     selector.stepContentSelectorActive = true;
@@ -344,6 +363,7 @@ void expectsDestructiveAndMuteIconsToRemainSemanticallyDistinct() {
 
 int main() {
     expectsRootFocusMatrix();
+    expectsClipLauncherPolicy();
     expectsStepContentPolicy();
     expectsChildContentBottomActions();
     expectsStructureCopyVisibleWithoutClipboard();

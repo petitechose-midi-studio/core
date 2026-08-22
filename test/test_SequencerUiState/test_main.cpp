@@ -244,6 +244,73 @@ void test_track_paste_has_one_bounded_revision_subscription_surface() {
     assert(!state.detailVisible);
 }
 
+void test_clip_launcher_navigation_follows_four_track_viewports() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerClipLauncherUiState state;
+    state.reset(0U);
+
+    for (uint8_t i = 0U; i < 4U; ++i) state.move(1);
+    assert(state.focusedTrack == 0U);
+    assert(state.focusedSlot == 1U);
+    assert(state.firstVisibleTrack == 0U);
+    assert(state.firstVisibleSlot == 0U);
+
+    for (uint8_t i = 0U; i < 4U; ++i) state.move(1);
+    assert(state.focusedTrack == 4U);
+    assert(state.focusedSlot == 0U);
+    assert(state.firstVisibleTrack == 4U);
+    assert(state.firstVisibleSlot == 0U);
+
+    state.move(-1);
+    assert(state.focusedTrack == 3U);
+    assert(state.focusedSlot == 1U);
+    assert(state.firstVisibleTrack == 0U);
+    assert(state.firstVisibleSlot == 0U);
+}
+
+void test_clip_launcher_returns_to_the_exact_clip_address() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerClipLauncherUiState state;
+    state.reset(0U);
+    state.enterPattern(6U, 5U);
+
+    assert(state.patternVisible());
+    assert(state.returnToLauncher());
+    assert(state.launcherVisible());
+    assert(state.focusedTrack == 6U);
+    assert(state.focusedSlot == 5U);
+    assert(state.firstVisibleTrack == 4U);
+    assert(state.firstVisibleSlot == 4U);
+    assert(!state.returnToLauncher());
+}
+
+void test_clip_launcher_operation_navigation_stays_on_the_source_track() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerClipLauncherUiState state;
+    state.reset(0U);
+    state.beginSelection(3U, 2U);
+
+    assert(state.selectionActive());
+    assert(!state.placementActive());
+    state.beginPlacement(
+        seq::SequencerClipLauncherOperation::DUPLICATE_DESTINATION,
+        3U
+    );
+    assert(state.placementActive());
+    state.move(1);
+    assert(state.focusedTrack == 3U);
+    assert(state.focusedSlot == 4U);
+
+    assert(state.backOperation());
+    assert(state.selectionActive());
+    assert(!state.placementActive());
+    assert(state.focusedTrack == 3U);
+    assert(state.focusedSlot == 2U);
+    assert(state.backOperation());
+    assert(!state.selectionActive());
+    assert(!state.backOperation());
+}
+
 void test_preset_library_keeps_only_the_active_domain_payload() {
     namespace seq = core::state::sequencer;
     using Library = seq::SequencerPresetLibrarySessionState;
@@ -362,6 +429,9 @@ int main() {
     test_history_feedback_shows_and_expires();
     test_history_rejection_feedback_is_typed_exact_and_expires();
     test_track_paste_has_one_bounded_revision_subscription_surface();
+    test_clip_launcher_navigation_follows_four_track_viewports();
+    test_clip_launcher_returns_to_the_exact_clip_address();
+    test_clip_launcher_operation_navigation_stays_on_the_source_track();
     test_preset_library_keeps_only_the_active_domain_payload();
     test_preset_library_entry_policy_matches_the_visible_editor_surface();
 

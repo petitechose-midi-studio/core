@@ -10,6 +10,7 @@ FLASHMEM void ProjectTrackEditorState::reset() {
     selectedProperty = ProjectTrackEditorProperty::CHANNEL;
     currentKind = ProjectTrackEditorKind::INSTRUMENT;
     draftKind = ProjectTrackEditorKind::INSTRUMENT;
+    typeChangeBlocked = false;
     active = false;
 }
 

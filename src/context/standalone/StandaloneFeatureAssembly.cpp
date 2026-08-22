@@ -94,6 +94,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
 #endif
     sequencer_feature_ = core::app::makeExtmemUnique<core::context::standalone::SequencerFeatureModule>(
         core::context::standalone::SequencerFeatureModule::StateRefs{
+            state,
             state.overlays,
             state.activeView,
             state.structureNavigationFocus,

@@ -54,6 +54,7 @@ FLASHMEM ProjectTrackEditorHandler::ProjectTrackEditorHandler(
     : editor_(state.editor)
     , tracks_(state.tracks)
     , sequencer_tracks_(state.sequencerTracks)
+    , sequencer_clips_(state.sequencerClips)
     , shared_tracks_(state.sharedTracks)
     , track_domain_(state.trackDomain)
     , history_(state.history)
@@ -150,6 +151,9 @@ void ProjectTrackEditorHandler::update(uint32_t nowMs) {
         commitPendingGesture();
     }
     if (!editor_.active) return;
+    if (clip_grid_revision_ != sequencer_clips_.revisionSignal().get()) {
+        syncTrackKindGuard();
+    }
 
     const uint8_t active = shared_tracks_.activeTrack();
     const uint16_t enabled = shared_tracks_.enabledMask();
@@ -234,6 +238,7 @@ FLASHMEM void ProjectTrackEditorHandler::setFocusedValue(float normalized) {
                 ? core::state::project::ProjectTrackEditorKind::DRUM
                 : core::state::project::ProjectTrackEditorKind::INSTRUMENT
         );
+        syncTrackKindGuard();
         return;
     }
     const auto kind = historyKind(property);
@@ -285,12 +290,15 @@ FLASHMEM void ProjectTrackEditorHandler::cancelTrackKindDraft() {
     (void)core::state::project::selectProjectTrackEditorDraftKind(
         editor_, editor_.currentKind
     );
+    syncTrackKindGuard();
     configureOpt();
 }
 
 FLASHMEM void ProjectTrackEditorHandler::applyTrackKind() {
     commitPendingGesture();
-    if (!ownsActiveTrack() || editor_.draftKind == editor_.currentKind) return;
+    syncTrackKindGuard();
+    if (!ownsActiveTrack() || editor_.draftKind == editor_.currentKind ||
+        editor_.typeChangeBlocked) return;
     const bool drum = editor_.draftKind ==
         core::state::project::ProjectTrackEditorKind::DRUM;
     core::state::sequencer::SequencerHistoryDescriptor descriptor{
@@ -328,6 +336,7 @@ FLASHMEM void ProjectTrackEditorHandler::applyTrackKind() {
             ? core::state::project::ProjectTrackEditorKind::DRUM
             : core::state::project::ProjectTrackEditorKind::INSTRUMENT
     );
+    syncTrackKindGuard();
     configureOpt();
 }
 
@@ -338,6 +347,27 @@ FLASHMEM void ProjectTrackEditorHandler::syncKindDraft() {
             ? core::state::project::ProjectTrackEditorKind::DRUM
             : core::state::project::ProjectTrackEditorKind::INSTRUMENT
     );
+    syncTrackKindGuard();
+}
+
+FLASHMEM void ProjectTrackEditorHandler::syncTrackKindGuard() {
+    clip_grid_revision_ = sequencer_clips_.revisionSignal().get();
+    bool blocked = false;
+    if (editor_.active && editor_.draftKind != editor_.currentKind) {
+        uint8_t occupied = 0U;
+        for (uint8_t slot = 0U;
+             slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
+             ++slot) {
+            if (sequencer_clips_.isOccupied({editor_.trackIndex, slot})) {
+                ++occupied;
+            }
+        }
+        blocked = occupied > 1U;
+    }
+    if (editor_.typeChangeBlocked == blocked) return;
+    editor_.typeChangeBlocked = blocked;
+    ++editor_.revision;
+    if (editor_.revision == 0U) editor_.revision = 1U;
 }
 
 FLASHMEM void ProjectTrackEditorHandler::configureOpt() {

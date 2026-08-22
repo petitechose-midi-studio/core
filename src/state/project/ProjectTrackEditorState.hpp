@@ -33,6 +33,7 @@ struct ProjectTrackEditorState {
         ProjectTrackEditorProperty::CHANNEL;
     ProjectTrackEditorKind currentKind = ProjectTrackEditorKind::INSTRUMENT;
     ProjectTrackEditorKind draftKind = ProjectTrackEditorKind::INSTRUMENT;
+    bool typeChangeBlocked = false;
     bool active = false;
 
     /**
@@ -62,6 +63,7 @@ struct ProjectTrackEditorState {
                lhs.selectedProperty == rhs.selectedProperty &&
                lhs.currentKind == rhs.currentKind &&
                lhs.draftKind == rhs.draftKind &&
+               lhs.typeChangeBlocked == rhs.typeChangeBlocked &&
                lhs.active == rhs.active;
     }
 };

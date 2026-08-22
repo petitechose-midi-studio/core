@@ -13,6 +13,7 @@
 #include "state/project/ProjectTrackEditorState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
 
 namespace core::handler {
 
@@ -32,6 +33,7 @@ public:
         core::state::project::ProjectTrackEditorState& editor;
         core::state::project::ProjectTrackState& tracks;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        const core::state::sequencer::SequencerClipGridState& sequencerClips;
         SharedTrackDomainServices sharedTracks;
         core::state::project::ProjectTrackDomainServices trackDomain;
         SequencerHistoryDomainServices history;
@@ -62,6 +64,7 @@ private:
     void cancelTrackKindDraft();
     void applyTrackKind();
     void syncKindDraft();
+    void syncTrackKindGuard();
     void configureOpt();
     void commitPendingGesture();
     void cancelPendingGesture();
@@ -70,6 +73,7 @@ private:
     core::state::project::ProjectTrackEditorState& editor_;
     core::state::project::ProjectTrackState& tracks_;
     core::state::sequencer::SequencerTrackBankState& sequencer_tracks_;
+    const core::state::sequencer::SequencerClipGridState& sequencer_clips_;
     SharedTrackDomainServices shared_tracks_;
     core::state::project::ProjectTrackDomainServices track_domain_;
     SequencerHistoryDomainServices history_;
@@ -78,6 +82,7 @@ private:
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID overlay_scope_ = 0;
     uint32_t gesture_commit_deadline_ms_ = 0U;
+    uint32_t clip_grid_revision_ = 0U;
 };
 
 }  // namespace core::handler

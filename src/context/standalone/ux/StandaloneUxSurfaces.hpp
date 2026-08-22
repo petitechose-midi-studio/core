@@ -37,6 +37,8 @@ struct ProjectTrackEditorState;
 struct ProjectTrackState;
 }
 namespace sequencer {
+class SequencerClipGridState;
+class SequencerClipLaunchQueue;
 struct SequencerState;
 struct SequencerPatternRandomizeSession;
 class SequencerTrackActivationQueue;
@@ -66,6 +68,7 @@ constexpr uint8_t SEQUENCER_STEP_EDIT = 25;
 constexpr uint8_t SEQUENCER_DRUM_LANE_EDIT = 26;
 constexpr uint8_t SEQUENCER_PROPERTY_SELECTOR = 30;
 constexpr uint8_t SEQUENCER_QUICK_CONTROLS = 35;
+constexpr uint8_t SEQUENCER_CLIP_LAUNCHER = 38;
 constexpr uint8_t SEQUENCER_STRUCTURE = 40;
 constexpr uint8_t SEQUENCER_STEP_GRID = 50;
 constexpr uint8_t PROJECT_NAVIGATION = 51;
@@ -307,6 +310,46 @@ public:
 private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::sequencer::SequencerState& sequencer_;
+};
+
+class SequencerClipLauncherUxSurface final
+    : public core::validation::ux::SemanticUxSurface {
+public:
+    SequencerClipLauncherUxSurface(
+        oc::state::Signal<core::ui::ViewType, 8>& activeView,
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
+        core::state::sequencer::SequencerState& sequencer,
+        core::state::sequencer::SequencerTrackBankState& tracks,
+        core::state::sequencer::SequencerClipGridState& clips,
+        core::state::sequencer::SequencerClipLaunchQueue& launches
+    );
+
+    bool captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent& event,
+        core::validation::ux::SemanticUxContext& out
+    ) const override;
+
+private:
+    enum class TransitionReplay : uint8_t {
+        NONE,
+        OPEN_PATTERN,
+        CREATE_PATTERN,
+        RETURN_LAUNCHER,
+    };
+
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    core::state::sequencer::SequencerState& sequencer_;
+    core::state::sequencer::SequencerTrackBankState& tracks_;
+    core::state::sequencer::SequencerClipGridState& clips_;
+    core::state::sequencer::SequencerClipLaunchQueue& launches_;
+    mutable TransitionReplay transition_replay_ = TransitionReplay::NONE;
+    mutable uint8_t transition_track_ = 0U;
+    mutable uint8_t transition_slot_ = 0U;
 };
 
 class SequencerPatternEditorUxSurface final

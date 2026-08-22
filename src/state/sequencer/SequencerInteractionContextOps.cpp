@@ -16,6 +16,7 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
 ) {
     SequencerInteractionContext context{};
     context.navigationFocus = navigationFocus;
+    context.clipLauncherActive = sequencer.clipLauncher.launcherVisible();
     context.childContentView = isChildContentView(sequencer);
     const bool drumTransientVisible =
         sequencer.drumSequencer.active() &&

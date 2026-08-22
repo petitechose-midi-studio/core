@@ -726,6 +726,58 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
 ) {
     StripProps props;
     props.visible = true;
+    if (source.sequencer.clipLauncher.launcherVisible()) {
+        const auto& launcher = source.sequencer.clipLauncher;
+        for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
+        if (!launcher.selectionActive()) return props;
+
+        const core::state::sequencer::SequencerClipAddress sourceAddress{
+            launcher.sourceTrack,
+            launcher.sourceSlot,
+        };
+        const bool removable = !launcher.placementActive() &&
+            !source.clips.isResident(sourceAddress) &&
+            !source.clipLaunches.references(sourceAddress);
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_REMOVE,
+            launcher.removeHoldActive
+                ? Visual::ARMED
+                : removable ? Visual::ACTIVE : Visual::DISABLED,
+            Tone::DESTRUCTIVE
+        );
+        props.slots[0].holdActive = launcher.removeHoldActive;
+        props.slots[0].holdStartedAtMs = launcher.removeHoldStartedAtMs;
+        props.slots[0].holdDurationMs =
+            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(1U);
+
+        const bool placement = launcher.placementActive();
+        bool hasEmptyDestination = false;
+        for (uint8_t slot = 0U;
+             slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
+             ++slot) {
+            hasEmptyDestination |= !source.clips.isOccupied({
+                launcher.sourceTrack, slot
+            });
+        }
+        const core::state::sequencer::SequencerClipAddress destination{
+            launcher.focusedTrack,
+            launcher.focusedSlot,
+        };
+        const bool destinationAvailable = placement &&
+            destination.track == launcher.sourceTrack &&
+            !source.clips.isOccupied(destination);
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            placement
+                ? standalone::icons::ACTION_PLACE_TARGET
+                : standalone::icons::ACTION_COPY,
+            placement
+                ? destinationAvailable ? Visual::ACTIVE : Visual::DISABLED
+                : hasEmptyDestination ? Visual::ACTIVE : Visual::DISABLED,
+            placement ? Tone::POSITIVE : Tone::NEUTRAL
+        );
+        return props;
+    }
     if (source.sequencer.patternPresetPreview.active()) {
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_VALIDATE,

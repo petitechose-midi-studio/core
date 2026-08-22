@@ -23,6 +23,7 @@
 #include "../../src/handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 #include "../../src/handler/sequencer/DrumLaneEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "../../src/handler/sequencer/SequencerClipLauncherWorkflow.hpp"
 #include "../../src/handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepContentHandler.hpp"
@@ -376,6 +377,7 @@ struct SequencerStepHarness {
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::state::sequencer::SequencerPatternRandomizeSession patternRandomize;
     core::handler::SequencerPatternEditorHandler patternEditorHandler;
+    core::handler::SequencerClipLauncherWorkflow clipLauncherWorkflow;
     core::handler::SequencerStepHandler handler;
     DrumAuditionProbe drumAudition;
     core::handler::DrumLaneEditorHandler drumLaneEditorHandler;
@@ -386,7 +388,7 @@ struct SequencerStepHarness {
     core::handler::SequencerStepEditHandler stepEditHandler;
     core::handler::SequencerStepContentHandler stepContentHandler;
 
-    SequencerStepHarness()
+    explicit SequencerStepHarness(bool enableClipLauncher = false)
         : state(storages.settings), navigationFocus(core::state::StructureNavigationFocus::PAGE),
           inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG),
           buttons(inputBinding, buttonHw), encoders(inputBinding, encoderHw),
@@ -399,6 +401,7 @@ struct SequencerStepHarness {
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               overlays, encoders, buttons, PATTERN_EDITOR_SCOPE),
+          clipLauncherWorkflow({state, navigationFocus, state.overlays}),
           handler(
               core::handler::SequencerStepHandler::StateRefs{
                   state.sequencer,
@@ -486,8 +489,12 @@ struct SequencerStepHarness {
             DRUM_LANE_EDITOR_SCOPE
         );
         handler.attachPatternEditorHandler(patternEditorHandler);
+        if (enableClipLauncher) {
+            handler.attachClipLauncherWorkflow(clipLauncherWorkflow);
+        }
         handler.attachStepEditHandler(stepEditHandler);
         handler.attachDrumLaneEditorHandler(drumLaneEditorHandler);
+        state.sequencer.clipLauncher.enterPattern(0U, 0U);
         handler.update(g_now_ms);
     }
 
@@ -532,6 +539,99 @@ struct SequencerStepHarness {
         eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, value));
     }
 };
+
+void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipLauncher;
+    launcher.reset(0U);
+    assert(launcher.launcherVisible());
+    assert(h.state.sequencerClips.isOccupied({0U, 0U}));
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.operation == seq::SequencerClipLauncherOperation::SELECT);
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(!launcher.removeHoldActive);
+    assert(launcher.feedback == seq::SequencerClipLauncherFeedback::FAILED);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(launcher.operation ==
+           seq::SequencerClipLauncherOperation::DUPLICATE_DESTINATION);
+    assert(launcher.focusedTrack == 0U);
+    assert(launcher.focusedSlot == 1U);
+    h.tap(Config::ButtonID::MACRO_2);
+    assert(launcher.focusedTrack == 0U);
+    assert(launcher.focusedSlot == 1U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!launcher.selectionActive());
+    assert(h.state.sequencerClips.isOccupied({0U, 1U}));
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(launcher.operation ==
+           seq::SequencerClipLauncherOperation::MOVE_DESTINATION);
+    assert(launcher.focusedSlot == 2U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.sequencerClips.isOccupied({0U, 1U}));
+    assert(h.state.sequencerClips.isOccupied({0U, 2U}));
+    assert(h.state.sequencerHistory.undoCount() == 2U);
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(!h.state.sequencerClips.isOccupied({0U, 2U}));
+    assert(h.state.sequencerHistory.undoCount() == 3U);
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerClips.isOccupied({0U, 2U}));
+    assert(h.state.redoSequencerHistory());
+    assert(!h.state.sequencerClips.isOccupied({0U, 2U}));
+
+    launcher.focus(0U, 0U);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.patternEditor.active.get());
+    assert(h.state.sequencer.patternEditor.focusedLayer ==
+           seq::SequencerPatternEditorLayer::REGION);
+    assert(launcher.launcherVisible());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.patternEditor.active.get());
+
+    h.tap(Config::ButtonID::NAV);
+    assert(launcher.patternVisible());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(launcher.launcherVisible());
+    assert(launcher.focusedTrack == 0U);
+    assert(launcher.focusedSlot == 0U);
+
+    std::cout
+        << "[PASS] Clip Launcher gestures reuse structure and region editors\n";
+}
+
+void test_pattern_preview_owns_back_before_clip_launcher() {
+    SequencerStepHarness h(true);
+    auto& sequencer = h.state.sequencer;
+    auto& launcher = sequencer.clipLauncher;
+
+    launcher.enterPattern(0U, 0U);
+    sequencer.patternPresetPreview.phase =
+        seq::SequencerPatternPresetPreviewPhase::PREVIEW;
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(launcher.patternVisible());
+    assert(sequencer.patternPresetPreview.active());
+
+    std::cout
+        << "[PASS] Pattern preview owns Back before Clip Launcher hierarchy\n";
+}
 
 core::handler::SequencerStructureEditWorkflow makeStructureEditWorkflow(
     SequencerStepHarness& harness,
@@ -4196,7 +4296,10 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     assert(!h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencerTracks.track(2).note[0] == 83);
     assert(h.state.sequencerTracks.track(2).isEnabled(0));
-    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    assert(h.state.sequencer.clipLauncher.patternVisible());
+    assert(h.state.sequencer.clipLauncher.returnTrack == 1U);
+    assert(h.state.sequencer.clipLauncher.returnSlot == 0U);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.state.sequencer.pattern.length.get() == 8);
@@ -7020,7 +7123,10 @@ void test_created_track_is_undoable_and_redoable() {
     assert(h.state.sequencer.pattern.length.get() == 8);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
-    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    assert(h.state.sequencer.clipLauncher.patternVisible());
+    assert(h.state.sequencer.clipLauncher.returnTrack == 1U);
+    assert(h.state.sequencer.clipLauncher.returnSlot == 0U);
     assert(h.state.sequencerHistory.undoCount() == 1);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 1);
@@ -9630,6 +9736,8 @@ void test_drum_advanced_creation_oom_restores_mapping_and_graph() {
 }  // namespace
 
 int main() {
+    test_clip_launcher_gestures_are_structural_and_region_editor_is_reused();
+    test_pattern_preview_owns_back_before_clip_launcher();
     test_child_creation_draft_apply_and_back_decisions();
     test_nav_context_selector_previews_and_applies_all_three_contexts();
     test_latched_track_editor_release_cannot_cross_into_page_editor();

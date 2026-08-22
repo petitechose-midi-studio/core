@@ -19,10 +19,16 @@ using core::ui::ContextActionStripVisualState;
 using test_support::CoreStorages;
 
 core::ui::sequencer::SequencerViewModelSource sourceFor(
-    core::state::CoreState& state
+    core::state::CoreState& state,
+    bool patternWorkspace = true
 ) {
+    if (patternWorkspace && state.sequencer.clipLauncher.launcherVisible()) {
+        state.sequencer.clipLauncher.enterPattern(0U, 0U);
+    }
     return {
         .sequencer = state.sequencer,
+        .clips = state.sequencerClips,
+        .clipLaunches = state.sequencerClipLaunches,
         .tracks = state.sequencerTracks,
         .projectTracks = state.projectTracks,
         .trackNavigation = state.trackNavigation,
@@ -34,6 +40,56 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
         .projectNavigation = state.projectNavigation,
         .trackActivations = state.sequencerTrackActivations,
     };
+}
+
+void test_clip_launcher_left_strip_exposes_region_and_selection_actions() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    auto& launcher = state.sequencer.clipLauncher;
+    launcher.reset(0U);
+
+    auto props = core::ui::sequencer::buildSequencerLeftActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[1].icon == standalone::icons::CLIP);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
+
+    launcher.beginSelection(0U, 0U);
+    props = core::ui::sequencer::buildSequencerLeftActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].icon == standalone::icons::ACTION_BACKWARD);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[1].icon == standalone::icons::ACTION_MOVE);
+
+    launcher.beginPlacement(
+        core::state::sequencer::SequencerClipLauncherOperation::MOVE_DESTINATION,
+        1U
+    );
+    props = core::ui::sequencer::buildSequencerLeftActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+
+    std::cout << "[PASS] Clip Launcher left strip exposes region and selection\n";
+}
+
+void test_clip_launcher_move_is_disabled_when_the_track_is_full() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    for (uint8_t slot = 1U;
+         slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
+         ++slot) {
+        assert(state.createSequencerClip({0U, slot}));
+    }
+    state.sequencer.clipLauncher.beginSelection(0U, 1U);
+
+    const auto props = core::ui::sequencer::buildSequencerLeftActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[1].icon == standalone::icons::ACTION_MOVE);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::DISABLED);
 }
 
 void expectCancel(const core::ui::ContextActionStripProps& props) {
@@ -122,6 +178,8 @@ void test_drum_pattern_lane_and_step_actions_are_distinct() {
 int main() {
     test_selector_strip_projection_contract();
     test_drum_pattern_lane_and_step_actions_are_distinct();
+    test_clip_launcher_left_strip_exposes_region_and_selection_actions();
+    test_clip_launcher_move_is_disabled_when_the_track_is_full();
     std::cout << "\nAll Sequencer left-action-strip tests passed.\n";
     return 0;
 }

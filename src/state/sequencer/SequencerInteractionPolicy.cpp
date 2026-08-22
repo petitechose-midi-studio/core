@@ -378,6 +378,23 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
     return policy;
 }
 
+FLASHMEM SequencerInteractionPolicy buildClipLauncherPolicy(
+    const SequencerInteractionContext& context
+) {
+    SequencerInteractionPolicy policy{};
+    policy.scope = Scope::CLIP_LAUNCHER;
+    disableMainEditing(policy);
+    hideLeftSelectors(policy);
+    if (context.overlayVisible) {
+        policy.navTurn = Action::NONE;
+        return policy;
+    }
+    policy.navTurn = Action::MOVE_CLIP;
+    policy.navTap = Action::OPEN_CLIP;
+    policy.macroTap = Action::LAUNCH_CLIP;
+    return policy;
+}
+
 }  // namespace
 
 FLASHMEM bool sequencerInteractionSelectionActive(const SequencerInteractionContext& context) {
@@ -394,12 +411,17 @@ FLASHMEM bool sequencerInteractionTransientActive(const SequencerInteractionCont
 }
 
 FLASHMEM bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractionContext& context) {
-    return !sequencerInteractionSelectionActive(context) && !sequencerInteractionTransientActive(context);
+    return !context.clipLauncherActive &&
+        !sequencerInteractionSelectionActive(context) &&
+        !sequencerInteractionTransientActive(context);
 }
 
 FLASHMEM SequencerInteractionPolicy buildSequencerInteractionPolicy(
     const SequencerInteractionContext& context
 ) {
+    if (context.clipLauncherActive) {
+        return buildClipLauncherPolicy(context);
+    }
     if (context.stepEditorVisible) {
         return buildStepEditorPolicy(context);
     }
@@ -425,6 +447,11 @@ FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
     switch (action) {
         case SequencerInteractionAction::NONE:
             return Intent::NONE;
+        case SequencerInteractionAction::MOVE_CLIP:
+            return Intent::MOVE_FOCUS;
+        case SequencerInteractionAction::OPEN_CLIP:
+        case SequencerInteractionAction::LAUNCH_CLIP:
+            return Intent::ACTIVATE;
         case SequencerInteractionAction::MOVE_TRACK:
         case SequencerInteractionAction::MOVE_PATTERN:
         case SequencerInteractionAction::MOVE_LANE:

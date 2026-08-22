@@ -32,8 +32,13 @@ namespace {
 core::ui::sequencer::SequencerViewModelSource sourceFor(
     core::state::CoreState& state
 ) {
+    if (state.sequencer.clipLauncher.launcherVisible()) {
+        state.sequencer.clipLauncher.enterPattern(0U, 0U);
+    }
     return {
         .sequencer = state.sequencer,
+        .clips = state.sequencerClips,
+        .clipLaunches = state.sequencerClipLaunches,
         .tracks = state.sequencerTracks,
         .projectTracks = state.projectTracks,
         .trackNavigation = state.trackNavigation,

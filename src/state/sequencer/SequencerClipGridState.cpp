@@ -16,7 +16,12 @@ namespace core::state::sequencer {
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 static_assert(sizeof(SequencerClipDocument) == 864U, "Clip document RAM drift");
+#if OC_ENABLE_STATS
+static_assert(sizeof(SequencerClipGridState) == 1184U,
+              "Diagnostic Clip grid RAM drift");
+#else
 static_assert(sizeof(SequencerClipGridState) == 1180U, "Clip grid RAM drift");
+#endif
 static_assert(sizeof(SequencerClipStructureChange) == 20U, "Clip history RAM drift");
 static_assert(sizeof(oc::note::sequencer::StepSequencerGraph) == 14792U,
               "Clip graph RAM drift");
@@ -148,6 +153,35 @@ FLASHMEM bool captureSequencerClipDocument(
     }
 
     out = std::move(next);
+    return true;
+}
+
+FLASHMEM bool createEmptySequencerClipDocument(
+    SequencerTrackKind trackKind,
+    const DrumTrackState* drumTemplate,
+    SequencerClipDocumentPtr& out
+) {
+    if ((trackKind == SequencerTrackKind::DRUM) !=
+        (drumTemplate != nullptr)) {
+        return false;
+    }
+
+    auto pattern = core::app::makeExtmemUniqueCold<SequencerPatternState>();
+    if (!pattern) return false;
+    pattern->reset();
+    const SequencerClipState clip{};
+    if (!captureSequencerClipDocument(
+            *pattern,
+            clip,
+            trackKind,
+            drumTemplate,
+            out)) {
+        return false;
+    }
+    if (out->drum != nullptr) {
+        out->drum->pattern.reset();
+        out->drum->advancedStepKeys.fill(DRUM_ADVANCED_STEP_KEY_INVALID);
+    }
     return true;
 }
 

@@ -325,6 +325,8 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
         viewsHost,
         core::ui::SequencerView::StateRefs{
             core_state_.sequencer,
+            core_state_.sequencerClips,
+            core_state_.sequencerClipLaunches,
             core_state_.sequencerTracks,
             core_state_.projectTracks,
             core_state_.trackNavigation,

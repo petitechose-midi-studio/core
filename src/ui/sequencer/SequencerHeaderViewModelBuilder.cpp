@@ -85,6 +85,66 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const SequencerViewModelSource& source
 ) {
     const auto& sequencer = source.sequencer;
+    if (sequencer.clipLauncher.launcherVisible()) {
+        const auto& launcher = sequencer.clipLauncher;
+        SequencerHeaderBarProps props{};
+        props.previewTrack = launcher.focusedTrack;
+        props.enabledMask = source.sharedTrackEnabledMask.get();
+        props.pageStripVisible = false;
+        props.previewLayout = true;
+        props.leftText = launcher.operation == core::state::sequencer::
+                SequencerClipLauncherOperation::MOVE_DESTINATION
+            ? "Move"
+            : launcher.operation == core::state::sequencer::
+                    SequencerClipLauncherOperation::DUPLICATE_DESTINATION
+                ? "Copy"
+                : launcher.operation == core::state::sequencer::
+                        SequencerClipLauncherOperation::SELECT
+                    ? "Select"
+                    : "Clips";
+        if (launcher.feedback == core::state::sequencer::
+                SequencerClipLauncherFeedback::FAILED) {
+            std::snprintf(
+                props.badgeText.data(), props.badgeText.size(), "%s", "Unavailable"
+            );
+        } else if (launcher.feedback == core::state::sequencer::
+                       SequencerClipLauncherFeedback::MOVED) {
+            std::snprintf(
+                props.badgeText.data(), props.badgeText.size(), "%s", "Moved"
+            );
+        } else if (launcher.feedback == core::state::sequencer::
+                       SequencerClipLauncherFeedback::DUPLICATED) {
+            std::snprintf(
+                props.badgeText.data(), props.badgeText.size(), "%s", "Duplicated"
+            );
+        } else if (launcher.feedback == core::state::sequencer::
+                       SequencerClipLauncherFeedback::REMOVED) {
+            std::snprintf(
+                props.badgeText.data(), props.badgeText.size(), "%s", "Removed"
+            );
+        } else if (launcher.placementActive()) {
+            std::snprintf(
+                props.badgeText.data(),
+                props.badgeText.size(),
+                "C%u > C%u",
+                static_cast<unsigned>(launcher.sourceSlot + 1U),
+                static_cast<unsigned>(launcher.focusedSlot + 1U)
+            );
+        } else {
+            std::snprintf(
+                props.badgeText.data(),
+                props.badgeText.size(),
+                "T%u / C%u",
+                static_cast<unsigned>(launcher.focusedTrack + 1U),
+                static_cast<unsigned>(launcher.focusedSlot + 1U)
+            );
+        }
+        props.contextIcon = standalone::icons::CLIP;
+        props.contextIconColor = standalone::theme::color::trackColor(
+            launcher.focusedTrack
+        );
+        return props;
+    }
     const auto& drumUi = sequencer.drumSequencer;
     const bool drumGrid =
         core::state::sequencer::isDrumOverviewActive(sequencer);

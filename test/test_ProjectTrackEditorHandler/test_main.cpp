@@ -48,6 +48,7 @@ struct Harness {
                   state.projectTrackEditor,
                   state.projectTracks,
                   state.sequencerTracks,
+                  state.sequencerClips,
                   core::handler::SharedTrackDomainServices::fromCoreState(state),
                   core::state::project::ProjectTrackDomainServices::fromCoreState(state),
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
@@ -215,6 +216,30 @@ void test_dirty_type_draft_blocks_track_retarget_until_resolved() {
     assert(h.state.projectTrackEditor.trackIndex == 1U);
 }
 
+void test_track_type_conversion_rejects_mixed_kind_clip_sets() {
+    Harness h;
+    assert(h.state.createSequencerClip({0U, 1U}));
+    assert(h.handler.openActiveTrack());
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    assert(h.state.projectTrackEditor.typeChangeBlocked);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.sequencerTracks.isDrumTrack(0U));
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+
+    assert(h.state.deleteSequencerClip({0U, 1U}));
+    h.handler.update(0U);
+    assert(!h.state.projectTrackEditor.typeChangeBlocked);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencerTracks.isDrumTrack(0U));
+
+    std::cout << "[PASS] Track kind conversion guards every Clip on the Track\n";
+}
+
 }  // namespace
 
 int main() {
@@ -223,6 +248,7 @@ int main() {
     test_bottom_mute_and_solo_are_global_history_commands();
     test_track_type_conversion_is_destructive_but_fully_undoable();
     test_dirty_type_draft_blocks_track_retarget_until_resolved();
+    test_track_type_conversion_rejects_mixed_kind_clip_sets();
     std::cout << "All ProjectTrackEditorHandler tests passed.\n";
     return 0;
 }

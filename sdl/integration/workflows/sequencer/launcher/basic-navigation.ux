@@ -1,0 +1,34 @@
+# Clip launcher vertical-slice acceptance: 4 Tracks x 2 rows, direct launch,
+# empty Drum Clip creation, Pattern entry, and exact one-level Back.
+# Expect: capture_changed:launcher_mixed=launcher_focus_t2
+# Expect: capture_changed:launcher_focus_t2=launcher_queued
+# Expect: capture_changed:launcher_queued=drum_clip_created
+# Expect: capture_changed:drum_clip_created=launcher_returned
+# Expect: semantic:launcher_focus_t2:mode=sequencer.clip_launcher, semantic:launcher_focus_t2:effect=focus_clip, semantic:launcher_focus_t2:target=clip, semantic:launcher_focus_t2:target_track=1, semantic:launcher_focus_t2:target_index=0
+# Expect: semantic:launcher_queued:effect=launch_clip, semantic:launcher_queued:target_track=0, semantic:launcher_queued:target_index=1, semantic:launcher_queued:outcome=queued
+# Expect: semantic:drum_clip_created:effect=create_clip_and_open_pattern, semantic:drum_clip_created:target_track=1, semantic:drum_clip_created:target_index=1
+# Expect: semantic:launcher_returned:effect=return_to_clip_launcher, semantic:launcher_returned:target_track=1, semantic:launcher_returned:target_index=1
+
+0 scenario clip-launcher
+100 capture screen launcher_mixed
+
+# NAV browses Track slices without changing the musical owner.
+200 encoder NAV 1
+350 capture screen launcher_focus_t2
+
+# The lower-left macro addresses T1/C2 directly. Playing transport makes the
+# request visible as queued until the next global bar boundary.
+450 tap BOTTOM_CENTER 60
+600 tap MACRO_5 60
+760 capture screen launcher_queued
+
+# T2/C2 is empty. Its macro focuses the slot; NAV creates a Drum Clip inherited
+# from T2 and enters that Clip's Pattern workspace.
+850 tap MACRO_6 60
+980 tap NAV 60
+1300 capture screen drum_clip_created
+
+# LEFT_TOP returns to the exact launcher address, never to an implicit Track.
+1420 tap LEFT_TOP 60
+1700 capture screen launcher_returned
+1820 tap BOTTOM_CENTER 60

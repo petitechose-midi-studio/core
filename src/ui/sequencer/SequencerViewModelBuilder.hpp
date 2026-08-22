@@ -9,6 +9,8 @@
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/common/TrackNavigationStrip.hpp"
@@ -28,6 +30,8 @@ namespace core::ui::sequencer {
  */
 struct SequencerViewModelSource {
     const core::state::sequencer::SequencerState& sequencer;
+    const core::state::sequencer::SequencerClipGridState& clips;
+    const core::state::sequencer::SequencerClipLaunchQueue& clipLaunches;
     const core::state::sequencer::SequencerTrackBankState& tracks;
     const core::state::project::ProjectTrackState& projectTracks;
     const core::state::TrackNavigationState& trackNavigation;

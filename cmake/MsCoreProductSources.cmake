@@ -89,6 +89,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerChordPresetDomainServices.cpp
     src/handler/sequencer/SequencerChordPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerChordProjectionFeedback.cpp
+    src/handler/sequencer/SequencerClipLauncherWorkflow.cpp
     src/handler/sequencer/SequencerContextSelectorWorkflow.cpp
     src/handler/sequencer/SequencerDirectTrackStructureTransaction.cpp
     src/handler/sequencer/SequencerHistoryDomainServices.cpp
@@ -304,6 +305,8 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/sequencer/SequencerChordPresetModel.cpp
     src/state/sequencer/SequencerChordProjectionWorkspace.cpp
     src/state/sequencer/SequencerChordUiOps.cpp
+    src/state/sequencer/SequencerClipGridState.cpp
+    src/state/sequencer/SequencerClipLaunchQueue.cpp
     src/state/sequencer/SequencerContentProjectionOps.cpp
     src/state/sequencer/SequencerContentStepOps.cpp
     src/state/sequencer/SequencerContentViewInternal.cpp
@@ -364,6 +367,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/project/ProjectTrackEditorOverlay.cpp
     src/ui/project/ProjectTrackEditorViewModel.cpp
     src/ui/sequencer/DrumOverviewSurface.cpp
+    src/ui/sequencer/SequencerClipLauncherSurface.cpp
     src/ui/sequencer/SequencerBottomActionStripViewModelBuilder.cpp
     src/ui/sequencer/SequencerCcLaneGrid.cpp
     src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.cpp

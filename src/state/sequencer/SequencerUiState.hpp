@@ -728,6 +728,86 @@ struct SequencerStepSelectionState {
     }
 };
 
+enum class SequencerWorkspace : uint8_t {
+    CLIP_LAUNCHER = 0,
+    PATTERN,
+};
+
+enum class SequencerClipLauncherFeedback : uint8_t {
+    NONE = 0,
+    MOVED,
+    DUPLICATED,
+    REMOVED,
+    FAILED,
+};
+
+enum class SequencerClipLauncherOperation : uint8_t {
+    BROWSE = 0,
+    SELECT,
+    MOVE_DESTINATION,
+    DUPLICATE_DESTINATION,
+};
+
+/** Session-only focus and return path for the sparse Clip launcher. */
+struct SequencerClipLauncherUiState {
+    static constexpr uint8_t VISIBLE_TRACKS = 4U;
+    static constexpr uint8_t VISIBLE_ROWS = 2U;
+    static constexpr uint8_t TRACK_COUNT = 16U;
+    static constexpr uint8_t SLOT_COUNT = 8U;
+
+    Signal<uint32_t, 8> revision{0U};
+    SequencerWorkspace workspace = SequencerWorkspace::CLIP_LAUNCHER;
+    SequencerClipLauncherFeedback feedback =
+        SequencerClipLauncherFeedback::NONE;
+    SequencerClipLauncherOperation operation =
+        SequencerClipLauncherOperation::BROWSE;
+    uint8_t focusedTrack = 0U;
+    uint8_t focusedSlot = 0U;
+    uint8_t firstVisibleTrack = 0U;
+    uint8_t firstVisibleSlot = 0U;
+    uint8_t returnTrack = 0U;
+    uint8_t returnSlot = 0U;
+    uint8_t sourceTrack = 0U;
+    uint8_t sourceSlot = 0U;
+    uint32_t removeHoldStartedAtMs = 0U;
+    bool removeHoldActive = false;
+
+    [[nodiscard]] bool launcherVisible() const {
+        return workspace == SequencerWorkspace::CLIP_LAUNCHER;
+    }
+    [[nodiscard]] bool patternVisible() const {
+        return workspace == SequencerWorkspace::PATTERN;
+    }
+    [[nodiscard]] bool selectionActive() const {
+        return operation != SequencerClipLauncherOperation::BROWSE;
+    }
+    [[nodiscard]] bool placementActive() const {
+        return operation == SequencerClipLauncherOperation::MOVE_DESTINATION ||
+            operation ==
+                SequencerClipLauncherOperation::DUPLICATE_DESTINATION;
+    }
+    void reset(uint8_t activeTrack = 0U);
+    void focus(uint8_t track, uint8_t slot);
+    void move(int direction);
+    void beginSelection(uint8_t track, uint8_t slot);
+    void beginPlacement(
+        SequencerClipLauncherOperation next,
+        uint8_t destinationSlot
+    );
+    bool backOperation();
+    void completeOperation(
+        uint8_t track,
+        uint8_t slot,
+        SequencerClipLauncherFeedback result
+    );
+    void beginRemoveHold(uint32_t nowMs);
+    void clearRemoveHold();
+    void enterPattern(uint8_t track, uint8_t slot);
+    bool returnToLauncher();
+    void setFeedback(SequencerClipLauncherFeedback next);
+    void bump();
+};
+
 /**
  * One bounded Track-paste interaction snapshot.
  *

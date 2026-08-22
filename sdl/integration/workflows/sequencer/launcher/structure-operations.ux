@@ -1,0 +1,53 @@
+# Clip Launcher structure grammar: select, duplicate, move, remove.
+# Expect: capture_changed:launcher_browse=clip_selected
+# Expect: capture_changed:clip_selected=duplicate_target
+# Expect: capture_changed:duplicate_target=clip_duplicated
+# Expect: capture_changed:clip_duplicated=move_target
+# Expect: capture_changed:move_target=clip_moved
+# Expect: capture_changed:clip_moved=clip_removed
+# Expect: semantic:clip_selected:mode=sequencer.clip_launcher, semantic:clip_selected:projection=selected
+# Expect: semantic:duplicate_target:effect=begin_duplicate_clip, semantic:duplicate_target:projection=duplicate_destination
+# Expect: semantic:clip_duplicated:effect=duplicate_clip, semantic:clip_duplicated:outcome=applied
+# Expect: semantic:move_target:effect=begin_move_clip, semantic:move_target:projection=move_destination
+# Expect: semantic:clip_moved:effect=move_clip, semantic:clip_moved:outcome=applied
+# Expect: semantic:clip_removed:effect=remove_clip, semantic:clip_removed:outcome=applied
+
+0 scenario clip-launcher
+100 capture screen launcher_browse
+
+# Browse to the existing inactive T1/C2 Clip.
+200 encoder NAV 1
+280 encoder NAV 1
+360 encoder NAV 1
+440 encoder NAV 1
+
+# Long NAV enters the same one-item structural selection grammar used by the
+# rest of the Sequencer. Its paired release must not open the Pattern.
+520 button NAV down
+1580 tick
+1640 button NAV up
+1820 capture screen clip_selected
+
+# Copy starts a destination phase on the next empty slot; a second tap applies.
+1920 tap BOTTOM_RIGHT 60
+2150 capture screen duplicate_target
+2250 tap BOTTOM_RIGHT 60
+2500 capture screen clip_duplicated
+
+# Select the duplicate, then LEFT_CENTER starts direct same-Track movement.
+2600 button NAV down
+3660 tick
+3720 button NAV up
+3900 tap LEFT_CENTER 60
+4120 capture screen move_target
+4220 tap BOTTOM_RIGHT 60
+4470 capture screen clip_moved
+
+# Removal remains the guarded destructive action and is committed on hold.
+4570 button NAV down
+5630 tick
+5690 button NAV up
+5790 button BOTTOM_LEFT down
+6850 tick
+7010 capture screen clip_removed
+7070 button BOTTOM_LEFT up

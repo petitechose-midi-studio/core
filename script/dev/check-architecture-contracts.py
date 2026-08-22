@@ -1687,7 +1687,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (project_transactions, r"files\.projectReadWorkspace\s*\(\s*lease\s*\)", "Project load must borrow only read capability under its lease"),
         (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project save/cancel must revalidate write capability", 2),
         (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*8U", "Project file store must remain two references on ARM"),
-        (project_codec_source, r"sizeof\(Storage\)\s*==\s*600295U", "Project encode scratch must remain exactly 600,295 B in cold PSRAM"),
+        (project_codec_source, r"sizeof\(Storage\)\s*==\s*698280U", "Project encode scratch must remain exactly 698,280 B in cold PSRAM"),
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*52U", "session store must remain 52 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*280U", "RPC write session must remain 280 B on ARM"),
@@ -4761,7 +4761,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         STRUCTURE_NAVIGATION_STATE_HEADER,
         r"enum\s+class\s+StructureNavigationFocus\s*:\s*uint8_t\s*\{\s*"
         r"PAGE\s*=\s*0\s*,\s*TRACK\s*=\s*1\s*,\s*STEP\s*=\s*2\s*,\s*"
-        r"COUNT\s*=\s*3\s*,\s*\}\s*;.*?"
+        r"LANE\s*=\s*3\s*,\s*COUNT\s*=\s*4\s*,\s*\}\s*;.*?"
         r"enum\s+class\s+StructureHoldAction\s*:\s*uint8_t\s*\{\s*"
         r"NONE\s*=\s*0\s*,\s*REMOVE\s*=\s*1\s*,\s*PASTE\s*=\s*2\s*,\s*"
         r"COUNT\s*=\s*3\s*,\s*\}\s*;",
@@ -4852,16 +4852,16 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require(
         SEQUENCER_VIEW_HEADER,
-        r"StaticWatchGroup\s*<\s*16\s*>\s+header_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*17\s*>\s+header_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+header_strip_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*2U\s*\*\s*"
         r"core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT\s*>\s*"
         r"structure_selection_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*45\s*>\s+grid_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*48\s*>\s+grid_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*26\s*>\s+selector_overlay_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*12\s*>\s+left_action_strip_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*25\s*>\s+bottom_action_strip_watcher_\s*;",
-        "Sequencer UI watcher capacities must retain the shared selection and Drum UI locks",
+        r"StaticWatchGroup\s*<\s*14\s*>\s+left_action_strip_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*27\s*>\s+bottom_action_strip_watcher_\s*;",
+        "Sequencer UI watcher capacities must retain the shared selection, Drum, and Clip UI locks",
     )
 
     require_in_type(

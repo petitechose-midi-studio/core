@@ -23,6 +23,7 @@
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
+#include "handler/sequencer/SequencerClipLauncherWorkflow.hpp"
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
@@ -30,6 +31,7 @@
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepContentHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
+#include "state/CoreState.hpp"
 #include "ui/sequencer/SequencerPatternEditorOverlay.hpp"
 #include "ui/sequencer/SequencerChordVoiceRail.hpp"
 #include "ui/sequencer/SequencerPatternPresetPreview.hpp"
@@ -80,6 +82,14 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
           stateRefs.midiCcCoordinator
       ),
       quick_controls_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
+      clip_launcher_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.structureNavigationFocus,
+          stateRefs.sequencer,
+          stateRefs.sequencerTracks,
+          stateRefs.core.sequencerClips,
+          stateRefs.core.sequencerClipLaunches
+      ),
       structure_ux_surface_(
           stateRefs.activeView,
           stateRefs.structureNavigationFocus,
@@ -140,6 +150,10 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
          !uxRegistry->add(
             quick_controls_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_QUICK_CONTROLS
+        ) ||
+         !uxRegistry->add(
+            clip_launcher_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_CLIP_LAUNCHER
         ) ||
          !uxRegistry->add(
             structure_ux_surface_,
@@ -483,6 +497,14 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         &structure_ux_trace_state_
 #endif
     );
+    clip_launcher_workflow_ = core::app::makeExtmemUnique<
+        core::handler::SequencerClipLauncherWorkflow>(
+            core::handler::SequencerClipLauncherWorkflow::StateRefs{
+                stateRefs.core,
+                stateRefs.structureNavigationFocus,
+                stateRefs.overlays,
+            }
+        );
     quick_controls_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerPatternQuickControlsHandler>(
             core::handler::SequencerPatternQuickControlsHandler::StateRefs{
@@ -515,6 +537,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.projectTrackEditor,
                 stateRefs.projectTracks,
                 stateRefs.sequencerTracks,
+                stateRefs.core.sequencerClips,
                 sharedTracks,
                 trackDomain,
                 stateRefs.history,
@@ -562,13 +585,14 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 : core::handler::DrumLaneAuditionServices{}
         );
     if (!drum_lane_editor_handler_) return;
-    if (!step_handler_ || !step_edit_handler_ || !pattern_editor_handler_ ||
-        !track_editor_handler_) return;
+    if (!step_handler_ || !clip_launcher_workflow_ || !step_edit_handler_ ||
+        !pattern_editor_handler_ || !track_editor_handler_) return;
     pattern_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
     step_handler_->attachStepEditHandler(*step_edit_handler_);
     step_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
     step_handler_->attachTrackEditorHandler(*track_editor_handler_);
     step_handler_->attachDrumLaneEditorHandler(*drum_lane_editor_handler_);
+    step_handler_->attachClipLauncherWorkflow(*clip_launcher_workflow_);
     step_content_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerStepContentHandler>(
             core::handler::SequencerStepContentHandler::StateRefs{
@@ -665,7 +689,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId,
             oc::time::millis
         );
-    valid_ = step_handler_ && quick_controls_handler_ && pattern_editor_handler_ &&
+    valid_ = step_handler_ && clip_launcher_workflow_ &&
+             quick_controls_handler_ && pattern_editor_handler_ &&
              track_editor_handler_ && track_editor_presenter_ &&
              drum_lane_editor_handler_ && drum_lane_editor_presenter_ &&
              step_edit_handler_ &&

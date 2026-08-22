@@ -1550,9 +1550,43 @@ bool prepareDrumSequencerScenario(core::state::CoreState& state) {
     // A fresh fixture already owns T1; this synchronization can be a no-op.
     (void)state.setSharedTrackState(0x0001, 0);
     state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
+    state.sequencer.clipLauncher.enterPattern(0U, 0U);
     // A Track payload is bound only after the picker atomically creates it.
     // The workflow itself authors lane-local timing later, so this fixture
     // intentionally leaves the editor unbound.
+    return true;
+}
+
+bool prepareClipLauncherScenario(core::state::CoreState& state) {
+    using namespace core::state;
+    using namespace core::state::sequencer;
+
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.overlays.hideAll();
+    state.statusBar.playing.set(false);
+    state.sequencer.reset();
+    state.sequencerTracks.reset();
+    state.trackNavigation.reset();
+    if (!state.setSharedTrackState(0x000FU, 0U)) return false;
+    state.sequencerClips.reset(state.currentSharedTrackEnabledMask());
+    if (!state.sequencerTracks.setTrackKind(
+            1U,
+            SequencerTrackKind::DRUM,
+            true,
+            DrumKitPreset::GENERAL_MIDI)) {
+        return false;
+    }
+    if (!state.duplicateSequencerClip({0U, 0U}, {0U, 1U}) ||
+        !state.duplicateSequencerClip({2U, 0U}, {2U, 1U})) {
+        return false;
+    }
+    state.sequencerClipLaunches.reset(
+        state.sequencerClips,
+        state.currentSharedTrackEnabledMask()
+    );
+    state.sequencerHistory.clear();
+    state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
+    state.sequencer.clipLauncher.reset(0U);
     return true;
 }
 
@@ -1764,7 +1798,18 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "sequencer") == 0) {
         state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.structureNavigationFocus.set(
+            core::state::StructureNavigationFocus::PAGE
+        );
+        state.sequencer.clipLauncher.enterPattern(
+            state.currentSharedActiveTrack(),
+            state.sequencerClips.residentSlot(state.currentSharedActiveTrack())
+        );
         return true;
+    }
+
+    if (std::strcmp(scenario, "clip-launcher") == 0) {
+        return prepareClipLauncherScenario(state);
     }
 
     if (std::strcmp(scenario, "drum-sequencer") == 0) {

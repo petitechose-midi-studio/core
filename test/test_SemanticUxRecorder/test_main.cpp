@@ -138,6 +138,29 @@ public:
     mutable int calls = 0;
 };
 
+class TransitioningCancelProvider : public core::validation::ux::SemanticUxContextProvider {
+public:
+    void captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent&,
+        core::validation::ux::SemanticUxContext& out
+    ) const override {
+        ++calls;
+        const bool cancelling = calls == 1;
+        out.intent = cancelling
+            ? core::state::interaction::ControllerIntent::CANCEL
+            : core::state::interaction::ControllerIntent::NONE;
+        out.mode = cancelling
+            ? "sequencer.pattern_preset.preview"
+            : "sequencer.pattern";
+        out.effect = cancelling
+            ? "cancel_pattern_preset_preview"
+            : "browse_pattern";
+        out.outcome = cancelling ? "cancelled" : "applied";
+    }
+
+    mutable int calls = 0;
+};
+
 oc::core::input::InputBindingTraceEvent dispatchedButton() {
     oc::core::input::InputBindingTraceEvent event{};
     event.stage = oc::core::input::InputBindingTraceStage::Dispatch;
@@ -536,6 +559,29 @@ void test_capture_keeps_causal_effect_with_live_surface_state() {
     std::cout << "[PASS] test_capture_keeps_causal_effect_with_live_surface_state\n";
 }
 
+void test_capture_keeps_terminal_cancel_outcome_after_surface_exit() {
+    CapturingSink sink;
+    TransitioningCancelProvider provider;
+    core::validation::ux::setCurrentSemanticUxContextProvider(&provider);
+    core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
+
+    recorder.onBindingTrace(dispatchedButton());
+    recorder.flush(2000, sequencerSnapshot());
+    recorder.capture(2100, "preset_cancelled", sequencerSnapshot());
+    core::validation::ux::clearCurrentSemanticUxContextProvider(&provider);
+
+    assert(sink.lines.size() == 2);
+    const auto& capture = sink.lines[1];
+    assert(contains(capture, "\"intent\":\"cancel\""));
+    assert(contains(capture, "\"mode\":\"sequencer.pattern\""));
+    assert(contains(capture, "\"effect\":\"cancel_pattern_preset_preview\""));
+    assert(contains(capture, "\"outcome\":\"cancelled\""));
+    assert(!contains(capture, "\"outcome\":\"applied\""));
+    assert(provider.calls == 3);
+    std::cout
+        << "[PASS] terminal cancel outcome survives the post-cancel surface\n";
+}
+
 void test_capture_context_reset_prevents_cross_scenario_claims() {
     CapturingSink sink;
     FakeContextProvider provider;
@@ -658,6 +704,7 @@ int main() {
     test_writes_native_context_provider_fields();
     test_associates_capture_with_live_surface_context();
     test_capture_keeps_causal_effect_with_live_surface_state();
+    test_capture_keeps_terminal_cancel_outcome_after_surface_exit();
     test_capture_context_reset_prevents_cross_scenario_claims();
     test_explicit_state_projection_capture_has_no_binding_source();
     test_reports_dropped_records();

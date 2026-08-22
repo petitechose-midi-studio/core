@@ -207,6 +207,18 @@ FLASHMEM bool SequencerPatternEditorHandler::openFromCurrentPage() {
     return true;
 }
 
+FLASHMEM bool SequencerPatternEditorHandler::openRegionFromCurrentPage() {
+    if (!openFromCurrentPage()) return false;
+    auto& editor = sequencer_.patternEditor;
+    editor.focusedLayer =
+        core::state::sequencer::SequencerPatternEditorLayer::REGION;
+    editor.focusedField =
+        core::state::sequencer::patternEditorVisibleFieldAt(sequencer_, 0U);
+    editor.bump();
+    configureOptForFocusedField();
+    return true;
+}
+
 FLASHMEM void SequencerPatternEditorHandler::close() {
     if (!sequencer_.patternEditor.active.get()) {
         if (!commitPendingEdit()) return;

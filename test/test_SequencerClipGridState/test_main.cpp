@@ -330,6 +330,19 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
     assert(state.switchSequencerClipForEditing({0U, 1U}));
     assert(state.sequencerClips.residentSlot(0U) == 1U);
     assert(!state.deleteSequencerClip({0U, 1U}));
+    // Editing residency and musical activation are deliberately independent:
+    // Clip 0 still feeds the runtime until Clip 1's launch is published.
+    assert(!state.deleteSequencerClip({0U, 0U}));
+    assert(state.requestSequencerClipLaunch(
+        {0U, 1U}, seq::SequencerClipLaunchQuantization::IMMEDIATE));
+    const auto publication =
+        state.sequencerClipLaunches.captureRuntimePublication(
+            state.sequencerClips, false);
+    assert((publication.queuedMask & 0x1U) != 0U);
+    state.sequencerClipLaunches.applyRuntimePublication(publication, 0U, 1U);
+    assert(state.sequencerClipLaunches.markAppliedFromRealtime(
+        0U, publication.generations[0U]));
+    (void)state.sequencerClipLaunches.publishRealtimeTelemetry();
     assert(state.deleteSequencerClip({0U, 0U}));
     assert(!state.sequencerClips.isOccupied({0U, 0U}));
     assert(state.undoSequencerHistory());

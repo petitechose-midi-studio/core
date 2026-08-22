@@ -386,6 +386,7 @@ FLASHMEM void SequencerState::reset() {
     patternEditor.reset();
     contentView.reset();
     stepContentDraft.resetSession();
+    clipLauncher.reset();
     structureUi.reset();
     drumSequencer.reset();
 }

@@ -110,6 +110,51 @@ FLASHMEM void setStripIconFromAction(
 FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     const SequencerViewModelSource& source
 ) {
+    if (source.sequencer.clipLauncher.launcherVisible()) {
+        StripProps props;
+        props.visible = true;
+        for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
+        const auto& launcher = source.sequencer.clipLauncher;
+        if (!launcher.selectionActive()) {
+            const core::state::sequencer::SequencerClipAddress focused{
+                launcher.focusedTrack,
+                launcher.focusedSlot,
+            };
+            if (source.clips.isOccupied(focused)) {
+                props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::CLIP,
+                    Visual::ACTIVE
+                );
+            }
+            return props;
+        }
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_BACKWARD,
+            Visual::ACTIVE
+        );
+        if (!launcher.placementActive()) {
+            const core::state::sequencer::SequencerClipAddress sourceAddress{
+                launcher.sourceTrack,
+                launcher.sourceSlot,
+            };
+            bool hasEmptyDestination = false;
+            for (uint8_t slot = 0U;
+                 slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
+                 ++slot) {
+                hasEmptyDestination |= !source.clips.isOccupied({
+                    sourceAddress.track, slot
+                });
+            }
+            props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_MOVE,
+                source.clipLaunches.references(sourceAddress) ||
+                        !hasEmptyDestination
+                    ? Visual::DISABLED
+                    : Visual::ACTIVE
+            );
+        }
+        return props;
+    }
     if (source.sequencer.patternPresetPreview.active()) {
         StripProps props;
         props.visible = true;

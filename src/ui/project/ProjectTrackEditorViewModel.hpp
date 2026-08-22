@@ -33,6 +33,7 @@ struct ProjectTrackEditorViewModel {
     bool drum = false;
     bool draftDrum = false;
     bool typeChangePending = false;
+    bool typeChangeBlocked = false;
 
     friend bool operator==(
         const ProjectTrackEditorViewModel& lhs,
@@ -50,7 +51,8 @@ struct ProjectTrackEditorViewModel {
                lhs.muted == rhs.muted && lhs.soloed == rhs.soloed &&
                lhs.portEditable == rhs.portEditable &&
                lhs.drum == rhs.drum && lhs.draftDrum == rhs.draftDrum &&
-               lhs.typeChangePending == rhs.typeChangePending;
+               lhs.typeChangePending == rhs.typeChangePending &&
+               lhs.typeChangeBlocked == rhs.typeChangeBlocked;
     }
 };
 

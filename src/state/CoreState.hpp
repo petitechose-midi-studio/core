@@ -532,6 +532,8 @@ public:
         sequencer::SequencerClipAddress target,
         sequencer::SequencerClipLaunchQuantization quantization =
             sequencer::SequencerClipLaunchQuantization::BAR);
+    [[nodiscard]] bool createSequencerClip(
+        sequencer::SequencerClipAddress target);
     [[nodiscard]] bool installSequencerClip(
         sequencer::SequencerClipAddress target,
         sequencer::SequencerClipDocumentPtr document,

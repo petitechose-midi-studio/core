@@ -65,6 +65,13 @@ using SequencerClipDocumentPtr =
     SequencerClipDocumentPtr& out
 );
 
+/** Creates a blank Clip while preserving the destination Track's Drum kit. */
+[[nodiscard]] bool createEmptySequencerClipDocument(
+    SequencerTrackKind trackKind,
+    const DrumTrackState* drumTemplate,
+    SequencerClipDocumentPtr& out
+);
+
 [[nodiscard]] bool cloneSequencerClipDocument(
     const SequencerClipDocument& source,
     SequencerClipDocumentPtr& out

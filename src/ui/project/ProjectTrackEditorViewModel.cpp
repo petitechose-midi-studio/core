@@ -51,6 +51,7 @@ FLASHMEM ProjectTrackEditorViewModel buildProjectTrackEditorViewModel(
     out.draftDrum = editor.draftKind ==
         track::ProjectTrackEditorKind::DRUM;
     out.typeChangePending = editor.currentKind != editor.draftKind;
+    out.typeChangeBlocked = editor.typeChangeBlocked;
     std::snprintf(
         out.title.data(),
         out.title.size(),

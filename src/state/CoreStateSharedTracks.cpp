@@ -129,6 +129,27 @@ FLASHMEM bool CoreState::requestSequencerClipLaunch(
         quantization);
 }
 
+FLASHMEM bool CoreState::createSequencerClip(
+    sequencer::SequencerClipAddress target
+) {
+    if (!sequencer::SequencerClipGridState::validAddress(target) ||
+        !sequencerTracks.isTrackEnabled(target.track) ||
+        sequencerClips.isOccupied(target)) {
+        return false;
+    }
+    const auto kind = sequencerTracks.trackKind(target.track);
+    sequencer::SequencerClipDocumentPtr document;
+    if (!sequencer::createEmptySequencerClipDocument(
+            kind,
+            kind == sequencer::SequencerTrackKind::DRUM
+                ? &sequencerTracks.drumTrack(target.track)
+                : nullptr,
+            document)) {
+        return false;
+    }
+    return installSequencerClip(target, std::move(document), false);
+}
+
 FLASHMEM bool CoreState::installSequencerClip(
     sequencer::SequencerClipAddress target,
     sequencer::SequencerClipDocumentPtr document,
