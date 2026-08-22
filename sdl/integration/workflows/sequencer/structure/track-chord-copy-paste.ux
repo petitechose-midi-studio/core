@@ -14,14 +14,14 @@
 # Expect: semantic:track_2_paste_hold_applied:activation_generation=*
 # Expect: capture_changed:track_paste_summary=track_paste_details_1
 # Expect: capture_changed:track_paste_armed_cancel=track_paste_cancelled, capture_changed:track_paste_queued=track_paste_applied
-# Expect: semantic:track_paste_summary:surface_context=true, semantic:track_paste_summary:outcome=preview
-# Expect: semantic:track_paste_summary:source_mask=1, semantic:track_paste_summary:target_mask=16
-# Expect: semantic:track_paste_summary:create_mask=0, semantic:track_paste_summary:overwrite_mask=16
-# Expect: semantic:track_paste_summary:route_policy=preserve_destination, semantic:track_paste_summary:mapping_count=1
-# Expect: semantic:track_paste_summary:mapping_index=0, semantic:track_paste_summary:source_track=0
-# Expect: semantic:track_paste_summary:target_track=4, semantic:track_paste_summary:target_kind=overwrite
-# Expect: semantic:track_paste_summary:target_route=8, semantic:track_paste_summary:target_route_valid=true
-# Expect: semantic:track_paste_summary:inherited_lane_count=1, semantic:track_paste_summary:pinned_lane_count=1
+# Expect: semantic:track_paste_details_1:surface_context=true, semantic:track_paste_details_1:outcome=preview
+# Expect: semantic:track_paste_details_1:source_mask=1, semantic:track_paste_details_1:target_mask=16
+# Expect: semantic:track_paste_details_1:create_mask=0, semantic:track_paste_details_1:overwrite_mask=16
+# Expect: semantic:track_paste_details_1:route_policy=preserve_destination, semantic:track_paste_details_1:mapping_count=1
+# Expect: semantic:track_paste_details_1:mapping_index=0, semantic:track_paste_details_1:source_track=0
+# Expect: semantic:track_paste_details_1:target_track=4, semantic:track_paste_details_1:target_kind=overwrite
+# Expect: semantic:track_paste_details_1:target_route=8, semantic:track_paste_details_1:target_route_valid=true
+# Expect: semantic:track_paste_details_1:inherited_lane_count=1, semantic:track_paste_details_1:pinned_lane_count=1
 # Expect: semantic:track_paste_armed_cancel:outcome=armed, semantic:track_paste_armed_cancel:operation_status=armed
 # Expect: semantic:track_paste_cancelled:outcome=cancelled, semantic:track_paste_cancelled:operation_status=cancelled
 # Expect: semantic:track_paste_queued:outcome=queued, semantic:track_paste_queued:operation_status=queued
@@ -61,15 +61,17 @@
 3500 tap LEFT_TOP 60
 3700 capture screen source_track_chord_badge
 
-# Switch the NAV context directly to Tracks, copy Track 1, then paste it into
-# the next empty Track slot.
-3800 button NAV down
-3860 encoder NAV 1
-3920 button NAV up
+# Leave Step focus, return to the Clips matrix, focus T1's explicit Track
+# header, copy it, then move across T1's two Clip cells to the empty T2 header.
+3800 tap LEFT_TOP 60
+4200 tap LEFT_TOP 60
+4500 encoder NAV -1
 5000 capture screen track_focus_source
 5050 tap BOTTOM_RIGHT 60
 5200 capture screen track_1_chord_copied
 5250 encoder NAV 1
+5300 encoder NAV 1
+5350 encoder NAV 1
 5400 capture screen track_2_paste_preview
 5450 button BOTTOM_RIGHT down
 5550 capture screen track_2_paste_pressed
@@ -89,19 +91,22 @@
 7050 tap BOTTOM_CENTER 60
 7250 capture screen track_paste_transport_playing
 
-# Copy T1, then move the sparse Track cursor to T5.
+# Copy T1, enter its first Clip cell, page to the T5-T8 viewport, then focus
+# T5's explicit Track header.
 7350 tap BOTTOM_RIGHT 60
 7550 capture screen track_paste_track_copied
 7650 encoder NAV 1
-7730 encoder NAV 1
-7810 encoder NAV 1
-7890 encoder NAV 1
-8150 capture screen track_paste_summary
+7750 tap BOTTOM_RIGHT 60
+7900 tap BOTTOM_RIGHT 60
+8050 tap BOTTOM_RIGHT 60
+8200 tap BOTTOM_RIGHT 60
+8350 encoder NAV -1
+8500 capture screen track_paste_summary
 
 # Details exposes the exact direct mapping while keeping the paste anchor fixed.
-8250 tap LEFT_CENTER 60
-8450 capture screen track_paste_details_1
-8750 tap LEFT_CENTER 60
+8600 tap LEFT_CENTER 60
+8750 capture screen track_paste_details_1
+8850 tap LEFT_CENTER 60
 9050 capture screen track_paste_summary_restored
 
 # An armed release is explicitly non-mutating and leaves a short Cancelled

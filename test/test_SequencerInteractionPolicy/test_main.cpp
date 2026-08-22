@@ -81,9 +81,21 @@ void expectsClipLauncherPolicy() {
     assert(policy.scope == Scope::CLIP_LAUNCHER);
     assert(policy.navTurn == Action::MOVE_CLIP);
     assert(policy.navTap == Action::OPEN_CLIP);
+    assert(policy.navLongPress == Action::ENTER_SELECTION);
     assert(policy.macroTap == Action::LAUNCH_CLIP);
     assert(!sequencerInteractionMainSurfaceAvailable(context));
 
+    context.navigationFocus = Focus::TRACK;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.scope == Scope::TRACK);
+    assert(policy.navTurn == Action::MOVE_CLIP);
+    assert(policy.navTap == Action::OPEN_TRACK_EDITOR);
+    assert(policy.navLongPress == Action::ENTER_SELECTION);
+    assert(policy.macroTap == Action::NONE);
+    assert(policy.bottomLeftTap == Action::MUTE_CURRENT_TRACK);
+    assert(policy.bottomRightTap == Action::COPY_CURRENT_STRUCTURE);
+
+    context.navigationFocus = Focus::PAGE;
     context.overlayVisible = true;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::CLIP_LAUNCHER);

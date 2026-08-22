@@ -201,12 +201,28 @@ void test_selection_strip_projection_contract() {
     assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
     assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    props = core::ui::sequencer::buildSequencerBottomActionStripProps(sourceFor(state));
+    assert(state.setSharedTrackState(0x0003U, 0U));
+    state.sequencer.clipWorkspace.reset(0U);
+    state.sequencer.clipWorkspace.focusTrackHeader(0U);
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
     assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[0].icon == standalone::icons::TRACK_MUTE);
     assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+
+    state.trackNavigation.hold.begin(
+        core::state::StructureHoldAction::REMOVE,
+        42U
+    );
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ARMED);
+    assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
+    assert(props.slots[0].holdActive);
+    assert(props.slots[0].holdStartedAtMs == 42U);
 
     std::cout << "[PASS] Selection strip projection contract\n";
 }

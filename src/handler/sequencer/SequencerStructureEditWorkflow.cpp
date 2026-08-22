@@ -858,6 +858,10 @@ SequencerStructureEditWorkflow::settleConsumedBottomLeftRelease() {
 
 FLASHMEM uint8_t SequencerStructureEditWorkflow::trackPasteTarget() const {
     if (track_ui_.selection.placementActive()) { return track_ui_.selection.cursorIndex.get(); }
+    const auto& workspace = sequencer_.clipWorkspace;
+    if (workspace.matrixVisible() && workspace.trackHeaderFocused()) {
+        return workspace.focusedTrack;
+    }
     return sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
 }
 

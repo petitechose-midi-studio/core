@@ -592,9 +592,10 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         !pattern_editor_handler_ || !track_editor_handler_) return;
     pattern_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
     clip_workspace_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
+    clip_workspace_handler_->attachTrackEditorHandler(*track_editor_handler_);
+    step_handler_->connectClipWorkspace(*clip_workspace_handler_);
     step_handler_->attachStepEditHandler(*step_edit_handler_);
     step_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
-    step_handler_->attachTrackEditorHandler(*track_editor_handler_);
     step_handler_->attachDrumLaneEditorHandler(*drum_lane_editor_handler_);
     step_content_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerStepContentHandler>(
@@ -708,6 +709,9 @@ FLASHMEM SequencerFeatureModule::~SequencerFeatureModule() = default;
 void SequencerFeatureModule::update(uint32_t nowMs) {
     if (step_handler_) {
         step_handler_->update(nowMs);
+    }
+    if (clip_workspace_handler_) {
+        clip_workspace_handler_->update();
     }
     if (step_edit_handler_) {
         step_edit_handler_->update(nowMs);

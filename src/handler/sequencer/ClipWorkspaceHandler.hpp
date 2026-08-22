@@ -12,6 +12,8 @@
 namespace core::handler {
 
 class SequencerPatternEditorHandler;
+class ProjectTrackEditorHandler;
+class SequencerStructureNavigationWorkflow;
 
 /** Owns the first-rank Clips matrix bindings and structural actions. */
 class ClipWorkspaceHandler {
@@ -33,6 +35,11 @@ public:
     );
 
     void attachPatternEditorHandler(SequencerPatternEditorHandler& handler);
+    void attachTrackEditorHandler(ProjectTrackEditorHandler& handler);
+    void attachTrackNavigationWorkflow(
+        SequencerStructureNavigationWorkflow& navigation
+    );
+    void update();
 
     [[nodiscard]] bool matrixAvailable() const;
     [[nodiscard]] bool operationBackAvailable() const;
@@ -63,6 +70,11 @@ private:
     bool selectClipForEditing(
         core::state::sequencer::SequencerClipAddress address
     );
+    bool selectTrack(uint8_t track);
+    [[nodiscard]] bool trackSelectionActive() const;
+    [[nodiscard]] bool trackHeaderAvailable() const;
+    void beginTrackSelection();
+    void syncNavigationFocus();
 
     core::state::CoreState& core_;
     oc::state::Signal<
@@ -74,6 +86,8 @@ private:
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
     SequencerPatternEditorHandler* pattern_editor_handler_ = nullptr;
+    ProjectTrackEditorHandler* track_editor_handler_ = nullptr;
+    SequencerStructureNavigationWorkflow* navigation_workflow_ = nullptr;
 };
 
 }  // namespace core::handler

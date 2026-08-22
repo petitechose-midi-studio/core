@@ -15,9 +15,6 @@
 
 # T1/C2 is occupied and inactive.
 200 encoder NAV 1
-280 encoder NAV 1
-360 encoder NAV 1
-440 encoder NAV 1
 520 button NAV down
 1580 tick
 1640 button NAV up

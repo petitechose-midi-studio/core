@@ -526,6 +526,7 @@ FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     route = ClipWorkspaceRoute::MATRIX;
     feedback = ClipWorkspaceFeedback::NONE;
     operation = ClipWorkspaceOperation::BROWSE;
+    focusArea = ClipWorkspaceFocus::CLIP;
     focusedTrack = std::min<uint8_t>(activeTrack, TRACK_COUNT - 1U);
     focusedSlot = 0U;
     firstVisibleTrack = static_cast<uint8_t>(
@@ -548,14 +549,34 @@ FLASHMEM void ClipWorkspaceUiState::focus(
     track = std::min<uint8_t>(track, TRACK_COUNT - 1U);
     slot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
     const bool changed = focusedTrack != track || focusedSlot != slot ||
+        focusArea != ClipWorkspaceFocus::CLIP ||
         feedback != ClipWorkspaceFeedback::NONE;
     focusedTrack = track;
     focusedSlot = slot;
+    focusArea = ClipWorkspaceFocus::CLIP;
     firstVisibleTrack = static_cast<uint8_t>(
         (focusedTrack / VISIBLE_TRACKS) * VISIBLE_TRACKS
     );
     firstVisibleSlot = static_cast<uint8_t>(
         (focusedSlot / VISIBLE_ROWS) * VISIBLE_ROWS
+    );
+    feedback = ClipWorkspaceFeedback::NONE;
+    if (changed) bump();
+}
+
+FLASHMEM void ClipWorkspaceUiState::focusTrackHeader(uint8_t track) {
+    track = std::min<uint8_t>(track, TRACK_COUNT - 1U);
+    const uint8_t headerSlot = static_cast<uint8_t>(
+        (firstVisibleSlot / VISIBLE_ROWS) * VISIBLE_ROWS
+    );
+    const bool changed = focusedTrack != track || focusedSlot != headerSlot ||
+        focusArea != ClipWorkspaceFocus::TRACK_HEADER ||
+        feedback != ClipWorkspaceFeedback::NONE;
+    focusedTrack = track;
+    focusedSlot = headerSlot;
+    focusArea = ClipWorkspaceFocus::TRACK_HEADER;
+    firstVisibleTrack = static_cast<uint8_t>(
+        (focusedTrack / VISIBLE_TRACKS) * VISIBLE_TRACKS
     );
     feedback = ClipWorkspaceFeedback::NONE;
     if (changed) bump();
@@ -570,30 +591,72 @@ FLASHMEM void ClipWorkspaceUiState::move(int direction) {
         focus(sourceTrack, static_cast<uint8_t>(next));
         return;
     }
-    constexpr int cellsPerViewport = VISIBLE_TRACKS * VISIBLE_ROWS;
+    if (selectionActive()) {
+        constexpr int cellsPerViewport = VISIBLE_TRACKS * VISIBLE_ROWS;
+        const int trackPage = focusedTrack / VISIBLE_TRACKS;
+        const int slotPage = focusedSlot / VISIBLE_ROWS;
+        const int localCell = (focusedSlot % VISIBLE_ROWS) * VISIBLE_TRACKS +
+            (focusedTrack % VISIBLE_TRACKS);
+        const int current =
+            (trackPage * SLOT_VIEWPORT_COUNT + slotPage) * cellsPerViewport +
+            localCell;
+        constexpr int cellCount = TRACK_COUNT * SLOT_COUNT;
+        int next = (current + (direction < 0 ? -1 : 1)) % cellCount;
+        if (next < 0) next += cellCount;
+
+        const int viewport = next / cellsPerViewport;
+        const int nextLocalCell = next % cellsPerViewport;
+        const int nextTrackPage = viewport / SLOT_VIEWPORT_COUNT;
+        const int nextSlotPage = viewport % SLOT_VIEWPORT_COUNT;
+        focus(
+            static_cast<uint8_t>(
+                nextTrackPage * VISIBLE_TRACKS +
+                nextLocalCell % VISIBLE_TRACKS
+            ),
+            static_cast<uint8_t>(
+                nextSlotPage * VISIBLE_ROWS +
+                nextLocalCell / VISIBLE_TRACKS
+            )
+        );
+        return;
+    }
+
+    constexpr int targetsPerTrack = VISIBLE_ROWS + 1;
+    constexpr int targetsPerViewport = VISIBLE_TRACKS * targetsPerTrack;
     const int trackPage = focusedTrack / VISIBLE_TRACKS;
     const int slotPage = focusedSlot / VISIBLE_ROWS;
-    const int localCell = (focusedSlot % VISIBLE_ROWS) * VISIBLE_TRACKS +
-        (focusedTrack % VISIBLE_TRACKS);
+    const int localTrack = focusedTrack % VISIBLE_TRACKS;
+    const int localTarget = trackHeaderFocused()
+        ? 0
+        : static_cast<int>(focusedSlot % VISIBLE_ROWS) + 1;
     const int current =
-        (trackPage * SLOT_VIEWPORT_COUNT + slotPage) * cellsPerViewport +
-        localCell;
-    constexpr int cellCount = TRACK_COUNT * SLOT_COUNT;
-    int next = (current + (direction < 0 ? -1 : 1)) % cellCount;
-    if (next < 0) next += cellCount;
+        (trackPage * SLOT_VIEWPORT_COUNT + slotPage) * targetsPerViewport +
+        localTrack * targetsPerTrack + localTarget;
+    constexpr int targetCount = VIEWPORT_COUNT * targetsPerViewport;
+    int next = (current + (direction < 0 ? -1 : 1)) % targetCount;
+    if (next < 0) next += targetCount;
 
-    const int viewport = next / cellsPerViewport;
-    const int nextLocalCell = next % cellsPerViewport;
+    const int viewport = next / targetsPerViewport;
+    const int nextLocalTarget = next % targetsPerViewport;
     const int nextTrackPage = viewport / SLOT_VIEWPORT_COUNT;
     const int nextSlotPage = viewport % SLOT_VIEWPORT_COUNT;
-    focus(
-        static_cast<uint8_t>(
-            nextTrackPage * VISIBLE_TRACKS + nextLocalCell % VISIBLE_TRACKS
-        ),
-        static_cast<uint8_t>(
-            nextSlotPage * VISIBLE_ROWS + nextLocalCell / VISIBLE_TRACKS
-        )
+    const uint8_t nextTrack = static_cast<uint8_t>(
+        nextTrackPage * VISIBLE_TRACKS + nextLocalTarget / targetsPerTrack
     );
+    const int nextTarget = nextLocalTarget % targetsPerTrack;
+    if (nextTarget == 0) {
+        firstVisibleSlot = static_cast<uint8_t>(
+            nextSlotPage * VISIBLE_ROWS
+        );
+        focusTrackHeader(nextTrack);
+    } else {
+        focus(
+            nextTrack,
+            static_cast<uint8_t>(
+                nextSlotPage * VISIBLE_ROWS + nextTarget - 1
+            )
+        );
+    }
 }
 
 FLASHMEM uint8_t ClipWorkspaceUiState::viewportIndex() const {
@@ -613,10 +676,18 @@ FLASHMEM void ClipWorkspaceUiState::moveViewport(int direction) {
     const uint8_t localSlot = focusedSlot % VISIBLE_ROWS;
     const uint8_t trackPage = static_cast<uint8_t>(next / SLOT_VIEWPORT_COUNT);
     const uint8_t slotPage = static_cast<uint8_t>(next % SLOT_VIEWPORT_COUNT);
-    focus(
-        static_cast<uint8_t>(trackPage * VISIBLE_TRACKS + localTrack),
-        static_cast<uint8_t>(slotPage * VISIBLE_ROWS + localSlot)
+    const uint8_t nextTrack = static_cast<uint8_t>(
+        trackPage * VISIBLE_TRACKS + localTrack
     );
+    if (trackHeaderFocused()) {
+        firstVisibleSlot = static_cast<uint8_t>(slotPage * VISIBLE_ROWS);
+        focusTrackHeader(nextTrack);
+    } else {
+        focus(
+            nextTrack,
+            static_cast<uint8_t>(slotPage * VISIBLE_ROWS + localSlot)
+        );
+    }
 }
 
 FLASHMEM void ClipWorkspaceUiState::beginSelection(
@@ -673,6 +744,7 @@ FLASHMEM void ClipWorkspaceUiState::completeOperation(
     sourceSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
     focusedTrack = sourceTrack;
     focusedSlot = sourceSlot;
+    focusArea = ClipWorkspaceFocus::CLIP;
     firstVisibleTrack = static_cast<uint8_t>(
         (focusedTrack / VISIBLE_TRACKS) * VISIBLE_TRACKS
     );
@@ -710,6 +782,7 @@ FLASHMEM void ClipWorkspaceUiState::enterPattern(
     returnSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
     focusedTrack = returnTrack;
     focusedSlot = returnSlot;
+    focusArea = ClipWorkspaceFocus::CLIP;
     route = ClipWorkspaceRoute::PATTERN;
     operation = ClipWorkspaceOperation::BROWSE;
     removeHoldStartedAtMs = 0U;
@@ -724,6 +797,7 @@ FLASHMEM bool ClipWorkspaceUiState::returnToMatrix() {
     operation = ClipWorkspaceOperation::BROWSE;
     focusedTrack = returnTrack;
     focusedSlot = returnSlot;
+    focusArea = ClipWorkspaceFocus::CLIP;
     firstVisibleTrack = static_cast<uint8_t>(
         (focusedTrack / VISIBLE_TRACKS) * VISIBLE_TRACKS
     );

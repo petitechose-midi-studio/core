@@ -1437,15 +1437,27 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     const bool removeAction = isButton(
         event, Config::ButtonID::BOTTOM_LEFT, ButtonType::LONG_PRESS
     );
+    const bool muteAction = isButton(
+        event, Config::ButtonID::BOTTOM_LEFT, ButtonType::RELEASE
+    );
     uint8_t macroIndex = 0U;
     const bool macroRelease = isMacroButtonRelease(event, macroIndex);
     const bool projection = isSemanticStateProjection(event);
     if (!navTurn && !navRelease && !navHold && !back && !moveAction &&
-        !structureAction && !removeAction && !macroRelease && !projection) {
+        !structureAction && !removeAction && !muteAction && !macroRelease &&
+        !projection) {
         return false;
     }
 
     const auto& ui = sequencer_.clipWorkspace;
+    const bool trackHeader = !macroRelease && ui.trackHeaderFocused();
+    const auto& trackPaste = sequencer_.structureUi.trackPaste;
+    const bool trackPasteOwnsSurface = trackHeader &&
+        trackPaste.inspectable() && trackPaste.feedback.active;
+    if (trackPasteOwnsSurface &&
+        (moveAction || structureAction || projection)) {
+        return false;
+    }
     seq::SequencerClipAddress address{ui.focusedTrack, ui.focusedSlot};
     if (macroRelease) {
         address = {
@@ -1463,13 +1475,19 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     const bool active = telemetry.activeSlot == address.slot;
 
     out.mode = "sequencer.clip_launcher";
-    out.target = "clip";
+    out.target = trackHeader ? "track" : "clip";
     out.targetTrack = address.track;
-    out.targetIndex = address.slot;
-    out.targetCount = seq::SequencerClipGridState::SLOT_COUNT;
+    out.targetIndex = trackHeader ? address.track : address.slot;
+    out.targetCount = trackHeader
+        ? seq::SequencerTrackBankState::TRACK_COUNT
+        : seq::SequencerClipGridState::SLOT_COUNT;
     out.source = tracks_.isDrumTrack(address.track) ? "drum" : "instrument";
-    out.property = queued ? "queued" : active ? "active" : occupied ? "occupied" : "empty";
-    out.projection = ui.operation == seq::ClipWorkspaceOperation::SELECT
+    out.property = trackHeader
+        ? tracks_.isTrackEnabled(address.track) ? "enabled" : "empty"
+        : queued ? "queued" : active ? "active" : occupied ? "occupied" : "empty";
+    out.projection = trackHeader
+        ? "track_header"
+        : ui.operation == seq::ClipWorkspaceOperation::SELECT
         ? "selected"
         : ui.operation ==
                 seq::ClipWorkspaceOperation::MOVE_DESTINATION
@@ -1478,21 +1496,42 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
                     seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION
                 ? "duplicate_destination"
                 : queued ? "queued" : active ? "active" : "browse";
-    std::snprintf(
-        out.valueLabel,
-        sizeof(out.valueLabel),
-        "T%u / C%u",
-        static_cast<unsigned>(address.track + 1U),
-        static_cast<unsigned>(address.slot + 1U)
-    );
+    if (trackHeader) {
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "T%u",
+            static_cast<unsigned>(address.track + 1U)
+        );
+    } else {
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "T%u / C%u",
+            static_cast<unsigned>(address.track + 1U),
+            static_cast<unsigned>(address.slot + 1U)
+        );
+    }
 
     if (navTurn) {
-        out.effect = "focus_clip";
+        out.effect = trackHeader ? "focus_track_header" : "focus_clip";
         out.intent = Intent::MOVE_FOCUS;
     } else if (navHold) {
-        out.effect = "select_clip";
+        out.effect = trackHeader ? "select_track" : "select_clip";
         out.intent = Intent::ENTER_SELECTION;
     } else if (navRelease) {
+        if (trackHeader) {
+            if (tracks_.isTrackEnabled(address.track)) {
+                out.effect = "open_track_editor";
+            } else {
+                transition_replay_ = TransitionReplay::CREATE_PATTERN;
+                transition_track_ = address.track;
+                transition_slot_ = 0U;
+                out.effect = "open_track_type_picker";
+            }
+            out.intent = Intent::ACTIVATE;
+            return true;
+        }
         if (ui.selectionActive()) {
             out.effect = "keep_clip_selection";
             out.intent = Intent::ENTER_SELECTION;
@@ -1528,7 +1567,11 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             : "open_clip_region";
         out.intent = Intent::CHANGE_SCOPE;
     } else if (structureAction) {
-        out.effect = ui.operation ==
+        out.effect = trackHeader
+            ? tracks_.isTrackEnabled(address.track)
+                ? "copy_or_paste_track"
+                : "paste_track"
+            : ui.operation ==
                 seq::ClipWorkspaceOperation::SELECT
             ? "begin_duplicate_clip"
             : ui.operation ==
@@ -1539,15 +1582,20 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
                     ? "duplicate_clip"
                     : "place_clip";
         out.intent = Intent::APPLY;
-        out.outcome = ui.feedback == seq::ClipWorkspaceFeedback::FAILED
+        out.outcome = !trackHeader &&
+                ui.feedback == seq::ClipWorkspaceFeedback::FAILED
             ? "blocked"
             : "applied";
     } else if (removeAction) {
-        out.effect = "remove_clip";
+        out.effect = trackHeader ? "remove_track" : "remove_clip";
         out.intent = Intent::DELETE_STRUCTURE;
-        out.outcome = ui.feedback == seq::ClipWorkspaceFeedback::REMOVED
+        out.outcome = trackHeader ||
+                ui.feedback == seq::ClipWorkspaceFeedback::REMOVED
             ? "applied"
             : "blocked";
+    } else if (muteAction && trackHeader) {
+        out.effect = "toggle_track_mute";
+        out.intent = Intent::ACTIVATE;
     } else if (back) {
         out.effect = "cancel_clip_operation";
         out.intent = Intent::BACK;

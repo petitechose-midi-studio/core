@@ -495,6 +495,7 @@ struct SequencerStepHarness {
         );
         handler.attachPatternEditorHandler(patternEditorHandler);
         clipWorkspaceHandler.attachPatternEditorHandler(patternEditorHandler);
+        handler.connectClipWorkspace(clipWorkspaceHandler);
         handler.attachStepEditHandler(stepEditHandler);
         handler.attachDrumLaneEditorHandler(drumLaneEditorHandler);
         state.sequencer.clipWorkspace.enterPattern(0U, 0U);
@@ -502,12 +503,14 @@ struct SequencerStepHarness {
             state.sequencer.clipWorkspace.reset();
         }
         handler.update(g_now_ms);
+        clipWorkspaceHandler.update();
     }
 
     void tick(uint32_t nowMs) {
         g_now_ms = nowMs;
         inputBinding.processTick();
         handler.update(g_now_ms);
+        clipWorkspaceHandler.update();
         patternEditorHandler.update(g_now_ms);
         stepEditHandler.update(g_now_ms);
         drumLaneEditorHandler.update(g_now_ms);
@@ -1369,8 +1372,20 @@ void test_child_creation_draft_apply_and_back_decisions() {
 }
 
 void focusTrackNavigation(SequencerStepHarness& h) {
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    h.state.trackNavigation.syncPreviewTrack(h.state.sequencerTracks.activeTrackIndex());
+    const uint8_t track = h.state.sequencerTracks.activeTrackIndex();
+    h.state.sequencer.clipWorkspace.reset(track);
+    h.state.sequencer.clipWorkspace.focusTrackHeader(track);
+    h.state.trackNavigation.syncPreviewTrack(track);
+}
+
+void moveToAdjacentTrackHeader(SequencerStepHarness& h, int direction) {
+    assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
+    for (uint8_t target = 0U;
+         target < core::state::sequencer::ClipWorkspaceUiState::VISIBLE_ROWS + 1U;
+         ++target) {
+        h.turn(Config::EncoderID::NAV, direction < 0 ? -1.0f : 1.0f);
+    }
+    assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
 }
 
 using TrackGraph = oc::note::sequencer::StepSequencerGraph;
@@ -1999,6 +2014,7 @@ DirectTrackFixture configureDirectTrackFixture(
     state.sequencer.focusedStep.set(31U);
     state.sequencer.page.set(3U);
     focusTrackNavigation(h);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     state.trackNavigation.previewAddSlot.set(
         kind == DirectTrackFixtureKind::Create);
     state.trackNavigation.previewTrackIndex.set(
@@ -2206,7 +2222,7 @@ void openPatternEditor(SequencerStepHarness& h) {
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_PATTERN_EDIT);
 }
 
-void test_nav_context_selector_previews_and_applies_all_three_contexts() {
+void test_nav_context_selector_previews_pattern_and_step() {
     SequencerStepHarness h;
 
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
@@ -2214,13 +2230,17 @@ void test_nav_context_selector_previews_and_applies_all_three_contexts() {
     assert(h.state.sequencer.contextSelector.visible);
     h.turn(Config::EncoderID::NAV, -1.0f);
     assert(h.state.sequencer.contextSelector.previewFocus ==
-           core::state::StructureNavigationFocus::TRACK);
+           core::state::StructureNavigationFocus::STEP);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
     h.release(Config::ButtonID::NAV);
-    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
 
     h.press(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::NAV);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+
+    h.press(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.release(Config::ButtonID::NAV);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
@@ -2243,46 +2263,7 @@ void test_nav_context_selector_previews_and_applies_all_three_contexts() {
     assert(h.state.sequencer.patternEditor.active.get());
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_PATTERN_EDIT);
 
-    std::cout << "[PASS] test_nav_context_selector_previews_and_applies_all_three_contexts\n";
-}
-
-void test_latched_track_editor_release_cannot_cross_into_page_editor() {
-    SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8U);
-    h.state.sequencerTracks.reset();
-    h.state.setSharedTrackState(0x0001U, 0U);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    h.state.trackNavigation.syncPreviewTrack(1U);
-    h.state.trackNavigation.previewAddSlot.set(true);
-    test_support::drainNotifications();
-
-    h.press(Config::ButtonID::NAV);
-    assert(h.state.sequencer.contextSelector.visible);
-
-    // The physical release remains a latched OPEN_TRACK_EDITOR action. A
-    // concurrent focus rewrite must fail closed rather than reinterpret it as
-    // an OPEN_PATTERN_EDITOR action.
-    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-    h.state.sequencer.structureUi.syncPreviewPage(0U);
-    test_support::drainNotifications();
-
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        h.release(Config::ButtonID::NAV);
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-    }
-    test_support::drainNotifications();
-
-    assert(!h.state.sequencer.contextSelector.visible);
-    assert(h.state.sequencer.pattern.length.get() == 8U);
-    assert(h.state.sequencerHistory.undoCount() == 0U);
-    assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
-    assert(h.state.sharedTrackActive.get() == 0U);
-    assert(!h.state.sequencer.patternEditor.active.get());
-    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0U);
-
-    std::cout
-        << "[PASS] latched Track editor release cannot open Page editor after focus drift\n";
+    std::cout << "[PASS] NAV selector previews Pattern and Step only\n";
 }
 
 void test_page_navigation_is_cyclic_and_tap_opens_pattern_editor() {
@@ -2526,8 +2507,8 @@ void test_hidden_context_selector_cannot_complete_an_old_gesture() {
 void test_latched_nav_hold_cannot_cross_selection_context() {
     using Focus = core::state::StructureNavigationFocus;
     for (const auto route : std::array<std::pair<Focus, Focus>, 2U>{
-             std::pair{Focus::TRACK, Focus::PAGE},
-             std::pair{Focus::PAGE, Focus::TRACK},
+             std::pair{Focus::PAGE, Focus::STEP},
+             std::pair{Focus::STEP, Focus::PAGE},
          }) {
         SequencerStepHarness h;
         h.state.sequencerTracks.reset();
@@ -2561,7 +2542,7 @@ void test_latched_nav_hold_cannot_cross_selection_context() {
     }
 
     std::cout
-        << "[PASS] latched NAV hold cannot cross Track/Page selection context\n";
+        << "[PASS] latched NAV hold cannot cross Pattern/Step selection context\n";
 }
 
 void test_child_context_selector_cycles_pattern_and_step_only() {
@@ -2604,7 +2585,8 @@ void test_track_selection_skips_gaps_and_mutes_atomically() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0005U, 0U);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.sequencer.clipWorkspace.reset(0U);
+    h.state.sequencer.clipWorkspace.focusTrackHeader(0U);
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -2645,7 +2627,7 @@ void test_track_selection_delete_is_undoable_and_keeps_one_track() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0007U, 0U);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    focusTrackNavigation(h);
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -2703,7 +2685,7 @@ void test_track_selection_copy_is_global_from_sequencer_view() {
     configureProjectTrackFixture(h.state, 4U, 9U);
     configureProjectTrackFixture(h.state, 6U, 13U, true);
 
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    focusTrackNavigation(h);
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::NAV);
@@ -3021,26 +3003,25 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     std::cout << "[PASS] sparse Pattern selection previews collisions and fills page gaps\n";
 }
 
-void test_track_context_nav_crosses_sparse_slots_and_creates_instrument_via_picker() {
+void test_matrix_nav_crosses_sparse_slots_and_creates_instrument_from_track_header() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0005U, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.sequencer.clipWorkspace.reset(0U);
+    h.state.sequencer.clipWorkspace.focusTrackHeader(0U);
 
+    // Matrix navigation traverses one Track header and its two visible Clip
+    // cells without changing the live Track.
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencerTracks.activeTrackIndex() == 0);
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
-    assert(h.state.trackNavigation.previewAddSlot.get());
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencerTracks.activeTrackIndex() == 2);
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 2U);
-    assert(!h.state.trackNavigation.previewAddSlot.get());
-
-    h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
-    assert(h.state.trackNavigation.previewAddSlot.get());
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0U);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.sequencer.drumSequencer.typePickerVisible());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+    assert(h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencer.drumSequencer.selectedKind ==
            seq::DrumSequencerKind::INSTRUMENT);
     h.tap(Config::ButtonID::NAV);
@@ -3052,7 +3033,7 @@ void test_track_context_nav_crosses_sparse_slots_and_creates_instrument_via_pick
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     std::cout
-        << "[PASS] sparse Track navigation creates Instrument through type picker\n";
+        << "[PASS] sparse matrix navigation creates Instrument from Track header\n";
 }
 
 void test_step_toggle_undo_redo_workflow() {
@@ -3981,11 +3962,14 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.structureClipboard.hasSequencerTrack());
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
 
-    h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -4030,15 +4014,16 @@ void test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute(
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.structureClipboard.hasSequencerTrack());
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 11);
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0);
     // Project Track remains authoritative while the guarded paste is open.
     assert(core::state::project::ProjectTrackDomainServices::fromCoreState(h.state).setMidiChannel(
         1, 13));
     assert(h.state.projectTracks.authored.midiChannels[1] == 13);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -4085,11 +4070,12 @@ void test_track_paste_global_undo_redo_restores_content_and_reports_outcome() {
     destination.setEnabled(0, true);
 
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.sequencer.pattern.note[0] == 42);
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    assert(h.state.sequencer.pattern.note[0] == 42);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.sequencer.pattern.note[0] == 76);
@@ -4123,12 +4109,13 @@ void test_track_paste_clamps_focus_to_short_source_before_history_commit() {
     configureProjectTrackFixture(h.state, 1, 7);
 
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0);
     h.state.sequencer.focusedStep.set(100);
     h.state.sequencer.page.set(12);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     h.advance(0);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -4162,12 +4149,13 @@ void test_track_paste_mid_hold_release_cancels_without_mutation_or_history() {
     configureProjectTrackFixture(h.state, 1, 6);
     focusTrackNavigation(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.sequencer.pattern.note[0] == 44);
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencer.pattern.note[0] == 81);
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount(
         core::state::sequencer::SequencerHistoryScope::Structure);
     h.press(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencer.pattern.note[0] == 44);
     h.advance(Config::Timing::LATCH_THRESHOLD_MS);
     assert(h.state.sequencer.structureUi.trackPaste.guard.phase ==
            core::state::contextual::GuardedActionPhase::ARMED);
@@ -4194,7 +4182,7 @@ void test_track_paste_commits_once_at_absolute_long_threshold() {
     configureProjectTrackFixture(h.state, 1, 7);
     focusTrackNavigation(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    moveToAdjacentTrackHeader(h, 1);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
@@ -4221,7 +4209,7 @@ void test_track_paste_left_top_cancels_and_consumes_later_release() {
     h.state.sequencerTracks.track(1).note[0] = 46;
     focusTrackNavigation(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    moveToAdjacentTrackHeader(h, 1);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.advance(Config::Timing::LATCH_THRESHOLD_MS);
@@ -4243,7 +4231,7 @@ void test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan() {
     configureProjectTrackFixture(h.state, 1, 3);
     focusTrackNavigation(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    moveToAdjacentTrackHeader(h, 1);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.advance(Config::Timing::LATCH_THRESHOLD_MS);
@@ -4276,20 +4264,23 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     h.state.sequencerTracks.track(2).setEnabled(0, true);
     focusTrackNavigation(h);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
     assert(h.state.trackNavigation.previewAddSlot.get());
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    moveToAdjacentTrackHeader(h, 1);
     assert(!h.state.trackNavigation.previewAddSlot.get());
-    assert(h.state.sequencerTracks.activeTrackIndex() == 2);
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 2U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0);
 
-    h.turn(Config::EncoderID::NAV, -1.0f);
+    moveToAdjacentTrackHeader(h, -1);
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
     assert(h.state.trackNavigation.previewAddSlot.get());
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.sequencer.drumSequencer.typePickerVisible());
     h.tap(Config::ButtonID::NAV);
 
@@ -6395,25 +6386,19 @@ void test_track_remove_hold_latches_target_and_rejects_external_drift() {
         << "[PASS] Track Remove hold latches target and rejects external drift\n";
 }
 
-void test_context_selector_owns_inputs_before_track_remove_hold() {
+void test_track_header_nav_never_opens_pattern_context_selector() {
     SequencerStepHarness h;
     configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
     seq::resetTransientTrackState(h.state.sequencer);
     test_support::drainNotifications();
 
     h.press(Config::ButtonID::NAV);
-    assert(h.state.sequencer.contextSelector.visible);
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.trackNavigation.hold.action.get() ==
-           core::state::StructureHoldAction::NONE);
+    assert(!h.state.sequencer.contextSelector.visible);
     h.release(Config::ButtonID::NAV);
     assert(!h.state.sequencer.contextSelector.visible);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.trackNavigation.hold.action.get() ==
-           core::state::StructureHoldAction::NONE);
 
     std::cout
-        << "[PASS] Context selector owns inputs before Track Remove hold\n";
+        << "[PASS] Track header NAV never opens Pattern context selector\n";
 }
 
 void test_track_remove_hold_rejects_new_nav_press_without_hiding_action() {
@@ -7046,7 +7031,7 @@ void test_track_structure_replay_preserves_runtime_when_active_is_unchanged() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     assert(h.state.setSharedTrackState(0x0007U, 0U));
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    focusTrackNavigation(h);
     test_support::drainNotifications();
 
     h.press(Config::ButtonID::NAV);
@@ -7114,12 +7099,14 @@ void test_created_track_is_undoable_and_redoable() {
     h.state.setSharedTrackState(0x0001, 0);
     focusTrackNavigation(h);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
     assert(h.state.trackNavigation.previewAddSlot.get());
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.sequencer.drumSequencer.typePickerVisible());
     h.tap(Config::ButtonID::NAV);
 
@@ -8519,11 +8506,14 @@ void createDrumTrackFromAddSlot(
     seq::DrumKitPreset preset
 ) {
     auto& drumUi = h.state.sequencer.drumSequencer;
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    h.state.trackNavigation.syncPreviewTrack(target);
-    h.state.trackNavigation.previewAddSlot.set(true);
+    h.state.sequencer.clipWorkspace.reset(
+        h.state.sequencerTracks.activeTrackIndex()
+    );
+    h.state.sequencer.clipWorkspace.focusTrackHeader(target);
 
     h.tap(Config::ButtonID::NAV);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.trackNavigation.previewTrackIndex.get() == target);
     assert(drumUi.typePickerVisible());
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(drumUi.selectedKind == seq::DrumSequencerKind::DRUM);
@@ -8593,10 +8583,13 @@ void test_drum_track_creation_navigation_and_owners_are_independent() {
     auto& second = h.state.sequencerTracks.drumTrack(2U);
     assert(second.kit.laneCount == 0U);
 
-    // Track focus changes the active owner. Returning to Track 2 must bind the
-    // original payload, never reuse the newly created Track's transient view.
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    h.turn(Config::EncoderID::NAV, -1.0f);
+    // Matrix focus alone never changes the active owner. Opening Track 2's
+    // Clip must bind its original payload, never reuse the newly created
+    // Track's transient view.
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.clipWorkspace.matrixVisible());
+    h.state.sequencer.clipWorkspace.focus(1U, 0U);
+    h.tap(Config::ButtonID::NAV);
     h.tick(g_now_ms + 1U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
     assert(drumUi.targetTrack == 1U);
@@ -9380,12 +9373,18 @@ void test_drum_track_pattern_step_bottom_actions_share_one_contract() {
     auto& drumUi = sequencer.drumSequencer;
     auto& track = h.state.sequencerTracks.drumTrack(1U);
 
-    // Track uses the common performance action: tap toggles mute.
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    // Track performance actions belong to the matrix header, never to the
+    // Pattern editor's navigation hierarchy.
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(sequencer.clipWorkspace.matrixVisible());
+    sequencer.clipWorkspace.focusTrackHeader(1U);
     h.tap(Config::ButtonID::BOTTOM_LEFT);
     assert((h.state.projectTracks.authored.mutedMask & 0x0002U) != 0U);
     h.tap(Config::ButtonID::BOTTOM_LEFT);
     assert((h.state.projectTracks.authored.mutedMask & 0x0002U) == 0U);
+    sequencer.clipWorkspace.focus(1U, 0U);
+    h.tap(Config::ButtonID::NAV);
+    assert(sequencer.clipWorkspace.patternVisible());
 
     // Pattern is the only deliberate Drum exception: the bottom pair pages
     // through the complete polymetric overview instead of mutating content.
@@ -9747,8 +9746,7 @@ int main() {
     test_clip_launcher_gestures_are_structural_and_region_editor_is_reused();
     test_pattern_preview_owns_back_before_clip_launcher();
     test_child_creation_draft_apply_and_back_decisions();
-    test_nav_context_selector_previews_and_applies_all_three_contexts();
-    test_latched_track_editor_release_cannot_cross_into_page_editor();
+    test_nav_context_selector_previews_pattern_and_step();
     test_page_navigation_is_cyclic_and_tap_opens_pattern_editor();
     test_latched_editor_target_drift_fails_closed();
     test_step_editor_uses_the_exact_latched_target();
@@ -9760,7 +9758,7 @@ int main() {
     test_track_selection_copy_is_global_from_sequencer_view();
     test_page_selection_clear_and_delete_are_undoable();
     test_pattern_selection_paste_previews_collisions_and_creates_intermediate_pages();
-    test_track_context_nav_crosses_sparse_slots_and_creates_instrument_via_picker();
+    test_matrix_nav_crosses_sparse_slots_and_creates_instrument_from_track_header();
     test_step_toggle_undo_redo_workflow();
     test_child_step_toggle_undo_redo_workflow();
     test_step_toggle_preflight_failure_is_atomic();
@@ -9805,7 +9803,7 @@ int main() {
     test_direct_track_obvious_invalid_topology_skips_chronology();
     test_direct_track_missing_presentation_capability_is_preflight_atomic();
     test_track_remove_hold_latches_target_and_rejects_external_drift();
-    test_context_selector_owns_inputs_before_track_remove_hold();
+    test_track_header_nav_never_opens_pattern_context_selector();
     test_track_remove_hold_rejects_new_nav_press_without_hiding_action();
     test_track_hold_boundary_drift_cannot_retarget_mutation();
     test_track_remove_hold_provenance_cannot_cross_context_or_selection();

@@ -9,6 +9,7 @@
 #include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/SequencerUiState.hpp"
+#include "state/TrackNavigationState.hpp"
 
 namespace core::ui::sequencer {
 
@@ -18,6 +19,7 @@ struct SequencerClipLauncherSurfaceProps {
     const core::state::sequencer::SequencerClipGridState* clips = nullptr;
     const core::state::sequencer::SequencerClipLaunchQueue* launches = nullptr;
     const core::state::sequencer::SequencerTrackBankState* tracks = nullptr;
+    const core::state::TrackNavigationState* trackNavigation = nullptr;
     uint16_t enabledTrackMask = 0U;
 };
 

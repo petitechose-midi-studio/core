@@ -145,6 +145,71 @@ FLASHMEM void applyTrackPasteProgress(
     slot.holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
 }
 
+FLASHMEM bool clipTrackHeaderBottomActionStrip(
+    const SequencerViewModelSource& source,
+    StripProps& props
+) {
+    const auto& launcher = source.sequencer.clipWorkspace;
+    if (!launcher.trackHeaderFocused()) return false;
+
+    for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
+    const uint16_t trackBit = static_cast<uint16_t>(
+        uint16_t{1U} << launcher.focusedTrack
+    );
+    const bool enabled =
+        (source.sharedTrackEnabledMask.get() & trackBit) != 0U;
+    const auto& hold = source.trackNavigation.hold;
+    const bool removeArmed = enabled &&
+        hold.action.get() == core::state::StructureHoldAction::REMOVE;
+    const bool removable = enabled &&
+        countSelectedItems(source.sharedTrackEnabledMask.get()) > 1U;
+
+    if (enabled) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            interactionActionIcon(
+                removeArmed
+                    ? InteractionAction::REMOVE_CURRENT_STRUCTURE
+                    : InteractionAction::MUTE_CURRENT_TRACK
+            ),
+            removeArmed ? Visual::ARMED : Visual::ACTIVE,
+            removeArmed ? Tone::DESTRUCTIVE : Tone::NEUTRAL
+        );
+        applyHoldProgress(props.slots[0], hold, removeArmed && removable);
+    }
+
+    const auto projection = trackTransferProjection(source);
+    const bool pastePressed =
+        projection.guard.phase ==
+            core::state::contextual::GuardedActionPhase::PRESSED;
+    const bool pasteArmed =
+        projection.guard.phase ==
+            core::state::contextual::GuardedActionPhase::ARMED;
+    const bool pasteVisible = pastePressed || pasteArmed || !enabled;
+    const bool pasteAvailable = enabled
+        ? trackPasteAvailable(projection)
+        : source.structureClipboard.hasSequencerTrack();
+    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+        interactionActionIcon(
+            pasteVisible
+                ? InteractionAction::PASTE_CURRENT_STRUCTURE
+                : InteractionAction::COPY_CURRENT_STRUCTURE
+        ),
+        pasteArmed
+            ? Visual::ARMED
+            : pastePressed
+                ? Visual::PRESSED
+                : (enabled || pasteAvailable)
+                    ? Visual::ACTIVE
+                    : Visual::DISABLED,
+        pasteArmed ? trackPasteTone(projection) : Tone::NEUTRAL
+    );
+    if (pastePressed || pasteArmed) {
+        showPastePending(props.slots[2], projection);
+        applyTrackPasteProgress(props.slots[2], projection.guard);
+    }
+    return true;
+}
+
 FLASHMEM Tone variationStatusTone(
     core::state::sequencer::StepProperty property
 ) {
@@ -727,6 +792,11 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     StripProps props;
     props.visible = true;
     if (source.sequencer.clipWorkspace.matrixVisible()) {
+        if (source.trackNavigation.selection.active.get() &&
+            projectSelectionBottomActionStrip(source, props)) {
+            return props;
+        }
+        if (clipTrackHeaderBottomActionStrip(source, props)) return props;
         const auto& launcher = source.sequencer.clipWorkspace;
         for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
         if (!launcher.selectionActive()) {

@@ -754,6 +754,7 @@ void SequencerView::render(uint32_t flags) {
                 .clips = &state_refs_.clips,
                 .launches = &state_refs_.clipLaunches,
                 .tracks = &state_refs_.tracks,
+                .trackNavigation = &state_refs_.trackNavigation,
                 .enabledTrackMask = state_refs_.sharedTrackEnabledMask.get(),
             });
         } else if (!previewEmptyTrack &&

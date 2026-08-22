@@ -33,8 +33,8 @@ namespace core::handler {
 
 class SequencerStepEditHandler;
 class SequencerPatternEditorHandler;
-class ProjectTrackEditorHandler;
 class DrumLaneEditorHandler;
+class ClipWorkspaceHandler;
 
 /**
  * Pattern-editor bindings inside the first-rank Clips workspace:
@@ -84,8 +84,8 @@ public:
     /** Late wiring avoids making the two view-scope handlers own each other. */
     void attachStepEditHandler(SequencerStepEditHandler& handler);
     void attachPatternEditorHandler(SequencerPatternEditorHandler& handler);
-    void attachTrackEditorHandler(ProjectTrackEditorHandler& handler);
     void attachDrumLaneEditorHandler(DrumLaneEditorHandler& handler);
+    void connectClipWorkspace(ClipWorkspaceHandler& handler);
 private:
     void setupBindings();
     void setupDrumBindings();
@@ -97,9 +97,11 @@ private:
     core::state::StructureSelectionInteractionPolicy selectionInteractionPolicy() const;
     bool childPatternContentActionsAvailable() const;
     bool currentStructureBottomActionsAvailable() const;
+    bool clipTrackHeaderAvailable() const;
+    bool enabledClipTrackHeaderAvailable() const;
+    bool prepareClipTrackHeaderAction(bool allowEmptyTrack);
     bool focusedStepHasChildContent() const;
     bool canPasteFocusedStepContent() const;
-    bool trackFocusActive() const;
     void clearFocusedStepContent();
     void copyFocusedStepContent();
     void pasteFocusedStepContent();
@@ -151,25 +153,20 @@ private:
     ButtonReleaseLatch<2> bottom_action_release_latch_;
     SequencerStepEditHandler* step_edit_handler_ = nullptr;
     SequencerPatternEditorHandler* pattern_editor_handler_ = nullptr;
-    ProjectTrackEditorHandler* track_editor_handler_ = nullptr;
     DrumLaneEditorHandler* drum_lane_editor_handler_ = nullptr;
 #if defined(MS_UX_RECORDER)
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif
 };
 
-inline constexpr std::size_t kSequencerStepHandlerArmDrumBytes = 4U;
-
 #if defined(MS_UX_RECORDER)
 static_assert(
-    sizeof(void*) != 4U || sizeof(SequencerStepHandler) ==
-        260U + kSequencerStepHandlerArmDrumBytes,
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 260U,
     "Sequencer Step handler exceeds its ARM UX-recorder PSRAM contract"
 );
 #else
 static_assert(
-    sizeof(void*) != 4U || sizeof(SequencerStepHandler) ==
-        256U + kSequencerStepHandlerArmDrumBytes,
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 256U,
     "Sequencer Step handler exceeds its ARM PSRAM contract"
 );
 #endif

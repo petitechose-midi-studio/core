@@ -249,21 +249,36 @@ void test_clip_launcher_navigation_follows_four_track_viewports() {
     seq::ClipWorkspaceUiState state;
     state.reset(0U);
 
-    for (uint8_t i = 0U; i < 4U; ++i) state.move(1);
+    state.move(-1);
+    assert(state.trackHeaderFocused());
     assert(state.focusedTrack == 0U);
-    assert(state.focusedSlot == 1U);
     assert(state.firstVisibleTrack == 0U);
     assert(state.firstVisibleSlot == 0U);
 
-    for (uint8_t i = 0U; i < 4U; ++i) state.move(1);
+    state.move(1);
+    assert(state.clipFocused());
+    assert(state.focusedSlot == 0U);
+
+    state.move(1);
+    assert(state.clipFocused());
+    assert(state.focusedSlot == 1U);
+
+    state.move(1);
+    assert(state.trackHeaderFocused());
+    assert(state.focusedTrack == 1U);
+
+    state.reset(0U);
+    for (uint8_t i = 0U; i < 11U; ++i) state.move(1);
+    assert(state.trackHeaderFocused());
     assert(state.focusedTrack == 0U);
-    assert(state.focusedSlot == 2U);
     assert(state.firstVisibleTrack == 0U);
     assert(state.firstVisibleSlot == 2U);
+    assert(state.viewportIndex() == 1U);
 
     state.move(-1);
     assert(state.focusedTrack == 3U);
     assert(state.focusedSlot == 1U);
+    assert(state.clipFocused());
     assert(state.firstVisibleTrack == 0U);
     assert(state.firstVisibleSlot == 0U);
 
@@ -277,6 +292,13 @@ void test_clip_launcher_navigation_follows_four_track_viewports() {
     assert(state.focusedTrack == 2U);
     assert(state.focusedSlot == 1U);
     assert(state.viewportIndex() == 0U);
+
+    state.focusTrackHeader(2U);
+    state.moveViewport(1);
+    assert(state.trackHeaderFocused());
+    assert(state.focusedTrack == 2U);
+    assert(state.firstVisibleSlot == 2U);
+    assert(state.viewportIndex() == 1U);
 }
 
 void test_clip_launcher_returns_to_the_exact_clip_address() {

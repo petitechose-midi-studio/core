@@ -1,5 +1,5 @@
 # UX workflow: retained Track Editor, direct musical routing/mix controls.
-# Purpose: validates the complete end-user path: open from Track context,
+# Purpose: validates the complete end-user path: open from a matrix Track header,
 # edit Channel and Delay, toggle Mute/Solo, hot-switch enabled Tracks, then
 # close and reopen the editor without an intermediate Structure screen.
 # Expect: semantic:track_2_editor:mode=sequencer.track_editor, semantic:track_2_editor:effect=open_track_editor, semantic:track_2_editor:target_track=1, semantic:track_2_editor:property=channel, semantic:track_2_editor:authored_value=1
@@ -15,19 +15,13 @@
 # Expect: semantic:type_applied:effect=apply_track_type_draft, semantic:type_applied:intent=apply, semantic:type_applied:draft_active=false, semantic:type_applied:dirty=false
 # Expect: capture_changed:track_2_editor=delay_edited, capture_changed:track_2_editor=track_1_hot_switch
 
-0 scenario sequencer
+0 scenario clip-launcher
 
-# Create sparse Track 2 directly from the shared Track strip. The first NAV
-# press opens the type prompt; the second confirms it. Wait for the transient
-# confirmation to clear before reopening the retained editor.
-100 button NAV down
-160 encoder NAV -1
-220 button NAV up
-300 tap LEFT_CENTER 60
-1450 encoder NAV 1
-1630 tap NAV 60
-2080 tap NAV 60
-3000 capture screen track_2_created
+# NAV crosses T1/C2 to reach the explicit T2 header. A short press opens the
+# retained editor without routing through a Pattern context.
+100 encoder NAV 1
+180 encoder NAV 1
+3000 capture screen track_2_header
 3200 tap NAV 60
 3480 capture screen track_2_editor
 
@@ -56,8 +50,8 @@
 5520 capture screen track_2_hot_switch_back
 5580 button LEFT_CENTER up
 
-# Close directly. Reopening the editor proves the Track identity retained its
-# authored values without routing through a Structure workspace.
+# Close directly to the same header. Reopening proves the Track identity
+# retained its authored values without routing through a Pattern workspace.
 5700 tap LEFT_TOP 60
 6280 tap NAV 60
 6520 capture screen track_2_values_restored
@@ -66,8 +60,8 @@
 # draft until the visible Apply action. A secondary-axis gesture cannot
 # silently retarget that dirty draft to Track 1.
 6700 encoder NAV 1
-6940 encoder OPT 1
-7020 encoder OPT 1
+6940 encoder OPT -1
+7020 encoder OPT -1
 7100 capture screen type_draft
 7200 button LEFT_CENTER down
 7280 encoder NAV -1

@@ -1647,6 +1647,14 @@ bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
         return false;
     }
 
+    state.sequencerClips.reset(state.currentSharedTrackEnabledMask());
+    state.sequencerClipLaunches.reset(
+        state.sequencerClips,
+        state.currentSharedTrackEnabledMask()
+    );
+    state.sequencer.clipWorkspace.reset(0U);
+    state.sequencer.clipWorkspace.focusTrackHeader(0U);
+
     return true;
 }
 

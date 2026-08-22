@@ -748,6 +748,11 @@ enum class ClipWorkspaceOperation : uint8_t {
     DUPLICATE_DESTINATION,
 };
 
+enum class ClipWorkspaceFocus : uint8_t {
+    CLIP = 0,
+    TRACK_HEADER,
+};
+
 /** Session-only focus and return path for the sparse Clip launcher. */
 struct ClipWorkspaceUiState {
     static constexpr uint8_t VISIBLE_TRACKS = 4U;
@@ -767,6 +772,7 @@ struct ClipWorkspaceUiState {
         ClipWorkspaceFeedback::NONE;
     ClipWorkspaceOperation operation =
         ClipWorkspaceOperation::BROWSE;
+    ClipWorkspaceFocus focusArea = ClipWorkspaceFocus::CLIP;
     uint8_t focusedTrack = 0U;
     uint8_t focusedSlot = 0U;
     uint8_t firstVisibleTrack = 0U;
@@ -792,8 +798,15 @@ struct ClipWorkspaceUiState {
             operation ==
                 ClipWorkspaceOperation::DUPLICATE_DESTINATION;
     }
+    [[nodiscard]] bool clipFocused() const {
+        return focusArea == ClipWorkspaceFocus::CLIP;
+    }
+    [[nodiscard]] bool trackHeaderFocused() const {
+        return focusArea == ClipWorkspaceFocus::TRACK_HEADER;
+    }
     void reset(uint8_t activeTrack = 0U);
     void focus(uint8_t track, uint8_t slot);
+    void focusTrackHeader(uint8_t track);
     void move(int direction);
     void moveViewport(int direction);
     [[nodiscard]] uint8_t viewportIndex() const;

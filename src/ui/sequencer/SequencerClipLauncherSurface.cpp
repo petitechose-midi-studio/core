@@ -121,6 +121,10 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         )
     );
     const auto& ui = *props_.ui;
+    const bool selectingTracks = props_.trackNavigation != nullptr &&
+        props_.trackNavigation->selection.active.get() &&
+        props_.trackNavigation->selection.scope.get() ==
+            core::state::StructureSelectionScope::TRACK;
 
     for (uint8_t column = 0U;
          column < seq::ClipWorkspaceUiState::VISIBLE_TRACKS;
@@ -140,6 +144,25 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             .x2 = static_cast<lv_coord_t>(x + columnWidth - 1),
             .y2 = static_cast<lv_coord_t>(surface.y1 + headerHeight - 1),
         };
+        const bool headerFocused = selectingTracks
+            ? props_.trackNavigation->selection.cursorIndex.get() == track
+            : ui.trackHeaderFocused() && ui.focusedTrack == track;
+        const bool headerSelected = selectingTracks &&
+            (props_.trackNavigation->selection.selectedMask.get() &
+             static_cast<uint16_t>(1U << track)) != 0U;
+        drawRect(
+            layer,
+            header,
+            headerSelected
+                ? theme::color::SURFACE_RAISED
+                : theme::color::SURFACE_IDLE,
+            LV_OPA_COVER,
+            headerFocused
+                ? theme::color::FOCUS_EDIT
+                : theme::color::BORDER_SUBTLE,
+            headerFocused ? 2 : 0,
+            headerFocused ? LV_OPA_COVER : LV_OPA_TRANSP
+        );
         std::array<char, 8> trackLabel{};
         std::snprintf(
             trackLabel.data(), trackLabel.size(), "T%u",
@@ -197,7 +220,8 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             );
             const seq::SequencerClipAddress address{track, slot};
             const bool occupied = enabled && props_.clips->isOccupied(address);
-            const bool focused = ui.focusedTrack == track &&
+            const bool focused = ui.clipFocused() &&
+                ui.focusedTrack == track &&
                 ui.focusedSlot == slot;
             const bool sourceSelected = ui.selectionActive() &&
                 ui.sourceTrack == track && ui.sourceSlot == slot;

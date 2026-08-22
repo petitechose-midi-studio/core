@@ -336,6 +336,7 @@ CORE_SEQUENCER_HISTORY_RECORDING = (
 )
 SEQUENCER_STEP_HANDLER = "src/handler/sequencer/SequencerStepHandler.cpp"
 SEQUENCER_STEP_HANDLER_HEADER = "src/handler/sequencer/SequencerStepHandler.hpp"
+CLIP_WORKSPACE_HANDLER = "src/handler/sequencer/ClipWorkspaceHandler.cpp"
 SEQUENCER_VIEW = "src/ui/view/SequencerView.cpp"
 SEQUENCER_VIEW_HEADER = "src/ui/view/SequencerView.hpp"
 SEQUENCER_OVERLAY_PRESENTER = (
@@ -4516,19 +4517,33 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"shared_tracks_\s*,\s*history_\s*,\s*\}\s*,\s*kind\s*,\s*drumPreset\s*\)",
         "Track Create edit workflow must validate activation ownership and pass every state and typed intent source",
     )
+    require(
+        CONTEXT_SELECTOR_WORKFLOW_HEADER,
+        r"\b(?:OPEN_TRACK_EDITOR|previewAddSlot|includeTrack)\b",
+        "Pattern context selector must not recover Track ownership",
+        count=0,
+    )
     require_in_function(
-        SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::handleContextSelectorRelease",
-        r"case\s+SequencerContextSelectorAction::OPEN_TRACK_EDITOR\s*:"
-        r".*?outcome\.focus\s*!=\s*"
-        r"core::state::StructureNavigationFocus::TRACK.*?"
-        r"track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*!=\s*"
-        r"outcome\.previewTarget.*?"
-        r"if\s*\(\s*outcome\.previewAddSlot\s*\).*?"
-        r"track_ui_\.previewAddSlot\.get\s*\(\s*\).*?"
-        r"sequencer_\.drumSequencer\.openTypePicker\s*\(\s*"
-        r"outcome\.previewTarget\s*\)",
-        "Track Add release must validate its exact preview and open the typed Track picker",
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::openFocused",
+        r"if\s*\(\s*ui\.trackHeaderFocused\s*\(\s*\)\s*\).*?"
+        r"!\s*core_\.sequencerTracks\.isTrackEnabled\s*\(\s*"
+        r"ui\.focusedTrack\s*\).*?"
+        r"core_\.sequencer\.drumSequencer\.openTypePicker\s*\(\s*"
+        r"ui\.focusedTrack\s*\).*?return\s*;.*?"
+        r"track_editor_handler_\s*!=\s*nullptr.*?"
+        r"track_editor_handler_->openActiveTrack\s*\(\s*\)",
+        "Clip Track header must own typed creation and Track editing",
+    )
+    require_in_function(
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::beginTrackSelection",
+        r"trackHeaderAvailable\s*\(\s*\).*?"
+        r"core_\.trackNavigation\.syncPreviewTrack\s*\(\s*track\s*\).*?"
+        r"navigation_focus_\.set\s*\(\s*"
+        r"core::state::StructureNavigationFocus::TRACK\s*\).*?"
+        r"navigation_workflow_->enterSelectionModeForCurrentFocus\s*\(\s*\)",
+        "Clip Track header hold must own Track selection",
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
@@ -4579,29 +4594,19 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"navigation_focus_\.get\s*\(\s*\)\s*!=\s*"
         r"core::state::StructureNavigationFocus::PAGE.*?"
         r"sequencer_\.structureUi\.previewPageIndex\.get\s*\(\s*\)\s*!=\s*"
-        r"outcome\.previewTarget\s*\|\|\s*outcome\.previewAddSlot.*?"
+        r"outcome\.previewTarget.*?"
+        r"core::state::sequencer::isRootContentView\s*\(\s*sequencer_\s*\).*?"
         r"pattern_editor_handler_->openFromCurrentPage\s*\(\s*\)",
-        "Pattern Editor release must revalidate Page focus/target and reject add provenance",
-    )
-    require_in_function(
-        SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupNavigationBindings",
-        r"const\s+bool\s+previewAddSlot\s*=\s*"
-        r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*&&\s*"
-        r"track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*;",
-        "NAV press and hold must derive add provenance from Track only",
-        count=2,
+        "Pattern Editor release must revalidate its exact root Pattern target",
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
         "SequencerStepHandler::setupNavigationBindings",
         r"const\s+uint8_t\s+previewTarget\s*=\s*"
-        r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*"
-        r"\?\s*track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*"
-        r":\s*focus\s*==\s*core::state::StructureNavigationFocus::STEP\s*"
+        r"focus\s*==\s*core::state::StructureNavigationFocus::STEP\s*"
         r"\?\s*sequencer_\.focusedStep\.get\s*\(\s*\)\s*"
         r":\s*sequencer_\.structureUi\.previewPageIndex\.get\s*\(\s*\)",
-        "NAV press and hold must latch the exact Track/Page/Step target",
+        "NAV press and hold must latch the exact Pattern/Step target",
         count=2,
     )
     require_in_function(
@@ -4888,9 +4893,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "SequencerContextSelectorWorkflow::press",
         r"press_target_\s*=\s*previewTarget\s*;.*?"
         r"static_cast<uint8_t>\s*\(\s*state_\.previewFocus\s*\)\s*&\s*0x03U.*?"
-        r"previewAddSlot\s*\?\s*0x04U\s*:\s*0U.*?"
-        r"includeTrack\s*\?\s*0x08U\s*:\s*0U",
-        "context press must retain an exact target and packed context provenance",
+        r"includeLane\s*\?\s*0x04U\s*:\s*0U",
+        "context press must retain its exact target and Pattern hierarchy provenance",
     )
     require_in_function(
         CONTEXT_SELECTOR_WORKFLOW,
@@ -4900,9 +4904,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"press_target_\s*=\s*0U\s*;\s*"
         r"return\s+false\s*;\s*\}.*?"
         r"current\s*==\s*origin\s*&&\s*"
-        r"previewTarget\s*==\s*press_target_\s*&&\s*"
-        r"previewAddSlot\s*==\s*"
-        r"\(\s*\(\s*press_context_\s*&\s*0x04U\s*\)\s*!=\s*0U\s*\).*?"
+        r"previewTarget\s*==\s*press_target_\s*;.*?"
         r"if\s*\(\s*!\s*pressMatches\s*\)\s*\{\s*cancel\s*\(\s*\)",
         "context selection hold must fail closed on exact press provenance drift",
     )
@@ -4927,7 +4929,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"^\s*if\s*\(\s*!\s*state_\.visible\s*\)\s*\{\s*"
         r"gesture_\.cancel\s*\(\s*\)\s*;\s*press_context_\s*=\s*0U\s*;\s*"
         r"press_target_\s*=\s*0U\s*;\s*return\s+false\s*;\s*\}.*?"
-        r"press_context_\s*&\s*0x08U",
+        r"press_context_\s*&\s*0x04U",
         "context turn must fail closed after external presentation reset",
     )
     require_in_function(
@@ -5184,14 +5186,13 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     require(
         SEQUENCER_STEP_HANDLER,
         r"\.when\s*\(\s*\[this\]\s*\(\s*\)\s*\{\s*return\s+"
-        r"currentStructureBottomActionsAvailable\s*\(\s*\)\s*&&\s*"
-        r"!trackFocusActive\s*\(\s*\)\s*;\s*\}\s*\)\s*\.then\s*"
+        r"currentStructureBottomActionsAvailable\s*\(\s*\)\s*;\s*\}\s*\)\s*\.then\s*"
         r"\(\s*\[this\]\s*\(\s*\)\s*\{\s*"
         r"bottom_action_release_latch_\.arm\s*\(\s*"
         r"Config::ButtonID::BOTTOM_RIGHT\s*\)\s*;.*?#endif\s*"
         r"edit_workflow_\.pasteCurrentStructure\s*"
         r"\(\s*\)\s*;",
-        "current Page/Step BottomRight must latch then delegate without an old barrier",
+        "current Pattern/Step BottomRight must latch then delegate without an old barrier",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -5216,7 +5217,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"if\s*\(\s*track_ui_\.selection\.active\.get\s*\(\s*\)\s*\)\s*\{\s*"
         r"edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*\}.*?"
         r"applySelectionBottomLeftHold\s*\(\s*\)",
-        "selection BottomLeft hold must route tokenized Track provenance before legacy Page/Step",
+        "selection BottomLeft hold must route tokenized Track provenance before Pattern/Step",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -5231,7 +5232,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"return\s*;\s*\}.*?"
         r"commitPatternHistoryBarrier\s*\(\s*sequencer_\s*,\s*history_\s*\).*?"
         r"applySelectionBottomLeftTap\s*\(\s*\)",
-        "selection BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
+        "selection BottomLeft tap must route tokenized Track provenance before Pattern/Step",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -5246,10 +5247,13 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"if\s*\(\s*edit_workflow_\.trackRemoveHoldPending\s*\(\s*\)\s*\)"
         r"\s*\{\s*edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*"
         r"return\s*;\s*\}.*?"
-        r"if\s*\(\s*trackFocusActive\s*\(\s*\)\s*\).*?"
-        r"commitPatternHistoryBarrier\s*\(\s*sequencer_\s*,\s*history_\s*\).*?"
+        r"if\s*\(\s*enabledClipTrackHeaderAvailable\s*\(\s*\)\s*\)\s*\{.*?"
+        r"prepareClipTrackHeaderAction\s*\(\s*false\s*\).*?"
+        r"edit_workflow_\.applyCurrentStructureShortPress\s*\(\s*\).*?"
+        r"return\s*;\s*\}.*?"
+        r"edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;.*?"
         r"applyCurrentStructureShortPress\s*\(\s*\)",
-        "current BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
+        "current BottomLeft tap must route Clip Track provenance before Pattern/Step",
     )
     require(
         SEQUENCER_STEP_HANDLER,

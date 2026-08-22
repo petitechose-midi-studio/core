@@ -382,16 +382,23 @@ FLASHMEM SequencerInteractionPolicy buildClipLauncherPolicy(
     const SequencerInteractionContext& context
 ) {
     SequencerInteractionPolicy policy{};
-    policy.scope = Scope::CLIP_LAUNCHER;
     disableMainEditing(policy);
     hideLeftSelectors(policy);
+    const bool trackHeader = context.navigationFocus == Focus::TRACK;
+    policy.scope = trackHeader ? Scope::TRACK : Scope::CLIP_LAUNCHER;
     if (context.overlayVisible) {
         policy.navTurn = Action::NONE;
         return policy;
     }
     policy.navTurn = Action::MOVE_CLIP;
-    policy.navTap = Action::OPEN_CLIP;
-    policy.macroTap = Action::LAUNCH_CLIP;
+    policy.navTap = trackHeader ? Action::OPEN_TRACK_EDITOR : Action::OPEN_CLIP;
+    policy.navLongPress = Action::ENTER_SELECTION;
+    if (trackHeader) {
+        applyStructureBottomActions(policy, context);
+        policy.bottomLeftTap = Action::MUTE_CURRENT_TRACK;
+    } else {
+        policy.macroTap = Action::LAUNCH_CLIP;
+    }
     return policy;
 }
 
@@ -419,6 +426,9 @@ FLASHMEM bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractio
 FLASHMEM SequencerInteractionPolicy buildSequencerInteractionPolicy(
     const SequencerInteractionContext& context
 ) {
+    if (context.clipWorkspaceActive && context.trackSelectionActive) {
+        return buildSelectionPolicy(context);
+    }
     if (context.clipWorkspaceActive) {
         return buildClipLauncherPolicy(context);
     }

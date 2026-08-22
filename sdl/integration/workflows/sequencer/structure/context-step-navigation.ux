@@ -1,26 +1,26 @@
-# UX workflow: shared Sequencer context grammar and root Step retargeting.
-# Purpose: proves NAV hold+turn Track/Pattern/Step selection, short NAV opening
+# UX workflow: shared Pattern context grammar and root Step retargeting.
+# Purpose: proves NAV hold+turn Pattern/Step selection, short NAV opening
 # the focused Step editor, LEFT_CENTER+NAV retargeting over the real Pattern,
-# and direct Track Editor close without losing the musical caller.
+# then the explicit Pattern -> matrix -> Track header ownership path.
 # Expect: semantic:pattern_context_preview:mode=sequencer.context_selector, semantic:pattern_context_preview:effect=show_context, semantic:pattern_context_preview:target=pattern, semantic:pattern_context_preview:projection=preview
+# Expect: semantic:step_context_preview:mode=sequencer.context_selector, semantic:step_context_preview:target=step, semantic:step_context_preview:projection=preview
 # Expect: semantic:step_context_applied:effect=apply_context, semantic:step_context_applied:target=step, semantic:step_context_applied:projection=applied
 # Expect: semantic:post_release_nav_turn:mode=sequencer.step, semantic:post_release_nav_turn:effect=move_step, semantic:post_release_nav_turn:target=step
 # Expect: semantic:step_1_editor:mode=sequencer.step_edit, semantic:step_1_editor:effect=open_step_editor, semantic:step_1_editor:target_step=0, semantic:step_1_editor:target_count=8, semantic:step_1_editor:target_page=0, semantic:step_1_editor:step_on=1
 # Expect: semantic:step_2_retargeted:mode=sequencer.step_edit, semantic:step_2_retargeted:effect=retarget_step, semantic:step_2_retargeted:target_step=1, semantic:step_2_retargeted:target_count=8, semantic:step_2_retargeted:target_page=0, semantic:step_2_retargeted:step_on=0
 # Expect: semantic:step_1_retargeted_back:effect=retarget_step, semantic:step_1_retargeted_back:target_step=0, semantic:step_1_retargeted_back:step_on=1
 # Expect: semantic:track_editor_open:mode=sequencer.track_editor, semantic:track_editor_open:target_track=0, semantic:track_editor_open:property=channel
-# Expect: capture_changed:track_context_preview=pattern_context_preview, capture_changed:step_1_editor=step_2_retargeted, capture_match:step_1_editor=step_1_retargeted_back
+# Expect: semantic:track_header:mode=sequencer.clip_launcher, semantic:track_header:target=track, semantic:track_header:target_track=0, semantic:track_header:projection=track_header
+# Expect: capture_changed:step_context_preview=pattern_context_preview, capture_changed:step_1_editor=step_2_retargeted, capture_match:step_1_editor=step_1_retargeted_back
 
 0 scenario sequencer
 
-# The selector is visible only while NAV is held. Visit Track and return to
-# Pattern before selecting Step; release commits Step.
+# The selector is visible only while NAV is held. Pattern advances directly to
+# Step for an Instrument Clip; release commits Step.
 100 button NAV down
 180 capture screen pattern_context_preview
-240 encoder NAV -1
-320 capture screen track_context_preview
 380 encoder NAV 1
-460 encoder NAV 1
+460 capture screen step_context_preview
 520 button NAV up
 1040 capture screen step_context_applied
 
@@ -45,13 +45,17 @@
 2700 button LEFT_CENTER up
 2900 tap LEFT_TOP 60
 
-# Step -> Track wraps in one held turn. A short NAV tap opens the retained
-# Track Editor; LEFT_TOP closes it directly to the musical caller.
+# Step -> Pattern is the only musical ascent. Back then returns to the exact
+# matrix Clip; one reverse turn reaches its Track header and opens the editor.
 3100 button NAV down
-3160 encoder NAV 1
+3160 encoder NAV -1
 3220 button NAV up
-3440 capture screen track_context_applied
-3540 tap NAV 60
-3780 capture screen track_editor_open
-4220 tap LEFT_TOP 60
-4460 capture screen musical_caller_restored
+3440 capture screen pattern_context_applied
+3540 tap LEFT_TOP 60
+3780 capture screen launcher_returned
+3900 encoder NAV -1
+4100 capture screen track_header
+4200 tap NAV 60
+4460 capture screen track_editor_open
+4700 tap LEFT_TOP 60
+4940 capture screen track_header_restored

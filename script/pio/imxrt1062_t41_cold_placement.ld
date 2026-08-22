@@ -138,11 +138,19 @@
  * draw loop; compiler-generated dispatch thunks therefore belong in Flash. */
 *ProjectHandler*.cpp.o(.text* .rodata*)
 
-/* Sequencer and Macro performance handlers dispatch human-rate controller
- * gestures into workflows. Their named methods already use FLASHMEM; keep the
- * compiler-generated std::function predicate/action thunks beside them instead
- * of spending ITCM reserved for playback, MIDI, and retained draw paths. */
+/* Sequencer and Macro handlers dispatch human-rate controller gestures into
+ * workflows. Their named methods already use FLASHMEM; keep the compiler-
+ * generated std::function predicate/action thunks beside them instead of
+ * spending ITCM reserved for playback, MIDI, and retained draw paths. */
 *MacroPerformanceHandler.cpp.o(.text* .rodata*)
+*ClipWorkspaceHandler.cpp.o(.text* .rodata*)
+*DrumLaneEditorHandler.cpp.o(.text* .rodata*)
+*PatternPitchSettingsHandler.cpp.o(.text* .rodata*)
+*ProjectTrackEditorHandler.cpp.o(.text* .rodata*)
+*SequencerPatternEditorHandler.cpp.o(.text* .rodata*)
+*SequencerPatternQuickControlsHandler.cpp.o(.text* .rodata*)
+*SequencerPropertySelectorHandler.cpp.o(.text* .rodata*)
+*SequencerStepEditHandler.cpp.o(.text* .rodata*)
 *SequencerStepHandler.cpp.o(.text* .rodata*)
 
 /* Macro history is entered only by authored edit, undo, and redo commands.

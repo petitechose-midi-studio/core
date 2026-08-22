@@ -17,9 +17,6 @@
 
 # Browse to the existing inactive T1/C2 Clip.
 200 encoder NAV 1
-280 encoder NAV 1
-360 encoder NAV 1
-440 encoder NAV 1
 
 # Long NAV enters the same one-item structural selection grammar used by the
 # rest of the Sequencer. Its paired release must not open the Pattern.
