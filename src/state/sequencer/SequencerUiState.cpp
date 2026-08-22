@@ -518,14 +518,14 @@ FLASHMEM bool SequencerStepSelectionState::selected(uint8_t step) const {
     return selectedMask.get().test(step);
 }
 
-FLASHMEM void SequencerClipLauncherUiState::bump() {
+FLASHMEM void ClipWorkspaceUiState::bump() {
     revision.set(revision.get() + 1U);
 }
 
-FLASHMEM void SequencerClipLauncherUiState::reset(uint8_t activeTrack) {
-    workspace = SequencerWorkspace::CLIP_LAUNCHER;
-    feedback = SequencerClipLauncherFeedback::NONE;
-    operation = SequencerClipLauncherOperation::BROWSE;
+FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
+    route = ClipWorkspaceRoute::MATRIX;
+    feedback = ClipWorkspaceFeedback::NONE;
+    operation = ClipWorkspaceOperation::BROWSE;
     focusedTrack = std::min<uint8_t>(activeTrack, TRACK_COUNT - 1U);
     focusedSlot = 0U;
     firstVisibleTrack = static_cast<uint8_t>(
@@ -541,14 +541,14 @@ FLASHMEM void SequencerClipLauncherUiState::reset(uint8_t activeTrack) {
     bump();
 }
 
-FLASHMEM void SequencerClipLauncherUiState::focus(
+FLASHMEM void ClipWorkspaceUiState::focus(
     uint8_t track,
     uint8_t slot
 ) {
     track = std::min<uint8_t>(track, TRACK_COUNT - 1U);
     slot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
     const bool changed = focusedTrack != track || focusedSlot != slot ||
-        feedback != SequencerClipLauncherFeedback::NONE;
+        feedback != ClipWorkspaceFeedback::NONE;
     focusedTrack = track;
     focusedSlot = slot;
     firstVisibleTrack = static_cast<uint8_t>(
@@ -557,11 +557,11 @@ FLASHMEM void SequencerClipLauncherUiState::focus(
     firstVisibleSlot = static_cast<uint8_t>(
         (focusedSlot / VISIBLE_ROWS) * VISIBLE_ROWS
     );
-    feedback = SequencerClipLauncherFeedback::NONE;
+    feedback = ClipWorkspaceFeedback::NONE;
     if (changed) bump();
 }
 
-FLASHMEM void SequencerClipLauncherUiState::move(int direction) {
+FLASHMEM void ClipWorkspaceUiState::move(int direction) {
     if (direction == 0) return;
     if (placementActive()) {
         int next = static_cast<int>(focusedSlot) + (direction < 0 ? -1 : 1);
@@ -570,22 +570,22 @@ FLASHMEM void SequencerClipLauncherUiState::move(int direction) {
         focus(sourceTrack, static_cast<uint8_t>(next));
         return;
     }
-    constexpr int trackPages = TRACK_COUNT / VISIBLE_TRACKS;
     constexpr int cellsPerViewport = VISIBLE_TRACKS * VISIBLE_ROWS;
     const int trackPage = focusedTrack / VISIBLE_TRACKS;
     const int slotPage = focusedSlot / VISIBLE_ROWS;
     const int localCell = (focusedSlot % VISIBLE_ROWS) * VISIBLE_TRACKS +
         (focusedTrack % VISIBLE_TRACKS);
     const int current =
-        (slotPage * trackPages + trackPage) * cellsPerViewport + localCell;
+        (trackPage * SLOT_VIEWPORT_COUNT + slotPage) * cellsPerViewport +
+        localCell;
     constexpr int cellCount = TRACK_COUNT * SLOT_COUNT;
     int next = (current + (direction < 0 ? -1 : 1)) % cellCount;
     if (next < 0) next += cellCount;
 
     const int viewport = next / cellsPerViewport;
     const int nextLocalCell = next % cellsPerViewport;
-    const int nextTrackPage = viewport % trackPages;
-    const int nextSlotPage = viewport / trackPages;
+    const int nextTrackPage = viewport / SLOT_VIEWPORT_COUNT;
+    const int nextSlotPage = viewport % SLOT_VIEWPORT_COUNT;
     focus(
         static_cast<uint8_t>(
             nextTrackPage * VISIBLE_TRACKS + nextLocalCell % VISIBLE_TRACKS
@@ -596,26 +596,49 @@ FLASHMEM void SequencerClipLauncherUiState::move(int direction) {
     );
 }
 
-FLASHMEM void SequencerClipLauncherUiState::beginSelection(
+FLASHMEM uint8_t ClipWorkspaceUiState::viewportIndex() const {
+    return static_cast<uint8_t>(
+        (firstVisibleTrack / VISIBLE_TRACKS) * SLOT_VIEWPORT_COUNT +
+        firstVisibleSlot / VISIBLE_ROWS
+    );
+}
+
+FLASHMEM void ClipWorkspaceUiState::moveViewport(int direction) {
+    if (direction == 0 || placementActive()) return;
+    int next = static_cast<int>(viewportIndex()) + (direction < 0 ? -1 : 1);
+    next %= VIEWPORT_COUNT;
+    if (next < 0) next += VIEWPORT_COUNT;
+
+    const uint8_t localTrack = focusedTrack % VISIBLE_TRACKS;
+    const uint8_t localSlot = focusedSlot % VISIBLE_ROWS;
+    const uint8_t trackPage = static_cast<uint8_t>(next / SLOT_VIEWPORT_COUNT);
+    const uint8_t slotPage = static_cast<uint8_t>(next % SLOT_VIEWPORT_COUNT);
+    focus(
+        static_cast<uint8_t>(trackPage * VISIBLE_TRACKS + localTrack),
+        static_cast<uint8_t>(slotPage * VISIBLE_ROWS + localSlot)
+    );
+}
+
+FLASHMEM void ClipWorkspaceUiState::beginSelection(
     uint8_t track,
     uint8_t slot
 ) {
     focus(track, slot);
     sourceTrack = focusedTrack;
     sourceSlot = focusedSlot;
-    operation = SequencerClipLauncherOperation::SELECT;
+    operation = ClipWorkspaceOperation::SELECT;
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
     bump();
 }
 
-FLASHMEM void SequencerClipLauncherUiState::beginPlacement(
-    SequencerClipLauncherOperation next,
+FLASHMEM void ClipWorkspaceUiState::beginPlacement(
+    ClipWorkspaceOperation next,
     uint8_t destinationSlot
 ) {
-    if (operation != SequencerClipLauncherOperation::SELECT ||
-        (next != SequencerClipLauncherOperation::MOVE_DESTINATION &&
-         next != SequencerClipLauncherOperation::DUPLICATE_DESTINATION)) {
+    if (operation != ClipWorkspaceOperation::SELECT ||
+        (next != ClipWorkspaceOperation::MOVE_DESTINATION &&
+         next != ClipWorkspaceOperation::DUPLICATE_DESTINATION)) {
         return;
     }
     operation = next;
@@ -625,14 +648,14 @@ FLASHMEM void SequencerClipLauncherUiState::beginPlacement(
     bump();
 }
 
-FLASHMEM bool SequencerClipLauncherUiState::backOperation() {
+FLASHMEM bool ClipWorkspaceUiState::backOperation() {
     if (!selectionActive()) return false;
     if (placementActive()) {
-        operation = SequencerClipLauncherOperation::SELECT;
+        operation = ClipWorkspaceOperation::SELECT;
         focus(sourceTrack, sourceSlot);
     } else {
-        operation = SequencerClipLauncherOperation::BROWSE;
-        feedback = SequencerClipLauncherFeedback::NONE;
+        operation = ClipWorkspaceOperation::BROWSE;
+        feedback = ClipWorkspaceFeedback::NONE;
     }
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
@@ -640,12 +663,12 @@ FLASHMEM bool SequencerClipLauncherUiState::backOperation() {
     return true;
 }
 
-FLASHMEM void SequencerClipLauncherUiState::completeOperation(
+FLASHMEM void ClipWorkspaceUiState::completeOperation(
     uint8_t track,
     uint8_t slot,
-    SequencerClipLauncherFeedback result
+    ClipWorkspaceFeedback result
 ) {
-    operation = SequencerClipLauncherOperation::BROWSE;
+    operation = ClipWorkspaceOperation::BROWSE;
     sourceTrack = std::min<uint8_t>(track, TRACK_COUNT - 1U);
     sourceSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
     focusedTrack = sourceTrack;
@@ -662,8 +685,8 @@ FLASHMEM void SequencerClipLauncherUiState::completeOperation(
     bump();
 }
 
-FLASHMEM void SequencerClipLauncherUiState::beginRemoveHold(uint32_t nowMs) {
-    if (operation != SequencerClipLauncherOperation::SELECT ||
+FLASHMEM void ClipWorkspaceUiState::beginRemoveHold(uint32_t nowMs) {
+    if (operation != ClipWorkspaceOperation::SELECT ||
         removeHoldActive) {
         return;
     }
@@ -672,14 +695,14 @@ FLASHMEM void SequencerClipLauncherUiState::beginRemoveHold(uint32_t nowMs) {
     bump();
 }
 
-FLASHMEM void SequencerClipLauncherUiState::clearRemoveHold() {
+FLASHMEM void ClipWorkspaceUiState::clearRemoveHold() {
     if (!removeHoldActive && removeHoldStartedAtMs == 0U) return;
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
     bump();
 }
 
-FLASHMEM void SequencerClipLauncherUiState::enterPattern(
+FLASHMEM void ClipWorkspaceUiState::enterPattern(
     uint8_t track,
     uint8_t slot
 ) {
@@ -687,18 +710,18 @@ FLASHMEM void SequencerClipLauncherUiState::enterPattern(
     returnSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
     focusedTrack = returnTrack;
     focusedSlot = returnSlot;
-    workspace = SequencerWorkspace::PATTERN;
-    operation = SequencerClipLauncherOperation::BROWSE;
+    route = ClipWorkspaceRoute::PATTERN;
+    operation = ClipWorkspaceOperation::BROWSE;
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
-    feedback = SequencerClipLauncherFeedback::NONE;
+    feedback = ClipWorkspaceFeedback::NONE;
     bump();
 }
 
-FLASHMEM bool SequencerClipLauncherUiState::returnToLauncher() {
-    if (launcherVisible()) return false;
-    workspace = SequencerWorkspace::CLIP_LAUNCHER;
-    operation = SequencerClipLauncherOperation::BROWSE;
+FLASHMEM bool ClipWorkspaceUiState::returnToMatrix() {
+    if (matrixVisible()) return false;
+    route = ClipWorkspaceRoute::MATRIX;
+    operation = ClipWorkspaceOperation::BROWSE;
     focusedTrack = returnTrack;
     focusedSlot = returnSlot;
     firstVisibleTrack = static_cast<uint8_t>(
@@ -707,13 +730,13 @@ FLASHMEM bool SequencerClipLauncherUiState::returnToLauncher() {
     firstVisibleSlot = static_cast<uint8_t>(
         (focusedSlot / VISIBLE_ROWS) * VISIBLE_ROWS
     );
-    feedback = SequencerClipLauncherFeedback::NONE;
+    feedback = ClipWorkspaceFeedback::NONE;
     bump();
     return true;
 }
 
-FLASHMEM void SequencerClipLauncherUiState::setFeedback(
-    SequencerClipLauncherFeedback next
+FLASHMEM void ClipWorkspaceUiState::setFeedback(
+    ClipWorkspaceFeedback next
 ) {
     if (feedback == next) return;
     feedback = next;

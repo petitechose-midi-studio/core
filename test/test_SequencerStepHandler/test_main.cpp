@@ -23,7 +23,7 @@
 #include "../../src/handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 #include "../../src/handler/sequencer/DrumLaneEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "../../src/handler/sequencer/SequencerClipLauncherWorkflow.hpp"
+#include "../../src/handler/sequencer/ClipWorkspaceHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepContentHandler.hpp"
@@ -377,7 +377,7 @@ struct SequencerStepHarness {
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::state::sequencer::SequencerPatternRandomizeSession patternRandomize;
     core::handler::SequencerPatternEditorHandler patternEditorHandler;
-    core::handler::SequencerClipLauncherWorkflow clipLauncherWorkflow;
+    core::handler::ClipWorkspaceHandler clipWorkspaceHandler;
     core::handler::SequencerStepHandler handler;
     DrumAuditionProbe drumAudition;
     core::handler::DrumLaneEditorHandler drumLaneEditorHandler;
@@ -388,7 +388,7 @@ struct SequencerStepHarness {
     core::handler::SequencerStepEditHandler stepEditHandler;
     core::handler::SequencerStepContentHandler stepContentHandler;
 
-    explicit SequencerStepHarness(bool enableClipLauncher = false)
+    explicit SequencerStepHarness(bool enableClipWorkspace = false)
         : state(storages.settings), navigationFocus(core::state::StructureNavigationFocus::PAGE),
           inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG),
           buttons(inputBinding, buttonHw), encoders(inputBinding, encoderHw),
@@ -401,7 +401,12 @@ struct SequencerStepHarness {
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
               overlays, encoders, buttons, PATTERN_EDITOR_SCOPE),
-          clipLauncherWorkflow({state, navigationFocus, state.overlays}),
+          clipWorkspaceHandler(
+              {state, navigationFocus, state.overlays},
+              encoders,
+              buttons,
+              SEQUENCER_SCOPE
+          ),
           handler(
               core::handler::SequencerStepHandler::StateRefs{
                   state.sequencer,
@@ -489,12 +494,13 @@ struct SequencerStepHarness {
             DRUM_LANE_EDITOR_SCOPE
         );
         handler.attachPatternEditorHandler(patternEditorHandler);
-        if (enableClipLauncher) {
-            handler.attachClipLauncherWorkflow(clipLauncherWorkflow);
-        }
+        clipWorkspaceHandler.attachPatternEditorHandler(patternEditorHandler);
         handler.attachStepEditHandler(stepEditHandler);
         handler.attachDrumLaneEditorHandler(drumLaneEditorHandler);
-        state.sequencer.clipLauncher.enterPattern(0U, 0U);
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
+        if (enableClipWorkspace) {
+            state.sequencer.clipWorkspace.reset();
+        }
         handler.update(g_now_ms);
     }
 
@@ -542,24 +548,24 @@ struct SequencerStepHarness {
 
 void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
     SequencerStepHarness h(true);
-    auto& launcher = h.state.sequencer.clipLauncher;
+    auto& launcher = h.state.sequencer.clipWorkspace;
     launcher.reset(0U);
-    assert(launcher.launcherVisible());
+    assert(launcher.matrixVisible());
     assert(h.state.sequencerClips.isOccupied({0U, 0U}));
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::NAV);
-    assert(launcher.operation == seq::SequencerClipLauncherOperation::SELECT);
+    assert(launcher.operation == seq::ClipWorkspaceOperation::SELECT);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     assert(!launcher.removeHoldActive);
-    assert(launcher.feedback == seq::SequencerClipLauncherFeedback::FAILED);
+    assert(launcher.feedback == seq::ClipWorkspaceFeedback::FAILED);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(launcher.operation ==
-           seq::SequencerClipLauncherOperation::DUPLICATE_DESTINATION);
+           seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION);
     assert(launcher.focusedTrack == 0U);
     assert(launcher.focusedSlot == 1U);
     h.tap(Config::ButtonID::MACRO_2);
@@ -575,7 +581,7 @@ void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
     h.release(Config::ButtonID::NAV);
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(launcher.operation ==
-           seq::SequencerClipLauncherOperation::MOVE_DESTINATION);
+           seq::ClipWorkspaceOperation::MOVE_DESTINATION);
     assert(launcher.focusedSlot == 2U);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(!h.state.sequencerClips.isOccupied({0U, 1U}));
@@ -600,14 +606,14 @@ void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
     assert(h.state.sequencer.patternEditor.active.get());
     assert(h.state.sequencer.patternEditor.focusedLayer ==
            seq::SequencerPatternEditorLayer::REGION);
-    assert(launcher.launcherVisible());
+    assert(launcher.matrixVisible());
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.patternEditor.active.get());
 
     h.tap(Config::ButtonID::NAV);
     assert(launcher.patternVisible());
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(launcher.launcherVisible());
+    assert(launcher.matrixVisible());
     assert(launcher.focusedTrack == 0U);
     assert(launcher.focusedSlot == 0U);
 
@@ -618,7 +624,7 @@ void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
 void test_pattern_preview_owns_back_before_clip_launcher() {
     SequencerStepHarness h(true);
     auto& sequencer = h.state.sequencer;
-    auto& launcher = sequencer.clipLauncher;
+    auto& launcher = sequencer.clipWorkspace;
 
     launcher.enterPattern(0U, 0U);
     sequencer.patternPresetPreview.phase =
@@ -4297,9 +4303,9 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     assert(h.state.sequencerTracks.track(2).note[0] == 83);
     assert(h.state.sequencerTracks.track(2).isEnabled(0));
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
-    assert(h.state.sequencer.clipLauncher.patternVisible());
-    assert(h.state.sequencer.clipLauncher.returnTrack == 1U);
-    assert(h.state.sequencer.clipLauncher.returnSlot == 0U);
+    assert(h.state.sequencer.clipWorkspace.patternVisible());
+    assert(h.state.sequencer.clipWorkspace.returnTrack == 1U);
+    assert(h.state.sequencer.clipWorkspace.returnSlot == 0U);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.state.sequencer.pattern.length.get() == 8);
@@ -7124,9 +7130,9 @@ void test_created_track_is_undoable_and_redoable() {
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
-    assert(h.state.sequencer.clipLauncher.patternVisible());
-    assert(h.state.sequencer.clipLauncher.returnTrack == 1U);
-    assert(h.state.sequencer.clipLauncher.returnSlot == 0U);
+    assert(h.state.sequencer.clipWorkspace.patternVisible());
+    assert(h.state.sequencer.clipWorkspace.returnTrack == 1U);
+    assert(h.state.sequencer.clipWorkspace.returnSlot == 0U);
     assert(h.state.sequencerHistory.undoCount() == 1);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 1);
@@ -8557,12 +8563,13 @@ void test_drum_track_creation_navigation_and_owners_are_independent() {
     h.release(Config::ButtonID::NAV);
     // This harness deliberately has no file-library services, so the opener
     // stops after consuming the gesture. Close Pattern defaults, then verify
-    // that structural Back still ascends Pattern -> Track.
+    // that structural Back returns from the Pattern editor to Clips.
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(drumUi.selector == seq::DrumSequencerSelector::NONE);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+    assert(h.state.sequencer.clipWorkspace.matrixVisible());
+    h.state.sequencer.clipWorkspace.enterPattern(1U, 0U);
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
     h.tap(Config::ButtonID::NAV);
@@ -8576,7 +8583,8 @@ void test_drum_track_creation_navigation_and_owners_are_independent() {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+    assert(h.state.sequencer.clipWorkspace.matrixVisible());
+    h.state.sequencer.clipWorkspace.enterPattern(1U, 0U);
 
     assert(drumUi.setStepEnabled(0U, 0U, true));
     assert(drumUi.setStepVelocity(0U, 0U, 91U));

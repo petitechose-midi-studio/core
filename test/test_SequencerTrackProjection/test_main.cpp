@@ -32,8 +32,8 @@ namespace {
 core::ui::sequencer::SequencerViewModelSource sourceFor(
     core::state::CoreState& state
 ) {
-    if (state.sequencer.clipLauncher.launcherVisible()) {
-        state.sequencer.clipLauncher.enterPattern(0U, 0U);
+    if (state.sequencer.clipWorkspace.matrixVisible()) {
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
     return {
         .sequencer = state.sequencer,

@@ -726,10 +726,23 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
 ) {
     StripProps props;
     props.visible = true;
-    if (source.sequencer.clipLauncher.launcherVisible()) {
-        const auto& launcher = source.sequencer.clipLauncher;
+    if (source.sequencer.clipWorkspace.matrixVisible()) {
+        const auto& launcher = source.sequencer.clipWorkspace;
         for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
-        if (!launcher.selectionActive()) return props;
+        if (!launcher.selectionActive()) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_BACKWARD,
+                Visual::ACTIVE,
+                Tone::NEUTRAL
+            );
+            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_BACKWARD,
+                Visual::ACTIVE,
+                Tone::NEUTRAL
+            );
+            props.slots[2].iconRotated180 = true;
+            return props;
+        }
 
         const core::state::sequencer::SequencerClipAddress sourceAddress{
             launcher.sourceTrack,

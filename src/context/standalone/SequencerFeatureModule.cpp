@@ -23,7 +23,7 @@
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
-#include "handler/sequencer/SequencerClipLauncherWorkflow.hpp"
+#include "handler/sequencer/ClipWorkspaceHandler.hpp"
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
@@ -497,13 +497,16 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         &structure_ux_trace_state_
 #endif
     );
-    clip_launcher_workflow_ = core::app::makeExtmemUnique<
-        core::handler::SequencerClipLauncherWorkflow>(
-            core::handler::SequencerClipLauncherWorkflow::StateRefs{
+    clip_workspace_handler_ = core::app::makeExtmemUnique<
+        core::handler::ClipWorkspaceHandler>(
+            core::handler::ClipWorkspaceHandler::StateRefs{
                 stateRefs.core,
                 stateRefs.structureNavigationFocus,
                 stateRefs.overlays,
-            }
+            },
+            encoders,
+            buttons,
+            sequencerViewScopeId
         );
     quick_controls_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerPatternQuickControlsHandler>(
@@ -585,14 +588,14 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 : core::handler::DrumLaneAuditionServices{}
         );
     if (!drum_lane_editor_handler_) return;
-    if (!step_handler_ || !clip_launcher_workflow_ || !step_edit_handler_ ||
+    if (!step_handler_ || !clip_workspace_handler_ || !step_edit_handler_ ||
         !pattern_editor_handler_ || !track_editor_handler_) return;
     pattern_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
+    clip_workspace_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
     step_handler_->attachStepEditHandler(*step_edit_handler_);
     step_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
     step_handler_->attachTrackEditorHandler(*track_editor_handler_);
     step_handler_->attachDrumLaneEditorHandler(*drum_lane_editor_handler_);
-    step_handler_->attachClipLauncherWorkflow(*clip_launcher_workflow_);
     step_content_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerStepContentHandler>(
             core::handler::SequencerStepContentHandler::StateRefs{
@@ -689,7 +692,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId,
             oc::time::millis
         );
-    valid_ = step_handler_ && clip_launcher_workflow_ &&
+    valid_ = step_handler_ && clip_workspace_handler_ &&
              quick_controls_handler_ && pattern_editor_handler_ &&
              track_editor_handler_ && track_editor_presenter_ &&
              drum_lane_editor_handler_ && drum_lane_editor_presenter_ &&

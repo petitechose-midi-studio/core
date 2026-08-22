@@ -99,7 +99,7 @@ enum class SequencerInteractionVisibility : uint8_t {
 
 struct SequencerInteractionContext {
     StructureNavigationFocus navigationFocus = StructureNavigationFocus::PAGE;
-    bool clipLauncherActive = false;
+    bool clipWorkspaceActive = false;
     bool childContentView = false;
     bool overlayVisible = false;
     bool previewingAddSlot = false;

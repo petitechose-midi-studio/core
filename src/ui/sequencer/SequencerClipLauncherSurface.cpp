@@ -111,19 +111,19 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
     constexpr lv_coord_t gap = 3;
     constexpr lv_coord_t headerHeight = 18;
     const lv_coord_t columnWidth = static_cast<lv_coord_t>(
-        (width - gap * 3) / seq::SequencerClipLauncherUiState::VISIBLE_TRACKS
+        (width - gap * 3) / seq::ClipWorkspaceUiState::VISIBLE_TRACKS
     );
     const lv_coord_t rowHeight = std::max<lv_coord_t>(
         1,
         static_cast<lv_coord_t>(
             (height - headerHeight - gap) /
-            seq::SequencerClipLauncherUiState::VISIBLE_ROWS
+            seq::ClipWorkspaceUiState::VISIBLE_ROWS
         )
     );
     const auto& ui = *props_.ui;
 
     for (uint8_t column = 0U;
-         column < seq::SequencerClipLauncherUiState::VISIBLE_TRACKS;
+         column < seq::ClipWorkspaceUiState::VISIBLE_TRACKS;
          ++column) {
         const uint8_t track = static_cast<uint8_t>(
             ui.firstVisibleTrack + column
@@ -190,7 +190,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
 
         const auto telemetry = props_.launches->telemetry(track);
         for (uint8_t row = 0U;
-             row < seq::SequencerClipLauncherUiState::VISIBLE_ROWS;
+             row < seq::ClipWorkspaceUiState::VISIBLE_ROWS;
              ++row) {
             const uint8_t slot = static_cast<uint8_t>(
                 ui.firstVisibleSlot + row
@@ -303,7 +303,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             }
             if (sourceSelected) {
                 const char* sourceIcon = ui.operation ==
-                        seq::SequencerClipLauncherOperation::MOVE_DESTINATION
+                        seq::ClipWorkspaceOperation::MOVE_DESTINATION
                     ? standalone::icons::ACTION_MOVE
                     : standalone::icons::ACTION_COPY;
                 drawText(

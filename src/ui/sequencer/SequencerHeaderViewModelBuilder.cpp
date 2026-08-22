@@ -85,40 +85,40 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const SequencerViewModelSource& source
 ) {
     const auto& sequencer = source.sequencer;
-    if (sequencer.clipLauncher.launcherVisible()) {
-        const auto& launcher = sequencer.clipLauncher;
+    if (sequencer.clipWorkspace.matrixVisible()) {
+        const auto& launcher = sequencer.clipWorkspace;
         SequencerHeaderBarProps props{};
         props.previewTrack = launcher.focusedTrack;
         props.enabledMask = source.sharedTrackEnabledMask.get();
         props.pageStripVisible = false;
         props.previewLayout = true;
         props.leftText = launcher.operation == core::state::sequencer::
-                SequencerClipLauncherOperation::MOVE_DESTINATION
+                ClipWorkspaceOperation::MOVE_DESTINATION
             ? "Move"
             : launcher.operation == core::state::sequencer::
-                    SequencerClipLauncherOperation::DUPLICATE_DESTINATION
+                    ClipWorkspaceOperation::DUPLICATE_DESTINATION
                 ? "Copy"
                 : launcher.operation == core::state::sequencer::
-                        SequencerClipLauncherOperation::SELECT
+                        ClipWorkspaceOperation::SELECT
                     ? "Select"
                     : "Clips";
         if (launcher.feedback == core::state::sequencer::
-                SequencerClipLauncherFeedback::FAILED) {
+                ClipWorkspaceFeedback::FAILED) {
             std::snprintf(
                 props.badgeText.data(), props.badgeText.size(), "%s", "Unavailable"
             );
         } else if (launcher.feedback == core::state::sequencer::
-                       SequencerClipLauncherFeedback::MOVED) {
+                       ClipWorkspaceFeedback::MOVED) {
             std::snprintf(
                 props.badgeText.data(), props.badgeText.size(), "%s", "Moved"
             );
         } else if (launcher.feedback == core::state::sequencer::
-                       SequencerClipLauncherFeedback::DUPLICATED) {
+                       ClipWorkspaceFeedback::DUPLICATED) {
             std::snprintf(
                 props.badgeText.data(), props.badgeText.size(), "%s", "Duplicated"
             );
         } else if (launcher.feedback == core::state::sequencer::
-                       SequencerClipLauncherFeedback::REMOVED) {
+                       ClipWorkspaceFeedback::REMOVED) {
             std::snprintf(
                 props.badgeText.data(), props.badgeText.size(), "%s", "Removed"
             );
@@ -134,9 +134,13 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             std::snprintf(
                 props.badgeText.data(),
                 props.badgeText.size(),
-                "T%u / C%u",
+                "T%u C%u  %u/%u",
                 static_cast<unsigned>(launcher.focusedTrack + 1U),
-                static_cast<unsigned>(launcher.focusedSlot + 1U)
+                static_cast<unsigned>(launcher.focusedSlot + 1U),
+                static_cast<unsigned>(launcher.viewportIndex() + 1U),
+                static_cast<unsigned>(
+                    core::state::sequencer::ClipWorkspaceUiState::VIEWPORT_COUNT
+                )
             );
         }
         props.contextIcon = standalone::icons::CLIP;

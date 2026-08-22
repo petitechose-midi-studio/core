@@ -22,8 +22,8 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
     core::state::CoreState& state,
     bool patternWorkspace = true
 ) {
-    if (patternWorkspace && state.sequencer.clipLauncher.launcherVisible()) {
-        state.sequencer.clipLauncher.enterPattern(0U, 0U);
+    if (patternWorkspace && state.sequencer.clipWorkspace.matrixVisible()) {
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
     return {
         .sequencer = state.sequencer,
@@ -45,7 +45,7 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
 void test_clip_launcher_left_strip_exposes_region_and_selection_actions() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
-    auto& launcher = state.sequencer.clipLauncher;
+    auto& launcher = state.sequencer.clipWorkspace;
     launcher.reset(0U);
 
     auto props = core::ui::sequencer::buildSequencerLeftActionStripProps(
@@ -63,7 +63,7 @@ void test_clip_launcher_left_strip_exposes_region_and_selection_actions() {
     assert(props.slots[1].icon == standalone::icons::ACTION_MOVE);
 
     launcher.beginPlacement(
-        core::state::sequencer::SequencerClipLauncherOperation::MOVE_DESTINATION,
+        core::state::sequencer::ClipWorkspaceOperation::MOVE_DESTINATION,
         1U
     );
     props = core::ui::sequencer::buildSequencerLeftActionStripProps(
@@ -83,7 +83,7 @@ void test_clip_launcher_move_is_disabled_when_the_track_is_full() {
          ++slot) {
         assert(state.createSequencerClip({0U, slot}));
     }
-    state.sequencer.clipLauncher.beginSelection(0U, 1U);
+    state.sequencer.clipWorkspace.beginSelection(0U, 1U);
 
     const auto props = core::ui::sequencer::buildSequencerLeftActionStripProps(
         sourceFor(state, false)

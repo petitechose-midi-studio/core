@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <oc/api/ButtonAPI.hpp>
+#include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 
 #include "app/OverlayTypes.hpp"
@@ -9,8 +11,10 @@
 
 namespace core::handler {
 
-/** Clip-launcher navigation and actions, routed by the shared Sequencer bindings. */
-class SequencerClipLauncherWorkflow {
+class SequencerPatternEditorHandler;
+
+/** Owns the first-rank Clips matrix bindings and structural actions. */
+class ClipWorkspaceHandler {
 public:
     struct StateRefs {
         core::state::CoreState& core;
@@ -21,13 +25,20 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
     };
 
-    explicit SequencerClipLauncherWorkflow(StateRefs state);
+    ClipWorkspaceHandler(
+        StateRefs state,
+        oc::api::EncoderAPI& encoders,
+        oc::api::ButtonAPI& buttons,
+        oc::type::ScopeID scopeId
+    );
 
-    [[nodiscard]] bool launcherAvailable() const;
-    [[nodiscard]] bool patternBackAvailable() const;
+    void attachPatternEditorHandler(SequencerPatternEditorHandler& handler);
+
+    [[nodiscard]] bool matrixAvailable() const;
     [[nodiscard]] bool operationBackAvailable() const;
     [[nodiscard]] bool focusedClipAvailable() const;
     void move(float delta);
+    void moveViewport(int direction);
     void selectFocused();
     void openFocused();
     void launchVisible(uint8_t macroIndex);
@@ -40,6 +51,7 @@ public:
     void back();
 
 private:
+    void setupBindings();
     [[nodiscard]] core::state::sequencer::SequencerClipAddress
     visibleAddress(uint8_t macroIndex) const;
     [[nodiscard]] core::state::sequencer::SequencerClipAddress
@@ -58,6 +70,10 @@ private:
         core::state::kStructureNavigationFocusMaxSubscribers>&
         navigation_focus_;
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
+    oc::api::EncoderAPI& encoders_;
+    oc::api::ButtonAPI& buttons_;
+    oc::type::ScopeID scope_id_ = 0;
+    SequencerPatternEditorHandler* pattern_editor_handler_ = nullptr;
 };
 
 }  // namespace core::handler

@@ -411,7 +411,7 @@ FLASHMEM bool sequencerInteractionTransientActive(const SequencerInteractionCont
 }
 
 FLASHMEM bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractionContext& context) {
-    return !context.clipLauncherActive &&
+    return !context.clipWorkspaceActive &&
         !sequencerInteractionSelectionActive(context) &&
         !sequencerInteractionTransientActive(context);
 }
@@ -419,7 +419,7 @@ FLASHMEM bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractio
 FLASHMEM SequencerInteractionPolicy buildSequencerInteractionPolicy(
     const SequencerInteractionContext& context
 ) {
-    if (context.clipLauncherActive) {
+    if (context.clipWorkspaceActive) {
         return buildClipLauncherPolicy(context);
     }
     if (context.stepEditorVisible) {

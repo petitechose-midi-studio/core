@@ -80,7 +80,7 @@ class ProjectTrackEditorHandler;
 class SequencerCcLaneHandler;
 class SequencerCcLaneWorkflow;
 class SequencerMacroPropertyHandler;
-class SequencerClipLauncherWorkflow;
+class ClipWorkspaceHandler;
 class SequencerPatternQuickControlsHandler;
 class SequencerPatternEditorHandler;
 class SequencerPropertySelectorHandler;
@@ -238,8 +238,8 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::PatternPitchSettingsOverlayPresenter>
         pattern_pitch_settings_presenter_;
     core::app::ExtmemUniquePtr<core::handler::SequencerStepHandler> step_handler_;
-    core::app::ExtmemUniquePtr<core::handler::SequencerClipLauncherWorkflow>
-        clip_launcher_workflow_;
+    core::app::ExtmemUniquePtr<core::handler::ClipWorkspaceHandler>
+        clip_workspace_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerPatternQuickControlsHandler>
         quick_controls_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerPatternEditorHandler>

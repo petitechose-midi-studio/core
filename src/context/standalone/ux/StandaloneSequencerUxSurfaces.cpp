@@ -1371,10 +1371,10 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     const bool replayEnter =
         (transition_replay_ == TransitionReplay::OPEN_PATTERN ||
          transition_replay_ == TransitionReplay::CREATE_PATTERN) &&
-        navRelease && sequencer_.clipLauncher.patternVisible();
+        navRelease && sequencer_.clipWorkspace.patternVisible();
     const bool replayReturn =
         transition_replay_ == TransitionReplay::RETURN_LAUNCHER &&
-        back && sequencer_.clipLauncher.launcherVisible();
+        back && sequencer_.clipWorkspace.matrixVisible();
     if (replayEnter || replayReturn) {
         out.mode = replayEnter
             ? "sequencer.pattern"
@@ -1400,18 +1400,18 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         return true;
     }
     transition_replay_ = TransitionReplay::NONE;
-    const bool returnToLauncher = back &&
-        sequencer_.clipLauncher.patternVisible() &&
+    const bool returnToMatrix = back &&
+        sequencer_.clipWorkspace.patternVisible() &&
         seq::isRootContentView(sequencer_) &&
         navigation_focus_.get() == core::state::StructureNavigationFocus::PAGE;
-    if (returnToLauncher) {
+    if (returnToMatrix) {
         transition_replay_ = TransitionReplay::RETURN_LAUNCHER;
-        transition_track_ = sequencer_.clipLauncher.returnTrack;
-        transition_slot_ = sequencer_.clipLauncher.returnSlot;
+        transition_track_ = sequencer_.clipWorkspace.returnTrack;
+        transition_slot_ = sequencer_.clipWorkspace.returnSlot;
         out.mode = "sequencer.pattern";
         out.target = "clip";
-        out.targetTrack = sequencer_.clipLauncher.returnTrack;
-        out.targetIndex = sequencer_.clipLauncher.returnSlot;
+        out.targetTrack = sequencer_.clipWorkspace.returnTrack;
+        out.targetIndex = sequencer_.clipWorkspace.returnSlot;
         out.effect = "return_to_clip_launcher";
         out.intent = Intent::BACK;
         out.outcome = "applied";
@@ -1419,13 +1419,13 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             out.valueLabel,
             sizeof(out.valueLabel),
             "T%u / C%u",
-            static_cast<unsigned>(sequencer_.clipLauncher.returnTrack + 1U),
-            static_cast<unsigned>(sequencer_.clipLauncher.returnSlot + 1U)
+            static_cast<unsigned>(sequencer_.clipWorkspace.returnTrack + 1U),
+            static_cast<unsigned>(sequencer_.clipWorkspace.returnSlot + 1U)
         );
         return true;
     }
 
-    if (!sequencer_.clipLauncher.launcherVisible()) return false;
+    if (!sequencer_.clipWorkspace.matrixVisible()) return false;
 
     const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
     const bool moveAction = isButton(
@@ -1445,14 +1445,14 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         return false;
     }
 
-    const auto& ui = sequencer_.clipLauncher;
+    const auto& ui = sequencer_.clipWorkspace;
     seq::SequencerClipAddress address{ui.focusedTrack, ui.focusedSlot};
     if (macroRelease) {
         address = {
             static_cast<uint8_t>(ui.firstVisibleTrack +
-                (macroIndex % seq::SequencerClipLauncherUiState::VISIBLE_TRACKS)),
+                (macroIndex % seq::ClipWorkspaceUiState::VISIBLE_TRACKS)),
             static_cast<uint8_t>(ui.firstVisibleSlot +
-                (macroIndex / seq::SequencerClipLauncherUiState::VISIBLE_TRACKS)),
+                (macroIndex / seq::ClipWorkspaceUiState::VISIBLE_TRACKS)),
         };
     }
 
@@ -1469,13 +1469,13 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     out.targetCount = seq::SequencerClipGridState::SLOT_COUNT;
     out.source = tracks_.isDrumTrack(address.track) ? "drum" : "instrument";
     out.property = queued ? "queued" : active ? "active" : occupied ? "occupied" : "empty";
-    out.projection = ui.operation == seq::SequencerClipLauncherOperation::SELECT
+    out.projection = ui.operation == seq::ClipWorkspaceOperation::SELECT
         ? "selected"
         : ui.operation ==
-                seq::SequencerClipLauncherOperation::MOVE_DESTINATION
+                seq::ClipWorkspaceOperation::MOVE_DESTINATION
             ? "move_destination"
             : ui.operation ==
-                    seq::SequencerClipLauncherOperation::DUPLICATE_DESTINATION
+                    seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION
                 ? "duplicate_destination"
                 : queued ? "queued" : active ? "active" : "browse";
     std::snprintf(
@@ -1523,29 +1523,29 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         }
     } else if (moveAction) {
         out.effect = ui.operation ==
-                seq::SequencerClipLauncherOperation::SELECT
+                seq::ClipWorkspaceOperation::SELECT
             ? "begin_move_clip"
             : "open_clip_region";
         out.intent = Intent::CHANGE_SCOPE;
     } else if (structureAction) {
         out.effect = ui.operation ==
-                seq::SequencerClipLauncherOperation::SELECT
+                seq::ClipWorkspaceOperation::SELECT
             ? "begin_duplicate_clip"
             : ui.operation ==
-                    seq::SequencerClipLauncherOperation::MOVE_DESTINATION
+                    seq::ClipWorkspaceOperation::MOVE_DESTINATION
                 ? "move_clip"
-                : ui.operation == seq::SequencerClipLauncherOperation::
+                : ui.operation == seq::ClipWorkspaceOperation::
                         DUPLICATE_DESTINATION
                     ? "duplicate_clip"
                     : "place_clip";
         out.intent = Intent::APPLY;
-        out.outcome = ui.feedback == seq::SequencerClipLauncherFeedback::FAILED
+        out.outcome = ui.feedback == seq::ClipWorkspaceFeedback::FAILED
             ? "blocked"
             : "applied";
     } else if (removeAction) {
         out.effect = "remove_clip";
         out.intent = Intent::DELETE_STRUCTURE;
-        out.outcome = ui.feedback == seq::SequencerClipLauncherFeedback::REMOVED
+        out.outcome = ui.feedback == seq::ClipWorkspaceFeedback::REMOVED
             ? "applied"
             : "blocked";
     } else if (back) {

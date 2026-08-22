@@ -9,7 +9,6 @@
 #include "handler/sequencer/ProjectTrackEditorHandler.hpp"
 #include "handler/sequencer/DrumLaneEditorHandler.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
-#include "handler/sequencer/SequencerClipLauncherWorkflow.hpp"
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "handler/sequencer/SequencerStepContentDraftWorkflow.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
@@ -181,12 +180,6 @@ FLASHMEM void SequencerStepHandler::attachDrumLaneEditorHandler(
     drum_lane_editor_handler_ = &handler;
 }
 
-FLASHMEM void SequencerStepHandler::attachClipLauncherWorkflow(
-    SequencerClipLauncherWorkflow& workflow
-) {
-    clip_launcher_workflow_ = &workflow;
-}
-
 FLASHMEM void SequencerStepHandler::syncDrumSequencerToActiveTrack() {
     auto& drumUi = sequencer_.drumSequencer;
     if (drumUi.pickerVisible()) return;
@@ -250,7 +243,7 @@ FLASHMEM void SequencerStepHandler::confirmDrumSequencerType() {
     track_ui_.previewAddSlot.set(false);
     track_ui_.syncPreviewTrack(createdTrack);
     navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
-    sequencer_.clipLauncher.enterPattern(createdTrack, 0U);
+    sequencer_.clipWorkspace.enterPattern(createdTrack, 0U);
 }
 
 FLASHMEM void SequencerStepHandler::handleDrumSequencerNavTurn(
@@ -441,18 +434,14 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerBack() {
             );
             break;
         case core::state::StructureNavigationFocus::PAGE:
-            if (clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->patternBackAvailable()) {
+            if (sequencer_.clipWorkspace.patternVisible()) {
                 if (history_.commitCoalescedDrumEditOutcome() ==
                     seq::SequencerPatternHistoryCommitOutcome::Failed) {
                     return;
                 }
-                clip_launcher_workflow_->back();
+                (void)sequencer_.clipWorkspace.returnToMatrix();
                 return;
             }
-            navigation_workflow_.setNavigationFocus(
-                core::state::StructureNavigationFocus::TRACK
-            );
             break;
         case core::state::StructureNavigationFocus::TRACK:
         default:
@@ -460,6 +449,40 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerBack() {
     }
     (void)history_.commitCoalescedDrumEditOutcome();
     drumUi.bump();
+}
+
+FLASHMEM bool SequencerStepHandler::instrumentPatternBackAvailable() const {
+    if (!sequencer_.clipWorkspace.patternVisible() ||
+        !core::state::sequencer::isRootContentView(sequencer_) ||
+        core::state::sequencer::isDrumOverviewActive(sequencer_) ||
+        sequencer_.contextSelector.visible ||
+        sequencer_.patternQuickControls.selecting.get() ||
+        sequencer_.stepPropertyInlineSelector.selecting.get() ||
+        sequencer_.stepContentSelector.selecting.get() ||
+        sequencer_.structureUi.pageSelection.active.get() ||
+        sequencer_.structureUi.stepSelection.active.get() ||
+        track_ui_.selection.active.get()) {
+        return false;
+    }
+    const auto focus = navigation_focus_.get();
+    return focus == core::state::StructureNavigationFocus::PAGE ||
+        focus == core::state::StructureNavigationFocus::STEP ||
+        focus == core::state::StructureNavigationFocus::TRACK;
+}
+
+FLASHMEM void SequencerStepHandler::handleInstrumentPatternBack() {
+    if (!instrumentPatternBackAvailable()) return;
+    if (navigation_focus_.get() != core::state::StructureNavigationFocus::PAGE) {
+        navigation_workflow_.setNavigationFocus(
+            core::state::StructureNavigationFocus::PAGE
+        );
+        return;
+    }
+    if (!publishPatternHistoryBarrier(
+            sequencer_, commitPatternHistoryBarrier(sequencer_, history_))) {
+        return;
+    }
+    (void)sequencer_.clipWorkspace.returnToMatrix();
 }
 
 FLASHMEM void SequencerStepHandler::editDrumSequencerStepProperty(
@@ -1181,17 +1204,8 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         buttons_.button(Config::MACRO_BUTTONS[i])
             .release()
             .scope(scope_id_)
-            .when([this]() {
-                return (clip_launcher_workflow_ != nullptr &&
-                        clip_launcher_workflow_->launcherAvailable()) ||
-                    navigation_workflow_.allowsMainBindings();
-            })
+            .when([this]() { return navigation_workflow_.allowsMainBindings(); })
             .then([this, i]() {
-                if (clip_launcher_workflow_ != nullptr &&
-                    clip_launcher_workflow_->launcherAvailable()) {
-                    clip_launcher_workflow_->launchVisible(i);
-                    return;
-                }
                 if (step_selection_macro_release_latch_.consume(Config::MACRO_BUTTONS[i])) {
                     return;
                 }
@@ -1266,46 +1280,18 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return (clip_launcher_workflow_ != nullptr &&
-                    clip_launcher_workflow_->launcherAvailable()) ||
-                (core::state::sequencer::isRootContentView(sequencer_) &&
+            return core::state::sequencer::isRootContentView(sequencer_) &&
                    !context_selector_workflow_.ownsGesture() &&
                    navigation_workflow_.allowsMainBindings() &&
                    !edit_workflow_.trackPasteNavigationBlocked() &&
-                   !edit_workflow_.trackRemoveNavigationBlocked());
+                   !edit_workflow_.trackRemoveNavigationBlocked();
         })
         .then([this](float delta) {
-            if (clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->launcherAvailable()) {
-                clip_launcher_workflow_->move(delta);
-                return;
-            }
             if (!publishPatternHistoryBarrier(
                     sequencer_, commitPatternHistoryBarrier(sequencer_, history_))) {
                 return;
             }
             navigation_workflow_.moveByFocus(delta);
-        });
-
-    buttons_.button(Config::ButtonID::LEFT_CENTER)
-        .release()
-        .scope(scope_id_)
-        .priority(120)
-        .when([this]() {
-            return clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->launcherAvailable() &&
-                (sequencer_.clipLauncher.selectionActive() ||
-                 clip_launcher_workflow_->focusedClipAvailable());
-        })
-        .then([this]() {
-            if (sequencer_.clipLauncher.selectionActive()) {
-                clip_launcher_workflow_->beginMove();
-                return;
-            }
-            if (pattern_editor_handler_ != nullptr &&
-                clip_launcher_workflow_->prepareFocusedEditor()) {
-                (void)pattern_editor_handler_->openRegionFromCurrentPage();
-            }
         });
 
     buttons_.button(Config::ButtonID::NAV)
@@ -1340,17 +1326,10 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() {
-            return (clip_launcher_workflow_ != nullptr &&
-                    clip_launcher_workflow_->focusedClipAvailable()) ||
-                (!core::state::sequencer::isDrumOverviewActive(sequencer_) &&
-                 context_selector_workflow_.ownsGesture());
+            return !core::state::sequencer::isDrumOverviewActive(sequencer_) &&
+                context_selector_workflow_.ownsGesture();
         })
         .then([this]() {
-            if (clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->focusedClipAvailable()) {
-                clip_launcher_workflow_->selectFocused();
-                return;
-            }
             const auto focus = navigation_focus_.get();
             const bool previewAddSlot =
                 focus == core::state::StructureNavigationFocus::TRACK &&
@@ -1375,20 +1354,12 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return (clip_launcher_workflow_ != nullptr &&
-                    clip_launcher_workflow_->launcherAvailable()) ||
-                (context_selector_workflow_.ownsGesture() &&
-                 !edit_workflow_.trackPasteNavigationBlocked());
+            return context_selector_workflow_.ownsGesture() &&
+                !edit_workflow_.trackPasteNavigationBlocked();
         })
         .then([this]() {
-            if (clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->launcherAvailable()) {
-                clip_launcher_workflow_->openFocused();
-                return;
-            }
             if (context_selector_workflow_.ownsGesture()) {
                 handleContextSelectorRelease();
-                return;
             }
         });
 
@@ -1405,10 +1376,8 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return (clip_launcher_workflow_ != nullptr &&
-                    (clip_launcher_workflow_->operationBackAvailable() ||
-                     clip_launcher_workflow_->patternBackAvailable())) ||
-                sequencer_.patternPresetPreview.active() ||
+            return sequencer_.patternPresetPreview.active() ||
+                instrumentPatternBackAvailable() ||
                 (navigation_workflow_.allowsMainBindings() &&
                  core::state::sequencer::isChildContentView(sequencer_) &&
                  !edit_workflow_.trackPasteNavigationBlocked());
@@ -1420,19 +1389,8 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
                 }
                 return;
             }
-            if (clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->operationBackAvailable()) {
-                clip_launcher_workflow_->back();
-                return;
-            }
-            if (clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->patternBackAvailable()) {
-                if (!publishPatternHistoryBarrier(
-                        sequencer_,
-                        commitPatternHistoryBarrier(sequencer_, history_))) {
-                    return;
-                }
-                clip_launcher_workflow_->back();
+            if (instrumentPatternBackAvailable()) {
+                handleInstrumentPatternBack();
                 return;
             }
             if (core::state::sequencer::isChildContentView(sequencer_)) {
@@ -1451,55 +1409,6 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
 }
 
 FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .press()
-        .scope(scope_id_)
-        .priority(120)
-        .when([this]() {
-            return clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->launcherAvailable() &&
-                sequencer_.clipLauncher.selectionActive() &&
-                !sequencer_.clipLauncher.placementActive();
-        })
-        .then([this]() {
-            clip_launcher_workflow_->beginRemove(core::time_compat::millis());
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(scope_id_)
-        .priority(120)
-        .when([this]() {
-            return clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->launcherAvailable() &&
-                sequencer_.clipLauncher.removeHoldActive;
-        })
-        .then([this]() { clip_launcher_workflow_->applyRemove(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(scope_id_)
-        .priority(120)
-        .when([this]() {
-            return clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->launcherAvailable() &&
-                sequencer_.clipLauncher.removeHoldActive;
-        })
-        .then([this]() { clip_launcher_workflow_->endRemove(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(scope_id_)
-        .priority(120)
-        .when([this]() {
-            return clip_launcher_workflow_ != nullptr &&
-                clip_launcher_workflow_->launcherAvailable() &&
-                sequencer_.clipLauncher.selectionActive();
-        })
-        .then([this]() {
-            clip_launcher_workflow_->applyOrBeginDuplicate();
-        });
-
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)

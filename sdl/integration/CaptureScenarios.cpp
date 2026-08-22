@@ -1550,7 +1550,7 @@ bool prepareDrumSequencerScenario(core::state::CoreState& state) {
     // A fresh fixture already owns T1; this synchronization can be a no-op.
     (void)state.setSharedTrackState(0x0001, 0);
     state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
-    state.sequencer.clipLauncher.enterPattern(0U, 0U);
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     // A Track payload is bound only after the picker atomically creates it.
     // The workflow itself authors lane-local timing later, so this fixture
     // intentionally leaves the editor unbound.
@@ -1586,7 +1586,7 @@ bool prepareClipLauncherScenario(core::state::CoreState& state) {
     );
     state.sequencerHistory.clear();
     state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
-    state.sequencer.clipLauncher.reset(0U);
+    state.sequencer.clipWorkspace.reset(0U);
     return true;
 }
 
@@ -1801,7 +1801,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         state.structureNavigationFocus.set(
             core::state::StructureNavigationFocus::PAGE
         );
-        state.sequencer.clipLauncher.enterPattern(
+        state.sequencer.clipWorkspace.enterPattern(
             state.currentSharedActiveTrack(),
             state.sequencerClips.residentSlot(state.currentSharedActiveTrack())
         );

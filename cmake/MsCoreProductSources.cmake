@@ -89,7 +89,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerChordPresetDomainServices.cpp
     src/handler/sequencer/SequencerChordPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerChordProjectionFeedback.cpp
-    src/handler/sequencer/SequencerClipLauncherWorkflow.cpp
+    src/handler/sequencer/ClipWorkspaceHandler.cpp
     src/handler/sequencer/SequencerContextSelectorWorkflow.cpp
     src/handler/sequencer/SequencerDirectTrackStructureTransaction.cpp
     src/handler/sequencer/SequencerHistoryDomainServices.cpp

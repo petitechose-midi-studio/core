@@ -132,7 +132,7 @@ void assertSelectorStaysClosed(ViewSwitcherHarness& h) {
 }
 
 void enterPatternRoute(ViewSwitcherHarness& h) {
-    h.state.sequencer.clipLauncher.enterPattern(0U, 0U);
+    h.state.sequencer.clipWorkspace.enterPattern(0U, 0U);
 }
 
 void recordMacroDestination(ViewSwitcherHarness& h, uint8_t cc) {

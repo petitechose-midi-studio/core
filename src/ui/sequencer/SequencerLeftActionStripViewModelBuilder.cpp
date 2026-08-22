@@ -110,11 +110,11 @@ FLASHMEM void setStripIconFromAction(
 FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     const SequencerViewModelSource& source
 ) {
-    if (source.sequencer.clipLauncher.launcherVisible()) {
+    if (source.sequencer.clipWorkspace.matrixVisible()) {
         StripProps props;
         props.visible = true;
         for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
-        const auto& launcher = source.sequencer.clipLauncher;
+        const auto& launcher = source.sequencer.clipWorkspace;
         if (!launcher.selectionActive()) {
             const core::state::sequencer::SequencerClipAddress focused{
                 launcher.focusedTrack,

@@ -246,7 +246,7 @@ void test_track_paste_has_one_bounded_revision_subscription_surface() {
 
 void test_clip_launcher_navigation_follows_four_track_viewports() {
     namespace seq = core::state::sequencer;
-    seq::SequencerClipLauncherUiState state;
+    seq::ClipWorkspaceUiState state;
     state.reset(0U);
 
     for (uint8_t i = 0U; i < 4U; ++i) state.move(1);
@@ -256,44 +256,55 @@ void test_clip_launcher_navigation_follows_four_track_viewports() {
     assert(state.firstVisibleSlot == 0U);
 
     for (uint8_t i = 0U; i < 4U; ++i) state.move(1);
-    assert(state.focusedTrack == 4U);
-    assert(state.focusedSlot == 0U);
-    assert(state.firstVisibleTrack == 4U);
-    assert(state.firstVisibleSlot == 0U);
+    assert(state.focusedTrack == 0U);
+    assert(state.focusedSlot == 2U);
+    assert(state.firstVisibleTrack == 0U);
+    assert(state.firstVisibleSlot == 2U);
 
     state.move(-1);
     assert(state.focusedTrack == 3U);
     assert(state.focusedSlot == 1U);
     assert(state.firstVisibleTrack == 0U);
     assert(state.firstVisibleSlot == 0U);
+
+    state.reset(2U);
+    state.focus(2U, 1U);
+    state.moveViewport(1);
+    assert(state.focusedTrack == 2U);
+    assert(state.focusedSlot == 3U);
+    assert(state.viewportIndex() == 1U);
+    state.moveViewport(-1);
+    assert(state.focusedTrack == 2U);
+    assert(state.focusedSlot == 1U);
+    assert(state.viewportIndex() == 0U);
 }
 
 void test_clip_launcher_returns_to_the_exact_clip_address() {
     namespace seq = core::state::sequencer;
-    seq::SequencerClipLauncherUiState state;
+    seq::ClipWorkspaceUiState state;
     state.reset(0U);
     state.enterPattern(6U, 5U);
 
     assert(state.patternVisible());
-    assert(state.returnToLauncher());
-    assert(state.launcherVisible());
+    assert(state.returnToMatrix());
+    assert(state.matrixVisible());
     assert(state.focusedTrack == 6U);
     assert(state.focusedSlot == 5U);
     assert(state.firstVisibleTrack == 4U);
     assert(state.firstVisibleSlot == 4U);
-    assert(!state.returnToLauncher());
+    assert(!state.returnToMatrix());
 }
 
 void test_clip_launcher_operation_navigation_stays_on_the_source_track() {
     namespace seq = core::state::sequencer;
-    seq::SequencerClipLauncherUiState state;
+    seq::ClipWorkspaceUiState state;
     state.reset(0U);
     state.beginSelection(3U, 2U);
 
     assert(state.selectionActive());
     assert(!state.placementActive());
     state.beginPlacement(
-        seq::SequencerClipLauncherOperation::DUPLICATE_DESTINATION,
+        seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION,
         3U
     );
     assert(state.placementActive());

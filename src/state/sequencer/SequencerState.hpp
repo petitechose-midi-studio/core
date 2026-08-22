@@ -88,7 +88,7 @@ struct SequencerState {
     // One cold PSRAM scratch shared by Chord/Micro/Cycle creation sessions.
     // Published Pattern data remains untouched until explicit Apply/Save.
     SequencerStepContentDraftSession stepContentDraft;
-    SequencerClipLauncherUiState clipLauncher;
+    ClipWorkspaceUiState clipWorkspace;
     SequencerStructureUiState structureUi;
     DrumSequencerState drumSequencer;
 

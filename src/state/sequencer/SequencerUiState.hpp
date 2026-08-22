@@ -728,12 +728,12 @@ struct SequencerStepSelectionState {
     }
 };
 
-enum class SequencerWorkspace : uint8_t {
-    CLIP_LAUNCHER = 0,
+enum class ClipWorkspaceRoute : uint8_t {
+    MATRIX = 0,
     PATTERN,
 };
 
-enum class SequencerClipLauncherFeedback : uint8_t {
+enum class ClipWorkspaceFeedback : uint8_t {
     NONE = 0,
     MOVED,
     DUPLICATED,
@@ -741,7 +741,7 @@ enum class SequencerClipLauncherFeedback : uint8_t {
     FAILED,
 };
 
-enum class SequencerClipLauncherOperation : uint8_t {
+enum class ClipWorkspaceOperation : uint8_t {
     BROWSE = 0,
     SELECT,
     MOVE_DESTINATION,
@@ -749,18 +749,24 @@ enum class SequencerClipLauncherOperation : uint8_t {
 };
 
 /** Session-only focus and return path for the sparse Clip launcher. */
-struct SequencerClipLauncherUiState {
+struct ClipWorkspaceUiState {
     static constexpr uint8_t VISIBLE_TRACKS = 4U;
     static constexpr uint8_t VISIBLE_ROWS = 2U;
     static constexpr uint8_t TRACK_COUNT = 16U;
     static constexpr uint8_t SLOT_COUNT = 8U;
+    static constexpr uint8_t TRACK_VIEWPORT_COUNT =
+        TRACK_COUNT / VISIBLE_TRACKS;
+    static constexpr uint8_t SLOT_VIEWPORT_COUNT =
+        SLOT_COUNT / VISIBLE_ROWS;
+    static constexpr uint8_t VIEWPORT_COUNT =
+        TRACK_VIEWPORT_COUNT * SLOT_VIEWPORT_COUNT;
 
     Signal<uint32_t, 8> revision{0U};
-    SequencerWorkspace workspace = SequencerWorkspace::CLIP_LAUNCHER;
-    SequencerClipLauncherFeedback feedback =
-        SequencerClipLauncherFeedback::NONE;
-    SequencerClipLauncherOperation operation =
-        SequencerClipLauncherOperation::BROWSE;
+    ClipWorkspaceRoute route = ClipWorkspaceRoute::MATRIX;
+    ClipWorkspaceFeedback feedback =
+        ClipWorkspaceFeedback::NONE;
+    ClipWorkspaceOperation operation =
+        ClipWorkspaceOperation::BROWSE;
     uint8_t focusedTrack = 0U;
     uint8_t focusedSlot = 0U;
     uint8_t firstVisibleTrack = 0U;
@@ -772,39 +778,41 @@ struct SequencerClipLauncherUiState {
     uint32_t removeHoldStartedAtMs = 0U;
     bool removeHoldActive = false;
 
-    [[nodiscard]] bool launcherVisible() const {
-        return workspace == SequencerWorkspace::CLIP_LAUNCHER;
+    [[nodiscard]] bool matrixVisible() const {
+        return route == ClipWorkspaceRoute::MATRIX;
     }
     [[nodiscard]] bool patternVisible() const {
-        return workspace == SequencerWorkspace::PATTERN;
+        return route == ClipWorkspaceRoute::PATTERN;
     }
     [[nodiscard]] bool selectionActive() const {
-        return operation != SequencerClipLauncherOperation::BROWSE;
+        return operation != ClipWorkspaceOperation::BROWSE;
     }
     [[nodiscard]] bool placementActive() const {
-        return operation == SequencerClipLauncherOperation::MOVE_DESTINATION ||
+        return operation == ClipWorkspaceOperation::MOVE_DESTINATION ||
             operation ==
-                SequencerClipLauncherOperation::DUPLICATE_DESTINATION;
+                ClipWorkspaceOperation::DUPLICATE_DESTINATION;
     }
     void reset(uint8_t activeTrack = 0U);
     void focus(uint8_t track, uint8_t slot);
     void move(int direction);
+    void moveViewport(int direction);
+    [[nodiscard]] uint8_t viewportIndex() const;
     void beginSelection(uint8_t track, uint8_t slot);
     void beginPlacement(
-        SequencerClipLauncherOperation next,
+        ClipWorkspaceOperation next,
         uint8_t destinationSlot
     );
     bool backOperation();
     void completeOperation(
         uint8_t track,
         uint8_t slot,
-        SequencerClipLauncherFeedback result
+        ClipWorkspaceFeedback result
     );
     void beginRemoveHold(uint32_t nowMs);
     void clearRemoveHold();
     void enterPattern(uint8_t track, uint8_t slot);
-    bool returnToLauncher();
-    void setFeedback(SequencerClipLauncherFeedback next);
+    bool returnToMatrix();
+    void setFeedback(ClipWorkspaceFeedback next);
     void bump();
 };
 

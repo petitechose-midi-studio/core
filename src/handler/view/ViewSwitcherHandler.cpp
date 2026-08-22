@@ -161,8 +161,8 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     // Clips is the first-rank workspace. Its matrix is the root that owns the
     // global selector; every Pattern route must unwind locally back to that
     // matrix first.
-    const auto& clipWorkspace = core_state_.sequencer.clipLauncher;
-    if (!clipWorkspace.launcherVisible() || clipWorkspace.selectionActive() ||
+    const auto& clipWorkspace = core_state_.sequencer.clipWorkspace;
+    if (!clipWorkspace.matrixVisible() || clipWorkspace.selectionActive() ||
         core_state_.sequencer.drumSequencer.pickerVisible()) {
         return false;
     }

@@ -14,7 +14,7 @@ namespace core::ui::sequencer {
 
 struct SequencerClipLauncherSurfaceProps {
     bool visible = false;
-    const core::state::sequencer::SequencerClipLauncherUiState* ui = nullptr;
+    const core::state::sequencer::ClipWorkspaceUiState* ui = nullptr;
     const core::state::sequencer::SequencerClipGridState* clips = nullptr;
     const core::state::sequencer::SequencerClipLaunchQueue* launches = nullptr;
     const core::state::sequencer::SequencerTrackBankState* tracks = nullptr;

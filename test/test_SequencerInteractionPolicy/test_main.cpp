@@ -75,7 +75,7 @@ void expectsRootFocusMatrix() {
 
 void expectsClipLauncherPolicy() {
     auto context = baseContext(Focus::PAGE);
-    context.clipLauncherActive = true;
+    context.clipWorkspaceActive = true;
 
     auto policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::CLIP_LAUNCHER);

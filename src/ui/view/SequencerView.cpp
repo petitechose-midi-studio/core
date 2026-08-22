@@ -270,7 +270,7 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.patternQuickControls.previewRevision,
         state_refs_.sequencer.drumSequencer.revision,
         state_refs_.sequencer.patternPresetPreview.revision,
-        state_refs_.sequencer.clipLauncher.revision
+        state_refs_.sequencer.clipWorkspace.revision
     );
 }
 
@@ -357,7 +357,7 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.patternQuickControls.previewRevision,
-        state_refs_.sequencer.clipLauncher.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
         state_refs_.clips.revisionSignal(),
         state_refs_.clipLaunches.telemetryRevision()
     );
@@ -443,7 +443,7 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.patternPresetPreview.revision,
-        state_refs_.sequencer.clipLauncher.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
         state_refs_.clipLaunches.telemetryRevision()
     );
     left_action_strip_watcher_.watch(
@@ -480,7 +480,7 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.ccLaneUi.actionGuard,
         state_refs_.sequencer.ccLaneUi.operationFeedback,
         state_refs_.sequencer.patternPresetPreview.revision,
-        state_refs_.sequencer.clipLauncher.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
         state_refs_.clipLaunches.telemetryRevision()
     );
     bottom_action_strip_watcher_.watch(
@@ -743,14 +743,14 @@ void SequencerView::render(uint32_t flags) {
             state_refs_.sequencer.drumSequencer;
         const bool previewEmptyTrack =
             sequencer::sequencerPreviewingEmptyTrack(source);
-        if (state_refs_.sequencer.clipLauncher.launcherVisible()) {
+        if (state_refs_.sequencer.clipWorkspace.matrixVisible()) {
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.clip-launcher");
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             cc_lane_grid_->render({.visible = false});
             drum_overview_surface_->render({.visible = false});
             clip_launcher_surface_->render({
                 .visible = true,
-                .ui = &state_refs_.sequencer.clipLauncher,
+                .ui = &state_refs_.sequencer.clipWorkspace,
                 .clips = &state_refs_.clips,
                 .launches = &state_refs_.clipLaunches,
                 .tracks = &state_refs_.tracks,

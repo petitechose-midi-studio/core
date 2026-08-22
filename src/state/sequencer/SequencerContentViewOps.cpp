@@ -29,7 +29,7 @@ FLASHMEM bool isChildContentView(const SequencerState& sequencer) {
 }
 
 FLASHMEM bool isDrumOverviewActive(const SequencerState& sequencer) {
-    return sequencer.clipLauncher.patternVisible() &&
+    return sequencer.clipWorkspace.patternVisible() &&
         sequencer.drumSequencer.gridVisible() && isRootContentView(sequencer);
 }
 
