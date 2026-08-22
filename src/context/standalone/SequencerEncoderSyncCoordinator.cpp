@@ -557,7 +557,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumSequencerValues() {
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) return;
+    if (active_view_.get() != core::ui::ViewType::CLIPS) return;
 
     // Visible overlays own OPT. Check that authority before specialized root
     // surfaces: Drum remains a visible GRID while its Lane Editor is open, so

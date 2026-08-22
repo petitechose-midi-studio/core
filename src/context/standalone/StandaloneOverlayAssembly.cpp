@@ -22,7 +22,7 @@ namespace {
 constexpr std::array<const char*, core::state::VIEW_SELECTOR_ITEM_COUNT>
     VIEW_SELECTOR_ICONS = {
         ::standalone::icons::VIEW_MACROS,
-        ::standalone::icons::VIEW_SEQUENCER,
+        ::standalone::icons::VIEW_CLIPS,
         ::standalone::icons::MODULATION,
         ::standalone::icons::VIEW_PROJECT,
         ::standalone::icons::VIEW_DEVICE,

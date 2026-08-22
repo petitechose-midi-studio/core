@@ -60,7 +60,8 @@ struct SequencerEncoderSyncHarness {
               encoders
           ) {
         assert(sync.bind());
-        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.activeView.set(core::ui::ViewType::CLIPS);
+        state.sequencer.clipLauncher.enterPattern(0U, 0U);
         test_support::drainNotifications();
     }
 };

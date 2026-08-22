@@ -62,7 +62,7 @@ void test_factory_reset_clears_transient_state_and_overlays() {
 
     core::state::CoreState state(storage.settings);
 
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.macroEdit.openEditor(1, 2, 10, 1000);
     state.macroEdit.openValueSelector(0, 2);
     state.deviceSettings.openView();
@@ -223,7 +223,7 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.macroUi.automationTake.previousManualValues[0] = 0.61f;
     assert(state.macroUi.manualOverrides.resume(manualAddress));
     core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.93f);
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.activeView.set(core::ui::ViewType::MACRO);
 
     const uint32_t beforeRuntimeOwnerRevision = state.macroRuntimeOwnerRevision.get();

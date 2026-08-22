@@ -79,7 +79,7 @@ enum class Size : uint8_t { S = 12, M = 14, L = 16 };
     constexpr const char* VIEW_DEVICE = "\xEE\x81\x85";
     constexpr const char* VIEW_MACROS = "\xEE\x81\x86";
     constexpr const char* VIEW_PROJECT = "\xEE\x81\x87";
-    constexpr const char* VIEW_SEQUENCER = "\xEE\x81\x88";
+    constexpr const char* VIEW_CLIPS = "\xEE\x81\x88";
 
 inline void set(lv_obj_t* label, const char* icon, Size size = Size::M) {
     lv_font_t* font = (size == Size::S) ? standalone_fonts.icons_12

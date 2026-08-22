@@ -283,7 +283,7 @@ void test_macro_encoder_does_not_activate_empty_or_add_slots() {
 void test_macro_value_handler_respects_modal_guards() {
     {
         MacroValueHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
         assert(std::fabs(h.state.macros[0].value.get() - 0.5f) < 0.0005f);
         assert(h.midiTransport.ccCount == 0);

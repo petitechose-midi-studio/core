@@ -131,7 +131,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
 
     overlay_.render({
         .title = PITCH_CONTEXT_LABEL,
-        .meta = core::state::viewSelectorItemLabel(core::state::ViewSelectorItem::SEQUENCER),
+        .meta = core::state::viewSelectorItemLabel(core::state::ViewSelectorItem::CLIPS),
         .rows = rows.data(),
         .rowCount = static_cast<int>(rows.size()),
         .selectedIndex = state_refs_.settings.focusedRow.get(),

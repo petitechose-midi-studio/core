@@ -6,8 +6,6 @@
 #include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
 #include "state/project/ProjectMenuModel.hpp"
-#include "state/sequencer/SequencerContentViewOps.hpp"
-#include "state/sequencer/SequencerInteractionContextOps.hpp"
 
 namespace core::handler {
 
@@ -135,7 +133,7 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
         return false;
     }
     const auto activeView = core_state_.activeView.get();
-    if (activeView != core::ui::ViewType::SEQUENCER) {
+    if (activeView != core::ui::ViewType::CLIPS) {
         if (activeView == core::ui::ViewType::MACRO) {
             return core_state_.macroUi.performanceOverlayMode.get() ==
                        core::state::macro::MacroPerformanceOverlayMode::NONE &&
@@ -160,18 +158,16 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
         return true;
     }
 
-    const auto interaction =
-        core::state::sequencer::makeSequencerInteractionContext(
-            core_state_.sequencer,
-            core_state_.trackNavigation,
-            core_state_.structureNavigationFocus.get()
-        );
+    // Clips is the first-rank workspace. Its matrix is the root that owns the
+    // global selector; every Pattern route must unwind locally back to that
+    // matrix first.
+    const auto& clipWorkspace = core_state_.sequencer.clipLauncher;
+    if (!clipWorkspace.launcherVisible() || clipWorkspace.selectionActive() ||
+        core_state_.sequencer.drumSequencer.pickerVisible()) {
+        return false;
+    }
     const auto& paste = core_state_.sequencer.structureUi.trackPaste;
-    return core::state::sequencer::isRootContentView(core_state_.sequencer) &&
-           core::state::sequencer::sequencerInteractionMainSurfaceAvailable(
-               interaction
-           ) &&
-           !core_state_.trackNavigation.hold.active() &&
+    return !core_state_.trackNavigation.hold.active() &&
            !core_state_.sequencer.structureUi.pageHold.active() &&
            !paste.buttonOwned && !paste.gestureActive() && !paste.detailVisible;
 }

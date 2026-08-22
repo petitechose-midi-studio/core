@@ -768,7 +768,7 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
+    if (active_view_.get() != core::ui::ViewType::CLIPS) {
         return false;
     }
 
@@ -1296,7 +1296,7 @@ FLASHMEM bool SequencerQuickControlsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
+    if (active_view_.get() != core::ui::ViewType::CLIPS) {
         return false;
     }
 
@@ -1351,7 +1351,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     using ButtonType = oc::core::input::ButtonBindingType;
     using Intent = core::state::interaction::ControllerIntent;
 
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) return false;
+    if (active_view_.get() != core::ui::ViewType::CLIPS) return false;
 
     // The provisional Pattern owns Back/Apply before the Pattern-to-Launcher
     // hierarchy. Let the structure surface preserve that pre-dispatch fact;
@@ -1616,7 +1616,7 @@ FLASHMEM bool SequencerPatternEditorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER ||
+    if (active_view_.get() != core::ui::ViewType::CLIPS ||
         !sequencer_.patternEditor.active.get() ||
         sequencer_.presetLibrary.visible.get()) {
         return false;
@@ -1750,7 +1750,7 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
     core::validation::ux::SemanticUxContext& out
 ) const {
     using ButtonType = oc::core::input::ButtonBindingType;
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER ||
+    if (active_view_.get() != core::ui::ViewType::CLIPS ||
         !editor_.active) {
         editor_state_seen_ = false;
         observed_kind_dirty_ = false;
@@ -1957,7 +1957,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
+    if (active_view_.get() != core::ui::ViewType::CLIPS) {
         return false;
     }
 
@@ -2367,7 +2367,7 @@ FLASHMEM bool SequencerStepGridUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
+    if (active_view_.get() != core::ui::ViewType::CLIPS) {
         return false;
     }
 
@@ -2473,7 +2473,7 @@ FLASHMEM bool DrumLaneEditorUxSurface::captureSemanticUxContext(
     using ButtonType = oc::core::input::ButtonBindingType;
     using Intent = core::state::interaction::ControllerIntent;
 
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) return false;
+    if (active_view_.get() != core::ui::ViewType::CLIPS) return false;
 
     // A Pattern preset audition deliberately closes the retained Lane Editor
     // before returning to the grid. Do not misclassify the library action's
@@ -2666,7 +2666,7 @@ FLASHMEM bool SequencerStepEditUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
+    if (active_view_.get() != core::ui::ViewType::CLIPS) {
         return false;
     }
 

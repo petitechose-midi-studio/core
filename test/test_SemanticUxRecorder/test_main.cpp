@@ -214,7 +214,7 @@ oc::core::input::InputBindingTraceEvent inputEncoder() {
 
 core::validation::ux::SemanticUxSnapshot sequencerSnapshot() {
     return core::validation::ux::SemanticUxSnapshot{
-        .view = core::ui::ViewType::SEQUENCER,
+        .view = core::ui::ViewType::CLIPS,
         .overlay = core::ui::OverlayType::SEQ_STEP_EDIT,
         .playing = true,
         .playheadStep = 5,
@@ -331,7 +331,7 @@ void test_writes_button_semantics_with_snapshot() {
     assert(contains(sink.lines[0], "\"button\":\"MACRO_1\""));
     assert(contains(sink.lines[0], "\"pre_view\":\"macro\""));
     assert(contains(sink.lines[0], "\"pre_overlay\":\"none\""));
-    assert(contains(sink.lines[0], "\"view\":\"sequencer\""));
+    assert(contains(sink.lines[0], "\"view\":\"clips\""));
     assert(contains(sink.lines[0], "\"overlay\":\"seq_step_edit\""));
     assert(contains(sink.lines[0], "\"playing\":1"));
     assert(contains(sink.lines[0], "\"playhead\":5"));
@@ -518,7 +518,7 @@ void test_associates_capture_with_live_surface_context() {
     assert(contains(capture, "\"label\":\"cc_lane_live\""));
     assert(contains(capture, "\"surface_context\":true"));
     assert(contains(capture, "\"source_seq\":1"));
-    assert(contains(capture, "\"view\":\"sequencer\""));
+    assert(contains(capture, "\"view\":\"clips\""));
     assert(contains(capture, "\"playing\":true"));
     assert(contains(capture, "\"mode\":\"sequencer.step_grid\""));
     assert(contains(capture, "\"projection\":\"live\""));

@@ -57,7 +57,7 @@ void publishVariationTelemetry(
 
 void prepareSequencerVariationScenario(core::state::CoreState& state,
                                        core::state::sequencer::StepProperty property) {
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.activeStepProperty.set(property);
     state.sequencer.setStepDataAt(0, 60, 100, 75, 0);
     if (!state.sequencer.pattern.isEnabled(0)) {
@@ -97,7 +97,7 @@ void prepareSequencerScaleScenario(
 ) {
     using namespace oc::note::sequencer;
 
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
     state.sequencer.setPitchEditMode(
         core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
@@ -874,7 +874,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
     using namespace oc::note::sequencer;
 
     state.sequencer.reset();
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.pattern.length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -941,7 +941,7 @@ void prepareSequencerLocalRandomGridScenario(core::state::CoreState& state) {
     using core::state::sequencer::StepProperty;
 
     state.sequencer.reset();
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.pattern.length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -1055,7 +1055,7 @@ void prepareSequencerSummedLocalRandomScenario(
     using core::state::sequencer::StepProperty;
 
     state.sequencer.reset();
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.pattern.length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -1157,7 +1157,7 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
     using core::state::sequencer::StepProperty;
 
     state.sequencer.reset();
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.pattern.length.set(4);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -1250,7 +1250,7 @@ void prepareStepPresetCaptureBase(
         core::state::sequencer::SequencerPresetLibraryMode::LOAD
 ) {
     using namespace core::state::sequencer;
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.overlays.hideAll();
     state.sequencer.stepEdit.visible.set(true);
     state.sequencer.stepEdit.stepIndex.set(5);
@@ -1481,7 +1481,7 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     using namespace core::state;
     using namespace core::state::sequencer;
 
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.overlays.hideAll();
     state.statusBar.playing.set(false);
     state.sequencer.reset();
@@ -1538,7 +1538,7 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
 bool prepareDrumSequencerScenario(core::state::CoreState& state) {
     using namespace core::state;
 
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.overlays.hideAll();
     state.statusBar.playing.set(false);
     state.sequencerTrackActivations.reset();
@@ -1561,7 +1561,7 @@ bool prepareClipLauncherScenario(core::state::CoreState& state) {
     using namespace core::state;
     using namespace core::state::sequencer;
 
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.overlays.hideAll();
     state.statusBar.playing.set(false);
     state.sequencer.reset();
@@ -1594,7 +1594,7 @@ bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     using namespace core::state;
     using namespace core::state::sequencer;
 
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.overlays.hideAll();
     state.statusBar.playing.set(false);
     state.sequencerTrackActivations.reset();
@@ -1797,7 +1797,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     }
 
     if (std::strcmp(scenario, "sequencer") == 0) {
-        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.activeView.set(core::ui::ViewType::CLIPS);
         state.structureNavigationFocus.set(
             core::state::StructureNavigationFocus::PAGE
         );
@@ -1839,7 +1839,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     }
 
     if (std::strcmp(scenario, "seq-step-edit") == 0) {
-        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.activeView.set(core::ui::ViewType::CLIPS);
         state.sequencer.setStepDataAt(0, 60, 100, 75);
         if (!state.sequencer.pattern.isEnabled(0)) {
             state.sequencer.pattern.toggle(0);
@@ -1851,7 +1851,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     }
 
     if (std::strcmp(scenario, "seq-property-selector") == 0) {
-        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.activeView.set(core::ui::ViewType::CLIPS);
         state.sequencer.stepPropertyInlineSelector.selecting.set(true);
         state.sequencer.stepPropertyInlineSelector.selectedIndex.set(
             static_cast<int>(core::state::sequencer::StepProperty::GATE)
@@ -1860,7 +1860,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     }
 
     if (std::strcmp(scenario, "seq-quick-controls") == 0) {
-        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.activeView.set(core::ui::ViewType::CLIPS);
         state.sequencer.patternQuickControls.selecting.set(true);
         state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
         return true;
@@ -1953,7 +1953,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
             scenario,
             "seq-history-unavailable-feedback"
         ) == 0) {
-        state.activeView.set(core::ui::ViewType::SEQUENCER);
+        state.activeView.set(core::ui::ViewType::CLIPS);
         state.overlays.hideAll();
         state.sequencer.historyFeedback.showRejection(
             core::state::sequencer::

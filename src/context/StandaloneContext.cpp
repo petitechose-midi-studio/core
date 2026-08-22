@@ -428,7 +428,7 @@ FLASHMEM oc::type::ScopeID StandaloneContext::activeViewScopeId() const {
     if (!ui_assembly_) return 0;
 
     switch (core_state_.activeView.get()) {
-        case core::ui::ViewType::SEQUENCER:
+        case core::ui::ViewType::CLIPS:
             return ui_assembly_->sequencerViewScope();
         case core::ui::ViewType::PROJECT:
         case core::ui::ViewType::MODULATORS:
@@ -450,7 +450,7 @@ FLASHMEM void StandaloneContext::applyActiveView() {
             case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_MACRO:
                 if (ui_assembly_) ui_assembly_->deactivateMacroView();
                 break;
-            case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER:
+            case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_CLIPS:
                 if (ui_assembly_) ui_assembly_->deactivateSequencerView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_PROJECT:
@@ -463,7 +463,7 @@ FLASHMEM void StandaloneContext::applyActiveView() {
                 core::context::standalone::prepareMacroViewActivation(core_state_);
                 if (ui_assembly_) ui_assembly_->activateMacroView();
                 break;
-            case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_SEQUENCER:
+            case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_CLIPS:
                 if (ui_assembly_) ui_assembly_->activateSequencerView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_PROJECT:
@@ -475,7 +475,7 @@ FLASHMEM void StandaloneContext::applyActiveView() {
             case core::context::standalone::ActiveViewLifecycleStep::SYNC_MACRO_ENCODERS:
                 syncEncodersFromState();
                 break;
-            case core::context::standalone::ActiveViewLifecycleStep::SYNC_SEQUENCER_ENCODERS:
+            case core::context::standalone::ActiveViewLifecycleStep::SYNC_CLIP_EDITOR_ENCODERS:
                 if (feature_assembly_) {
                     feature_assembly_->syncSequencerEncodersNow();
                 }
