@@ -794,7 +794,7 @@ FLASHMEM void ClipWorkspaceUiState::moveHorizontal(
         }
         return;
     }
-    if (direction < 0 && clipFocused()) focusScene(focusedSlot);
+    if (direction < 0) focusScene(focusedSlot);
 }
 
 FLASHMEM uint8_t ClipWorkspaceUiState::viewportIndex() const {

@@ -126,6 +126,10 @@ FLASHMEM bool ClipWorkspaceHandler::quickSelectorAvailable() const {
         !core_.sequencer.clipWorkspace.quickSelectorVisible;
 }
 
+FLASHMEM bool ClipWorkspaceHandler::directPatternAvailable() const {
+    return focusedClipAvailable();
+}
+
 FLASHMEM bool ClipWorkspaceHandler::operationBackAvailable() const {
     return matrixAvailable() && core_.sequencer.clipWorkspace.selectionActive();
 }
@@ -251,6 +255,13 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
                 return;
             }
         });
+
+    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
+        .release()
+        .scope(scope_id_)
+        .priority(120)
+        .when([this]() { return directPatternAvailable(); })
+        .then([this]() { openFocusedPattern(); });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
@@ -379,6 +390,18 @@ FLASHMEM void ClipWorkspaceHandler::releaseQuickSelector() {
         return;
     }
     ui.armQuickProperty(core::time_compat::millis());
+}
+
+FLASHMEM void ClipWorkspaceHandler::openFocusedPattern() {
+    if (!directPatternAvailable()) return;
+    auto& ui = core_.sequencer.clipWorkspace;
+    const seq::SequencerClipAddress address{
+        ui.focusedTrack,
+        ui.focusedSlot,
+    };
+    if (!enterClip(address)) {
+        ui.setFeedback(seq::ClipWorkspaceFeedback::FAILED);
+    }
 }
 
 FLASHMEM void ClipWorkspaceHandler::move(float delta) {
@@ -598,6 +621,23 @@ FLASHMEM void ClipWorkspaceHandler::openFocused() {
         return;
     }
     if (ui.sceneFocused()) {
+        if (ui.focusedSlot == lastNavigableScene() &&
+            !core_.sequencerClips.sceneUsed(ui.focusedSlot)) {
+            const uint16_t enabledMask = core_.currentSharedTrackEnabledMask();
+            for (uint8_t track = 0U;
+                 track < seq::SequencerClipGridState::TRACK_COUNT;
+                 ++track) {
+                if ((enabledMask & static_cast<uint16_t>(1U << track)) == 0U) {
+                    continue;
+                }
+                ui.focus(track, ui.focusedSlot);
+                ui.openEditor(seq::ClipWorkspaceEditor::SLOT_ACTION);
+                syncNavigationFocus();
+                return;
+            }
+            ui.setFeedback(seq::ClipWorkspaceFeedback::FAILED);
+            return;
+        }
         launchScene(ui.focusedSlot);
         return;
     }
@@ -625,7 +665,7 @@ FLASHMEM void ClipWorkspaceHandler::openFocused() {
         return;
     }
     if (kind == seq::SequencerLauncherSlotKind::EMPTY) {
-        ui.setFeedback(seq::ClipWorkspaceFeedback::NONE);
+        ui.openEditor(seq::ClipWorkspaceEditor::SLOT_ACTION);
         return;
     }
     ui.setFeedback(core_.requestSequencerClipLaunch(address)

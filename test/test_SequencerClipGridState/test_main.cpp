@@ -198,6 +198,10 @@ void test_launcher_metadata_survives_snapshot_move_and_history() {
     assert(grid.setClipBehavior({0U, 1U}, clipBehavior));
     assert(grid.setStop({0U, 3U}));
     assert(grid.setSceneBehavior(1U, sceneBehavior));
+    assert(grid.sceneUsed(1U));
+    assert(!grid.sceneUsed(2U));
+    assert(grid.sceneUsed(3U));
+    assert(grid.lastNavigableScene() == 4U);
 
     seq::SequencerClipGridSnapshot snapshot;
     assert(seq::captureSequencerClipGridSnapshot(grid, snapshot));
@@ -206,6 +210,9 @@ void test_launcher_metadata_survives_snapshot_move_and_history() {
     assert(restored.clipBehavior({0U, 1U}) == clipBehavior);
     assert(restored.isStop({0U, 3U}));
     assert(restored.sceneBehavior(1U) == sceneBehavior);
+    assert(restored.sceneUsed(1U));
+    assert(!restored.sceneUsed(2U));
+    assert(restored.sceneUsed(3U));
 
     auto move = seq::prepareSequencerClipMoveChange(
         restored, {0U, 1U}, {0U, 2U});

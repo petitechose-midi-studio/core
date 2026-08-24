@@ -134,6 +134,10 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                     standalone::icons::CLIP,
                     Visual::ACTIVE
                 );
+                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::PATTERN,
+                    Visual::ACTIVE
+                );
             }
             return props;
         }

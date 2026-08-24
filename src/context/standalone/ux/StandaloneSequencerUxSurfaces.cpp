@@ -1464,6 +1464,9 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     const bool quickRelease = isButton(
         event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE
     );
+    const bool directPatternRelease = isButton(
+        event, Config::ButtonID::LEFT_BOTTOM, ButtonType::RELEASE
+    );
     const bool back = isButton(
         event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE
     );
@@ -1543,6 +1546,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     const bool projection = isSemanticStateProjection(event);
     if (!navPress && !navTurn && !navRelease && !navHold && !back &&
         !quickPress && !quickRelease && !optTurn &&
+        !directPatternRelease &&
         !structureAction && !removeAction && !muteAction && !macroRelease &&
         !projection) {
         return false;
@@ -1633,6 +1637,16 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         return true;
     }
     if (!ui.matrixVisible()) {
+        if (directPatternRelease && ui.patternVisible()) {
+            out.mode = "sequencer.pattern";
+            out.target = "clip";
+            out.targetTrack = ui.returnTrack;
+            out.targetIndex = ui.returnSlot;
+            out.effect = "open_clip_pattern";
+            out.intent = Intent::OPEN_ADVANCED;
+            out.outcome = "applied";
+            return true;
+        }
         if (quickRelease && ui.patternVisible()) {
             out.mode = "sequencer.pattern_editor";
             out.target = "clip_region";
@@ -1875,9 +1889,11 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             return true;
         }
         if (scene) {
-            out.effect = "launch_scene";
+            const bool addScene = !clips_.sceneUsed(ui.focusedSlot);
+            out.effect = addScene ? "open_slot_actions" : "launch_scene";
             out.intent = Intent::ACTIVATE;
-            out.outcome = sceneQueued ? "queued"
+            out.outcome = addScene ? "applied"
+                : sceneQueued ? "queued"
                 : sceneActive ? "applied" : "blocked";
             return true;
         }
@@ -1889,7 +1905,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         out.effect = !tracks_.isTrackEnabled(address.track)
             ? "open_track_type_picker"
             : stopSlot ? "stop_track"
-            : occupied ? "launch_clip" : "ignore_empty_clip";
+            : occupied ? "launch_clip" : "open_slot_actions";
         out.intent = Intent::ACTIVATE;
     } else if (macroRelease) {
         out.effect = ui.selectionActive() ? "select_visible_clip"
@@ -1906,6 +1922,10 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         } else if (telemetry.status == seq::SequencerClipLaunchStatus::APPLIED) {
             out.outcome = "applied";
         }
+    } else if (directPatternRelease && occupied) {
+        out.effect = "open_clip_pattern";
+        out.intent = Intent::OPEN_ADVANCED;
+        out.outcome = "applied";
     } else if (quickRelease) {
         retained_quick_selector_ = false;
         const bool armsProperty =

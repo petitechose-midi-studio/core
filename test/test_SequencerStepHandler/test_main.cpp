@@ -649,6 +649,38 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
         << "[PASS] Clip Launcher LEFT_CENTER arms quick OPT editing\n";
 }
 
+void test_clip_launcher_direct_pattern_and_short_create_actions() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+
+    launcher.focus(0U, 0U);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(launcher.patternVisible());
+    assert(!h.state.sequencer.patternEditor.active.get());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(launcher.matrixVisible());
+
+    launcher.focus(0U, 1U);
+    assert(!h.state.sequencerClips.isOccupied({0U, 1U}));
+    h.tap(Config::ButtonID::NAV);
+    assert(launcher.editor == seq::ClipWorkspaceEditor::SLOT_ACTION);
+    assert(launcher.slotAction == seq::ClipWorkspaceSlotAction::CREATE_CLIP);
+    h.tap(Config::ButtonID::NAV);
+    assert(!launcher.editorActive());
+    assert(h.state.sequencerClips.isOccupied({0U, 1U}));
+
+    const uint8_t addScene = h.state.sequencerClips.lastNavigableScene();
+    launcher.focusScene(addScene);
+    h.tap(Config::ButtonID::NAV);
+    assert(launcher.clipFocused());
+    assert(launcher.focusedTrack == 0U);
+    assert(launcher.focusedSlot == addScene);
+    assert(launcher.editor == seq::ClipWorkspaceEditor::SLOT_ACTION);
+
+    std::cout
+        << "[PASS] Clip Launcher separates Pattern entry and direct creation\n";
+}
+
 void test_inactive_clip_workspace_does_not_steal_shared_navigation_focus() {
     SequencerStepHarness h(true);
     assert(h.state.sequencer.clipWorkspace.matrixVisible());
@@ -9810,6 +9842,7 @@ int main() {
     test_clip_launcher_gestures_are_structural_and_region_editor_is_reused();
     test_clip_launcher_nav_turn_moves_horizontally_without_launching();
     test_clip_launcher_left_center_arms_quick_property_for_opt();
+    test_clip_launcher_direct_pattern_and_short_create_actions();
     test_inactive_clip_workspace_does_not_steal_shared_navigation_focus();
     test_pattern_preview_owns_back_before_clip_launcher();
     test_cc_lane_owns_back_before_clip_launcher();

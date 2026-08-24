@@ -47,6 +47,7 @@ public:
     [[nodiscard]] bool editorAvailable() const;
     [[nodiscard]] bool horizontalNavigationAvailable() const;
     [[nodiscard]] bool quickSelectorAvailable() const;
+    [[nodiscard]] bool directPatternAvailable() const;
     [[nodiscard]] bool operationBackAvailable() const;
     [[nodiscard]] bool focusedClipAvailable() const;
     void move(float delta);
@@ -73,6 +74,7 @@ private:
     void beginQuickSelector();
     void moveQuickSelector(float delta);
     void releaseQuickSelector();
+    void openFocusedPattern();
     void editQuickProperty(float delta);
     [[nodiscard]] core::state::sequencer::SequencerClipAddress
     visibleAddress(uint8_t macroIndex) const;

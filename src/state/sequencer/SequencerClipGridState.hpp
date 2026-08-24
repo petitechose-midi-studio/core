@@ -204,6 +204,7 @@ public:
         uint8_t slot,
         SequencerLauncherBehavior behavior
     ) noexcept;
+    [[nodiscard]] bool sceneUsed(uint8_t slot) const noexcept;
     [[nodiscard]] uint8_t lastNavigableScene() const noexcept;
     [[nodiscard]] uint32_t generation(SequencerClipAddress address) const noexcept;
     [[nodiscard]] uint8_t inactiveDocumentCount() const noexcept {

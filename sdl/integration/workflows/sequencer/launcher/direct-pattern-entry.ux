@@ -1,0 +1,25 @@
+# UX workflow: explicit Clip-versus-Pattern editing hierarchy.
+# Purpose: proves LEFT_CENTER owns Clip-region editing while LEFT_BOTTOM opens
+# the Pattern content directly, then Back returns to the exact Launcher cell.
+# Expect: capture_changed:clip_focused=launcher_ready
+# Expect: capture_changed:pattern_content=clip_focused
+# Expect: capture_changed:launcher_returned=pattern_content
+# Expect: semantic:pattern_content:mode=sequencer.pattern, semantic:pattern_content:effect=open_clip_pattern, semantic:pattern_content:target_track=0, semantic:pattern_content:target_index=0
+# Expect: semantic:launcher_returned:effect=return_to_clip_launcher, semantic:launcher_returned:target_track=0, semantic:launcher_returned:target_index=0
+
+0 scenario clip-launcher-v3
+100 capture screen launcher_ready
+
+# Scene rail -> first occupied Clip.
+220 button NAV down
+300 encoder NAV 0.01
+380 button NAV up
+540 capture screen clip_focused
+
+# LEFT_BOTTOM enters Pattern content without opening the Clip-region editor.
+660 tap LEFT_BOTTOM 60
+1020 capture screen pattern_content
+
+# Back returns directly to the exact Launcher cell.
+1140 tap LEFT_TOP 60
+1500 capture screen launcher_returned

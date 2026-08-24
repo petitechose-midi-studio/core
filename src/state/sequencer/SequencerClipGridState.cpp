@@ -469,15 +469,20 @@ FLASHMEM bool SequencerClipGridState::setSceneBehavior(
     return true;
 }
 
+FLASHMEM bool SequencerClipGridState::sceneUsed(uint8_t slot) const noexcept {
+    if (slot >= SLOT_COUNT) return false;
+    bool used = stop_masks_[slot] != 0U ||
+        !(scene_behaviors_[slot] == SequencerLauncherBehavior{});
+    for (uint8_t track = 0U; !used && track < TRACK_COUNT; ++track) {
+        used = isOccupied({track, slot});
+    }
+    return used;
+}
+
 FLASHMEM uint8_t SequencerClipGridState::lastNavigableScene() const noexcept {
     uint8_t highest = 0U;
     for (uint8_t slot = 0U; slot < SLOT_COUNT; ++slot) {
-        bool used = stop_masks_[slot] != 0U ||
-            !(scene_behaviors_[slot] == SequencerLauncherBehavior{});
-        for (uint8_t track = 0U; !used && track < TRACK_COUNT; ++track) {
-            used = isOccupied({track, slot});
-        }
-        if (used) highest = slot;
+        if (sceneUsed(slot)) highest = slot;
     }
     return highest < SLOT_COUNT - 1U
         ? static_cast<uint8_t>(highest + 1U)

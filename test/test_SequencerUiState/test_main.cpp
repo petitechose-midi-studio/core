@@ -303,6 +303,12 @@ void test_clip_launcher_navigation_is_spatial_and_scrolls_one_item() {
     assert(seq::ClipWorkspaceUiState::trackNavigable(0U, 0x0001U));
     assert(seq::ClipWorkspaceUiState::trackNavigable(1U, 0x0001U));
     assert(!seq::ClipWorkspaceUiState::trackNavigable(2U, 0x0001U));
+
+    state.reset(0U);
+    state.focusTrackHeader(0U);
+    state.moveHorizontal(-1, 0x0001U);
+    assert(state.sceneFocused());
+    assert(state.focusedSlot == 0U);
 }
 
 void test_clip_launcher_quick_control_is_bounded_and_expires() {

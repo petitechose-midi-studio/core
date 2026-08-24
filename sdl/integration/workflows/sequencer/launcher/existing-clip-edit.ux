@@ -1,0 +1,30 @@
+# UX workflow: edit an existing Clip without changing performance semantics.
+# Purpose: proves LEFT_CENTER defaults to Edit on an occupied Clip, opens the
+# shared Pattern editor, then unwinds one hierarchy level at a time back to the
+# exact Launcher cell.
+# Expect: capture_changed:clip_focused=launcher_ready
+# Expect: capture_changed:pattern_editor=clip_focused
+# Expect: capture_changed:pattern_returned=pattern_editor
+# Expect: capture_changed:launcher_returned=pattern_returned
+# Expect: semantic:pattern_editor:effect=open_clip_region, semantic:pattern_editor:target=pattern
+# Expect: semantic:launcher_returned:effect=return_to_clip_launcher, semantic:launcher_returned:target_track=0, semantic:launcher_returned:target_index=0
+
+0 scenario clip-launcher-v3
+100 capture screen launcher_ready
+
+# Scene rail -> first occupied Clip.
+220 button NAV down
+300 encoder NAV 0.01
+380 button NAV up
+540 capture screen clip_focused
+
+# LEFT_CENTER is the shared contextual-edit gesture. Its default item is Edit,
+# so releasing it without turning NAV opens this Clip's Pattern editor.
+660 tap LEFT_CENTER 60
+1020 capture screen pattern_editor
+
+# Back unwinds Pattern editor -> Pattern -> exact Launcher cell.
+1140 tap LEFT_TOP 60
+1500 capture screen pattern_returned
+1620 tap LEFT_TOP 60
+1980 capture screen launcher_returned
