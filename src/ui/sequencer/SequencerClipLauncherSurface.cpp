@@ -9,6 +9,7 @@
 
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::ui::sequencer {
 
@@ -90,6 +91,29 @@ FLASHMEM void drawText(
     lv_draw_label(layer, &dsc, &area);
 }
 
+FLASHMEM void drawSquare(
+    lv_layer_t* layer,
+    lv_coord_t centerX,
+    lv_coord_t centerY,
+    lv_coord_t side,
+    uint32_t color
+) {
+    const lv_coord_t half = static_cast<lv_coord_t>(side / 2);
+    drawRect(
+        layer,
+        {static_cast<lv_coord_t>(centerX - half),
+         static_cast<lv_coord_t>(centerY - half),
+         static_cast<lv_coord_t>(centerX - half + side - 1),
+         static_cast<lv_coord_t>(centerY - half + side - 1)},
+        color,
+        LV_OPA_COVER,
+        color,
+        0,
+        LV_OPA_TRANSP,
+        1
+    );
+}
+
 FLASHMEM void drawQueuedCorners(
     lv_layer_t* layer,
     const lv_area_t& area,
@@ -146,6 +170,64 @@ FLASHMEM const char* quantizationLabel(uint8_t value) {
     }
 }
 
+FLASHMEM bool areasOverlap(const lv_area_t& lhs, const lv_area_t& rhs) {
+    return lhs.x1 <= rhs.x2 && lhs.x2 >= rhs.x1 &&
+        lhs.y1 <= rhs.y2 && lhs.y2 >= rhs.y1;
+}
+
+template <typename Mask, std::size_t BinCount>
+FLASHMEM void projectMask(
+    const Mask& mask,
+    uint8_t length,
+    std::array<uint8_t, BinCount>& density
+) {
+    static_assert(BinCount > 0U);
+    length = std::max<uint8_t>(length, 1U);
+    for (uint8_t step = 0U; step < length; ++step) {
+        if (!mask.test(step)) continue;
+        const uint8_t bin = std::min<uint8_t>(
+            static_cast<uint8_t>((static_cast<uint16_t>(step) *
+                                  density.size()) / length),
+            static_cast<uint8_t>(density.size() - 1U)
+        );
+        if (density[bin] != UINT8_MAX) ++density[bin];
+    }
+}
+
+template <std::size_t BinCount>
+FLASHMEM void projectPattern(
+    const seq::SequencerPatternState& pattern,
+    std::array<uint8_t, BinCount>& density
+) {
+    projectMask(pattern.enabledMask.get(), pattern.length.get(), density);
+}
+
+template <std::size_t BinCount>
+FLASHMEM void projectPattern(
+    const seq::SequencerPatternSnapshot& pattern,
+    std::array<uint8_t, BinCount>& density
+) {
+    projectMask(pattern.enabledMask, pattern.length, density);
+}
+
+template <std::size_t BinCount>
+FLASHMEM void projectDrum(
+    const seq::DrumTrackState& drum,
+    std::array<uint8_t, BinCount>& density
+) {
+    const uint8_t laneCount = std::min<uint8_t>(
+        drum.kit.laneCount,
+        seq::DRUM_MAX_LANES
+    );
+    for (uint8_t lane = 0U; lane < laneCount; ++lane) {
+        projectMask(
+            drum.pattern.lanes[lane].enabledMask,
+            drum.pattern.effectiveLength(lane),
+            density
+        );
+    }
+}
+
 }  // namespace
 
 FLASHMEM SequencerClipLauncherSurface::SequencerClipLauncherSurface(
@@ -175,8 +257,66 @@ FLASHMEM void SequencerClipLauncherSurface::render(
         lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
         return;
     }
+    rebuildPreviews();
     lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_invalidate(root_);
+}
+
+FLASHMEM void SequencerClipLauncherSurface::rebuildPreviews() {
+    previews_.fill({});
+    if (props_.ui == nullptr || props_.clips == nullptr ||
+        props_.tracks == nullptr || props_.sequencer == nullptr) {
+        return;
+    }
+
+    const auto& ui = *props_.ui;
+    for (uint8_t column = 0U;
+         column < seq::ClipWorkspaceUiState::VISIBLE_TRACKS;
+         ++column) {
+        const uint8_t track = static_cast<uint8_t>(
+            ui.firstVisibleTrack + column
+        );
+        if (track >= seq::SequencerClipGridState::TRACK_COUNT) continue;
+        for (uint8_t row = 0U;
+             row < seq::ClipWorkspaceUiState::VISIBLE_ROWS;
+             ++row) {
+            const uint8_t slot = static_cast<uint8_t>(
+                ui.firstVisibleSlot + row
+            );
+            const seq::SequencerClipAddress address{track, slot};
+            if (!props_.clips->isOccupied(address)) continue;
+
+            auto& preview = previews_[
+                column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
+            ];
+            if (props_.clips->isResident(address)) {
+                if (props_.tracks->isDrumTrack(track)) {
+                    projectDrum(props_.tracks->drumTrack(track), preview.density);
+                } else {
+                    projectPattern(
+                        seq::canonicalTrackPattern(
+                            *props_.tracks,
+                            *props_.sequencer,
+                            track
+                        ),
+                        preview.density
+                    );
+                }
+            } else if (const auto* document =
+                           props_.clips->inactiveDocument(address)) {
+                if (document->trackKind == seq::SequencerTrackKind::DRUM &&
+                    document->drum != nullptr) {
+                    projectDrum(*document->drum, preview.density);
+                } else {
+                    projectPattern(document->pattern, preview.density);
+                }
+            }
+            preview.peak = *std::max_element(
+                preview.density.begin(),
+                preview.density.end()
+            );
+        }
+    }
 }
 
 FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
@@ -601,12 +741,8 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         drawText(
             layer,
             stopStatus
-                ? lv_area_t{
-                    static_cast<lv_coord_t>(header.x1 + 5),
-                    header.y1,
-                    static_cast<lv_coord_t>(header.x1 + 26),
-                    header.y2,
-                }
+                ? lv_area_t{static_cast<lv_coord_t>(header.x1 + 4), header.y1,
+                            static_cast<lv_coord_t>(header.x2 - 16), header.y2}
                 : header,
             trackLabel.data(),
             enabled ? theme::color::TEXT_PRIMARY
@@ -637,26 +773,29 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         );
 
         if (enabled && telemetry.stopped) {
-            drawText(
+            drawSquare(
                 layer,
-                {static_cast<lv_coord_t>(header.x1 + 2), header.y1,
-                 static_cast<lv_coord_t>(header.x2 - 2), header.y2},
-                "STOP",
-                theme::color::DESTRUCTIVE,
-                LV_OPA_COVER,
-                fonts.meta_label(),
-                LV_TEXT_ALIGN_RIGHT
+                static_cast<lv_coord_t>(header.x2 - 8),
+                static_cast<lv_coord_t>((header.y1 + header.y2) / 2),
+                7,
+                theme::color::DESTRUCTIVE
             );
         } else if (queuedStop) {
-            // "STOP " + the full uint8_t range + terminator.
-            std::array<char, 9> stopCount{};
+            std::array<char, 4> stopCount{};
             std::snprintf(
-                stopCount.data(), stopCount.size(), "STOP %u",
+                stopCount.data(), stopCount.size(), "%u",
                 static_cast<unsigned>(telemetry.beatsRemaining));
+            drawSquare(
+                layer,
+                static_cast<lv_coord_t>(header.x2 - 9),
+                static_cast<lv_coord_t>(header.y1 + 8),
+                6,
+                theme::color::ROUTING
+            );
             drawText(
                 layer,
-                {header.x1, header.y1, static_cast<lv_coord_t>(header.x2 - 2),
-                 header.y2},
+                {static_cast<lv_coord_t>(header.x2 - 25), header.y1,
+                 static_cast<lv_coord_t>(header.x2 - 14), header.y2},
                 stopCount.data(),
                 theme::color::ROUTING,
                 LV_OPA_COVER,
@@ -733,7 +872,13 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             if (occupied || stop) {
                 std::array<char, 12> clipLabel{};
                 if (stop) {
-                    std::snprintf(clipLabel.data(), clipLabel.size(), "Stop");
+                    drawSquare(
+                        layer,
+                        static_cast<lv_coord_t>((cell.x1 + cell.x2) / 2),
+                        static_cast<lv_coord_t>((cell.y1 + cell.y2) / 2),
+                        9,
+                        theme::color::DESTRUCTIVE
+                    );
                 } else {
                     std::snprintf(
                         clipLabel.data(),
@@ -742,22 +887,71 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                         static_cast<unsigned>(slot + 1U)
                     );
                 }
-                drawText(
-                    layer,
-                    lv_area_t{
-                        .x1 = static_cast<lv_coord_t>(cell.x1 + 3),
-                        .y1 = cell.y1,
-                        .x2 = static_cast<lv_coord_t>(
-                            cell.x2 - (queued ? 18 : 3)
-                        ),
-                        .y2 = static_cast<lv_coord_t>(cell.y2 - 4),
-                    },
-                    clipLabel.data(),
-                    stop ? theme::color::DESTRUCTIVE
-                         : theme::color::TEXT_PRIMARY,
-                    focused || active ? LV_OPA_COVER : LV_OPA_80,
-                    fonts.compact_selected()
-                );
+                if (!stop) {
+                    const auto& preview = previews_[
+                        column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
+                    ];
+                    drawText(
+                        layer,
+                        lv_area_t{
+                            .x1 = static_cast<lv_coord_t>(cell.x1 + 4),
+                            .y1 = static_cast<lv_coord_t>(cell.y1 + 1),
+                            .x2 = static_cast<lv_coord_t>(
+                                cell.x2 - (queued ? 18 : 3)
+                            ),
+                            .y2 = static_cast<lv_coord_t>(cell.y1 + 13),
+                        },
+                        clipLabel.data(),
+                        theme::color::TEXT_PRIMARY,
+                        focused || active ? LV_OPA_COVER : LV_OPA_80,
+                        fonts.meta_label(),
+                        LV_TEXT_ALIGN_LEFT
+                    );
+                    const lv_area_t previewArea{
+                        static_cast<lv_coord_t>(cell.x1 + 5),
+                        static_cast<lv_coord_t>(cell.y1 + 14),
+                        static_cast<lv_coord_t>(cell.x2 - 5),
+                        static_cast<lv_coord_t>(cell.y2 - 7),
+                    };
+                    if (preview.peak != 0U &&
+                        areasOverlap(previewArea, layer->_clip_area)) {
+                        constexpr lv_coord_t previewHeight = 10;
+                        const lv_coord_t previewX1 = previewArea.x1;
+                        const lv_coord_t previewX2 = previewArea.x2;
+                        const lv_coord_t previewWidth = static_cast<lv_coord_t>(
+                            previewX2 - previewX1 + 1
+                        );
+                        for (uint8_t bin = 0U; bin < PREVIEW_BINS; ++bin) {
+                            const uint8_t density = preview.density[bin];
+                            if (density == 0U) continue;
+                            const lv_coord_t x1 = static_cast<lv_coord_t>(
+                                previewX1 + (static_cast<uint32_t>(previewWidth) *
+                                    bin) / PREVIEW_BINS
+                            );
+                            const lv_coord_t x2 = static_cast<lv_coord_t>(
+                                previewX1 + (static_cast<uint32_t>(previewWidth) *
+                                    (bin + 1U)) / PREVIEW_BINS - 2
+                            );
+                            const lv_coord_t height = static_cast<lv_coord_t>(
+                                2 + (static_cast<uint16_t>(previewHeight - 2) *
+                                    density) / preview.peak
+                            );
+                            drawRect(
+                                layer,
+                                {x1,
+                                 static_cast<lv_coord_t>(cell.y2 - 6 - height),
+                                 std::max<lv_coord_t>(x1, x2),
+                                 static_cast<lv_coord_t>(cell.y2 - 7)},
+                                trackColor,
+                                active ? LV_OPA_COVER : LV_OPA_70,
+                                trackColor,
+                                0,
+                                LV_OPA_TRANSP,
+                                1
+                            );
+                        }
+                    }
+                }
             } else if (!disabledSecondary) {
                 drawText(
                     layer,

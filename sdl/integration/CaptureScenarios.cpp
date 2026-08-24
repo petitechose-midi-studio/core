@@ -1617,6 +1617,21 @@ bool prepareClipLauncherV3Scenario(core::state::CoreState& state) {
         return false;
     }
 
+    // Give the launcher fixture a readable musical silhouette. Duplicated
+    // Clips then prove that previews come from both resident and cold
+    // documents without changing production defaults.
+    constexpr std::array<uint8_t, 5> previewSteps{0U, 2U, 3U, 5U, 7U};
+    oc::note::sequencer::StepBitMask128 previewMask{};
+    for (uint8_t step : previewSteps) {
+        state.sequencer.pattern.note[step] =
+            static_cast<uint8_t>(60U + step / 3U);
+        state.sequencer.pattern.velocity[step] =
+            static_cast<uint8_t>(88U + step);
+        state.sequencer.pattern.gate[step] = 75U;
+        previewMask.setBit(step);
+    }
+    state.sequencer.pattern.enabledMask.set(previewMask);
+
     // Three authored Tracks plus the one sequential Add Track column. The
     // first four Scenes deliberately mix Clip, Stop and Empty cells so one
     // fixture can exercise the complete launcher vocabulary.
