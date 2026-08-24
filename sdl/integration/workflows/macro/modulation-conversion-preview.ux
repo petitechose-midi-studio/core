@@ -14,16 +14,16 @@
 260 tap MACRO_1 60
 1240 tick
 1300 button LEFT_BOTTOM up
-1450 encoder NAV 1
+1450 encoder NAV 0.01
 1580 tap NAV 60
 1780 capture screen automation_detail
 
 # Convert is directly below Playback. Entering it opens a non-audible preview
 # that states the policy, reference value, and post-conversion source states.
-1900 encoder NAV 1
+1900 encoder NAV 0.01
 2020 tap NAV 60
 2220 capture screen preview_mean_empty
-2340 encoder NAV 1
+2340 encoder NAV 0.01
 2500 capture screen preview_first_empty
 
 # Empty destination: tap Apply. Automation stays stored but Playback is Off;
@@ -36,7 +36,7 @@
 # destination now requires a guarded overwrite.
 3000 tap LEFT_TOP 60
 3160 tap NAV 60
-3320 encoder NAV 1
+3320 encoder NAV 0.01
 3460 tap NAV 60
 3680 capture screen overwrite_preview
 3820 button BOTTOM_RIGHT down

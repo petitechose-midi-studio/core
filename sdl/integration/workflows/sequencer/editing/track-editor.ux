@@ -2,14 +2,14 @@
 # Purpose: validates the complete end-user path: open from a matrix Track header,
 # edit Channel and Delay, toggle Mute/Solo, hot-switch enabled Tracks, then
 # close and reopen the editor without an intermediate Structure screen.
-# Expect: semantic:track_2_editor:mode=sequencer.track_editor, semantic:track_2_editor:effect=open_track_editor, semantic:track_2_editor:target_track=1, semantic:track_2_editor:property=channel, semantic:track_2_editor:authored_value=1
+# Expect: semantic:track_2_editor:mode=sequencer.clip_launcher, semantic:track_2_editor:effect=open_track_settings, semantic:track_2_editor:target_track=1, semantic:track_2_editor:property=enabled
 # Expect: semantic:channel_edited:effect=edit_track_property, semantic:channel_edited:property=channel, semantic:channel_edited:authored_value=4
 # Expect: semantic:delay_selected:effect=select_track_property, semantic:delay_selected:property=delay
 # Expect: semantic:delay_edited:effect=edit_track_property, semantic:delay_edited:property=delay, semantic:delay_edited:value_label=+37 ms
 # Expect: semantic:track_muted:effect=toggle_track_mute, semantic:track_muted:property=mute, semantic:track_muted:authored_value=1
 # Expect: semantic:track_soloed:effect=toggle_track_solo, semantic:track_soloed:property=solo, semantic:track_soloed:authored_value=1
 # Expect: semantic:track_1_hot_switch:effect=switch_track, semantic:track_1_hot_switch:target_track=0
-# Expect: semantic:track_2_values_restored:mode=sequencer.track_editor, semantic:track_2_values_restored:target_track=1, semantic:track_2_values_restored:property=delay, semantic:track_2_values_restored:value_label=+37 ms
+# Expect: semantic:track_2_values_restored:mode=sequencer.track_editor, semantic:track_2_values_restored:effect=select_track_property, semantic:track_2_values_restored:target_track=1, semantic:track_2_values_restored:property=delay, semantic:track_2_values_restored:value_label=+37 ms
 # Expect: semantic:type_draft:mode=sequencer.track_editor, semantic:type_draft:property=type, semantic:type_draft:effect=edit_track_property, semantic:type_draft:intent=edit_value, semantic:type_draft:draft_active=true, semantic:type_draft:dirty=true, semantic:type_draft:projection=draft
 # Expect: semantic:type_draft_retarget_blocked:effect=keep_track_type_draft_target, semantic:type_draft_retarget_blocked:intent=navigate_secondary_axis, semantic:type_draft_retarget_blocked:target_track=1, semantic:type_draft_retarget_blocked:reason=unsaved_draft, semantic:type_draft_retarget_blocked:dirty=true
 # Expect: semantic:type_applied:effect=apply_track_type_draft, semantic:type_applied:intent=apply, semantic:type_applied:draft_active=false, semantic:type_applied:dirty=false
@@ -17,55 +17,65 @@
 
 0 scenario clip-launcher
 
-# NAV crosses T1/C2 to reach the explicit T2 header. A short press opens the
-# retained editor without routing through a Pattern context.
-100 encoder NAV 1
-180 encoder NAV 1
-3000 capture screen track_2_header
-3200 tap NAV 60
-3480 capture screen track_2_editor
+# Held NAV owns the launcher horizontal axis. Enter T1, move to T2, then move
+# vertically to its header; long NAV opens the retained Track settings.
+100 button NAV down
+180 encoder NAV 0.01
+260 encoder NAV 0.01
+340 button NAV up
+420 encoder NAV -0.01
+500 capture screen track_2_header
+600 button NAV down
+1660 tick
+1720 capture screen track_2_editor
+1780 button NAV up
 
 # OUTPUT is focused by default. OPT changes only the canonical Track Channel.
-3660 encoder OPT 0.60
-3820 capture screen channel_edited
+1900 encoder OPT 0.60
+2060 capture screen channel_edited
 
 # NAV focuses Delay directly; OPT edits its signed millisecond value without
 # opening another screen or requiring a secondary modifier.
-4000 encoder NAV 1
-4080 capture screen delay_selected
-4260 encoder OPT 0.75
-4420 capture screen delay_edited
+2240 encoder NAV 0.01
+2320 capture screen delay_selected
+2500 encoder OPT 0.75
+2660 capture screen delay_edited
 
 # The visible action strip maps directly to Mute and Solo.
-4520 tap BOTTOM_LEFT 60
-4680 capture screen track_muted
-4780 tap BOTTOM_RIGHT 60
-4940 capture screen track_soloed
+2760 tap BOTTOM_LEFT 60
+2920 capture screen track_muted
+3020 tap BOTTOM_RIGHT 60
+3180 capture screen track_soloed
 
 # LEFT_CENTER+NAV wraps only through enabled Tracks and retargets in place.
-5040 button LEFT_CENTER down
-5120 encoder NAV -1
-5280 capture screen track_1_hot_switch
-5360 encoder NAV 1
-5520 capture screen track_2_hot_switch_back
-5580 button LEFT_CENTER up
+3280 button LEFT_CENTER down
+3360 encoder NAV -0.01
+3520 capture screen track_1_hot_switch
+3600 encoder NAV 0.01
+3760 capture screen track_2_hot_switch_back
+3820 button LEFT_CENTER up
 
 # Close directly to the same header. Reopening proves the Track identity
 # retained its authored values without routing through a Pattern workspace.
-5700 tap LEFT_TOP 60
-6280 tap NAV 60
-6520 capture screen track_2_values_restored
+3940 tap LEFT_TOP 60
+4140 capture screen track_2_header_restored
+4240 button NAV down
+5300 tick
+5360 button NAV up
+5480 encoder NAV 0.01
+5560 encoder NAV -0.01
+5740 capture screen track_2_values_restored
 
 # TYPE follows the retained Delay focus. Its destructive conversion remains a
 # draft until the visible Apply action. A secondary-axis gesture cannot
 # silently retarget that dirty draft to Track 1.
-6700 encoder NAV 1
-6940 encoder OPT -1
-7020 encoder OPT -1
-7100 capture screen type_draft
-7200 button LEFT_CENTER down
-7280 encoder NAV -1
-7440 capture screen type_draft_retarget_blocked
-7520 button LEFT_CENTER up
-7640 tap BOTTOM_RIGHT 60
-7880 capture screen type_applied
+5840 encoder NAV 0.01
+6080 encoder OPT -1
+6160 encoder OPT -1
+6240 capture screen type_draft
+6340 button LEFT_CENTER down
+6420 encoder NAV -0.01
+6580 capture screen type_draft_retarget_blocked
+6660 button LEFT_CENTER up
+6780 tap BOTTOM_RIGHT 60
+7020 capture screen type_applied

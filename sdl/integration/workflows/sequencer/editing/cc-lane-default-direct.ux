@@ -12,10 +12,10 @@
 # Hold the shared property selector, choose + CC lane, then simply release.
 # Lane 1 inherits the project default CC 1 and opens directly in the grid.
 180 button LEFT_BOTTOM down
-260 encoder NAV 1
-340 encoder NAV 1
-420 encoder NAV 1
-500 encoder NAV 1
+260 encoder NAV 0.01
+340 encoder NAV 0.01
+420 encoder NAV 0.01
+500 encoder NAV 0.01
 740 capture screen cc_lane_default_selected
 820 button LEFT_BOTTOM up
 1060 capture screen cc_lane_default_grid

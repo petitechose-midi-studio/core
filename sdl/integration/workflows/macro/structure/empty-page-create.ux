@@ -7,7 +7,7 @@
 80 capture screen source_page
 
 # The next Page is a non-created preview and must not reuse the active Page.
-180 encoder NAV 1
+180 encoder NAV 0.01
 360 capture screen page_add_target
 
 # Confirm through the ordinary NAV grammar. The new Page remains truly empty.

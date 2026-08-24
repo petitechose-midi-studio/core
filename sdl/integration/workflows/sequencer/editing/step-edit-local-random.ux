@@ -15,8 +15,8 @@
 1550 button MACRO_1 up
 
 # Move focus to Pitch: State -> Chance -> Pitch.
-1650 encoder NAV 1
-1700 encoder NAV 1
+1650 encoder NAV 0.01
+1700 encoder NAV 0.01
 1750 capture screen pitch_focused
 
 # Hold LEFT_BOTTOM to enter local random mode, then set the Pitch range.

@@ -1,50 +1,87 @@
-# Clip Launcher structure grammar: select, duplicate, move, remove.
-# Expect: capture_changed:launcher_browse=clip_selected
-# Expect: capture_changed:clip_selected=duplicate_target
-# Expect: capture_changed:duplicate_target=clip_duplicated
-# Expect: capture_changed:clip_duplicated=move_target
-# Expect: capture_changed:move_target=clip_moved
-# Expect: capture_changed:clip_moved=clip_removed
-# Expect: semantic:clip_selected:mode=sequencer.clip_launcher, semantic:clip_selected:projection=selected
-# Expect: semantic:duplicate_target:effect=begin_duplicate_clip, semantic:duplicate_target:projection=duplicate_destination
-# Expect: semantic:clip_duplicated:effect=duplicate_clip, semantic:clip_duplicated:outcome=applied
-# Expect: semantic:move_target:effect=begin_move_clip, semantic:move_target:projection=move_destination
-# Expect: semantic:clip_moved:effect=move_clip, semantic:clip_moved:outcome=applied
-# Expect: semantic:clip_removed:effect=remove_clip, semantic:clip_removed:outcome=applied
+# UX workflow: Clip and slot authoring in the Launcher V3 matrix.
+# Purpose: validates long-NAV discovery, the three-field Clip behavior editor,
+# persisted values, and reversible creation of an explicit Stop slot.
+# Expect: capture_changed:clip_behavior_length=launcher_ready
+# Expect: capture_changed:clip_behavior_then=clip_behavior_length
+# Expect: capture_changed:clip_behavior_target=clip_behavior_then
+# Expect: capture_changed:clip_behavior_quantize=clip_behavior_target
+# Expect: capture_changed:clip_behavior_beat=clip_behavior_quantize
+# Expect: capture_changed:behavior_applied=clip_behavior_beat
+# Expect: capture_changed:behavior_persisted=behavior_applied
+# Expect: capture_changed:empty_slot=behavior_persisted
+# Expect: capture_changed:slot_action_create=empty_slot
+# Expect: capture_changed:slot_action_stop=slot_action_create
+# Expect: capture_changed:stop_authored=slot_action_stop
+# Expect: capture_changed:slot_action_clear=stop_authored
+# Expect: semantic:clip_behavior_length:mode=sequencer.clip_launcher.editor, semantic:clip_behavior_length:target=clip_behavior, semantic:clip_behavior_length:property=length, semantic:clip_behavior_length:value_label=2_loops
+# Expect: semantic:clip_behavior_then:effect=select_behavior_field, semantic:clip_behavior_then:property=then, semantic:clip_behavior_then:value_label=clip_3
+# Expect: semantic:clip_behavior_target:effect=edit_behavior_value, semantic:clip_behavior_target:value_label=clip_4
+# Expect: semantic:clip_behavior_beat:property=quantization, semantic:clip_behavior_beat:value_label=beat
+# Expect: semantic:behavior_applied:effect=apply_launcher_editor, semantic:behavior_applied:outcome=applied
+# Expect: semantic:behavior_persisted:value_label=2_loops
+# Expect: semantic:empty_slot:property=empty, semantic:empty_slot:target_track=2, semantic:empty_slot:target_index=3
+# Expect: semantic:slot_action_stop:target=slot_action, semantic:slot_action_stop:value_label=set_stop
+# Expect: semantic:stop_authored:property=stop, semantic:stop_authored:outcome=applied
+# Expect: semantic:slot_action_clear:value_label=clear_stop
+# Expect: semantic:stop_preserved_after_cancel:property=stop, semantic:stop_preserved_after_cancel:outcome=cancelled
 
-0 scenario clip-launcher
-100 capture screen launcher_browse
+0 scenario clip-launcher-v3
+100 capture screen launcher_ready
 
-# Browse to the existing inactive T1/C2 Clip.
-200 encoder NAV 1
+# T1/S2 already has a two-loop Follow action to S3.
+220 encoder NAV 0.01
+300 button NAV down
+380 encoder NAV 0.01
+460 button NAV up
+620 button NAV down
+1680 tick
+1760 capture screen clip_behavior_length
+1840 button NAV up
 
-# Long NAV enters the same one-item structural selection grammar used by the
-# rest of the Sequencer. Its paired release must not open the Pattern.
-520 button NAV down
-1580 tick
-1640 button NAV up
-1820 capture screen clip_selected
+# Bare NAV selects a field. LEFT_CENTER + NAV changes that field's value.
+2000 encoder NAV 0.01
+2160 capture screen clip_behavior_then
+2240 button LEFT_CENTER down
+2320 encoder NAV 0.01
+2400 button LEFT_CENTER up
+2560 capture screen clip_behavior_target
+2640 encoder NAV 0.01
+2800 capture screen clip_behavior_quantize
+2880 button LEFT_CENTER down
+2960 encoder NAV 0.01
+3040 button LEFT_CENTER up
+3200 capture screen clip_behavior_beat
 
-# Copy starts a destination phase on the next empty slot; a second tap applies.
-1920 tap BOTTOM_RIGHT 60
-2150 capture screen duplicate_target
-2250 tap BOTTOM_RIGHT 60
-2500 capture screen clip_duplicated
+# Short NAV applies. Reopening proves all three authored values survived.
+3280 tap NAV 60
+3460 capture screen behavior_applied
+3540 button NAV down
+4600 tick
+4680 capture screen behavior_persisted
+4760 button NAV up
+4920 tap LEFT_TOP 60
 
-# Select the duplicate, then LEFT_CENTER starts direct same-Track movement.
-2600 button NAV down
-3660 tick
-3720 button NAV up
-3900 tap LEFT_CENTER 60
-4120 capture screen move_target
-4220 tap BOTTOM_RIGHT 60
-4470 capture screen clip_moved
+# T3/S4 is Empty. Its long-NAV menu can author a dedicated Stop cell.
+5080 encoder NAV 0.01
+5160 encoder NAV 0.01
+5240 button NAV down
+5320 encoder NAV 0.01
+5400 encoder NAV 0.01
+5480 button NAV up
+5640 capture screen empty_slot
+5720 button NAV down
+6780 tick
+6860 capture screen slot_action_create
+6940 button NAV up
+7100 encoder NAV 0.01
+7260 capture screen slot_action_stop
+7340 tap NAV 60
+7520 capture screen stop_authored
 
-# Removal remains the guarded destructive action and is committed on hold.
-4570 button NAV down
-5630 tick
-5690 button NAV up
-5790 button BOTTOM_LEFT down
-6850 tick
-7010 capture screen clip_removed
-7070 button BOTTOM_LEFT up
+# The same gesture on a Stop slot selects Clear Stop by default.
+7600 button NAV down
+8660 tick
+8740 capture screen slot_action_clear
+8820 button NAV up
+8980 tap LEFT_TOP 60
+9140 capture screen stop_preserved_after_cancel

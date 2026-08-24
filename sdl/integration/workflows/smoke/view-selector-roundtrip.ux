@@ -10,7 +10,7 @@
 # second short tap applies the highlighted view.
 700 tap LEFT_TOP 60
 900 tick
-1000 encoder NAV 1
+1000 encoder NAV 0.01
 1100 tap LEFT_TOP 60
 1400 tick
 1600 capture screen sequencer_open
@@ -20,7 +20,7 @@
 # with every other top-level view. Contextual selection belongs to NAV hold.
 9000 tap LEFT_TOP 60
 9200 tick
-9300 encoder NAV -1
+9300 encoder NAV -0.01
 9400 tap LEFT_TOP 60
 9700 tick
 9900 capture screen macro_after_sequencer
@@ -28,18 +28,18 @@
 # Macro -> Project -> settle -> Macro.
 10000 tap LEFT_TOP 60
 10200 tick
-10300 encoder NAV 1
-10400 encoder NAV 1
-10500 encoder NAV 1
+10300 encoder NAV 0.01
+10400 encoder NAV 0.01
+10500 encoder NAV 0.01
 10600 tap LEFT_TOP 60
 10900 tick
 11100 capture screen project_open
 18600 tick
 18700 tap LEFT_TOP 60
 18900 tick
-19000 encoder NAV -1
-19100 encoder NAV -1
-19200 encoder NAV -1
+19000 encoder NAV -0.01
+19100 encoder NAV -0.01
+19200 encoder NAV -0.01
 19300 tap LEFT_TOP 60
 19600 tick
 19800 capture screen macro_after_project
@@ -47,20 +47,20 @@
 # Macro -> Device Settings -> settle -> Macro.
 19900 tap LEFT_TOP 60
 20100 tick
-20200 encoder NAV 1
-20300 encoder NAV 1
-20400 encoder NAV 1
-20500 encoder NAV 1
+20200 encoder NAV 0.01
+20300 encoder NAV 0.01
+20400 encoder NAV 0.01
+20500 encoder NAV 0.01
 20600 tap LEFT_TOP 60
 20900 tick
 21100 capture screen device_settings_open
 28600 tick
 28700 tap LEFT_TOP 60
 28900 tick
-29000 encoder NAV -1
-29100 encoder NAV -1
-29200 encoder NAV -1
-29300 encoder NAV -1
+29000 encoder NAV -0.01
+29100 encoder NAV -0.01
+29200 encoder NAV -0.01
+29300 encoder NAV -0.01
 29400 tap LEFT_TOP 60
 29700 tick
 29900 capture screen macro_final

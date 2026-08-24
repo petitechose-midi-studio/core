@@ -1,0 +1,30 @@
+# UX workflow: Clip Launcher quick property selector.
+# Purpose: proves LEFT_CENTER defaults to Edit, held LEFT_CENTER + NAV selects
+# Loops, release arms it, and OPT edits it without leaving performance view.
+# Expect: capture_changed:quick_edit=clip_focused
+# Expect: capture_changed:quick_length=quick_edit
+# The selected value remains visible briefly after release while OPT is armed.
+# Expect: capture_match:length_armed=quick_length
+# Expect: capture_changed:length_changed=length_armed
+# Expect: semantic:quick_length:effect=select_clip_quick_action, semantic:quick_length:property=length
+# Expect: semantic:length_armed:effect=arm_clip_quick_property, semantic:length_armed:property=length
+# Expect: semantic:length_changed:effect=edit_clip_quick_property, semantic:length_changed:property=length
+
+0 scenario clip-launcher-v3
+
+# Scene -> first Clip.
+100 button NAV down
+180 encoder NAV 0.01
+260 button NAV up
+420 capture screen clip_focused
+
+# LEFT_CENTER opens on Edit; held NAV moves to Loops.
+500 button LEFT_CENTER down
+620 capture screen quick_edit
+700 encoder NAV 0.01
+820 capture screen quick_length
+900 button LEFT_CENTER up
+1020 capture screen length_armed
+
+1100 encoder OPT 0.01
+1260 capture screen length_changed

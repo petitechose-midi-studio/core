@@ -324,7 +324,8 @@ void SequencerPlaybackService::update(
         const uint16_t trackBit = static_cast<uint16_t>(1U << i);
         const bool trackPlaying =
             (runtime_audible_mask_ & trackBit) != 0 &&
-            track_runtime_states_[i].midiChannel <= 15U;
+            track_runtime_states_[i].midiChannel <= 15U &&
+            (clip_launches_ == nullptr || !clip_launches_->stopped(i));
         const auto clipLaunch = clip_launches_ != nullptr
             ? clip_launches_->realtimeView(i)
             : core::state::sequencer::SequencerClipLaunchRealtimeView{};
@@ -547,9 +548,13 @@ void SequencerPlaybackService::processCcRuntime_(
                     .playbackOrdinal = positionValid ? position.playback.ordinal : 0,
                     .playbackRegion = region,
                     .enabled = (projectTrackEnabledMask(projectTracks) &
-                                static_cast<uint16_t>(1U << track)) != 0,
+                                static_cast<uint16_t>(1U << track)) != 0 &&
+                        (clip_launches_ == nullptr ||
+                         !clip_launches_->stopped(track)),
                     .muted = (projectTrackAudibleMask(projectTracks) &
-                              static_cast<uint16_t>(1U << track)) == 0,
+                              static_cast<uint16_t>(1U << track)) == 0 ||
+                        (clip_launches_ != nullptr &&
+                         clip_launches_->stopped(track)),
                     .stepTriggered = positionValid && position.atStepBoundary,
                     .frozen = clipFrozen || activation.disposition !=
                         core::state::sequencer::SequencerTrackActivationRealtimeView::
@@ -763,7 +768,7 @@ void SequencerPlaybackService::syncRuntimeStates_(
                 core::state::sequencer::SequencerClipLaunchRealtimeView::
                     Disposition::STAGED) {
                 if (!isClipLaunchBoundary_(
-                        launch.quantization, tick, playing)) {
+                        launch.dueTick, tick, playing)) {
                     continue;
                 }
                 applyStagedClip_(
@@ -917,20 +922,11 @@ bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
 }
 
 bool SequencerPlaybackService::isClipLaunchBoundary_(
-    core::state::sequencer::SequencerClipLaunchQuantization quantization,
+    uint32_t dueTick,
     uint32_t tick,
     bool playing
 ) {
-    if (!playing ||
-        quantization ==
-            core::state::sequencer::SequencerClipLaunchQuantization::IMMEDIATE) {
-        return true;
-    }
-    const uint32_t ticks = quantization ==
-        core::state::sequencer::SequencerClipLaunchQuantization::BEAT
-            ? oc::note::clock::PPQN
-            : 4U * oc::note::clock::PPQN;
-    return ticks != 0U && tick % ticks == 0U;
+    return !playing || static_cast<int32_t>(tick - dueTick) >= 0;
 }
 
 void SequencerPlaybackService::syncRuntimeMasksForTrack_(
@@ -968,10 +964,25 @@ void SequencerPlaybackService::applyStagedClip_(
     uint32_t tick,
     bool playing
 ) {
-    if (clip_launches_ == nullptr ||
-        !applyStagedTrackContent_(
+    if (clip_launches_ == nullptr) return;
+    const auto launch = clip_launches_->realtimeView(trackIndex);
+    if (launch.generation != generation) return;
+    if (launch.action ==
+        core::state::sequencer::SequencerClipLaunchAction::STOP) {
+        if (trackIndex >= TRACK_COUNT) return;
+        midi_queue_.cancelPendingEvents(trackIndex);
+        if (cc_coordinator_ != nullptr) {
+            cc_coordinator_->invalidateTrack(trackIndex);
+        }
+        stopTrack(trackIndex);
+        (void)clip_launches_->markAppliedFromRealtime(
+            trackIndex, generation, tick);
+        return;
+    }
+    if (!applyStagedTrackContent_(
             snapshot, projectTracks, trackIndex, tick, playing)) return;
-    (void)clip_launches_->markAppliedFromRealtime(trackIndex, generation);
+    (void)clip_launches_->markAppliedFromRealtime(
+        trackIndex, generation, tick);
 }
 
 bool SequencerPlaybackService::applyStagedTrackContent_(

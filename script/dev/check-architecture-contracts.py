@@ -2483,6 +2483,19 @@ def documentation_contract_errors() -> list[str]:
     return errors
 
 
+def ux_workflow_contract_errors() -> list[str]:
+    errors: list[str] = []
+    workflow_root = ROOT / "sdl" / "integration" / "workflows"
+    for path in sorted(workflow_root.rglob("*.ux")):
+        content = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        if not re.search(r"^# Purpose:\s+\S", content, flags=re.MULTILINE):
+            errors.append(f"{rel}: UX workflow must declare # Purpose:")
+        if not re.search(r"^# Expect:\s+\S", content, flags=re.MULTILINE):
+            errors.append(f"{rel}: UX workflow must declare at least one # Expect:")
+    return errors
+
+
 def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     errors: list[str] = []
     code_mask_cache: dict[str, str] = {}
@@ -4531,9 +4544,17 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"ui\.focusedTrack\s*\).*?"
         r"core_\.sequencer\.drumSequencer\.openTypePicker\s*\(\s*"
         r"ui\.focusedTrack\s*\).*?return\s*;.*?"
+        r"stopTrack\s*\(\s*ui\.focusedTrack\s*,\s*true\s*\)",
+        "Clip Track header short action must own typed creation and direct Stop",
+    )
+    require_in_function(
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::openFocusedEditor",
+        r"if\s*\(\s*ui\.trackHeaderFocused\s*\(\s*\)\s*\).*?"
+        r"core_\.sequencerTracks\.isTrackEnabled\s*\(\s*ui\.focusedTrack\s*\).*?"
         r"track_editor_handler_\s*!=\s*nullptr.*?"
         r"track_editor_handler_->openActiveTrack\s*\(\s*\)",
-        "Clip Track header must own typed creation and Track editing",
+        "Clip Track header long action must own Track editing",
     )
     require_in_function(
         CLIP_WORKSPACE_HANDLER,
@@ -4857,13 +4878,15 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require(
         SEQUENCER_VIEW_HEADER,
-        r"StaticWatchGroup\s*<\s*17\s*>\s+header_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*18\s*>\s+header_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+header_strip_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*2U\s*\*\s*"
         r"core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT\s*>\s*"
         r"structure_selection_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*48\s*>\s+grid_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*26\s*>\s+selector_overlay_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*1\s*>\s+grid_tick_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*27\s*>\s+selector_overlay_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*5\s*>\s+overlay_visibility_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+left_action_strip_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*27\s*>\s+bottom_action_strip_watcher_\s*;",
         "Sequencer UI watcher capacities must retain the shared selection, Drum, and Clip UI locks",
@@ -5299,6 +5322,7 @@ def main(show_inventory: bool = False) -> int:
     errors: list[str] = []
 
     errors.extend(documentation_contract_errors())
+    errors.extend(ux_workflow_contract_errors())
     contract_sources = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
         for path in source_files()

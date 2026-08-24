@@ -197,20 +197,56 @@ void SequencerRuntimeService::update() {
     const uint32_t nowUs = core::time_compat::micros();
     const uint32_t nowMs = oc::time::millis();
     const auto clockConfig = captureClockSyncRuntimeConfig_();
-    const auto activationPublication =
-        track_activations_.captureRuntimePublication();
-    const auto clipLaunchPublication =
-        clip_launches_.captureRuntimePublication(
-            clip_grid_state_, clockConfig.playing);
-    core::state::sequencer::SequencerClipRuntimeSources runtimeSources{};
-    const bool runtimeSourcesValid = clip_launches_.captureRuntimeSources(
-        clip_grid_state_, runtimeSources);
 
     ClockDomainUpdateResult clockDomain{};
     {
         OC_PERF_SCOPE(perfClock, "sequencer.clock-domain");
         clockDomain = updateClockDomainOwnership_(clockConfig, nowMs);
     }
+
+    clip_launches_.updateTransportPosition(
+        clockDomain.transport.tick,
+        clockDomain.transport.playing
+    );
+
+    // A replacement/cancellation may arrive after the next launch generation
+    // has already been staged. Restore the retained graph + flat snapshot pair
+    // atomically, then let the desired request publish as a fresh generation.
+    const auto clipRollback = clip_launches_.captureRollbackPublication();
+    if (!clipRollback.empty()) {
+        runtime_graph_bank_.rollbackRetained(
+            clipRollback.trackMask,
+            [this, &clockConfig, &clockDomain, &clipRollback]() {
+#ifdef ARDUINO
+                if (clockDomain.timerOwnsTransport) {
+                    realtime_lane_->timer.publishRealtimeInputs(
+                        clockConfig,
+                        clipRollback.previousSnapshotIndex
+                    );
+                } else {
+                    snapshot_bank_.commit(clipRollback.previousSnapshotIndex);
+                }
+#else
+                snapshot_bank_.commit(clipRollback.previousSnapshotIndex);
+#endif
+                clip_launches_.applyRollbackPublication(clipRollback);
+            }
+        );
+    }
+
+    clip_launches_.processFollowActions(
+        clip_grid_state_,
+        track_bank_state_.enabledMaskSignal().get(),
+        clockDomain.transport.playing
+    );
+    const auto activationPublication =
+        track_activations_.captureRuntimePublication();
+    const auto clipLaunchPublication =
+        clip_launches_.captureRuntimePublication(
+            clip_grid_state_, clockDomain.transport.playing);
+    core::state::sequencer::SequencerClipRuntimeSources runtimeSources{};
+    const bool runtimeSourcesValid = clip_launches_.captureRuntimeSources(
+        clip_grid_state_, runtimeSources);
 
     const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
     bool runtimePublicationDue =

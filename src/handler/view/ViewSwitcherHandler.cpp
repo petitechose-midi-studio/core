@@ -163,6 +163,7 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     // matrix first.
     const auto& clipWorkspace = core_state_.sequencer.clipWorkspace;
     if (!clipWorkspace.matrixVisible() || clipWorkspace.selectionActive() ||
+        clipWorkspace.editorActive() ||
         core_state_.sequencer.drumSequencer.pickerVisible()) {
         return false;
     }

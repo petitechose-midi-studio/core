@@ -12,8 +12,8 @@
 260 tap MACRO_1 60
 1240 tick
 1300 button LEFT_BOTTOM up
-1430 encoder NAV 1
-1560 encoder NAV 1
+1430 encoder NAV 0.01
+1560 encoder NAV 0.01
 1710 capture screen sine
 1840 tap LEFT_TOP 60
 
@@ -22,8 +22,8 @@
 2100 tap MACRO_2 60
 3080 tick
 3140 button LEFT_BOTTOM up
-3270 encoder NAV 1
-3400 encoder NAV 1
+3270 encoder NAV 0.01
+3400 encoder NAV 0.01
 3550 capture screen triangle
 3680 tap LEFT_TOP 60
 
@@ -32,8 +32,8 @@
 3940 tap MACRO_3 60
 4920 tick
 4980 button LEFT_BOTTOM up
-5110 encoder NAV 1
-5240 encoder NAV 1
+5110 encoder NAV 0.01
+5240 encoder NAV 0.01
 5390 capture screen saw
 5520 tap LEFT_TOP 60
 
@@ -42,8 +42,8 @@
 5780 tap MACRO_4 60
 6760 tick
 6820 button LEFT_BOTTOM up
-6950 encoder NAV 1
-7080 encoder NAV 1
+6950 encoder NAV 0.01
+7080 encoder NAV 0.01
 7230 capture screen square
 7360 tap LEFT_TOP 60
 
@@ -52,7 +52,7 @@
 7620 tap MACRO_5 60
 8600 tick
 8660 button LEFT_BOTTOM up
-8790 encoder NAV 1
-8920 encoder NAV 1
+8790 encoder NAV 0.01
+8920 encoder NAV 0.01
 9070 capture screen recorded_shape
 9200 tap LEFT_TOP 60

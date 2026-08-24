@@ -185,7 +185,7 @@ private:
     );
     bool isLocalLoopBoundary_(uint8_t trackIndex, uint32_t tick) const;
     static bool isClipLaunchBoundary_(
-        core::state::sequencer::SequencerClipLaunchQuantization quantization,
+        uint32_t dueTick,
         uint32_t tick,
         bool playing
     );

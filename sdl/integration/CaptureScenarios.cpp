@@ -57,7 +57,9 @@ void publishVariationTelemetry(
 
 void prepareSequencerVariationScenario(core::state::CoreState& state,
                                        core::state::sequencer::StepProperty property) {
+    (void)state.clearSequencerHistory();
     state.activeView.set(core::ui::ViewType::CLIPS);
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     state.sequencer.activeStepProperty.set(property);
     state.sequencer.setStepDataAt(0, 60, 100, 75, 0);
     if (!state.sequencer.pattern.isEnabled(0)) {
@@ -98,6 +100,7 @@ void prepareSequencerScaleScenario(
     using namespace oc::note::sequencer;
 
     state.activeView.set(core::ui::ViewType::CLIPS);
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
     state.sequencer.setPitchEditMode(
         core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
@@ -875,6 +878,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
 
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     state.sequencer.pattern.length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -942,6 +946,7 @@ void prepareSequencerLocalRandomGridScenario(core::state::CoreState& state) {
 
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     state.sequencer.pattern.length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -1056,6 +1061,7 @@ void prepareSequencerSummedLocalRandomScenario(
 
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     state.sequencer.pattern.length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -1158,6 +1164,7 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
 
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     state.sequencer.pattern.length.set(4);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
@@ -1590,6 +1597,102 @@ bool prepareClipLauncherScenario(core::state::CoreState& state) {
     return true;
 }
 
+bool prepareClipLauncherV3Scenario(core::state::CoreState& state) {
+    using namespace core::state;
+    using namespace core::state::sequencer;
+
+    state.activeView.set(core::ui::ViewType::CLIPS);
+    state.overlays.hideAll();
+    state.statusBar.playing.set(false);
+    state.sequencer.reset();
+    state.sequencerTracks.reset();
+    state.trackNavigation.reset();
+    if (!state.setSharedTrackState(0x0007U, 0U)) return false;
+    state.sequencerClips.reset(state.currentSharedTrackEnabledMask());
+    if (!state.sequencerTracks.setTrackKind(
+            1U,
+            SequencerTrackKind::DRUM,
+            true,
+            DrumKitPreset::GENERAL_MIDI)) {
+        return false;
+    }
+
+    // Three authored Tracks plus the one sequential Add Track column. The
+    // first four Scenes deliberately mix Clip, Stop and Empty cells so one
+    // fixture can exercise the complete launcher vocabulary.
+    if (!state.duplicateSequencerClip({0U, 0U}, {0U, 1U}) ||
+        !state.duplicateSequencerClip({0U, 0U}, {0U, 2U}) ||
+        !state.duplicateSequencerClip({1U, 0U}, {1U, 1U}) ||
+        !state.duplicateSequencerClip({1U, 0U}, {1U, 3U}) ||
+        !state.duplicateSequencerClip({2U, 0U}, {2U, 2U}) ||
+        !state.setSequencerStopSlot({2U, 1U}, true) ||
+        !state.setSequencerStopSlot({1U, 2U}, true) ||
+        !state.setSequencerStopSlot({0U, 3U}, true)) {
+        return false;
+    }
+    if (!state.setSequencerClipBehavior(
+            {0U, 1U},
+            SequencerLauncherBehavior{
+                .length = 2U,
+                .thenTarget = 2U,
+                .quantization =
+                    SequencerLauncherFollowQuantization::GLOBAL,
+            }) ||
+        !state.setSequencerSceneBehavior(
+            1U,
+            SequencerLauncherBehavior{
+                .length = 2U,
+                .thenTarget = 2U,
+                .quantization = SequencerLauncherFollowQuantization::BAR,
+            })) {
+        return false;
+    }
+    state.sequencerClipLaunches.reset(
+        state.sequencerClips,
+        state.currentSharedTrackEnabledMask()
+    );
+    state.sequencerHistory.clear();
+    state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
+    state.sequencer.clipWorkspace.reset(0U);
+    return true;
+}
+
+bool prepareClipLauncherV3ScrollScenario(core::state::CoreState& state) {
+    using namespace core::state;
+    using namespace core::state::sequencer;
+
+    state.activeView.set(core::ui::ViewType::CLIPS);
+    state.overlays.hideAll();
+    state.statusBar.playing.set(false);
+    state.sequencer.reset();
+    state.sequencerTracks.reset();
+    state.trackNavigation.reset();
+    if (!state.setSharedTrackState(0x00FFU, 0U)) return false;
+    state.sequencerClips.reset(state.currentSharedTrackEnabledMask());
+
+    for (uint8_t slot = 1U;
+         slot < SequencerClipGridState::SLOT_COUNT;
+         ++slot) {
+        if (!state.duplicateSequencerClip({0U, 0U}, {0U, slot})) {
+            return false;
+        }
+    }
+    if (!state.duplicateSequencerClip({4U, 0U}, {4U, 4U}) ||
+        !state.duplicateSequencerClip({6U, 0U}, {6U, 6U}) ||
+        !state.setSequencerStopSlot({5U, 5U}, true) ||
+        !state.setSequencerStopSlot({7U, 7U}, true)) {
+        return false;
+    }
+    state.sequencerClipLaunches.reset(
+        state.sequencerClips,
+        state.currentSharedTrackEnabledMask()
+    );
+    state.sequencerHistory.clear();
+    state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
+    state.sequencer.clipWorkspace.reset(0U);
+    return true;
+}
+
 bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     using namespace core::state;
     using namespace core::state::sequencer;
@@ -1818,6 +1921,14 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "clip-launcher") == 0) {
         return prepareClipLauncherScenario(state);
+    }
+
+    if (std::strcmp(scenario, "clip-launcher-v3") == 0) {
+        return prepareClipLauncherV3Scenario(state);
+    }
+
+    if (std::strcmp(scenario, "clip-launcher-v3-scroll") == 0) {
+        return prepareClipLauncherV3ScrollScenario(state);
     }
 
     if (std::strcmp(scenario, "drum-sequencer") == 0) {

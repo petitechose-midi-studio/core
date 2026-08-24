@@ -200,6 +200,33 @@ FLASHMEM const char* operationOutcomeName(
     return nullptr;
 }
 
+FLASHMEM const char* clipLaunchOriginName(
+    core::state::sequencer::SequencerClipLaunchOrigin origin
+) {
+    using Origin = core::state::sequencer::SequencerClipLaunchOrigin;
+    switch (origin) {
+        case Origin::CLIP_FOLLOW: return "clip_follow";
+        case Origin::SCENE_FOLLOW: return "scene_follow";
+        case Origin::MANUAL_CLIP: return "manual_clip";
+        case Origin::MANUAL_SCENE: return "manual_scene";
+        case Origin::DIRECT_STOP: return "direct_stop";
+    }
+    return nullptr;
+}
+
+FLASHMEM const char* clipLaunchStatusName(
+    core::state::sequencer::SequencerClipLaunchStatus status
+) {
+    using Status = core::state::sequencer::SequencerClipLaunchStatus;
+    switch (status) {
+        case Status::IDLE: return "idle";
+        case Status::QUEUED: return "queued";
+        case Status::APPLIED: return "applied";
+        case Status::CANCELLED: return "cancelled";
+    }
+    return nullptr;
+}
+
 FLASHMEM const char* guardedActionOutcomeName(
     core::state::contextual::GuardedActionPhase phase
 ) {
@@ -779,6 +806,7 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
     const bool contextSelectorEvent = navPress || navHold || navRelease || navTurn;
     const bool mainContextAvailable =
+        !sequencer_.clipWorkspace.matrixVisible() &&
         !sequencer_.structureUi.stepSelection.active.get() &&
         !sequencer_.stepEdit.visible.get() &&
         !sequencer_.stepContentSelector.selecting.get() &&
@@ -1335,13 +1363,15 @@ FLASHMEM SequencerClipLauncherUxSurface::SequencerClipLauncherUxSurface(
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& tracks,
     core::state::sequencer::SequencerClipGridState& clips,
-    core::state::sequencer::SequencerClipLaunchQueue& launches
+    core::state::sequencer::SequencerClipLaunchQueue& launches,
+    oc::api::ButtonAPI& buttons
 ) : active_view_(activeView),
     navigation_focus_(navigationFocus),
     sequencer_(sequencer),
     tracks_(tracks),
     clips_(clips),
-    launches_(launches) {}
+    launches_(launches),
+    buttons_(buttons) {}
 
 FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
@@ -1350,6 +1380,69 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     namespace seq = core::state::sequencer;
     using ButtonType = oc::core::input::ButtonBindingType;
     using Intent = core::state::interaction::ControllerIntent;
+    const auto describeEditorValue = [&out](
+        seq::ClipWorkspaceEditor editor,
+        seq::ClipWorkspaceBehaviorField field,
+        seq::ClipWorkspaceSlotAction action,
+        uint8_t length,
+        uint8_t target,
+        uint8_t quantization
+    ) {
+        if (editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
+            const char* label = action ==
+                    seq::ClipWorkspaceSlotAction::SET_STOP
+                ? "set_stop"
+                : action == seq::ClipWorkspaceSlotAction::CLEAR
+                    ? "clear_stop" : "create_clip";
+            std::snprintf(
+                out.valueLabel, sizeof(out.valueLabel), "%s", label
+            );
+            return;
+        }
+        if (field == seq::ClipWorkspaceBehaviorField::LENGTH) {
+            if (length == 0U) {
+                std::snprintf(
+                    out.valueLabel, sizeof(out.valueLabel), "%s", "off"
+                );
+            } else {
+                std::snprintf(
+                    out.valueLabel,
+                    sizeof(out.valueLabel),
+                    "%u_%s",
+                    static_cast<unsigned>(length),
+                    editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
+                        ? "loops" : "bars"
+                );
+            }
+            return;
+        }
+        if (field == seq::ClipWorkspaceBehaviorField::THEN) {
+            if (target == seq::SequencerLauncherBehavior::NO_TARGET) {
+                std::snprintf(
+                    out.valueLabel, sizeof(out.valueLabel), "%s", "none"
+                );
+            } else {
+                std::snprintf(
+                    out.valueLabel,
+                    sizeof(out.valueLabel),
+                    "%s_%u",
+                    editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
+                        ? "clip" : "scene",
+                    static_cast<unsigned>(target + 1U)
+                );
+            }
+            return;
+        }
+        constexpr std::array<const char*, 3> labels{{
+            "global", "beat", "bar"
+        }};
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "%s",
+            labels[std::min<uint8_t>(quantization, 2U)]
+        );
+    };
 
     if (active_view_.get() != core::ui::ViewType::CLIPS) return false;
 
@@ -1359,11 +1452,17 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     // Launcher return even though no hierarchy transition occurred.
     if (sequencer_.patternPresetPreview.active()) return false;
 
+    const bool navPress = isButton(
+        event, Config::ButtonID::NAV, ButtonType::PRESS
+    );
     const bool navRelease = isButton(
         event, Config::ButtonID::NAV, ButtonType::RELEASE
     );
     const bool navHold = isButton(
         event, Config::ButtonID::NAV, ButtonType::LONG_PRESS
+    );
+    const bool quickRelease = isButton(
+        event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE
     );
     const bool back = isButton(
         event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE
@@ -1371,7 +1470,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     const bool replayEnter =
         (transition_replay_ == TransitionReplay::OPEN_PATTERN ||
          transition_replay_ == TransitionReplay::CREATE_PATTERN) &&
-        navRelease && sequencer_.clipWorkspace.patternVisible();
+        quickRelease && sequencer_.clipWorkspace.patternVisible();
     const bool replayReturn =
         transition_replay_ == TransitionReplay::RETURN_LAUNCHER &&
         back && sequencer_.clipWorkspace.matrixVisible();
@@ -1425,12 +1524,11 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         return true;
     }
 
-    if (!sequencer_.clipWorkspace.matrixVisible()) return false;
-
     const bool navTurn = isEncoder(event, Config::EncoderID::NAV);
-    const bool moveAction = isButton(
-        event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE
+    const bool quickPress = isButton(
+        event, Config::ButtonID::LEFT_CENTER, ButtonType::PRESS
     );
+    const bool optTurn = isEncoder(event, Config::EncoderID::OPT);
     const bool structureAction = isButton(
         event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE
     );
@@ -1443,19 +1541,188 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     uint8_t macroIndex = 0U;
     const bool macroRelease = isMacroButtonRelease(event, macroIndex);
     const bool projection = isSemanticStateProjection(event);
-    if (!navTurn && !navRelease && !navHold && !back && !moveAction &&
+    if (!navPress && !navTurn && !navRelease && !navHold && !back &&
+        !quickPress && !quickRelease && !optTurn &&
         !structureAction && !removeAction && !muteAction && !macroRelease &&
         !projection) {
         return false;
     }
 
     const auto& ui = sequencer_.clipWorkspace;
+    if (navPress && !ui.selectionActive() &&
+        !sequencer_.drumSequencer.pickerVisible()) {
+        retained_horizontal_navigation_ = true;
+        retained_horizontal_navigation_rotated_ = false;
+    }
+    if (navHold && retained_horizontal_navigation_) {
+        retained_horizontal_navigation_ = false;
+        retained_horizontal_navigation_rotated_ = false;
+    }
+    if (retained_horizontal_navigation_ && navTurn) {
+        retained_horizontal_navigation_rotated_ = true;
+        out.mode = "sequencer.clip_launcher";
+        out.target = ui.sceneFocused() ? "scene"
+            : ui.trackHeaderFocused() ? "track" : "clip";
+        out.targetTrack = ui.focusedTrack;
+        out.targetIndex = ui.focusedSlot;
+        out.property = "horizontal_focus";
+        out.effect = "focus_launcher_column";
+        out.intent = Intent::MOVE_FOCUS;
+        out.projection = "applied";
+        out.outcome = "applied";
+        return true;
+    }
+    if (retained_horizontal_navigation_ && navRelease &&
+        retained_horizontal_navigation_rotated_) {
+        retained_horizontal_navigation_ = false;
+        retained_horizontal_navigation_rotated_ = false;
+        out.mode = "sequencer.clip_launcher";
+        out.target = ui.sceneFocused() ? "scene"
+            : ui.trackHeaderFocused() ? "track" : "clip";
+        out.targetTrack = ui.focusedTrack;
+        out.targetIndex = ui.focusedSlot;
+        out.property = "horizontal_focus";
+        out.effect = "finish_horizontal_navigation";
+        out.intent = Intent::MOVE_FOCUS;
+        out.outcome = "noop";
+        return true;
+    }
+    if (quickPress && ui.quickSelectorVisible) retained_quick_selector_ = true;
+    const bool editorClosed =
+        retained_editor_ != seq::ClipWorkspaceEditor::NONE &&
+        !ui.editorActive() && (navRelease || back);
+    if (editorClosed) {
+        out.mode = "sequencer.clip_launcher.editor";
+        out.target =
+            retained_editor_ == seq::ClipWorkspaceEditor::SCENE_BEHAVIOR
+            ? "scene_behavior"
+            : retained_editor_ == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
+                ? "clip_behavior"
+                : "slot_action";
+        out.targetTrack = retained_editor_track_;
+        out.targetIndex = retained_editor_slot_;
+        out.targetCount =
+            retained_editor_ == seq::ClipWorkspaceEditor::SLOT_ACTION
+            ? static_cast<uint8_t>(seq::ClipWorkspaceSlotAction::COUNT)
+            : static_cast<uint8_t>(seq::ClipWorkspaceBehaviorField::COUNT);
+        out.property =
+            retained_editor_ == seq::ClipWorkspaceEditor::SLOT_ACTION
+            ? "action"
+            : retained_editor_field_ ==
+                    seq::ClipWorkspaceBehaviorField::LENGTH
+                ? "length"
+                : retained_editor_field_ ==
+                        seq::ClipWorkspaceBehaviorField::THEN
+                    ? "then"
+                    : "quantization";
+        out.projection = "editor";
+        out.effect = navRelease
+            ? "apply_launcher_editor"
+            : "cancel_launcher_editor";
+        out.intent = navRelease ? Intent::APPLY : Intent::BACK;
+        out.outcome = navRelease ? "applied" : "cancelled";
+        describeEditorValue(
+            retained_editor_,
+            retained_editor_field_,
+            retained_slot_action_,
+            retained_editor_length_,
+            retained_editor_target_,
+            retained_editor_quantization_
+        );
+        retained_editor_ = seq::ClipWorkspaceEditor::NONE;
+        return true;
+    }
+    if (!ui.matrixVisible()) {
+        if (quickRelease && ui.patternVisible()) {
+            out.mode = "sequencer.pattern_editor";
+            out.target = "clip_region";
+            out.targetTrack = ui.returnTrack;
+            out.targetIndex = ui.returnSlot;
+            out.effect = "open_clip_region";
+            out.intent = Intent::CHANGE_SCOPE;
+            out.outcome = "applied";
+            return true;
+        }
+        return false;
+    }
+
+    if (ui.editorActive()) {
+        out.mode = "sequencer.clip_launcher.editor";
+        out.target = ui.editor == seq::ClipWorkspaceEditor::SCENE_BEHAVIOR
+            ? "scene_behavior"
+            : ui.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
+                ? "clip_behavior"
+                : "slot_action";
+        out.targetTrack = ui.focusedTrack;
+        out.targetIndex = ui.focusedSlot;
+        out.targetCount = ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION
+            ? static_cast<uint8_t>(seq::ClipWorkspaceSlotAction::COUNT)
+            : static_cast<uint8_t>(seq::ClipWorkspaceBehaviorField::COUNT);
+        out.property = ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION
+            ? "action"
+            : ui.editorField == seq::ClipWorkspaceBehaviorField::LENGTH
+                ? "length"
+                : ui.editorField == seq::ClipWorkspaceBehaviorField::THEN
+                    ? "then"
+                    : "quantization";
+        out.projection = "editor";
+        if (navTurn) {
+            out.effect = ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION
+                ? "select_slot_action"
+                : buttons_.isPressed(Config::ButtonID::LEFT_CENTER)
+                    ? "edit_behavior_value"
+                    : "select_behavior_field";
+            out.intent = Intent::MOVE_FOCUS;
+        } else if (navHold) {
+            out.effect = "open_launcher_editor";
+            out.intent = Intent::EDIT_VALUE;
+            retained_nav_hold_ = true;
+        } else if (navRelease) {
+            if (retained_nav_hold_) {
+                out.effect = "finish_open_launcher_editor";
+                out.intent = Intent::EDIT_VALUE;
+                out.outcome = "noop";
+                retained_nav_hold_ = false;
+            } else {
+                out.effect = "apply_launcher_editor";
+                out.intent = Intent::APPLY;
+                out.outcome = ui.feedback ==
+                        seq::ClipWorkspaceFeedback::FAILED
+                    ? "blocked" : "applied";
+            }
+        } else if (back) {
+            out.effect = "cancel_launcher_editor";
+            out.intent = Intent::BACK;
+        } else {
+            out.effect = "inspect_launcher_editor";
+        }
+        describeEditorValue(
+            ui.editor,
+            ui.editorField,
+            ui.slotAction,
+            ui.editorLength,
+            ui.editorThenTarget,
+            ui.editorQuantization
+        );
+        retained_editor_ = ui.editor;
+        retained_editor_field_ = ui.editorField;
+        retained_slot_action_ = ui.slotAction;
+        retained_editor_length_ = ui.editorLength;
+        retained_editor_target_ = ui.editorThenTarget;
+        retained_editor_quantization_ = ui.editorQuantization;
+        retained_editor_track_ = ui.focusedTrack;
+        retained_editor_slot_ = ui.focusedSlot;
+        return true;
+    }
+    retained_editor_ = seq::ClipWorkspaceEditor::NONE;
+
     const bool trackHeader = !macroRelease && ui.trackHeaderFocused();
+    const bool scene = !macroRelease && ui.sceneFocused();
     const auto& trackPaste = sequencer_.structureUi.trackPaste;
     const bool trackPasteOwnsSurface = trackHeader &&
         trackPaste.inspectable() && trackPaste.feedback.active;
     if (trackPasteOwnsSurface &&
-        (moveAction || structureAction || projection)) {
+        (quickRelease || structureAction || projection)) {
         return false;
     }
     seq::SequencerClipAddress address{ui.focusedTrack, ui.focusedSlot};
@@ -1463,30 +1730,82 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         address = {
             static_cast<uint8_t>(ui.firstVisibleTrack +
                 (macroIndex % seq::ClipWorkspaceUiState::VISIBLE_TRACKS)),
-            static_cast<uint8_t>(ui.firstVisibleSlot +
+            static_cast<uint8_t>(ui.macroBankFirstSlot() +
                 (macroIndex / seq::ClipWorkspaceUiState::VISIBLE_TRACKS)),
         };
     }
 
-    const bool occupied = clips_.isOccupied(address);
+    const auto slotKind = clips_.slotKind(address);
+    const bool occupied = slotKind == seq::SequencerLauncherSlotKind::CLIP;
+    const bool stopSlot = slotKind == seq::SequencerLauncherSlotKind::STOP;
     const auto telemetry = launches_.telemetry(address.track);
     const bool queued = telemetry.status == seq::SequencerClipLaunchStatus::QUEUED &&
         telemetry.queuedSlot == address.slot;
     const bool active = telemetry.activeSlot == address.slot;
+    const auto sceneTelemetry = launches_.sceneTelemetry();
+    const bool sceneQueued = scene &&
+        sceneTelemetry.queuedScene == ui.focusedSlot &&
+        sceneTelemetry.status == seq::SequencerClipLaunchStatus::QUEUED;
+    const bool sceneActive = scene &&
+        sceneTelemetry.activeScene == ui.focusedSlot;
+
+    auto operationTelemetry = telemetry;
+    if (scene && (sceneQueued || sceneActive)) {
+        for (uint8_t track = 0U;
+             track < seq::SequencerClipLaunchQueue::TRACK_COUNT;
+             ++track) {
+            const auto candidate = launches_.telemetry(track);
+            const bool ownsQueuedScene = sceneQueued &&
+                candidate.status == seq::SequencerClipLaunchStatus::QUEUED &&
+                candidate.queuedSlot == ui.focusedSlot;
+            const bool ownsActiveScene = sceneActive &&
+                candidate.status == seq::SequencerClipLaunchStatus::APPLIED &&
+                candidate.activeSlot == ui.focusedSlot;
+            if (ownsQueuedScene || ownsActiveScene) {
+                operationTelemetry = candidate;
+                break;
+            }
+        }
+    }
 
     out.mode = "sequencer.clip_launcher";
-    out.target = trackHeader ? "track" : "clip";
+    out.target = trackHeader ? "track" : scene ? "scene" : "clip";
     out.targetTrack = address.track;
-    out.targetIndex = trackHeader ? address.track : address.slot;
+    out.targetIndex = trackHeader ? address.track
+                                  : scene ? ui.focusedSlot : address.slot;
     out.targetCount = trackHeader
         ? seq::SequencerTrackBankState::TRACK_COUNT
         : seq::SequencerClipGridState::SLOT_COUNT;
     out.source = tracks_.isDrumTrack(address.track) ? "drum" : "instrument";
+    out.operationOrigin = operationTelemetry.generation != 0U
+        ? clipLaunchOriginName(operationTelemetry.origin) : nullptr;
+    out.hasOperationGeneration = operationTelemetry.generation != 0U;
+    out.operationGeneration = operationTelemetry.generation;
+    out.operationStatus = clipLaunchStatusName(scene
+        ? sceneTelemetry.status : telemetry.status);
+    const uint8_t activeSlot = scene
+        ? sceneTelemetry.activeScene : telemetry.activeSlot;
+    const uint8_t queuedSlot = scene
+        ? sceneTelemetry.queuedScene : telemetry.queuedSlot;
+    out.activeSlot = activeSlot < seq::SequencerClipGridState::SLOT_COUNT
+        ? activeSlot : -1;
+    out.queuedSlot = queuedSlot < seq::SequencerClipGridState::SLOT_COUNT
+        ? queuedSlot : -1;
+    out.beatsRemaining = scene
+        ? sceneTelemetry.beatsRemaining : telemetry.beatsRemaining;
+    if (!scene) {
+        out.hasStopped = true;
+        out.stopped = telemetry.stopped;
+    }
     out.property = trackHeader
         ? tracks_.isTrackEnabled(address.track) ? "enabled" : "empty"
-        : queued ? "queued" : active ? "active" : occupied ? "occupied" : "empty";
+        : scene ? sceneQueued ? "queued"
+                    : sceneActive ? "active" : "scene"
+        : queued ? "queued" : active ? "active"
+        : stopSlot ? "stop" : occupied ? "occupied" : "empty";
     out.projection = trackHeader
         ? "track_header"
+        : scene ? sceneQueued ? "queued" : sceneActive ? "active" : "scene_rail"
         : ui.operation == seq::ClipWorkspaceOperation::SELECT
         ? "selected"
         : ui.operation ==
@@ -1503,6 +1822,13 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             "T%u",
             static_cast<unsigned>(address.track + 1U)
         );
+    } else if (scene) {
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "Scene %u",
+            static_cast<unsigned>(ui.focusedSlot + 1U)
+        );
     } else {
         std::snprintf(
             out.valueLabel,
@@ -1514,22 +1840,45 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     }
 
     if (navTurn) {
-        out.effect = trackHeader ? "focus_track_header" : "focus_clip";
+        if (retained_quick_selector_ || ui.quickSelectorVisible) {
+            out.effect = "select_clip_quick_action";
+            out.intent = Intent::MOVE_FOCUS;
+            out.property = ui.quickAction == seq::ClipWorkspaceQuickAction::EDIT
+                ? "edit"
+                : ui.quickAction == seq::ClipWorkspaceQuickAction::LENGTH
+                    ? "length"
+                    : ui.quickAction == seq::ClipWorkspaceQuickAction::THEN
+                        ? "then" : "quantization";
+            return true;
+        }
+        out.effect = trackHeader ? "focus_track_header"
+            : scene ? "focus_scene" : "focus_clip";
         out.intent = Intent::MOVE_FOCUS;
     } else if (navHold) {
-        out.effect = trackHeader ? "select_track" : "select_clip";
-        out.intent = Intent::ENTER_SELECTION;
+        out.effect = trackHeader ? "open_track_settings"
+            : scene ? "open_scene_behavior"
+            : occupied ? "open_clip_behavior" : "open_slot_actions";
+        out.intent = Intent::EDIT_VALUE;
     } else if (navRelease) {
+        retained_horizontal_navigation_ = false;
+        retained_horizontal_navigation_rotated_ = false;
         if (trackHeader) {
             if (tracks_.isTrackEnabled(address.track)) {
-                out.effect = "open_track_editor";
+                out.effect = "stop_track";
+                out.outcome = telemetry.stopped ? "applied" : "queued";
             } else {
-                transition_replay_ = TransitionReplay::CREATE_PATTERN;
-                transition_track_ = address.track;
-                transition_slot_ = 0U;
-                out.effect = "open_track_type_picker";
+                out.effect = sequencer_.drumSequencer.pickerVisible()
+                    ? "create_track_and_open_pattern"
+                    : "open_track_type_picker";
             }
             out.intent = Intent::ACTIVATE;
+            return true;
+        }
+        if (scene) {
+            out.effect = "launch_scene";
+            out.intent = Intent::ACTIVATE;
+            out.outcome = sceneQueued ? "queued"
+                : sceneActive ? "applied" : "blocked";
             return true;
         }
         if (ui.selectionActive()) {
@@ -1537,21 +1886,18 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             out.intent = Intent::ENTER_SELECTION;
             return true;
         }
-        transition_replay_ = occupied
-            ? TransitionReplay::OPEN_PATTERN
-            : TransitionReplay::CREATE_PATTERN;
-        transition_track_ = address.track;
-        transition_slot_ = address.slot;
         out.effect = !tracks_.isTrackEnabled(address.track)
             ? "open_track_type_picker"
-            : occupied ? "open_clip_pattern" : "create_clip_and_open_pattern";
+            : stopSlot ? "stop_track"
+            : occupied ? "launch_clip" : "ignore_empty_clip";
         out.intent = Intent::ACTIVATE;
     } else if (macroRelease) {
-        out.effect = ui.selectionActive() ? "select_visible_clip" : "launch_clip";
+        out.effect = ui.selectionActive() ? "select_visible_clip"
+            : stopSlot ? "stop_track" : "launch_clip";
         out.intent = ui.selectionActive()
             ? Intent::ENTER_SELECTION
             : Intent::ACTIVATE;
-        if (!occupied) {
+        if (!occupied && !stopSlot) {
             out.outcome = "noop";
             out.reason = "empty_clip";
         } else if (queued) {
@@ -1560,12 +1906,28 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         } else if (telemetry.status == seq::SequencerClipLaunchStatus::APPLIED) {
             out.outcome = "applied";
         }
-    } else if (moveAction) {
-        out.effect = ui.operation ==
-                seq::ClipWorkspaceOperation::SELECT
-            ? "begin_move_clip"
+    } else if (quickRelease) {
+        retained_quick_selector_ = false;
+        const bool armsProperty =
+            ui.quickAction != seq::ClipWorkspaceQuickAction::EDIT;
+        out.effect = armsProperty
+            ? "arm_clip_quick_property"
             : "open_clip_region";
-        out.intent = Intent::CHANGE_SCOPE;
+        out.intent = armsProperty
+            ? Intent::EDIT_VALUE : Intent::CHANGE_SCOPE;
+        out.property = ui.quickAction == seq::ClipWorkspaceQuickAction::LENGTH
+            ? "length"
+            : ui.quickAction == seq::ClipWorkspaceQuickAction::THEN
+                ? "then"
+                : ui.quickAction == seq::ClipWorkspaceQuickAction::QUANTIZE
+                    ? "quantization" : "edit";
+    } else if (optTurn && ui.quickPropertyArmed) {
+        out.effect = "edit_clip_quick_property";
+        out.intent = Intent::EDIT_VALUE;
+        out.property = ui.quickAction == seq::ClipWorkspaceQuickAction::LENGTH
+            ? "length"
+            : ui.quickAction == seq::ClipWorkspaceQuickAction::THEN
+                ? "then" : "quantization";
     } else if (structureAction) {
         out.effect = trackHeader
             ? tracks_.isTrackEnabled(address.track)

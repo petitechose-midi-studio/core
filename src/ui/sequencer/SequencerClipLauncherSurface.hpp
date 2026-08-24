@@ -23,13 +23,14 @@ struct SequencerClipLauncherSurfaceProps {
     uint16_t enabledTrackMask = 0U;
 };
 
-/** One retained draw surface for the 4-Track x 2-row launcher viewport. */
+/** One retained draw surface for the spatial 4-Track x 4-Scene launcher. */
 class SequencerClipLauncherSurface : public oc::ui::lvgl::IWidget {
 public:
     explicit SequencerClipLauncherSurface(lv_obj_t* parent);
     ~SequencerClipLauncherSurface() override;
 
     void render(const SequencerClipLauncherSurfaceProps& props);
+    void invalidatePlaybackProgress();
     lv_obj_t* getElement() const override { return root_; }
 
 private:

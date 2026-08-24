@@ -17,7 +17,7 @@
 1550 button MACRO_1 up
 
 # Move focus and edit the focused step property.
-1650 encoder NAV 1
+1650 encoder NAV 0.01
 1750 encoder OPT 0.65
 1850 capture screen step_edit_adjusted
 

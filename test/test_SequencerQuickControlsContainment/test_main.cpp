@@ -200,6 +200,7 @@ struct Harness {
           ) {
         overlayManager.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
         g_now_ms = 0U;
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
 
     void press(Config::ButtonID id) {

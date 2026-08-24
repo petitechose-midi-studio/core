@@ -36,6 +36,7 @@ namespace graph_policy =
 
 constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
 constexpr uint8_t kEnvelopeVersion = ENVELOPE_VERSION;
+constexpr uint8_t kPreviousEnvelopeVersion = 17U;
 constexpr uint16_t kEnvelopeHeaderSize = 12;
 constexpr uint16_t kSectionHeaderSize = 10;
 constexpr uint8_t kNoTrack = 0xFF;
@@ -58,6 +59,7 @@ enum class SectionId : uint16_t {
     DrumTrack = 21,
     ClipGrid = 22,
     ClipDocument = 23,
+    LauncherMetadata = 24,
 };
 
 struct EnvelopeHeader {
@@ -101,6 +103,7 @@ struct GraphSectionViews {
 
 struct ClipSectionViews {
     SectionView grid{};
+    SectionView launcherMetadata{};
     std::array<
         SectionView,
         state::sequencer::SequencerClipGridState::CELL_COUNT
@@ -451,6 +454,40 @@ FLASHMEM bool addClipGridSections(
         CLIP_GRID_RECORD_SIZE
     );
 
+    uint8_t* metadata = nullptr;
+    if (!writer.reserveSection(
+            SectionId::LauncherMetadata,
+            kNoTrack,
+            1U,
+            LAUNCHER_METADATA_RECORD_SIZE,
+            LAUNCHER_METADATA_RECORD_SIZE,
+            metadata
+        )) {
+        return false;
+    }
+    binary::Writer metadataWriter(metadata, LAUNCHER_METADATA_RECORD_SIZE);
+    for (const uint16_t mask : clips.stopMasks) {
+        if (!metadataWriter.writeU16(mask)) return false;
+    }
+    const auto writeBehavior = [&metadataWriter](
+        const state::sequencer::SequencerLauncherBehavior& behavior
+    ) {
+        return metadataWriter.writeU8(behavior.length) &&
+            metadataWriter.writeU8(behavior.thenTarget) &&
+            metadataWriter.writeU8(
+                static_cast<uint8_t>(behavior.quantization));
+    };
+    for (const auto& behavior : clips.clipBehaviors) {
+        if (!writeBehavior(behavior)) return false;
+    }
+    for (const auto& behavior : clips.sceneBehaviors) {
+        if (!writeBehavior(behavior)) return false;
+    }
+    if (!metadataWriter.ok() ||
+        metadataWriter.offset() != LAUNCHER_METADATA_RECORD_SIZE) {
+        return false;
+    }
+
     for (uint16_t index = 0U;
          index < state::sequencer::SequencerClipGridState::CELL_COUNT;
          ++index) {
@@ -534,7 +571,8 @@ FLASHMEM bool readEnvelopeHeader(binary::Reader& reader, EnvelopeHeader& out) {
 
 FLASHMEM bool isHeaderValid(const EnvelopeHeader& header, EnvelopeKind kind) {
     return header.magic == kEnvelopeMagic &&
-           header.version == kEnvelopeVersion &&
+           (header.version == kEnvelopeVersion ||
+            header.version == kPreviousEnvelopeVersion) &&
            header.kind == static_cast<uint8_t>(kind) &&
            header.headerSize == kEnvelopeHeaderSize &&
            header.reserved0 == 0;
@@ -560,13 +598,15 @@ FLASHMEM bool findSections(const uint8_t* data,
                            SectionId flatId,
                            SectionView& flat,
                            std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>* graphViews,
-                           ClipSectionViews* clipViews) {
+                           ClipSectionViews* clipViews,
+                           uint8_t* envelopeVersion = nullptr) {
     if (data == nullptr || size < kEnvelopeHeaderSize) return false;
 
     binary::Reader reader(data, size);
     EnvelopeHeader header{};
     if (!readEnvelopeHeader(reader, header)) return false;
     if (!isHeaderValid(header, kind)) return false;
+    if (envelopeVersion != nullptr) *envelopeVersion = header.version;
     for (uint16_t i = 0; i < header.sectionCount; ++i) {
         SectionHeader section{};
         if (!readSectionHeader(reader, section)) return false;
@@ -590,6 +630,12 @@ FLASHMEM bool findSections(const uint8_t* data,
                    clipViews != nullptr &&
                    section.track < clipViews->documents.size()) {
             if (!assignSectionView(clipViews->documents[section.track], view)) {
+                return false;
+            }
+        } else if (id == SectionId::LauncherMetadata &&
+                   kind == EnvelopeKind::ProjectSequencer &&
+                   clipViews != nullptr && section.track == kNoTrack) {
+            if (!assignSectionView(clipViews->launcherMetadata, view)) {
                 return false;
             }
         } else if (graphViews != nullptr && section.track < graphViews->size()) {
@@ -1152,6 +1198,7 @@ FLASHMEM bool decodeClipDocument(
 
 FLASHMEM bool decodeClipGrid(
     const ClipSectionViews& sections,
+    uint8_t envelopeVersion,
     uint16_t enabledTrackMask,
     uint16_t drumTrackMask,
     state::sequencer::SequencerClipGridSnapshot& out
@@ -1168,6 +1215,44 @@ FLASHMEM bool decodeClipGrid(
         sections.grid.data,
         CLIP_GRID_RECORD_SIZE
     );
+    if (envelopeVersion >= kEnvelopeVersion) {
+        if (sections.launcherMetadata.data == nullptr ||
+            sections.launcherMetadata.recordSize != 1U ||
+            sections.launcherMetadata.count != LAUNCHER_METADATA_RECORD_SIZE ||
+            sections.launcherMetadata.byteSize != LAUNCHER_METADATA_RECORD_SIZE) {
+            return false;
+        }
+        binary::Reader metadata(
+            sections.launcherMetadata.data,
+            sections.launcherMetadata.byteSize
+        );
+        for (auto& mask : decoded.stopMasks) {
+            if (!metadata.readU16(mask)) return false;
+        }
+        const auto readBehavior = [&metadata](
+            state::sequencer::SequencerLauncherBehavior& behavior
+        ) {
+            uint8_t quantization = 0U;
+            if (!metadata.readU8(behavior.length) ||
+                !metadata.readU8(behavior.thenTarget) ||
+                !metadata.readU8(quantization) || quantization > 2U) {
+                return false;
+            }
+            behavior.quantization = static_cast<
+                state::sequencer::SequencerLauncherFollowQuantization>(
+                    quantization);
+            return true;
+        };
+        for (auto& behavior : decoded.clipBehaviors) {
+            if (!readBehavior(behavior)) return false;
+        }
+        for (auto& behavior : decoded.sceneBehaviors) {
+            if (!readBehavior(behavior)) return false;
+        }
+        if (!metadata.ok() || metadata.remaining() != 0U) return false;
+    } else if (sections.launcherMetadata.data != nullptr) {
+        return false;
+    }
     for (uint16_t index = 0U;
          index < state::sequencer::SequencerClipGridState::CELL_COUNT;
          ++index) {
@@ -1366,13 +1451,15 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
     SectionView flat{};
     std::array<GraphSectionViews, PERSISTED_TRACK_COUNT> graphs{};
     ClipSectionViews clipSections{};
+    uint8_t envelopeVersion = 0U;
     if (!findSections(data,
                       size,
                       EnvelopeKind::ProjectSequencer,
                        SectionId::FlatProjectSequencer,
                        flat,
                        &graphs,
-                       &clipSections)) {
+                       &clipSections,
+                       &envelopeVersion)) {
         return false;
     }
     if (!sectionHasExactRecordShape(flat, PROJECT_SEQUENCER_PAYLOAD_SIZE) || flat.count != 1) {
@@ -1404,6 +1491,7 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
         ) ||
         !decodeClipGrid(
             clipSections,
+            envelopeVersion,
             flatEnabledMask(flat, EnvelopeKind::ProjectSequencer),
             decodedDrums != nullptr ? decodedDrums->drumTrackMask : 0U,
             decodedClips

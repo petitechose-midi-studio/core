@@ -10,23 +10,23 @@
 # Create Track 2 first so its structural history is older than both musical
 # edits. The two later Undo actions must therefore target Step State exactly.
 150 button NAV down
-210 encoder NAV -1
+210 encoder NAV -0.01
 270 button NAV up
 330 tap LEFT_CENTER 60
-1480 encoder NAV 1
+1480 encoder NAV 0.01
 1680 capture screen t02_add_preview
 1780 tap NAV 60
 2130 capture screen t02_created
 
 # Return to the already-existing Track 1 without creating history, then record
 # action A there.
-2230 encoder NAV -1
+2230 encoder NAV -0.01
 2580 capture screen t01_selected
 2680 tap MACRO_1 60
 2880 capture screen t01_step_on
 
 # Switch to the already-existing Track 2 without mutation and record action B.
-2980 encoder NAV 1
+2980 encoder NAV 0.01
 3330 capture screen t02_selected
 3430 tap MACRO_1 60
 3630 capture screen t02_step_on
@@ -50,5 +50,5 @@
 9310 capture screen still_t02_after_t01_undo
 
 # Hot-switch back to Track 1 and verify the hidden-track undo.
-9410 encoder NAV -1
+9410 encoder NAV -0.01
 9760 capture screen t01_step_off_verified

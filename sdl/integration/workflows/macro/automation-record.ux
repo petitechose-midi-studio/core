@@ -11,9 +11,9 @@
 
 # LEFT_CENTER arms a shared 1/4-note take.
 650 button LEFT_CENTER down
-700 encoder NAV 1
-740 encoder NAV 1
-780 encoder NAV 1
+700 encoder NAV 0.01
+740 encoder NAV 0.01
+780 encoder NAV 0.01
 840 capture screen take_armed
 
 # Macro 2 joins later. Keep the modifier held across more than two loops, then
@@ -40,7 +40,7 @@
 3020 button LEFT_BOTTOM down
 3120 tap MACRO_1 60
 3220 button LEFT_BOTTOM up
-3340 encoder NAV 1
+3340 encoder NAV 0.01
 3460 button LEFT_BOTTOM down
 3540 capture screen context_record_ready
 3660 encoder OPT -32.00

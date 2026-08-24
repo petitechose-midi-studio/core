@@ -350,6 +350,8 @@ FLASHMEM bool CoreState::traversePreparedSequencerStructureHistory_(
         pages,
         std::move(prepared));
     sequencerClips.synchronizeEnabledTracks(sequencerTracks.currentEnabledMask());
+    sequencerClipLaunches.synchronizeEnabledTracks(
+        sequencerClips, sequencerTracks.currentEnabledMask());
     if (hasActivation) {
         sequencerTrackActivations.commitHistoryTransition(transition);
     }
@@ -394,6 +396,10 @@ FLASHMEM bool CoreState::traverseGenericSequencerHistory_(
         }
         return false;
     }
+    sequencerClips.synchronizeEnabledTracks(
+        sequencerTracks.currentEnabledMask());
+    sequencerClipLaunches.synchronizeEnabledTracks(
+        sequencerClips, sequencerTracks.currentEnabledMask());
     if (hasActivation) {
         sequencerTrackActivations.commitHistoryTransition(transition);
     }

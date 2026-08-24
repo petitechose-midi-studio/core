@@ -13,7 +13,7 @@
 0 scenario project-modulator-workspace
 
 100 button LEFT_TOP down
-700 encoder NAV -1
+700 encoder NAV -0.01
 1100 button LEFT_TOP up
 1320 capture screen registry
 

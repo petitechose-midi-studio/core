@@ -19,7 +19,7 @@
 1740 capture screen pattern_selected
 1840 tap BOTTOM_RIGHT 60
 2060 capture screen pattern_selection_placing
-2160 encoder NAV 1
+2160 encoder NAV 0.01
 2360 capture screen pattern_selection_destination
 2460 button BOTTOM_RIGHT down
 3540 tick
@@ -36,7 +36,7 @@
 # header. Repeat the same lifecycle there with a Project-wide payload.
 4600 tap LEFT_TOP 60
 4820 capture screen launcher_returned
-4920 encoder NAV -1
+4920 encoder NAV -0.01
 5120 capture screen track_header_ready
 5220 button NAV down
 6300 tick
@@ -45,7 +45,7 @@
 6780 capture screen track_selected
 6880 tap BOTTOM_RIGHT 60
 7100 capture screen track_selection_placing
-7200 encoder NAV 1
+7200 encoder NAV 0.01
 7400 capture screen track_selection_destination
 7500 button BOTTOM_RIGHT down
 8580 tick

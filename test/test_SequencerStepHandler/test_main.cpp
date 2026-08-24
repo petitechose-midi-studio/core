@@ -500,6 +500,7 @@ struct SequencerStepHarness {
         handler.attachDrumLaneEditorHandler(drumLaneEditorHandler);
         state.sequencer.clipWorkspace.enterPattern(0U, 0U);
         if (enableClipWorkspace) {
+            state.activeView.set(core::ui::ViewType::CLIPS);
             state.sequencer.clipWorkspace.reset();
         }
         handler.update(g_now_ms);
@@ -555,65 +556,25 @@ void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
     launcher.reset(0U);
     assert(launcher.matrixVisible());
     assert(h.state.sequencerClips.isOccupied({0U, 0U}));
+    launcher.focus(0U, 0U);
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(launcher.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR);
     h.release(Config::ButtonID::NAV);
-    assert(launcher.operation == seq::ClipWorkspaceOperation::SELECT);
-
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    assert(!launcher.removeHoldActive);
-    assert(launcher.feedback == seq::ClipWorkspaceFeedback::FAILED);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-
-    h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    assert(launcher.operation ==
-           seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION);
-    assert(launcher.focusedTrack == 0U);
-    assert(launcher.focusedSlot == 1U);
-    h.tap(Config::ButtonID::MACRO_2);
-    assert(launcher.focusedTrack == 0U);
-    assert(launcher.focusedSlot == 1U);
-    h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    assert(!launcher.selectionActive());
-    assert(h.state.sequencerClips.isOccupied({0U, 1U}));
-    assert(h.state.sequencerHistory.undoCount() == 1U);
-
-    h.press(Config::ButtonID::NAV);
-    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::NAV);
-    h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(launcher.operation ==
-           seq::ClipWorkspaceOperation::MOVE_DESTINATION);
-    assert(launcher.focusedSlot == 2U);
-    h.tap(Config::ButtonID::BOTTOM_RIGHT);
-    assert(!h.state.sequencerClips.isOccupied({0U, 1U}));
-    assert(h.state.sequencerClips.isOccupied({0U, 2U}));
-    assert(h.state.sequencerHistory.undoCount() == 2U);
-
-    h.press(Config::ButtonID::NAV);
-    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::NAV);
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-    assert(!h.state.sequencerClips.isOccupied({0U, 2U}));
-    assert(h.state.sequencerHistory.undoCount() == 3U);
-    assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencerClips.isOccupied({0U, 2U}));
-    assert(h.state.redoSequencerHistory());
-    assert(!h.state.sequencerClips.isOccupied({0U, 2U}));
+    assert(launcher.editorActive());
+    h.tap(Config::ButtonID::NAV);
+    assert(!launcher.editorActive());
+    assert(launcher.matrixVisible());
 
     launcher.focus(0U, 0U);
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencer.patternEditor.active.get());
     assert(h.state.sequencer.patternEditor.focusedLayer ==
            seq::SequencerPatternEditorLayer::REGION);
-    assert(launcher.matrixVisible());
+    assert(launcher.patternVisible());
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.patternEditor.active.get());
-
-    h.tap(Config::ButtonID::NAV);
     assert(launcher.patternVisible());
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(launcher.matrixVisible());
@@ -622,6 +583,89 @@ void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
 
     std::cout
         << "[PASS] Clip Launcher gestures reuse structure and region editors\n";
+}
+
+void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    auto& launches = h.state.sequencerClipLaunches;
+    launcher.reset(0U);
+    const uint16_t pendingBefore = launches.pendingTrackMask();
+    const uint16_t stagedBefore = launches.stagedTrackMask();
+
+    assert(launcher.sceneFocused());
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(launcher.clipFocused());
+    assert(launcher.focusedTrack == 0U);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.clipFocused());
+    assert(launches.pendingTrackMask() == pendingBefore);
+    assert(launches.stagedTrackMask() == stagedBefore);
+
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.clipFocused());
+    assert(launcher.focusedTrack == 1U);
+    assert(launches.pendingTrackMask() == pendingBefore);
+    assert(launches.stagedTrackMask() == stagedBefore);
+
+    launcher.focus(0U, 0U);
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.sceneFocused());
+    assert(launches.pendingTrackMask() == pendingBefore);
+    assert(launches.stagedTrackMask() == stagedBefore);
+
+    std::cout
+        << "[PASS] Clip Launcher held NAV moves horizontally without launch\n";
+}
+
+void test_clip_launcher_left_center_arms_quick_property_for_opt() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    const seq::SequencerClipAddress address{0U, 0U};
+    launcher.focus(address.track, address.slot);
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(launcher.quickSelectorVisible);
+    assert(launcher.quickAction == seq::ClipWorkspaceQuickAction::EDIT);
+    h.tick(g_now_ms + 1U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(launcher.quickAction == seq::ClipWorkspaceQuickAction::LENGTH);
+    h.tick(g_now_ms + 1U);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!launcher.quickSelectorVisible);
+    assert(launcher.quickPropertyArmed);
+
+    const uint8_t before = h.state.sequencerClips.clipBehavior(address).length;
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencerClips.clipBehavior(address).length == before + 1U);
+    assert(launcher.quickFeedbackVisible);
+
+    std::cout
+        << "[PASS] Clip Launcher LEFT_CENTER arms quick OPT editing\n";
+}
+
+void test_inactive_clip_workspace_does_not_steal_shared_navigation_focus() {
+    SequencerStepHarness h(true);
+    assert(h.state.sequencer.clipWorkspace.matrixVisible());
+
+    h.state.activeView.set(core::ui::ViewType::MACRO);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.clipWorkspaceHandler.update();
+    assert(h.navigationFocus.get() ==
+           core::state::StructureNavigationFocus::STEP);
+
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
+    h.clipWorkspaceHandler.update();
+    assert(h.navigationFocus.get() ==
+           core::state::StructureNavigationFocus::PAGE);
+
+    std::cout
+        << "[PASS] inactive Clips matrix preserves the visible view focus\n";
 }
 
 void test_pattern_preview_owns_back_before_clip_launcher() {
@@ -640,6 +684,22 @@ void test_pattern_preview_owns_back_before_clip_launcher() {
 
     std::cout
         << "[PASS] Pattern preview owns Back before Clip Launcher hierarchy\n";
+}
+
+void test_cc_lane_owns_back_before_clip_launcher() {
+    SequencerStepHarness h(true);
+    auto& sequencer = h.state.sequencer;
+    auto& launcher = sequencer.clipWorkspace;
+
+    launcher.enterPattern(0U, 0U);
+    sequencer.ccLaneUi.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(launcher.patternVisible());
+    assert(sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
+
+    std::cout << "[PASS] CC Lane owns Back before Clip Launcher hierarchy\n";
 }
 
 core::handler::SequencerStructureEditWorkflow makeStructureEditWorkflow(
@@ -1378,13 +1438,19 @@ void focusTrackNavigation(SequencerStepHarness& h) {
     h.state.trackNavigation.syncPreviewTrack(track);
 }
 
+void beginTrackSelectionForTest(SequencerStepHarness& h) {
+    const uint8_t track = h.state.sequencer.clipWorkspace.focusedTrack;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.trackNavigation.syncPreviewTrack(track);
+    h.handler.enterSelectionModeForCurrentFocus();
+}
+
 void moveToAdjacentTrackHeader(SequencerStepHarness& h, int direction) {
     assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
-    for (uint8_t target = 0U;
-         target < core::state::sequencer::ClipWorkspaceUiState::VISIBLE_ROWS + 1U;
-         ++target) {
-        h.turn(Config::EncoderID::NAV, direction < 0 ? -1.0f : 1.0f);
-    }
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, direction < 0 ? -1.0f : 1.0f);
+    h.release(Config::ButtonID::NAV);
+    h.clipWorkspaceHandler.update();
     assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
 }
 
@@ -2588,11 +2654,9 @@ void test_track_selection_skips_gaps_and_mutes_atomically() {
     h.state.sequencer.clipWorkspace.reset(0U);
     h.state.sequencer.clipWorkspace.focusTrackHeader(0U);
 
-    h.press(Config::ButtonID::NAV);
-    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    beginTrackSelectionForTest(h);
     assert(h.state.trackNavigation.selection.active.get());
     assert(h.state.trackNavigation.selection.cursorIndex.get() == 0U);
-    h.release(Config::ButtonID::NAV);
     assert(h.state.trackNavigation.selection.selectedMask.get() == 0U);
 
     h.tap(Config::ButtonID::NAV);
@@ -2629,9 +2693,7 @@ void test_track_selection_delete_is_undoable_and_keeps_one_track() {
     h.state.setSharedTrackState(0x0007U, 0U);
     focusTrackNavigation(h);
 
-    h.press(Config::ButtonID::NAV);
-    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::NAV);
+    beginTrackSelectionForTest(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.trackNavigation.selection.selectedMask.get() == 0x0002U);
@@ -2686,9 +2748,7 @@ void test_track_selection_copy_is_global_from_sequencer_view() {
     configureProjectTrackFixture(h.state, 6U, 13U, true);
 
     focusTrackNavigation(h);
-    h.press(Config::ButtonID::NAV);
-    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::NAV);
+    beginTrackSelectionForTest(h);
     assert(h.state.trackNavigation.selection.active.get());
     h.tap(Config::ButtonID::NAV);
     assert(h.state.trackNavigation.selection.selectedMask.get() == 0x0001U);
@@ -3003,18 +3063,18 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     std::cout << "[PASS] sparse Pattern selection previews collisions and fills page gaps\n";
 }
 
-void test_matrix_nav_crosses_sparse_slots_and_creates_instrument_from_track_header() {
+void test_matrix_nav_reaches_sequential_add_and_creates_instrument_from_track_header() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
-    h.state.setSharedTrackState(0x0005U, 0);
+    h.state.setSharedTrackState(0x0001U, 0);
     h.state.sequencer.clipWorkspace.reset(0U);
     h.state.sequencer.clipWorkspace.focusTrackHeader(0U);
 
-    // Matrix navigation traverses one Track header and its two visible Clip
-    // cells without changing the live Track.
+    // Held NAV owns the horizontal axis and reaches the single sequential Add
+    // Track header without changing the live Track.
+    h.press(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::NAV);
     assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
     assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 0U);
@@ -3026,14 +3086,14 @@ void test_matrix_nav_crosses_sparse_slots_and_creates_instrument_from_track_head
            seq::DrumSequencerKind::INSTRUMENT);
     h.tap(Config::ButtonID::NAV);
 
-    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007U);
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
     assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
     assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     std::cout
-        << "[PASS] sparse matrix navigation creates Instrument from Track header\n";
+        << "[PASS] spatial matrix navigation creates the sequential Track\n";
 }
 
 void test_step_toggle_undo_redo_workflow() {
@@ -4254,54 +4314,57 @@ void test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan() {
     assert(h.state.sequencer.structureUi.trackPaste.activationGeneration == frozenGeneration);
 }
 
-void test_deleted_track_slot_can_be_recreated_at_any_gap() {
+void test_next_sequential_track_slot_can_be_created() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
-    h.state.setSharedTrackState(0x0005, 0);
+    h.state.setSharedTrackState(0x0003, 0);
     configureProjectTrackFixture(h.state, 1, 8);
     configureProjectTrackFixture(h.state, 2, 2);
-    h.state.sequencerTracks.track(2).note[0] = 83;
-    h.state.sequencerTracks.track(2).setEnabled(0, true);
+    h.state.sequencerTracks.track(1).note[0] = 83;
+    h.state.sequencerTracks.track(1).setEnabled(0, true);
     focusTrackNavigation(h);
 
     moveToAdjacentTrackHeader(h, 1);
     assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
-    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(!h.state.trackNavigation.previewAddSlot.get());
 
     moveToAdjacentTrackHeader(h, 1);
-    assert(!h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencer.clipWorkspace.focusedTrack == 2U);
+    assert(h.state.trackNavigation.previewAddSlot.get());
     assert(h.state.sequencerTracks.activeTrackIndex() == 0);
 
     moveToAdjacentTrackHeader(h, -1);
     assert(h.state.sequencer.clipWorkspace.focusedTrack == 1U);
+    assert(!h.state.trackNavigation.previewAddSlot.get());
+    moveToAdjacentTrackHeader(h, 1);
+    assert(h.state.sequencer.clipWorkspace.focusedTrack == 2U);
     assert(h.state.trackNavigation.previewAddSlot.get());
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
     assert(h.state.trackNavigation.previewAddSlot.get());
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 2);
     assert(h.state.sequencer.drumSequencer.typePickerVisible());
     h.tap(Config::ButtonID::NAV);
 
     assert(!h.state.trackNavigation.previewAddSlot.get());
-    assert(h.state.sequencerTracks.isTrackEnabled(1));
-    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.projectTracks.authored.midiChannels[1] == 8);
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 2);
+    assert(h.state.projectTracks.authored.midiChannels[2] == 2);
     assert(h.state.sequencer.pattern.note[0] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(!h.state.sequencer.pattern.isEnabled(0));
-    assert(h.state.sequencerTracks.track(2).note[0] == 83);
-    assert(h.state.sequencerTracks.track(2).isEnabled(0));
+    assert(h.state.sequencerTracks.track(1).note[0] == 83);
+    assert(h.state.sequencerTracks.track(1).isEnabled(0));
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
     assert(h.state.sequencer.clipWorkspace.patternVisible());
-    assert(h.state.sequencer.clipWorkspace.returnTrack == 1U);
+    assert(h.state.sequencer.clipWorkspace.returnTrack == 2U);
     assert(h.state.sequencer.clipWorkspace.returnSlot == 0U);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.state.sequencer.pattern.length.get() == 8);
 
-    std::cout << "[PASS] test_deleted_track_slot_can_be_recreated_at_any_gap\n";
+    std::cout << "[PASS] test_next_sequential_track_slot_can_be_created\n";
 }
 
 void test_created_page_is_undoable_and_redoable() {
@@ -7034,9 +7097,7 @@ void test_track_structure_replay_preserves_runtime_when_active_is_unchanged() {
     focusTrackNavigation(h);
     test_support::drainNotifications();
 
-    h.press(Config::ButtonID::NAV);
-    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    h.release(Config::ButtonID::NAV);
+    beginTrackSelectionForTest(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.tap(Config::ButtonID::NAV);
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -8589,7 +8650,7 @@ void test_drum_track_creation_navigation_and_owners_are_independent() {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.clipWorkspace.matrixVisible());
     h.state.sequencer.clipWorkspace.focus(1U, 0U);
-    h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::LEFT_CENTER);
     h.tick(g_now_ms + 1U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
     assert(drumUi.targetTrack == 1U);
@@ -9383,7 +9444,10 @@ void test_drum_track_pattern_step_bottom_actions_share_one_contract() {
     h.tap(Config::ButtonID::BOTTOM_LEFT);
     assert((h.state.projectTracks.authored.mutedMask & 0x0002U) == 0U);
     sequencer.clipWorkspace.focus(1U, 0U);
-    h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(sequencer.clipWorkspace.patternVisible());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!sequencer.patternEditor.active.get());
     assert(sequencer.clipWorkspace.patternVisible());
 
     // Pattern is the only deliberate Drum exception: the bottom pair pages
@@ -9744,7 +9808,11 @@ void test_drum_advanced_creation_oom_restores_mapping_and_graph() {
 
 int main() {
     test_clip_launcher_gestures_are_structural_and_region_editor_is_reused();
+    test_clip_launcher_nav_turn_moves_horizontally_without_launching();
+    test_clip_launcher_left_center_arms_quick_property_for_opt();
+    test_inactive_clip_workspace_does_not_steal_shared_navigation_focus();
     test_pattern_preview_owns_back_before_clip_launcher();
+    test_cc_lane_owns_back_before_clip_launcher();
     test_child_creation_draft_apply_and_back_decisions();
     test_nav_context_selector_previews_pattern_and_step();
     test_page_navigation_is_cyclic_and_tap_opens_pattern_editor();
@@ -9758,7 +9826,7 @@ int main() {
     test_track_selection_copy_is_global_from_sequencer_view();
     test_page_selection_clear_and_delete_are_undoable();
     test_pattern_selection_paste_previews_collisions_and_creates_intermediate_pages();
-    test_matrix_nav_crosses_sparse_slots_and_creates_instrument_from_track_header();
+    test_matrix_nav_reaches_sequential_add_and_creates_instrument_from_track_header();
     test_step_toggle_undo_redo_workflow();
     test_child_step_toggle_undo_redo_workflow();
     test_step_toggle_preflight_failure_is_atomic();
@@ -9780,7 +9848,7 @@ int main() {
     test_track_paste_commits_once_at_absolute_long_threshold();
     test_track_paste_left_top_cancels_and_consumes_later_release();
     test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan();
-    test_deleted_track_slot_can_be_recreated_at_any_gap();
+    test_next_sequential_track_slot_can_be_created();
     test_created_page_is_undoable_and_redoable();
     test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic();
     test_page_delete_prepared_workflow_shifts_cc_and_replays();

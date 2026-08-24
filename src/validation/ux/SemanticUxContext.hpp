@@ -43,6 +43,11 @@ struct SemanticUxContext {
     bool hasOperationGeneration = false;
     uint32_t operationGeneration = 0;
     const char* operationStatus = nullptr;
+    int16_t activeSlot = -1;
+    int16_t queuedSlot = -1;
+    int16_t beatsRemaining = -1;
+    bool hasStopped = false;
+    bool stopped = false;
     bool hasTargetRoute = false;
     uint8_t targetRoute = 0;
     bool targetRouteValid = false;

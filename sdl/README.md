@@ -195,7 +195,7 @@ Supported commands:
 | `<ms> button <ButtonID> down` | Press a logical hardware button. |
 | `<ms> button <ButtonID> up` | Release a logical hardware button. |
 | `<ms> tap <ButtonID> [duration_ms]` | Expand to button down/up; default duration is 60ms. |
-| `<ms> encoder <EncoderID> <delta>` | Turn a logical encoder by a normalized delta. |
+| `<ms> encoder <EncoderID> <delta>` | Turn a logical encoder by a normalized raw delta (`0.01` = one SDL tick). |
 | `<ms> capture screen <name>` | Capture only the app screen area. |
 | `<ms> capture controller <name>` | Capture the full controller simulator. |
 | `<ms> tick` | Pump the app until this time without input. |
@@ -237,7 +237,7 @@ Example:
 1250 button LEFT_TOP up
 
 # Navigate one row and confirm the selected view.
-1350 encoder NAV 1
+1350 encoder NAV 0.01
 1450 capture screen view_selector_navigated
 1500 tap NAV 60
 1700 capture screen after_confirm

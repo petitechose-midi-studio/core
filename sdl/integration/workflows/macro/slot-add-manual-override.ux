@@ -15,7 +15,7 @@
 
 # Focus the Macro Slot scope, move to the add target, and confirm creation.
 320 tap NAV 60
-440 encoder NAV 1
+440 encoder NAV 0.01
 560 capture screen second_slot_add_focused
 680 tap NAV 60
 820 capture screen second_slot_created

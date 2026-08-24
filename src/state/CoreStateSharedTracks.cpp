@@ -43,6 +43,32 @@ FLASHMEM bool closeClipMutationBoundary(CoreState& state) {
                sequencer::SequencerPatternHistoryCommitOutcome::Failed;
 }
 
+FLASHMEM uint32_t clipLoopTicks(
+    const CoreState& state,
+    sequencer::SequencerClipAddress address
+) {
+    if (!sequencer::SequencerClipGridState::validAddress(address) ||
+        !state.sequencerClips.isOccupied(address)) {
+        return 0U;
+    }
+    uint16_t loopStart = 0U;
+    uint16_t loopEnd = 0U;
+    if (state.sequencerClips.isResident(address)) {
+        const auto& clip = sequencer::canonicalTrackClip(
+            state.sequencerTracks, state.sequencer, address.track);
+        loopStart = clip.loopStartTick;
+        loopEnd = clip.loopEndTick;
+    } else {
+        const auto* document = state.sequencerClips.inactiveDocument(address);
+        if (document == nullptr) return 0U;
+        loopStart = document->clip.loopStartTick;
+        loopEnd = document->clip.loopEndTick;
+    }
+    return loopEnd > loopStart
+        ? static_cast<uint32_t>(loopEnd - loopStart)
+        : 0U;
+}
+
 }  // namespace
 
 uint16_t CoreState::currentSharedTrackEnabledMask() const { return sharedTrackEnabledMask.get(); }
@@ -64,6 +90,8 @@ bool CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t
         sharedTrackRefs(*this), enabledMask, activeTrack);
     if (result.ok) {
         sequencerClips.synchronizeEnabledTracks(result.enabledMask);
+        sequencerClipLaunches.synchronizeEnabledTracks(
+            sequencerClips, result.enabledMask);
     }
     return result.ok;
 }
@@ -126,7 +154,102 @@ FLASHMEM bool CoreState::requestSequencerClipLaunch(
         target,
         sequencerClips,
         statusBar.playing.get(),
-        quantization);
+        quantization,
+        clipLoopTicks(*this, target));
+}
+
+FLASHMEM bool CoreState::requestSequencerTrackStop(
+    uint8_t track,
+    sequencer::SequencerClipLaunchQuantization quantization
+) {
+    if (track >= sequencer::SequencerClipGridState::TRACK_COUNT) return false;
+    const uint16_t bit = static_cast<uint16_t>(1U << track);
+    if ((currentSharedTrackEnabledMask() & bit) == 0U) {
+        return false;
+    }
+    return sequencerClipLaunches.requestStop(
+        track,
+        statusBar.playing.get(),
+        quantization
+    );
+}
+
+FLASHMEM bool CoreState::requestSequencerSceneLaunch(
+    uint8_t slot,
+    sequencer::SequencerClipLaunchQuantization quantization
+) {
+    if (slot >= sequencer::SequencerClipGridState::SLOT_COUNT) return false;
+    const uint16_t enabledMask = currentSharedTrackEnabledMask();
+    uint16_t sceneMask = 0U;
+    std::array<uint32_t, sequencer::SequencerClipLaunchQueue::TRACK_COUNT>
+        loopTicks{};
+    for (uint8_t track = 0U;
+         track < sequencer::SequencerClipLaunchQueue::TRACK_COUNT;
+         ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((enabledMask & bit) == 0U) continue;
+        const sequencer::SequencerClipAddress address{track, slot};
+        if (sequencerClips.slotKind(address) ==
+            sequencer::SequencerLauncherSlotKind::EMPTY) {
+            continue;
+        }
+        sceneMask = static_cast<uint16_t>(sceneMask | bit);
+        loopTicks[track] = clipLoopTicks(*this, address);
+    }
+    if (sceneMask == 0U ||
+        (sequencerTrackActivations.pendingTrackMask() & sceneMask) != 0U) {
+        return false;
+    }
+    return sequencerClipLaunches.requestScene(
+        slot,
+        sequencerClips,
+        enabledMask,
+        statusBar.playing.get(),
+        quantization,
+        &loopTicks
+    );
+}
+
+FLASHMEM bool CoreState::setSequencerStopSlot(
+    sequencer::SequencerClipAddress target,
+    bool stop
+) {
+    if (!closeClipMutationBoundary(*this) ||
+        !sequencer::SequencerClipGridState::validAddress(target) ||
+        !sequencerTracks.isTrackEnabled(target.track) ||
+        sequencerClipLaunches.references(target)) {
+        return false;
+    }
+    const bool changed = stop
+        ? sequencerClips.setStop(target)
+        : sequencerClips.clearStop(target);
+    if (changed) markSequencerProjectMutated_();
+    return changed;
+}
+
+FLASHMEM bool CoreState::setSequencerClipBehavior(
+    sequencer::SequencerClipAddress target,
+    sequencer::SequencerLauncherBehavior behavior
+) {
+    if (!closeClipMutationBoundary(*this) ||
+        !sequencerClips.setClipBehavior(target, behavior)) {
+        return false;
+    }
+    sequencerClipLaunches.refreshBehavior(target, behavior);
+    markSequencerProjectMutated_();
+    return true;
+}
+
+FLASHMEM bool CoreState::setSequencerSceneBehavior(
+    uint8_t slot,
+    sequencer::SequencerLauncherBehavior behavior
+) {
+    if (!closeClipMutationBoundary(*this) ||
+        !sequencerClips.setSceneBehavior(slot, behavior)) {
+        return false;
+    }
+    markSequencerProjectMutated_();
+    return true;
 }
 
 FLASHMEM bool CoreState::createSequencerClip(
@@ -153,20 +276,23 @@ FLASHMEM bool CoreState::createSequencerClip(
 FLASHMEM bool CoreState::installSequencerClip(
     sequencer::SequencerClipAddress target,
     sequencer::SequencerClipDocumentPtr document,
-    bool duplicate
+    bool duplicate,
+    sequencer::SequencerLauncherBehavior behavior
 ) {
     if (!document || !closeClipMutationBoundary(*this) ||
         !sequencer::SequencerClipGridState::validAddress(target) ||
-        sequencerClips.isOccupied(target) ||
+        sequencerClips.slotKind(target) !=
+            sequencer::SequencerLauncherSlotKind::EMPTY ||
         !sequencerTracks.isTrackEnabled(target.track) ||
         document->trackKind != sequencerTracks.trackKind(target.track)) {
         return false;
     }
     auto change = sequencer::prepareSequencerClipInstallChange(
-        duplicate ? sequencer::SequencerClipStructureAction::DUPLICATE
+        duplicate ? sequencer::SequencerClipStructureAction::DUPLICATE_CLIP
                   : sequencer::SequencerClipStructureAction::CREATE,
         target,
-        std::move(document));
+        std::move(document),
+        behavior);
     if (!change || !sequencerHistory.canRecordClipStructure(*change) ||
         !sequencer::applySequencerClipStructureChange(
             sequencerClips, *change, true)) {
@@ -222,7 +348,8 @@ FLASHMEM bool CoreState::duplicateSequencerClip(
     if (!sequencer::SequencerClipGridState::validAddress(source) ||
         !sequencer::SequencerClipGridState::validAddress(destination) ||
         source.track != destination.track ||
-        sequencerClips.isOccupied(destination)) {
+        sequencerClips.slotKind(destination) !=
+            sequencer::SequencerLauncherSlotKind::EMPTY) {
         return false;
     }
 
@@ -248,7 +375,12 @@ FLASHMEM bool CoreState::duplicateSequencerClip(
             return false;
         }
     }
-    return installSequencerClip(destination, std::move(document), true);
+    return installSequencerClip(
+        destination,
+        std::move(document),
+        true,
+        sequencerClips.clipBehavior(source)
+    );
 }
 
 FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverSettingsFromRamAfterStorageReopen() {
@@ -303,6 +435,8 @@ FLASHMEM bool CoreState::refreshSharedTrackStateFromMacroPages_() {
         shared::SharedTrackCoordinator::apply(sharedTrackRefs(*this), enabledMask, activeTrack);
     if (result.ok) {
         sequencerClips.synchronizeEnabledTracks(result.enabledMask);
+        sequencerClipLaunches.synchronizeEnabledTracks(
+            sequencerClips, result.enabledMask);
     }
     return result.changed;
 }
@@ -328,6 +462,8 @@ FLASHMEM bool CoreState::refreshSharedTrackStateFromSequencer_() {
         shared::SharedTrackCoordinator::refreshFromSequencer(sharedTrackRefs(*this));
     if (result.ok) {
         sequencerClips.synchronizeEnabledTracks(result.enabledMask);
+        sequencerClipLaunches.synchronizeEnabledTracks(
+            sequencerClips, result.enabledMask);
     }
     return result.changed;
 }
@@ -350,6 +486,8 @@ FLASHMEM bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t acti
         shared::SharedTrackCoordinator::apply(sharedTrackRefs(*this), enabledMask, activeTrack);
     if (result.ok) {
         sequencerClips.synchronizeEnabledTracks(result.enabledMask);
+        sequencerClipLaunches.synchronizeEnabledTracks(
+            sequencerClips, result.enabledMask);
     }
     return result.changed;
 }

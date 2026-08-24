@@ -16,15 +16,15 @@
 180 button LEFT_BOTTOM down
 260 tap MACRO_1 60
 380 button LEFT_BOTTOM up
-520 encoder NAV 1
-600 encoder NAV 1
+520 encoder NAV 0.01
+600 encoder NAV 0.01
 
 # Open Modulation, select the first-rank Record shape row, then reuse the
 # contextual RAW capture already shared by Macro editing.
 720 tap NAV 60
-860 encoder NAV 1
-900 encoder NAV 1
-940 encoder NAV 1
+860 encoder NAV 0.01
+900 encoder NAV 0.01
+940 encoder NAV 0.01
 1000 capture screen record_shape_row
 1060 tap NAV 60
 1260 capture screen record_context

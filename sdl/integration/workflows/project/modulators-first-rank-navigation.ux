@@ -1,14 +1,24 @@
 # UX workflow: Modulators as a first-rank musical destination.
 # Purpose: proves the global route reuses Project/Modulators, then preserves
 # bidirectional Source <-> Macro navigation without a parallel workspace.
+# Expect: capture_changed:macro_ready=modulators_global_target, capture_changed:modulators_global_target=modulators_root
+# Expect: capture_changed:source_workspace=source_destinations, capture_changed:source_destinations=macro_destination
+# Expect: capture_changed:macro_destination=source_from_destination, capture_changed:source_from_destination=macro_return
+# Expect: semantic:modulators_global_target:mode=view_selector, semantic:modulators_global_target:effect=select_view, semantic:modulators_global_target:target_index=2
+# Expect: semantic:modulators_root:mode=project.modulators, semantic:modulators_root:route_policy=project
+# Expect: semantic:source_workspace:mode=project.modulator_detail, semantic:source_workspace:source=lfo, semantic:source_workspace:operation_status=enabled
+# Expect: semantic:source_destinations:mode=project.modulator_destinations, semantic:source_destinations:target=modulator_assignment, semantic:source_destinations:target_kind=macro
+# Expect: semantic:macro_destination:mode=macro.modulation_editor, semantic:macro_destination:effect=open_macro_destination, semantic:macro_destination:source=lfo
+# Expect: semantic:source_from_destination:mode=project.modulator_detail, semantic:source_from_destination:effect=open_modulator_source, semantic:source_from_destination:source=lfo
+# Expect: semantic:macro_return:mode=macro.modulation_editor, semantic:macro_return:effect=back_modulator_context, semantic:macro_return:source=lfo
 
 0 scenario macro-reusable-modulators
 80 capture screen macro_ready
 
 # Global selector: Macros -> Sequencer -> Modulators.
 180 button LEFT_TOP down
-260 encoder NAV 1
-340 encoder NAV 1
+260 encoder NAV 0.01
+340 encoder NAV 0.01
 420 capture screen modulators_global_target
 500 button LEFT_TOP up
 760 capture screen modulators_root
@@ -16,10 +26,10 @@
 # Open the first shared Source, then its Destinations card.
 860 tap NAV 60
 1100 capture screen source_workspace
-1200 encoder NAV 1
-1260 encoder NAV 1
-1320 encoder NAV 1
-1380 encoder NAV 1
+1200 encoder NAV 0.01
+1260 encoder NAV 0.01
+1320 encoder NAV 0.01
+1380 encoder NAV 0.01
 1480 tap NAV 60
 1720 capture screen source_destinations
 

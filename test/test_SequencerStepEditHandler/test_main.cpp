@@ -324,6 +324,7 @@ struct SequencerStepEditHarness {
         overlays.registerCleanup(core::ui::OverlayType::SEQ_STEP_EDIT, OVERLAY_SCOPE);
         overlays.registerCleanup(core::ui::OverlayType::PRESET_LIBRARY, PRESET_LIBRARY_SCOPE);
         state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
         g_now_ms = 0;
         g_step_preset_time_lag_ms = 0;
     }

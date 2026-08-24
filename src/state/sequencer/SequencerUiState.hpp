@@ -750,15 +750,47 @@ enum class ClipWorkspaceOperation : uint8_t {
 
 enum class ClipWorkspaceFocus : uint8_t {
     CLIP = 0,
+    SCENE,
     TRACK_HEADER,
+};
+
+enum class ClipWorkspaceEditor : uint8_t {
+    NONE = 0,
+    SLOT_ACTION,
+    CLIP_BEHAVIOR,
+    SCENE_BEHAVIOR,
+};
+
+enum class ClipWorkspaceBehaviorField : uint8_t {
+    LENGTH = 0,
+    THEN,
+    QUANTIZE,
+    COUNT,
+};
+
+enum class ClipWorkspaceQuickAction : uint8_t {
+    EDIT = 0,
+    LENGTH,
+    THEN,
+    QUANTIZE,
+    COUNT,
+};
+
+enum class ClipWorkspaceSlotAction : uint8_t {
+    CREATE_CLIP = 0,
+    SET_STOP,
+    CLEAR,
+    COUNT,
 };
 
 /** Session-only focus and return path for the sparse Clip launcher. */
 struct ClipWorkspaceUiState {
     static constexpr uint8_t VISIBLE_TRACKS = 4U;
-    static constexpr uint8_t VISIBLE_ROWS = 2U;
+    static constexpr uint8_t VISIBLE_ROWS = 4U;
+    static constexpr uint8_t MACRO_ROWS = 2U;
     static constexpr uint8_t TRACK_COUNT = 16U;
     static constexpr uint8_t SLOT_COUNT = 8U;
+    static constexpr uint8_t INVALID_TRACK = 0xFFU;
     static constexpr uint8_t TRACK_VIEWPORT_COUNT =
         TRACK_COUNT / VISIBLE_TRACKS;
     static constexpr uint8_t SLOT_VIEWPORT_COUNT =
@@ -772,7 +804,22 @@ struct ClipWorkspaceUiState {
         ClipWorkspaceFeedback::NONE;
     ClipWorkspaceOperation operation =
         ClipWorkspaceOperation::BROWSE;
-    ClipWorkspaceFocus focusArea = ClipWorkspaceFocus::CLIP;
+    ClipWorkspaceFocus focusArea = ClipWorkspaceFocus::SCENE;
+    ClipWorkspaceQuickAction quickAction = ClipWorkspaceQuickAction::EDIT;
+    bool quickSelectorVisible = false;
+    bool quickPropertyArmed = false;
+    bool quickFeedbackVisible = false;
+    uint8_t quickTargetTrack = 0U;
+    uint8_t quickTargetSlot = 0U;
+    uint32_t quickFeedbackHideAtMs = 0U;
+    ClipWorkspaceEditor editor = ClipWorkspaceEditor::NONE;
+    ClipWorkspaceBehaviorField editorField =
+        ClipWorkspaceBehaviorField::LENGTH;
+    ClipWorkspaceSlotAction slotAction =
+        ClipWorkspaceSlotAction::CREATE_CLIP;
+    uint8_t editorLength = 0U;
+    uint8_t editorThenTarget = 0xFFU;
+    uint8_t editorQuantization = 0U;
     uint8_t focusedTrack = 0U;
     uint8_t focusedSlot = 0U;
     uint8_t firstVisibleTrack = 0U;
@@ -804,12 +851,46 @@ struct ClipWorkspaceUiState {
     [[nodiscard]] bool trackHeaderFocused() const {
         return focusArea == ClipWorkspaceFocus::TRACK_HEADER;
     }
+    [[nodiscard]] bool sceneFocused() const {
+        return focusArea == ClipWorkspaceFocus::SCENE;
+    }
+    [[nodiscard]] bool editorActive() const {
+        return editor != ClipWorkspaceEditor::NONE;
+    }
+    [[nodiscard]] static uint8_t addTrackIndex(uint16_t enabledTrackMask);
+    [[nodiscard]] static bool trackNavigable(
+        uint8_t track,
+        uint16_t enabledTrackMask
+    );
+    [[nodiscard]] uint8_t macroBankFirstSlot() const;
     void reset(uint8_t activeTrack = 0U);
     void focus(uint8_t track, uint8_t slot);
+    void focusScene(uint8_t slot);
     void focusTrackHeader(uint8_t track);
-    void move(int direction);
+    void showQuickSelector();
+    void moveQuickAction(int direction);
+    void armQuickProperty(uint32_t nowMs);
+    void showQuickFeedback(uint32_t nowMs);
+    void clearQuickControl();
+    void updateQuickFeedback(uint32_t nowMs);
+    void moveVertical(int direction, uint8_t lastSlot = SLOT_COUNT - 1U);
+    void moveHorizontal(int direction, uint16_t enabledTrackMask);
     void moveViewport(int direction);
     [[nodiscard]] uint8_t viewportIndex() const;
+    void openEditor(
+        ClipWorkspaceEditor next,
+        uint8_t length = 0U,
+        uint8_t thenTarget = 0xFFU,
+        uint8_t quantization = 0U
+    );
+    bool closeEditor();
+    void moveEditorField(int direction);
+    void moveSlotAction(int direction);
+    void setEditorValues(
+        uint8_t length,
+        uint8_t thenTarget,
+        uint8_t quantization
+    );
     void beginSelection(uint8_t track, uint8_t slot);
     void beginPlacement(
         ClipWorkspaceOperation next,

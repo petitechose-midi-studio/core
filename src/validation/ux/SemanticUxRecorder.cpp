@@ -371,6 +371,28 @@ FLASHMEM void formatContextFields(char* out,
         );
     }
     appendField(out, size, "operation_status", operation.operationStatus);
+    const SemanticUxContext& launchState = post.activeSlot >= 0 ||
+            post.queuedSlot >= 0 || post.beatsRemaining >= 0 || post.hasStopped
+        ? post : pre;
+    if (launchState.activeSlot >= 0) {
+        appendIntField(
+            out, size, "active_slot", static_cast<int>(launchState.activeSlot));
+    }
+    if (launchState.queuedSlot >= 0) {
+        appendIntField(
+            out, size, "queued_slot", static_cast<int>(launchState.queuedSlot));
+    }
+    if (launchState.beatsRemaining >= 0) {
+        appendIntField(
+            out,
+            size,
+            "beats_remaining",
+            static_cast<int>(launchState.beatsRemaining)
+        );
+    }
+    if (launchState.hasStopped) {
+        appendBoolField(out, size, "stopped", launchState.stopped);
+    }
     const SemanticUxContext& route = post.hasTargetRoute ? post : pre;
     if (route.hasTargetRoute) {
         appendIntField(out, size, "target_route", static_cast<int>(route.targetRoute));

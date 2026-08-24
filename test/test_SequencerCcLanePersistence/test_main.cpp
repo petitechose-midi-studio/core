@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <memory>
 
@@ -19,6 +20,61 @@ namespace {
 
 namespace codec = core::persistence::sequencer_codec;
 namespace seq = core::state::sequencer;
+
+uint16_t readU16(const uint8_t* data) {
+    return static_cast<uint16_t>(
+        data[0] | static_cast<uint16_t>(data[1]) << 8U);
+}
+
+void writeU16(uint8_t* data, uint16_t value) {
+    data[0] = static_cast<uint8_t>(value & 0xFFU);
+    data[1] = static_cast<uint8_t>(value >> 8U);
+}
+
+uint32_t downgradeProjectEnvelopeToV17(
+    const uint8_t* source,
+    uint32_t size,
+    uint8_t* destination,
+    uint32_t capacity
+) {
+    constexpr uint32_t kHeaderSize = 12U;
+    constexpr uint32_t kSectionHeaderSize = 10U;
+    constexpr uint16_t kLauncherMetadataSection = 24U;
+    assert(source != nullptr && destination != nullptr);
+    assert(size >= kHeaderSize && capacity >= size);
+    assert(source[4U] == codec::ENVELOPE_VERSION);
+
+    std::memcpy(destination, source, kHeaderSize);
+    destination[4U] = 17U;
+    const uint16_t sectionCount = readU16(source + 8U);
+    uint16_t retainedCount = 0U;
+    uint32_t sourceOffset = kHeaderSize;
+    uint32_t destinationOffset = kHeaderSize;
+    bool removedMetadata = false;
+    for (uint16_t section = 0U; section < sectionCount; ++section) {
+        assert(sourceOffset + kSectionHeaderSize <= size);
+        const uint16_t id = readU16(source + sourceOffset);
+        const uint16_t byteSize = readU16(source + sourceOffset + 8U);
+        const uint32_t sectionSize = kSectionHeaderSize + byteSize;
+        assert(sourceOffset + sectionSize <= size);
+        if (id == kLauncherMetadataSection) {
+            assert(!removedMetadata);
+            removedMetadata = true;
+        } else {
+            std::memcpy(
+                destination + destinationOffset,
+                source + sourceOffset,
+                sectionSize
+            );
+            destinationOffset += sectionSize;
+            ++retainedCount;
+        }
+        sourceOffset += sectionSize;
+    }
+    assert(sourceOffset == size && removedMetadata);
+    writeU16(destination + 8U, retainedCount);
+    return destinationOffset;
+}
 
 void authorTwoLanes(seq::SequencerPatternState& pattern) {
     auto* bank = seq::ensureSequencerCcLaneBank(pattern);
@@ -288,6 +344,19 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     projectSource.flat = &flat;
     projectSource.drums = drums.get();
     projectSource.clips = &projectClips;
+    projectClips.stopMasks[3U] = 0x0001U;
+    projectClips.clipBehaviors[
+        seq::SequencerClipGridState::cellIndex({0U, 0U})
+    ] = {
+        .length = 2U,
+        .thenTarget = 1U,
+        .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
+    };
+    projectClips.sceneBehaviors[0U] = {
+        .length = 4U,
+        .thenTarget = 1U,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    };
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -322,6 +391,11 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     assert(projectBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
     assert(projectBank.drumTrack(2U).pattern.lanes[1U].velocity[3U] == 109U);
     assertTrackRegions(projectBank, projectLoaded);
+    assert(projectGrid.isStop({0U, 3U}));
+    assert(projectGrid.clipBehavior({0U, 0U}) ==
+           projectClips.clipBehaviors[
+               seq::SequencerClipGridState::cellIndex({0U, 0U})]);
+    assert(projectGrid.sceneBehavior(0U) == projectClips.sceneBehaviors[0U]);
 
     codec::EnvelopeBuffer setBytes{};
     const auto setEncoded = codec::fillSetEnvelope(
@@ -349,6 +423,67 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     assertTrackRegions(setBank, setLoaded);
 
     std::cout << "[PASS] Project and Set retain every Track-local lane owner\n";
+}
+
+void testV17ProjectEnvelopeMigratesWithDefaultLauncherMetadata() {
+    seq::SequencerState source{};
+    seq::SequencerTrackBankState bank{};
+    source.reset();
+    bank.reset();
+    assert(seq::initializeTrackBankFromActive(bank, source));
+
+    seq::SequencerTrackBankSnapshot flat{};
+    seq::captureTrackBankSnapshot(bank, source, flat);
+    seq::SequencerClipGridSnapshot clips{};
+    clips.residentSlots[0U] = 0U;
+    clips.stopMasks[2U] = 0x0001U;
+    clips.clipBehaviors[0U] = {
+        .length = 3U,
+        .thenTarget = 2U,
+        .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
+    };
+    clips.sceneBehaviors[0U] = {
+        .length = 2U,
+        .thenTarget = 1U,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    };
+    codec::ProjectSequencerSnapshotEncodeSource encodeSource{};
+    encodeSource.flat = &flat;
+    encodeSource.clips = &clips;
+
+    auto current = std::make_unique<codec::EnvelopeBuffer>();
+    auto previous = std::make_unique<codec::EnvelopeBuffer>();
+    assert(current && previous);
+    const auto encoded = codec::fillProjectSequencerEnvelope(
+        encodeSource,
+        current->bytes.data(),
+        static_cast<uint32_t>(current->bytes.size())
+    );
+    assert(encoded.ok);
+    const uint32_t previousSize = downgradeProjectEnvelopeToV17(
+        current->bytes.data(),
+        encoded.size,
+        previous->bytes.data(),
+        static_cast<uint32_t>(previous->bytes.size())
+    );
+
+    seq::SequencerState loaded{};
+    seq::SequencerTrackBankState loadedBank{};
+    seq::SequencerClipGridState loadedClips{};
+    assert(codec::applyProjectSequencerEnvelope(
+        previous->bytes.data(),
+        previousSize,
+        loadedBank,
+        loaded,
+        loadedClips
+    ));
+    assert(loadedClips.residentSlot(0U) == 0U);
+    assert(!loadedClips.isStop({0U, 2U}));
+    assert(loadedClips.clipBehavior({0U, 0U}) ==
+           seq::SequencerLauncherBehavior{});
+    assert(loadedClips.sceneBehavior(0U) ==
+           seq::SequencerLauncherBehavior{});
+    std::cout << "[PASS] v17 Project envelope defaults launcher metadata\n";
 }
 
 void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
@@ -416,6 +551,7 @@ int main() {
     testCurrentRecordRoundTripAndStrictVersioning();
     testPatternEnvelopeRoundTripAndStrictVersioning();
     testProjectAndSetRoundTripEveryTrackOwner();
+    testV17ProjectEnvelopeMigratesWithDefaultLauncherMetadata();
     testEnvelopeWithoutDrumsClearsExistingDrumBank();
     std::cout << "All SequencerCcLanePersistence tests passed\n";
     return 0;

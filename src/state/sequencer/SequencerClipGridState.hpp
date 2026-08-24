@@ -21,11 +21,46 @@ struct SequencerClipAddress {
     uint8_t slot = 0U;
 };
 
+enum class SequencerLauncherSlotKind : uint8_t {
+    EMPTY = 0,
+    CLIP,
+    STOP,
+};
+
+enum class SequencerLauncherFollowQuantization : uint8_t {
+    GLOBAL = 0,
+    BEAT,
+    BAR,
+};
+
+/** Compact authored follow action shared by Clips and Scenes. */
+struct SequencerLauncherBehavior {
+    static constexpr uint8_t MAX_LENGTH = 16U;
+    static constexpr uint8_t NO_TARGET = 0xFFU;
+
+    uint8_t length = 0U;
+    uint8_t thenTarget = NO_TARGET;
+    SequencerLauncherFollowQuantization quantization =
+        SequencerLauncherFollowQuantization::GLOBAL;
+
+    [[nodiscard]] bool enabled() const noexcept {
+        return length > 0U && thenTarget != NO_TARGET;
+    }
+};
+
+constexpr bool operator==(
+    const SequencerLauncherBehavior& lhs,
+    const SequencerLauncherBehavior& rhs
+) noexcept {
+    return lhs.length == rhs.length && lhs.thenTarget == rhs.thenTarget &&
+        lhs.quantization == rhs.quantization;
+}
+
 enum class SequencerClipStructureAction : uint8_t {
     CREATE = 0,
     DELETE,
     MOVE,
-    DUPLICATE,
+    DUPLICATE_CLIP,
 };
 
 constexpr bool operator==(
@@ -95,6 +130,9 @@ struct SequencerClipGridSnapshot {
 
     std::array<uint8_t, TRACK_COUNT> residentSlots{};
     std::array<uint32_t, CELL_COUNT> generations{};
+    std::array<uint16_t, SLOT_COUNT> stopMasks{};
+    std::array<SequencerLauncherBehavior, CELL_COUNT> clipBehaviors{};
+    std::array<SequencerLauncherBehavior, SLOT_COUNT> sceneBehaviors{};
     std::array<SequencerClipDocumentPtr, CELL_COUNT> documents{};
 
     SequencerClipGridSnapshot();
@@ -146,6 +184,27 @@ public:
     [[nodiscard]] uint8_t residentSlot(uint8_t track) const noexcept;
     [[nodiscard]] bool isOccupied(SequencerClipAddress address) const noexcept;
     [[nodiscard]] bool isResident(SequencerClipAddress address) const noexcept;
+    [[nodiscard]] SequencerLauncherSlotKind slotKind(
+        SequencerClipAddress address
+    ) const noexcept;
+    [[nodiscard]] bool isStop(SequencerClipAddress address) const noexcept;
+    [[nodiscard]] bool setStop(SequencerClipAddress address) noexcept;
+    [[nodiscard]] bool clearStop(SequencerClipAddress address) noexcept;
+    [[nodiscard]] SequencerLauncherBehavior clipBehavior(
+        SequencerClipAddress address
+    ) const noexcept;
+    [[nodiscard]] SequencerLauncherBehavior sceneBehavior(
+        uint8_t slot
+    ) const noexcept;
+    [[nodiscard]] bool setClipBehavior(
+        SequencerClipAddress address,
+        SequencerLauncherBehavior behavior
+    ) noexcept;
+    [[nodiscard]] bool setSceneBehavior(
+        uint8_t slot,
+        SequencerLauncherBehavior behavior
+    ) noexcept;
+    [[nodiscard]] uint8_t lastNavigableScene() const noexcept;
     [[nodiscard]] uint32_t generation(SequencerClipAddress address) const noexcept;
     [[nodiscard]] uint8_t inactiveDocumentCount() const noexcept {
         return inactive_document_count_;
@@ -218,6 +277,9 @@ private:
 
     std::array<uint8_t, TRACK_COUNT> resident_slots_{};
     std::array<Cell, CELL_COUNT> cells_{};
+    std::array<uint16_t, SLOT_COUNT> stop_masks_{};
+    std::array<SequencerLauncherBehavior, CELL_COUNT> clip_behaviors_{};
+    std::array<SequencerLauncherBehavior, SLOT_COUNT> scene_behaviors_{};
     uint32_t inactive_retained_bytes_ = 0U;
     uint8_t inactive_document_count_ = 0U;
     oc::state::Signal<uint32_t, 8> revision_{1U};
@@ -247,6 +309,7 @@ struct SequencerClipStructureChange {
     uint32_t retainedBytes = 0U;
     uint16_t retainedSpans = 0U;
     bool afterApplied = false;
+    SequencerLauncherBehavior behavior{};
     SequencerClipDocumentPtr document;
 };
 
@@ -257,7 +320,8 @@ using SequencerClipStructureChangePtr =
 prepareSequencerClipInstallChange(
     SequencerClipStructureAction action,
     SequencerClipAddress destination,
-    SequencerClipDocumentPtr document
+    SequencerClipDocumentPtr document,
+    SequencerLauncherBehavior behavior = {}
 );
 
 [[nodiscard]] SequencerClipStructureChangePtr

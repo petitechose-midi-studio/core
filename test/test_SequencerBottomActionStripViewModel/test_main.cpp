@@ -79,6 +79,7 @@ void test_clip_workspace_browse_strip_exposes_viewport_navigation() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
     state.sequencer.clipWorkspace.reset(0U);
+    state.sequencer.clipWorkspace.focus(0U, 0U);
 
     const auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
@@ -207,10 +208,9 @@ void test_selection_strip_projection_contract() {
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(props.slots[0].icon == standalone::icons::TRACK_MUTE);
-    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 
     state.trackNavigation.hold.begin(
         core::state::StructureHoldAction::REMOVE,
@@ -219,10 +219,9 @@ void test_selection_strip_projection_contract() {
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].visualState == ContextActionStripVisualState::ARMED);
-    assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
-    assert(props.slots[0].holdActive);
-    assert(props.slots[0].holdStartedAtMs == 42U);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 
     std::cout << "[PASS] Selection strip projection contract\n";
 }

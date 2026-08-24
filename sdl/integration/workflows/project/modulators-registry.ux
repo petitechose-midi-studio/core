@@ -11,7 +11,7 @@
 
 # Open the first-rank Modulators view from Project Settings.
 180 button LEFT_TOP down
-780 encoder NAV -1
+780 encoder NAV -0.01
 1180 button LEFT_TOP up
 1400 capture screen modulators_registry
 
@@ -26,6 +26,6 @@
 # NAV opens the same selected source; Back returns to the same registry row.
 2200 tap NAV 60
 2420 capture screen modulator_detail
-2540 encoder NAV 1
+2540 encoder NAV 0.01
 2660 tap LEFT_TOP 60
 2880 capture screen registry_focus_restored

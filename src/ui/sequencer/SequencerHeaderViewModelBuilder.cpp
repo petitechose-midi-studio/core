@@ -99,20 +99,35 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         props.enabledMask = source.sharedTrackEnabledMask.get();
         props.pageStripVisible = false;
         props.previewLayout = true;
-        props.leftText = selectingTrack
-            ? source.trackNavigation.selection.placementActive()
-                ? "Paste"
-                : "Tracks"
-            : launcher.operation == core::state::sequencer::
-                ClipWorkspaceOperation::MOVE_DESTINATION
-            ? "Move"
-            : launcher.operation == core::state::sequencer::
-                    ClipWorkspaceOperation::DUPLICATE_DESTINATION
-                ? "Copy"
-                : launcher.operation == core::state::sequencer::
-                        ClipWorkspaceOperation::SELECT
-                    ? "Select"
-                    : launcher.trackHeaderFocused() ? "Track" : "Clips";
+        props.leftText = launcher.editor == core::state::sequencer::
+                ClipWorkspaceEditor::SLOT_ACTION
+            ? "Slot"
+            : launcher.editor == core::state::sequencer::
+                    ClipWorkspaceEditor::CLIP_BEHAVIOR
+                ? "Clip behavior"
+                : launcher.editor == core::state::sequencer::
+                        ClipWorkspaceEditor::SCENE_BEHAVIOR
+                    ? "Scene behavior"
+                    : selectingTrack
+                        ? source.trackNavigation.selection.placementActive()
+                            ? "Paste"
+                            : "Tracks"
+                        : launcher.operation == core::state::sequencer::
+                                ClipWorkspaceOperation::MOVE_DESTINATION
+                            ? "Move"
+                            : launcher.operation == core::state::sequencer::
+                                    ClipWorkspaceOperation::
+                                        DUPLICATE_DESTINATION
+                                ? "Copy"
+                                : launcher.operation ==
+                                          core::state::sequencer::
+                                              ClipWorkspaceOperation::SELECT
+                                    ? "Select"
+                                    : launcher.trackHeaderFocused()
+                                        ? "Track"
+                                        : launcher.sceneFocused()
+                                            ? "Scene"
+                                            : "Clip";
         if (selectingTrack) {
             const uint8_t selected = core::state::shared::countEnabled(
                 static_cast<uint16_t>(
@@ -130,6 +145,22 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 std::snprintf(
                     props.badgeText.data(), props.badgeText.size(),
                     "T%u", static_cast<unsigned>(focusedTrack + 1U)
+                );
+            }
+        } else if (launcher.editorActive()) {
+            if (launcher.editor == core::state::sequencer::
+                    ClipWorkspaceEditor::SCENE_BEHAVIOR) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "S%u",
+                    static_cast<unsigned>(launcher.focusedSlot + 1U)
+                );
+            } else {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u / S%u",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launcher.focusedSlot + 1U)
                 );
             }
         } else if (launcher.feedback == core::state::sequencer::
@@ -161,28 +192,154 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 static_cast<unsigned>(launcher.focusedSlot + 1U)
             );
         } else if (launcher.trackHeaderFocused()) {
-            std::snprintf(
-                props.badgeText.data(),
-                props.badgeText.size(),
-                "T%u  %u/%u",
-                static_cast<unsigned>(launcher.focusedTrack + 1U),
-                static_cast<unsigned>(launcher.viewportIndex() + 1U),
-                static_cast<unsigned>(
-                    core::state::sequencer::ClipWorkspaceUiState::VIEWPORT_COUNT
-                )
+            const auto launch = source.clipLaunches.telemetry(
+                launcher.focusedTrack
             );
+            const bool enabled =
+                (source.sharedTrackEnabledMask.get() &
+                 static_cast<uint16_t>(1U << launcher.focusedTrack)) != 0U;
+            if (!enabled) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "+T%u  MIDI CH %u",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launcher.focusedTrack + 1U)
+                );
+            } else if (launch.stopped) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u  STOP",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U)
+                );
+            } else if (
+                launch.status == core::state::sequencer::
+                    SequencerClipLaunchStatus::QUEUED &&
+                launch.action == core::state::sequencer::
+                    SequencerClipLaunchAction::STOP) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u  NEXT STOP %u",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launch.beatsRemaining)
+                );
+            } else {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u  MIDI CH %u",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launcher.focusedTrack + 1U)
+                );
+            }
+        } else if (launcher.sceneFocused()) {
+            const auto scene = source.clipLaunches.sceneTelemetry();
+            if (scene.status == core::state::sequencer::
+                    SequencerClipLaunchStatus::QUEUED &&
+                scene.queuedScene == launcher.focusedSlot) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "S%u  NEXT %u",
+                    static_cast<unsigned>(launcher.focusedSlot + 1U),
+                    static_cast<unsigned>(scene.beatsRemaining)
+                );
+            } else if (scene.activeScene == launcher.focusedSlot) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "S%u  PLAY",
+                    static_cast<unsigned>(launcher.focusedSlot + 1U)
+                );
+            } else {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "S%u  READY",
+                    static_cast<unsigned>(launcher.focusedSlot + 1U)
+                );
+            }
         } else {
-            std::snprintf(
-                props.badgeText.data(),
-                props.badgeText.size(),
-                "T%u C%u  %u/%u",
-                static_cast<unsigned>(launcher.focusedTrack + 1U),
-                static_cast<unsigned>(launcher.focusedSlot + 1U),
-                static_cast<unsigned>(launcher.viewportIndex() + 1U),
-                static_cast<unsigned>(
-                    core::state::sequencer::ClipWorkspaceUiState::VIEWPORT_COUNT
-                )
+            const core::state::sequencer::SequencerClipAddress address{
+                launcher.focusedTrack,
+                launcher.focusedSlot,
+            };
+            const auto kind = source.clips.slotKind(address);
+            const auto launch = source.clipLaunches.telemetry(
+                launcher.focusedTrack
             );
+            const bool scrolled = launcher.firstVisibleTrack != 0U ||
+                launcher.firstVisibleSlot != 0U;
+            if (launch.status == core::state::sequencer::
+                    SequencerClipLaunchStatus::QUEUED &&
+                launch.queuedSlot == launcher.focusedSlot) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u S%u  NEXT %u",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launcher.focusedSlot + 1U),
+                    static_cast<unsigned>(launch.beatsRemaining)
+                );
+            } else if (!launch.stopped &&
+                       launch.activeSlot == launcher.focusedSlot) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u S%u  PLAY",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launcher.focusedSlot + 1U)
+                );
+            } else if (kind == core::state::sequencer::
+                    SequencerLauncherSlotKind::STOP) {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u S%u  STOP",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launcher.focusedSlot + 1U)
+                );
+            } else if (scrolled) {
+                using Grid = core::state::sequencer::SequencerClipGridState;
+                using Workspace = core::state::sequencer::ClipWorkspaceUiState;
+                const unsigned focusedTrack = std::min<unsigned>(
+                    static_cast<unsigned>(launcher.focusedTrack) + 1U,
+                    Grid::TRACK_COUNT
+                );
+                const unsigned focusedSlot = std::min<unsigned>(
+                    static_cast<unsigned>(launcher.focusedSlot) + 1U,
+                    Grid::SLOT_COUNT
+                );
+                const unsigned firstTrack = std::min<unsigned>(
+                    static_cast<unsigned>(launcher.firstVisibleTrack) + 1U,
+                    Grid::TRACK_COUNT
+                );
+                const unsigned lastTrack = std::min<unsigned>(
+                    firstTrack + Workspace::VISIBLE_TRACKS - 1U,
+                    Grid::TRACK_COUNT
+                );
+                const unsigned firstSlot = std::min<unsigned>(
+                    static_cast<unsigned>(launcher.firstVisibleSlot) + 1U,
+                    Grid::SLOT_COUNT
+                );
+                const unsigned lastSlot = std::min<unsigned>(
+                    firstSlot + Workspace::VISIBLE_ROWS - 1U,
+                    Grid::SLOT_COUNT
+                );
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u S%u  %u-%u/%u-%u",
+                    focusedTrack,
+                    focusedSlot,
+                    firstTrack,
+                    lastTrack,
+                    firstSlot,
+                    lastSlot
+                );
+            } else {
+                std::snprintf(
+                    props.badgeText.data(), props.badgeText.size(),
+                    "T%u S%u  %s",
+                    static_cast<unsigned>(launcher.focusedTrack + 1U),
+                    static_cast<unsigned>(launcher.focusedSlot + 1U),
+                    kind == core::state::sequencer::
+                            SequencerLauncherSlotKind::EMPTY
+                        ? "EMPTY"
+                        : "READY"
+                );
+            }
         }
         props.contextIcon = selectingTrack || launcher.trackHeaderFocused()
             ? source.tracks.isDrumTrack(focusedTrack)

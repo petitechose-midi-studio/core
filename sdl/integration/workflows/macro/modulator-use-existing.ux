@@ -15,18 +15,18 @@
 260 tap MACRO_1 60
 1240 tick
 1300 button LEFT_BOTTOM up
-1450 encoder NAV 1
-1570 encoder NAV 1
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
 1690 tap NAV 60
 
 # Creation choice: Use Existing follows the two explicit new-source kinds.
-1810 encoder NAV 1
-1870 encoder NAV 1
+1810 encoder NAV 0.01
+1870 encoder NAV 0.01
 1930 tap NAV 60
 2150 capture screen modulator_picker_default
 
 # Browsing changes only focus and preview; it must remain silent.
-2270 encoder NAV 1
+2270 encoder NAV 0.01
 2490 capture screen modulator_picker_focused
 
 # Explicit selection starts a destination-local audible audition.

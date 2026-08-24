@@ -11,7 +11,7 @@
 # Select Step with the shared NAV hold+turn context grammar so LEFT_CENTER
 # opens the musical property selector instead of the retained Pattern Editor.
 150 button NAV down
-210 encoder NAV 1
+210 encoder NAV 0.01
 270 button NAV up
 650 capture screen step_focus
 

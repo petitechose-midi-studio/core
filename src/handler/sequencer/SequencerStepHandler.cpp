@@ -430,6 +430,7 @@ FLASHMEM bool SequencerStepHandler::instrumentPatternBackAvailable() const {
     if (!sequencer_.clipWorkspace.patternVisible() ||
         !core::state::sequencer::isRootContentView(sequencer_) ||
         core::state::sequencer::isDrumOverviewActive(sequencer_) ||
+        sequencer_.ccLaneUi.visible() ||
         sequencer_.contextSelector.visible ||
         sequencer_.patternQuickControls.selecting.get() ||
         sequencer_.stepPropertyInlineSelector.selecting.get() ||

@@ -177,6 +177,11 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.setSharedTrackState_(macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK, 0);
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
+    // A Project replacement already publishes its own session boundary.
+    // Consume the watched domain mutations before resetting retained UI state
+    // so their obsolete callbacks do not occupy the bounded notification wave.
+    consumeProjectReplacementMutationCoalescing(state);
+
     state.statusBar.tempo.set(120.0f);
     if (!state.statusBar.tempoLocked.get()) {
         state.statusBar.tempoDisplay.set(120.0f);
@@ -219,7 +224,6 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
         state.projectHistory.clear();
     }
 
-    flushMutationCoalescers_(state);
     state.publishProjectSessionReplacement_();
 }
 

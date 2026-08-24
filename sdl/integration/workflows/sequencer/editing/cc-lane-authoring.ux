@@ -22,14 +22,14 @@
 # Exercise the held context selector without changing the active Pattern, then
 # open the shared musical-property selector and walk to `+ CC lane`.
 120 button NAV down
-160 encoder NAV -1
-220 encoder NAV 1
+160 encoder NAV -0.01
+220 encoder NAV 0.01
 280 button NAV up
 300 button LEFT_BOTTOM down
-420 encoder NAV 1
-500 encoder NAV 1
-580 encoder NAV 1
-660 encoder NAV 1
+420 encoder NAV 0.01
+500 encoder NAV 0.01
+580 encoder NAV 0.01
+660 encoder NAV 0.01
 840 capture screen cc_lane_property_selected
 1080 button LEFT_BOTTOM up
 1200 capture screen cc_lane_grid_preview
@@ -45,7 +45,7 @@
 2560 tap LEFT_TOP 60
 2740 tap BOTTOM_CENTER 60
 3020 button LEFT_BOTTOM down
-3100 encoder NAV 1
+3100 encoder NAV 0.01
 3520 tap NAV 60
 3600 button LEFT_BOTTOM up
 3820 capture screen cc_lane_grid_live
@@ -56,7 +56,7 @@
 
 # Route is the second field. Toggle Track -> Fixed and expose the temporary
 # Channel setting only when it is useful.
-4260 encoder NAV 1
+4260 encoder NAV 0.01
 4340 encoder OPT 1
 4540 capture screen cc_lane_settings_pinned
 4620 tap BOTTOM_RIGHT 60
@@ -68,7 +68,7 @@
 4940 tap LEFT_TOP 60
 5100 tap BOTTOM_CENTER 60
 5260 button LEFT_BOTTOM down
-5340 encoder NAV 1
+5340 encoder NAV 0.01
 5760 tap NAV 60
 5840 button LEFT_BOTTOM up
 5960 tap BOTTOM_RIGHT 60

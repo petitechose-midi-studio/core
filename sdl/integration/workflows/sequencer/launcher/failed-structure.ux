@@ -1,35 +1,51 @@
-# Clip Launcher failure grammar: occupied targets stay explicit and Back
-# unwinds destination then selection without mutating either Clip.
-# Expect: capture_changed:launcher_browse=clip_selected
-# Expect: capture_changed:clip_selected=occupied_target
-# Expect: capture_changed:occupied_target=duplicate_blocked
-# Expect: capture_changed:duplicate_blocked=selection_restored
-# Expect: capture_changed:selection_restored=launcher_restored
-# Expect: semantic:occupied_target:mode=sequencer.clip_launcher, semantic:occupied_target:projection=duplicate_destination, semantic:occupied_target:property=occupied
-# Expect: semantic:duplicate_blocked:effect=duplicate_clip, semantic:duplicate_blocked:outcome=blocked
-# Expect: semantic:selection_restored:effect=cancel_clip_operation, semantic:selection_restored:projection=selected
-# Expect: semantic:launcher_restored:effect=cancel_clip_operation, semantic:launcher_restored:projection=browse
+# UX workflow: Scene behavior and live Scene scheduling.
+# Purpose: validates the row-level editor, atomic Scene queue, same-Scene
+# cancellation, latest-Scene replacement, countdown and mixed Clip/Stop apply.
+# Expect: capture_changed:scene_ready=launcher_ready
+# Expect: capture_changed:scene_behavior=scene_ready
+# Expect: capture_changed:scene_returned=scene_behavior
+# Expect: capture_changed:scene_queued=scene_returned
+# Expect: capture_changed:scene_queue_cancelled=scene_queued
+# Expect: capture_changed:scene_replaced=scene_queue_cancelled
+# Expect: capture_changed:scene_countdown=scene_replaced
+# Expect: capture_changed:scene_applied=scene_countdown
+# Expect: semantic:scene_ready:target=scene, semantic:scene_ready:target_index=1, semantic:scene_ready:projection=scene_rail
+# Expect: semantic:scene_behavior:mode=sequencer.clip_launcher.editor, semantic:scene_behavior:target=scene_behavior, semantic:scene_behavior:value_label=2_bars
+# Expect: semantic:scene_queued:operation_origin=manual_scene, semantic:scene_queued:operation_status=queued, semantic:scene_queued:queued_slot=1, semantic:scene_queued:beats_remaining=4
+# Expect: semantic:scene_queue_cancelled:operation_status=cancelled
+# Expect: semantic:scene_replaced:operation_origin=manual_scene, semantic:scene_replaced:queued_slot=2, semantic:scene_replaced:beats_remaining=2
+# Expect: semantic:scene_countdown:queued_slot=2, semantic:scene_countdown:beats_remaining=1
+# Expect: semantic:scene_applied:operation_status=applied, semantic:scene_applied:active_slot=2, semantic:scene_applied:property=active
 
-0 scenario clip-launcher
-100 capture screen launcher_browse
+0 scenario clip-launcher-v3
+100 capture screen launcher_ready
 
-# T1/C2 is occupied and inactive.
-200 encoder NAV 1
-520 button NAV down
-1580 tick
-1640 button NAV up
-1820 capture screen clip_selected
+# Scene is the default performance focus; one turn selects Scene 2.
+220 encoder NAV 0.01
+620 capture screen scene_ready
 
-# Copy proposes C3. Moving back onto the occupied source exposes a conflict;
-# Apply must fail without leaving the destination phase.
-1920 tap BOTTOM_RIGHT 60
-2080 encoder NAV -1
-2300 capture screen occupied_target
-2400 tap BOTTOM_RIGHT 60
-2650 capture screen duplicate_blocked
+# Long NAV exposes the authored two-bar Follow to Scene 3.
+700 button NAV down
+1760 tick
+1840 capture screen scene_behavior
+1920 button NAV up
+2080 tap LEFT_TOP 60
+2260 capture screen scene_returned
 
-# One Back returns to the source selection, the next to normal browse.
-2750 tap LEFT_TOP 60
-3000 capture screen selection_restored
-3100 tap LEFT_TOP 60
-3350 capture screen launcher_restored
+# While transport runs, Scene 2 is queued on the next bar. Pressing it again
+# cancels the exact request; a newer Scene replaces the older request.
+2340 tap BOTTOM_CENTER 60
+2520 tap NAV 60
+2700 capture screen scene_queued
+2780 tap NAV 60
+2960 capture screen scene_queue_cancelled
+3040 tap NAV 60
+3200 encoder NAV 0.01
+3280 tap NAV 60
+3460 capture screen scene_replaced
+
+# Countdown remains visible until the shared boundary. Scene 3 applies Clips
+# on T1/T3 and an authored Stop on T2 as one musical action.
+4140 capture screen scene_countdown
+4860 capture screen scene_applied
+5040 tap BOTTOM_CENTER 60

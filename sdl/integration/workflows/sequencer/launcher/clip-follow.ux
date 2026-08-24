@@ -1,0 +1,32 @@
+# UX workflow: authored Clip Follow action at runtime.
+# Purpose: proves a Clip's two-loop duration queues its target Clip on the next
+# global boundary without changing the other Tracks or Scene ownership.
+# Expect: capture_changed:clip_2_queued=clip_2_ready
+# Expect: capture_changed:clip_2_active=clip_2_queued
+# Expect: capture_changed:clip_follow_queued=clip_2_active
+# Expect: capture_changed:clip_follow_countdown=clip_follow_queued
+# Expect: capture_changed:clip_3_followed=clip_follow_countdown
+# Expect: semantic:clip_2_queued:operation_origin=manual_clip, semantic:clip_2_queued:operation_status=queued, semantic:clip_2_queued:queued_slot=1, semantic:clip_2_queued:beats_remaining=4
+# Expect: semantic:clip_2_active:operation_origin=manual_clip, semantic:clip_2_active:operation_status=applied, semantic:clip_2_active:active_slot=1
+# Expect: semantic:clip_follow_queued:operation_origin=clip_follow, semantic:clip_follow_queued:operation_status=queued, semantic:clip_follow_queued:active_slot=1, semantic:clip_follow_queued:queued_slot=2, semantic:clip_follow_queued:beats_remaining=4
+# Expect: semantic:clip_follow_countdown:operation_origin=clip_follow, semantic:clip_follow_countdown:queued_slot=2, semantic:clip_follow_countdown:beats_remaining=2
+# Expect: semantic:clip_3_followed:operation_origin=clip_follow, semantic:clip_3_followed:operation_status=applied, semantic:clip_3_followed:active_slot=2
+
+0 scenario clip-launcher-v3
+# Scene 1 -> Scene 2 -> Track 1 Clip 2.
+100 encoder NAV 0.01
+180 button NAV down
+260 encoder NAV 0.01
+340 button NAV up
+420 capture screen clip_2_ready
+
+500 tap BOTTOM_CENTER 60
+660 tap NAV 60
+860 capture screen clip_2_queued
+2600 capture screen clip_2_active
+
+# Two complete Clip loops later, only T1 queues its authored Clip 3 target.
+4820 capture screen clip_follow_queued
+5820 capture screen clip_follow_countdown
+6820 capture screen clip_3_followed
+7000 tap BOTTOM_CENTER 60

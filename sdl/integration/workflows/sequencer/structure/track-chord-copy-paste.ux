@@ -37,7 +37,7 @@
 # Enter Step focus, enable step 1, and create a local chord from the Step Editor.
 150 capture screen pattern_focus
 450 button NAV down
-510 encoder NAV 1
+510 encoder NAV 0.01
 570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
@@ -46,12 +46,12 @@
 2100 tick
 2150 capture screen step_editor_open
 2200 button MACRO_1 up
-2300 encoder NAV 1
-2380 encoder NAV 1
-2460 encoder NAV 1
-2540 encoder NAV 1
-2620 encoder NAV 1
-2700 encoder NAV 1
+2300 encoder NAV 0.01
+2380 encoder NAV 0.01
+2460 encoder NAV 0.01
+2540 encoder NAV 0.01
+2620 encoder NAV 0.01
+2700 encoder NAV 0.01
 2900 capture screen chord_row_single
 3000 tap NAV 60
 3160 encoder OPT 1.0
@@ -62,16 +62,16 @@
 3700 capture screen source_track_chord_badge
 
 # Leave Step focus, return to the Clips matrix, focus T1's explicit Track
-# header, copy it, then move across T1's two Clip cells to the empty T2 header.
+# header, copy it, then move horizontally to the empty T2 header.
 3800 tap LEFT_TOP 60
 4200 tap LEFT_TOP 60
-4500 encoder NAV -1
+4500 encoder NAV -0.01
 5000 capture screen track_focus_source
 5050 tap BOTTOM_RIGHT 60
 5200 capture screen track_1_chord_copied
-5250 encoder NAV 1
-5300 encoder NAV 1
-5350 encoder NAV 1
+5250 button LEFT_CENTER down
+5300 encoder NAV 0.01
+5350 button LEFT_CENTER up
 5400 capture screen track_2_paste_preview
 5450 button BOTTOM_RIGHT down
 5550 capture screen track_2_paste_pressed
@@ -91,16 +91,12 @@
 7050 tap BOTTOM_CENTER 60
 7250 capture screen track_paste_transport_playing
 
-# Copy T1, enter its first Clip cell, page to the T5-T8 viewport, then focus
-# T5's explicit Track header.
+# Copy T1, then use horizontal Track navigation to slide to T5's header.
 7350 tap BOTTOM_RIGHT 60
 7550 capture screen track_paste_track_copied
-7650 encoder NAV 1
-7750 tap BOTTOM_RIGHT 60
-7900 tap BOTTOM_RIGHT 60
-8050 tap BOTTOM_RIGHT 60
-8200 tap BOTTOM_RIGHT 60
-8350 encoder NAV -1
+7650 button LEFT_CENTER down
+7730 encoder NAV 0.01
+8050 button LEFT_CENTER up
 8500 capture screen track_paste_summary
 
 # Details exposes the exact direct mapping while keeping the paste anchor fixed.

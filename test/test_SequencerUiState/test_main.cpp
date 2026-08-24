@@ -244,61 +244,92 @@ void test_track_paste_has_one_bounded_revision_subscription_surface() {
     assert(!state.detailVisible);
 }
 
-void test_clip_launcher_navigation_follows_four_track_viewports() {
+void test_clip_launcher_navigation_is_spatial_and_scrolls_one_item() {
     namespace seq = core::state::sequencer;
     seq::ClipWorkspaceUiState state;
     state.reset(0U);
 
-    state.move(-1);
-    assert(state.trackHeaderFocused());
+    assert(state.sceneFocused());
     assert(state.focusedTrack == 0U);
     assert(state.firstVisibleTrack == 0U);
     assert(state.firstVisibleSlot == 0U);
 
-    state.move(1);
+    state.moveVertical(1);
+    assert(state.sceneFocused());
+    assert(state.focusedSlot == 1U);
+
+    state.moveHorizontal(1, 0x000FU);
+    assert(state.clipFocused());
+    assert(state.focusedTrack == 0U);
+    assert(state.focusedSlot == 1U);
+
+    state.moveVertical(-1);
     assert(state.clipFocused());
     assert(state.focusedSlot == 0U);
 
-    state.move(1);
-    assert(state.clipFocused());
-    assert(state.focusedSlot == 1U);
-
-    state.move(1);
+    state.moveVertical(-1);
     assert(state.trackHeaderFocused());
-    assert(state.focusedTrack == 1U);
 
     state.reset(0U);
-    for (uint8_t i = 0U; i < 11U; ++i) state.move(1);
-    assert(state.trackHeaderFocused());
-    assert(state.focusedTrack == 0U);
-    assert(state.firstVisibleTrack == 0U);
+    state.focus(0U, 0U);
+    for (uint8_t i = 0U; i < 5U; ++i) state.moveVertical(1, 7U);
+    assert(state.focusedSlot == 5U);
     assert(state.firstVisibleSlot == 2U);
-    assert(state.viewportIndex() == 1U);
 
-    state.move(-1);
-    assert(state.focusedTrack == 3U);
-    assert(state.focusedSlot == 1U);
+    state.moveHorizontal(-1, 0x000FU);
+    assert(state.sceneFocused());
+    assert(state.focusedSlot == 5U);
+    state.moveHorizontal(1, 0x000FU);
     assert(state.clipFocused());
-    assert(state.firstVisibleTrack == 0U);
-    assert(state.firstVisibleSlot == 0U);
+    assert(state.focusedTrack == 0U);
 
     state.reset(2U);
     state.focus(2U, 1U);
     state.moveViewport(1);
     assert(state.focusedTrack == 2U);
-    assert(state.focusedSlot == 3U);
-    assert(state.viewportIndex() == 1U);
+    assert(state.focusedSlot == 5U);
     state.moveViewport(-1);
     assert(state.focusedTrack == 2U);
     assert(state.focusedSlot == 1U);
     assert(state.viewportIndex() == 0U);
 
-    state.focusTrackHeader(2U);
-    state.moveViewport(1);
-    assert(state.trackHeaderFocused());
-    assert(state.focusedTrack == 2U);
-    assert(state.firstVisibleSlot == 2U);
-    assert(state.viewportIndex() == 1U);
+    // The eight hardware pads always address one visible 4 x 2 half. With a
+    // sliding viewport starting on Scene 2, the first bank is Scenes 2-3.
+    assert(state.macroBankFirstSlot() == 1U);
+    state.focus(2U, 3U);
+    assert(state.macroBankFirstSlot() == 3U);
+
+    assert(seq::ClipWorkspaceUiState::addTrackIndex(0x0001U) == 1U);
+    assert(seq::ClipWorkspaceUiState::trackNavigable(0U, 0x0001U));
+    assert(seq::ClipWorkspaceUiState::trackNavigable(1U, 0x0001U));
+    assert(!seq::ClipWorkspaceUiState::trackNavigable(2U, 0x0001U));
+}
+
+void test_clip_launcher_quick_control_is_bounded_and_expires() {
+    namespace seq = core::state::sequencer;
+    seq::ClipWorkspaceUiState state;
+    state.reset(0U);
+    state.focus(0U, 0U);
+
+    state.showQuickSelector();
+    assert(state.quickSelectorVisible);
+    assert(state.quickAction == seq::ClipWorkspaceQuickAction::EDIT);
+    state.moveQuickAction(1);
+    assert(state.quickAction == seq::ClipWorkspaceQuickAction::LENGTH);
+    state.armQuickProperty(100U);
+    assert(!state.quickSelectorVisible);
+    assert(state.quickPropertyArmed);
+    assert(state.quickFeedbackVisible);
+
+    state.updateQuickFeedback(799U);
+    assert(state.quickFeedbackVisible);
+    state.updateQuickFeedback(800U);
+    assert(!state.quickFeedbackVisible);
+    assert(state.quickPropertyArmed);
+
+    state.clearQuickControl();
+    assert(!state.quickPropertyArmed);
+    assert(state.quickAction == seq::ClipWorkspaceQuickAction::EDIT);
 }
 
 void test_clip_launcher_returns_to_the_exact_clip_address() {
@@ -312,8 +343,8 @@ void test_clip_launcher_returns_to_the_exact_clip_address() {
     assert(state.matrixVisible());
     assert(state.focusedTrack == 6U);
     assert(state.focusedSlot == 5U);
-    assert(state.firstVisibleTrack == 4U);
-    assert(state.firstVisibleSlot == 4U);
+    assert(state.firstVisibleTrack == 3U);
+    assert(state.firstVisibleSlot == 2U);
     assert(!state.returnToMatrix());
 }
 
@@ -330,7 +361,7 @@ void test_clip_launcher_operation_navigation_stays_on_the_source_track() {
         3U
     );
     assert(state.placementActive());
-    state.move(1);
+    state.moveVertical(1);
     assert(state.focusedTrack == 3U);
     assert(state.focusedSlot == 4U);
 
@@ -462,7 +493,8 @@ int main() {
     test_history_feedback_shows_and_expires();
     test_history_rejection_feedback_is_typed_exact_and_expires();
     test_track_paste_has_one_bounded_revision_subscription_surface();
-    test_clip_launcher_navigation_follows_four_track_viewports();
+    test_clip_launcher_navigation_is_spatial_and_scrolls_one_item();
+    test_clip_launcher_quick_control_is_bounded_and_expires();
     test_clip_launcher_returns_to_the_exact_clip_address();
     test_clip_launcher_operation_navigation_stays_on_the_source_track();
     test_preset_library_keeps_only_the_active_domain_payload();

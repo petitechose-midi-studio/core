@@ -350,11 +350,46 @@ void test_full_bank_project_apply_stays_within_notification_capacity() {
               << " callbacks=" << observers.callbackCount << "\n";
 }
 
+void test_musical_project_reset_stays_within_notification_capacity() {
+    CoreStorages storage;
+    storage.initAll();
+
+#if OC_ENABLE_STATS
+    oc::log::setOutput(diagnosticOutput);
+#endif
+
+    CoreState state(storage.settings);
+    prepareDifferentLiveBank(state);
+    drainNotifications();
+
+    RepresentativeSequencerObservers observers;
+    assert(observers.bind(state));
+
+    auto& queue = oc::state::NotificationQueue::instance();
+    queue.setDeferredMode(true);
+    queue.resetOverflowCount();
+    size_t peakPending = queue.pendingCount();
+
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
+    sampleQueue(queue, peakPending);
+    queue.flush();
+    sampleQueue(queue, peakPending);
+
+    assert(!queue.hasPending());
+    assert(queue.overflowCount() == 0U);
+    assert(observers.callbackCount > 0U);
+    std::cout << "[PASS] musical Project reset notification peak="
+              << peakPending << "/" << oc::state::NotificationQueue::maxPending()
+              << " callbacks=" << observers.callbackCount << "\n";
+}
+
 }  // namespace
 
 int main() {
     std::cout.setf(std::ios::unitbuf);
     test_full_bank_project_apply_stays_within_notification_capacity();
+    test_musical_project_reset_stays_within_notification_capacity();
     std::cout << "All CoreState notification queue tests passed.\n";
     return 0;
 }

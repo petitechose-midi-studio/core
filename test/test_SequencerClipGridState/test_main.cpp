@@ -177,6 +177,58 @@ void test_grid_enforces_the_aggregate_psram_budget() {
     std::cout << "[PASS] aggregate Clip PSRAM budget is enforced\n";
 }
 
+void test_launcher_metadata_survives_snapshot_move_and_history() {
+    seq::SequencerClipGridState grid;
+    seq::SequencerPatternState pattern;
+    seq::SequencerClipState clip;
+    seed(pattern, clip, 66U);
+    auto document = capture(pattern, clip);
+    assert(grid.installInactiveDocument({0U, 1U}, std::move(document)));
+
+    const seq::SequencerLauncherBehavior clipBehavior{
+        .length = 2U,
+        .thenTarget = 3U,
+        .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
+    };
+    const seq::SequencerLauncherBehavior sceneBehavior{
+        .length = 4U,
+        .thenTarget = 2U,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    };
+    assert(grid.setClipBehavior({0U, 1U}, clipBehavior));
+    assert(grid.setStop({0U, 3U}));
+    assert(grid.setSceneBehavior(1U, sceneBehavior));
+
+    seq::SequencerClipGridSnapshot snapshot;
+    assert(seq::captureSequencerClipGridSnapshot(grid, snapshot));
+    seq::SequencerClipGridState restored;
+    assert(seq::applySequencerClipGridSnapshot(restored, snapshot));
+    assert(restored.clipBehavior({0U, 1U}) == clipBehavior);
+    assert(restored.isStop({0U, 3U}));
+    assert(restored.sceneBehavior(1U) == sceneBehavior);
+
+    auto move = seq::prepareSequencerClipMoveChange(
+        restored, {0U, 1U}, {0U, 2U});
+    assert(move);
+    assert(seq::applySequencerClipStructureChange(restored, *move, true));
+    assert(restored.clipBehavior({0U, 1U}) ==
+           seq::SequencerLauncherBehavior{});
+    assert(restored.clipBehavior({0U, 2U}) == clipBehavior);
+    assert(seq::applySequencerClipStructureChange(restored, *move, false));
+    assert(restored.clipBehavior({0U, 1U}) == clipBehavior);
+
+    auto remove = seq::prepareSequencerClipDeleteChange(restored, {0U, 1U});
+    assert(remove);
+    assert(seq::applySequencerClipStructureChange(restored, *remove, true));
+    assert(!restored.isOccupied({0U, 1U}));
+    assert(seq::applySequencerClipStructureChange(restored, *remove, false));
+    assert(restored.isOccupied({0U, 1U}));
+    assert(restored.clipBehavior({0U, 1U}) == clipBehavior);
+    assert(restored.isStop({0U, 3U}));
+    assert(restored.sceneBehavior(1U) == sceneBehavior);
+    std::cout << "[PASS] launcher metadata survives snapshots and history\n";
+}
+
 void test_resident_switch_preserves_both_clip_documents() {
     seq::SequencerTrackBankState bank;
     seq::SequencerState active;
@@ -296,7 +348,7 @@ void test_clip_structure_history_transfers_ownership_without_project_copies() {
     seq::SequencerClipDocumentPtr duplicateDocument;
     assert(seq::cloneSequencerClipDocument(*source, duplicateDocument));
     auto duplicate = seq::prepareSequencerClipInstallChange(
-        seq::SequencerClipStructureAction::DUPLICATE,
+        seq::SequencerClipStructureAction::DUPLICATE_CLIP,
         {0U, 3U},
         std::move(duplicateDocument));
     assert(duplicate && history.canRecordClipStructure(*duplicate));
@@ -357,6 +409,7 @@ int main() {
     test_capture_and_snapshot_fail_without_mutating_destination();
     test_grid_rejects_malformed_documents();
     test_grid_enforces_the_aggregate_psram_budget();
+    test_launcher_metadata_survives_snapshot_move_and_history();
     test_resident_switch_preserves_both_clip_documents();
     test_history_targets_the_authored_clip_after_resident_switch();
     test_clip_structure_history_transfers_ownership_without_project_copies();

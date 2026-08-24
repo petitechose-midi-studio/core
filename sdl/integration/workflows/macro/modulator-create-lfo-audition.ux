@@ -15,8 +15,8 @@
 260 tap MACRO_1 60
 1240 tick
 1300 button LEFT_BOTTOM up
-1450 encoder NAV 1
-1570 encoder NAV 1
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
 1690 tap NAV 60
 1900 capture screen modulation_empty
 
@@ -36,9 +36,9 @@
 
 # Shape, fastest Sync Rate, then signed destination Depth use NAV + OPT.
 3380 encoder OPT 1.00
-3500 encoder NAV 1
+3500 encoder NAV 0.01
 3680 encoder OPT 0.00
-3800 encoder NAV 1
+3800 encoder NAV 0.01
 4040 encoder OPT 0.75
 4260 capture screen lfo_audition_edited
 

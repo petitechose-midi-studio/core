@@ -286,6 +286,7 @@ void initializeCapturedTracks(
 
 void stageActivePattern(const Harness& h, seq::SequencerState& staged) {
     staged.reset();
+    staged.clip = h.state.sequencer.clip;
     assert(seq::copyPatternState(
         staged.pattern,
         h.state.sequencer.pattern
@@ -828,7 +829,11 @@ void runPatternCommit(
             h.state.sequencerTracks,
             prepared.synchronization
         ));
-        seq::installPatternStateToEditor(h.state.sequencer, staged.pattern);
+        seq::installPatternStateToEditor(
+            h.state.sequencer,
+            staged.pattern,
+            staged.clip
+        );
         seq::publishPreparedActiveTrackSynchronization(
             h.state.sequencerTracks,
             h.state.sequencer,
@@ -1065,7 +1070,11 @@ void prepareGraphCcPatternTraversalEntry(Harness& h, bool targetActive) {
         h.state.sequencerTracks,
         prepared.synchronization
     ));
-    seq::installPatternStateToEditor(h.state.sequencer, staged.pattern);
+    seq::installPatternStateToEditor(
+        h.state.sequencer,
+        staged.pattern,
+        staged.clip
+    );
     seq::publishPreparedActiveTrackSynchronization(
         h.state.sequencerTracks,
         h.state.sequencer,

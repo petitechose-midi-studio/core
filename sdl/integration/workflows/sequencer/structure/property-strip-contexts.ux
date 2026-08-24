@@ -22,14 +22,14 @@
 # Step LEFT_CENTER starts on Note. Move to State, switch the focused step Off,
 # and apply on release. The overlay must report the authored value immediately.
 1250 button NAV down
-1310 encoder NAV 1
+1310 encoder NAV 0.01
 1370 button NAV up
 1450 tap MACRO_1 60
 1650 capture screen step_state_on
 1750 button LEFT_CENTER down
 1950 capture screen step_property_note_selected
-2050 encoder NAV -1
-2130 encoder NAV -1
+2050 encoder NAV -0.01
+2130 encoder NAV -0.01
 2250 capture screen step_property_state_selected
 2350 encoder OPT -2.0
 2550 capture screen step_state_off_in_selector
@@ -45,6 +45,6 @@
 3900 tap LEFT_TOP 60
 4200 capture screen step_after_chord_editor
 4300 button NAV down
-4360 encoder NAV -1
+4360 encoder NAV -0.01
 4420 button NAV up
 4550 capture screen pattern_after_step_edit

@@ -17,12 +17,16 @@
 
 namespace core::persistence::sequencer_codec {
 
-inline constexpr uint8_t ENVELOPE_VERSION = 17;
+inline constexpr uint8_t ENVELOPE_VERSION = 18;
 inline constexpr uint32_t ENVELOPE_HEADER_SIZE = 12;
 inline constexpr uint32_t ENVELOPE_SECTION_HEADER_SIZE = 10;
 inline constexpr uint16_t CLIP_REGION_RECORD_SIZE = 3;
 inline constexpr uint16_t CLIP_GRID_RECORD_SIZE =
     state::sequencer::SequencerClipGridState::TRACK_COUNT;
+inline constexpr uint16_t LAUNCHER_METADATA_RECORD_SIZE =
+    state::sequencer::SequencerClipGridState::SLOT_COUNT * sizeof(uint16_t) +
+    state::sequencer::SequencerClipGridState::CELL_COUNT * 3U +
+    state::sequencer::SequencerClipGridState::SLOT_COUNT * 3U;
 inline constexpr uint16_t CLIP_DOCUMENT_HEADER_SIZE = 12U;
 inline constexpr uint32_t MAX_GRAPH_ENVELOPE_SIZE =
     3U * ENVELOPE_SECTION_HEADER_SIZE +

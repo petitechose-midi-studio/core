@@ -24,13 +24,13 @@
 1900 tap MACRO_1 60
 2020 capture screen macro_editor_open
 2120 button LEFT_BOTTOM up
-2260 encoder NAV 1
+2260 encoder NAV 0.01
 2400 capture screen automation_property_selected
 
 # Hold LEFT_BOTTOM to expose Automation properties. Record Macro is first, so
 # one NAV step selects Playback before OPT resumes Auto.
 2520 button LEFT_BOTTOM down
-2620 encoder NAV 1
+2620 encoder NAV 0.01
 2700 capture screen automation_playback_shortcut
 2840 encoder OPT 1.00
 2980 capture screen automation_restored_auto

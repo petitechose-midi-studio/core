@@ -13,8 +13,8 @@
 260 tap MACRO_1 60
 1240 tick
 1300 button LEFT_BOTTOM up
-1450 encoder NAV 1
-1570 encoder NAV 1
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
 1690 tap NAV 60
 1910 capture screen assignments_focused
 
@@ -26,8 +26,8 @@
 
 # All is the permanent destination summary: OPT scales every source while tap
 # keeps the independent aggregate bypass learned elsewhere.
-2710 encoder NAV -1
-2830 encoder NAV -1
+2710 encoder NAV -0.01
+2830 encoder NAV -0.01
 2950 encoder OPT 0.75
 3050 capture screen all_modulation_mixed
 3170 tap BOTTOM_LEFT 60
@@ -36,7 +36,7 @@
 3730 capture screen all_modulation_on
 
 # Guarded removal affects one edge and preserves every root source.
-3850 encoder NAV 1
+3850 encoder NAV 0.01
 3970 button BOTTOM_LEFT down
 5070 tick
 5130 capture screen remove_assignment_armed
@@ -44,8 +44,8 @@
 5410 capture screen assignment_removed
 
 # Add source opens the same concise creation grammar used by an empty Macro.
-5530 encoder NAV 1
-5650 encoder NAV 1
+5530 encoder NAV 0.01
+5650 encoder NAV 0.01
 5870 capture screen add_source_focused
 5990 tap NAV 60
 6210 capture screen add_source_choices

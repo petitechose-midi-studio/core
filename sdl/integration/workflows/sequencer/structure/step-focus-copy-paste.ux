@@ -8,7 +8,7 @@
 
 # Move directly to Step focus and create an edited source step.
 150 button NAV down
-210 encoder NAV 1
+210 encoder NAV 0.01
 270 button NAV up
 350 capture screen step_focus
 750 tap MACRO_2 60
@@ -21,7 +21,7 @@
 1600 capture screen step_2_copied
 
 # Move focus to step 4 and paste the complete step payload.
-1700 encoder NAV 2
+1700 encoder NAV 0.02
 1900 capture screen step_4_focus_paste_target
 2000 button BOTTOM_RIGHT down
 2200 capture screen step_4_paste_hold_started

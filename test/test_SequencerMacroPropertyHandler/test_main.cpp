@@ -171,6 +171,7 @@ struct SequencerMacroPropertyHarness {
                   SEQUENCER_SCOPE,
                   mockTimeMs) {
         g_now_ms = 0;
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
 
     void press(Config::ButtonID id) {

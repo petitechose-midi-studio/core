@@ -88,7 +88,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
           stateRefs.sequencer,
           stateRefs.sequencerTracks,
           stateRefs.core.sequencerClips,
-          stateRefs.core.sequencerClipLaunches
+          stateRefs.core.sequencerClipLaunches,
+          buttons
       ),
       structure_ux_surface_(
           stateRefs.activeView,

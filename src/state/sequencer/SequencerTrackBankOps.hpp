@@ -40,6 +40,10 @@ struct SequencerPreparedActiveTrackRotation {
 
     const oc::note::sequencer::StepSequencerGraph* expectedEditorGraphOwner = nullptr;
     const SequencerCcLaneBank* expectedEditorCcLaneOwner = nullptr;
+    const oc::note::sequencer::StepSequencerGraph* expectedOutgoingGraphOwner = nullptr;
+    const SequencerCcLaneBank* expectedOutgoingCcLaneOwner = nullptr;
+    const oc::note::sequencer::StepSequencerGraph* expectedIncomingGraphOwner = nullptr;
+    const SequencerCcLaneBank* expectedIncomingCcLaneOwner = nullptr;
     uint16_t expectedEnabledMask = 0U;
     uint8_t outgoingTrack = SequencerTrackBankState::TRACK_COUNT;
     uint8_t incomingTrack = SequencerTrackBankState::TRACK_COUNT;
@@ -52,7 +56,7 @@ static_assert(
     "active-Track rotation must remain a bounded scalar ARM plan"
 );
 static_assert(
-    sizeof(SequencerPreparedActiveTrackRotation) <= 128U,
+    sizeof(SequencerPreparedActiveTrackRotation) <= 160U,
     "active-Track rotation must remain a bounded native plan"
 );
 

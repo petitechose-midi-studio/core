@@ -787,6 +787,7 @@
       "test/test_ProjectHistoryCoordinator/test_main.cpp": 1,
       "test/test_ProjectSessionAutosaveService/test_main.cpp": 1,
       "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 10,
+      "test/test_SequencerClipGridState/test_main.cpp": 1,
       "test/test_SequencerHistory/test_main.cpp": 1,
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,
       "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,

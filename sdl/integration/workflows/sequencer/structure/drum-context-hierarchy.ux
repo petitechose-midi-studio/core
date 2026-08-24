@@ -18,17 +18,19 @@
 
 0 scenario clip-launcher
 
-# T2/C1 is a General MIDI Drum Clip. NAV crosses T1/C2 and the explicit T2
-# header before reaching the Clip.
-150 encoder NAV 1
-210 encoder NAV 1
-270 encoder NAV 1
-330 tap NAV 60
+# T2/C1 is a General MIDI Drum Clip. Move horizontally from the Scene rail to
+# it, open its Pattern editor, then close that editor onto the Pattern root.
+150 button NAV down
+230 encoder NAV 0.01
+270 encoder NAV 0.01
+310 button NAV up
+400 tap LEFT_CENTER 60
+700 tap LEFT_TOP 60
 4100 capture screen pattern_context
 
 # Pattern -> Lane. A short NAV opens Lane edit; Back returns to Lane.
 4250 button NAV down
-4320 encoder NAV 1
+4320 encoder NAV 0.01
 4390 button NAV up
 4650 capture screen lane_context
 4800 tap NAV 60
@@ -38,7 +40,7 @@
 
 # Lane -> Step. A short NAV opens the shared Step Editor; Back restores Step.
 5850 button NAV down
-5920 encoder NAV 1
+5920 encoder NAV 0.01
 5990 button NAV up
 6250 capture screen step_context
 6400 tap NAV 60

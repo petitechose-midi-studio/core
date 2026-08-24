@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 
+#include <oc/api/ButtonAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
@@ -37,6 +38,10 @@ struct ProjectTrackEditorState;
 struct ProjectTrackState;
 }
 namespace sequencer {
+enum class ClipWorkspaceBehaviorField : uint8_t;
+enum class ClipWorkspaceEditor : uint8_t;
+enum class ClipWorkspaceFocus : uint8_t;
+enum class ClipWorkspaceSlotAction : uint8_t;
 class SequencerClipGridState;
 class SequencerClipLaunchQueue;
 struct SequencerState;
@@ -323,7 +328,8 @@ public:
         core::state::sequencer::SequencerState& sequencer,
         core::state::sequencer::SequencerTrackBankState& tracks,
         core::state::sequencer::SequencerClipGridState& clips,
-        core::state::sequencer::SequencerClipLaunchQueue& launches
+        core::state::sequencer::SequencerClipLaunchQueue& launches,
+        oc::api::ButtonAPI& buttons
     );
 
     bool captureSemanticUxContext(
@@ -347,9 +353,28 @@ private:
     core::state::sequencer::SequencerTrackBankState& tracks_;
     core::state::sequencer::SequencerClipGridState& clips_;
     core::state::sequencer::SequencerClipLaunchQueue& launches_;
+    oc::api::ButtonAPI& buttons_;
     mutable TransitionReplay transition_replay_ = TransitionReplay::NONE;
     mutable uint8_t transition_track_ = 0U;
     mutable uint8_t transition_slot_ = 0U;
+    mutable core::state::sequencer::ClipWorkspaceEditor retained_editor_ =
+        static_cast<core::state::sequencer::ClipWorkspaceEditor>(0U);
+    mutable core::state::sequencer::ClipWorkspaceBehaviorField
+        retained_editor_field_ =
+            static_cast<
+                core::state::sequencer::ClipWorkspaceBehaviorField>(0U);
+    mutable core::state::sequencer::ClipWorkspaceSlotAction
+        retained_slot_action_ =
+            static_cast<core::state::sequencer::ClipWorkspaceSlotAction>(0U);
+    mutable uint8_t retained_editor_length_ = 0U;
+    mutable uint8_t retained_editor_target_ = 0xFFU;
+    mutable uint8_t retained_editor_quantization_ = 0U;
+    mutable uint8_t retained_editor_track_ = 0U;
+    mutable uint8_t retained_editor_slot_ = 0U;
+    mutable bool retained_horizontal_navigation_ = false;
+    mutable bool retained_horizontal_navigation_rotated_ = false;
+    mutable bool retained_quick_selector_ = false;
+    mutable bool retained_nav_hold_ = false;
 };
 
 class SequencerPatternEditorUxSurface final

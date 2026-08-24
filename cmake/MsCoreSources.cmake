@@ -97,6 +97,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSlug.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectHistoryCoordinator.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerClipGridState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentProjectionOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentStepOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentViewInternal.cpp"

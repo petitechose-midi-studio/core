@@ -134,14 +134,14 @@ private:
     sequencer::SequencerViewModelSource modelSource() const;
 
     StateRefs state_refs_;
-    oc::state::StaticWatchGroup<17> header_watcher_;
+    oc::state::StaticWatchGroup<18> header_watcher_;
     oc::state::StaticWatchGroup<14> header_strip_watcher_;
     oc::state::StaticWatchGroup<
         2U * core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
         structure_selection_watcher_;
     oc::state::StaticWatchGroup<48> grid_watcher_;
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
-    oc::state::StaticWatchGroup<26> selector_overlay_watcher_;
+    oc::state::StaticWatchGroup<27> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<5> overlay_visibility_watcher_;
     oc::state::StaticWatchGroup<14> left_action_strip_watcher_;
     oc::state::StaticWatchGroup<27> bottom_action_strip_watcher_;

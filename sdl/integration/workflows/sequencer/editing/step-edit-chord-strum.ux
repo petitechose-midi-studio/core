@@ -12,7 +12,7 @@
 # Move to Step focus, enable step 1, and open the Step Editor.
 150 capture screen pattern_focus
 450 button NAV down
-510 encoder NAV 1
+510 encoder NAV 0.01
 570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
@@ -23,27 +23,27 @@
 2200 button MACRO_1 up
 
 # Focus Chord, create a local chord, and open Chord detail.
-2300 encoder NAV 1
-2380 encoder NAV 1
-2460 encoder NAV 1
-2540 encoder NAV 1
-2620 encoder NAV 1
-2700 encoder NAV 1
+2300 encoder NAV 0.01
+2380 encoder NAV 0.01
+2460 encoder NAV 0.01
+2540 encoder NAV 0.01
+2620 encoder NAV 0.01
+2700 encoder NAV 0.01
 2850 encoder OPT 0.3
 3050 tap NAV 60
 
 # Move to Strum: Shape -> Formula -> Inversion -> Voicing -> Strum.
-3150 encoder NAV 1
-3230 encoder NAV 1
-3310 encoder NAV 1
-3390 encoder NAV 1
+3150 encoder NAV 0.01
+3230 encoder NAV 0.01
+3310 encoder NAV 0.01
+3390 encoder NAV 0.01
 3600 capture screen strum_zero
 3700 encoder OPT 1.0
 3900 capture screen strum_adjusted
 
 # Move to Velocity contour and verify it has distinct top-title feedback while
 # the chord map remains readable.
-4000 encoder NAV 1
+4000 encoder NAV 0.01
 4200 capture screen velocity_contour_zero
 4300 encoder OPT 1.0
 4500 capture screen velocity_contour_adjusted

@@ -8,7 +8,7 @@
 
 # Move to Step, then hold NAV without rotation through the selection timeout.
 150 button NAV down
-210 encoder NAV 1
+210 encoder NAV 0.01
 270 button NAV up
 350 capture screen step_focus
 450 button NAV down
@@ -21,7 +21,7 @@
 2100 capture screen step_3_selected
 
 # Move cursor to step 5 and select it, leaving step 4 unselected.
-2200 encoder NAV 2
+2200 encoder NAV 0.02
 2400 capture screen cursor_step_5
 2500 tap MACRO_5 60
 2700 capture screen steps_3_5_selected
@@ -36,7 +36,7 @@
 # Copy the sparse selection, move to step 6, preview its 6/8 footprint, paste.
 4280 tap BOTTOM_RIGHT 60
 4530 capture screen steps_copied
-4630 encoder NAV 1
+4630 encoder NAV 0.01
 4830 capture screen paste_footprint_step_6
 4930 button BOTTOM_RIGHT down
 5130 capture screen paste_preview_step_6

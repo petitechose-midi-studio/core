@@ -1,13 +1,22 @@
 # UX workflow: shared Macro context selector and focalized editors.
 # Purpose: proves the same held-NAV grammar as Sequencer: preview while held,
 # apply on release, short NAV opens the focused object, LEFT_TOP returns.
+# Expect: capture_changed:macro_page_hot_surface=macro_context_preview, capture_changed:macro_context_applied=macro_editor_open, capture_changed:macro_editor_open=macro_back_to_surface
+# Expect: capture_changed:macro_back_to_surface=track_context_preview, capture_changed:track_context_preview=track_editor_open
+# Expect: capture_changed:track_back_to_macro=track_selection_active, capture_changed:track_selection_active=track_selection_cleared, capture_match:track_back_to_macro=track_selection_cleared
+# Expect: semantic:macro_context_preview:mode=macro.structure, semantic:macro_context_preview:effect=preview_structure
+# Expect: semantic:macro_context_applied:effect=switch_structure_focus, semantic:macro_context_applied:target=macro
+# Expect: semantic:macro_editor_open:mode=macro.edit, semantic:macro_editor_open:target=macro_destination
+# Expect: semantic:track_editor_open:effect=switch_structure_focus, semantic:track_editor_open:target=track
+# Expect: semantic:track_selection_active:mode=macro.structure, semantic:track_selection_active:target=track
+# Expect: semantic:track_selection_cleared:view=macro, semantic:track_selection_cleared:overlay=none
 
 0 scenario macro-automation-clean
 80 capture screen macro_page_hot_surface
 
 # Page -> Macro: the temporary overlay is visible only while NAV is held.
 180 button NAV down
-260 encoder NAV 1
+260 encoder NAV 0.01
 340 capture screen macro_context_preview
 420 button NAV up
 560 capture screen macro_context_applied
@@ -20,8 +29,8 @@
 
 # Macro -> Page -> Track with the same gesture; Track tap opens Track Editor.
 1340 button NAV down
-1420 encoder NAV -1
-1500 encoder NAV -1
+1420 encoder NAV -0.01
+1500 encoder NAV -0.01
 1580 capture screen track_context_preview
 1660 button NAV up
 1800 tap NAV 60

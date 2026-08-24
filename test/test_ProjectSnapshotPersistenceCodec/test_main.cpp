@@ -199,6 +199,19 @@ project::ProjectSnapshot makeSnapshot() {
     snapshot.clips.documents[
         sequencer::SequencerClipGridState::cellIndex({6U, 2U})
     ] = std::move(inactiveDrumDocument);
+    snapshot.clips.stopMasks[3U] = static_cast<uint16_t>(1U << 6U);
+    snapshot.clips.clipBehaviors[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ] = {
+        .length = 2U,
+        .thenTarget = 2U,
+        .quantization = sequencer::SequencerLauncherFollowQuantization::BEAT,
+    };
+    snapshot.clips.sceneBehaviors[1U] = {
+        .length = 4U,
+        .thenTarget = 2U,
+        .quantization = sequencer::SequencerLauncherFollowQuantization::BAR,
+    };
     return snapshot;
 }
 
@@ -385,6 +398,12 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     assert(loadedDrumClip != nullptr && loadedDrumClip->drum != nullptr);
     assert(loadedDrumClip->drum->pattern.stepEnabled(0U, 2U));
     assert(loadedDrumClip->drum->pattern.lanes[0U].velocity[2U] == 117U);
+    assert(loaded.clips.stopMasks[3U] == source.clips.stopMasks[3U]);
+    assert(loaded.clips.clipBehaviors[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ] == source.clips.clipBehaviors[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})]);
+    assert(loaded.clips.sceneBehaviors[1U] == source.clips.sceneBehaviors[1U]);
     assert(sameTracks(loaded.projectTracks, source.projectTracks));
 
     std::cout << "[PASS] current snapshot round-trip is deterministic\n";

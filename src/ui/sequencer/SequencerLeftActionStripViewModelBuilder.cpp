@@ -114,12 +114,15 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         StripProps props;
         props.visible = true;
         for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_BACKWARD,
-            Visual::ACTIVE
-        );
-        if (source.trackNavigation.selection.active.get()) return props;
         const auto& launcher = source.sequencer.clipWorkspace;
+        if (launcher.editorActive() || launcher.selectionActive() ||
+            source.trackNavigation.selection.active.get()) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_BACKWARD,
+                Visual::ACTIVE
+            );
+        }
+        if (source.trackNavigation.selection.active.get()) return props;
         if (!launcher.selectionActive()) {
             if (launcher.trackHeaderFocused()) return props;
             const core::state::sequencer::SequencerClipAddress focused{
@@ -134,10 +137,6 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
             }
             return props;
         }
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_BACKWARD,
-            Visual::ACTIVE
-        );
         if (!launcher.placementActive()) {
             const core::state::sequencer::SequencerClipAddress sourceAddress{
                 launcher.sourceTrack,

@@ -138,6 +138,7 @@ struct SequencerInlineHarness {
         g_prepared_begin_seen = false;
         g_prepared_payload_plan =
             core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
 
     void press(Config::ButtonID id) {

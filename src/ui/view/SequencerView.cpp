@@ -270,7 +270,8 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.patternQuickControls.previewRevision,
         state_refs_.sequencer.drumSequencer.revision,
         state_refs_.sequencer.patternPresetPreview.revision,
-        state_refs_.sequencer.clipWorkspace.revision
+        state_refs_.sequencer.clipWorkspace.revision,
+        state_refs_.clipLaunches.telemetryRevision()
     );
 }
 
@@ -384,6 +385,7 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
     );
     selector_overlay_watcher_.watchAll(
         state_refs_.sequencer.contextSelector.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepStatePropertyActive,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
@@ -644,6 +646,12 @@ void SequencerView::requestGridRender() {
 }
 
 void SequencerView::requestGridTickRender() {
+    if (state_refs_.sequencer.clipWorkspace.matrixVisible()) {
+        if (clip_launcher_surface_) {
+            clip_launcher_surface_->invalidatePlaybackProgress();
+        }
+        return;
+    }
     if (state_refs_.sequencer.ccLaneUi.mode !=
         core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID) {
         requestRender(RENDER_GRID);

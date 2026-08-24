@@ -14,6 +14,6 @@
 1460 button LEFT_BOTTOM up
 
 # Open Automation detail.
-1620 encoder NAV 1
+1620 encoder NAV 0.01
 1780 tap NAV 60
 2020 capture screen macro_1_automation_sparkline

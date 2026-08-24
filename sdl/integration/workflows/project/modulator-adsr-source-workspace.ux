@@ -19,14 +19,14 @@
 
 # Reach the empty first-rank Modulators view from Project Settings.
 100 button LEFT_TOP down
-700 encoder NAV -1
+700 encoder NAV -0.01
 1100 button LEFT_TOP up
 1320 capture screen empty_registry
 
 # Type is explicit before any destination or provisional musical data exists.
 1440 tap NAV 60
 1660 capture screen source_kind_picker
-1780 encoder NAV 1
+1780 encoder NAV 0.01
 2000 capture screen dahdsr_kind_selected
 2120 tap NAV 60
 2340 capture screen dahdsr_destination_picker
@@ -49,33 +49,33 @@
 # Trigger is one source card. Its retained workspace exposes the complete,
 # deterministic Track / note range / velocity range filter without hiding the
 # DAHDSR curve.
-4100 encoder NAV 1
-4180 encoder NAV 1
-4260 encoder NAV 1
-4340 encoder NAV 1
+4100 encoder NAV 0.01
+4180 encoder NAV 0.01
+4260 encoder NAV 0.01
+4340 encoder NAV 0.01
 4460 tap NAV 60
 4680 capture screen trigger_editor
 4800 encoder OPT 0.20
-5000 encoder NAV 1
+5000 encoder NAV 0.01
 5200 encoder OPT 0.25
-5400 encoder NAV 1
+5400 encoder NAV 0.01
 5600 encoder OPT -0.25
-5800 encoder NAV 1
+5800 encoder NAV 0.01
 6000 encoder OPT 0.20
-6200 encoder NAV 1
+6200 encoder NAV 0.01
 6400 encoder OPT -0.20
 6620 capture screen trigger_route_edited
 
 # Back restores Trigger focus; the adjacent Details card keeps the same curve
 # visible and exposes D/H/Timing/Smooth/Response/Retrigger/Rename.
 6740 tap LEFT_TOP 60
-6860 encoder NAV 1
+6860 encoder NAV 0.01
 6980 tap NAV 60
 7200 capture screen dahdsr_details
 7320 encoder OPT 0.10
-7440 encoder NAV 1
+7440 encoder NAV 0.01
 7560 encoder OPT 0.20
-7680 encoder NAV 1
+7680 encoder NAV 0.01
 7800 encoder OPT -1.00
 7920 encoder OPT -1.00
 8040 encoder OPT -1.00
@@ -83,18 +83,18 @@
 8380 capture screen sync_timing
 
 # In Sync timing a NAV tap on one temporal card cycles its independent Feel.
-8500 encoder NAV -1
+8500 encoder NAV -0.01
 8620 tap NAV 60
 8840 capture screen hold_triplet
 
 # Smooth, response and retrigger stay in the same local editor.
-8960 encoder NAV 1
-9040 encoder NAV 1
+8960 encoder NAV 0.01
+9040 encoder NAV 0.01
 9160 encoder OPT 0.35
-9280 encoder NAV 1
+9280 encoder NAV 0.01
 9400 encoder OPT -1.00
 9520 encoder OPT -1.00
-9640 encoder NAV 1
+9640 encoder NAV 0.01
 9760 encoder OPT 1.00
 9880 encoder OPT 1.00
 10100 encoder OPT 1.00
@@ -102,6 +102,6 @@
 
 # Returning to the source and opening Destinations preserves the assignment.
 10440 tap LEFT_TOP 60
-10560 encoder NAV 1
+10560 encoder NAV 0.01
 10680 tap NAV 60
 10900 capture screen destinations_restored

@@ -23,13 +23,13 @@
 260 tap MACRO_1 60
 1240 tick
 1300 button LEFT_BOTTOM up
-1450 encoder NAV 1
-1570 encoder NAV 1
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
 1690 tap NAV 60
 1910 capture screen modulation_empty
 
 # New DAHDSR is adjacent to New LFO; browsing remains silent until selection.
-2030 encoder NAV 1
+2030 encoder NAV 0.01
 2250 capture screen dahdsr_choice
 2370 tap NAV 60
 2590 capture screen dahdsr_audition_default
@@ -47,17 +47,17 @@
 
 # The destination-first editor shares the durable source grammar. Details is
 # adjacent to Trigger and keeps the curve visible.
-3730 encoder NAV 1
-3810 encoder NAV 1
-3890 encoder NAV 1
-3970 encoder NAV 1
-4050 encoder NAV 1
+3730 encoder NAV 0.01
+3810 encoder NAV 0.01
+3890 encoder NAV 0.01
+3970 encoder NAV 0.01
+4050 encoder NAV 0.01
 4170 tap NAV 60
 4390 capture screen dahdsr_details
 4510 encoder OPT 0.10
-4630 encoder NAV 1
+4630 encoder NAV 0.01
 4750 encoder OPT 0.20
-4870 encoder NAV 1
+4870 encoder NAV 0.01
 4990 encoder OPT -1.00
 5110 encoder OPT -1.00
 5230 encoder OPT -1.00
@@ -65,14 +65,14 @@
 5570 capture screen dahdsr_sync
 
 # Feel belongs to each temporal parameter and cycles by tapping NAV in Sync.
-5690 encoder NAV -1
+5690 encoder NAV -0.01
 5810 tap NAV 60
 6030 capture screen dahdsr_hold_triplet
 
 # Back restores Details focus. Depth is deliberately the final audition item,
 # so it is one NAV step away and affects only this implied destination.
 6150 tap LEFT_TOP 60
-6270 encoder NAV 1
+6270 encoder NAV 0.01
 6390 encoder OPT 0.75
 6610 capture screen dahdsr_audition_edited
 

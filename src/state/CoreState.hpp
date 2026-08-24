@@ -532,12 +532,30 @@ public:
         sequencer::SequencerClipAddress target,
         sequencer::SequencerClipLaunchQuantization quantization =
             sequencer::SequencerClipLaunchQuantization::BAR);
+    [[nodiscard]] bool requestSequencerTrackStop(
+        uint8_t track,
+        sequencer::SequencerClipLaunchQuantization quantization =
+            sequencer::SequencerClipLaunchQuantization::IMMEDIATE);
+    [[nodiscard]] bool requestSequencerSceneLaunch(
+        uint8_t slot,
+        sequencer::SequencerClipLaunchQuantization quantization =
+            sequencer::SequencerClipLaunchQuantization::BAR);
+    [[nodiscard]] bool setSequencerStopSlot(
+        sequencer::SequencerClipAddress target,
+        bool stop);
+    [[nodiscard]] bool setSequencerClipBehavior(
+        sequencer::SequencerClipAddress target,
+        sequencer::SequencerLauncherBehavior behavior);
+    [[nodiscard]] bool setSequencerSceneBehavior(
+        uint8_t slot,
+        sequencer::SequencerLauncherBehavior behavior);
     [[nodiscard]] bool createSequencerClip(
         sequencer::SequencerClipAddress target);
     [[nodiscard]] bool installSequencerClip(
         sequencer::SequencerClipAddress target,
         sequencer::SequencerClipDocumentPtr document,
-        bool duplicate);
+        bool duplicate,
+        sequencer::SequencerLauncherBehavior behavior = {});
     [[nodiscard]] bool deleteSequencerClip(
         sequencer::SequencerClipAddress target);
     [[nodiscard]] bool moveSequencerClip(

@@ -6,6 +6,8 @@
 # Expect: semantic:randomize_applied:effect=apply_pattern_randomize, semantic:randomize_applied:outcome=applied
 # Expect: semantic:undo_applied:effect=undo_project_action, semantic:undo_applied:intent=undo
 # Expect: semantic:redo_applied:effect=redo_project_action, semantic:redo_applied:intent=redo
+# Expect: capture_changed:velocity_after_undo=velocity_after_redo
+# Expect: semantic:velocity_after_undo:mode=sequencer.property_selector, semantic:velocity_after_redo:mode=sequencer.property_selector
 # Expect: semantic:region_layer:effect=select_pattern_layer
 # Expect: semantic:playing_pattern_early:effect=transport_start, semantic:playing_pattern_early:playing=true, semantic:playing_pattern_early:playhead=1
 # Expect: semantic:playing_pattern_late:playing=true, semantic:playing_pattern_late:playhead=5
@@ -14,14 +16,14 @@
 
 # Author four notes in Step context, then return to the root Pattern context.
 100 button NAV down
-160 encoder NAV 1
+160 encoder NAV 0.01
 220 button NAV up
 340 tap MACRO_1 60
 440 tap MACRO_2 60
 540 tap MACRO_3 60
 640 tap MACRO_4 60
 760 button NAV down
-820 encoder NAV -1
+820 encoder NAV -0.01
 880 button NAV up
 
 # Open the retained Pattern Editor, extend to 16 steps and visit its second
@@ -29,17 +31,17 @@
 1040 tap NAV 60
 1260 encoder OPT 0.21
 1400 button LEFT_CENTER down
-1480 encoder NAV 1
+1480 encoder NAV 0.01
 1620 capture screen second_window
-1700 encoder NAV -1
+1700 encoder NAV -0.01
 1780 button LEFT_CENTER up
 
 # The same modifier grammar selects the timeline layer. Notes wraps directly
 # to Region in the current progressive layer list; return to Notes afterward.
 1880 button LEFT_BOTTOM down
-1960 encoder NAV -1
+1960 encoder NAV -0.01
 2100 capture screen region_layer
-2180 encoder NAV 1
+2180 encoder NAV 0.01
 2260 button LEFT_BOTTOM up
 
 # Randomize is an advanced action, not a permanent scalar field. Open its
@@ -48,7 +50,7 @@
 2340 tap BOTTOM_LEFT 60
 2480 encoder OPT 0.50
 2620 capture screen velocity_preview
-2700 encoder NAV 1
+2700 encoder NAV 0.01
 2780 encoder OPT -0.50
 2920 capture screen amount_preview
 3020 tap BOTTOM_LEFT 60
@@ -60,26 +62,50 @@
 3600 capture screen applied_pattern
 3700 tap LEFT_TOP 60
 
-# Global Undo, reopen Pattern Editor and observe the exact base Pattern.
+# Back reaches the Pattern and then the Clip Launcher. A second Back opens the
+# global selector; Undo is captured on the action itself. Re-enter the Pattern
+# and inspect the same step's Velocity to observe the restored base value.
 3820 tap LEFT_TOP 60
-4860 tick
-4920 tap LEFT_CENTER 60
-5000 capture screen undo_applied
-5040 tap LEFT_TOP 60
-5320 tap NAV 60
-5580 tap LEFT_TOP 60
+4020 tap LEFT_TOP 60
+5060 tick
+5120 tap LEFT_CENTER 60
+5200 capture screen undo_applied
+5300 tap LEFT_TOP 60
+5500 tap LEFT_CENTER 60
+5620 tap LEFT_TOP 60
+5700 button NAV down
+5760 encoder NAV 0.01
+5820 button NAV up
+5920 button LEFT_CENTER down
+6000 encoder NAV 0.01
+6200 capture screen velocity_after_undo
+6300 button LEFT_CENTER up
+6420 button NAV down
+6480 encoder NAV -0.01
+6540 button NAV up
 
-# Global Redo restores the already materialized target; no RNG runs again.
-5700 tap LEFT_TOP 60
-6740 tick
-6800 tap LEFT_BOTTOM 60
-6880 capture screen redo_applied
-6920 tap LEFT_TOP 60
-7200 tap NAV 60
+# Return through the launcher and Redo from the same global surface. Inspecting
+# that same Velocity must restore the materialized target; no RNG runs again.
+6660 tap LEFT_TOP 60
+6860 tap LEFT_TOP 60
+7900 tick
+7960 tap LEFT_BOTTOM 60
+8040 capture screen redo_applied
+8140 tap LEFT_TOP 60
+8340 tap LEFT_CENTER 60
+8460 tap LEFT_TOP 60
+8540 button NAV down
+8600 encoder NAV 0.01
+8660 button NAV up
+8760 button LEFT_CENTER down
+8840 encoder NAV 0.01
+8920 encoder NAV -0.01
+9040 capture screen velocity_after_redo
+9140 button LEFT_CENTER up
 
 # Transport remains globally available through the retained editor. Two
 # captures prove the live playhead advances without changing context.
-7420 tap BOTTOM_CENTER 60
-7640 capture screen playing_pattern_early
-8140 capture screen playing_pattern_late
-8260 tap BOTTOM_CENTER 60
+9360 tap BOTTOM_CENTER 60
+9580 capture screen playing_pattern_early
+10080 capture screen playing_pattern_late
+10200 tap BOTTOM_CENTER 60

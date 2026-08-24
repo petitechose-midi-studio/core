@@ -1,9 +1,10 @@
 # UX workflow: Step Preset semantic states and temporary feedback.
 # Purpose: keeps every transient state explicit without permanently loading the
 # picker: semantic browse names, mixed pitch details, overwrite guard phases,
-# cancellation, applied/queued outcomes, and actionable Save failures.
-# Expect: capture_changed:step_preset_browse=step_preset_browse_page_2, capture_changed:step_preset_detail_scale_relative=step_preset_preview_next, capture_changed:step_preset_overwrite_ready=step_preset_overwrite_pressed, capture_changed:step_preset_overwrite_pressed=step_preset_overwrite_armed, capture_changed:step_preset_applied=step_preset_queued, capture_changed:step_preset_save_capacity=step_preset_save_stale, capture_changed:step_preset_save_stale=step_preset_save_storage_failed
-# Expect: capture_match:step_preset_applied=step_preset_applied_stable, capture_match:step_preset_save_stale=step_preset_save_stale_stable
+# cancellation, applied/queued outcomes, and distinct Save failure reasons
+# behind the shared compact failure treatment.
+# Expect: capture_changed:step_preset_browse=step_preset_browse_page_2, capture_changed:step_preset_detail_scale_relative=step_preset_preview_next, capture_changed:step_preset_overwrite_ready=step_preset_overwrite_pressed, capture_changed:step_preset_overwrite_pressed=step_preset_overwrite_armed, capture_changed:step_preset_applied=step_preset_queued
+# Expect: capture_match:step_preset_applied=step_preset_applied_stable, capture_match:step_preset_save_capacity=step_preset_save_stale, capture_match:step_preset_save_stale=step_preset_save_stale_stable, capture_match:step_preset_save_stale=step_preset_save_storage_failed
 # Expect: semantic:step_preset_detail_scale_relative:surface_context=true, semantic:step_preset_detail_scale_relative:mode=sequencer.step_preset.load.detail, semantic:step_preset_detail_scale_relative:source=orbit-a, semantic:step_preset_detail_scale_relative:target=step, semantic:step_preset_detail_scale_relative:target_step=5
 # Expect: semantic:step_preset_detail_scale_relative:route_policy=preserve_destination, semantic:step_preset_detail_scale_relative:projection=preview, semantic:step_preset_detail_scale_relative:property=pitch_policy, semantic:step_preset_detail_scale_relative:value_label=scale_relative, semantic:step_preset_detail_scale_relative:reason=adapted
 # Expect: semantic:step_preset_queued:outcome=queued, semantic:step_preset_queued:activation_origin=step_preset, semantic:step_preset_queued:activation_generation=1, semantic:step_preset_queued:playing=true

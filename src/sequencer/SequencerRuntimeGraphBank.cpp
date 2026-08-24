@@ -103,22 +103,28 @@ void SequencerRuntimeGraphBank::commitPrepared_() {
 }
 
 FLASHMEM void SequencerRuntimeGraphBank::finishPublication_() {
-    if (prepared_mask_ == 0) return;
+    if (prepared_mask_ == 0) {
+        retain_active_mask_ = 0U;
+        return;
+    }
     // Retain one old allocation as scratch for the common single-track edit.
     // Other obsolete generations are released outside the interrupt guard.
     for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
         const uint16_t trackBit = static_cast<uint16_t>(1U << track);
         if ((prepared_mask_ & trackBit) == 0) continue;
 
-        source_signatures_[track] = prepared_signatures_[track];
-        prepared_signatures_[track] = {};
         if ((retain_active_mask_ & trackBit) != 0U) {
+            retired_signatures_[track] = source_signatures_[track];
             retired_graphs_[track] = std::move(prepared_graphs_[track]);
+            retired_valid_mask_ = static_cast<uint16_t>(
+                retired_valid_mask_ | trackBit);
         } else if (!staging_graph_ && prepared_graphs_[track]) {
             staging_graph_ = std::move(prepared_graphs_[track]);
         } else {
             prepared_graphs_[track].reset();
         }
+        source_signatures_[track] = prepared_signatures_[track];
+        prepared_signatures_[track] = {};
     }
     prepared_mask_ = 0;
     retain_active_mask_ = 0U;
@@ -160,14 +166,19 @@ SequencerRuntimeGraphBank::graphBeforeRetainedLaunch(uint8_t trackIndex) const {
 
 FLASHMEM void SequencerRuntimeGraphBank::releaseRetired(uint16_t trackMask) {
     for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
-        if ((trackMask & static_cast<uint16_t>(1U << track)) != 0U) {
-            retired_graphs_[track].reset();
-        }
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((trackMask & bit) == 0U) continue;
+        retired_graphs_[track].reset();
+        retired_signatures_[track] = {};
+        retired_valid_mask_ = static_cast<uint16_t>(
+            retired_valid_mask_ & static_cast<uint16_t>(~bit));
     }
 }
 
 FLASHMEM void SequencerRuntimeGraphBank::releaseAllRetired() {
     for (auto& graph : retired_graphs_) graph.reset();
+    retired_signatures_.fill({});
+    retired_valid_mask_ = 0U;
 }
 
 }  // namespace core::sequencer

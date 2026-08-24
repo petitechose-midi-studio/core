@@ -1328,13 +1328,13 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(const SequencerHistoryEnt
             case SequencerClipStructureAction::MOVE:
                 descriptor.kind = SequencerHistoryActionKind::ClipMove;
                 break;
-            case SequencerClipStructureAction::DUPLICATE:
+            case SequencerClipStructureAction::DUPLICATE_CLIP:
                 descriptor.kind = SequencerHistoryActionKind::ClipDuplicate;
                 break;
         }
         descriptor.trackIndex = change.source.track;
         descriptor.clipIndex = change.action == SequencerClipStructureAction::CREATE ||
-                change.action == SequencerClipStructureAction::DUPLICATE
+                change.action == SequencerClipStructureAction::DUPLICATE_CLIP
             ? change.destination.slot
             : change.source.slot;
         return descriptor;

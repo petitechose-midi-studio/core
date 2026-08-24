@@ -14,11 +14,11 @@
 1460 button LEFT_BOTTOM up
 
 # Open Automation detail and focus Length.
-1620 encoder NAV 1
+1620 encoder NAV 0.01
 1780 tap NAV 60
 2020 capture screen macro_1_automation_detail
-2100 encoder NAV 1
-2180 encoder NAV 1
+2100 encoder NAV 0.01
+2180 encoder NAV 0.01
 
 # Shorten the active window.
 2340 encoder OPT -1.00

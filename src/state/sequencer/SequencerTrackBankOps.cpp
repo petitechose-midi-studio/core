@@ -306,6 +306,10 @@ FLASHMEM bool preparedActiveTrackOwnerRotationMatches(
     const auto& incoming = bank.track(prepared.incomingTrack);
     if (active.pattern.graph.get() != prepared.expectedEditorGraphOwner ||
         active.pattern.ccLanes.get() != prepared.expectedEditorCcLaneOwner ||
+        outgoing.graph.get() != prepared.expectedOutgoingGraphOwner ||
+        outgoing.ccLanes.get() != prepared.expectedOutgoingCcLaneOwner ||
+        incoming.graph.get() != prepared.expectedIncomingGraphOwner ||
+        incoming.ccLanes.get() != prepared.expectedIncomingCcLaneOwner ||
         !distinctNonNullOwners(
             prepared.expectedEditorGraphOwner,
             outgoing.graph.get(),
@@ -358,6 +362,10 @@ FLASHMEM bool prepareActiveTrackOwnerRotation(
     out.finalIncoming = finalIncoming;
     out.expectedEditorGraphOwner = active.pattern.graph.get();
     out.expectedEditorCcLaneOwner = active.pattern.ccLanes.get();
+    out.expectedOutgoingGraphOwner = bank.track(outgoingTrack).graph.get();
+    out.expectedOutgoingCcLaneOwner = bank.track(outgoingTrack).ccLanes.get();
+    out.expectedIncomingGraphOwner = bank.track(incomingTrack).graph.get();
+    out.expectedIncomingCcLaneOwner = bank.track(incomingTrack).ccLanes.get();
     out.expectedEnabledMask = bank.currentEnabledMask();
     out.outgoingTrack = outgoingTrack;
     out.incomingTrack = incomingTrack;
