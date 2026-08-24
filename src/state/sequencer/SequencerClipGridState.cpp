@@ -573,9 +573,11 @@ FLASHMEM bool SequencerClipGridState::moveClip(
     SequencerClipAddress destination
 ) noexcept {
     if (!validAddress(source) || !validAddress(destination) ||
-        source.track != destination.track || source.slot == destination.slot ||
+        source == destination ||
         !isOccupied(source) || slotKind(destination) !=
-            SequencerLauncherSlotKind::EMPTY) {
+            SequencerLauncherSlotKind::EMPTY ||
+        resident_slots_[destination.track] == INVALID_SLOT ||
+        (source.track != destination.track && isResident(source))) {
         return false;
     }
 
@@ -595,6 +597,98 @@ FLASHMEM bool SequencerClipGridState::moveClip(
     destinationCell.generation = nextGeneration(destinationCell.generation);
     publishMutation();
     return true;
+}
+
+FLASHMEM bool canTransferSequencerClip(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    SequencerClipAddress source,
+    SequencerClipAddress destination,
+    SequencerClipStructureAction action
+) noexcept {
+    if ((action != SequencerClipStructureAction::MOVE &&
+         action != SequencerClipStructureAction::DUPLICATE_CLIP) ||
+        !SequencerClipGridState::validAddress(source) ||
+        !SequencerClipGridState::validAddress(destination) ||
+        source == destination || !grid.isOccupied(source) ||
+        grid.slotKind(destination) != SequencerLauncherSlotKind::EMPTY ||
+        !bank.isTrackEnabled(source.track) ||
+        !bank.isTrackEnabled(destination.track) ||
+        grid.residentSlot(destination.track) ==
+            SequencerClipGridState::INVALID_SLOT ||
+        bank.trackKind(source.track) != bank.trackKind(destination.track) ||
+        (action == SequencerClipStructureAction::MOVE &&
+         source.track != destination.track && grid.isResident(source))) {
+        return false;
+    }
+
+    const auto* document = grid.inactiveDocument(source);
+    return document == nullptr ||
+        document->trackKind == bank.trackKind(destination.track);
+}
+
+FLASHMEM uint16_t compatibleSequencerClipTrackMask(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    SequencerClipAddress source
+) noexcept {
+    if (!SequencerClipGridState::validAddress(source) ||
+        !grid.isOccupied(source) || !bank.isTrackEnabled(source.track)) {
+        return 0U;
+    }
+
+    const auto kind = bank.trackKind(source.track);
+    uint16_t mask = 0U;
+    for (uint8_t track = 0U;
+         track < SequencerClipGridState::TRACK_COUNT;
+         ++track) {
+        if (bank.isTrackEnabled(track) && bank.trackKind(track) == kind) {
+            mask = static_cast<uint16_t>(
+                mask | static_cast<uint16_t>(1U << track));
+        }
+    }
+    return mask;
+}
+
+FLASHMEM bool firstSequencerClipTransferDestination(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    SequencerClipAddress source,
+    SequencerClipStructureAction action,
+    SequencerClipAddress& out
+) noexcept {
+    for (uint8_t offset = 1U;
+         offset < SequencerClipGridState::SLOT_COUNT;
+         ++offset) {
+        const SequencerClipAddress candidate{
+            source.track,
+            static_cast<uint8_t>(
+                (source.slot + offset) % SequencerClipGridState::SLOT_COUNT),
+        };
+        if (canTransferSequencerClip(grid, bank, source, candidate, action)) {
+            out = candidate;
+            return true;
+        }
+    }
+
+    for (uint8_t trackOffset = 1U;
+         trackOffset < SequencerClipGridState::TRACK_COUNT;
+         ++trackOffset) {
+        const uint8_t track = static_cast<uint8_t>(
+            (source.track + trackOffset) %
+            SequencerClipGridState::TRACK_COUNT);
+        for (uint8_t slot = 0U;
+             slot < SequencerClipGridState::SLOT_COUNT;
+             ++slot) {
+            const SequencerClipAddress candidate{track, slot};
+            if (canTransferSequencerClip(
+                    grid, bank, source, candidate, action)) {
+                out = candidate;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 FLASHMEM uint32_t sequencerClipDocumentRetainedBytes(
@@ -677,9 +771,12 @@ FLASHMEM SequencerClipStructureChangePtr prepareSequencerClipMoveChange(
 ) {
     if (!SequencerClipGridState::validAddress(source) ||
         !SequencerClipGridState::validAddress(destination) ||
-        source.track != destination.track || source.slot == destination.slot ||
+        source == destination ||
         !grid.isOccupied(source) || grid.slotKind(destination) !=
-            SequencerLauncherSlotKind::EMPTY) {
+            SequencerLauncherSlotKind::EMPTY ||
+        grid.residentSlot(destination.track) ==
+            SequencerClipGridState::INVALID_SLOT ||
+        (source.track != destination.track && grid.isResident(source))) {
         return {};
     }
     auto change = core::app::makeExtmemUniqueCold<SequencerClipStructureChange>();

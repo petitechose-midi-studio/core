@@ -63,6 +63,7 @@ void test_clip_launcher_selection_strip_reuses_structure_grammar() {
     launcher.beginPlacement(
         core::state::sequencer::
             ClipWorkspaceOperation::DUPLICATE_DESTINATION,
+        0U,
         1U
     );
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
@@ -92,9 +93,10 @@ void test_clip_workspace_browse_strip_exposes_viewport_navigation() {
     assert(props.slots[2].iconRotated180);
 }
 
-void test_clip_launcher_copy_is_disabled_when_the_track_is_full() {
+void test_clip_launcher_copy_uses_a_compatible_track_when_source_is_full() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
+    assert(state.setSharedTrackState(0x0003U, 0U));
     for (uint8_t slot = 1U;
          slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
          ++slot) {
@@ -102,10 +104,21 @@ void test_clip_launcher_copy_is_disabled_when_the_track_is_full() {
     }
     state.sequencer.clipWorkspace.beginSelection(0U, 1U);
 
-    const auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+    auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
     assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    assert(state.sequencerTracks.setTrackKind(
+        1U,
+        core::state::sequencer::SequencerTrackKind::DRUM,
+        true,
+        core::state::sequencer::DrumKitPreset::GENERAL_MIDI
+    ));
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
     assert(props.slots[2].visualState == ContextActionStripVisualState::DISABLED);
 }
 
@@ -232,7 +245,7 @@ int main() {
     test_selection_strip_projection_contract();
     test_clip_workspace_browse_strip_exposes_viewport_navigation();
     test_clip_launcher_selection_strip_reuses_structure_grammar();
-    test_clip_launcher_copy_is_disabled_when_the_track_is_full();
+    test_clip_launcher_copy_uses_a_compatible_track_when_source_is_full();
     std::cout << "\nAll Sequencer bottom-action-strip tests passed.\n";
     return 0;
 }

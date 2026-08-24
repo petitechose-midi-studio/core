@@ -735,7 +735,7 @@ FLASHMEM void ClipWorkspaceUiState::moveVertical(
             0,
             static_cast<int>(SLOT_COUNT - 1U)
         );
-        focus(sourceTrack, static_cast<uint8_t>(next));
+        focus(focusedTrack, static_cast<uint8_t>(next));
         return;
     }
     lastSlot = std::min<uint8_t>(lastSlot, SLOT_COUNT - 1U);
@@ -768,7 +768,10 @@ FLASHMEM void ClipWorkspaceUiState::moveHorizontal(
     int direction,
     uint16_t enabledTrackMask
 ) {
-    if (direction == 0 || editorActive() || placementActive()) return;
+    if (direction == 0 || editorActive() ||
+        (selectionActive() && !placementActive())) {
+        return;
+    }
     if (sceneFocused()) {
         if (direction < 0) return;
         for (uint8_t track = firstVisibleTrack; track < TRACK_COUNT; ++track) {
@@ -784,7 +787,10 @@ FLASHMEM void ClipWorkspaceUiState::moveHorizontal(
     for (int track = static_cast<int>(focusedTrack) + step;
          track >= 0 && track < TRACK_COUNT;
          track += step) {
-        if (!trackNavigable(static_cast<uint8_t>(track), enabledTrackMask)) {
+        const bool navigable = placementActive()
+            ? (enabledTrackMask & static_cast<uint16_t>(1U << track)) != 0U
+            : trackNavigable(static_cast<uint8_t>(track), enabledTrackMask);
+        if (!navigable) {
             continue;
         }
         if (trackHeaderFocused()) {
@@ -794,7 +800,7 @@ FLASHMEM void ClipWorkspaceUiState::moveHorizontal(
         }
         return;
     }
-    if (direction < 0) focusScene(focusedSlot);
+    if (direction < 0 && !placementActive()) focusScene(focusedSlot);
 }
 
 FLASHMEM uint8_t ClipWorkspaceUiState::viewportIndex() const {
@@ -893,6 +899,7 @@ FLASHMEM void ClipWorkspaceUiState::beginSelection(
 
 FLASHMEM void ClipWorkspaceUiState::beginPlacement(
     ClipWorkspaceOperation next,
+    uint8_t destinationTrack,
     uint8_t destinationSlot
 ) {
     if (operation != ClipWorkspaceOperation::SELECT ||
@@ -903,7 +910,7 @@ FLASHMEM void ClipWorkspaceUiState::beginPlacement(
     operation = next;
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
-    focus(sourceTrack, destinationSlot);
+    focus(destinationTrack, destinationSlot);
     bump();
 }
 

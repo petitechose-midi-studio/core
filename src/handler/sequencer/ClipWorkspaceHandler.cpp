@@ -111,7 +111,8 @@ FLASHMEM bool ClipWorkspaceHandler::editorAvailable() const {
 
 FLASHMEM bool ClipWorkspaceHandler::horizontalNavigationAvailable() const {
     return matrixAvailable() &&
-        !core_.sequencer.clipWorkspace.selectionActive();
+        (!core_.sequencer.clipWorkspace.selectionActive() ||
+         core_.sequencer.clipWorkspace.placementActive());
 }
 
 FLASHMEM bool ClipWorkspaceHandler::quickSelectorAvailable() const {
@@ -344,9 +345,15 @@ FLASHMEM void ClipWorkspaceHandler::moveHorizontal(float delta) {
     if (!horizontal_navigation_gesture_.turn(nav::hasTurnDelta(delta))) return;
     auto& ui = core_.sequencer.clipWorkspace;
     ui.clearQuickControl();
+    const uint16_t navigableTracks = ui.placementActive()
+        ? seq::compatibleSequencerClipTrackMask(
+            core_.sequencerClips,
+            core_.sequencerTracks,
+            sourceAddress())
+        : core_.currentSharedTrackEnabledMask();
     ui.moveHorizontal(
         nav::turnStep(delta),
-        core_.currentSharedTrackEnabledMask()
+        navigableTracks
     );
     syncNavigationFocus();
 }
@@ -780,24 +787,6 @@ ClipWorkspaceHandler::sourceAddress() const {
     return {ui.sourceTrack, ui.sourceSlot};
 }
 
-FLASHMEM uint8_t ClipWorkspaceHandler::firstEmptySlotAfter(
-    seq::SequencerClipAddress source
-) const {
-    for (uint8_t offset = 1U;
-         offset < seq::ClipWorkspaceUiState::SLOT_COUNT;
-         ++offset) {
-        const uint8_t slot = static_cast<uint8_t>(
-            (source.slot + offset) %
-            seq::ClipWorkspaceUiState::SLOT_COUNT
-        );
-        if (core_.sequencerClips.slotKind({source.track, slot}) ==
-            seq::SequencerLauncherSlotKind::EMPTY) {
-            return slot;
-        }
-    }
-    return seq::SequencerClipGridState::INVALID_SLOT;
-}
-
 FLASHMEM void ClipWorkspaceHandler::beginMove() {
     auto& ui = core_.sequencer.clipWorkspace;
     if (!matrixAvailable() ||
@@ -805,15 +794,21 @@ FLASHMEM void ClipWorkspaceHandler::beginMove() {
         return;
     }
     const auto source = sourceAddress();
-    const uint8_t destination = firstEmptySlotAfter(source);
+    seq::SequencerClipAddress destination{};
     if (core_.sequencerClipLaunches.references(source) ||
-        destination == seq::SequencerClipGridState::INVALID_SLOT) {
+        !seq::firstSequencerClipTransferDestination(
+            core_.sequencerClips,
+            core_.sequencerTracks,
+            source,
+            seq::SequencerClipStructureAction::MOVE,
+            destination)) {
         ui.setFeedback(seq::ClipWorkspaceFeedback::FAILED);
         return;
     }
     ui.beginPlacement(
         seq::ClipWorkspaceOperation::MOVE_DESTINATION,
-        destination
+        destination.track,
+        destination.slot
     );
     syncNavigationFocus();
 }
@@ -823,14 +818,20 @@ FLASHMEM void ClipWorkspaceHandler::applyOrBeginDuplicate() {
     if (!matrixAvailable()) return;
     if (ui.operation == seq::ClipWorkspaceOperation::SELECT) {
         const auto source = sourceAddress();
-        const uint8_t destination = firstEmptySlotAfter(source);
-        if (destination == seq::SequencerClipGridState::INVALID_SLOT) {
+        seq::SequencerClipAddress destination{};
+        if (!seq::firstSequencerClipTransferDestination(
+                core_.sequencerClips,
+                core_.sequencerTracks,
+                source,
+                seq::SequencerClipStructureAction::DUPLICATE_CLIP,
+                destination)) {
             ui.setFeedback(seq::ClipWorkspaceFeedback::FAILED);
             return;
         }
         ui.beginPlacement(
             seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION,
-            destination
+            destination.track,
+            destination.slot
         );
         syncNavigationFocus();
         return;

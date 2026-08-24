@@ -894,6 +894,7 @@ struct ClipWorkspaceUiState {
     void beginSelection(uint8_t track, uint8_t slot);
     void beginPlacement(
         ClipWorkspaceOperation next,
+        uint8_t destinationTrack,
         uint8_t destinationSlot
     );
     bool backOperation();

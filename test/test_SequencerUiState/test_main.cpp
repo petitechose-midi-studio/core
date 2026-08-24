@@ -354,7 +354,7 @@ void test_clip_launcher_returns_to_the_exact_clip_address() {
     assert(!state.returnToMatrix());
 }
 
-void test_clip_launcher_operation_navigation_stays_on_the_source_track() {
+void test_clip_launcher_placement_navigation_moves_across_tracks() {
     namespace seq = core::state::sequencer;
     seq::ClipWorkspaceUiState state;
     state.reset(0U);
@@ -364,11 +364,14 @@ void test_clip_launcher_operation_navigation_stays_on_the_source_track() {
     assert(!state.placementActive());
     state.beginPlacement(
         seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION,
+        3U,
         3U
     );
     assert(state.placementActive());
+    state.moveHorizontal(1, 0x0018U);
+    assert(state.focusedTrack == 4U);
     state.moveVertical(1);
-    assert(state.focusedTrack == 3U);
+    assert(state.focusedTrack == 4U);
     assert(state.focusedSlot == 4U);
 
     assert(state.backOperation());
@@ -502,7 +505,7 @@ int main() {
     test_clip_launcher_navigation_is_spatial_and_scrolls_one_item();
     test_clip_launcher_quick_control_is_bounded_and_expires();
     test_clip_launcher_returns_to_the_exact_clip_address();
-    test_clip_launcher_operation_navigation_stays_on_the_source_track();
+    test_clip_launcher_placement_navigation_moves_across_tracks();
     test_preset_library_keeps_only_the_active_domain_payload();
     test_preset_library_entry_policy_matches_the_visible_editor_surface();
 

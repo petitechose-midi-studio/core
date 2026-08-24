@@ -772,30 +772,42 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(1U);
 
         const bool placement = launcher.placementActive();
-        bool hasEmptyDestination = false;
-        for (uint8_t slot = 0U;
-             slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
-             ++slot) {
-            hasEmptyDestination |= source.clips.slotKind({
-                launcher.sourceTrack, slot
-            }) == core::state::sequencer::
-                SequencerLauncherSlotKind::EMPTY;
-        }
+        core::state::sequencer::SequencerClipAddress firstDestination{};
+        const bool hasDuplicateDestination =
+            core::state::sequencer::firstSequencerClipTransferDestination(
+                source.clips,
+                source.tracks,
+                sourceAddress,
+                core::state::sequencer::
+                    SequencerClipStructureAction::DUPLICATE_CLIP,
+                firstDestination);
         const core::state::sequencer::SequencerClipAddress destination{
             launcher.focusedTrack,
             launcher.focusedSlot,
         };
+        const auto action = launcher.operation ==
+                core::state::sequencer::
+                    ClipWorkspaceOperation::MOVE_DESTINATION
+            ? core::state::sequencer::SequencerClipStructureAction::MOVE
+            : core::state::sequencer::
+                SequencerClipStructureAction::DUPLICATE_CLIP;
         const bool destinationAvailable = placement &&
-            destination.track == launcher.sourceTrack &&
-            source.clips.slotKind(destination) ==
-                core::state::sequencer::SequencerLauncherSlotKind::EMPTY;
+            core::state::sequencer::canTransferSequencerClip(
+                source.clips,
+                source.tracks,
+                sourceAddress,
+                destination,
+                action) &&
+            (action != core::state::sequencer::
+                    SequencerClipStructureAction::MOVE ||
+             !source.clipLaunches.references(sourceAddress));
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             placement
                 ? standalone::icons::ACTION_PLACE_TARGET
                 : standalone::icons::ACTION_COPY,
             placement
                 ? destinationAvailable ? Visual::ACTIVE : Visual::DISABLED
-                : hasEmptyDestination ? Visual::ACTIVE : Visual::DISABLED,
+                : hasDuplicateDestination ? Visual::ACTIVE : Visual::DISABLED,
             placement ? Tone::POSITIVE : Tone::NEUTRAL
         );
         return props;

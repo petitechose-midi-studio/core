@@ -303,6 +303,35 @@ private:
     ) noexcept;
 };
 
+/**
+ * Shared capability contract for Clip move/duplicate placement.
+ *
+ * Cross-Track transfer is intentionally kind-preserving. A resident Clip may
+ * move inside its Track, but cannot leave it while every enabled Track must
+ * retain one live editor/runtime owner.
+ */
+[[nodiscard]] bool canTransferSequencerClip(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    SequencerClipAddress source,
+    SequencerClipAddress destination,
+    SequencerClipStructureAction action
+) noexcept;
+
+[[nodiscard]] uint16_t compatibleSequencerClipTrackMask(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    SequencerClipAddress source
+) noexcept;
+
+[[nodiscard]] bool firstSequencerClipTransferDestination(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    SequencerClipAddress source,
+    SequencerClipStructureAction action,
+    SequencerClipAddress& out
+) noexcept;
+
 struct SequencerClipStructureChange {
     SequencerClipStructureAction action = SequencerClipStructureAction::CREATE;
     SequencerClipAddress source{};

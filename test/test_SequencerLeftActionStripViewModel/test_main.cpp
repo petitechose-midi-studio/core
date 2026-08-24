@@ -64,6 +64,7 @@ void test_clip_launcher_left_strip_exposes_region_and_selection_actions() {
 
     launcher.beginPlacement(
         core::state::sequencer::ClipWorkspaceOperation::MOVE_DESTINATION,
+        0U,
         1U
     );
     props = core::ui::sequencer::buildSequencerLeftActionStripProps(

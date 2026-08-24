@@ -1,0 +1,51 @@
+# UX workflow: kind-safe Clip placement across Tracks.
+# Purpose: proves that duplicate and move share the launcher placement grammar,
+# preserve the destination row while crossing compatible Track columns, and
+# remain explicit two-step structural operations.
+# Expect: capture_changed:clip_copied_cross_track=duplicate_cross_target
+# Expect: capture_changed:copied_clip_selected=clip_copied_cross_track
+# Expect: capture_changed:move_cross_target=copied_clip_selected
+# Expect: capture_changed:clip_moved_cross_track=move_cross_target
+# Expect: semantic:clip_selected:effect=enter_clip_selection, semantic:clip_selected:projection=selected
+# Expect: semantic:duplicate_cross_target:projection=duplicate_destination, semantic:duplicate_cross_target:target_track=2
+# Expect: semantic:clip_copied_cross_track:effect=duplicate_clip, semantic:clip_copied_cross_track:outcome=applied
+# Expect: semantic:copied_clip_selected:effect=enter_clip_selection, semantic:copied_clip_selected:target_track=2
+# Expect: semantic:move_cross_target:projection=move_destination, semantic:move_cross_target:target_track=0
+# Expect: semantic:clip_moved_cross_track:effect=move_clip, semantic:clip_moved_cross_track:outcome=applied
+
+0 scenario clip-launcher-v3
+100 capture screen launcher_ready
+
+# Scene rail -> T1 resident Clip, then enter structural selection.
+220 button NAV down
+300 encoder NAV 0.01
+380 button NAV up
+540 button NAV down
+1600 tick
+1680 capture screen clip_selected
+1760 button NAV up
+
+# Copy initially targets the next row on T1. Held NAV moves that destination
+# horizontally to the same row on T3. T2 is Drum and therefore skipped;
+# applying leaves the new Clip focused without an implicit kind conversion.
+1960 tap BOTTOM_RIGHT 60
+2120 button NAV down
+2200 encoder NAV 0.01
+2280 button NAV up
+2440 capture screen duplicate_cross_target
+2520 tap BOTTOM_RIGHT 60
+2780 capture screen clip_copied_cross_track
+
+# Select the copied (inactive) Clip. Move begins on T3 and crosses back to T1
+# keeping its row, then applies through the same positive placement action.
+2880 button NAV down
+3940 tick
+4020 capture screen copied_clip_selected
+4100 button NAV up
+4260 tap LEFT_CENTER 60
+4420 button NAV down
+4500 encoder NAV -0.01
+4580 button NAV up
+4740 capture screen move_cross_target
+4820 tap BOTTOM_RIGHT 60
+5080 capture screen clip_moved_cross_track

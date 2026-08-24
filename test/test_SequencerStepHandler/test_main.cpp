@@ -681,6 +681,48 @@ void test_clip_launcher_direct_pattern_and_short_create_actions() {
         << "[PASS] Clip Launcher separates Pattern entry and direct creation\n";
 }
 
+void test_clip_launcher_places_copy_and_move_across_tracks() {
+    SequencerStepHarness h(true);
+    assert(h.state.setSharedTrackState(0x0003U, 0U));
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+    launcher.focus(0U, 0U);
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.operation == seq::ClipWorkspaceOperation::SELECT);
+
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(launcher.operation ==
+           seq::ClipWorkspaceOperation::DUPLICATE_DESTINATION);
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.focusedTrack == 1U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!launcher.selectionActive());
+    const uint8_t copiedSlot = launcher.focusedSlot;
+    assert(h.state.sequencerClips.isOccupied({1U, copiedSlot}));
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.operation == seq::ClipWorkspaceOperation::SELECT);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(launcher.operation == seq::ClipWorkspaceOperation::MOVE_DESTINATION);
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.focusedTrack == 0U);
+    const uint8_t movedSlot = launcher.focusedSlot;
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.sequencerClips.isOccupied({1U, copiedSlot}));
+    assert(h.state.sequencerClips.isOccupied({0U, movedSlot}));
+
+    std::cout << "[PASS] Clip Launcher places copy and move across Tracks\n";
+}
+
 void test_inactive_clip_workspace_does_not_steal_shared_navigation_focus() {
     SequencerStepHarness h(true);
     assert(h.state.sequencer.clipWorkspace.matrixVisible());
@@ -9840,6 +9882,7 @@ int main() {
     test_clip_launcher_nav_turn_moves_horizontally_without_launching();
     test_clip_launcher_left_center_arms_quick_property_for_opt();
     test_clip_launcher_direct_pattern_and_short_create_actions();
+    test_clip_launcher_places_copy_and_move_across_tracks();
     test_inactive_clip_workspace_does_not_steal_shared_navigation_focus();
     test_pattern_preview_owns_back_before_clip_launcher();
     test_cc_lane_owns_back_before_clip_launcher();

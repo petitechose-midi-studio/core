@@ -328,7 +328,15 @@ FLASHMEM bool CoreState::moveSequencerClip(
     sequencer::SequencerClipAddress destination
 ) {
     if (!closeClipMutationBoundary(*this) ||
-        sequencerClipLaunches.references(source)) return false;
+        sequencerClipLaunches.references(source) ||
+        !sequencer::canTransferSequencerClip(
+            sequencerClips,
+            sequencerTracks,
+            source,
+            destination,
+            sequencer::SequencerClipStructureAction::MOVE)) {
+        return false;
+    }
     auto change = sequencer::prepareSequencerClipMoveChange(
         sequencerClips, source, destination);
     if (!change || !sequencerHistory.canRecordClipStructure(*change) ||
@@ -345,11 +353,12 @@ FLASHMEM bool CoreState::duplicateSequencerClip(
     sequencer::SequencerClipAddress source,
     sequencer::SequencerClipAddress destination
 ) {
-    if (!sequencer::SequencerClipGridState::validAddress(source) ||
-        !sequencer::SequencerClipGridState::validAddress(destination) ||
-        source.track != destination.track ||
-        sequencerClips.slotKind(destination) !=
-            sequencer::SequencerLauncherSlotKind::EMPTY) {
+    if (!sequencer::canTransferSequencerClip(
+            sequencerClips,
+            sequencerTracks,
+            source,
+            destination,
+            sequencer::SequencerClipStructureAction::DUPLICATE_CLIP)) {
         return false;
     }
 

@@ -375,6 +375,83 @@ void test_clip_structure_history_transfers_ownership_without_project_copies() {
     std::cout << "[PASS] Clip structure history transfers one document owner\n";
 }
 
+void test_cross_track_transfer_is_kind_safe_and_preserves_residency() {
+    seq::SequencerClipGridState grid;
+    seq::SequencerTrackBankState bank;
+    seq::SequencerState active;
+    assert(seq::initializeTrackBankFromActive(bank, active));
+    bank.syncSharedTrackState(0x0007U, 0U);
+    grid.synchronizeEnabledTracks(0x0007U);
+
+    seq::SequencerPatternState pattern;
+    seq::SequencerClipState clip;
+    seed(pattern, clip, 69U);
+    auto document = capture(pattern, clip);
+    assert(grid.installInactiveDocument({0U, 1U}, std::move(document)));
+
+    assert(seq::compatibleSequencerClipTrackMask(grid, bank, {0U, 1U}) ==
+           0x0007U);
+    assert(seq::canTransferSequencerClip(
+        grid,
+        bank,
+        {0U, 1U},
+        {1U, 1U},
+        seq::SequencerClipStructureAction::MOVE
+    ));
+    assert(!seq::canTransferSequencerClip(
+        grid,
+        bank,
+        {0U, 0U},
+        {1U, 1U},
+        seq::SequencerClipStructureAction::MOVE
+    ));
+    assert(seq::canTransferSequencerClip(
+        grid,
+        bank,
+        {0U, 0U},
+        {1U, 1U},
+        seq::SequencerClipStructureAction::DUPLICATE_CLIP
+    ));
+
+    assert(bank.setTrackKind(
+        2U,
+        seq::SequencerTrackKind::DRUM,
+        true,
+        seq::DrumKitPreset::GENERAL_MIDI
+    ));
+    assert(seq::compatibleSequencerClipTrackMask(grid, bank, {0U, 1U}) ==
+           0x0003U);
+    assert(!seq::canTransferSequencerClip(
+        grid,
+        bank,
+        {0U, 1U},
+        {2U, 1U},
+        seq::SequencerClipStructureAction::DUPLICATE_CLIP
+    ));
+
+    seq::SequencerClipAddress destination{};
+    assert(seq::firstSequencerClipTransferDestination(
+        grid,
+        bank,
+        {0U, 1U},
+        seq::SequencerClipStructureAction::MOVE,
+        destination
+    ));
+    assert(destination.track == 0U && destination.slot == 2U);
+
+    auto move = seq::prepareSequencerClipMoveChange(
+        grid, {0U, 1U}, {1U, 1U});
+    assert(move);
+    assert(seq::applySequencerClipStructureChange(grid, *move, true));
+    assert(!grid.isOccupied({0U, 1U}));
+    assert(grid.inactiveDocument({1U, 1U})->pattern.note[0] == 69U);
+    assert(seq::applySequencerClipStructureChange(grid, *move, false));
+    assert(grid.inactiveDocument({0U, 1U})->pattern.note[0] == 69U);
+
+    std::cout
+        << "[PASS] cross-Track Clip transfer preserves kind and residency\n";
+}
+
 void test_core_clip_api_keeps_structure_and_history_coherent() {
     test_support::CoreStorages storages;
     core::state::CoreState state(storages.settings);
@@ -406,6 +483,26 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
     assert(!state.sequencerClips.isOccupied({0U, 0U}));
     assert(state.undoSequencerHistory());
     assert(state.sequencerClips.isOccupied({0U, 0U}));
+
+    assert(state.setSharedTrackState(0x0003U, 0U));
+    assert(state.duplicateSequencerClip({0U, 1U}, {1U, 1U}));
+    assert(state.sequencerClips.isOccupied({1U, 1U}));
+    assert(state.moveSequencerClip({1U, 1U}, {0U, 2U}));
+    assert(!state.sequencerClips.isOccupied({1U, 1U}));
+    assert(state.sequencerClips.isOccupied({0U, 2U}));
+    assert(state.undoSequencerHistory());
+    assert(state.sequencerClips.isOccupied({1U, 1U}));
+    assert(!state.sequencerClips.isOccupied({0U, 2U}));
+    assert(state.redoSequencerHistory());
+    assert(!state.moveSequencerClip({0U, 1U}, {1U, 2U}));
+
+    assert(state.sequencerTracks.setTrackKind(
+        1U,
+        seq::SequencerTrackKind::DRUM,
+        true,
+        seq::DrumKitPreset::GENERAL_MIDI
+    ));
+    assert(!state.duplicateSequencerClip({0U, 1U}, {1U, 2U}));
     std::cout << "[PASS] Core Clip API preserves structural history\n";
 }
 
@@ -420,6 +517,7 @@ int main() {
     test_resident_switch_preserves_both_clip_documents();
     test_history_targets_the_authored_clip_after_resident_switch();
     test_clip_structure_history_transfers_ownership_without_project_copies();
+    test_cross_track_transfer_is_kind_safe_and_preserves_residency();
     test_core_clip_api_keeps_structure_and_history_coherent();
     std::cout << "All SequencerClipGridState tests passed.\n";
     return 0;
