@@ -233,6 +233,8 @@ void SequencerPlaybackService::update(
 ) {
     OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
     OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
+    runtime_transport_tick_ = tick;
+    runtime_transport_playing_ = playing;
     const bool phaseClockValid = playing && tickPeriodUs != 0U && nowUs != 0U;
     if (phaseClockValid) {
         if (!runtime_tick_anchor_valid_ ||
@@ -240,7 +242,6 @@ void SequencerPlaybackService::update(
             runtime_tick_period_us_ != tickPeriodUs) {
             runtime_tick_anchor_us_ = nowUs;
         }
-        runtime_transport_tick_ = tick;
         runtime_tick_anchor_valid_ = true;
     } else {
         runtime_tick_anchor_valid_ = false;
@@ -423,6 +424,7 @@ FLASHMEM void SequencerPlaybackService::stopTrack(uint8_t trackIndex) {
 }
 
 FLASHMEM void SequencerPlaybackService::completeStop() {
+    runtime_transport_playing_ = false;
     runtime_tick_anchor_valid_ = false;
     publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
     last_playhead_ = -1;
@@ -1080,6 +1082,8 @@ FLASHMEM void SequencerPlaybackService::publishUiProjection(const UiProjectionSn
 
 FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService::takeUiProjectionSnapshot() {
     UiProjectionSnapshot snapshot{
+        .transportTick = runtime_transport_tick_,
+        .transportPlaying = runtime_transport_playing_,
         .noteOutPulse = pending_ui_projection_.noteOutPulse,
         .ccOutPulse = pending_ui_projection_.ccOutPulse,
         .beatPulse = pending_ui_projection_.beatPulse,

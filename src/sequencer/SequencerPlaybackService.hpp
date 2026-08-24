@@ -68,6 +68,8 @@ public:
     static constexpr uint8_t TRACK_COUNT = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 
     struct UiProjectionSnapshot {
+        uint32_t transportTick = 0U;
+        bool transportPlaying = false;
         bool noteOutPulse = false;
         bool ccOutPulse = false;
         bool beatPulse = false;
@@ -275,6 +277,7 @@ private:
     uint32_t runtime_tick_period_us_ = 0U;
     uint32_t runtime_transport_tick_ = 0U;
     uint32_t runtime_tick_anchor_us_ = 0U;
+    bool runtime_transport_playing_ = false;
     bool runtime_tick_anchor_valid_ = false;
     bool runtime_predictive_lookahead_ = false;
 

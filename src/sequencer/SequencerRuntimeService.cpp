@@ -204,10 +204,15 @@ void SequencerRuntimeService::update() {
         clockDomain = updateClockDomainOwnership_(clockConfig, nowMs);
     }
 
-    clip_launches_.updateTransportPosition(
-        clockDomain.transport.tick,
-        clockDomain.transport.playing
-    );
+    // The hardware timer owns the internal transport on Teensy. In that mode
+    // MidiClockSyncService deliberately exposes tick zero, so retain the last
+    // timer projection instead of overwriting the launcher clock here.
+    if (!clockDomain.timerOwnsTransport) {
+        clip_launches_.updateTransportPosition(
+            clockDomain.transport.tick,
+            clockDomain.transport.playing
+        );
+    }
 
     // A replacement/cancellation may arrive after the next launch generation
     // has already been staged. Restore the retained graph + flat snapshot pair
@@ -520,6 +525,10 @@ FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
         runtimeTelemetry = realtime_lane_->playback.copyActiveRuntimeTelemetry();
     }
 
+    clip_launches_.updateTransportPosition(
+        uiProjection.transportTick,
+        uiProjection.transportPlaying
+    );
     publishRuntimeTelemetry(sequencer_state_, runtimeTelemetry);
     realtime_lane_->playback.publishUiProjection(uiProjection, nowMs);
 #else

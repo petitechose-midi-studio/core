@@ -788,8 +788,15 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
     oc::api::MidiAPI midi{midiTransport};
     drainDue(midiQueue, midi, 12000, 10000);
     const auto projection = service.takeUiProjectionSnapshot();
+    assert(projection.transportTick == 12U);
+    assert(projection.transportPlaying);
     assert(projection.noteOutPulse);
     assert(projection.trackVelocity[0] == 96);
+
+    service.update(graphSnapshot, 12, false, 13000, 1000, false);
+    const auto stoppedProjection = service.takeUiProjectionSnapshot();
+    assert(stoppedProjection.transportTick == 12U);
+    assert(!stoppedProjection.transportPlaying);
 
     std::cout << "[PASS] test_graph_revision_change_resyncs_playback_service_graph\n";
 }
