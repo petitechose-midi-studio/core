@@ -150,9 +150,10 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
             for (uint8_t slot = 0U;
                  slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
                  ++slot) {
-                hasEmptyDestination |= !source.clips.isOccupied({
+                hasEmptyDestination |= source.clips.slotKind({
                     sourceAddress.track, slot
-                });
+                }) == core::state::sequencer::
+                    SequencerLauncherSlotKind::EMPTY;
             }
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_MOVE,

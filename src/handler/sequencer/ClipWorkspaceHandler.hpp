@@ -13,7 +13,6 @@
 
 namespace core::handler {
 
-class SequencerPatternEditorHandler;
 class ProjectTrackEditorHandler;
 class SequencerStructureNavigationWorkflow;
 
@@ -36,7 +35,6 @@ public:
         oc::type::ScopeID scopeId
     );
 
-    void attachPatternEditorHandler(SequencerPatternEditorHandler& handler);
     void attachTrackEditorHandler(ProjectTrackEditorHandler& handler);
     void attachTrackNavigationWorkflow(
         SequencerStructureNavigationWorkflow& navigation
@@ -63,7 +61,6 @@ public:
     void beginRemove(uint32_t nowMs);
     void applyRemove();
     void endRemove();
-    [[nodiscard]] bool prepareFocusedEditor();
     void back();
 
 private:
@@ -105,7 +102,6 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
-    SequencerPatternEditorHandler* pattern_editor_handler_ = nullptr;
     ProjectTrackEditorHandler* track_editor_handler_ = nullptr;
     SequencerStructureNavigationWorkflow* navigation_workflow_ = nullptr;
     PressHoldTurnReleaseGesture horizontal_navigation_gesture_{};

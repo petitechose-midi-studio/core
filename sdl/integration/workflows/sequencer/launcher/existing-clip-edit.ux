@@ -1,12 +1,13 @@
-# UX workflow: edit an existing Clip without changing performance semantics.
-# Purpose: proves LEFT_CENTER defaults to Edit on an occupied Clip, opens the
-# shared Pattern editor, then unwinds one hierarchy level at a time back to the
-# exact Launcher cell.
+# UX workflow: Clip properties and Pattern content have explicit entry points.
+# Purpose: proves LEFT_CENTER opens Clip properties, LEFT_BOTTOM enters Pattern
+# content, and Back returns to the exact Launcher cell after either path.
 # Expect: capture_changed:clip_focused=launcher_ready
-# Expect: capture_changed:pattern_editor=clip_focused
-# Expect: capture_changed:pattern_returned=pattern_editor
-# Expect: capture_changed:launcher_returned=pattern_returned
-# Expect: semantic:pattern_editor:effect=open_clip_region, semantic:pattern_editor:target=pattern
+# Expect: capture_changed:clip_behavior=clip_focused
+# Expect: capture_changed:clip_restored=clip_behavior
+# Expect: capture_changed:pattern_content=clip_restored
+# Expect: capture_changed:launcher_returned=pattern_content
+# Expect: semantic:clip_behavior:effect=open_clip_behavior, semantic:clip_behavior:target=clip_behavior
+# Expect: semantic:pattern_content:effect=open_clip_pattern, semantic:pattern_content:mode=sequencer.pattern
 # Expect: semantic:launcher_returned:effect=return_to_clip_launcher, semantic:launcher_returned:target_track=0, semantic:launcher_returned:target_index=0
 
 0 scenario clip-launcher-v3
@@ -18,13 +19,14 @@
 380 button NAV up
 540 capture screen clip_focused
 
-# LEFT_CENTER is the shared contextual-edit gesture. Its default item is Edit,
-# so releasing it without turning NAV opens this Clip's Pattern editor.
+# LEFT_CENTER defaults to the Clip-properties editor.
 660 tap LEFT_CENTER 60
-1020 capture screen pattern_editor
-
-# Back unwinds Pattern editor -> Pattern -> exact Launcher cell.
+1020 capture screen clip_behavior
 1140 tap LEFT_TOP 60
-1500 capture screen pattern_returned
-1620 tap LEFT_TOP 60
-1980 capture screen launcher_returned
+1500 capture screen clip_restored
+
+# LEFT_BOTTOM enters Pattern content without passing through Clip properties.
+1620 tap LEFT_BOTTOM 60
+1980 capture screen pattern_content
+2100 tap LEFT_TOP 60
+2460 capture screen launcher_returned

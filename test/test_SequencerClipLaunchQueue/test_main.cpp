@@ -159,6 +159,34 @@ void test_stop_is_immediate_while_idle_and_new_tracks_are_synchronized() {
     assert(queue.pendingTrackMask() == 0U);
 }
 
+void test_stopping_one_track_preserves_other_track_progress() {
+    constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
+    seq::SequencerClipGridState clips;
+    clips.reset(0x0003U);
+
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 0x0003U);
+    queue.updateTransportPosition(kBar / 4U, true);
+    assert(queue.telemetry(0U).activePhaseQ8 == 64U);
+    assert(queue.telemetry(1U).activePhaseQ8 == 64U);
+
+    assert(queue.requestStop(
+        1U,
+        true,
+        seq::SequencerClipLaunchQuantization::IMMEDIATE
+    ));
+    applyQueued(queue, clips, 0x0002U, kBar / 4U);
+
+    assert(!queue.stopped(0U));
+    assert(queue.activeSlot(0U) == clips.residentSlot(0U));
+    assert(queue.telemetry(0U).activePhaseQ8 == 64U);
+    assert(queue.stopped(1U));
+
+    queue.updateTransportPosition(kBar / 2U, true);
+    assert(queue.telemetry(0U).activePhaseQ8 == 128U);
+    assert(queue.telemetry(1U).activePhaseQ8 == 0U);
+}
+
 void test_scene_plan_keeps_empty_tracks_and_supports_cancel_replace_stop() {
     seq::SequencerClipGridState clips;
     clips.reset(0x0003U);
@@ -281,6 +309,37 @@ void test_clip_and_scene_follow_actions_obey_priority() {
            seq::SequencerClipGridState::INVALID_SLOT);
 }
 
+void test_two_bar_scene_follows_after_exactly_two_bars() {
+    constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
+    seq::SequencerClipGridState clips;
+    clips.reset(0x0001U);
+    install(clips, 1U);
+    install(clips, 2U);
+    assert(clips.setSceneBehavior(1U, {
+        .length = 2U,
+        .thenTarget = 2U,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    }));
+
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 0x0001U);
+    assert(queue.requestScene(1U, clips, 0x0001U, false));
+    applyQueued(queue, clips, 0x0001U, 0U);
+
+    queue.updateTransportPosition(kBar, true);
+    queue.processFollowActions(clips, 0x0001U, true);
+    assert(queue.pendingTrackMask() == 0U);
+    assert(queue.sceneTelemetry().activeScene == 1U);
+    assert(queue.sceneTelemetry().activeRemainingQ8 >= 127U);
+
+    queue.updateTransportPosition(2U * kBar, true);
+    queue.processFollowActions(clips, 0x0001U, true);
+    assert(queue.pendingTrackMask() == 0x0001U);
+    assert(queue.sceneTelemetry().queuedScene == 2U);
+    assert(queue.telemetry(0U).origin ==
+           seq::SequencerClipLaunchOrigin::SCENE_FOLLOW);
+}
+
 void test_active_phase_and_live_behavior_follow_the_running_clip() {
     constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
     seq::SequencerClipGridState clips;
@@ -316,9 +375,11 @@ int main() {
     test_stale_target_is_cancelled_before_runtime_publication();
     test_missing_active_clip_queues_resident_fallback();
     test_stop_is_immediate_while_idle_and_new_tracks_are_synchronized();
+    test_stopping_one_track_preserves_other_track_progress();
     test_scene_plan_keeps_empty_tracks_and_supports_cancel_replace_stop();
     test_newest_manual_request_wins_and_direct_stop_has_priority();
     test_clip_and_scene_follow_actions_obey_priority();
+    test_two_bar_scene_follows_after_exactly_two_bars();
     test_active_phase_and_live_behavior_follow_the_running_clip();
     std::cout << "All SequencerClipLaunchQueue tests passed\n";
     return 0;

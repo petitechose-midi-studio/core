@@ -1,6 +1,6 @@
 # UX workflow: sequential Track creation and Track-context actions.
 # Purpose: validates the sole +Track column, inherited track-type picker,
-# default MIDI routing, long-NAV Track settings and short-NAV immediate Stop.
+# default MIDI routing, LEFT_CENTER Track settings and short-NAV immediate Stop.
 # Expect: capture_changed:track_4_add=launcher_ready
 # Expect: capture_changed:track_type_picker=track_4_add
 # Expect: capture_changed:track_4_pattern=track_type_picker
@@ -40,23 +40,21 @@
 1740 tap LEFT_TOP 60
 1920 capture screen track_4_created
 
-# Long NAV on the T4 header opens routing settings. The default route follows
+# LEFT_CENTER on the T4 header opens routing settings. The default route follows
 # Track identity, so the new T4 starts on MIDI Channel 4.
 2000 encoder NAV -0.01
 2160 capture screen track_4_header
-2240 button NAV down
-3300 tick
-3380 capture screen track_4_settings
-3460 button NAV up
-3620 tap LEFT_TOP 60
-3800 capture screen track_4_header_restored
+2240 tap LEFT_CENTER 60
+2600 capture screen track_4_settings
+2680 tap LEFT_TOP 60
+2860 capture screen track_4_header_restored
 
 # Short NAV in Track context is the explicit immediate Stop action.
-3880 tap NAV 60
-4060 capture screen track_4_stopped
+2940 tap NAV 60
+3120 capture screen track_4_stopped
 
 # The next horizontal position is now +T5, proving sequential growth.
-4140 button NAV down
-4220 encoder NAV 0.01
-4300 button NAV up
-4460 capture screen track_5_add
+3200 button NAV down
+3280 encoder NAV 0.01
+3360 button NAV up
+3520 capture screen track_5_add

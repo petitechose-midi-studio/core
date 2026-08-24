@@ -10,7 +10,6 @@
 
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/ProjectTrackEditorHandler.hpp"
-#include "handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 
 namespace core::handler {
@@ -27,12 +26,6 @@ FLASHMEM ClipWorkspaceHandler::ClipWorkspaceHandler(
       overlays_(state.overlays), encoders_(encoders), buttons_(buttons),
       scope_id_(scopeId) {
     setupBindings();
-}
-
-FLASHMEM void ClipWorkspaceHandler::attachPatternEditorHandler(
-    SequencerPatternEditorHandler& handler
-) {
-    pattern_editor_handler_ = &handler;
 }
 
 FLASHMEM void ClipWorkspaceHandler::attachTrackEditorHandler(
@@ -196,7 +189,9 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
         .then([this]() {
             horizontal_navigation_gesture_.cancel();
             release_latch_.arm(Config::ButtonID::NAV);
-            openFocusedEditor();
+            if (trackHeaderAvailable()) beginTrackSelection();
+            else if (focusedClipAvailable()) selectFocused();
+            else openFocusedEditor();
             // External editors take ownership before the physical release,
             // so the launcher cannot consume that release in its own scope.
             // Clear the local latch now to avoid swallowing the next NAV tap
@@ -241,7 +236,7 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
             return quick_selector_gesture_.active() ||
                 (matrixAvailable() &&
                     (core_.sequencer.clipWorkspace.selectionActive() ||
-                     focusedClipAvailable())) ||
+                     focusedClipAvailable() || trackHeaderAvailable())) ||
                 release_latch_.isArmed(Config::ButtonID::LEFT_CENTER);
         })
         .then([this]() {
@@ -254,6 +249,7 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
                 beginMove();
                 return;
             }
+            if (trackHeaderAvailable()) openFocusedEditor();
         });
 
     buttons_.button(Config::ButtonID::LEFT_BOTTOM)
@@ -380,13 +376,7 @@ FLASHMEM void ClipWorkspaceHandler::releaseQuickSelector() {
     }
     if (action == seq::ClipWorkspaceQuickAction::EDIT) {
         ui.clearQuickControl();
-        const seq::SequencerClipAddress address{
-            ui.focusedTrack,
-            ui.focusedSlot,
-        };
-        if (pattern_editor_handler_ != nullptr && enterClip(address)) {
-            (void)pattern_editor_handler_->openRegionFromCurrentPage();
-        }
+        openFocusedEditor();
         return;
     }
     ui.armQuickProperty(core::time_compat::millis());
@@ -800,7 +790,8 @@ FLASHMEM uint8_t ClipWorkspaceHandler::firstEmptySlotAfter(
             (source.slot + offset) %
             seq::ClipWorkspaceUiState::SLOT_COUNT
         );
-        if (!core_.sequencerClips.isOccupied({source.track, slot})) {
+        if (core_.sequencerClips.slotKind({source.track, slot}) ==
+            seq::SequencerLauncherSlotKind::EMPTY) {
             return slot;
         }
     }
@@ -907,12 +898,6 @@ FLASHMEM void ClipWorkspaceHandler::applyRemove() {
 FLASHMEM void ClipWorkspaceHandler::endRemove() {
     if (!matrixAvailable()) return;
     core_.sequencer.clipWorkspace.clearRemoveHold();
-}
-
-FLASHMEM bool ClipWorkspaceHandler::prepareFocusedEditor() {
-    if (!focusedClipAvailable()) return false;
-    const auto& ui = core_.sequencer.clipWorkspace;
-    return selectClipForEditing({ui.focusedTrack, ui.focusedSlot});
 }
 
 FLASHMEM void ClipWorkspaceHandler::back() {

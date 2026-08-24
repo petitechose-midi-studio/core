@@ -1680,7 +1680,13 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
                     ? "then"
                     : "quantization";
         out.projection = "editor";
-        if (navTurn) {
+        if (quickRelease &&
+            retained_editor_ == seq::ClipWorkspaceEditor::NONE &&
+            ui.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR) {
+            out.effect = "open_clip_behavior";
+            out.intent = Intent::OPEN_ADVANCED;
+            out.outcome = "applied";
+        } else if (navTurn) {
             out.effect = ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION
                 ? "select_slot_action"
                 : buttons_.isPressed(Config::ButtonID::LEFT_CENTER)
@@ -1869,10 +1875,17 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             : scene ? "focus_scene" : "focus_clip";
         out.intent = Intent::MOVE_FOCUS;
     } else if (navHold) {
-        out.effect = trackHeader ? "open_track_settings"
-            : scene ? "open_scene_behavior"
-            : occupied ? "open_clip_behavior" : "open_slot_actions";
-        out.intent = Intent::EDIT_VALUE;
+        if (trackHeader && tracks_.isTrackEnabled(address.track)) {
+            out.effect = "enter_track_selection";
+            out.intent = Intent::ENTER_SELECTION;
+        } else if (occupied) {
+            out.effect = "enter_clip_selection";
+            out.intent = Intent::ENTER_SELECTION;
+        } else {
+            out.effect = scene
+                ? "open_scene_behavior" : "open_slot_actions";
+            out.intent = Intent::OPEN_ADVANCED;
+        }
     } else if (navRelease) {
         retained_horizontal_navigation_ = false;
         retained_horizontal_navigation_rotated_ = false;
@@ -1926,15 +1939,26 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         out.effect = "open_clip_pattern";
         out.intent = Intent::OPEN_ADVANCED;
         out.outcome = "applied";
+    } else if (quickRelease && trackHeader) {
+        retained_quick_selector_ = false;
+        out.effect = "open_track_settings";
+        out.intent = Intent::OPEN_ADVANCED;
+        out.outcome = "applied";
+    } else if (quickRelease && !retained_quick_selector_ &&
+            ui.operation == seq::ClipWorkspaceOperation::SELECT) {
+        retained_quick_selector_ = false;
+        out.effect = "begin_move_clip";
+        out.intent = Intent::CHANGE_SCOPE;
+        out.outcome = "applied";
     } else if (quickRelease) {
         retained_quick_selector_ = false;
         const bool armsProperty =
             ui.quickAction != seq::ClipWorkspaceQuickAction::EDIT;
         out.effect = armsProperty
             ? "arm_clip_quick_property"
-            : "open_clip_region";
+            : "open_clip_behavior";
         out.intent = armsProperty
-            ? Intent::EDIT_VALUE : Intent::CHANGE_SCOPE;
+            ? Intent::EDIT_VALUE : Intent::OPEN_ADVANCED;
         out.property = ui.quickAction == seq::ClipWorkspaceQuickAction::LENGTH
             ? "length"
             : ui.quickAction == seq::ClipWorkspaceQuickAction::THEN

@@ -776,9 +776,10 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         for (uint8_t slot = 0U;
              slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
              ++slot) {
-            hasEmptyDestination |= !source.clips.isOccupied({
+            hasEmptyDestination |= source.clips.slotKind({
                 launcher.sourceTrack, slot
-            });
+            }) == core::state::sequencer::
+                SequencerLauncherSlotKind::EMPTY;
         }
         const core::state::sequencer::SequencerClipAddress destination{
             launcher.focusedTrack,
@@ -786,7 +787,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         };
         const bool destinationAvailable = placement &&
             destination.track == launcher.sourceTrack &&
-            !source.clips.isOccupied(destination);
+            source.clips.slotKind(destination) ==
+                core::state::sequencer::SequencerLauncherSlotKind::EMPTY;
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             placement
                 ? standalone::icons::ACTION_PLACE_TARGET

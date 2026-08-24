@@ -494,7 +494,6 @@ struct SequencerStepHarness {
             DRUM_LANE_EDITOR_SCOPE
         );
         handler.attachPatternEditorHandler(patternEditorHandler);
-        clipWorkspaceHandler.attachPatternEditorHandler(patternEditorHandler);
         handler.connectClipWorkspace(clipWorkspaceHandler);
         handler.attachStepEditHandler(stepEditHandler);
         handler.attachDrumLaneEditorHandler(drumLaneEditorHandler);
@@ -550,7 +549,7 @@ struct SequencerStepHarness {
     }
 };
 
-void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
+void test_clip_launcher_gestures_separate_selection_properties_and_pattern() {
     SequencerStepHarness h(true);
     auto& launcher = h.state.sequencer.clipWorkspace;
     launcher.reset(0U);
@@ -560,29 +559,30 @@ void test_clip_launcher_gestures_are_structural_and_region_editor_is_reused() {
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(launcher.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR);
+    assert(launcher.operation == seq::ClipWorkspaceOperation::SELECT);
     h.release(Config::ButtonID::NAV);
-    assert(launcher.editorActive());
-    h.tap(Config::ButtonID::NAV);
-    assert(!launcher.editorActive());
+    assert(launcher.selectionActive());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!launcher.selectionActive());
     assert(launcher.matrixVisible());
 
     launcher.focus(0U, 0U);
     h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(h.state.sequencer.patternEditor.active.get());
-    assert(h.state.sequencer.patternEditor.focusedLayer ==
-           seq::SequencerPatternEditorLayer::REGION);
-    assert(launcher.patternVisible());
+    assert(launcher.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR);
+    assert(launcher.matrixVisible());
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(!h.state.sequencer.patternEditor.active.get());
+    assert(!launcher.editorActive());
+
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(launcher.patternVisible());
+    assert(!h.state.sequencer.patternEditor.active.get());
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(launcher.matrixVisible());
     assert(launcher.focusedTrack == 0U);
     assert(launcher.focusedSlot == 0U);
 
     std::cout
-        << "[PASS] Clip Launcher gestures reuse structure and region editors\n";
+        << "[PASS] Clip Launcher separates selection, properties and Pattern\n";
 }
 
 void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
@@ -8682,7 +8682,7 @@ void test_drum_track_creation_navigation_and_owners_are_independent() {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.clipWorkspace.matrixVisible());
     h.state.sequencer.clipWorkspace.focus(1U, 0U);
-    h.tap(Config::ButtonID::LEFT_CENTER);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
     h.tick(g_now_ms + 1U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
     assert(drumUi.targetTrack == 1U);
@@ -9476,10 +9476,7 @@ void test_drum_track_pattern_step_bottom_actions_share_one_contract() {
     h.tap(Config::ButtonID::BOTTOM_LEFT);
     assert((h.state.projectTracks.authored.mutedMask & 0x0002U) == 0U);
     sequencer.clipWorkspace.focus(1U, 0U);
-    h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(sequencer.clipWorkspace.patternVisible());
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(!sequencer.patternEditor.active.get());
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(sequencer.clipWorkspace.patternVisible());
 
     // Pattern is the only deliberate Drum exception: the bottom pair pages
@@ -9839,7 +9836,7 @@ void test_drum_advanced_creation_oom_restores_mapping_and_graph() {
 }  // namespace
 
 int main() {
-    test_clip_launcher_gestures_are_structural_and_region_editor_is_reused();
+    test_clip_launcher_gestures_separate_selection_properties_and_pattern();
     test_clip_launcher_nav_turn_moves_horizontally_without_launching();
     test_clip_launcher_left_center_arms_quick_property_for_opt();
     test_clip_launcher_direct_pattern_and_short_create_actions();
