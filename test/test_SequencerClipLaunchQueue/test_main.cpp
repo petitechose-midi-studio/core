@@ -170,6 +170,7 @@ void test_scene_plan_keeps_empty_tracks_and_supports_cancel_replace_stop() {
     queue.reset(clips, 0x0003U);
     queue.updateTransportPosition(1U, true);
     assert(queue.requestScene(1U, clips, 0x0003U, true));
+    assert(queue.telemetry(0U).queuedRemainingQ8 == 253U);
     auto publication = queue.captureRuntimePublication(clips, true);
     assert(publication.queuedMask == 0x0003U);
     assert(publication.actions[0U] == seq::SequencerClipLaunchAction::CLIP);
@@ -253,6 +254,11 @@ void test_clip_and_scene_follow_actions_obey_priority() {
     assert(queue.requestScene(1U, clips, 0x0001U, false));
     applyQueued(queue, clips, 0x0001U, 0U);
     assert(queue.sceneTelemetry().activeScene == 1U);
+    queue.updateTransportPosition(0U, true);
+    assert(queue.sceneTelemetry().activeRemainingQ8 == 255U);
+
+    queue.updateTransportPosition(kBar / 2U, true);
+    assert(queue.sceneTelemetry().activeRemainingQ8 == 128U);
 
     // Both deadlines expire together. Scene follow outranks Clip follow.
     queue.updateTransportPosition(kBar, true);
@@ -264,6 +270,7 @@ void test_clip_and_scene_follow_actions_obey_priority() {
     assert(telemetry.origin == seq::SequencerClipLaunchOrigin::SCENE_FOLLOW);
     assert(telemetry.queuedSlot == 2U);
     assert(queue.sceneTelemetry().queuedScene == 2U);
+    assert(queue.realtimeView(0U).dueTick == kBar);
 
     // Any newer manual launch then supersedes the automatic Scene follow.
     assert(queue.request({0U, 3U}, clips, true));
@@ -279,21 +286,22 @@ void test_active_phase_and_live_behavior_follow_the_running_clip() {
     seq::SequencerClipGridState clips;
     clips.reset(0x0001U);
     install(clips, 1U);
-
-    seq::SequencerClipLaunchQueue queue;
-    queue.reset(clips, 0x0001U);
-    queue.updateTransportPosition(kBar / 2U, true);
-    assert(queue.telemetry(0U).activePhaseQ8 == 128U);
-    queue.updateTransportPosition(kBar, true);
-    assert(queue.telemetry(0U).activePhaseQ8 == 0U);
-
     const seq::SequencerLauncherBehavior behavior{
         .length = 1U,
         .thenTarget = 1U,
         .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
     };
     assert(clips.setClipBehavior({0U, 0U}, behavior));
-    queue.refreshBehavior({0U, 0U}, behavior);
+
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 0x0001U);
+    queue.updateTransportPosition(kBar / 2U, true);
+    assert(queue.telemetry(0U).activePhaseQ8 == 128U);
+    assert(queue.telemetry(0U).activeRemainingQ8 == 128U);
+    queue.updateTransportPosition(kBar, true);
+    assert(queue.telemetry(0U).activePhaseQ8 == 0U);
+    assert(queue.telemetry(0U).activeRemainingQ8 == 0U);
+
     queue.processFollowActions(clips, 0x0001U, true);
     const auto telemetry = queue.telemetry(0U);
     assert(telemetry.status == seq::SequencerClipLaunchStatus::QUEUED);

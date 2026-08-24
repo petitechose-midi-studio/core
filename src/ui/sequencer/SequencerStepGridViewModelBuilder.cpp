@@ -75,10 +75,20 @@ FLASHMEM grid::StepGridFrameState buildSequencerStepGridProps(
         return frame;
     }
 
+    bool runtimeProjectionActive = true;
+    if (source.sequencer.clipWorkspace.patternVisible()) {
+        const uint8_t track = source.sequencer.clipWorkspace.returnTrack;
+        const auto runtime = source.clipLaunches.telemetry(track);
+        runtimeProjectionActive =
+            !runtime.stopped &&
+            runtime.activeSlot == source.sequencer.clipWorkspace.returnSlot;
+    }
+
     auto frame = grid::buildStepGridFrameState(
         source.sequencer,
         source.tracks.projectScaleSettings(),
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP
+        source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP,
+        runtimeProjectionActive
     );
     frame.accentColor = standalone::theme::color::trackColor(
         source.sharedTrackActive.get()

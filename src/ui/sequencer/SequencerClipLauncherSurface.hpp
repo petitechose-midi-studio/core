@@ -37,10 +37,15 @@ public:
     lv_obj_t* getElement() const override { return root_; }
 
 private:
-    static constexpr uint8_t PREVIEW_BINS = 8U;
     struct ClipPreview {
-        std::array<uint8_t, PREVIEW_BINS> density{};
-        uint8_t peak = 0U;
+        static constexpr uint8_t COLUMNS = 32U;
+        static constexpr uint8_t ROWS = 8U;
+        static constexpr uint8_t INVALID_COLUMN = 0xFFU;
+
+        std::array<uint8_t, COLUMNS * ROWS> velocity{};
+        std::array<uint32_t, ROWS> onsetMask{};
+        uint8_t loopColumn = INVALID_COLUMN;
+        bool content = false;
     };
 
     static void onDraw(lv_event_t* event);

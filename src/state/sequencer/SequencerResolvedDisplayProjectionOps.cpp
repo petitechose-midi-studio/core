@@ -444,7 +444,7 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
     if (!step.inPattern) return step;
 
     const int16_t playhead = sequencer.playheadStep.get();
-    step.playheadVisible =
+    step.playheadVisible = context.runtimeProjectionActive &&
         (playhead >= 0) &&
         (context.childContext
              ? (context.contentPlayback.visible && absoluteStep == context.contentPlayback.step)
@@ -533,11 +533,12 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
 
     oc::note::sequencer::StepSequencerResolvedVariation expandedRuntimeVariation{};
     step.runtimeNodeId = childSummaryTouched ? childSummary.nodeId : projection.nodeId;
-    bool hasExpandedRuntimeVariation = expandedTelemetryVariationForNode(
-        sequencer,
-        step.runtimeNodeId,
-        expandedRuntimeVariation
-    );
+    bool hasExpandedRuntimeVariation = context.runtimeProjectionActive &&
+        expandedTelemetryVariationForNode(
+            sequencer,
+            step.runtimeNodeId,
+            expandedRuntimeVariation
+        );
     if (!hasExpandedRuntimeVariation && step.playheadVisible) {
         hasExpandedRuntimeVariation = expandedTelemetryVariationAtCurrentOffset(
             sequencer,
@@ -564,6 +565,7 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
 
     const auto& telemetry = sequencer.cycleVariationTelemetry;
     const bool hasRuntimeVariation =
+        context.runtimeProjectionActive &&
         !context.childContext &&
         step.enabled &&
         telemetry.validMask.test(absoluteStep) &&

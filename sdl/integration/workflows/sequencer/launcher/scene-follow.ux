@@ -1,15 +1,14 @@
 # UX workflow: authored Scene Follow action at runtime.
-# Purpose: proves Scene 2 remains active for its authored two bars, then queues
-# Scene 3 on the next bar with outgoing, NEXT/countdown and final apply states.
+# Purpose: proves Scene 2 remains active for exactly its authored two bars,
+# exposes a visual countdown during the final bar, then applies Scene 3 on the
+# same boundary without adding a third bar.
 # Expect: capture_changed:scene_2_queued=scene_2_ready
 # Expect: capture_changed:scene_2_active=scene_2_queued
-# Expect: capture_changed:follow_queued=scene_2_active
-# Expect: capture_changed:follow_countdown=follow_queued
-# Expect: capture_changed:scene_3_followed=follow_countdown
+# Expect: capture_changed:final_bar_countdown=scene_2_active
+# Expect: capture_changed:scene_3_followed=final_bar_countdown
 # Expect: semantic:scene_2_queued:operation_origin=manual_scene, semantic:scene_2_queued:operation_status=queued, semantic:scene_2_queued:queued_slot=1
 # Expect: semantic:scene_2_active:operation_origin=manual_scene, semantic:scene_2_active:operation_status=applied, semantic:scene_2_active:active_slot=1
-# Expect: semantic:follow_queued:operation_origin=scene_follow, semantic:follow_queued:operation_status=queued, semantic:follow_queued:active_slot=1, semantic:follow_queued:queued_slot=2, semantic:follow_queued:beats_remaining=4
-# Expect: semantic:follow_countdown:operation_origin=scene_follow, semantic:follow_countdown:queued_slot=2, semantic:follow_countdown:beats_remaining=2
+# Expect: semantic:final_bar_countdown:operation_origin=manual_scene, semantic:final_bar_countdown:operation_status=applied, semantic:final_bar_countdown:active_slot=1
 # Expect: semantic:scene_3_followed:operation_origin=scene_follow, semantic:scene_3_followed:operation_status=applied, semantic:scene_3_followed:active_slot=2
 
 0 scenario clip-launcher-v3
@@ -24,9 +23,8 @@
 # The initial Scene starts on the next global bar.
 2680 capture screen scene_2_active
 
-# Its authored two-bar duration expires later; the follow remains quantized and
-# exposes the same explicit preview as a manual Scene request.
-6740 capture screen follow_queued
-7900 capture screen follow_countdown
-8740 capture screen scene_3_followed
-8920 tap BOTTOM_CENTER 60
+# The first bar is visually calm. The final bar exposes the compact countdown,
+# and Scene 3 is active immediately after the authored two-bar boundary.
+4700 capture screen final_bar_countdown
+6700 capture screen scene_3_followed
+6880 tap BOTTOM_CENTER 60

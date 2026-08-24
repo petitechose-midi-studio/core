@@ -12,11 +12,13 @@ namespace core::ui::sequencer::grid {
 StepGridFrameState buildStepGridFrameState(
     const core::state::sequencer::SequencerState&,
     oc::note::sequencer::StepSequencerScaleSettings,
-    bool
+    bool,
+    bool runtimeProjectionActive
 ) {
     StepGridFrameState frame{};
     frame.tiles[0].inPattern = true;
     frame.tiles[0].enabled = true;
+    frame.tiles[0].playheadVisible = runtimeProjectionActive;
     return frame;
 }
 
@@ -158,12 +160,29 @@ void testPitchFeedbackProjectsTonalValueWithoutChangingContext() {
            ));
 }
 
+void testPatternPlayheadBelongsOnlyToItsActiveParentClip() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    state.sequencer.playheadStep.set(0);
+
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
+    auto frame = core::ui::sequencer::buildSequencerStepGridProps(
+        sourceFor(state)
+    );
+    assert(frame.tiles[0].playheadVisible);
+
+    state.sequencer.clipWorkspace.enterPattern(0U, 1U);
+    frame = core::ui::sequencer::buildSequencerStepGridProps(sourceFor(state));
+    assert(!frame.tiles[0].playheadVisible);
+}
+
 }  // namespace
 
 int main() {
     testEmptyTrackPreviewProjectsNoMusicalState();
     testDrumTrackAndPatternProjectTheSameMusicalHeader();
     testPitchFeedbackProjectsTonalValueWithoutChangingContext();
+    testPatternPlayheadBelongsOnlyToItsActiveParentClip();
     std::cout << "Sequencer Track projection tests passed\n";
     return 0;
 }

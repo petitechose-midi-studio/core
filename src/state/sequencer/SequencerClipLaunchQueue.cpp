@@ -78,7 +78,7 @@ bool SequencerClipLaunchQueue::due_(uint32_t now, uint32_t deadline) noexcept {
     return static_cast<int32_t>(now - deadline) >= 0;
 }
 
-uint32_t SequencerClipLaunchQueue::nextBoundaryTick_(
+FLASHMEM uint32_t SequencerClipLaunchQueue::nextBoundaryTick_(
     SequencerClipLaunchQuantization quantization,
     bool transportPlaying
 ) const noexcept {
@@ -89,15 +89,38 @@ uint32_t SequencerClipLaunchQueue::nextBoundaryTick_(
     const uint32_t unit = quantization == SequencerClipLaunchQuantization::BEAT
         ? kTicksPerBeat
         : kTicksPerBar;
-    return static_cast<uint32_t>((transport_tick_ / unit + 1U) * unit);
+    const uint32_t remainder = transport_tick_ % unit;
+    return remainder == 0U
+        ? transport_tick_
+        : transport_tick_ + (unit - remainder);
 }
 
-uint8_t SequencerClipLaunchQueue::beatsRemaining_(uint32_t dueTick) const noexcept {
+FLASHMEM uint8_t SequencerClipLaunchQueue::beatsRemaining_(
+    uint32_t dueTick
+) const noexcept {
     if (!transport_playing_ || due_(transport_tick_, dueTick)) return 0U;
     const uint32_t ticks = dueTick - transport_tick_;
     return static_cast<uint8_t>(std::min<uint32_t>(
         255U,
         (ticks + kTicksPerBeat - 1U) / kTicksPerBeat
+    ));
+}
+
+FLASHMEM uint8_t SequencerClipLaunchQueue::queuedRemainingQ8_(
+    uint32_t dueTick,
+    SequencerClipLaunchQuantization quantization
+) const noexcept {
+    if (!transport_playing_ || due_(transport_tick_, dueTick) ||
+        quantization == SequencerClipLaunchQuantization::IMMEDIATE) {
+        return 0U;
+    }
+    const uint32_t span = quantization == SequencerClipLaunchQuantization::BEAT
+        ? kTicksPerBeat
+        : kTicksPerBar;
+    const uint32_t remaining = dueTick - transport_tick_;
+    return static_cast<uint8_t>(std::min<uint32_t>(
+        255U,
+        (remaining * 255U + span - 1U) / span
     ));
 }
 
@@ -969,7 +992,7 @@ bool SequencerClipLaunchQueue::stopped(uint8_t track) const noexcept {
     return track >= TRACK_COUNT || entries_[track].stopped;
 }
 
-SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
+FLASHMEM SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
     uint8_t track
 ) const noexcept {
     if (track >= TRACK_COUNT) return {};
@@ -984,6 +1007,22 @@ SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
             ) << 8U
         ) / loopTicks)
         : 0U;
+    uint8_t activeRemainingQ8 = 0U;
+    if (transport_playing_ && !entry.stopped &&
+        entry.activeBehavior.enabled() && loopTicks != 0U) {
+        const uint32_t duration =
+            static_cast<uint32_t>(entry.activeBehavior.length) * loopTicks;
+        const uint32_t elapsed = transport_tick_ - entry.activeStartedTick;
+        if (duration != 0U && elapsed < duration) {
+            const uint32_t remaining = duration - elapsed;
+            if (remaining <= loopTicks) {
+                activeRemainingQ8 = static_cast<uint8_t>(std::min<uint32_t>(
+                    255U,
+                    (remaining * 255U + loopTicks - 1U) / loopTicks
+                ));
+            }
+        }
+    }
     if (rollback_track_mask_ != 0U) {
         const auto& request = rollback_plan_.requests[track];
         return {
@@ -1000,7 +1039,11 @@ SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
             .beatsRemaining = static_cast<uint8_t>(request.queued()
                 ? beatsRemaining_(request.dueTick)
                 : 0U),
+            .queuedRemainingQ8 = static_cast<uint8_t>(request.queued()
+                ? queuedRemainingQ8_(request.dueTick, request.quantization)
+                : 0U),
             .activePhaseQ8 = activePhaseQ8,
+            .activeRemainingQ8 = activeRemainingQ8,
             .generation = request.generation,
             .stopped = entry.stopped,
         };
@@ -1017,14 +1060,20 @@ SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
         .beatsRemaining = static_cast<uint8_t>(pending_(entry.phase)
             ? beatsRemaining_(entry.dueTick)
             : 0U),
+        .queuedRemainingQ8 = static_cast<uint8_t>(pending_(entry.phase)
+            ? queuedRemainingQ8_(entry.dueTick, entry.quantization)
+            : 0U),
         .activePhaseQ8 = activePhaseQ8,
+        .activeRemainingQ8 = activeRemainingQ8,
         .generation = entry.generation,
         .stopped = entry.stopped,
     };
 }
 
-SequencerSceneLaunchTelemetry SequencerClipLaunchQueue::sceneTelemetry() const noexcept {
+FLASHMEM SequencerSceneLaunchTelemetry
+SequencerClipLaunchQueue::sceneTelemetry() const noexcept {
     uint8_t beats = 0U;
+    uint8_t queuedRemainingQ8 = 0U;
     if (queued_scene_ != SequencerClipGridState::INVALID_SLOT) {
         for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
             const uint32_t group = rollback_track_mask_ != 0U
@@ -1034,6 +1083,24 @@ SequencerSceneLaunchTelemetry SequencerClipLaunchQueue::sceneTelemetry() const n
             const auto telemetryForTrack = telemetry(track);
             if (telemetryForTrack.status == SequencerClipLaunchStatus::QUEUED) {
                 beats = std::max<uint8_t>(beats, telemetryForTrack.beatsRemaining);
+                queuedRemainingQ8 = std::max<uint8_t>(
+                    queuedRemainingQ8,
+                    telemetryForTrack.queuedRemainingQ8
+                );
+            }
+        }
+    }
+    uint8_t activeRemainingQ8 = 0U;
+    if (transport_playing_ && active_scene_behavior_.enabled()) {
+        const uint32_t duration =
+            static_cast<uint32_t>(active_scene_behavior_.length) * kTicksPerBar;
+        const uint32_t elapsed = transport_tick_ - active_scene_started_tick_;
+        if (duration != 0U && elapsed < duration) {
+            const uint32_t remaining = duration - elapsed;
+            if (remaining <= kTicksPerBar) {
+                activeRemainingQ8 = static_cast<uint8_t>(
+                    (remaining * 255U + kTicksPerBar - 1U) / kTicksPerBar
+                );
             }
         }
     }
@@ -1042,6 +1109,8 @@ SequencerSceneLaunchTelemetry SequencerClipLaunchQueue::sceneTelemetry() const n
         .activeScene = active_scene_,
         .queuedScene = queued_scene_,
         .beatsRemaining = beats,
+        .queuedRemainingQ8 = queuedRemainingQ8,
+        .activeRemainingQ8 = activeRemainingQ8,
         .generation = queued_scene_ != SequencerClipGridState::INVALID_SLOT
             ? queued_scene_generation_
             : active_scene_generation_,

@@ -100,7 +100,9 @@ struct SequencerClipLaunchTelemetry {
     uint8_t activeSlot = SequencerClipGridState::INVALID_SLOT;
     uint8_t queuedSlot = SequencerClipGridState::INVALID_SLOT;
     uint8_t beatsRemaining = 0U;
+    uint8_t queuedRemainingQ8 = 0U;
     uint8_t activePhaseQ8 = 0U;
+    uint8_t activeRemainingQ8 = 0U;
     uint32_t generation = 0U;
     bool stopped = false;
 };
@@ -110,6 +112,8 @@ struct SequencerSceneLaunchTelemetry {
     uint8_t activeScene = SequencerClipGridState::INVALID_SLOT;
     uint8_t queuedScene = SequencerClipGridState::INVALID_SLOT;
     uint8_t beatsRemaining = 0U;
+    uint8_t queuedRemainingQ8 = 0U;
+    uint8_t activeRemainingQ8 = 0U;
     uint32_t generation = 0U;
     bool replaced = false;
 };
@@ -288,6 +292,10 @@ private:
         bool transportPlaying
     ) const noexcept;
     uint8_t beatsRemaining_(uint32_t dueTick) const noexcept;
+    uint8_t queuedRemainingQ8_(
+        uint32_t dueTick,
+        SequencerClipLaunchQuantization quantization
+    ) const noexcept;
     void resetEntry_(
         Entry& entry,
         uint8_t track,

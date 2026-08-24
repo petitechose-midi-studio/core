@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <limits>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::ui::sequencer {
@@ -153,13 +155,34 @@ FLASHMEM void drawQueuedCorners(
     }
 }
 
-FLASHMEM const char* areaLabel(seq::ClipWorkspaceFocus focus) {
-    switch (focus) {
-        case seq::ClipWorkspaceFocus::SCENE: return "Scene";
-        case seq::ClipWorkspaceFocus::TRACK_HEADER: return "Track";
-        case seq::ClipWorkspaceFocus::CLIP:
-        default: return "Clip";
-    }
+FLASHMEM void drawCountdownRing(
+    lv_layer_t* layer,
+    lv_coord_t centerX,
+    lv_coord_t centerY,
+    lv_coord_t radius,
+    uint8_t remainingQ8,
+    uint32_t color
+) {
+    lv_draw_arc_dsc_t arc;
+    lv_draw_arc_dsc_init(&arc);
+    arc.base.layer = layer;
+    arc.center = {centerX, centerY};
+    arc.radius = radius;
+    arc.width = 2;
+    arc.rounded = 0;
+    arc.start_angle = 270;
+    arc.end_angle = 629;
+    arc.color = lv_color_hex(theme::color::BORDER_SUBTLE);
+    arc.opa = LV_OPA_50;
+    lv_draw_arc(layer, &arc);
+
+    if (remainingQ8 == 0U) return;
+    arc.end_angle = static_cast<int32_t>(
+        270U + (static_cast<uint32_t>(remainingQ8) * 359U) / 255U
+    );
+    arc.color = lv_color_hex(color);
+    arc.opa = LV_OPA_COVER;
+    lv_draw_arc(layer, &arc);
 }
 
 FLASHMEM const char* quantizationLabel(uint8_t value) {
@@ -175,56 +198,213 @@ FLASHMEM bool areasOverlap(const lv_area_t& lhs, const lv_area_t& rhs) {
         lhs.y1 <= rhs.y2 && lhs.y2 >= rhs.y1;
 }
 
-template <typename Mask, std::size_t BinCount>
-FLASHMEM void projectMask(
-    const Mask& mask,
-    uint8_t length,
-    std::array<uint8_t, BinCount>& density
+struct PreviewWindow {
+    uint32_t start = 0U;
+    uint32_t loop = 0U;
+    uint32_t end = 0U;
+
+    [[nodiscard]] bool valid() const noexcept { return start < end; }
+};
+
+FLASHMEM PreviewWindow previewWindow(
+    uint16_t playStart,
+    uint16_t loopStart,
+    uint16_t loopEnd
 ) {
-    static_assert(BinCount > 0U);
-    length = std::max<uint8_t>(length, 1U);
+    if (playStart > loopStart || loopStart >= loopEnd) return {};
+    return {playStart, loopStart, loopEnd};
+}
+
+template <typename Preview>
+FLASHMEM void setPreviewSpan(
+    Preview& preview,
+    uint8_t row,
+    uint32_t start,
+    uint32_t end,
+    uint8_t velocity,
+    const PreviewWindow& window
+) {
+    if (!window.valid() || row >= Preview::ROWS || velocity == 0U ||
+        end <= window.start || start >= window.end) {
+        return;
+    }
+    start = std::max(start, window.start);
+    end = std::min(end, window.end);
+    if (start >= end) return;
+
+    const uint32_t duration = window.end - window.start;
+    const uint8_t first = static_cast<uint8_t>(std::min<uint32_t>(
+        Preview::COLUMNS - 1U,
+        ((start - window.start) * Preview::COLUMNS) / duration
+    ));
+    const uint8_t lastExclusive = static_cast<uint8_t>(std::min<uint32_t>(
+        Preview::COLUMNS,
+        ((end - window.start) * Preview::COLUMNS + duration - 1U) / duration
+    ));
+    const uint8_t last = std::max<uint8_t>(
+        static_cast<uint8_t>(first + 1U),
+        lastExclusive
+    );
+    for (uint8_t column = first; column < last; ++column) {
+        const std::size_t index =
+            static_cast<std::size_t>(row) * Preview::COLUMNS + column;
+        auto& pixel = preview.velocity[index];
+        pixel = std::max(pixel, velocity);
+    }
+    preview.onsetMask[row] |= static_cast<uint32_t>(1UL << first);
+    preview.content = true;
+}
+
+template <typename Preview>
+FLASHMEM void setLoopMarker(
+    Preview& preview,
+    const PreviewWindow& window
+) {
+    if (!window.valid() || window.loop <= window.start ||
+        window.loop >= window.end) {
+        return;
+    }
+    preview.loopColumn = static_cast<uint8_t>(std::min<uint32_t>(
+        Preview::COLUMNS - 1U,
+        ((window.loop - window.start) * Preview::COLUMNS) /
+            (window.end - window.start)
+    ));
+}
+
+template <typename Preview>
+FLASHMEM uint8_t previewPitchRow(
+    uint8_t note,
+    uint8_t minimum,
+    uint8_t maximum
+) {
+    if (minimum >= maximum) return 3U;
+    const uint16_t range = static_cast<uint16_t>(maximum - minimum);
+    const uint8_t ascending = static_cast<uint8_t>(std::min<uint16_t>(
+        Preview::ROWS - 1U,
+        (static_cast<uint16_t>(note - minimum) * (Preview::ROWS - 1U) +
+         range / 2U) / range
+    ));
+    return static_cast<uint8_t>(Preview::ROWS - 1U - ascending);
+}
+
+template <typename Pattern, typename Clip, typename Preview>
+FLASHMEM void projectMelodicPreview(
+    const Pattern& pattern,
+    const Clip& clip,
+    uint8_t length,
+    uint8_t stepsPerBeat,
+    const oc::note::sequencer::StepBitMask128& enabledMask,
+    Preview& preview
+) {
+    const uint16_t ticksPerStep = seq::sequencerTicksPerStep(stepsPerBeat);
+    const auto window = previewWindow(
+        clip.playStartTick,
+        clip.loopStartTick,
+        clip.loopEndTick
+    );
+    if (ticksPerStep == 0U || !window.valid()) return;
+    setLoopMarker(preview, window);
+
+    uint8_t minimum = std::numeric_limits<uint8_t>::max();
+    uint8_t maximum = 0U;
     for (uint8_t step = 0U; step < length; ++step) {
-        if (!mask.test(step)) continue;
-        const uint8_t bin = std::min<uint8_t>(
-            static_cast<uint8_t>((static_cast<uint16_t>(step) *
-                                  density.size()) / length),
-            static_cast<uint8_t>(density.size() - 1U)
+        const uint32_t tick = static_cast<uint32_t>(step) * ticksPerStep;
+        if (!enabledMask.test(step) || tick < window.start ||
+            tick >= window.end) {
+            continue;
+        }
+        minimum = std::min(minimum, pattern.note[step]);
+        maximum = std::max(maximum, pattern.note[step]);
+    }
+    if (minimum == std::numeric_limits<uint8_t>::max()) return;
+
+    for (uint8_t step = 0U; step < length; ++step) {
+        if (!enabledMask.test(step) || pattern.gate[step] == 0U) continue;
+        const int32_t base = static_cast<int32_t>(step) * ticksPerStep;
+        const int32_t nudged = base +
+            (static_cast<int32_t>(pattern.nudge[step]) * ticksPerStep) / 100;
+        if (nudged < 0) continue;
+        const uint32_t start = static_cast<uint32_t>(nudged);
+        const uint32_t span = std::max<uint32_t>(
+            1U,
+            (static_cast<uint32_t>(pattern.gate[step]) * ticksPerStep) / 100U
         );
-        if (density[bin] != UINT8_MAX) ++density[bin];
+        setPreviewSpan(
+            preview,
+            previewPitchRow<Preview>(pattern.note[step], minimum, maximum),
+            start,
+            start + span,
+            std::max<uint8_t>(1U, pattern.velocity[step]),
+            window
+        );
     }
 }
 
-template <std::size_t BinCount>
-FLASHMEM void projectPattern(
-    const seq::SequencerPatternState& pattern,
-    std::array<uint8_t, BinCount>& density
-) {
-    projectMask(pattern.enabledMask.get(), pattern.length.get(), density);
-}
-
-template <std::size_t BinCount>
-FLASHMEM void projectPattern(
-    const seq::SequencerPatternSnapshot& pattern,
-    std::array<uint8_t, BinCount>& density
-) {
-    projectMask(pattern.enabledMask, pattern.length, density);
-}
-
-template <std::size_t BinCount>
-FLASHMEM void projectDrum(
+template <typename Preview>
+FLASHMEM void projectDrumPreview(
     const seq::DrumTrackState& drum,
-    std::array<uint8_t, BinCount>& density
+    uint16_t playStartTick,
+    uint16_t loopStartTick,
+    uint16_t loopEndTick,
+    Preview& preview
 ) {
+    const auto window = previewWindow(
+        playStartTick,
+        loopStartTick,
+        loopEndTick
+    );
+    if (!window.valid()) return;
+    setLoopMarker(preview, window);
+
     const uint8_t laneCount = std::min<uint8_t>(
         drum.kit.laneCount,
         seq::DRUM_MAX_LANES
     );
     for (uint8_t lane = 0U; lane < laneCount; ++lane) {
-        projectMask(
-            drum.pattern.lanes[lane].enabledMask,
-            drum.pattern.effectiveLength(lane),
-            density
+        const uint8_t length = drum.pattern.effectiveLength(lane);
+        const uint16_t ticksPerStep = seq::sequencerTicksPerStep(
+            drum.pattern.effectiveStepsPerBeat(lane)
         );
+        const uint32_t cycle = static_cast<uint32_t>(length) * ticksPerStep;
+        if (length == 0U || ticksPerStep == 0U || cycle == 0U) continue;
+        const auto& lanePattern = drum.pattern.lanes[lane];
+        for (uint8_t step = 0U; step < length; ++step) {
+            if (!lanePattern.enabledMask.test(step) ||
+                lanePattern.gate[step] == 0U) {
+                continue;
+            }
+            const uint32_t base = static_cast<uint32_t>(step) * ticksPerStep;
+            uint32_t occurrence = base;
+            if (occurrence < window.start) {
+                const uint32_t skipped =
+                    (window.start - occurrence + cycle - 1U) / cycle;
+                occurrence += skipped * cycle;
+            }
+            const uint32_t span = std::max<uint32_t>(
+                1U,
+                (static_cast<uint32_t>(lanePattern.gate[step]) *
+                 ticksPerStep) / 100U
+            );
+            for (; occurrence < window.end; occurrence += cycle) {
+                const int32_t nudged = static_cast<int32_t>(occurrence) +
+                    (static_cast<int32_t>(lanePattern.nudge[step]) *
+                     ticksPerStep) / 100;
+                if (nudged >= 0) {
+                    const uint32_t start = static_cast<uint32_t>(nudged);
+                    setPreviewSpan(
+                        preview,
+                        lane,
+                        start,
+                        start + span,
+                        std::max<uint8_t>(1U, lanePattern.velocity[step]),
+                        window
+                    );
+                }
+                if (std::numeric_limits<uint32_t>::max() - occurrence < cycle) {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -290,31 +470,56 @@ FLASHMEM void SequencerClipLauncherSurface::rebuildPreviews() {
                 column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
             ];
             if (props_.clips->isResident(address)) {
+                const auto& clip = seq::canonicalTrackClip(
+                    *props_.tracks,
+                    *props_.sequencer,
+                    track
+                );
                 if (props_.tracks->isDrumTrack(track)) {
-                    projectDrum(props_.tracks->drumTrack(track), preview.density);
+                    projectDrumPreview(
+                        props_.tracks->drumTrack(track),
+                        clip.playStartTick,
+                        clip.loopStartTick,
+                        clip.loopEndTick,
+                        preview
+                    );
                 } else {
-                    projectPattern(
-                        seq::canonicalTrackPattern(
-                            *props_.tracks,
-                            *props_.sequencer,
-                            track
-                        ),
-                        preview.density
+                    const auto& pattern = seq::canonicalTrackPattern(
+                        *props_.tracks,
+                        *props_.sequencer,
+                        track
+                    );
+                    projectMelodicPreview(
+                        pattern,
+                        clip,
+                        pattern.length.get(),
+                        pattern.stepsPerBeat.get(),
+                        pattern.enabledMask.get(),
+                        preview
                     );
                 }
             } else if (const auto* document =
                            props_.clips->inactiveDocument(address)) {
                 if (document->trackKind == seq::SequencerTrackKind::DRUM &&
                     document->drum != nullptr) {
-                    projectDrum(*document->drum, preview.density);
+                    projectDrumPreview(
+                        *document->drum,
+                        document->clip.playStartTick,
+                        document->clip.loopStartTick,
+                        document->clip.loopEndTick,
+                        preview
+                    );
                 } else {
-                    projectPattern(document->pattern, preview.density);
+                    projectMelodicPreview(
+                        document->pattern,
+                        document->clip,
+                        document->pattern.length,
+                        document->pattern.stepsPerBeat,
+                        document->pattern.enabledMask,
+                        preview
+                    );
                 }
             }
-            preview.peak = *std::max_element(
-                preview.density.begin(),
-                preview.density.end()
-            );
         }
     }
 }
@@ -330,6 +535,35 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
     lv_obj_get_content_coords(root_, &surface);
     const auto layout = launcherLayout(surface);
     const auto& ui = *props_.ui;
+    const auto scene = props_.launches->sceneTelemetry();
+    const uint8_t sceneSlot = scene.queuedScene <
+            seq::SequencerClipGridState::SLOT_COUNT
+        ? scene.queuedScene
+        : scene.activeScene;
+    if (sceneSlot >= ui.firstVisibleSlot &&
+        sceneSlot < ui.firstVisibleSlot +
+            seq::ClipWorkspaceUiState::VISIBLE_ROWS) {
+        const uint8_t row = static_cast<uint8_t>(
+            sceneSlot - ui.firstVisibleSlot
+        );
+        const lv_coord_t y = static_cast<lv_coord_t>(
+            surface.y1 + LauncherLayout::HEADER_HEIGHT +
+            LauncherLayout::GAP + row * layout.rowHeight
+        );
+        const lv_area_t rail{
+            .x1 = surface.x1,
+            .y1 = y,
+            .x2 = static_cast<lv_coord_t>(
+                surface.x1 + LauncherLayout::SCENE_RAIL_WIDTH - 1
+            ),
+            .y2 = static_cast<lv_coord_t>(
+                y + layout.rowHeight - LauncherLayout::GAP - 1
+            ),
+        };
+        // The full 42 px cell is cheap to redraw and cleanly replaces the Play
+        // glyph with the transient countdown ring.
+        lv_obj_invalidate_area(root_, &rail);
+    }
     for (uint8_t column = 0U;
          column < seq::ClipWorkspaceUiState::VISIBLE_TRACKS;
          ++column) {
@@ -337,7 +571,63 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
             ui.firstVisibleTrack + column
         );
         if (track >= seq::ClipWorkspaceUiState::TRACK_COUNT) continue;
+        const lv_coord_t x = static_cast<lv_coord_t>(
+            layout.gridX + column *
+                (layout.columnWidth + LauncherLayout::GAP)
+        );
         const auto telemetry = props_.launches->telemetry(track);
+        if (telemetry.status == seq::SequencerClipLaunchStatus::QUEUED &&
+            telemetry.action == seq::SequencerClipLaunchAction::STOP &&
+            telemetry.queuedSlot ==
+                seq::SequencerClipGridState::INVALID_SLOT) {
+            const lv_area_t stopRing{
+                .x1 = static_cast<lv_coord_t>(x + layout.columnWidth - 20),
+                .y1 = surface.y1,
+                .x2 = static_cast<lv_coord_t>(x + layout.columnWidth - 1),
+                .y2 = static_cast<lv_coord_t>(
+                    surface.y1 + LauncherLayout::HEADER_HEIGHT - 1
+                ),
+            };
+            lv_obj_invalidate_area(root_, &stopRing);
+        }
+        if (telemetry.status == seq::SequencerClipLaunchStatus::QUEUED &&
+            telemetry.queuedSlot >= ui.firstVisibleSlot &&
+            telemetry.queuedSlot < ui.firstVisibleSlot +
+                seq::ClipWorkspaceUiState::VISIBLE_ROWS) {
+            const uint8_t queuedRow = static_cast<uint8_t>(
+                telemetry.queuedSlot - ui.firstVisibleSlot
+            );
+            const lv_coord_t queuedY = static_cast<lv_coord_t>(
+                surface.y1 + LauncherLayout::HEADER_HEIGHT +
+                LauncherLayout::GAP + queuedRow * layout.rowHeight
+            );
+            const lv_area_t queuedRing{
+                .x1 = static_cast<lv_coord_t>(x + layout.columnWidth - 19),
+                .y1 = queuedY,
+                .x2 = static_cast<lv_coord_t>(x + layout.columnWidth - 1),
+                .y2 = static_cast<lv_coord_t>(queuedY + 18),
+            };
+            lv_obj_invalidate_area(root_, &queuedRing);
+        }
+        if (telemetry.activeRemainingQ8 != 0U &&
+            telemetry.activeSlot >= ui.firstVisibleSlot &&
+            telemetry.activeSlot < ui.firstVisibleSlot +
+                seq::ClipWorkspaceUiState::VISIBLE_ROWS) {
+            const uint8_t activeRow = static_cast<uint8_t>(
+                telemetry.activeSlot - ui.firstVisibleSlot
+            );
+            const lv_coord_t activeY = static_cast<lv_coord_t>(
+                surface.y1 + LauncherLayout::HEADER_HEIGHT +
+                LauncherLayout::GAP + activeRow * layout.rowHeight
+            );
+            const lv_area_t activeRing{
+                .x1 = static_cast<lv_coord_t>(x + layout.columnWidth - 19),
+                .y1 = activeY,
+                .x2 = static_cast<lv_coord_t>(x + layout.columnWidth - 1),
+                .y2 = static_cast<lv_coord_t>(activeY + 18),
+            };
+            lv_obj_invalidate_area(root_, &activeRing);
+        }
         if (telemetry.stopped ||
             telemetry.activeSlot < ui.firstVisibleSlot ||
             telemetry.activeSlot >=
@@ -346,10 +636,6 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
         }
         const uint8_t row = static_cast<uint8_t>(
             telemetry.activeSlot - ui.firstVisibleSlot
-        );
-        const lv_coord_t x = static_cast<lv_coord_t>(
-            layout.gridX + column *
-                (layout.columnWidth + LauncherLayout::GAP)
         );
         const lv_coord_t y = static_cast<lv_coord_t>(
             surface.y1 + LauncherLayout::HEADER_HEIGHT +
@@ -401,7 +687,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         std::array<char, 32> title{};
         if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
             std::snprintf(
-                title.data(), title.size(), "SLOT T%u / S%u",
+                title.data(), title.size(), "SLOT T%u / C%u",
                 static_cast<unsigned>(ui.focusedTrack + 1U),
                 static_cast<unsigned>(ui.focusedSlot + 1U)
             );
@@ -588,13 +874,20 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         1,
         LV_OPA_COVER
     );
+    const char* areaIcon = ui.sceneFocused()
+        ? standalone::icons::VIEW_CLIPS
+        : ui.trackHeaderFocused()
+            ? (props_.tracks->isDrumTrack(ui.focusedTrack)
+                   ? standalone::icons::DRUM_GENERIC
+                   : standalone::icons::NOTE)
+            : standalone::icons::CLIP;
     drawText(
         layer,
         areaHeader,
-        areaLabel(ui.focusArea),
+        areaIcon,
         theme::color::TEXT_PRIMARY,
         LV_OPA_COVER,
-        fonts.meta_label()
+        standalone_fonts.icons_16
     );
 
     for (uint8_t row = 0U;
@@ -630,7 +923,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         drawRect(
             layer,
             rail,
-            playing ? 0x10271F : theme::color::SURFACE_IDLE,
+            theme::color::SURFACE_IDLE,
             visibleScene ? LV_OPA_COVER : LV_OPA_20,
             focused ? theme::color::TEXT_PRIMARY
                     : playing ? theme::color::LIVE_TIME
@@ -638,34 +931,41 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             focused || playing ? 2 : 1,
             visibleScene ? LV_OPA_COVER : LV_OPA_20
         );
-        std::array<char, 8> sceneLabel{};
-        std::snprintf(
-            sceneLabel.data(), sceneLabel.size(), addScene ? "+S%u" : "S%u",
-            static_cast<unsigned>(slot + 1U));
-        drawText(
-            layer,
-            rail,
-            visibleScene ? sceneLabel.data() : "",
-            addScene ? theme::color::TEXT_DISABLED
-                     : playing ? theme::color::LIVE_TIME
-                     : theme::color::TEXT_PRIMARY,
-            LV_OPA_COVER,
-            fonts.meta_label()
-        );
         if (queued) {
             drawQueuedCorners(layer, rail, theme::color::ROUTING);
-            std::array<char, 4> count{};
-            std::snprintf(
-                count.data(), count.size(), "%u",
-                static_cast<unsigned>(sceneTelemetry.beatsRemaining));
+            drawCountdownRing(
+                layer,
+                static_cast<lv_coord_t>((rail.x1 + rail.x2) / 2),
+                static_cast<lv_coord_t>((rail.y1 + rail.y2) / 2),
+                11,
+                sceneTelemetry.queuedRemainingQ8,
+                theme::color::ROUTING
+            );
+        } else if (playing && sceneTelemetry.activeRemainingQ8 != 0U) {
+            drawCountdownRing(
+                layer,
+                static_cast<lv_coord_t>((rail.x1 + rail.x2) / 2),
+                static_cast<lv_coord_t>((rail.y1 + rail.y2) / 2),
+                11,
+                sceneTelemetry.activeRemainingQ8,
+                theme::color::LIVE_TIME
+            );
+        }
+        const bool countdown = queued ||
+            (playing && sceneTelemetry.activeRemainingQ8 != 0U);
+        if (visibleScene && (addScene || !countdown)) {
             drawText(
                 layer,
-                {static_cast<lv_coord_t>(rail.x2 - 12), rail.y1,
-                 rail.x2, static_cast<lv_coord_t>(rail.y1 + 12)},
-                count.data(),
-                theme::color::ROUTING,
-                LV_OPA_COVER,
-                fonts.meta_label()
+                rail,
+                addScene
+                    ? standalone::icons::ACTION_CREATE
+                    : standalone::icons::TRANSPORT_PLAY,
+                addScene ? theme::color::TEXT_DISABLED
+                         : playing ? theme::color::LIVE_TIME
+                         : queued ? theme::color::ROUTING
+                                  : theme::color::TEXT_SECONDARY,
+                addScene ? LV_OPA_60 : LV_OPA_COVER,
+                standalone_fonts.icons_16
             );
         }
     }
@@ -716,13 +1016,6 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             telemetry.action == seq::SequencerClipLaunchAction::STOP &&
             telemetry.queuedSlot ==
                 seq::SequencerClipGridState::INVALID_SLOT;
-        const bool stopStatus = enabled &&
-            (telemetry.stopped || queuedStop);
-        std::array<char, 8> trackLabel{};
-        std::snprintf(
-            trackLabel.data(), trackLabel.size(), addSlot ? "+T%u" : "T%u",
-            static_cast<unsigned>(track + 1U)
-        );
         drawRect(
             layer,
             lv_area_t{
@@ -738,69 +1031,55 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             LV_OPA_TRANSP,
             0
         );
-        drawText(
-            layer,
-            stopStatus
-                ? lv_area_t{static_cast<lv_coord_t>(header.x1 + 4), header.y1,
-                            static_cast<lv_coord_t>(header.x2 - 16), header.y2}
-                : header,
-            trackLabel.data(),
-            enabled ? theme::color::TEXT_PRIMARY
-                    : addSlot ? theme::color::TEXT_SECONDARY
-                              : theme::color::TEXT_DISABLED,
-            LV_OPA_COVER,
-            fonts.compact_selected(),
-            stopStatus ? LV_TEXT_ALIGN_LEFT : LV_TEXT_ALIGN_CENTER
+        const lv_coord_t headerCenterX = static_cast<lv_coord_t>(
+            (header.x1 + header.x2) / 2
         );
-
-        const char* kindIcon = enabled && !stopStatus &&
-                props_.tracks->isDrumTrack(track)
-            ? standalone::icons::DRUM_GENERIC
-            : enabled && !stopStatus ? standalone::icons::NOTE : "";
-        const lv_area_t kindArea{
-            .x1 = static_cast<lv_coord_t>(header.x2 - 17),
-            .y1 = header.y1,
-            .x2 = header.x2,
-            .y2 = header.y2,
-        };
-        drawText(
-            layer,
-            kindArea,
-            kindIcon,
-            trackColor,
-            enabled ? LV_OPA_80 : LV_OPA_TRANSP,
-            standalone_fonts.icons_14
+        const lv_coord_t headerCenterY = static_cast<lv_coord_t>(
+            (header.y1 + header.y2) / 2
         );
-
-        if (enabled && telemetry.stopped) {
+        if (addSlot) {
+            drawText(
+                layer,
+                header,
+                standalone::icons::ACTION_CREATE,
+                theme::color::TEXT_SECONDARY,
+                LV_OPA_60,
+                standalone_fonts.icons_16
+            );
+        } else if (enabled && telemetry.stopped) {
             drawSquare(
                 layer,
-                static_cast<lv_coord_t>(header.x2 - 8),
-                static_cast<lv_coord_t>((header.y1 + header.y2) / 2),
+                headerCenterX,
+                headerCenterY,
                 7,
                 theme::color::DESTRUCTIVE
             );
         } else if (queuedStop) {
-            std::array<char, 4> stopCount{};
-            std::snprintf(
-                stopCount.data(), stopCount.size(), "%u",
-                static_cast<unsigned>(telemetry.beatsRemaining));
             drawSquare(
                 layer,
-                static_cast<lv_coord_t>(header.x2 - 9),
-                static_cast<lv_coord_t>(header.y1 + 8),
+                headerCenterX,
+                headerCenterY,
                 6,
                 theme::color::ROUTING
             );
+            drawCountdownRing(
+                layer,
+                headerCenterX,
+                headerCenterY,
+                8,
+                telemetry.queuedRemainingQ8,
+                theme::color::ROUTING
+            );
+        } else if (enabled) {
             drawText(
                 layer,
-                {static_cast<lv_coord_t>(header.x2 - 25), header.y1,
-                 static_cast<lv_coord_t>(header.x2 - 14), header.y2},
-                stopCount.data(),
-                theme::color::ROUTING,
+                header,
+                props_.tracks->isDrumTrack(track)
+                    ? standalone::icons::DRUM_GENERIC
+                    : standalone::icons::NOTE,
+                trackColor,
                 LV_OPA_COVER,
-                fonts.meta_label(),
-                LV_TEXT_ALIGN_RIGHT
+                standalone_fonts.icons_16
             );
         }
         for (uint8_t row = 0U;
@@ -870,7 +1149,6 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                 );
             }
             if (occupied || stop) {
-                std::array<char, 12> clipLabel{};
                 if (stop) {
                     drawSquare(
                         layer,
@@ -880,74 +1158,121 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                         theme::color::DESTRUCTIVE
                     );
                 } else {
-                    std::snprintf(
-                        clipLabel.data(),
-                        clipLabel.size(),
-                        "Clip %u",
-                        static_cast<unsigned>(slot + 1U)
-                    );
-                }
-                if (!stop) {
                     const auto& preview = previews_[
                         column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
                     ];
-                    drawText(
-                        layer,
-                        lv_area_t{
-                            .x1 = static_cast<lv_coord_t>(cell.x1 + 4),
-                            .y1 = static_cast<lv_coord_t>(cell.y1 + 1),
-                            .x2 = static_cast<lv_coord_t>(
-                                cell.x2 - (queued ? 18 : 3)
-                            ),
-                            .y2 = static_cast<lv_coord_t>(cell.y1 + 13),
-                        },
-                        clipLabel.data(),
-                        theme::color::TEXT_PRIMARY,
-                        focused || active ? LV_OPA_COVER : LV_OPA_80,
-                        fonts.meta_label(),
-                        LV_TEXT_ALIGN_LEFT
-                    );
                     const lv_area_t previewArea{
-                        static_cast<lv_coord_t>(cell.x1 + 5),
-                        static_cast<lv_coord_t>(cell.y1 + 14),
-                        static_cast<lv_coord_t>(cell.x2 - 5),
-                        static_cast<lv_coord_t>(cell.y2 - 7),
+                        static_cast<lv_coord_t>(cell.x1 + 4),
+                        static_cast<lv_coord_t>(cell.y1 + 3),
+                        static_cast<lv_coord_t>(cell.x2 - 4),
+                        static_cast<lv_coord_t>(cell.y2 - 5),
                     };
-                    if (preview.peak != 0U &&
+                    if (preview.content &&
                         areasOverlap(previewArea, layer->_clip_area)) {
-                        constexpr lv_coord_t previewHeight = 10;
-                        const lv_coord_t previewX1 = previewArea.x1;
-                        const lv_coord_t previewX2 = previewArea.x2;
                         const lv_coord_t previewWidth = static_cast<lv_coord_t>(
-                            previewX2 - previewX1 + 1
+                            lv_area_get_width(&previewArea)
                         );
-                        for (uint8_t bin = 0U; bin < PREVIEW_BINS; ++bin) {
-                            const uint8_t density = preview.density[bin];
-                            if (density == 0U) continue;
-                            const lv_coord_t x1 = static_cast<lv_coord_t>(
-                                previewX1 + (static_cast<uint32_t>(previewWidth) *
-                                    bin) / PREVIEW_BINS
-                            );
-                            const lv_coord_t x2 = static_cast<lv_coord_t>(
-                                previewX1 + (static_cast<uint32_t>(previewWidth) *
-                                    (bin + 1U)) / PREVIEW_BINS - 2
-                            );
-                            const lv_coord_t height = static_cast<lv_coord_t>(
-                                2 + (static_cast<uint16_t>(previewHeight - 2) *
-                                    density) / preview.peak
+                        const lv_coord_t previewHeight = static_cast<lv_coord_t>(
+                            lv_area_get_height(&previewArea)
+                        );
+                        for (uint8_t previewRow = 0U;
+                             previewRow < ClipPreview::ROWS;
+                             ++previewRow) {
+                            uint8_t previewColumn = 0U;
+                            while (previewColumn < ClipPreview::COLUMNS) {
+                                const std::size_t index =
+                                    static_cast<std::size_t>(previewRow) *
+                                        ClipPreview::COLUMNS + previewColumn;
+                                const uint8_t velocity = preview.velocity[index];
+                                if (velocity == 0U) {
+                                    ++previewColumn;
+                                    continue;
+                                }
+                                uint8_t runEnd = static_cast<uint8_t>(
+                                    previewColumn + 1U
+                                );
+                                while (runEnd < ClipPreview::COLUMNS) {
+                                    const std::size_t next =
+                                        static_cast<std::size_t>(previewRow) *
+                                            ClipPreview::COLUMNS + runEnd;
+                                    if (preview.velocity[next] != velocity ||
+                                        (preview.onsetMask[previewRow] &
+                                         static_cast<uint32_t>(1UL << runEnd)) !=
+                                            0U) {
+                                        break;
+                                    }
+                                    ++runEnd;
+                                }
+                                const lv_coord_t x1 = static_cast<lv_coord_t>(
+                                    previewArea.x1 +
+                                    (static_cast<uint32_t>(previewWidth) *
+                                     previewColumn) / ClipPreview::COLUMNS
+                                );
+                                const lv_coord_t x2 = static_cast<lv_coord_t>(
+                                    previewArea.x1 +
+                                    (static_cast<uint32_t>(previewWidth) *
+                                     runEnd) /
+                                        ClipPreview::COLUMNS - 1
+                                );
+                                const lv_coord_t y1 = static_cast<lv_coord_t>(
+                                    previewArea.y1 +
+                                    (static_cast<uint32_t>(previewHeight) *
+                                     previewRow) / ClipPreview::ROWS
+                                );
+                                const lv_coord_t y2 = static_cast<lv_coord_t>(
+                                    previewArea.y1 +
+                                    (static_cast<uint32_t>(previewHeight) *
+                                     (previewRow + 1U)) /
+                                        ClipPreview::ROWS - 2
+                                );
+                                drawRect(
+                                    layer,
+                                    {x1, y1, std::max(x1, x2), std::max(y1, y2)},
+                                    trackColor,
+                                    static_cast<lv_opa_t>(std::min<uint16_t>(
+                                        255U,
+                                        55U +
+                                            (static_cast<uint16_t>(velocity) *
+                                             200U) / 127U
+                                    )),
+                                    trackColor,
+                                    0,
+                                    LV_OPA_TRANSP,
+                                    0
+                                );
+                                if ((preview.onsetMask[previewRow] &
+                                     static_cast<uint32_t>(
+                                         1UL << previewColumn
+                                     )) != 0U) {
+                                    drawRect(
+                                        layer,
+                                        {x1, y1, x1, std::max(y1, y2)},
+                                        trackColor,
+                                        LV_OPA_COVER,
+                                        trackColor,
+                                        0,
+                                        LV_OPA_TRANSP,
+                                        0
+                                    );
+                                }
+                                previewColumn = runEnd;
+                            }
+                        }
+                        if (preview.loopColumn != ClipPreview::INVALID_COLUMN) {
+                            const lv_coord_t loopX = static_cast<lv_coord_t>(
+                                previewArea.x1 +
+                                (static_cast<uint32_t>(previewWidth) *
+                                 preview.loopColumn) / ClipPreview::COLUMNS
                             );
                             drawRect(
                                 layer,
-                                {x1,
-                                 static_cast<lv_coord_t>(cell.y2 - 6 - height),
-                                 std::max<lv_coord_t>(x1, x2),
-                                 static_cast<lv_coord_t>(cell.y2 - 7)},
-                                trackColor,
-                                active ? LV_OPA_COVER : LV_OPA_70,
-                                trackColor,
+                                {loopX, previewArea.y1, loopX, previewArea.y2},
+                                theme::color::TEXT_SECONDARY,
+                                LV_OPA_60,
+                                theme::color::TEXT_SECONDARY,
                                 0,
                                 LV_OPA_TRANSP,
-                                1
+                                0
                             );
                         }
                     }
@@ -1011,10 +1336,6 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             }
             if (queued) {
                 drawQueuedCorners(layer, cell, theme::color::ROUTING);
-                std::array<char, 4> count{};
-                std::snprintf(
-                    count.data(), count.size(), "%u",
-                    static_cast<unsigned>(telemetry.beatsRemaining));
                 const lv_area_t countArea{
                     .x1 = static_cast<lv_coord_t>(cell.x2 - 16),
                     .y1 = static_cast<lv_coord_t>(cell.y1 + 2),
@@ -1027,17 +1348,56 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     theme::color::BACKGROUND,
                     LV_OPA_80,
                     theme::color::ROUTING,
-                    1,
-                    LV_OPA_COVER,
+                    0,
+                    LV_OPA_TRANSP,
                     6
                 );
-                drawText(
+                drawCountdownRing(
                     layer,
-                    countArea,
-                    count.data(),
-                    theme::color::ROUTING,
-                    LV_OPA_COVER,
-                    fonts.meta_label()
+                    static_cast<lv_coord_t>((countArea.x1 + countArea.x2) / 2),
+                    static_cast<lv_coord_t>((countArea.y1 + countArea.y2) / 2),
+                    6,
+                    telemetry.queuedRemainingQ8,
+                    theme::color::ROUTING
+                );
+                drawSquare(
+                    layer,
+                    static_cast<lv_coord_t>((countArea.x1 + countArea.x2) / 2),
+                    static_cast<lv_coord_t>((countArea.y1 + countArea.y2) / 2),
+                    2,
+                    theme::color::ROUTING
+                );
+            } else if (active && telemetry.activeRemainingQ8 != 0U) {
+                const lv_area_t ringArea{
+                    .x1 = static_cast<lv_coord_t>(cell.x2 - 16),
+                    .y1 = static_cast<lv_coord_t>(cell.y1 + 2),
+                    .x2 = static_cast<lv_coord_t>(cell.x2 - 2),
+                    .y2 = static_cast<lv_coord_t>(cell.y1 + 16),
+                };
+                drawRect(
+                    layer,
+                    ringArea,
+                    theme::color::BACKGROUND,
+                    LV_OPA_80,
+                    theme::color::BACKGROUND,
+                    0,
+                    LV_OPA_TRANSP,
+                    6
+                );
+                drawCountdownRing(
+                    layer,
+                    static_cast<lv_coord_t>((ringArea.x1 + ringArea.x2) / 2),
+                    static_cast<lv_coord_t>((ringArea.y1 + ringArea.y2) / 2),
+                    6,
+                    telemetry.activeRemainingQ8,
+                    theme::color::LIVE_TIME
+                );
+                drawSquare(
+                    layer,
+                    static_cast<lv_coord_t>((ringArea.x1 + ringArea.x2) / 2),
+                    static_cast<lv_coord_t>((ringArea.y1 + ringArea.y2) / 2),
+                    2,
+                    theme::color::LIVE_TIME
                 );
             }
             if (sourceSelected) {
