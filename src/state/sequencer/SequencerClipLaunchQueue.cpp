@@ -17,6 +17,110 @@ constexpr uint16_t trackBit(uint8_t track) noexcept {
     return static_cast<uint16_t>(1U << track);
 }
 
+FLASHMEM uint32_t mixFollowSeed(uint32_t value) noexcept {
+    value ^= value >> 16U;
+    value *= 0x7FEB352DU;
+    value ^= value >> 15U;
+    value *= 0x846CA68BU;
+    return value ^ (value >> 16U);
+}
+
+template <typename IsCandidate>
+FLASHMEM
+uint8_t resolveFollowChoice(
+    SequencerLauncherFollowChoice choice,
+    uint8_t current,
+    uint32_t seed,
+    const IsCandidate& isCandidate
+) noexcept {
+    if (sequencerLauncherFollowChoiceIsTarget(choice)) {
+        return sequencerLauncherFollowTargetSlot(choice);
+    }
+    if (choice == SequencerLauncherFollowChoice::NEXT) {
+        for (uint8_t offset = 1U;
+             offset <= SequencerClipGridState::SLOT_COUNT;
+             ++offset) {
+            const uint8_t slot = static_cast<uint8_t>(
+                (current + offset) % SequencerClipGridState::SLOT_COUNT
+            );
+            if (isCandidate(slot)) return slot;
+        }
+        return SequencerClipGridState::INVALID_SLOT;
+    }
+    if (choice == SequencerLauncherFollowChoice::FIRST) {
+        for (uint8_t slot = 0U;
+             slot < SequencerClipGridState::SLOT_COUNT;
+             ++slot) {
+            if (isCandidate(slot)) return slot;
+        }
+        return SequencerClipGridState::INVALID_SLOT;
+    }
+    if (choice != SequencerLauncherFollowChoice::RANDOM_OTHER &&
+        choice != SequencerLauncherFollowChoice::RANDOM_ANY) {
+        return SequencerClipGridState::INVALID_SLOT;
+    }
+
+    std::array<uint8_t, SequencerClipGridState::SLOT_COUNT> candidates{};
+    uint8_t count = 0U;
+    for (uint8_t slot = 0U;
+         slot < SequencerClipGridState::SLOT_COUNT;
+         ++slot) {
+        if (!isCandidate(slot) ||
+            (choice == SequencerLauncherFollowChoice::RANDOM_OTHER &&
+             slot == current)) {
+            continue;
+        }
+        candidates[count++] = slot;
+    }
+    return count == 0U
+        ? SequencerClipGridState::INVALID_SLOT
+        : candidates[mixFollowSeed(seed) % count];
+}
+
+FLASHMEM uint8_t resolveClipFollowChoice(
+    const SequencerClipGridState& clips,
+    uint8_t track,
+    uint8_t current,
+    SequencerLauncherFollowChoice choice,
+    uint32_t seed
+) noexcept {
+    return resolveFollowChoice(
+        choice,
+        current,
+        seed,
+        [&clips, track](uint8_t slot) {
+            return clips.slotKind({track, slot}) ==
+                SequencerLauncherSlotKind::CLIP;
+        }
+    );
+}
+
+FLASHMEM uint8_t resolveSceneFollowChoice(
+    const SequencerClipGridState& clips,
+    uint16_t enabledTrackMask,
+    uint8_t current,
+    SequencerLauncherFollowChoice choice,
+    uint32_t seed
+) noexcept {
+    return resolveFollowChoice(
+        choice,
+        current,
+        seed,
+        [&clips, enabledTrackMask](uint8_t slot) {
+            for (uint8_t track = 0U;
+                 track < SequencerClipGridState::TRACK_COUNT;
+                 ++track) {
+                if ((enabledTrackMask & trackBit(track)) != 0U &&
+                    clips.slotKind({track, slot}) !=
+                        SequencerLauncherSlotKind::EMPTY) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    );
+}
+
 }  // namespace
 
 uint32_t SequencerClipLaunchQueue::nextNonZeroGeneration_(
@@ -613,11 +717,17 @@ void SequencerClipLaunchQueue::processFollowActions(
     const std::array<uint32_t, TRACK_COUNT>* loopTicks
 ) {
     if (!transportPlaying) return;
-    std::array<uint8_t, TRACK_COUNT> clipTargets{};
+    std::array<SequencerLauncherFollowChoice, TRACK_COUNT> clipChoices{};
+    std::array<uint8_t, TRACK_COUNT> clipCurrentSlots{};
+    std::array<uint32_t, TRACK_COUNT> clipSeeds{};
     std::array<SequencerLauncherFollowQuantization, TRACK_COUNT>
         clipQuantizations{};
-    clipTargets.fill(SequencerClipGridState::INVALID_SLOT);
-    uint8_t sceneTarget = SequencerClipGridState::INVALID_SLOT;
+    clipChoices.fill(SequencerLauncherFollowChoice::NONE);
+    clipCurrentSlots.fill(SequencerClipGridState::INVALID_SLOT);
+    SequencerLauncherFollowChoice sceneChoice =
+        SequencerLauncherFollowChoice::NONE;
+    uint8_t sceneCurrentSlot = SequencerClipGridState::INVALID_SLOT;
+    uint32_t sceneSeed = 0U;
     SequencerLauncherFollowQuantization sceneQuantization =
         SequencerLauncherFollowQuantization::GLOBAL;
     {
@@ -634,7 +744,11 @@ void SequencerClipLaunchQueue::processFollowActions(
                     entry.activeLoopTicks;
             if (!due_(transport_tick_, deadline)) continue;
             entry.activeFollowScheduled = true;
-            clipTargets[track] = entry.activeBehavior.thenTarget;
+            clipChoices[track] = entry.activeBehavior.follow;
+            clipCurrentSlots[track] = entry.activeSlot;
+            clipSeeds[track] = transport_tick_ ^ entry.activeStartedTick ^
+                (static_cast<uint32_t>(track + 1U) * 0x9E3779B9U) ^
+                static_cast<uint32_t>(entry.activeSlot + 1U);
             clipQuantizations[track] = entry.activeBehavior.quantization;
         }
         if (!active_scene_follow_scheduled_ &&
@@ -644,15 +758,29 @@ void SequencerClipLaunchQueue::processFollowActions(
                     kTicksPerBar;
             if (due_(transport_tick_, deadline)) {
                 active_scene_follow_scheduled_ = true;
-                sceneTarget = active_scene_behavior_.thenTarget;
+                sceneChoice = active_scene_behavior_.follow;
+                sceneCurrentSlot = active_scene_;
+                sceneSeed = transport_tick_ ^ active_scene_started_tick_ ^
+                    (static_cast<uint32_t>(active_scene_ + 1U) *
+                     0x85EBCA6BU);
                 sceneQuantization = active_scene_behavior_.quantization;
             }
         }
     }
 
     for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
-        if (clipTargets[track] >= SequencerClipGridState::SLOT_COUNT) continue;
-        const SequencerClipAddress target{track, clipTargets[track]};
+        if (clipChoices[track] == SequencerLauncherFollowChoice::NONE) {
+            continue;
+        }
+        const uint8_t targetSlot = resolveClipFollowChoice(
+            clips,
+            track,
+            clipCurrentSlots[track],
+            clipChoices[track],
+            clipSeeds[track]
+        );
+        if (targetSlot >= SequencerClipGridState::SLOT_COUNT) continue;
+        const SequencerClipAddress target{track, targetSlot};
         if (clips.isStop(target)) {
             (void)requestStop(
                 track,
@@ -672,6 +800,16 @@ void SequencerClipLaunchQueue::processFollowActions(
             );
         }
     }
+    const uint8_t sceneTarget = sceneChoice ==
+            SequencerLauncherFollowChoice::NONE
+        ? SequencerClipGridState::INVALID_SLOT
+        : resolveSceneFollowChoice(
+            clips,
+            enabledTrackMask,
+            sceneCurrentSlot,
+            sceneChoice,
+            sceneSeed
+        );
     if (sceneTarget < SequencerClipGridState::SLOT_COUNT) {
         (void)requestSceneWithOrigin_(
             sceneTarget,

@@ -473,7 +473,7 @@ FLASHMEM bool addClipGridSections(
         const state::sequencer::SequencerLauncherBehavior& behavior
     ) {
         return metadataWriter.writeU8(behavior.length) &&
-            metadataWriter.writeU8(behavior.thenTarget) &&
+            metadataWriter.writeU8(static_cast<uint8_t>(behavior.follow)) &&
             metadataWriter.writeU8(
                 static_cast<uint8_t>(behavior.quantization));
     };
@@ -1232,12 +1232,15 @@ FLASHMEM bool decodeClipGrid(
         const auto readBehavior = [&metadata](
             state::sequencer::SequencerLauncherBehavior& behavior
         ) {
+            uint8_t follow = 0U;
             uint8_t quantization = 0U;
             if (!metadata.readU8(behavior.length) ||
-                !metadata.readU8(behavior.thenTarget) ||
+                !metadata.readU8(follow) ||
                 !metadata.readU8(quantization) || quantization > 2U) {
                 return false;
             }
+            behavior.follow = static_cast<
+                state::sequencer::SequencerLauncherFollowChoice>(follow);
             behavior.quantization = static_cast<
                 state::sequencer::SequencerLauncherFollowQuantization>(
                     quantization);

@@ -349,12 +349,12 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
         seq::SequencerClipGridState::cellIndex({0U, 0U})
     ] = {
         .length = 2U,
-        .thenTarget = 1U,
+        .follow = seq::SequencerLauncherFollowChoice::RANDOM_OTHER,
         .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
     };
     projectClips.sceneBehaviors[0U] = {
         .length = 4U,
-        .thenTarget = 1U,
+        .follow = seq::SequencerLauncherFollowChoice::NEXT,
         .quantization = seq::SequencerLauncherFollowQuantization::BAR,
     };
     for (uint8_t track = 0U;
@@ -439,12 +439,12 @@ void testV17ProjectEnvelopeMigratesWithDefaultLauncherMetadata() {
     clips.stopMasks[2U] = 0x0001U;
     clips.clipBehaviors[0U] = {
         .length = 3U,
-        .thenTarget = 2U,
+        .follow = seq::sequencerLauncherFollowTarget(2U),
         .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
     };
     clips.sceneBehaviors[0U] = {
         .length = 2U,
-        .thenTarget = 1U,
+        .follow = seq::sequencerLauncherFollowTarget(1U),
         .quantization = seq::SequencerLauncherFollowQuantization::BAR,
     };
     codec::ProjectSequencerSnapshotEncodeSource encodeSource{};

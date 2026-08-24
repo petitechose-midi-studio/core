@@ -436,7 +436,8 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision,
         state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.patternQuickControls.previewRevision
+        state_refs_.sequencer.patternQuickControls.previewRevision,
+        state_refs_.clips.revisionSignal()
     );
     selector_overlay_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision

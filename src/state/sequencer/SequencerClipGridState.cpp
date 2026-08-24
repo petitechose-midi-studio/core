@@ -34,12 +34,36 @@ namespace {
 using Graph = oc::note::sequencer::StepSequencerGraph;
 constexpr uint32_t kExtmemAllocationOverheadEstimate = 16U;
 
+constexpr std::array<SequencerLauncherFollowChoice, 13U> kFollowChoices{{
+    SequencerLauncherFollowChoice::NONE,
+    SequencerLauncherFollowChoice::NEXT,
+    SequencerLauncherFollowChoice::FIRST,
+    SequencerLauncherFollowChoice::RANDOM_OTHER,
+    SequencerLauncherFollowChoice::RANDOM_ANY,
+    SequencerLauncherFollowChoice::TARGET_1,
+    SequencerLauncherFollowChoice::TARGET_2,
+    SequencerLauncherFollowChoice::TARGET_3,
+    SequencerLauncherFollowChoice::TARGET_4,
+    SequencerLauncherFollowChoice::TARGET_5,
+    SequencerLauncherFollowChoice::TARGET_6,
+    SequencerLauncherFollowChoice::TARGET_7,
+    SequencerLauncherFollowChoice::TARGET_8,
+}};
+
+constexpr bool validLauncherFollowChoice(
+    SequencerLauncherFollowChoice choice
+) noexcept {
+    for (const auto candidate : kFollowChoices) {
+        if (candidate == choice) return true;
+    }
+    return false;
+}
+
 constexpr bool validLauncherBehavior(
     const SequencerLauncherBehavior& behavior
 ) noexcept {
     return behavior.length <= SequencerLauncherBehavior::MAX_LENGTH &&
-        (behavior.thenTarget == SequencerLauncherBehavior::NO_TARGET ||
-         behavior.thenTarget < SequencerClipGridState::SLOT_COUNT) &&
+        validLauncherFollowChoice(behavior.follow) &&
         behavior.quantization <=
             SequencerLauncherFollowQuantization::BAR;
 }
@@ -125,6 +149,24 @@ FLASHMEM void installDocument(
 }
 
 }  // namespace
+
+FLASHMEM SequencerLauncherFollowChoice stepSequencerLauncherFollowChoice(
+    SequencerLauncherFollowChoice choice,
+    int direction
+) noexcept {
+    if (direction == 0) return choice;
+    size_t index = 0U;
+    while (index < kFollowChoices.size() && kFollowChoices[index] != choice) {
+        ++index;
+    }
+    if (index == kFollowChoices.size()) index = 0U;
+    if (direction < 0) {
+        if (index > 0U) --index;
+    } else if (index + 1U < kFollowChoices.size()) {
+        ++index;
+    }
+    return kFollowChoices[index];
+}
 
 FLASHMEM SequencerClipDocument::SequencerClipDocument() = default;
 FLASHMEM SequencerClipDocument::~SequencerClipDocument() = default;

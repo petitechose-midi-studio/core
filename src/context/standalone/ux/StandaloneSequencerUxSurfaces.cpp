@@ -1385,7 +1385,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         seq::ClipWorkspaceBehaviorField field,
         seq::ClipWorkspaceSlotAction action,
         uint8_t length,
-        uint8_t target,
+        uint8_t followChoice,
         uint8_t quantization
     ) {
         if (editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
@@ -1416,10 +1416,25 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             }
             return;
         }
-        if (field == seq::ClipWorkspaceBehaviorField::THEN) {
-            if (target == seq::SequencerLauncherBehavior::NO_TARGET) {
+        if (field == seq::ClipWorkspaceBehaviorField::FOLLOW) {
+            const auto follow =
+                static_cast<seq::SequencerLauncherFollowChoice>(followChoice);
+            const char* label = follow ==
+                    seq::SequencerLauncherFollowChoice::NONE
+                ? "none"
+                : follow == seq::SequencerLauncherFollowChoice::NEXT
+                    ? "next"
+                    : follow == seq::SequencerLauncherFollowChoice::FIRST
+                        ? "first"
+                        : follow == seq::SequencerLauncherFollowChoice::
+                                RANDOM_OTHER
+                            ? "random_other"
+                            : follow == seq::SequencerLauncherFollowChoice::
+                                    RANDOM_ANY
+                                ? "random_any" : nullptr;
+            if (label != nullptr) {
                 std::snprintf(
-                    out.valueLabel, sizeof(out.valueLabel), "%s", "none"
+                    out.valueLabel, sizeof(out.valueLabel), "%s", label
                 );
             } else {
                 std::snprintf(
@@ -1428,7 +1443,9 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
                     "%s_%u",
                     editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
                         ? "clip" : "scene",
-                    static_cast<unsigned>(target + 1U)
+                    static_cast<unsigned>(
+                        seq::sequencerLauncherFollowTargetSlot(follow) + 1U
+                    )
                 );
             }
             return;
@@ -1616,8 +1633,8 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
                     seq::ClipWorkspaceBehaviorField::LENGTH
                 ? "length"
                 : retained_editor_field_ ==
-                        seq::ClipWorkspaceBehaviorField::THEN
-                    ? "then"
+                        seq::ClipWorkspaceBehaviorField::FOLLOW
+                    ? "follow"
                     : "quantization";
         out.projection = "editor";
         out.effect = navRelease
@@ -1630,7 +1647,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             retained_editor_field_,
             retained_slot_action_,
             retained_editor_length_,
-            retained_editor_target_,
+            retained_editor_follow_,
             retained_editor_quantization_
         );
         retained_editor_ = seq::ClipWorkspaceEditor::NONE;
@@ -1676,8 +1693,8 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             ? "action"
             : ui.editorField == seq::ClipWorkspaceBehaviorField::LENGTH
                 ? "length"
-                : ui.editorField == seq::ClipWorkspaceBehaviorField::THEN
-                    ? "then"
+                : ui.editorField == seq::ClipWorkspaceBehaviorField::FOLLOW
+                    ? "follow"
                     : "quantization";
         out.projection = "editor";
         if (quickRelease &&
@@ -1721,14 +1738,14 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             ui.editorField,
             ui.slotAction,
             ui.editorLength,
-            ui.editorThenTarget,
+            ui.editorFollowChoice,
             ui.editorQuantization
         );
         retained_editor_ = ui.editor;
         retained_editor_field_ = ui.editorField;
         retained_slot_action_ = ui.slotAction;
         retained_editor_length_ = ui.editorLength;
-        retained_editor_target_ = ui.editorThenTarget;
+        retained_editor_follow_ = ui.editorFollowChoice;
         retained_editor_quantization_ = ui.editorQuantization;
         retained_editor_track_ = ui.focusedTrack;
         retained_editor_slot_ = ui.focusedSlot;
@@ -1867,8 +1884,8 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
                 ? "edit"
                 : ui.quickAction == seq::ClipWorkspaceQuickAction::LENGTH
                     ? "length"
-                    : ui.quickAction == seq::ClipWorkspaceQuickAction::THEN
-                        ? "then" : "quantization";
+                    : ui.quickAction == seq::ClipWorkspaceQuickAction::FOLLOW
+                        ? "follow" : "quantization";
             return true;
         }
         out.effect = trackHeader ? "focus_track_header"
@@ -1961,8 +1978,8 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             ? Intent::EDIT_VALUE : Intent::OPEN_ADVANCED;
         out.property = ui.quickAction == seq::ClipWorkspaceQuickAction::LENGTH
             ? "length"
-            : ui.quickAction == seq::ClipWorkspaceQuickAction::THEN
-                ? "then"
+            : ui.quickAction == seq::ClipWorkspaceQuickAction::FOLLOW
+                ? "follow"
                 : ui.quickAction == seq::ClipWorkspaceQuickAction::QUANTIZE
                     ? "quantization" : "edit";
     } else if (optTurn && ui.quickPropertyArmed) {
@@ -1970,8 +1987,8 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
         out.intent = Intent::EDIT_VALUE;
         out.property = ui.quickAction == seq::ClipWorkspaceQuickAction::LENGTH
             ? "length"
-            : ui.quickAction == seq::ClipWorkspaceQuickAction::THEN
-                ? "then" : "quantization";
+            : ui.quickAction == seq::ClipWorkspaceQuickAction::FOLLOW
+                ? "follow" : "quantization";
     } else if (structureAction) {
         out.effect = trackHeader
             ? tracks_.isTrackEnabled(address.track)

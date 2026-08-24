@@ -268,12 +268,12 @@ void test_clip_and_scene_follow_actions_obey_priority() {
     install(clips, 3U);
     assert(clips.setClipBehavior({0U, 1U}, {
         .length = 1U,
-        .thenTarget = 3U,
+        .follow = seq::sequencerLauncherFollowTarget(3U),
         .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
     }));
     assert(clips.setSceneBehavior(1U, {
         .length = 1U,
-        .thenTarget = 2U,
+        .follow = seq::sequencerLauncherFollowTarget(2U),
         .quantization = seq::SequencerLauncherFollowQuantization::BAR,
     }));
 
@@ -317,7 +317,7 @@ void test_two_bar_scene_follows_after_exactly_two_bars() {
     install(clips, 2U);
     assert(clips.setSceneBehavior(1U, {
         .length = 2U,
-        .thenTarget = 2U,
+        .follow = seq::sequencerLauncherFollowTarget(2U),
         .quantization = seq::SequencerLauncherFollowQuantization::BAR,
     }));
 
@@ -347,7 +347,7 @@ void test_active_phase_and_live_behavior_follow_the_running_clip() {
     install(clips, 1U);
     const seq::SequencerLauncherBehavior behavior{
         .length = 1U,
-        .thenTarget = 1U,
+        .follow = seq::sequencerLauncherFollowTarget(1U),
         .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
     };
     assert(clips.setClipBehavior({0U, 0U}, behavior));
@@ -368,6 +368,73 @@ void test_active_phase_and_live_behavior_follow_the_running_clip() {
     assert(telemetry.queuedSlot == 1U);
 }
 
+uint8_t queuedClipForFollowChoice(
+    seq::SequencerLauncherFollowChoice choice
+) {
+    constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
+    seq::SequencerClipGridState clips;
+    clips.reset(0x0001U);
+    install(clips, 1U);
+    install(clips, 3U);
+    assert(clips.setStop({0U, 2U}));
+    assert(clips.setClipBehavior({0U, 0U}, {
+        .length = 1U,
+        .follow = choice,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    }));
+
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 0x0001U);
+    queue.updateTransportPosition(kBar, true);
+    queue.processFollowActions(clips, 0x0001U, true);
+    return queue.telemetry(0U).queuedSlot;
+}
+
+void test_relative_clip_follow_choices_are_sparse_and_deterministic() {
+    assert(queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::NEXT) == 1U);
+    assert(queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::FIRST) == 0U);
+
+    const uint8_t randomOther = queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::RANDOM_OTHER);
+    assert(randomOther == 1U || randomOther == 3U);
+    assert(randomOther == queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::RANDOM_OTHER));
+
+    const uint8_t randomAny = queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::RANDOM_ANY);
+    assert(randomAny == 0U || randomAny == 1U || randomAny == 3U);
+    assert(randomAny == queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::RANDOM_ANY));
+}
+
+void test_scene_next_skips_behavior_only_rows() {
+    constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
+    seq::SequencerClipGridState clips;
+    clips.reset(0x0001U);
+    install(clips, 2U);
+    assert(clips.setSceneBehavior(0U, {
+        .length = 1U,
+        .follow = seq::SequencerLauncherFollowChoice::NEXT,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    }));
+    assert(clips.setSceneBehavior(1U, {
+        .length = 1U,
+        .follow = seq::SequencerLauncherFollowChoice::NONE,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    }));
+    assert(clips.sceneUsed(1U));
+
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 0x0001U);
+    assert(queue.requestScene(0U, clips, 0x0001U, false));
+    applyQueued(queue, clips, 0x0001U, 0U);
+    queue.updateTransportPosition(kBar, true);
+    queue.processFollowActions(clips, 0x0001U, true);
+    assert(queue.sceneTelemetry().queuedScene == 2U);
+}
+
 }  // namespace
 
 int main() {
@@ -381,6 +448,8 @@ int main() {
     test_clip_and_scene_follow_actions_obey_priority();
     test_two_bar_scene_follows_after_exactly_two_bars();
     test_active_phase_and_live_behavior_follow_the_running_clip();
+    test_relative_clip_follow_choices_are_sparse_and_deterministic();
+    test_scene_next_skips_behavior_only_rows();
     std::cout << "All SequencerClipLaunchQueue tests passed\n";
     return 0;
 }

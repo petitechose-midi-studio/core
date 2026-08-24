@@ -204,12 +204,12 @@ project::ProjectSnapshot makeSnapshot() {
         sequencer::SequencerClipGridState::cellIndex({0U, 1U})
     ] = {
         .length = 2U,
-        .thenTarget = 2U,
+        .follow = sequencer::sequencerLauncherFollowTarget(2U),
         .quantization = sequencer::SequencerLauncherFollowQuantization::BEAT,
     };
     snapshot.clips.sceneBehaviors[1U] = {
         .length = 4U,
-        .thenTarget = 2U,
+        .follow = sequencer::sequencerLauncherFollowTarget(2U),
         .quantization = sequencer::SequencerLauncherFollowQuantization::BAR,
     };
     return snapshot;

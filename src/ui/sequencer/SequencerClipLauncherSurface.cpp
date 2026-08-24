@@ -12,6 +12,7 @@
 #include "ui/theme/StandaloneTheme.hpp"
 #include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
+#include "ui/sequencer/SequencerQuickControlVisuals.hpp"
 
 namespace core::ui::sequencer {
 
@@ -832,17 +833,14 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     );
                 }
             } else if (row == 1U) {
-                if (ui.editorThenTarget ==
-                    seq::SequencerLauncherBehavior::NO_TARGET) {
-                    std::snprintf(value.data(), value.size(), "None");
-                } else {
-                    std::snprintf(
-                        value.data(), value.size(), "%s %u",
-                        ui.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
-                            ? "Clip" : "Scene",
-                        static_cast<unsigned>(ui.editorThenTarget + 1U)
-                    );
-                }
+                visual::formatLauncherFollowChoice(
+                    value.data(),
+                    value.size(),
+                    static_cast<seq::SequencerLauncherFollowChoice>(
+                        ui.editorFollowChoice
+                    ),
+                    ui.editor == seq::ClipWorkspaceEditor::SCENE_BEHAVIOR
+                );
             } else {
                 std::snprintf(
                     value.data(), value.size(), "%s",

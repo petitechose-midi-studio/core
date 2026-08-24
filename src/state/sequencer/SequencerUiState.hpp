@@ -763,7 +763,7 @@ enum class ClipWorkspaceEditor : uint8_t {
 
 enum class ClipWorkspaceBehaviorField : uint8_t {
     LENGTH = 0,
-    THEN,
+    FOLLOW,
     QUANTIZE,
     COUNT,
 };
@@ -771,7 +771,7 @@ enum class ClipWorkspaceBehaviorField : uint8_t {
 enum class ClipWorkspaceQuickAction : uint8_t {
     EDIT = 0,
     LENGTH,
-    THEN,
+    FOLLOW,
     QUANTIZE,
     COUNT,
 };
@@ -818,7 +818,7 @@ struct ClipWorkspaceUiState {
     ClipWorkspaceSlotAction slotAction =
         ClipWorkspaceSlotAction::CREATE_CLIP;
     uint8_t editorLength = 0U;
-    uint8_t editorThenTarget = 0xFFU;
+    uint8_t editorFollowChoice = 0xFFU;
     uint8_t editorQuantization = 0U;
     uint8_t focusedTrack = 0U;
     uint8_t focusedSlot = 0U;
@@ -880,7 +880,7 @@ struct ClipWorkspaceUiState {
     void openEditor(
         ClipWorkspaceEditor next,
         uint8_t length = 0U,
-        uint8_t thenTarget = 0xFFU,
+        uint8_t followChoice = 0xFFU,
         uint8_t quantization = 0U
     );
     bool closeEditor();
@@ -888,7 +888,7 @@ struct ClipWorkspaceUiState {
     void moveSlotAction(int direction);
     void setEditorValues(
         uint8_t length,
-        uint8_t thenTarget,
+        uint8_t followChoice,
         uint8_t quantization
     );
     void beginSelection(uint8_t track, uint8_t slot);

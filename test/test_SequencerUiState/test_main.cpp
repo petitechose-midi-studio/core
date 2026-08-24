@@ -322,6 +322,10 @@ void test_clip_launcher_quick_control_is_bounded_and_expires() {
     assert(state.quickAction == seq::ClipWorkspaceQuickAction::EDIT);
     state.moveQuickAction(1);
     assert(state.quickAction == seq::ClipWorkspaceQuickAction::LENGTH);
+    state.moveQuickAction(1);
+    assert(state.quickAction == seq::ClipWorkspaceQuickAction::FOLLOW);
+    state.moveQuickAction(-1);
+    assert(state.quickAction == seq::ClipWorkspaceQuickAction::LENGTH);
     state.armQuickProperty(100U);
     assert(!state.quickSelectorVisible);
     assert(state.quickPropertyArmed);

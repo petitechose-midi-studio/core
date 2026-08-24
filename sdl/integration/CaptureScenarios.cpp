@@ -1649,7 +1649,7 @@ bool prepareClipLauncherV3Scenario(core::state::CoreState& state) {
             {0U, 1U},
             SequencerLauncherBehavior{
                 .length = 2U,
-                .thenTarget = 2U,
+                .follow = SequencerLauncherFollowChoice::NEXT,
                 .quantization =
                     SequencerLauncherFollowQuantization::GLOBAL,
             }) ||
@@ -1657,7 +1657,7 @@ bool prepareClipLauncherV3Scenario(core::state::CoreState& state) {
             1U,
             SequencerLauncherBehavior{
                 .length = 2U,
-                .thenTarget = 2U,
+                .follow = SequencerLauncherFollowChoice::NEXT,
                 .quantization = SequencerLauncherFollowQuantization::BAR,
             })) {
         return false;

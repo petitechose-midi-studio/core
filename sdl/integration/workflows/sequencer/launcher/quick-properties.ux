@@ -9,6 +9,17 @@
 # Expect: semantic:quick_length:effect=select_clip_quick_action, semantic:quick_length:property=length
 # Expect: semantic:length_armed:effect=arm_clip_quick_property, semantic:length_armed:property=length
 # Expect: semantic:length_changed:effect=edit_clip_quick_property, semantic:length_changed:property=length
+# Follow reuses the same gesture and exposes semantic choices rather than raw
+# slot arithmetic.
+# Expect: capture_changed:quick_follow=length_changed
+# Expect: capture_match:follow_armed=quick_follow
+# Expect: capture_changed:follow_next=follow_armed
+# Expect: semantic:quick_follow:effect=select_clip_quick_action, semantic:quick_follow:property=follow
+# Expect: semantic:follow_armed:effect=arm_clip_quick_property, semantic:follow_armed:property=follow
+# Expect: semantic:follow_next:effect=edit_clip_quick_property, semantic:follow_next:property=follow
+# Opening the full editor reads the authored value back from the Clip domain.
+# Expect: capture_changed:behavior_follow=follow_next
+# Expect: semantic:behavior_follow:target=clip_behavior, semantic:behavior_follow:property=follow, semantic:behavior_follow:value_label=next
 
 0 scenario clip-launcher-v3
 
@@ -28,3 +39,16 @@
 
 1100 encoder OPT 0.01
 1260 capture screen length_changed
+
+1400 button LEFT_CENTER down
+1500 encoder NAV 0.01
+1600 encoder NAV 0.01
+1700 capture screen quick_follow
+1780 button LEFT_CENTER up
+1900 capture screen follow_armed
+1980 encoder OPT 0.01
+2140 capture screen follow_next
+
+3000 tap LEFT_CENTER 60
+3300 encoder NAV 0.01
+3460 capture screen behavior_follow

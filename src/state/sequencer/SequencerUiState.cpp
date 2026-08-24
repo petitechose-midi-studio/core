@@ -569,7 +569,7 @@ FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     editorField = ClipWorkspaceBehaviorField::LENGTH;
     slotAction = ClipWorkspaceSlotAction::CREATE_CLIP;
     editorLength = 0U;
-    editorThenTarget = 0xFFU;
+    editorFollowChoice = 0xFFU;
     editorQuantization = 0U;
     focusedTrack = std::min<uint8_t>(activeTrack, TRACK_COUNT - 1U);
     focusedSlot = 0U;
@@ -826,7 +826,7 @@ FLASHMEM void ClipWorkspaceUiState::moveViewport(int direction) {
 FLASHMEM void ClipWorkspaceUiState::openEditor(
     ClipWorkspaceEditor next,
     uint8_t length,
-    uint8_t thenTarget,
+    uint8_t followChoice,
     uint8_t quantization
 ) {
     if (next == ClipWorkspaceEditor::NONE) return;
@@ -834,7 +834,7 @@ FLASHMEM void ClipWorkspaceUiState::openEditor(
     editorField = ClipWorkspaceBehaviorField::LENGTH;
     slotAction = ClipWorkspaceSlotAction::CREATE_CLIP;
     editorLength = length;
-    editorThenTarget = thenTarget;
+    editorFollowChoice = followChoice;
     editorQuantization = quantization;
     bump();
 }
@@ -871,15 +871,15 @@ FLASHMEM void ClipWorkspaceUiState::moveSlotAction(int direction) {
 
 FLASHMEM void ClipWorkspaceUiState::setEditorValues(
     uint8_t length,
-    uint8_t thenTarget,
+    uint8_t followChoice,
     uint8_t quantization
 ) {
-    if (editorLength == length && editorThenTarget == thenTarget &&
+    if (editorLength == length && editorFollowChoice == followChoice &&
         editorQuantization == quantization) {
         return;
     }
     editorLength = length;
-    editorThenTarget = thenTarget;
+    editorFollowChoice = followChoice;
     editorQuantization = quantization;
     bump();
 }

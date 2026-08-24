@@ -147,7 +147,7 @@ private:
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
     oc::state::StaticWatchGroup<core::state::StatusBarState::TRACK_COUNT>
         clip_activity_watcher_;
-    oc::state::StaticWatchGroup<27> selector_overlay_watcher_;
+    oc::state::StaticWatchGroup<28> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<5> overlay_visibility_watcher_;
     oc::state::StaticWatchGroup<14> left_action_strip_watcher_;
     oc::state::StaticWatchGroup<27> bottom_action_strip_watcher_;

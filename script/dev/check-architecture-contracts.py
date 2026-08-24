@@ -4885,7 +4885,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"structure_selection_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*48\s*>\s+grid_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*1\s*>\s+grid_tick_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*27\s*>\s+selector_overlay_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*28\s*>\s+selector_overlay_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*5\s*>\s+overlay_visibility_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+left_action_strip_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*27\s*>\s+bottom_action_strip_watcher_\s*;",

@@ -250,7 +250,7 @@ const char* clipQuickActionLabel(
     using Action = core::state::sequencer::ClipWorkspaceQuickAction;
     switch (action) {
         case Action::LENGTH: return "Loops";
-        case Action::THEN: return "Next clip";
+        case Action::FOLLOW: return "Follow";
         case Action::QUANTIZE: return "Follow quantize";
         case Action::EDIT:
         case Action::COUNT:
@@ -264,7 +264,7 @@ const char* clipQuickActionIcon(
     using Action = core::state::sequencer::ClipWorkspaceQuickAction;
     switch (action) {
         case Action::LENGTH: return standalone::icons::LENGTH;
-        case Action::THEN: return standalone::icons::ACTION_PLACE_TARGET;
+        case Action::FOLLOW: return standalone::icons::ACTION_PLACE_TARGET;
         case Action::QUANTIZE: return standalone::icons::CLOCK_SYNC;
         case Action::EDIT:
         case Action::COUNT:
@@ -298,18 +298,13 @@ void formatClipQuickActionValue(
                 );
             }
             return;
-        case Action::THEN:
-            if (behavior.thenTarget == core::state::sequencer::
-                    SequencerLauncherBehavior::NO_TARGET) {
-                std::snprintf(buffer, size, "None");
-            } else {
-                std::snprintf(
-                    buffer,
-                    size,
-                    "Clip %u",
-                    static_cast<unsigned>(behavior.thenTarget + 1U)
-                );
-            }
+        case Action::FOLLOW:
+            visual::formatLauncherFollowChoice(
+                buffer,
+                size,
+                behavior.follow,
+                false
+            );
             return;
         case Action::QUANTIZE:
             switch (behavior.quantization) {

@@ -367,7 +367,7 @@ private:
         retained_slot_action_ =
             static_cast<core::state::sequencer::ClipWorkspaceSlotAction>(0U);
     mutable uint8_t retained_editor_length_ = 0U;
-    mutable uint8_t retained_editor_target_ = 0xFFU;
+    mutable uint8_t retained_editor_follow_ = 0xFFU;
     mutable uint8_t retained_editor_quantization_ = 0U;
     mutable uint8_t retained_editor_track_ = 0U;
     mutable uint8_t retained_editor_slot_ = 0U;

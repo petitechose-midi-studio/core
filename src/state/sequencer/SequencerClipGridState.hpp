@@ -33,18 +33,62 @@ enum class SequencerLauncherFollowQuantization : uint8_t {
     BAR,
 };
 
+/** One-byte authored Follow choice; explicit slot values keep their wire IDs. */
+enum class SequencerLauncherFollowChoice : uint8_t {
+    TARGET_1 = 0U,
+    TARGET_2,
+    TARGET_3,
+    TARGET_4,
+    TARGET_5,
+    TARGET_6,
+    TARGET_7,
+    TARGET_8,
+    RANDOM_ANY = 0xFBU,
+    RANDOM_OTHER = 0xFCU,
+    FIRST = 0xFDU,
+    NEXT = 0xFEU,
+    NONE = 0xFFU,
+};
+
+constexpr bool sequencerLauncherFollowChoiceIsTarget(
+    SequencerLauncherFollowChoice choice
+) noexcept {
+    return static_cast<uint8_t>(choice) < 8U;
+}
+
+constexpr SequencerLauncherFollowChoice sequencerLauncherFollowTarget(
+    uint8_t slot
+) noexcept {
+    return slot < 8U
+        ? static_cast<SequencerLauncherFollowChoice>(slot)
+        : SequencerLauncherFollowChoice::NONE;
+}
+
+constexpr uint8_t sequencerLauncherFollowTargetSlot(
+    SequencerLauncherFollowChoice choice
+) noexcept {
+    return sequencerLauncherFollowChoiceIsTarget(choice)
+        ? static_cast<uint8_t>(choice)
+        : 0xFFU;
+}
+
+[[nodiscard]] SequencerLauncherFollowChoice stepSequencerLauncherFollowChoice(
+    SequencerLauncherFollowChoice choice,
+    int direction
+) noexcept;
+
 /** Compact authored follow action shared by Clips and Scenes. */
 struct SequencerLauncherBehavior {
     static constexpr uint8_t MAX_LENGTH = 16U;
-    static constexpr uint8_t NO_TARGET = 0xFFU;
 
     uint8_t length = 0U;
-    uint8_t thenTarget = NO_TARGET;
+    SequencerLauncherFollowChoice follow =
+        SequencerLauncherFollowChoice::NONE;
     SequencerLauncherFollowQuantization quantization =
         SequencerLauncherFollowQuantization::GLOBAL;
 
     [[nodiscard]] bool enabled() const noexcept {
-        return length > 0U && thenTarget != NO_TARGET;
+        return length > 0U && follow != SequencerLauncherFollowChoice::NONE;
     }
 };
 
@@ -52,7 +96,7 @@ constexpr bool operator==(
     const SequencerLauncherBehavior& lhs,
     const SequencerLauncherBehavior& rhs
 ) noexcept {
-    return lhs.length == rhs.length && lhs.thenTarget == rhs.thenTarget &&
+    return lhs.length == rhs.length && lhs.follow == rhs.follow &&
         lhs.quantization == rhs.quantization;
 }
 

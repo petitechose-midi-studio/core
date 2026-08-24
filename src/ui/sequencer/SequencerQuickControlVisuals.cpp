@@ -1,5 +1,7 @@
 #include "ui/sequencer/SequencerQuickControlVisuals.hpp"
 
+#include <cstdio>
+
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -38,6 +40,48 @@ uint32_t quickControlColor(QuickItem item) {
         default:
             return theme::color::STEP_OFFSET;
     }
+}
+
+void formatLauncherFollowChoice(
+    char* buffer,
+    size_t size,
+    core::state::sequencer::SequencerLauncherFollowChoice choice,
+    bool scene
+) {
+    using Choice = core::state::sequencer::SequencerLauncherFollowChoice;
+    if (buffer == nullptr || size == 0U) return;
+    switch (choice) {
+        case Choice::NONE:
+            std::snprintf(buffer, size, "None");
+            return;
+        case Choice::NEXT:
+            std::snprintf(buffer, size, "Next");
+            return;
+        case Choice::FIRST:
+            std::snprintf(buffer, size, "First");
+            return;
+        case Choice::RANDOM_OTHER:
+            std::snprintf(buffer, size, "Random other");
+            return;
+        case Choice::RANDOM_ANY:
+            std::snprintf(buffer, size, "Random any");
+            return;
+        default:
+            break;
+    }
+    const uint8_t slot = core::state::sequencer::
+        sequencerLauncherFollowTargetSlot(choice);
+    if (slot >= core::state::sequencer::SequencerClipGridState::SLOT_COUNT) {
+        std::snprintf(buffer, size, "None");
+        return;
+    }
+    std::snprintf(
+        buffer,
+        size,
+        "%s %u",
+        scene ? "Scene" : "Clip",
+        static_cast<unsigned>(slot + 1U)
+    );
 }
 
 }  // namespace core::ui::sequencer::visual

@@ -187,12 +187,12 @@ void test_launcher_metadata_survives_snapshot_move_and_history() {
 
     const seq::SequencerLauncherBehavior clipBehavior{
         .length = 2U,
-        .thenTarget = 3U,
+        .follow = seq::sequencerLauncherFollowTarget(3U),
         .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
     };
     const seq::SequencerLauncherBehavior sceneBehavior{
         .length = 4U,
-        .thenTarget = 2U,
+        .follow = seq::sequencerLauncherFollowTarget(2U),
         .quantization = seq::SequencerLauncherFollowQuantization::BAR,
     };
     assert(grid.setClipBehavior({0U, 1U}, clipBehavior));
@@ -233,7 +233,30 @@ void test_launcher_metadata_survives_snapshot_move_and_history() {
     assert(restored.clipBehavior({0U, 1U}) == clipBehavior);
     assert(restored.isStop({0U, 3U}));
     assert(restored.sceneBehavior(1U) == sceneBehavior);
+    assert(!restored.setClipBehavior({0U, 1U}, {
+        .length = 1U,
+        .follow = static_cast<seq::SequencerLauncherFollowChoice>(42U),
+        .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
+    }));
     std::cout << "[PASS] launcher metadata survives snapshots and history\n";
+}
+
+void test_follow_choice_order_matches_the_editor_grammar() {
+    using Choice = seq::SequencerLauncherFollowChoice;
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::NONE, 1) ==
+           Choice::NEXT);
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::NEXT, 1) ==
+           Choice::FIRST);
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::FIRST, 1) ==
+           Choice::RANDOM_OTHER);
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::RANDOM_OTHER, 1) ==
+           Choice::RANDOM_ANY);
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::RANDOM_ANY, 1) ==
+           Choice::TARGET_1);
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::TARGET_8, 1) ==
+           Choice::TARGET_8);
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::NONE, -1) ==
+           Choice::NONE);
 }
 
 void test_resident_switch_preserves_both_clip_documents() {
@@ -514,6 +537,7 @@ int main() {
     test_grid_rejects_malformed_documents();
     test_grid_enforces_the_aggregate_psram_budget();
     test_launcher_metadata_survives_snapshot_move_and_history();
+    test_follow_choice_order_matches_the_editor_grammar();
     test_resident_switch_preserves_both_clip_documents();
     test_history_targets_the_authored_clip_after_resident_switch();
     test_clip_structure_history_transfers_ownership_without_project_copies();

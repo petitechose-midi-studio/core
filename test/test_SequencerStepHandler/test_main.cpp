@@ -645,6 +645,18 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
     assert(h.state.sequencerClips.clipBehavior(address).length == before + 1U);
     assert(launcher.quickFeedbackVisible);
 
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.tick(g_now_ms + 1U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tick(g_now_ms + 1U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(launcher.quickAction == seq::ClipWorkspaceQuickAction::FOLLOW);
+    h.tick(g_now_ms + 1U);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencerClips.clipBehavior(address).follow ==
+           seq::SequencerLauncherFollowChoice::NEXT);
+
     std::cout
         << "[PASS] Clip Launcher LEFT_CENTER arms quick OPT editing\n";
 }

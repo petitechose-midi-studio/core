@@ -434,22 +434,11 @@ FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float delta) {
                 static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH)
             ));
             break;
-        case seq::ClipWorkspaceQuickAction::THEN:
-            if (direction < 0) {
-                behavior.thenTarget = behavior.thenTarget ==
-                            seq::SequencerLauncherBehavior::NO_TARGET ||
-                        behavior.thenTarget == 0U
-                    ? seq::SequencerLauncherBehavior::NO_TARGET
-                    : static_cast<uint8_t>(behavior.thenTarget - 1U);
-            } else {
-                behavior.thenTarget = behavior.thenTarget ==
-                        seq::SequencerLauncherBehavior::NO_TARGET
-                    ? 0U
-                    : std::min<uint8_t>(
-                        static_cast<uint8_t>(behavior.thenTarget + 1U),
-                        seq::SequencerClipGridState::SLOT_COUNT - 1U
-                    );
-            }
+        case seq::ClipWorkspaceQuickAction::FOLLOW:
+            behavior.follow = seq::stepSequencerLauncherFollowChoice(
+                behavior.follow,
+                direction
+            );
             break;
         case seq::ClipWorkspaceQuickAction::QUANTIZE: {
             const int value = std::clamp(
@@ -492,7 +481,7 @@ FLASHMEM void ClipWorkspaceHandler::edit(float delta) {
     release_latch_.arm(Config::ButtonID::LEFT_CENTER);
 
     uint8_t length = ui.editorLength;
-    uint8_t target = ui.editorThenTarget;
+    uint8_t followChoice = ui.editorFollowChoice;
     uint8_t quantization = ui.editorQuantization;
     switch (ui.editorField) {
         case seq::ClipWorkspaceBehaviorField::LENGTH:
@@ -502,20 +491,15 @@ FLASHMEM void ClipWorkspaceHandler::edit(float delta) {
                 static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH)
             ));
             break;
-        case seq::ClipWorkspaceBehaviorField::THEN:
-            if (direction < 0) {
-                target = target == seq::SequencerLauncherBehavior::NO_TARGET ||
-                        target == 0U
-                    ? seq::SequencerLauncherBehavior::NO_TARGET
-                    : static_cast<uint8_t>(target - 1U);
-            } else {
-                target = target == seq::SequencerLauncherBehavior::NO_TARGET
-                    ? 0U
-                    : std::min<uint8_t>(
-                        static_cast<uint8_t>(target + 1U),
-                        seq::SequencerClipGridState::SLOT_COUNT - 1U
-                    );
-            }
+        case seq::ClipWorkspaceBehaviorField::FOLLOW:
+            followChoice = static_cast<uint8_t>(
+                seq::stepSequencerLauncherFollowChoice(
+                    static_cast<seq::SequencerLauncherFollowChoice>(
+                        followChoice
+                    ),
+                    direction
+                )
+            );
             break;
         case seq::ClipWorkspaceBehaviorField::QUANTIZE:
             quantization = static_cast<uint8_t>(std::clamp(
@@ -528,7 +512,7 @@ FLASHMEM void ClipWorkspaceHandler::edit(float delta) {
         case seq::ClipWorkspaceBehaviorField::COUNT:
             break;
     }
-    ui.setEditorValues(length, target, quantization);
+    ui.setEditorValues(length, followChoice, quantization);
 }
 
 FLASHMEM void ClipWorkspaceHandler::moveViewport(int direction) {
@@ -686,7 +670,7 @@ FLASHMEM void ClipWorkspaceHandler::openFocusedEditor() {
         ui.openEditor(
             seq::ClipWorkspaceEditor::SCENE_BEHAVIOR,
             behavior.length,
-            behavior.thenTarget,
+            static_cast<uint8_t>(behavior.follow),
             static_cast<uint8_t>(behavior.quantization)
         );
         return;
@@ -698,7 +682,7 @@ FLASHMEM void ClipWorkspaceHandler::openFocusedEditor() {
         ui.openEditor(
             seq::ClipWorkspaceEditor::CLIP_BEHAVIOR,
             behavior.length,
-            behavior.thenTarget,
+            static_cast<uint8_t>(behavior.follow),
             static_cast<uint8_t>(behavior.quantization)
         );
     } else {
@@ -734,7 +718,9 @@ FLASHMEM void ClipWorkspaceHandler::applyEditor() {
     } else {
         const seq::SequencerLauncherBehavior behavior{
             .length = ui.editorLength,
-            .thenTarget = ui.editorThenTarget,
+            .follow = static_cast<seq::SequencerLauncherFollowChoice>(
+                ui.editorFollowChoice
+            ),
             .quantization = static_cast<
                 seq::SequencerLauncherFollowQuantization>(
                     std::min<uint8_t>(ui.editorQuantization, 2U))
