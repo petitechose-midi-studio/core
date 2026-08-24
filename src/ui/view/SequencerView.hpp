@@ -79,11 +79,13 @@ private:
         RENDER_HISTORY_FEEDBACK = 1U << 5,
         RENDER_GRID = 1U << 6,
         RENDER_TRACK_PASTE_PREFLIGHT = 1U << 7,
+        RENDER_CLIP_ACTIVITY = 1U << 8,
     };
     static constexpr uint32_t RENDER_ALL =
         RENDER_HEADER_TOP | RENDER_HEADER_STRIP | RENDER_SELECTOR_OVERLAY |
         RENDER_LEFT_ACTION_STRIP | RENDER_BOTTOM_ACTION_STRIP |
-        RENDER_HISTORY_FEEDBACK | RENDER_GRID | RENDER_TRACK_PASTE_PREFLIGHT;
+        RENDER_HISTORY_FEEDBACK | RENDER_GRID | RENDER_TRACK_PASTE_PREFLIGHT |
+        RENDER_CLIP_ACTIVITY;
 
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
@@ -98,6 +100,7 @@ private:
     void bindHeaderStripState();
     bool bindStructureSelectionState();
     void bindGridState();
+    void bindClipActivityState();
     void bindSelectorOverlayState();
     void bindOverlayVisibilityState();
     void bindLeftActionStripState();
@@ -123,6 +126,7 @@ private:
     void requestHistoryFeedbackRender();
     void requestGridRender();
     void requestGridTickRender();
+    void requestClipActivityRender();
     void requestTrackPastePreflightRender();
     void requestClipboardDependentRenders();
     static bool canDrainRender(void* context);
@@ -141,6 +145,8 @@ private:
         structure_selection_watcher_;
     oc::state::StaticWatchGroup<48> grid_watcher_;
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
+    oc::state::StaticWatchGroup<core::state::StatusBarState::TRACK_COUNT>
+        clip_activity_watcher_;
     oc::state::StaticWatchGroup<27> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<5> overlay_visibility_watcher_;
     oc::state::StaticWatchGroup<14> left_action_strip_watcher_;

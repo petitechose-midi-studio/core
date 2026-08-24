@@ -83,14 +83,22 @@ FLASHMEM void drawText(
     const lv_font_t* font,
     lv_text_align_t alignment = LV_TEXT_ALIGN_CENTER
 ) {
+    const lv_font_t* resolvedFont = font ? font : LV_FONT_DEFAULT;
+    lv_area_t textArea = area;
+    const lv_coord_t availableHeight = lv_area_get_height(&area);
+    if (resolvedFont->line_height < availableHeight) {
+        textArea.y1 = static_cast<lv_coord_t>(
+            area.y1 + (availableHeight - resolvedFont->line_height) / 2
+        );
+    }
     lv_draw_label_dsc_t dsc;
     lv_draw_label_dsc_init(&dsc);
     dsc.text = text;
-    dsc.font = font ? font : LV_FONT_DEFAULT;
+    dsc.font = resolvedFont;
     dsc.color = lv_color_hex(color);
     dsc.opa = opacity;
     dsc.align = alignment;
-    lv_draw_label(layer, &dsc, &area);
+    lv_draw_label(layer, &dsc, &textArea);
 }
 
 FLASHMEM void drawSquare(
@@ -187,9 +195,9 @@ FLASHMEM void drawCountdownRing(
 
 FLASHMEM const char* quantizationLabel(uint8_t value) {
     switch (value) {
-        case 1U: return "1 BEAT";
-        case 2U: return "1 BAR";
-        default: return "GLOBAL";
+        case 1U: return "1 beat";
+        case 2U: return "1 bar";
+        default: return "Global";
     }
 }
 
@@ -655,6 +663,28 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
     }
 }
 
+FLASHMEM void SequencerClipLauncherSurface::invalidateTrackActivity() {
+    if (!root_ || !props_.visible || props_.ui == nullptr ||
+        props_.statusBar == nullptr ||
+        props_.ui->editorActive() ||
+        lv_obj_has_flag(root_, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+
+    lv_area_t surface{};
+    lv_obj_get_content_coords(root_, &surface);
+    const auto layout = launcherLayout(surface);
+    const lv_area_t headers{
+        .x1 = layout.gridX,
+        .y1 = surface.y1,
+        .x2 = surface.x2,
+        .y2 = static_cast<lv_coord_t>(
+            surface.y1 + LauncherLayout::HEADER_HEIGHT - 1
+        ),
+    };
+    lv_obj_invalidate_area(root_, &headers);
+}
+
 FLASHMEM void SequencerClipLauncherSurface::onDraw(lv_event_t* event) {
     auto* self = static_cast<SequencerClipLauncherSurface*>(
         lv_event_get_user_data(event)
@@ -684,162 +714,152 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             LV_OPA_TRANSP,
             0
         );
-        std::array<char, 32> title{};
-        if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
-            std::snprintf(
-                title.data(), title.size(), "SLOT T%u / C%u",
-                static_cast<unsigned>(ui.focusedTrack + 1U),
-                static_cast<unsigned>(ui.focusedSlot + 1U)
-            );
-        } else if (ui.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR) {
-            std::snprintf(
-                title.data(), title.size(), "CLIP T%u / C%u",
-                static_cast<unsigned>(ui.focusedTrack + 1U),
-                static_cast<unsigned>(ui.focusedSlot + 1U)
-            );
-        } else {
-            std::snprintf(
-                title.data(), title.size(), "SCENE S%u",
-                static_cast<unsigned>(ui.focusedSlot + 1U)
-            );
-        }
-        drawText(
-            layer,
-            {surface.x1, surface.y1, surface.x2,
-             static_cast<lv_coord_t>(surface.y1 + 20)},
-            title.data(),
-            theme::color::TEXT_PRIMARY,
-            LV_OPA_COVER,
-            fonts.compact_selected(),
-            LV_TEXT_ALIGN_LEFT
+        constexpr lv_coord_t margin = theme::layout::PAD_SM;
+        constexpr lv_coord_t gap = theme::layout::GAP_SM;
+        constexpr uint8_t rowCount = 3U;
+        const lv_coord_t availableHeight = static_cast<lv_coord_t>(
+            lv_area_get_height(&surface) - 2 * margin - 2 * gap
         );
+        const lv_coord_t rowHeight = static_cast<lv_coord_t>(
+            availableHeight / rowCount
+        );
+        constexpr std::array<const char*, rowCount> behaviorIcons{{
+            standalone::icons::LENGTH,
+            standalone::icons::ROUTING,
+            standalone::icons::DIVISION,
+        }};
+        constexpr std::array<uint32_t, rowCount> behaviorColors{{
+            theme::color::STEP_LENGTH,
+            theme::color::ROUTING,
+            theme::color::STEP_DIVISION,
+        }};
+        constexpr std::array<const char*, rowCount> actionIcons{{
+            standalone::icons::ACTION_CREATE,
+            "",
+            standalone::icons::ACTION_CLEAR,
+        }};
+        constexpr std::array<const char*, rowCount> actionLabels{{
+            "Create clip", "Set stop", "Clear stop",
+        }};
+        constexpr std::array<uint32_t, rowCount> actionColors{{
+            theme::color::POSITIVE,
+            theme::color::DESTRUCTIVE,
+            theme::color::SECONDARY,
+        }};
 
-        constexpr lv_coord_t editorTop = 26;
-        constexpr lv_coord_t editorRowHeight = 34;
-        if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
-            constexpr std::array<const char*, 3> labels{{
-                "CREATE CLIP", "SET STOP", "CLEAR STOP"
-            }};
-            for (uint8_t row = 0U; row < labels.size(); ++row) {
-                const lv_area_t item{
-                    static_cast<lv_coord_t>(surface.x1 + 4),
-                    static_cast<lv_coord_t>(surface.y1 + editorTop +
-                        row * editorRowHeight),
-                    static_cast<lv_coord_t>(surface.x2 - 4),
-                    static_cast<lv_coord_t>(surface.y1 + editorTop +
-                        row * editorRowHeight + editorRowHeight - 5),
-                };
-                const bool focused = static_cast<uint8_t>(ui.slotAction) == row;
-                drawRect(
+        for (uint8_t row = 0U; row < rowCount; ++row) {
+            const lv_coord_t y = static_cast<lv_coord_t>(
+                surface.y1 + margin + row * (rowHeight + gap)
+            );
+            const lv_area_t item{
+                static_cast<lv_coord_t>(surface.x1 + margin),
+                y,
+                static_cast<lv_coord_t>(surface.x2 - margin),
+                row + 1U == rowCount
+                    ? static_cast<lv_coord_t>(surface.y2 - margin)
+                    : static_cast<lv_coord_t>(y + rowHeight - 1),
+            };
+            const bool slotAction =
+                ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION;
+            const bool focused = slotAction
+                ? static_cast<uint8_t>(ui.slotAction) == row
+                : static_cast<uint8_t>(ui.editorField) == row;
+            drawRect(
+                layer,
+                item,
+                focused ? theme::color::SURFACE_RAISED
+                        : theme::color::SURFACE_IDLE,
+                LV_OPA_COVER,
+                focused ? theme::color::FOCUS_EDIT
+                        : theme::color::BORDER_SUBTLE,
+                focused ? 2 : 1,
+                LV_OPA_COVER
+            );
+
+            const char* icon = slotAction
+                ? actionIcons[row] : behaviorIcons[row];
+            const uint32_t iconColor = slotAction
+                ? actionColors[row] : behaviorColors[row];
+            if (slotAction && row == 1U) {
+                drawSquare(
                     layer,
-                    item,
-                    focused ? theme::color::SURFACE_RAISED
-                            : theme::color::SURFACE_IDLE,
-                    LV_OPA_COVER,
-                    focused ? theme::color::TEXT_PRIMARY
-                            : theme::color::BORDER_SUBTLE,
-                    focused ? 2 : 1,
-                    LV_OPA_COVER
+                    static_cast<lv_coord_t>(item.x1 + 24),
+                    static_cast<lv_coord_t>((item.y1 + item.y2) / 2),
+                    9,
+                    iconColor
                 );
-                drawText(
-                    layer,
-                    item,
-                    labels[row],
-                    row == 1U ? theme::color::DESTRUCTIVE
-                              : theme::color::TEXT_PRIMARY,
-                    focused ? LV_OPA_COVER : LV_OPA_70,
-                    fonts.meta_label()
-                );
-            }
-        } else {
-            constexpr std::array<const char*, 3> fieldLabels{{
-                "LENGTH", "THEN", "QUANTIZE"
-            }};
-            for (uint8_t row = 0U; row < fieldLabels.size(); ++row) {
-                const lv_area_t item{
-                    static_cast<lv_coord_t>(surface.x1 + 4),
-                    static_cast<lv_coord_t>(surface.y1 + editorTop +
-                        row * editorRowHeight),
-                    static_cast<lv_coord_t>(surface.x2 - 4),
-                    static_cast<lv_coord_t>(surface.y1 + editorTop +
-                        row * editorRowHeight + editorRowHeight - 5),
-                };
-                const bool focused = static_cast<uint8_t>(ui.editorField) == row;
-                drawRect(
-                    layer,
-                    item,
-                    focused ? theme::color::SURFACE_RAISED
-                            : theme::color::SURFACE_IDLE,
-                    LV_OPA_COVER,
-                    focused ? theme::color::TEXT_PRIMARY
-                            : theme::color::BORDER_SUBTLE,
-                    focused ? 2 : 1,
-                    LV_OPA_COVER
-                );
+            } else {
                 drawText(
                     layer,
                     {static_cast<lv_coord_t>(item.x1 + 8), item.y1,
-                     static_cast<lv_coord_t>(item.x1 + 92), item.y2},
-                    fieldLabels[row],
-                    theme::color::TEXT_SECONDARY,
-                    LV_OPA_COVER,
-                    fonts.meta_label(),
-                    LV_TEXT_ALIGN_LEFT
-                );
-                std::array<char, 20> value{};
-                if (row == 0U) {
-                    if (ui.editorLength == 0U) {
-                        std::snprintf(value.data(), value.size(), "OFF");
-                    } else {
-                        std::snprintf(
-                            value.data(), value.size(), "%u %s",
-                            static_cast<unsigned>(ui.editorLength),
-                            ui.editor ==
-                                    seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
-                                ? "LOOPS" : "BARS"
-                        );
-                    }
-                } else if (row == 1U) {
-                    if (ui.editorThenTarget ==
-                        seq::SequencerLauncherBehavior::NO_TARGET) {
-                        std::snprintf(value.data(), value.size(), "NONE");
-                    } else {
-                        std::snprintf(
-                            value.data(), value.size(), "%s %u",
-                            ui.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
-                                ? "CLIP" : "SCENE",
-                            static_cast<unsigned>(ui.editorThenTarget + 1U)
-                        );
-                    }
-                } else {
-                    std::snprintf(
-                        value.data(), value.size(), "%s",
-                        quantizationLabel(ui.editorQuantization)
-                    );
-                }
-                drawText(
-                    layer,
-                    {static_cast<lv_coord_t>(item.x1 + 96), item.y1,
-                     static_cast<lv_coord_t>(item.x2 - 8), item.y2},
-                    value.data(),
-                    theme::color::TEXT_PRIMARY,
-                    LV_OPA_COVER,
-                    fonts.compact_selected(),
-                    LV_TEXT_ALIGN_RIGHT
+                     static_cast<lv_coord_t>(item.x1 + 40), item.y2},
+                    icon,
+                    iconColor,
+                    focused ? LV_OPA_COVER : LV_OPA_70,
+                    standalone_fonts.icons_16
                 );
             }
+
+            if (slotAction) {
+                drawText(
+                    layer,
+                    {static_cast<lv_coord_t>(item.x1 + 48), item.y1,
+                     static_cast<lv_coord_t>(item.x2 - 8), item.y2},
+                    actionLabels[row],
+                    actionColors[row],
+                    focused ? LV_OPA_COVER : LV_OPA_70,
+                    fonts.compact_selected(),
+                    LV_TEXT_ALIGN_LEFT
+                );
+                continue;
+            }
+
+            std::array<char, 20> value{};
+            if (row == 0U) {
+                if (ui.editorLength == 0U) {
+                    std::snprintf(value.data(), value.size(), "Off");
+                } else {
+                    const bool clip = ui.editor ==
+                        seq::ClipWorkspaceEditor::CLIP_BEHAVIOR;
+                    const bool singular = ui.editorLength == 1U;
+                    const char* unit = clip
+                        ? singular ? "loop" : "loops"
+                        : singular ? "bar" : "bars";
+                    std::snprintf(
+                        value.data(), value.size(), "%u %s",
+                        static_cast<unsigned>(ui.editorLength),
+                        unit
+                    );
+                }
+            } else if (row == 1U) {
+                if (ui.editorThenTarget ==
+                    seq::SequencerLauncherBehavior::NO_TARGET) {
+                    std::snprintf(value.data(), value.size(), "None");
+                } else {
+                    std::snprintf(
+                        value.data(), value.size(), "%s %u",
+                        ui.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR
+                            ? "Clip" : "Scene",
+                        static_cast<unsigned>(ui.editorThenTarget + 1U)
+                    );
+                }
+            } else {
+                std::snprintf(
+                    value.data(), value.size(), "%s",
+                    quantizationLabel(ui.editorQuantization)
+                );
+            }
+            drawText(
+                layer,
+                {static_cast<lv_coord_t>(item.x1 + 48), item.y1,
+                 static_cast<lv_coord_t>(item.x2 - 8), item.y2},
+                value.data(),
+                theme::color::TEXT_PRIMARY,
+                LV_OPA_COVER,
+                fonts.compact_selected(),
+                LV_TEXT_ALIGN_RIGHT
+            );
         }
-        drawText(
-            layer,
-            {surface.x1,
-             static_cast<lv_coord_t>(surface.y2 - 20),
-             surface.x2,
-             surface.y2},
-            "NAV: FIELD   LC+NAV: VALUE   NAV: APPLY",
-            theme::color::TEXT_SECONDARY,
-            LV_OPA_80,
-            fonts.meta_label()
-        );
         return;
     }
 
@@ -874,22 +894,6 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         1,
         LV_OPA_COVER
     );
-    const char* areaIcon = ui.sceneFocused()
-        ? standalone::icons::VIEW_CLIPS
-        : ui.trackHeaderFocused()
-            ? (props_.tracks->isDrumTrack(ui.focusedTrack)
-                   ? standalone::icons::DRUM_GENERIC
-                   : standalone::icons::NOTE)
-            : standalone::icons::CLIP;
-    drawText(
-        layer,
-        areaHeader,
-        areaIcon,
-        theme::color::TEXT_PRIMARY,
-        LV_OPA_COVER,
-        standalone_fonts.icons_16
-    );
-
     for (uint8_t row = 0U;
          row < seq::ClipWorkspaceUiState::VISIBLE_ROWS;
          ++row) {
@@ -997,6 +1001,9 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         const bool headerSelected = selectingTracks &&
             (props_.trackNavigation->selection.selectedMask.get() &
              static_cast<uint16_t>(1U << track)) != 0U;
+        const uint8_t activity = enabled && props_.statusBar != nullptr
+            ? props_.statusBar->trackNoteActivity[track].get()
+            : 0U;
         drawRect(
             layer,
             header,
@@ -1010,6 +1017,26 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             headerFocused ? 2 : 1,
             navigable ? LV_OPA_COVER : LV_OPA_20
         );
+        if (activity != 0U) {
+            const lv_area_t pulse{
+                static_cast<lv_coord_t>(header.x1 + 1),
+                static_cast<lv_coord_t>(header.y1 + 1),
+                static_cast<lv_coord_t>(header.x2 - 1),
+                static_cast<lv_coord_t>(header.y2 - 1),
+            };
+            drawRect(
+                layer,
+                pulse,
+                trackColor,
+                static_cast<lv_opa_t>(
+                    32U + (static_cast<uint16_t>(activity) * 64U) / 127U
+                ),
+                trackColor,
+                0,
+                LV_OPA_TRANSP,
+                2
+            );
+        }
         const auto telemetry = props_.launches->telemetry(track);
         const bool queuedStop = enabled &&
             telemetry.status == seq::SequencerClipLaunchStatus::QUEUED &&
@@ -1077,7 +1104,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                 props_.tracks->isDrumTrack(track)
                     ? standalone::icons::DRUM_GENERIC
                     : standalone::icons::NOTE,
-                trackColor,
+                activity != 0U ? theme::color::TEXT_PRIMARY : trackColor,
                 LV_OPA_COVER,
                 standalone_fonts.icons_16
             );

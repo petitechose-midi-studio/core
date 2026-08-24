@@ -6,6 +6,7 @@
 #include <lvgl.h>
 #include <oc/ui/lvgl/IWidget.hpp>
 
+#include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerClipGridState.hpp"
 #include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -23,6 +24,7 @@ struct SequencerClipLauncherSurfaceProps {
     const core::state::sequencer::SequencerTrackBankState* tracks = nullptr;
     const core::state::sequencer::SequencerState* sequencer = nullptr;
     const core::state::TrackNavigationState* trackNavigation = nullptr;
+    const core::state::StatusBarState* statusBar = nullptr;
     uint16_t enabledTrackMask = 0U;
 };
 
@@ -34,6 +36,7 @@ public:
 
     void render(const SequencerClipLauncherSurfaceProps& props);
     void invalidatePlaybackProgress();
+    void invalidateTrackActivity();
     lv_obj_t* getElement() const override { return root_; }
 
 private:

@@ -217,6 +217,7 @@ FLASHMEM bool SequencerView::bindToState() {
     bindHeaderStripState();
     const bool structureSelectionBound = bindStructureSelectionState();
     bindGridState();
+    bindClipActivityState();
     bindSelectorOverlayState();
     bindOverlayVisibilityState();
     bindLeftActionStripState();
@@ -234,6 +235,8 @@ FLASHMEM bool SequencerView::bindToState() {
             structure_selection_watcher_.capacity() &&
         grid_watcher_.subscriptionCount() == grid_watcher_.capacity() &&
         grid_tick_watcher_.subscriptionCount() == grid_tick_watcher_.capacity() &&
+        clip_activity_watcher_.subscriptionCount() ==
+            clip_activity_watcher_.capacity() &&
         selector_overlay_watcher_.subscriptionCount() == selector_overlay_watcher_.capacity() &&
         overlay_visibility_watcher_.subscriptionCount() == overlay_visibility_watcher_.capacity() &&
         left_action_strip_watcher_.subscriptionCount() == left_action_strip_watcher_.capacity() &&
@@ -376,6 +379,30 @@ FLASHMEM void SequencerView::bindGridState() {
     );
     grid_tick_watcher_.watch(
         state_refs_.sequencer.playheadStepPhaseQ8
+    );
+}
+
+FLASHMEM void SequencerView::bindClipActivityState() {
+    clip_activity_watcher_.bind<&SequencerView::requestClipActivityRender>(
+        *this, 13, "SequencerView.clipActivity"
+    );
+    clip_activity_watcher_.watchAll(
+        state_refs_.statusBar.trackNoteActivity[0],
+        state_refs_.statusBar.trackNoteActivity[1],
+        state_refs_.statusBar.trackNoteActivity[2],
+        state_refs_.statusBar.trackNoteActivity[3],
+        state_refs_.statusBar.trackNoteActivity[4],
+        state_refs_.statusBar.trackNoteActivity[5],
+        state_refs_.statusBar.trackNoteActivity[6],
+        state_refs_.statusBar.trackNoteActivity[7],
+        state_refs_.statusBar.trackNoteActivity[8],
+        state_refs_.statusBar.trackNoteActivity[9],
+        state_refs_.statusBar.trackNoteActivity[10],
+        state_refs_.statusBar.trackNoteActivity[11],
+        state_refs_.statusBar.trackNoteActivity[12],
+        state_refs_.statusBar.trackNoteActivity[13],
+        state_refs_.statusBar.trackNoteActivity[14],
+        state_refs_.statusBar.trackNoteActivity[15]
     );
 }
 
@@ -658,6 +685,13 @@ void SequencerView::requestGridTickRender() {
     }
 }
 
+void SequencerView::requestClipActivityRender() {
+    if (state_refs_.sequencer.clipWorkspace.matrixVisible() &&
+        !state_refs_.sequencer.clipWorkspace.editorActive()) {
+        requestRender(RENDER_CLIP_ACTIVITY);
+    }
+}
+
 void SequencerView::requestTrackPastePreflightRender() {
     requestRender(RENDER_TRACK_PASTE_PREFLIGHT);
 }
@@ -704,9 +738,12 @@ void SequencerView::render(uint32_t flags) {
     const bool needsTrackPastePreflight =
         (flags & RENDER_TRACK_PASTE_PREFLIGHT) != 0 &&
         track_paste_preflight_card_;
+    const bool needsClipActivity =
+        (flags & RENDER_CLIP_ACTIVITY) != 0 && clip_launcher_surface_;
     if (!needsSelectorOverlay && !needsLeftActionStrip &&
         !needsBottomActionStrip && !needsHistoryToast && !needsHeaderTop &&
-        !needsHeaderStrip && !needsGrid && !needsTrackPastePreflight) {
+        !needsHeaderStrip && !needsGrid && !needsTrackPastePreflight &&
+        !needsClipActivity) {
         return;
     }
 
@@ -764,6 +801,7 @@ void SequencerView::render(uint32_t flags) {
                 .tracks = &state_refs_.tracks,
                 .sequencer = &state_refs_.sequencer,
                 .trackNavigation = &state_refs_.trackNavigation,
+                .statusBar = &state_refs_.statusBar,
                 .enabledTrackMask = state_refs_.sharedTrackEnabledMask.get(),
             });
         } else if (!previewEmptyTrack &&
@@ -798,6 +836,10 @@ void SequencerView::render(uint32_t flags) {
                 step_grid_->render(stepGridProps);
             }
         }
+    }
+
+    if (needsClipActivity && !needsGrid) {
+        clip_launcher_surface_->invalidateTrackActivity();
     }
 
     if (needsHistoryToast) {

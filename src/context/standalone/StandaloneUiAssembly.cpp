@@ -419,7 +419,8 @@ FLASHMEM bool StandaloneUiAssembly::bindGlobalTrackStrip() {
     >(*this, 0, "GlobalTrackStrip.context");
     bound = global_track_context_watcher_.watchAll(
         core_state_.activeView,
-        core_state_.structureNavigationFocus
+        core_state_.structureNavigationFocus,
+        core_state_.sequencer.clipWorkspace.revision
     ) && bound;
 
     global_track_structure_watcher_.bind<
@@ -508,6 +509,10 @@ void StandaloneUiAssembly::scheduleGlobalTrackStripRender(bool ready) {
 }
 
 void StandaloneUiAssembly::requestGlobalTrackStripRender() {
+    if (core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
+        core_state_.sequencer.clipWorkspace.matrixVisible()) {
+        return;
+    }
     scheduleGlobalTrackStripRender();
 }
 
@@ -517,6 +522,22 @@ void StandaloneUiAssembly::requestGlobalTrackStripRenderReady() {
 
 void StandaloneUiAssembly::renderGlobalTrackStrip() {
     if (!global_track_strip_) return;
+
+    const bool launcherMatrixVisible =
+        core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
+        core_state_.sequencer.clipWorkspace.matrixVisible();
+    if (global_track_strip_container_) {
+        if (launcherMatrixVisible) {
+            lv_obj_add_flag(
+                global_track_strip_container_, LV_OBJ_FLAG_HIDDEN
+            );
+        } else {
+            lv_obj_clear_flag(
+                global_track_strip_container_, LV_OBJ_FLAG_HIDDEN
+            );
+        }
+    }
+    if (launcherMatrixVisible) return;
 
     applyOverlayExclusivity();
     if (overlay_exclusive_mode_) {

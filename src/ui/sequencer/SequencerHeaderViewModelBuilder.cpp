@@ -104,10 +104,10 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             ? "Slot"
             : launcher.editor == core::state::sequencer::
                     ClipWorkspaceEditor::CLIP_BEHAVIOR
-                ? "Clip behavior"
+                ? "Clip"
                 : launcher.editor == core::state::sequencer::
                         ClipWorkspaceEditor::SCENE_BEHAVIOR
-                    ? "Scene behavior"
+                    ? "Scene"
                     : selectingTrack
                         ? source.trackNavigation.selection.placementActive()
                             ? "Paste"
@@ -241,14 +241,16 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 );
             }
         }
-        props.contextIcon = selectingTrack || launcher.trackHeaderFocused()
+        const bool trackContext =
+            selectingTrack || launcher.trackHeaderFocused();
+        props.contextIcon = trackContext
             ? source.tracks.isDrumTrack(focusedTrack)
                 ? standalone::icons::DRUM_GENERIC
                 : standalone::icons::NOTE
-            : standalone::icons::CLIP;
-        props.contextIconColor = standalone::theme::color::trackColor(
-            focusedTrack
-        );
+            : "";
+        props.contextIconColor = trackContext
+            ? standalone::theme::color::trackColor(focusedTrack)
+            : 0U;
         return props;
     }
     const auto& drumUi = sequencer.drumSequencer;
@@ -410,14 +412,8 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         );
     }
     std::array<core::ui::SequencerHeaderMetricProps, 2> metrics{};
-    const char* contextIcon = sequencer.clipWorkspace.patternVisible()
-        ? standalone::icons::CLIP
-        : "";
-    uint32_t contextIconColor = sequencer.clipWorkspace.patternVisible()
-        ? standalone::theme::color::trackColor(
-              sequencer.clipWorkspace.returnTrack
-          )
-        : 0U;
+    const char* contextIcon = "";
+    uint32_t contextIconColor = 0U;
     std::array<char, SequencerHeaderBarProps::PAGE_TEXT_SIZE> pageText{};
     uint8_t pitchFeedbackStep = 0U;
     const bool inlinePitchFeedback =
