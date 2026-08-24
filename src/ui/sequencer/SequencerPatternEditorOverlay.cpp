@@ -230,15 +230,6 @@ FLASHMEM void SequencerPatternEditorOverlay::createUi(lv_obj_t* parent) {
         playhead_surface_, onPlayheadDraw, LV_EVENT_DRAW_MAIN, this
     );
 
-    layer_ = createLabel(
-        root_, fonts.meta_label(), theme::color::TEXT_PRIMARY, LV_TEXT_ALIGN_LEFT
-    );
-    lv_obj_set_pos(layer_, 12, 31);
-    lv_obj_set_size(layer_, 172, 15);
-    lv_obj_set_style_bg_color(layer_, lv_color_hex(theme::color::BACKGROUND), 0);
-    lv_obj_set_style_bg_opa(layer_, LV_OPA_80, 0);
-    lv_obj_move_foreground(layer_);
-
     transient_hint_ = createLabel(
         root_, fonts.meta_label(), theme::color::TEXT_SECONDARY, LV_TEXT_ALIGN_CENTER
     );
@@ -285,32 +276,15 @@ FLASHMEM void SequencerPatternEditorOverlay::render(
     bool headerChanged = false;
     headerChanged = copyText(title_text_, props.title) || headerChanged;
     headerChanged = copyText(meta_text_, props.meta) || headerChanged;
-    headerChanged = copyText(layer_text_, props.layer) || headerChanged;
     headerChanged = copyText(hint_text_, props.transientHint) || headerChanged;
-    const uint32_t requestedLayerColor = props.layerColor == 0U
+    const uint32_t requestedAccentColor = props.accentColor == 0U
         ? theme::color::CONTENT_ACTIVE
-        : props.layerColor;
-    const bool layerStyleChanged = !rendered_ ||
-        layer_color_ != requestedLayerColor ||
-        navigation_mode_ != props.navigationMode;
-    layer_color_ = requestedLayerColor;
+        : props.accentColor;
+    accent_color_ = requestedAccentColor;
     if (headerChanged || !rendered_) {
         lv_label_set_text_static(title_, title_text_.data());
         lv_label_set_text_static(meta_, meta_text_.data());
-        lv_label_set_text_static(layer_, layer_text_.data());
         lv_label_set_text_static(transient_hint_, hint_text_.data());
-    }
-    if (layerStyleChanged) {
-        lv_obj_set_style_text_color(
-            layer_,
-            lv_color_hex(
-                props.navigationMode == core::state::sequencer::
-                    SequencerPatternEditorNavigationMode::LAYERS
-                    ? theme::color::FOCUS_EDIT
-                    : requestedLayerColor
-            ),
-            0
-        );
     }
 
     const uint8_t requestedFieldCount = std::clamp<uint8_t>(
@@ -496,6 +470,7 @@ FLASHMEM void SequencerPatternEditorOverlay::drawTimeline(lv_layer_t* layer) {
 
     const bool noteProjection = notesDominant ||
         (randomize_preview_ && randomize_property_ == RandomProperty::NOTE);
+    const bool noteContext = !randomize_preview_ && !notesDominant;
     const bool velocityProjection = randomize_preview_ &&
         randomize_property_ == RandomProperty::VELOCITY;
     const bool gateProjection = randomize_preview_ &&
@@ -531,12 +506,12 @@ FLASHMEM void SequencerPatternEditorOverlay::drawTimeline(lv_layer_t* layer) {
             : LV_OPA_COVER;
         const lv_coord_t projectionWidth = previewChanged || notesDominant ? 2 : 1;
 
-        if (noteProjection) {
+        if (noteProjection || noteContext) {
             const lv_coord_t y = gy(retained.noteY);
             lv_coord_t noteWidth = projectionWidth;
             lv_opa_t noteOpacity = opacity;
             uint16_t noteVelocity = 127U;
-            if (notesDominant && key.height > 1U) {
+            if (key.height > 1U) {
                 const uint16_t verticalRange = static_cast<uint16_t>(key.height - 1U);
                 noteVelocity = static_cast<uint16_t>(
                     (static_cast<uint32_t>(verticalRange - retained.velocityY) *
@@ -548,18 +523,22 @@ FLASHMEM void SequencerPatternEditorOverlay::drawTimeline(lv_layer_t* layer) {
                      100U) /
                     verticalRange
                 );
-                noteWidth = static_cast<lv_coord_t>(
-                    1U + (noteVelocity * 4U + 63U) / 127U
-                );
-                noteOpacity = static_cast<lv_opa_t>(
-                    64U + (chance * 191U + 50U) / 100U
-                );
+                if (notesDominant) {
+                    noteWidth = static_cast<lv_coord_t>(
+                        1U + (noteVelocity * 4U + 63U) / 127U
+                    );
+                    noteOpacity = static_cast<lv_opa_t>(
+                        64U + (chance * 191U + 50U) / 100U
+                    );
+                }
+            }
+            if (noteContext) {
+                noteWidth = 1;
+                noteOpacity = OPACITY_35;
             }
             drawLine(
                 layer, x1, y, x2, y,
-                notesDominant
-                    ? velocityContentColor(noteVelocity)
-                    : theme::color::CONTENT_ACTIVE,
+                velocityContentColor(noteVelocity),
                 noteOpacity,
                 noteWidth
             );
@@ -610,21 +589,6 @@ FLASHMEM void SequencerPatternEditorOverlay::drawTimeline(lv_layer_t* layer) {
                 opacity,
                 projectionWidth
             );
-        } else {
-            // In CC and Region modes, authored onsets remain a quiet rhythmic
-            // reference instead of competing as a second musical layer.
-            const lv_area_t activity{
-                .x1 = x1,
-                .y1 = static_cast<lv_coord_t>(area.y2 - 2),
-                .x2 = static_cast<lv_coord_t>(x1 + 1),
-                .y2 = static_cast<lv_coord_t>(area.y2 - 1),
-            };
-            drawRect(
-                layer,
-                activity,
-                theme::color::SECONDARY,
-                LV_OPA_40
-            );
         }
     }
 
@@ -672,7 +636,7 @@ FLASHMEM void SequencerPatternEditorOverlay::drawTimeline(lv_layer_t* layer) {
             drawRect(
                 layer,
                 marker,
-                layer_color_,
+                accent_color_,
                 LV_OPA_TRANSP,
                 1,
                 active ? LV_OPA_COVER : LV_OPA_70,
@@ -701,7 +665,7 @@ FLASHMEM void SequencerPatternEditorOverlay::drawTimeline(lv_layer_t* layer) {
                         layer,
                         curve_points_,
                         runCount,
-                        theme::color::CONTENT_ACTIVE,
+                        accent_color_,
                         LV_OPA_COVER,
                         true
                     );
@@ -716,7 +680,7 @@ FLASHMEM void SequencerPatternEditorOverlay::drawTimeline(lv_layer_t* layer) {
                 layer,
                 curve_points_,
                 runCount,
-                theme::color::CONTENT_ACTIVE,
+                accent_color_,
                 LV_OPA_COVER,
                 true
             );

@@ -64,15 +64,15 @@
 
 # Back reaches the Pattern and then the Clip Launcher. A second Back opens the
 # global selector; Undo is captured on the action itself. Re-enter the Pattern
-# and inspect the same step's Velocity to observe the restored base value.
+# through the Launcher's explicit content gesture and inspect the same step's
+# Velocity to observe the restored base value.
 3820 tap LEFT_TOP 60
 4020 tap LEFT_TOP 60
 5060 tick
 5120 tap LEFT_CENTER 60
 5200 capture screen undo_applied
 5300 tap LEFT_TOP 60
-5500 tap LEFT_CENTER 60
-5620 tap LEFT_TOP 60
+5500 tap LEFT_BOTTOM 60
 5700 button NAV down
 5760 encoder NAV 0.01
 5820 button NAV up
@@ -92,8 +92,7 @@
 7960 tap LEFT_BOTTOM 60
 8040 capture screen redo_applied
 8140 tap LEFT_TOP 60
-8340 tap LEFT_CENTER 60
-8460 tap LEFT_TOP 60
+8340 tap LEFT_BOTTOM 60
 8540 button NAV down
 8600 encoder NAV 0.01
 8660 button NAV up

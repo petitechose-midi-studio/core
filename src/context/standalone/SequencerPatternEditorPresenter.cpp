@@ -300,21 +300,21 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
     );
 
     const auto* bank = state_.sequencer.pattern.ccLanes.get();
-    uint32_t layerColor = theme::color::CONTENT_ACTIVE;
+    uint32_t accentColor = theme::color::CONTENT_ACTIVE;
     if (state_.randomize.active) {
         std::snprintf(
             layer_.data(), layer_.size(), "Preview \xC2\xB7 %s",
             randomizePropertyName(state_.randomize.draft.property)
         );
-        layerColor = randomizePropertyColor(state_.randomize.draft.property);
+        accentColor = randomizePropertyColor(state_.randomize.draft.property);
     } else switch (editor.focusedLayer) {
         case Layer::NOTES:
             std::snprintf(layer_.data(), layer_.size(), "Notes");
-            layerColor = theme::color::STEP_PITCH;
+            accentColor = theme::color::STEP_PITCH;
             break;
         case Layer::REGION:
             std::snprintf(layer_.data(), layer_.size(), "Region");
-            layerColor = theme::color::STEP_LENGTH;
+            accentColor = theme::color::STEP_LENGTH;
             break;
         case Layer::CC1:
         case Layer::CC2:
@@ -328,10 +328,10 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
                     static_cast<unsigned>(lane + 1U),
                     static_cast<unsigned>(bank->lanes[lane].destination.controller)
                 );
-                layerColor = CC_LAYER_COLORS[lane];
+                accentColor = CC_LAYER_COLORS[lane];
             } else {
                 std::snprintf(layer_.data(), layer_.size(), "+ CC lane");
-                layerColor = theme::color::SECONDARY;
+                accentColor = theme::color::SECONDARY;
             }
             break;
         }
@@ -387,9 +387,8 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
     props.visible = true;
     props.title = title_.data();
     props.meta = meta_.data();
-    props.layer = layer_.data();
     props.transientHint = hint_.data();
-    props.layerColor = layerColor;
+    props.accentColor = accentColor;
     props.geometry = geometry_.get();
     props.geometryRevision = geometry_revision_;
     props.playhead = projectPlayhead();
