@@ -207,6 +207,11 @@ FLASHMEM bool areasOverlap(const lv_area_t& lhs, const lv_area_t& rhs) {
         lhs.y1 <= rhs.y2 && lhs.y2 >= rhs.y1;
 }
 
+FLASHMEM bool sameArea(const lv_area_t& lhs, const lv_area_t& rhs) {
+    return lhs.x1 == rhs.x1 && lhs.y1 == rhs.y1 &&
+        lhs.x2 == rhs.x2 && lhs.y2 == rhs.y2;
+}
+
 struct PreviewWindow {
     uint32_t start = 0U;
     uint32_t loop = 0U;
@@ -602,7 +607,10 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
             seq::SequencerClipGridState::SLOT_COUNT
         ? scene.queuedScene
         : scene.activeScene;
-    if (sceneSlot >= ui.firstVisibleSlot &&
+    const bool sceneProgressVisible =
+        scene.status == seq::SequencerClipLaunchStatus::QUEUED ||
+        scene.activeRemainingQ8 != 0U;
+    if (sceneProgressVisible && sceneSlot >= ui.firstVisibleSlot &&
         sceneSlot < ui.firstVisibleSlot +
             seq::ClipWorkspaceUiState::VISIBLE_ROWS) {
         const uint8_t row = static_cast<uint8_t>(
@@ -730,11 +738,19 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
                 y + layout.rowHeight - LauncherLayout::GAP - 5
             ),
         };
-        if (playback_heads_[column].valid) {
-            lv_obj_invalidate_area(root_, &playback_heads_[column].area);
+        auto& cachedHead = playback_heads_[column];
+        if (cachedHead.valid && sameArea(cachedHead.area, head)) {
+            continue;
         }
-        lv_obj_invalidate_area(root_, &head);
-        playback_heads_[column] = {.area = head, .valid = true};
+        lv_area_t damage = head;
+        if (cachedHead.valid) {
+            damage.x1 = std::min(damage.x1, cachedHead.area.x1);
+            damage.y1 = std::min(damage.y1, cachedHead.area.y1);
+            damage.x2 = std::max(damage.x2, cachedHead.area.x2);
+            damage.y2 = std::max(damage.y2, cachedHead.area.y2);
+        }
+        lv_obj_invalidate_area(root_, &damage);
+        cachedHead = {.area = head, .valid = true};
     }
 }
 
