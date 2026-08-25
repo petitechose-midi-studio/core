@@ -5,6 +5,8 @@
 #include <iostream>
 #include <type_traits>
 
+#include <config/Timing.hpp>
+
 #include "../../src/state/sequencer/SequencerPresetLibraryEntryPolicy.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 #include "../../src/state/sequencer/SequencerUiState.hpp"
@@ -342,6 +344,38 @@ void test_clip_launcher_quick_control_is_bounded_and_expires() {
     assert(state.quickAction == seq::ClipWorkspaceQuickAction::EDIT);
 }
 
+void test_clip_launcher_operation_feedback_expires() {
+    namespace seq = core::state::sequencer;
+    seq::ClipWorkspaceUiState state;
+    state.reset(0U);
+
+    state.setFeedback(seq::ClipWorkspaceFeedback::FAILED, 100U);
+    assert(state.feedback == seq::ClipWorkspaceFeedback::FAILED);
+    state.updateFeedback(
+        100U + Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS - 1U
+    );
+    assert(state.feedback == seq::ClipWorkspaceFeedback::FAILED);
+    state.updateFeedback(
+        100U + Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
+    );
+    assert(state.feedback == seq::ClipWorkspaceFeedback::NONE);
+
+    state.completeOperation(
+        0U,
+        0U,
+        seq::ClipWorkspaceFeedback::REMOVED,
+        1000U
+    );
+    state.updateFeedback(
+        1000U + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS - 1U
+    );
+    assert(state.feedback == seq::ClipWorkspaceFeedback::REMOVED);
+    state.updateFeedback(
+        1000U + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+    );
+    assert(state.feedback == seq::ClipWorkspaceFeedback::NONE);
+}
+
 void test_clip_launcher_returns_to_the_exact_clip_address() {
     namespace seq = core::state::sequencer;
     seq::ClipWorkspaceUiState state;
@@ -508,6 +542,7 @@ int main() {
     test_track_paste_has_one_bounded_revision_subscription_surface();
     test_clip_launcher_navigation_is_spatial_and_scrolls_one_item();
     test_clip_launcher_quick_control_is_bounded_and_expires();
+    test_clip_launcher_operation_feedback_expires();
     test_clip_launcher_returns_to_the_exact_clip_address();
     test_clip_launcher_placement_navigation_moves_across_tracks();
     test_preset_library_keeps_only_the_active_domain_payload();

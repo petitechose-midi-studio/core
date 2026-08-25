@@ -81,6 +81,9 @@ private:
     void launchScene(uint8_t slot);
     void stopTrack(uint8_t track, bool immediate);
     void toggleTrackSolo();
+    void showFeedback(
+        core::state::sequencer::ClipWorkspaceFeedback feedback
+    );
     bool enterClip(core::state::sequencer::SequencerClipAddress address);
     bool selectClipForEditing(
         core::state::sequencer::SequencerClipAddress address

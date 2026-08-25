@@ -15,6 +15,7 @@
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/SequencerQuickControlVisuals.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -243,14 +244,18 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         }
         const bool trackContext =
             selectingTrack || launcher.trackHeaderFocused();
-        props.contextIcon = trackContext
-            ? source.tracks.isDrumTrack(focusedTrack)
+        if (trackContext) {
+            props.contextIcon = source.tracks.isDrumTrack(focusedTrack)
                 ? standalone::icons::DRUM_GENERIC
-                : standalone::icons::NOTE
-            : "";
-        props.contextIconColor = trackContext
-            ? standalone::theme::color::trackColor(focusedTrack)
-            : 0U;
+                : standalone::icons::NOTE;
+            props.contextIconColor =
+                standalone::theme::color::trackColor(focusedTrack);
+        } else if (launcher.quickPropertyArmed) {
+            props.contextIcon = visual::launcherQuickActionIconGlyph(
+                launcher.quickAction
+            );
+            props.contextIconColor = standalone::theme::color::STEP_STATE;
+        }
         return props;
     }
     const auto& drumUi = sequencer.drumSequencer;

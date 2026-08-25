@@ -16,6 +16,10 @@ uint32_t quickControlColor(
     core::state::sequencer::PatternQuickControlItem item
 );
 
+const char* launcherQuickActionIconGlyph(
+    core::state::sequencer::ClipWorkspaceQuickAction action
+);
+
 void formatLauncherFollowChoice(
     char* buffer,
     size_t size,

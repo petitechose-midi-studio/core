@@ -26,15 +26,17 @@ StepGridFrameState buildStepGridFrameState(
 
 // These firmware-only view-model sources are outside the native source filter.
 #include "ui/sequencer/StepPropertyVisuals.cpp"
+#include "ui/sequencer/SequencerQuickControlVisuals.cpp"
 #include "ui/sequencer/SequencerHeaderViewModelBuilder.cpp"
 #include "ui/sequencer/SequencerStepGridViewModelBuilder.cpp"
 
 namespace {
 
 core::ui::sequencer::SequencerViewModelSource sourceFor(
-    core::state::CoreState& state
+    core::state::CoreState& state,
+    bool patternWorkspace = true
 ) {
-    if (state.sequencer.clipWorkspace.matrixVisible()) {
+    if (patternWorkspace && state.sequencer.clipWorkspace.matrixVisible()) {
         state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
     return {
@@ -52,6 +54,27 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
         .projectNavigation = state.projectNavigation,
         .trackActivations = state.sequencerTrackActivations,
     };
+}
+
+void testClipQuickPropertyRemainsVisibleAfterFeedbackExpires() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    auto& launcher = state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+    launcher.focus(0U, 0U);
+    launcher.showQuickSelector();
+    launcher.moveQuickAction(1);
+    launcher.armQuickProperty(100U);
+    launcher.updateQuickFeedback(800U);
+
+    assert(launcher.quickPropertyArmed);
+    assert(!launcher.quickFeedbackVisible);
+    const auto header = core::ui::sequencer::buildSequencerHeaderBarProps(
+        sourceFor(state, false)
+    );
+    assert(std::strcmp(header.contextIcon, ::standalone::icons::LENGTH) == 0);
+    assert(header.contextIconColor ==
+           ::standalone::theme::color::STEP_STATE);
 }
 
 void testEmptyTrackPreviewProjectsNoMusicalState() {
@@ -183,6 +206,7 @@ int main() {
     testDrumTrackAndPatternProjectTheSameMusicalHeader();
     testPitchFeedbackProjectsTonalValueWithoutChangingContext();
     testPatternPlayheadBelongsOnlyToItsActiveParentClip();
+    testClipQuickPropertyRemainsVisibleAfterFeedbackExpires();
     std::cout << "Sequencer Track projection tests passed\n";
     return 0;
 }

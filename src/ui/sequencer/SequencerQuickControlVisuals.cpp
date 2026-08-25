@@ -42,6 +42,24 @@ uint32_t quickControlColor(QuickItem item) {
     }
 }
 
+const char* launcherQuickActionIconGlyph(
+    core::state::sequencer::ClipWorkspaceQuickAction action
+) {
+    using Action = core::state::sequencer::ClipWorkspaceQuickAction;
+    switch (action) {
+        case Action::LENGTH:
+            return standalone::icons::LENGTH;
+        case Action::FOLLOW:
+            return standalone::icons::ACTION_PLACE_TARGET;
+        case Action::QUANTIZE:
+            return standalone::icons::CLOCK_SYNC;
+        case Action::EDIT:
+        case Action::COUNT:
+        default:
+            return standalone::icons::CLIP;
+    }
+}
+
 void formatLauncherFollowChoice(
     char* buffer,
     size_t size,

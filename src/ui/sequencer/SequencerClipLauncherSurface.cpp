@@ -1035,6 +1035,28 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         }
     }
 
+    const uint8_t bankRow = static_cast<uint8_t>(
+        ui.macroBankFirstSlot() - ui.firstVisibleSlot
+    );
+    const lv_coord_t bankY1 = static_cast<lv_coord_t>(
+        surface.y1 + headerHeight + gap + bankRow * rowHeight
+    );
+    const lv_coord_t bankY2 = static_cast<lv_coord_t>(
+        bankY1 + seq::ClipWorkspaceUiState::MACRO_ROWS * rowHeight - gap - 1
+    );
+    const lv_coord_t bankX1 = static_cast<lv_coord_t>(gridX - gap);
+    const lv_coord_t bankX2 = static_cast<lv_coord_t>(gridX - 1);
+    drawRect(
+        layer,
+        {bankX1, bankY1, bankX2, bankY2},
+        theme::color::ACTIVE,
+        LV_OPA_80,
+        theme::color::ACTIVE,
+        0,
+        LV_OPA_TRANSP,
+        0
+    );
+
     for (uint8_t column = 0U;
          column < seq::ClipWorkspaceUiState::VISIBLE_TRACKS;
          ++column) {

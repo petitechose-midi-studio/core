@@ -258,20 +258,6 @@ const char* clipQuickActionLabel(
     }
 }
 
-const char* clipQuickActionIcon(
-    core::state::sequencer::ClipWorkspaceQuickAction action
-) {
-    using Action = core::state::sequencer::ClipWorkspaceQuickAction;
-    switch (action) {
-        case Action::LENGTH: return standalone::icons::LENGTH;
-        case Action::FOLLOW: return standalone::icons::ACTION_PLACE_TARGET;
-        case Action::QUANTIZE: return standalone::icons::CLOCK_SYNC;
-        case Action::EDIT:
-        case Action::COUNT:
-        default: return standalone::icons::CLIP;
-    }
-}
-
 void formatClipQuickActionValue(
     char* buffer,
     size_t size,
@@ -717,7 +703,7 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
         StepPropertySelectionOverlayProps props{
             .visible = true,
             .customContent = true,
-            .icon = clipQuickActionIcon(action),
+            .icon = visual::launcherQuickActionIconGlyph(action),
             .label = clipQuickActionLabel(action),
             .useValueText = true,
             .color = standalone::theme::color::STEP_STATE,

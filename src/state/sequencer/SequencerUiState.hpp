@@ -813,6 +813,7 @@ struct ClipWorkspaceUiState {
     uint8_t quickTargetTrack = 0U;
     uint8_t quickTargetSlot = 0U;
     uint32_t quickFeedbackHideAtMs = 0U;
+    uint32_t feedbackHideAtMs = 0U;
     ClipWorkspaceEditor editor = ClipWorkspaceEditor::NONE;
     ClipWorkspaceBehaviorField editorField =
         ClipWorkspaceBehaviorField::LENGTH;
@@ -902,13 +903,15 @@ struct ClipWorkspaceUiState {
     void completeOperation(
         uint8_t track,
         uint8_t slot,
-        ClipWorkspaceFeedback result
+        ClipWorkspaceFeedback result,
+        uint32_t nowMs
     );
     void beginRemoveHold(uint32_t nowMs);
     void clearRemoveHold();
     void enterPattern(uint8_t track, uint8_t slot);
     bool returnToMatrix();
-    void setFeedback(ClipWorkspaceFeedback next);
+    void setFeedback(ClipWorkspaceFeedback next, uint32_t nowMs);
+    void updateFeedback(uint32_t nowMs);
     void bump();
 };
 

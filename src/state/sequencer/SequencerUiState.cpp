@@ -3,8 +3,24 @@
 #include <algorithm>
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 
 namespace core::state::sequencer {
+
+namespace {
+
+FLASHMEM uint32_t clipWorkspaceFeedbackDeadline(
+    ClipWorkspaceFeedback feedback,
+    uint32_t nowMs
+) {
+    if (feedback == ClipWorkspaceFeedback::NONE) return 0U;
+    const uint32_t duration = feedback == ClipWorkspaceFeedback::FAILED
+        ? Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
+        : Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS;
+    return nowMs + duration;
+}
+
+}  // namespace
 
 FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState() = default;
 FLASHMEM SequencerPatternQuickControlsState::~SequencerPatternQuickControlsState() = default;
@@ -566,6 +582,7 @@ FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     quickTargetTrack = std::min<uint8_t>(activeTrack, TRACK_COUNT - 1U);
     quickTargetSlot = 0U;
     quickFeedbackHideAtMs = 0U;
+    feedbackHideAtMs = 0U;
     editor = ClipWorkspaceEditor::NONE;
     editorField = ClipWorkspaceBehaviorField::LENGTH;
     slotAction = ClipWorkspaceSlotAction::CREATE_CLIP;
@@ -620,6 +637,7 @@ FLASHMEM void ClipWorkspaceUiState::focus(
         SLOT_COUNT - VISIBLE_ROWS
     );
     feedback = ClipWorkspaceFeedback::NONE;
+    feedbackHideAtMs = 0U;
     if (changed) bump();
 }
 
@@ -641,6 +659,7 @@ FLASHMEM void ClipWorkspaceUiState::focusScene(uint8_t slot) {
         SLOT_COUNT - VISIBLE_ROWS
     );
     feedback = ClipWorkspaceFeedback::NONE;
+    feedbackHideAtMs = 0U;
     if (changed) bump();
 }
 
@@ -662,6 +681,7 @@ FLASHMEM void ClipWorkspaceUiState::focusTrackHeader(uint8_t track) {
         TRACK_COUNT - VISIBLE_TRACKS
     );
     feedback = ClipWorkspaceFeedback::NONE;
+    feedbackHideAtMs = 0U;
     if (changed) bump();
 }
 
@@ -924,6 +944,7 @@ FLASHMEM bool ClipWorkspaceUiState::backOperation() {
     } else {
         operation = ClipWorkspaceOperation::BROWSE;
         feedback = ClipWorkspaceFeedback::NONE;
+        feedbackHideAtMs = 0U;
     }
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
@@ -934,7 +955,8 @@ FLASHMEM bool ClipWorkspaceUiState::backOperation() {
 FLASHMEM void ClipWorkspaceUiState::completeOperation(
     uint8_t track,
     uint8_t slot,
-    ClipWorkspaceFeedback result
+    ClipWorkspaceFeedback result,
+    uint32_t nowMs
 ) {
     operation = ClipWorkspaceOperation::BROWSE;
     sourceTrack = std::min<uint8_t>(track, TRACK_COUNT - 1U);
@@ -957,6 +979,7 @@ FLASHMEM void ClipWorkspaceUiState::completeOperation(
     firstVisibleSlot = std::min<uint8_t>(
         firstVisibleSlot, SLOT_COUNT - VISIBLE_ROWS);
     feedback = result;
+    feedbackHideAtMs = clipWorkspaceFeedbackDeadline(result, nowMs);
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
     bump();
@@ -994,6 +1017,7 @@ FLASHMEM void ClipWorkspaceUiState::enterPattern(
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
     feedback = ClipWorkspaceFeedback::NONE;
+    feedbackHideAtMs = 0U;
     bump();
 }
 
@@ -1020,15 +1044,30 @@ FLASHMEM bool ClipWorkspaceUiState::returnToMatrix() {
     firstVisibleSlot = std::min<uint8_t>(
         firstVisibleSlot, SLOT_COUNT - VISIBLE_ROWS);
     feedback = ClipWorkspaceFeedback::NONE;
+    feedbackHideAtMs = 0U;
     bump();
     return true;
 }
 
 FLASHMEM void ClipWorkspaceUiState::setFeedback(
-    ClipWorkspaceFeedback next
+    ClipWorkspaceFeedback next,
+    uint32_t nowMs
 ) {
-    if (feedback == next) return;
+    const uint32_t deadline = clipWorkspaceFeedbackDeadline(next, nowMs);
+    if (feedback == next && feedbackHideAtMs == deadline) return;
+    const bool changed = feedback != next;
     feedback = next;
+    feedbackHideAtMs = deadline;
+    if (changed) bump();
+}
+
+FLASHMEM void ClipWorkspaceUiState::updateFeedback(uint32_t nowMs) {
+    if (feedback == ClipWorkspaceFeedback::NONE ||
+        static_cast<int32_t>(nowMs - feedbackHideAtMs) < 0) {
+        return;
+    }
+    feedback = ClipWorkspaceFeedback::NONE;
+    feedbackHideAtMs = 0U;
     bump();
 }
 
