@@ -276,6 +276,7 @@ void test_resident_switch_preserves_both_clip_documents() {
     auto second = capture(*secondPattern, secondClip);
     assert(grid.installInactiveDocument({0U, 1U}, std::move(second)));
     const uint32_t retainedBeforeSwitch = grid.inactiveRetainedBytes();
+    const uint32_t contentRevisionBeforeSwitch = active.contentView.revision.get();
 
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
     {
@@ -286,6 +287,9 @@ void test_resident_switch_preserves_both_clip_documents() {
 #else
     assert(seq::switchResidentSequencerClip(grid, bank, active, {0U, 1U}));
 #endif
+    // The shared revision publishes the content reset and the draft-session
+    // reset. No caller-level refresh is needed after those two transitions.
+    assert(active.contentView.revision.get() == contentRevisionBeforeSwitch + 2U);
     assert(grid.residentSlot(0U) == 1U);
     assert(active.pattern.note[0] == 72U);
     assert(grid.inactiveDocument({0U, 0U}) != nullptr);
@@ -496,7 +500,13 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
     assert(!state.sequencerClips.isOccupied({0U, 1U}));
     assert(state.redoSequencerHistory());
 
+    const uint32_t contentRevisionBeforeCoreSwitch =
+        state.sequencer.contentView.revision.get();
     assert(state.switchSequencerClipForEditing({0U, 1U}));
+    // Content-view and draft-session resets are the only publications. The
+    // Core wrapper must not refresh and bump the same retained view again.
+    assert(state.sequencer.contentView.revision.get() ==
+           contentRevisionBeforeCoreSwitch + 2U);
     assert(state.sequencerClips.residentSlot(0U) == 1U);
     assert(state.deleteSequencerClip({0U, 1U}));
     assert(state.sequencerClips.residentSlot(0U) ==

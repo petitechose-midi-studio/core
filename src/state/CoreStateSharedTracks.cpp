@@ -16,7 +16,6 @@
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
-#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/shared/SharedTrackCoordinator.hpp"
@@ -133,8 +132,6 @@ FLASHMEM bool CoreState::switchSequencerClipForEditing(
             sequencerClips, sequencerTracks, sequencer, target)) {
         return false;
     }
-    sequencer::refreshContentView(sequencer);
-    sequencer.contentView.bump();
     markSequencerProjectMutated_();
     return true;
 }
