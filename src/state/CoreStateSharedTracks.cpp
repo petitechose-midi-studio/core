@@ -42,7 +42,7 @@ FLASHMEM bool closeClipMutationBoundary(CoreState& state) {
                sequencer::SequencerPatternHistoryCommitOutcome::Failed;
 }
 
-FLASHMEM uint32_t clipLoopTicks(
+FLASHMEM uint16_t clipLoopTicks(
     const CoreState& state,
     sequencer::SequencerClipAddress address
 ) {
@@ -64,7 +64,7 @@ FLASHMEM uint32_t clipLoopTicks(
         loopEnd = document->clip.loopEndTick;
     }
     return loopEnd > loopStart
-        ? static_cast<uint32_t>(loopEnd - loopStart)
+        ? static_cast<uint16_t>(loopEnd - loopStart)
         : 0U;
 }
 
@@ -178,7 +178,7 @@ FLASHMEM bool CoreState::requestSequencerSceneLaunch(
     if (slot >= sequencer::SequencerClipGridState::SLOT_COUNT) return false;
     const uint16_t enabledMask = currentSharedTrackEnabledMask();
     uint16_t sceneMask = 0U;
-    std::array<uint32_t, sequencer::SequencerClipLaunchQueue::TRACK_COUNT>
+    std::array<uint16_t, sequencer::SequencerClipLaunchQueue::TRACK_COUNT>
         loopTicks{};
     for (uint8_t track = 0U;
          track < sequencer::SequencerClipLaunchQueue::TRACK_COUNT;

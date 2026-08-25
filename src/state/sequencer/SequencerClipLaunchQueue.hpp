@@ -137,7 +137,7 @@ public:
         bool transportPlaying,
         SequencerClipLaunchQuantization quantization =
             SequencerClipLaunchQuantization::BAR,
-        uint32_t loopTicks = 0U
+        uint16_t loopTicks = 0U
     );
     [[nodiscard]] bool requestStop(
         uint8_t track,
@@ -154,13 +154,13 @@ public:
         bool transportPlaying,
         SequencerClipLaunchQuantization quantization =
             SequencerClipLaunchQuantization::BAR,
-        const std::array<uint32_t, TRACK_COUNT>* loopTicks = nullptr
+        const std::array<uint16_t, TRACK_COUNT>* loopTicks = nullptr
     );
     void processFollowActions(
         const SequencerClipGridState& clips,
         uint16_t enabledTrackMask,
         bool transportPlaying,
-        const std::array<uint32_t, TRACK_COUNT>* loopTicks = nullptr
+        const std::array<uint16_t, TRACK_COUNT>* loopTicks = nullptr
     );
 
     [[nodiscard]] SequencerClipLaunchRollbackPublication
@@ -235,7 +235,7 @@ private:
         uint32_t dueTick = 0U;
         uint32_t generation = 0U;
         uint32_t groupGeneration = 0U;
-        uint32_t loopTicks = 0U;
+        uint16_t loopTicks = 0U;
         SequencerLauncherBehavior behavior{};
 
         [[nodiscard]] bool queued() const noexcept {
@@ -269,9 +269,9 @@ private:
         volatile uint32_t dueTick = 0U;
         volatile uint32_t generation = 0U;
         volatile uint32_t groupGeneration = 0U;
-        volatile uint32_t pendingLoopTicks = 0U;
+        volatile uint16_t pendingLoopTicks = 0U;
         volatile uint32_t activeStartedTick = 0U;
-        volatile uint32_t activeLoopTicks = 0U;
+        volatile uint16_t activeLoopTicks = 0U;
         volatile bool activeFollowScheduled = false;
         SequencerLauncherBehavior pendingBehavior{};
         SequencerLauncherBehavior activeBehavior{};
@@ -313,7 +313,7 @@ private:
         const SequencerClipGridState& clips,
         bool transportPlaying,
         SequencerClipLaunchQuantization quantization,
-        uint32_t loopTicks,
+        uint16_t loopTicks,
         SequencerClipLaunchOrigin origin
     );
     [[nodiscard]] bool requestSceneWithOrigin_(
@@ -322,7 +322,7 @@ private:
         uint16_t enabledTrackMask,
         bool transportPlaying,
         SequencerClipLaunchQuantization quantization,
-        const std::array<uint32_t, TRACK_COUNT>* loopTicks,
+        const std::array<uint16_t, TRACK_COUNT>* loopTicks,
         SequencerClipLaunchOrigin origin
     );
     bool queueFallback_(

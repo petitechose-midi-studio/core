@@ -509,7 +509,7 @@ FLASHMEM bool SequencerClipLaunchQueue::requestWithOrigin_(
     const SequencerClipGridState& clips,
     bool transportPlaying,
     SequencerClipLaunchQuantization quantization,
-    uint32_t loopTicks,
+    uint16_t loopTicks,
     SequencerClipLaunchOrigin origin
 ) {
     if (!SequencerClipGridState::validAddress(target) ||
@@ -562,7 +562,7 @@ FLASHMEM bool SequencerClipLaunchQueue::request(
     const SequencerClipGridState& clips,
     bool transportPlaying,
     SequencerClipLaunchQuantization quantization,
-    uint32_t loopTicks
+    uint16_t loopTicks
 ) {
     return requestWithOrigin_(
         target,
@@ -640,7 +640,7 @@ FLASHMEM bool SequencerClipLaunchQueue::requestSceneWithOrigin_(
     uint16_t enabledTrackMask,
     bool transportPlaying,
     SequencerClipLaunchQuantization quantization,
-    const std::array<uint32_t, TRACK_COUNT>* loopTicks,
+    const std::array<uint16_t, TRACK_COUNT>* loopTicks,
     SequencerClipLaunchOrigin origin
 ) {
     if (slot >= SequencerClipGridState::SLOT_COUNT) return false;
@@ -731,7 +731,7 @@ FLASHMEM bool SequencerClipLaunchQueue::requestScene(
     uint16_t enabledTrackMask,
     bool transportPlaying,
     SequencerClipLaunchQuantization quantization,
-    const std::array<uint32_t, TRACK_COUNT>* loopTicks
+    const std::array<uint16_t, TRACK_COUNT>* loopTicks
 ) {
     return requestSceneWithOrigin_(
         slot,
@@ -748,7 +748,7 @@ void SequencerClipLaunchQueue::processFollowActions(
     const SequencerClipGridState& clips,
     uint16_t enabledTrackMask,
     bool transportPlaying,
-    const std::array<uint32_t, TRACK_COUNT>* loopTicks
+    const std::array<uint16_t, TRACK_COUNT>* loopTicks
 ) {
     if (!transportPlaying) {
         follow_process_started_ = false;
@@ -1184,14 +1184,12 @@ FLASHMEM SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
 ) const noexcept {
     if (track >= TRACK_COUNT) return {};
     const auto& entry = entries_[track];
-    const uint32_t loopTicks = entry.activeLoopTicks;
+    const uint16_t loopTicks = entry.activeLoopTicks;
     const uint8_t activePhaseQ8 = !entry.stopped &&
             entry.activeSlot < SequencerClipGridState::SLOT_COUNT &&
             loopTicks != 0U
         ? static_cast<uint8_t>((
-            static_cast<uint64_t>(
-                (transport_tick_ - entry.activeStartedTick) % loopTicks
-            ) << 8U
+            ((transport_tick_ - entry.activeStartedTick) % loopTicks) << 8U
         ) / loopTicks)
         : 0U;
     const uint32_t activeElapsedTicks = !entry.stopped &&

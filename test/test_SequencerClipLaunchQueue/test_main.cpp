@@ -306,7 +306,7 @@ void test_clip_and_scene_follow_actions_obey_priority() {
 
     // Both deadlines expire together. Scene follow outranks Clip follow.
     queue.updateTransportPosition(kBar, true);
-    const std::array<uint32_t, seq::SequencerClipLaunchQueue::TRACK_COUNT>
+    const std::array<uint16_t, seq::SequencerClipLaunchQueue::TRACK_COUNT>
         loopTicks = {kBar};
     queue.processFollowActions(clips, 0x0001U, true, &loopTicks);
     auto telemetry = queue.telemetry(0U);
