@@ -307,21 +307,14 @@ FLASHMEM bool CoreState::deleteSequencerClip(
     sequencer::SequencerClipAddress target
 ) {
     if (!closeClipMutationBoundary(*this) ||
-        !sequencer::SequencerClipGridState::validAddress(target) ||
-        !sequencerClips.isOccupied(target)) {
+        !sequencer::canDeleteSequencerClip(
+            sequencerClips,
+            sequencerClipLaunches,
+            target,
+            statusBar.playing.get())) {
         return false;
     }
     const bool resident = sequencerClips.isResident(target);
-    const uint16_t trackBit = static_cast<uint16_t>(1U << target.track);
-    if (resident) {
-        if (statusBar.playing.get() ||
-            (sequencerClipLaunches.pendingTrackMask() & trackBit) != 0U ||
-            (sequencerClipLaunches.stagedTrackMask() & trackBit) != 0U) {
-            return false;
-        }
-    } else if (sequencerClipLaunches.references(target)) {
-        return false;
-    }
     auto change = resident
         ? sequencer::prepareSequencerResidentClipDeleteChange(
               sequencerClips, sequencerTracks, sequencer, target)

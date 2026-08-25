@@ -1280,4 +1280,22 @@ SequencerClipLaunchQueue::sceneTelemetry() const noexcept {
     };
 }
 
+FLASHMEM bool canDeleteSequencerClip(
+    const SequencerClipGridState& clips,
+    const SequencerClipLaunchQueue& launches,
+    SequencerClipAddress target,
+    bool transportPlaying
+) noexcept {
+    if (!SequencerClipGridState::validAddress(target) ||
+        !clips.isOccupied(target)) {
+        return false;
+    }
+    if (!clips.isResident(target)) return !launches.references(target);
+
+    const uint16_t trackBit = static_cast<uint16_t>(1U << target.track);
+    return !transportPlaying &&
+        (launches.pendingTrackMask() & trackBit) == 0U &&
+        (launches.stagedTrackMask() & trackBit) == 0U;
+}
+
 }  // namespace core::state::sequencer

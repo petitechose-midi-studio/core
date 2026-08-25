@@ -356,4 +356,12 @@ private:
     oc::state::Signal<uint32_t, 4> telemetry_revision_{0U};
 };
 
+/** Shared capability contract used by mutation and UI affordances. */
+[[nodiscard]] bool canDeleteSequencerClip(
+    const SequencerClipGridState& clips,
+    const SequencerClipLaunchQueue& launches,
+    SequencerClipAddress target,
+    bool transportPlaying
+) noexcept;
+
 }  // namespace core::state::sequencer

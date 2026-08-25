@@ -55,10 +55,17 @@ void test_clip_launcher_selection_strip_reuses_structure_grammar() {
         sourceFor(state, false)
     );
     assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
-    assert(props.slots[0].visualState == ContextActionStripVisualState::DISABLED);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
     assert(std::strcmp(props.slots[1].labelText.data(), "1 selected") == 0);
     assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
     assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    state.statusBar.playing.set(true);
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::DISABLED);
+    state.statusBar.playing.set(false);
 
     launcher.beginPlacement(
         core::state::sequencer::
