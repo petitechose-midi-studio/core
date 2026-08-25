@@ -277,7 +277,15 @@ void test_resident_switch_preserves_both_clip_documents() {
     assert(grid.installInactiveDocument({0U, 1U}, std::move(second)));
     const uint32_t retainedBeforeSwitch = grid.inactiveRetainedBytes();
 
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(seq::switchResidentSequencerClip(grid, bank, active, {0U, 1U}));
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+#else
     assert(seq::switchResidentSequencerClip(grid, bank, active, {0U, 1U}));
+#endif
     assert(grid.residentSlot(0U) == 1U);
     assert(active.pattern.note[0] == 72U);
     assert(grid.inactiveDocument({0U, 0U}) != nullptr);
@@ -289,7 +297,7 @@ void test_resident_switch_preserves_both_clip_documents() {
     assert(active.pattern.note[0] == 64U);
     assert(grid.inactiveDocument({0U, 1U})->pattern.note[0] == 72U);
     assert(grid.inactiveRetainedBytes() == retainedBeforeSwitch);
-    std::cout << "[PASS] resident switching preserves both Clips\n";
+    std::cout << "[PASS] resident switching preserves both Clips without allocation\n";
 }
 
 void test_history_targets_the_authored_clip_after_resident_switch() {

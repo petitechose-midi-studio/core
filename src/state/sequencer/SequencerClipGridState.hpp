@@ -300,18 +300,6 @@ public:
         SequencerClipAddress destination
     ) noexcept;
 
-    /**
-     * Exchanges storage roles after a fully prepared resident switch.
-     *
-     * The returned target document is consumed by the reactive Track/editor;
-     * outgoing remains at the old slot. No allocation can occur here.
-     */
-    [[nodiscard]] SequencerClipDocumentPtr exchangeResidentDocument(
-        uint8_t track,
-        uint8_t targetSlot,
-        SequencerClipDocumentPtr outgoing
-    ) noexcept;
-
     /** Removes/restores the canonical Clip marker without disabling its Track. */
     [[nodiscard]] bool clearResident(SequencerClipAddress address) noexcept;
     [[nodiscard]] bool restoreResident(
@@ -372,6 +360,12 @@ private:
         SequencerClipGridState&,
         SequencerClipGridSnapshot&
     ) noexcept;
+    friend bool switchResidentSequencerClip(
+        SequencerClipGridState&,
+        SequencerTrackBankState&,
+        SequencerState&,
+        SequencerClipAddress
+    );
 };
 
 /**

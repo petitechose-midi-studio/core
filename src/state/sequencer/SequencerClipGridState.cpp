@@ -1160,40 +1160,6 @@ FLASHMEM bool applySequencerClipStructureChange(
     return true;
 }
 
-FLASHMEM SequencerClipDocumentPtr SequencerClipGridState::exchangeResidentDocument(
-    uint8_t track,
-    uint8_t targetSlot,
-    SequencerClipDocumentPtr outgoing
-) noexcept {
-    if (track >= TRACK_COUNT || targetSlot >= SLOT_COUNT || !outgoing ||
-        resident_slots_[track] == INVALID_SLOT ||
-        resident_slots_[track] == targetSlot) {
-        return {};
-    }
-    const uint8_t oldSlot = resident_slots_[track];
-    auto& incomingCell = cells_[cellIndex({track, targetSlot})];
-    auto& outgoingCell = cells_[cellIndex({track, oldSlot})];
-    if (!incomingCell.document || outgoingCell.document) return {};
-
-    const uint32_t incomingBytes = sequencerClipDocumentRetainedBytes(
-        *incomingCell.document
-    );
-    const uint32_t outgoingBytes = sequencerClipDocumentRetainedBytes(*outgoing);
-    const uint32_t retainedWithoutIncoming =
-        inactive_retained_bytes_ - incomingBytes;
-    if (outgoingBytes > MAX_INACTIVE_RETAINED_BYTES - retainedWithoutIncoming) {
-        return {};
-    }
-
-    auto incoming = std::move(incomingCell.document);
-    outgoingCell.document = std::move(outgoing);
-    outgoingCell.generation = nextGeneration(outgoingCell.generation);
-    inactive_retained_bytes_ = retainedWithoutIncoming + outgoingBytes;
-    resident_slots_[track] = targetSlot;
-    publishMutation();
-    return incoming;
-}
-
 FLASHMEM bool captureSequencerClipGridSnapshot(
     const SequencerClipGridState& source,
     SequencerClipGridSnapshot& out
@@ -1400,29 +1366,43 @@ FLASHMEM bool switchResidentSequencerClip(
         return true;
     }
 
-    SequencerClipDocumentPtr outgoing;
-    const auto& currentPattern = canonicalTrackPattern(bank, active, target.track);
-    const auto& currentClip = canonicalTrackClip(bank, active, target.track);
-    const auto kind = bank.trackKind(target.track);
-    if (!captureSequencerClipDocument(
-            currentPattern,
-            currentClip,
-            kind,
-            kind == SequencerTrackKind::DRUM
-                ? &bank.drumTrack(target.track)
-                : nullptr,
-            outgoing
+    const uint8_t oldSlot = grid.resident_slots_[target.track];
+    auto& incomingCell = grid.cells_[SequencerClipGridState::cellIndex(target)];
+    auto& outgoingCell = grid.cells_[SequencerClipGridState::cellIndex({
+        target.track,
+        oldSlot,
+    })];
+    if (!incomingCell.document || outgoingCell.document) return false;
+
+    const uint32_t incomingBytes = sequencerClipDocumentRetainedBytes(
+        *incomingCell.document
+    );
+    if (incomingBytes > grid.inactive_retained_bytes_) return false;
+    const uint32_t retainedWithoutIncoming =
+        grid.inactive_retained_bytes_ - incomingBytes;
+    const uint32_t outgoingBytes = canonicalTrackRetainedBytes(
+        bank,
+        active,
+        target.track
+    );
+    if (outgoingBytes > SequencerClipGridState::MAX_INACTIVE_RETAINED_BYTES -
+            retainedWithoutIncoming ||
+        !exchangeCanonicalTrackDocument(
+            bank,
+            active,
+            target.track,
+            *incomingCell.document
         )) {
         return false;
     }
 
-    auto preparedIncoming = grid.exchangeResidentDocument(
-        target.track,
-        target.slot,
-        std::move(outgoing)
+    outgoingCell.document = std::move(incomingCell.document);
+    outgoingCell.generation = SequencerClipGridState::nextGeneration(
+        outgoingCell.generation
     );
-    if (!preparedIncoming) return false;
-    installDocument(bank, active, target.track, *preparedIncoming);
+    grid.inactive_retained_bytes_ = retainedWithoutIncoming + outgoingBytes;
+    grid.resident_slots_[target.track] = target.slot;
+    grid.publishMutation();
     return true;
 }
 
