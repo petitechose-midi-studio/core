@@ -1688,7 +1688,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (project_transactions, r"files\.projectReadWorkspace\s*\(\s*lease\s*\)", "Project load must borrow only read capability under its lease"),
         (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project save/cancel must revalidate write capability", 2),
         (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*8U", "Project file store must remain two references on ARM"),
-        (project_codec_source, r"sizeof\(Storage\)\s*==\s*698280U", "Project encode scratch must remain exactly 698,280 B in cold PSRAM"),
+        (project_codec_source, r"sizeof\(Storage\)\s*==\s*173992U", "Project encode scratch must remain exactly 173,992 B in cold PSRAM"),
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*52U", "session store must remain 52 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*280U", "RPC write session must remain 280 B on ARM"),

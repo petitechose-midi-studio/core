@@ -297,7 +297,7 @@ FLASHMEM EncodeResult encode(const ChunkView* chunks,
         }
 
         if (chunks[i].size > 0) {
-            std::memcpy(out + payloadCursor, chunks[i].data, chunks[i].size);
+            std::memmove(out + payloadCursor, chunks[i].data, chunks[i].size);
         }
         payloadCursor += chunks[i].size;
     }
