@@ -323,7 +323,6 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.page,
         state_refs_.sequencer.focusedStep,
         state_refs_.sequencer.pattern.enabledMask,
-        state_refs_.sequencer.playheadStep,
         state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.probabilityCycleRevision,
         state_refs_.sequencer.variationTelemetryRevision,
@@ -371,14 +370,13 @@ FLASHMEM void SequencerView::bindGridState() {
     grid_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
     );
-    grid_watcher_.watch(
-        state_refs_.sequencer.drumSequencer.playbackRevision
-    );
     grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
         *this, 11, "SequencerView.gridTick"
     );
-    grid_tick_watcher_.watch(
-        state_refs_.sequencer.playheadStepPhaseQ8
+    grid_tick_watcher_.watchAll(
+        state_refs_.sequencer.playheadStep,
+        state_refs_.sequencer.playheadStepPhaseQ8,
+        state_refs_.sequencer.drumSequencer.playbackRevision
     );
 }
 
@@ -804,6 +802,8 @@ void SequencerView::render(uint32_t flags) {
                 .trackNavigation = &state_refs_.trackNavigation,
                 .statusBar = &state_refs_.statusBar,
                 .enabledTrackMask = state_refs_.sharedTrackEnabledMask.get(),
+                .contentRevision =
+                    state_refs_.projectNavigation.contentRevision.get(),
             });
         } else if (!previewEmptyTrack &&
             core::state::sequencer::isDrumOverviewActive(

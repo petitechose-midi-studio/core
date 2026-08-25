@@ -485,10 +485,21 @@ FLASHMEM void SequencerClipLauncherSurface::render(
     playback_heads_.fill({});
     if (!props.visible || props.ui == nullptr || props.clips == nullptr ||
         props.launches == nullptr || props.tracks == nullptr) {
+        preview_cache_valid_ = false;
         lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
         return;
     }
-    rebuildPreviews();
+    const PreviewCacheKey previewKey{
+        .clipGridRevision = props.clips->revisionSignal().get(),
+        .contentRevision = props.contentRevision,
+        .firstVisibleTrack = props.ui->firstVisibleTrack,
+        .firstVisibleSlot = props.ui->firstVisibleSlot,
+    };
+    if (!preview_cache_valid_ || !preview_cache_key_.matches(previewKey)) {
+        rebuildPreviews();
+        preview_cache_key_ = previewKey;
+        preview_cache_valid_ = true;
+    }
     lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_invalidate(root_);
 }

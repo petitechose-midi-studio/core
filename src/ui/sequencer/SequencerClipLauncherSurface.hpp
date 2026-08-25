@@ -26,6 +26,7 @@ struct SequencerClipLauncherSurfaceProps {
     const core::state::TrackNavigationState* trackNavigation = nullptr;
     const core::state::StatusBarState* statusBar = nullptr;
     uint16_t enabledTrackMask = 0U;
+    uint8_t contentRevision = 0U;
 };
 
 /** One retained draw surface for the spatial 4-Track x 4-Scene launcher. */
@@ -59,6 +60,20 @@ private:
         bool valid = false;
     };
 
+    struct PreviewCacheKey {
+        uint32_t clipGridRevision = 0U;
+        uint8_t contentRevision = 0U;
+        uint8_t firstVisibleTrack = 0U;
+        uint8_t firstVisibleSlot = 0U;
+
+        [[nodiscard]] bool matches(const PreviewCacheKey& other) const {
+            return clipGridRevision == other.clipGridRevision &&
+                contentRevision == other.contentRevision &&
+                firstVisibleTrack == other.firstVisibleTrack &&
+                firstVisibleSlot == other.firstVisibleSlot;
+        }
+    };
+
     static void onDraw(lv_event_t* event);
     void rebuildPreviews();
     void draw(lv_layer_t* layer) const;
@@ -74,6 +89,8 @@ private:
         PlaybackHeadCache,
         core::state::sequencer::ClipWorkspaceUiState::VISIBLE_TRACKS>
         playback_heads_{};
+    PreviewCacheKey preview_cache_key_{};
+    bool preview_cache_valid_ = false;
 };
 
 }  // namespace core::ui::sequencer
