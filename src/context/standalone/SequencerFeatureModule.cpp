@@ -177,6 +177,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.trackNavigation,
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
+            stateRefs.core.sequencerClips,
         },
         encoders
     );

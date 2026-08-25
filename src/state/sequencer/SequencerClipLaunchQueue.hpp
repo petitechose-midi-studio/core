@@ -103,6 +103,7 @@ struct SequencerClipLaunchTelemetry {
     uint8_t queuedRemainingQ8 = 0U;
     uint8_t activePhaseQ8 = 0U;
     uint8_t activeRemainingQ8 = 0U;
+    uint32_t activeElapsedTicks = 0U;
     uint32_t generation = 0U;
     bool stopped = false;
 };

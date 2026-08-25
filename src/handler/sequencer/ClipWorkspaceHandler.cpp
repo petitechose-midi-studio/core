@@ -10,6 +10,7 @@
 
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/ProjectTrackEditorHandler.hpp"
+#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 
 namespace core::handler {
@@ -351,10 +352,11 @@ FLASHMEM void ClipWorkspaceHandler::moveHorizontal(float delta) {
             core_.sequencerTracks,
             sourceAddress())
         : core_.currentSharedTrackEnabledMask();
-    ui.moveHorizontal(
-        nav::turnStep(delta),
-        navigableTracks
-    );
+    const int steps = nav::turnSteps(delta);
+    const int direction = steps < 0 ? -1 : 1;
+    for (int step = 0; step < std::abs(steps); ++step) {
+        ui.moveHorizontal(direction, navigableTracks);
+    }
     syncNavigationFocus();
 }
 
@@ -370,7 +372,7 @@ FLASHMEM void ClipWorkspaceHandler::beginQuickSelector() {
 
 FLASHMEM void ClipWorkspaceHandler::moveQuickSelector(float delta) {
     if (!quick_selector_gesture_.turn(nav::hasTurnDelta(delta))) return;
-    core_.sequencer.clipWorkspace.moveQuickAction(nav::turnStep(delta));
+    core_.sequencer.clipWorkspace.moveQuickAction(nav::turnSteps(delta));
 }
 
 FLASHMEM void ClipWorkspaceHandler::releaseQuickSelector() {
@@ -403,16 +405,18 @@ FLASHMEM void ClipWorkspaceHandler::openFocusedPattern() {
 
 FLASHMEM void ClipWorkspaceHandler::move(float delta) {
     if (!matrixAvailable() || !nav::hasTurnDelta(delta)) return;
-    core_.sequencer.clipWorkspace.clearQuickControl();
-    core_.sequencer.clipWorkspace.moveVertical(
-        nav::turnStep(delta),
-        lastNavigableScene()
-    );
+    auto& ui = core_.sequencer.clipWorkspace;
+    ui.clearQuickControl();
+    const int steps = nav::turnSteps(delta);
+    const int direction = steps < 0 ? -1 : 1;
+    for (int step = 0; step < std::abs(steps); ++step) {
+        ui.moveVertical(direction, lastNavigableScene());
+    }
     syncNavigationFocus();
 }
 
-FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float delta) {
-    if (!matrixAvailable() || !nav::hasTurnDelta(delta)) return;
+FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float normalized) {
+    if (!matrixAvailable()) return;
     auto& ui = core_.sequencer.clipWorkspace;
     if (!ui.quickPropertyArmed) return;
     const seq::SequencerClipAddress address{
@@ -425,26 +429,26 @@ FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float delta) {
     }
 
     auto behavior = core_.sequencerClips.clipBehavior(address);
-    const int direction = nav::turnStep(delta);
+    namespace input = core::handler::sequencer::input_utils;
     switch (ui.quickAction) {
         case seq::ClipWorkspaceQuickAction::LENGTH:
-            behavior.length = static_cast<uint8_t>(std::clamp(
-                static_cast<int>(behavior.length) + direction,
-                0,
-                static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH)
+            behavior.length = static_cast<uint8_t>(input::normalizedToIndex(
+                normalized,
+                static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH) + 1
             ));
             break;
         case seq::ClipWorkspaceQuickAction::FOLLOW:
-            behavior.follow = seq::stepSequencerLauncherFollowChoice(
-                behavior.follow,
-                direction
+            behavior.follow = seq::sequencerLauncherFollowChoiceAt(
+                static_cast<uint8_t>(input::normalizedToIndex(
+                    normalized,
+                    seq::sequencerLauncherFollowChoiceCount()
+                ))
             );
             break;
         case seq::ClipWorkspaceQuickAction::QUANTIZE: {
-            const int value = std::clamp(
-                static_cast<int>(behavior.quantization) + direction,
-                0,
-                2
+            const int value = input::normalizedToIndex(
+                normalized,
+                3
             );
             behavior.quantization = static_cast<
                 seq::SequencerLauncherFollowQuantization>(value);
@@ -467,7 +471,7 @@ FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float delta) {
 
 FLASHMEM void ClipWorkspaceHandler::edit(float delta) {
     if (!editorAvailable() || !nav::hasTurnDelta(delta)) return;
-    const int direction = nav::turnStep(delta);
+    const int direction = nav::turnSteps(delta);
     auto& ui = core_.sequencer.clipWorkspace;
     if (!buttons_.isPressed(Config::ButtonID::LEFT_CENTER)) {
         if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
@@ -486,25 +490,28 @@ FLASHMEM void ClipWorkspaceHandler::edit(float delta) {
     switch (ui.editorField) {
         case seq::ClipWorkspaceBehaviorField::LENGTH:
             length = static_cast<uint8_t>(std::clamp(
-                static_cast<int>(length) + (direction < 0 ? -1 : 1),
+                static_cast<int>(length) + direction,
                 0,
                 static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH)
             ));
             break;
-        case seq::ClipWorkspaceBehaviorField::FOLLOW:
-            followChoice = static_cast<uint8_t>(
-                seq::stepSequencerLauncherFollowChoice(
-                    static_cast<seq::SequencerLauncherFollowChoice>(
-                        followChoice
-                    ),
-                    direction
-                )
+        case seq::ClipWorkspaceBehaviorField::FOLLOW: {
+            auto follow = static_cast<seq::SequencerLauncherFollowChoice>(
+                followChoice
             );
+            const int step = direction < 0 ? -1 : 1;
+            for (int index = 0; index < std::abs(direction); ++index) {
+                follow = seq::stepSequencerLauncherFollowChoice(
+                    follow,
+                    step
+                );
+            }
+            followChoice = static_cast<uint8_t>(follow);
             break;
+        }
         case seq::ClipWorkspaceBehaviorField::QUANTIZE:
             quantization = static_cast<uint8_t>(std::clamp(
-                static_cast<int>(quantization) +
-                    (direction < 0 ? -1 : 1),
+                static_cast<int>(quantization) + direction,
                 0,
                 2
             ));
@@ -854,8 +861,7 @@ FLASHMEM void ClipWorkspaceHandler::beginRemove(uint32_t nowMs) {
         return;
     }
     const auto source = sourceAddress();
-    if (core_.sequencerClips.isResident(source) ||
-        core_.sequencerClipLaunches.references(source)) {
+    if (!core_.sequencerClips.isOccupied(source)) {
         ui.setFeedback(seq::ClipWorkspaceFeedback::FAILED);
         return;
     }

@@ -77,6 +77,14 @@ constexpr uint8_t sequencerLauncherFollowTargetSlot(
     int direction
 ) noexcept;
 
+[[nodiscard]] uint8_t sequencerLauncherFollowChoiceCount() noexcept;
+[[nodiscard]] uint8_t sequencerLauncherFollowChoiceIndex(
+    SequencerLauncherFollowChoice choice
+) noexcept;
+[[nodiscard]] SequencerLauncherFollowChoice sequencerLauncherFollowChoiceAt(
+    uint8_t index
+) noexcept;
+
 /** Compact authored follow action shared by Clips and Scenes. */
 struct SequencerLauncherBehavior {
     static constexpr uint8_t MAX_LENGTH = 16U;
@@ -191,10 +199,11 @@ struct SequencerClipGridSnapshot {
 /**
  * Sparse launcher ownership.
  *
- * One Clip per enabled Track is resident in the existing reactive Track bank.
- * Only the other occupied slots own a plain PSRAM document here. Eight rows
- * are addressable while at most sixteen inactive documents may coexist; this
- * keeps the 4 x 2 viewport independent from retained-memory capacity.
+ * Each non-empty enabled Track keeps one Clip resident in the existing
+ * reactive Track bank. The other occupied slots own plain PSRAM documents
+ * here. Eight rows are addressable while at most sixteen inactive documents
+ * may coexist; this keeps the 4 x 2 viewport independent from retained-memory
+ * capacity. An enabled Track may stay empty without losing its routing.
  */
 class SequencerClipGridState {
 public:
@@ -225,6 +234,9 @@ public:
     void reset(uint16_t enabledTrackMask = 0x0001U);
     void synchronizeEnabledTracks(uint16_t enabledTrackMask);
 
+    [[nodiscard]] uint16_t enabledTrackMask() const noexcept {
+        return enabled_track_mask_;
+    }
     [[nodiscard]] uint8_t residentSlot(uint8_t track) const noexcept;
     [[nodiscard]] bool isOccupied(SequencerClipAddress address) const noexcept;
     [[nodiscard]] bool isResident(SequencerClipAddress address) const noexcept;
@@ -300,6 +312,18 @@ public:
         SequencerClipDocumentPtr outgoing
     ) noexcept;
 
+    /** Removes/restores the canonical Clip marker without disabling its Track. */
+    [[nodiscard]] bool clearResident(SequencerClipAddress address) noexcept;
+    [[nodiscard]] bool restoreResident(
+        SequencerClipAddress address,
+        SequencerLauncherBehavior behavior = {}
+    ) noexcept;
+
+    /** Promotes an inactive document when an enabled Track currently has no resident. */
+    [[nodiscard]] SequencerClipDocumentPtr promoteInactiveDocument(
+        SequencerClipAddress address
+    ) noexcept;
+
     [[nodiscard]] uint32_t revision() const noexcept {
         return revision_.get();
     }
@@ -327,6 +351,7 @@ private:
     std::array<SequencerLauncherBehavior, SLOT_COUNT> scene_behaviors_{};
     uint32_t inactive_retained_bytes_ = 0U;
     uint8_t inactive_document_count_ = 0U;
+    uint16_t enabled_track_mask_ = 0x0001U;
     oc::state::Signal<uint32_t, 8> revision_{1U};
 
     friend bool captureSequencerClipGridSnapshot(
@@ -335,11 +360,13 @@ private:
     );
     friend bool applySequencerClipGridSnapshot(
         SequencerClipGridState&,
-        const SequencerClipGridSnapshot&
+        const SequencerClipGridSnapshot&,
+        uint16_t
     );
     friend bool restoreSequencerClipGridSnapshot(
         SequencerClipGridState&,
-        SequencerClipGridSnapshot&&
+        SequencerClipGridSnapshot&&,
+        uint16_t
     ) noexcept;
     friend void extractSequencerClipGridSnapshot(
         SequencerClipGridState&,
@@ -351,8 +378,8 @@ private:
  * Shared capability contract for Clip move/duplicate placement.
  *
  * Cross-Track transfer is intentionally kind-preserving. A resident Clip may
- * move inside its Track, but cannot leave it while every enabled Track must
- * retain one live editor/runtime owner.
+ * move inside its Track, but cannot leave it; enabled Tracks may otherwise be
+ * empty and retain only their routing identity.
  */
 [[nodiscard]] bool canTransferSequencerClip(
     const SequencerClipGridState& grid,
@@ -383,6 +410,7 @@ struct SequencerClipStructureChange {
     uint32_t retainedBytes = 0U;
     uint16_t retainedSpans = 0U;
     bool afterApplied = false;
+    bool resident = false;
     SequencerLauncherBehavior behavior{};
     SequencerClipDocumentPtr document;
 };
@@ -405,6 +433,14 @@ prepareSequencerClipDeleteChange(
 );
 
 [[nodiscard]] SequencerClipStructureChangePtr
+prepareSequencerResidentClipDeleteChange(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerClipAddress source
+);
+
+[[nodiscard]] SequencerClipStructureChangePtr
 prepareSequencerClipMoveChange(
     const SequencerClipGridState& grid,
     SequencerClipAddress source,
@@ -421,6 +457,14 @@ prepareSequencerClipMoveChange(
 /** Allocation-free structural history replay. */
 [[nodiscard]] bool applySequencerClipStructureChange(
     SequencerClipGridState& grid,
+    SequencerClipStructureChange& change,
+    bool after
+) noexcept;
+
+[[nodiscard]] bool applySequencerClipStructureChange(
+    SequencerClipGridState& grid,
+    SequencerTrackBankState& bank,
+    SequencerState& active,
     SequencerClipStructureChange& change,
     bool after
 ) noexcept;
@@ -450,13 +494,15 @@ void extractSequencerClipGridSnapshot(
 /** Validates, then transfers a prepared snapshot without allocating. */
 [[nodiscard]] bool restoreSequencerClipGridSnapshot(
     SequencerClipGridState& target,
-    SequencerClipGridSnapshot&& snapshot
+    SequencerClipGridSnapshot&& snapshot,
+    uint16_t enabledTrackMask
 ) noexcept;
 
 /** Clones first, then atomically replaces the complete sparse grid. */
 [[nodiscard]] bool applySequencerClipGridSnapshot(
     SequencerClipGridState& target,
-    const SequencerClipGridSnapshot& snapshot
+    const SequencerClipGridSnapshot& snapshot,
+    uint16_t enabledTrackMask
 );
 
 /**

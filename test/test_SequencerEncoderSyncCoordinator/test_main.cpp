@@ -56,6 +56,7 @@ struct SequencerEncoderSyncHarness {
                   state.trackNavigation,
                   state.sequencer,
                   state.sequencerTracks,
+                  state.sequencerClips,
               },
               encoders
           ) {
@@ -264,6 +265,36 @@ void expects_drum_pattern_defaults_to_own_opt_only_while_open() {
         "[PASS] expects_drum_pattern_defaults_to_own_opt_only_while_open\n";
 }
 
+void expects_clip_quick_property_to_publish_its_exact_opt_contract() {
+    SequencerEncoderSyncHarness h;
+    auto& workspace = h.state.sequencer.clipWorkspace;
+    workspace.reset(0U);
+    workspace.focus(0U, 0U);
+    workspace.showQuickSelector();
+    workspace.moveQuickAction(1);
+    workspace.armQuickProperty(0U);
+    assert(workspace.quickAction ==
+           core::state::sequencer::ClipWorkspaceQuickAction::LENGTH);
+    assert(h.state.sequencerClips.setClipBehavior({0U, 0U}, {
+        .length = 8U,
+        .follow = core::state::sequencer::SequencerLauncherFollowChoice::NONE,
+        .quantization =
+            core::state::sequencer::SequencerLauncherFollowQuantization::GLOBAL,
+    }));
+
+    test_support::drainNotifications();
+    h.sync.syncNow();
+
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) == 17U);
+    assert(almostEqual(
+        h.encoderHw.getPosition(OPT_ENCODER_ID),
+        input_utils::indexToNormalized(8, 17)
+    ));
+
+    std::cout <<
+        "[PASS] expects_clip_quick_property_to_publish_its_exact_opt_contract\n";
+}
+
 }  // namespace
 
 int main() {
@@ -273,6 +304,7 @@ int main() {
     expects_overlay_release_to_reapply_the_main_opt_contract();
     expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid();
     expects_drum_pattern_defaults_to_own_opt_only_while_open();
+    expects_clip_quick_property_to_publish_its_exact_opt_contract();
 
     std::cout << "SequencerEncoderSyncCoordinator tests passed\n";
     return 0;

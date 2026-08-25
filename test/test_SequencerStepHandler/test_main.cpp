@@ -587,6 +587,7 @@ void test_clip_launcher_gestures_separate_selection_properties_and_pattern() {
 
 void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
     SequencerStepHarness h(true);
+    assert(h.state.setSharedTrackState(0x0007U, 0U));
     auto& launcher = h.state.sequencer.clipWorkspace;
     auto& launches = h.state.sequencerClipLaunches;
     launcher.reset(0U);
@@ -607,7 +608,7 @@ void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
     h.turn(Config::EncoderID::NAV, 2.0f);
     h.release(Config::ButtonID::NAV);
     assert(launcher.clipFocused());
-    assert(launcher.focusedTrack == 1U);
+    assert(launcher.focusedTrack == 2U);
     assert(launches.pendingTrackMask() == pendingBefore);
     assert(launches.stagedTrackMask() == stagedBefore);
 
@@ -618,6 +619,14 @@ void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
     assert(launcher.sceneFocused());
     assert(launches.pendingTrackMask() == pendingBefore);
     assert(launches.stagedTrackMask() == stagedBefore);
+
+    // Coalesced vertical detents must cross the semantic Track header -> Clip
+    // boundary one step at a time instead of dropping the second detent.
+    launcher.focusTrackHeader(0U);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(launcher.clipFocused());
+    assert(launcher.focusedTrack == 0U);
+    assert(launcher.focusedSlot == 1U);
 
     std::cout
         << "[PASS] Clip Launcher held NAV moves horizontally without launch\n";
@@ -640,9 +649,8 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
     assert(!launcher.quickSelectorVisible);
     assert(launcher.quickPropertyArmed);
 
-    const uint8_t before = h.state.sequencerClips.clipBehavior(address).length;
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencerClips.clipBehavior(address).length == before + 1U);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.sequencerClips.clipBehavior(address).length == 8U);
     assert(launcher.quickFeedbackVisible);
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -653,7 +661,12 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
     assert(launcher.quickAction == seq::ClipWorkspaceQuickAction::FOLLOW);
     h.tick(g_now_ms + 1U);
     h.release(Config::ButtonID::LEFT_CENTER);
-    h.turn(Config::EncoderID::OPT, 1.0f);
+    const float nextChoice = static_cast<float>(
+        seq::sequencerLauncherFollowChoiceIndex(
+            seq::SequencerLauncherFollowChoice::NEXT
+        )
+    ) / static_cast<float>(seq::sequencerLauncherFollowChoiceCount() - 1U);
+    h.turn(Config::EncoderID::OPT, nextChoice);
     assert(h.state.sequencerClips.clipBehavior(address).follow ==
            seq::SequencerLauncherFollowChoice::NEXT);
 
@@ -691,6 +704,31 @@ void test_clip_launcher_direct_pattern_and_short_create_actions() {
 
     std::cout
         << "[PASS] Clip Launcher separates Pattern entry and direct creation\n";
+}
+
+void test_clip_launcher_can_remove_the_last_clip_without_removing_track() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+    launcher.focus(0U, 0U);
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.selectionActive());
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(!launcher.selectionActive());
+    assert(h.state.sequencerTracks.isTrackEnabled(0U));
+    assert(h.state.sequencerClips.occupiedCount() == 0U);
+    assert(h.state.sequencerClips.residentSlot(0U) ==
+           seq::SequencerClipGridState::INVALID_SLOT);
+
+    std::cout
+        << "[PASS] Clip Launcher removes its last Clip but keeps the Track\n";
 }
 
 void test_clip_launcher_places_copy_and_move_across_tracks() {
@@ -9894,6 +9932,7 @@ int main() {
     test_clip_launcher_nav_turn_moves_horizontally_without_launching();
     test_clip_launcher_left_center_arms_quick_property_for_opt();
     test_clip_launcher_direct_pattern_and_short_create_actions();
+    test_clip_launcher_can_remove_the_last_clip_without_removing_track();
     test_clip_launcher_places_copy_and_move_across_tracks();
     test_inactive_clip_workspace_does_not_steal_shared_navigation_focus();
     test_pattern_preview_owns_back_before_clip_launcher();

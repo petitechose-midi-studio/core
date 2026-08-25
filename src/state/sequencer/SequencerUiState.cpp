@@ -680,7 +680,7 @@ FLASHMEM void ClipWorkspaceUiState::moveQuickAction(int direction) {
     if (!quickSelectorVisible || direction == 0) return;
     constexpr int count = static_cast<int>(ClipWorkspaceQuickAction::COUNT);
     const int current = static_cast<int>(quickAction);
-    const int next = (current + (direction < 0 ? count - 1 : 1)) % count;
+    const int next = ((current + direction) % count + count) % count;
     if (next == current) return;
     quickAction = static_cast<ClipWorkspaceQuickAction>(next);
     bump();
@@ -731,7 +731,7 @@ FLASHMEM void ClipWorkspaceUiState::moveVertical(
     if (direction == 0 || editorActive()) return;
     if (placementActive()) {
         const int next = std::clamp(
-            static_cast<int>(focusedSlot) + (direction < 0 ? -1 : 1),
+            static_cast<int>(focusedSlot) + direction,
             0,
             static_cast<int>(SLOT_COUNT - 1U)
         );
@@ -741,7 +741,7 @@ FLASHMEM void ClipWorkspaceUiState::moveVertical(
     lastSlot = std::min<uint8_t>(lastSlot, SLOT_COUNT - 1U);
     if (sceneFocused()) {
         const int next = std::clamp(
-            static_cast<int>(focusedSlot) + (direction < 0 ? -1 : 1),
+            static_cast<int>(focusedSlot) + direction,
             0,
             static_cast<int>(lastSlot)
         );
@@ -757,7 +757,7 @@ FLASHMEM void ClipWorkspaceUiState::moveVertical(
         return;
     }
     const int next = std::clamp(
-        static_cast<int>(focusedSlot) + (direction < 0 ? -1 : 1),
+        static_cast<int>(focusedSlot) + direction,
         0,
         static_cast<int>(lastSlot)
     );
@@ -852,7 +852,7 @@ FLASHMEM void ClipWorkspaceUiState::moveEditorField(int direction) {
         return;
     }
     constexpr int count = static_cast<int>(ClipWorkspaceBehaviorField::COUNT);
-    int next = static_cast<int>(editorField) + (direction < 0 ? -1 : 1);
+    int next = static_cast<int>(editorField) + direction;
     next = std::clamp(next, 0, count - 1);
     if (next == static_cast<int>(editorField)) return;
     editorField = static_cast<ClipWorkspaceBehaviorField>(next);
@@ -862,7 +862,7 @@ FLASHMEM void ClipWorkspaceUiState::moveEditorField(int direction) {
 FLASHMEM void ClipWorkspaceUiState::moveSlotAction(int direction) {
     if (editor != ClipWorkspaceEditor::SLOT_ACTION || direction == 0) return;
     constexpr int count = static_cast<int>(ClipWorkspaceSlotAction::COUNT);
-    int next = static_cast<int>(slotAction) + (direction < 0 ? -1 : 1);
+    int next = static_cast<int>(slotAction) + direction;
     next = std::clamp(next, 0, count - 1);
     if (next == static_cast<int>(slotAction)) return;
     slotAction = static_cast<ClipWorkspaceSlotAction>(next);

@@ -535,7 +535,8 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     }
     if (!core::state::sequencer::restoreSequencerClipGridSnapshot(
             state.sequencerClips,
-            std::move(preparedClips)
+            std::move(preparedClips),
+            state.sequencerTracks.currentEnabledMask()
         )) {
         return false;
     }

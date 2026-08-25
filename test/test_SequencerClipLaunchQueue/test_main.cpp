@@ -159,6 +159,22 @@ void test_stop_is_immediate_while_idle_and_new_tracks_are_synchronized() {
     assert(queue.pendingTrackMask() == 0U);
 }
 
+void test_enabled_empty_track_releases_stale_active_clip() {
+    seq::SequencerClipGridState clips;
+    clips.reset(0x0001U);
+
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 0x0001U);
+    assert(queue.activeSlot(0U) == 0U);
+    assert(clips.clearResident({0U, 0U}));
+
+    clips.synchronizeEnabledTracks(0x0001U);
+    assert(clips.residentSlot(0U) == seq::SequencerClipGridState::INVALID_SLOT);
+    queue.synchronizeEnabledTracks(clips, 0x0001U);
+    assert(queue.activeSlot(0U) == seq::SequencerClipGridState::INVALID_SLOT);
+    assert(queue.stopped(0U));
+}
+
 void test_stopping_one_track_preserves_other_track_progress() {
     constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
     seq::SequencerClipGridState clips;
@@ -357,9 +373,11 @@ void test_active_phase_and_live_behavior_follow_the_running_clip() {
     queue.updateTransportPosition(kBar / 2U, true);
     assert(queue.telemetry(0U).activePhaseQ8 == 128U);
     assert(queue.telemetry(0U).activeRemainingQ8 == 128U);
+    assert(queue.telemetry(0U).activeElapsedTicks == kBar / 2U);
     queue.updateTransportPosition(kBar, true);
     assert(queue.telemetry(0U).activePhaseQ8 == 0U);
     assert(queue.telemetry(0U).activeRemainingQ8 == 0U);
+    assert(queue.telemetry(0U).activeElapsedTicks == kBar);
 
     queue.processFollowActions(clips, 0x0001U, true);
     const auto telemetry = queue.telemetry(0U);
@@ -442,6 +460,7 @@ int main() {
     test_stale_target_is_cancelled_before_runtime_publication();
     test_missing_active_clip_queues_resident_fallback();
     test_stop_is_immediate_while_idle_and_new_tracks_are_synchronized();
+    test_enabled_empty_track_releases_stale_active_clip();
     test_stopping_one_track_preserves_other_track_progress();
     test_scene_plan_keeps_empty_tracks_and_supports_cancel_replace_stop();
     test_newest_manual_request_wins_and_direct_stop_has_priority();

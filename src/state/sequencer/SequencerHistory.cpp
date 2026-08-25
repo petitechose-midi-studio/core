@@ -1283,7 +1283,7 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
     if (entry.scope == SequencerHistoryScope::ClipStructure) {
         return clips != nullptr && entry.clipStructure != nullptr &&
             applySequencerClipStructureChange(
-                *clips, *entry.clipStructure, after);
+                *clips, bank, active, *entry.clipStructure, after);
     }
 
     if (!entry.fullBank) return false;

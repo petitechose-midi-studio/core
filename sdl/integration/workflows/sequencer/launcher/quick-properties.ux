@@ -37,7 +37,9 @@
 900 button LEFT_CENTER up
 1020 capture screen length_armed
 
-1100 encoder OPT 0.01
+# OPT is NORMALIZED here: use a short physical turn large enough to cross one
+# discrete value instead of relying on the former sign-only callback.
+1100 encoder OPT 0.20
 1260 capture screen length_changed
 
 1400 button LEFT_CENTER down
@@ -46,7 +48,7 @@
 1700 capture screen quick_follow
 1780 button LEFT_CENTER up
 1900 capture screen follow_armed
-1980 encoder OPT 0.01
+1980 encoder OPT 0.20
 2140 capture screen follow_next
 
 3000 tap LEFT_CENTER 60

@@ -248,7 +248,8 @@ FLASHMEM void SequencerClipLaunchQueue::resetEntry_(
     entry.targetSlot = SequencerClipGridState::INVALID_SLOT;
     entry.previousSnapshotIndex = 0U;
     entry.targetSnapshotIndex = 0U;
-    entry.stopped = false;
+    entry.stopped = enabled &&
+        entry.activeSlot >= SequencerClipGridState::SLOT_COUNT;
     entry.sourceGeneration = 0U;
     entry.dueTick = 0U;
     entry.generation = 0U;
@@ -313,41 +314,58 @@ FLASHMEM void SequencerClipLaunchQueue::synchronizeEnabledTracks(
 ) {
     enabledTrackMask = static_cast<uint16_t>(
         enabledTrackMask & ALL_TRACKS_MASK);
-    if (enabledTrackMask == enabled_track_mask_) return;
+    bool telemetryChanged = enabledTrackMask != enabled_track_mask_;
     {
         oc::realtime::InterruptGuard lock;
         const uint16_t changed = static_cast<uint16_t>(
             enabledTrackMask ^ enabled_track_mask_);
-        const uint16_t disabled = static_cast<uint16_t>(
-            enabled_track_mask_ & static_cast<uint16_t>(~enabledTrackMask));
+        uint16_t resetTracks = changed;
         for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
-            if ((changed & trackBit(track)) == 0U) continue;
-            resetEntry_(
-                entries_[track],
-                track,
-                clips,
-                (enabledTrackMask & trackBit(track)) != 0U
-            );
-            rollback_plan_.requests[track] = {};
+            if ((changed & trackBit(track)) != 0U) {
+                resetEntry_(
+                    entries_[track],
+                    track,
+                    clips,
+                    (enabledTrackMask & trackBit(track)) != 0U
+                );
+                rollback_plan_.requests[track] = {};
+                continue;
+            }
+            auto& entry = entries_[track];
+            const SequencerClipAddress active{track, entry.activeSlot};
+            if ((enabledTrackMask & trackBit(track)) != 0U &&
+                entry.activeSlot < SequencerClipGridState::SLOT_COUNT &&
+                !clips.isOccupied(active)) {
+                resetEntry_(entry, track, clips, true);
+                rollback_plan_.requests[track] = {};
+                resetTracks = static_cast<uint16_t>(
+                    resetTracks | trackBit(track));
+                telemetryChanged = true;
+            }
         }
         rollback_track_mask_ = static_cast<uint16_t>(
-            rollback_track_mask_ & enabledTrackMask);
+            rollback_track_mask_ & enabledTrackMask &
+            static_cast<uint16_t>(~resetTracks));
         rollback_plan_.queuedMask = static_cast<uint16_t>(
-            rollback_plan_.queuedMask & enabledTrackMask);
+            rollback_plan_.queuedMask & enabledTrackMask &
+            static_cast<uint16_t>(~resetTracks));
         rollback_plan_.sceneExpectedMask = static_cast<uint16_t>(
-            rollback_plan_.sceneExpectedMask & enabledTrackMask);
+            rollback_plan_.sceneExpectedMask & enabledTrackMask &
+            static_cast<uint16_t>(~resetTracks));
         scene_expected_mask_ = static_cast<uint16_t>(
-            scene_expected_mask_ & enabledTrackMask);
+            scene_expected_mask_ & enabledTrackMask &
+            static_cast<uint16_t>(~resetTracks));
         scene_applied_mask_ = static_cast<uint16_t>(
-            scene_applied_mask_ & enabledTrackMask);
-        if (disabled != 0U &&
+            scene_applied_mask_ & enabledTrackMask &
+            static_cast<uint16_t>(~resetTracks));
+        if (resetTracks != 0U &&
             rollback_plan_.sceneExpectedMask == 0U) {
             rollback_plan_.sceneSlot =
                 SequencerClipGridState::INVALID_SLOT;
             rollback_plan_.sceneGeneration = 0U;
             rollback_plan_.sceneBehavior = {};
         }
-        if (disabled != 0U &&
+        if (resetTracks != 0U &&
             queued_scene_ != SequencerClipGridState::INVALID_SLOT &&
             scene_expected_mask_ == 0U) {
             queued_scene_ = SequencerClipGridState::INVALID_SLOT;
@@ -357,7 +375,7 @@ FLASHMEM void SequencerClipLaunchQueue::synchronizeEnabledTracks(
         }
         enabled_track_mask_ = enabledTrackMask;
     }
-    bumpTelemetryRevision_();
+    if (telemetryChanged) bumpTelemetryRevision_();
 }
 
 void SequencerClipLaunchQueue::updateTransportPosition(
@@ -1145,6 +1163,10 @@ FLASHMEM SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
             ) << 8U
         ) / loopTicks)
         : 0U;
+    const uint32_t activeElapsedTicks = !entry.stopped &&
+            entry.activeSlot < SequencerClipGridState::SLOT_COUNT
+        ? transport_tick_ - entry.activeStartedTick
+        : 0U;
     uint8_t activeRemainingQ8 = 0U;
     if (transport_playing_ && !entry.stopped &&
         entry.activeBehavior.enabled() && loopTicks != 0U) {
@@ -1182,6 +1204,7 @@ FLASHMEM SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
                 : 0U),
             .activePhaseQ8 = activePhaseQ8,
             .activeRemainingQ8 = activeRemainingQ8,
+            .activeElapsedTicks = activeElapsedTicks,
             .generation = request.generation,
             .stopped = entry.stopped,
         };
@@ -1203,6 +1226,7 @@ FLASHMEM SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
             : 0U),
         .activePhaseQ8 = activePhaseQ8,
         .activeRemainingQ8 = activeRemainingQ8,
+        .activeElapsedTicks = activeElapsedTicks,
         .generation = entry.generation,
         .stopped = entry.stopped,
     };

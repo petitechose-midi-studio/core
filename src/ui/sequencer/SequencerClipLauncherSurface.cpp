@@ -281,6 +281,45 @@ FLASHMEM void setLoopMarker(
 }
 
 template <typename Preview>
+FLASHMEM void setPreviewWindow(
+    Preview& preview,
+    const PreviewWindow& window
+) {
+    if (!window.valid()) return;
+    preview.playStartTick = static_cast<uint16_t>(window.start);
+    preview.loopStartTick = static_cast<uint16_t>(window.loop);
+    preview.loopEndTick = static_cast<uint16_t>(window.end);
+}
+
+template <typename Preview>
+FLASHMEM uint8_t previewPlayheadQ8(
+    const Preview& preview,
+    uint32_t elapsedTicks
+) {
+    if (preview.playStartTick > preview.loopStartTick ||
+        preview.loopStartTick >= preview.loopEndTick) {
+        return 0U;
+    }
+    const uint32_t prelude = static_cast<uint32_t>(
+        preview.loopStartTick - preview.playStartTick
+    );
+    const uint32_t loop = static_cast<uint32_t>(
+        preview.loopEndTick - preview.loopStartTick
+    );
+    const uint32_t localTick = elapsedTicks < prelude
+        ? static_cast<uint32_t>(preview.playStartTick) + elapsedTicks
+        : static_cast<uint32_t>(preview.loopStartTick) +
+            (elapsedTicks - prelude) % loop;
+    const uint32_t window = static_cast<uint32_t>(
+        preview.loopEndTick - preview.playStartTick
+    );
+    return static_cast<uint8_t>(std::min<uint32_t>(
+        255U,
+        ((localTick - preview.playStartTick) * 255U) / window
+    ));
+}
+
+template <typename Preview>
 FLASHMEM uint8_t previewPitchRow(
     uint8_t note,
     uint8_t minimum,
@@ -312,6 +351,7 @@ FLASHMEM void projectMelodicPreview(
         clip.loopEndTick
     );
     if (ticksPerStep == 0U || !window.valid()) return;
+    setPreviewWindow(preview, window);
     setLoopMarker(preview, window);
 
     uint8_t minimum = std::numeric_limits<uint8_t>::max();
@@ -363,6 +403,7 @@ FLASHMEM void projectDrumPreview(
         loopEndTick
     );
     if (!window.valid()) return;
+    setPreviewWindow(preview, window);
     setLoopMarker(preview, window);
 
     const uint8_t laneCount = std::min<uint8_t>(
@@ -441,6 +482,7 @@ FLASHMEM void SequencerClipLauncherSurface::render(
 ) {
     if (!root_) return;
     props_ = props;
+    playback_heads_.fill({});
     if (!props.visible || props.ui == nullptr || props.clips == nullptr ||
         props.launches == nullptr || props.tracks == nullptr) {
         lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
@@ -641,6 +683,10 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
             telemetry.activeSlot < ui.firstVisibleSlot ||
             telemetry.activeSlot >=
                 ui.firstVisibleSlot + seq::ClipWorkspaceUiState::VISIBLE_ROWS) {
+            if (playback_heads_[column].valid) {
+                lv_obj_invalidate_area(root_, &playback_heads_[column].area);
+                playback_heads_[column] = {};
+            }
             continue;
         }
         const uint8_t row = static_cast<uint8_t>(
@@ -650,17 +696,34 @@ FLASHMEM void SequencerClipLauncherSurface::invalidatePlaybackProgress() {
             surface.y1 + LauncherLayout::HEADER_HEIGHT +
             LauncherLayout::GAP + row * layout.rowHeight
         );
-        const lv_area_t progress{
-            .x1 = static_cast<lv_coord_t>(x + 4),
-            .y1 = static_cast<lv_coord_t>(
-                y + layout.rowHeight - LauncherLayout::GAP - 3
-            ),
-            .x2 = static_cast<lv_coord_t>(x + layout.columnWidth - 5),
+        const auto& preview = previews_[
+            column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
+        ];
+        const lv_coord_t previewX1 = static_cast<lv_coord_t>(x + 4);
+        const lv_coord_t previewX2 = static_cast<lv_coord_t>(
+            x + layout.columnWidth - 5
+        );
+        const lv_coord_t previewWidth = static_cast<lv_coord_t>(
+            previewX2 - previewX1 + 1
+        );
+        const lv_coord_t headX = static_cast<lv_coord_t>(
+            previewX1 +
+            (static_cast<uint32_t>(previewWidth - 1) *
+             previewPlayheadQ8(preview, telemetry.activeElapsedTicks)) / 255U
+        );
+        const lv_area_t head{
+            .x1 = static_cast<lv_coord_t>(headX - 1),
+            .y1 = static_cast<lv_coord_t>(y + 3),
+            .x2 = static_cast<lv_coord_t>(headX + 1),
             .y2 = static_cast<lv_coord_t>(
-                y + layout.rowHeight - LauncherLayout::GAP - 1
+                y + layout.rowHeight - LauncherLayout::GAP - 5
             ),
         };
-        lv_obj_invalidate_area(root_, &progress);
+        if (playback_heads_[column].valid) {
+            lv_obj_invalidate_area(root_, &playback_heads_[column].area);
+        }
+        lv_obj_invalidate_area(root_, &head);
+        playback_heads_[column] = {.area = head, .valid = true};
     }
 }
 
@@ -1313,50 +1376,35 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                 );
             }
             if (active) {
-                const lv_coord_t progressX1 = static_cast<lv_coord_t>(
-                    cell.x1 + 4
+                const auto& preview = previews_[
+                    column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
+                ];
+                const lv_coord_t previewWidth = std::max<lv_coord_t>(
+                    1,
+                    static_cast<lv_coord_t>(lv_area_get_width(&cell) - 8)
                 );
-                const lv_coord_t progressX2 = static_cast<lv_coord_t>(
-                    cell.x2 - 4
-                );
-                const lv_coord_t progressWidth = static_cast<lv_coord_t>(
-                    progressX2 - progressX1 + 1
-                );
-                const lv_coord_t progressHead = static_cast<lv_coord_t>(
-                    progressX1 +
-                    (static_cast<uint32_t>(progressWidth - 1) *
-                        telemetry.activePhaseQ8) /
-                        255U
-                );
-                drawRect(
-                    layer,
-                    lv_area_t{
-                        .x1 = progressX1,
-                        .y1 = static_cast<lv_coord_t>(cell.y2 - 2),
-                        .x2 = progressX2,
-                        .y2 = cell.y2,
-                    },
-                    theme::color::BORDER_SUBTLE,
-                    LV_OPA_60,
-                    theme::color::BORDER_SUBTLE,
-                    0,
-                    LV_OPA_TRANSP,
-                    1
+                const lv_coord_t playheadX = static_cast<lv_coord_t>(
+                    cell.x1 + 4 +
+                    (static_cast<uint32_t>(previewWidth - 1) *
+                     previewPlayheadQ8(
+                        preview,
+                        telemetry.activeElapsedTicks
+                    )) / 255U
                 );
                 drawRect(
                     layer,
                     lv_area_t{
-                        .x1 = progressX1,
-                        .y1 = static_cast<lv_coord_t>(cell.y2 - 2),
-                        .x2 = progressHead,
-                        .y2 = cell.y2,
+                        .x1 = playheadX,
+                        .y1 = static_cast<lv_coord_t>(cell.y1 + 3),
+                        .x2 = static_cast<lv_coord_t>(playheadX + 1),
+                        .y2 = static_cast<lv_coord_t>(cell.y2 - 5),
                     },
-                    trackColor,
+                    theme::color::LIVE_TIME,
                     LV_OPA_COVER,
-                    trackColor,
+                    theme::color::LIVE_TIME,
                     0,
                     LV_OPA_TRANSP,
-                    1
+                    0
                 );
             }
             if (queued) {

@@ -44,6 +44,8 @@ struct ChildLengthRange {
 };
 
 using QuickItem = core::state::sequencer::PatternQuickControlItem;
+using ClipQuickAction = core::state::sequencer::ClipWorkspaceQuickAction;
+using LauncherBehavior = core::state::sequencer::SequencerLauncherBehavior;
 
 FLASHMEM ChildLengthRange activeChildLengthRange(
     const core::state::sequencer::SequencerState& sequencer
@@ -197,6 +199,60 @@ FLASHMEM QuickItem validQuickItemForContext(
     return item;
 }
 
+FLASHMEM input_utils::StepPropertyEncoderConfig clipQuickEncoderConfig(
+    ClipQuickAction action
+) {
+    input_utils::StepPropertyEncoderConfig config;
+    switch (action) {
+        case ClipQuickAction::LENGTH:
+            config.discreteSteps = static_cast<uint8_t>(
+                LauncherBehavior::MAX_LENGTH + 1U
+            );
+            break;
+        case ClipQuickAction::FOLLOW:
+            config.discreteSteps = core::state::sequencer::
+                sequencerLauncherFollowChoiceCount();
+            break;
+        case ClipQuickAction::QUANTIZE:
+            config.discreteSteps = 3U;
+            break;
+        case ClipQuickAction::EDIT:
+        case ClipQuickAction::COUNT:
+            config.discreteSteps = 1U;
+            break;
+    }
+    return config;
+}
+
+FLASHMEM float clipQuickValueToNormalized(
+    const LauncherBehavior& behavior,
+    ClipQuickAction action
+) {
+    switch (action) {
+        case ClipQuickAction::LENGTH:
+            return input_utils::indexToNormalized(
+                behavior.length,
+                static_cast<int>(LauncherBehavior::MAX_LENGTH) + 1
+            );
+        case ClipQuickAction::FOLLOW:
+            return input_utils::indexToNormalized(
+                core::state::sequencer::sequencerLauncherFollowChoiceIndex(
+                    behavior.follow
+                ),
+                core::state::sequencer::sequencerLauncherFollowChoiceCount()
+            );
+        case ClipQuickAction::QUANTIZE:
+            return input_utils::indexToNormalized(
+                static_cast<uint8_t>(behavior.quantization),
+                3
+            );
+        case ClipQuickAction::EDIT:
+        case ClipQuickAction::COUNT:
+        default:
+            return 0.0f;
+    }
+}
+
 template <typename EncoderIdT>
 inline void applySequencerEncoderConfig(
     oc::api::EncoderAPI& encoders,
@@ -222,6 +278,7 @@ FLASHMEM SequencerEncoderSyncCoordinator::SequencerEncoderSyncCoordinator(
     , track_ui_(state.trackNavigation)
     , sequencer_(state.sequencer)
     , track_bank_(state.trackBank)
+    , clips_(state.clips)
     , encoders_(encoders) {}
 
 FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
@@ -255,7 +312,9 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         sequencer_.pattern.swingOffsetPercent,
         sequencer_.pattern.patternNudgePercent,
         sequencer_.pattern.patternTimingRevision,
-        sequencer_.patternQuickControls.previewRevision
+        sequencer_.patternQuickControls.previewRevision,
+        sequencer_.clipWorkspace.revision,
+        clips_.revisionSignal()
     );
     return watcher_.watch(track_bank_.drumRevisionSignal()) &&
            watcher_.watch(sequencer_.drumSequencer.revision) && bound;
@@ -495,6 +554,29 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
     syncOptPosition(input_utils::quickControlToNormalized(sequencer_, item));
 }
 
+FLASHMEM void SequencerEncoderSyncCoordinator::syncClipWorkspaceOptValue() {
+    const auto& workspace = sequencer_.clipWorkspace;
+    if (!workspace.quickPropertyArmed ||
+        workspace.quickAction == ClipQuickAction::EDIT ||
+        workspace.quickAction == ClipQuickAction::COUNT) {
+        invalidateOptEncoderCache();
+        return;
+    }
+    const core::state::sequencer::SequencerClipAddress address{
+        workspace.quickTargetTrack,
+        workspace.quickTargetSlot,
+    };
+    if (!clips_.isOccupied(address)) {
+        invalidateOptEncoderCache();
+        return;
+    }
+    ensureOptEncoderConfig(clipQuickEncoderConfig(workspace.quickAction));
+    syncOptPosition(clipQuickValueToNormalized(
+        clips_.clipBehavior(address),
+        workspace.quickAction
+    ));
+}
+
 FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumSequencerValues() {
     const auto& drumUi = sequencer_.drumSequencer;
 
@@ -566,6 +648,12 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     // (128 steps).
     if (overlays_.hasVisible()) {
         invalidateOptEncoderCache();
+        return;
+    }
+
+    if (sequencer_.clipWorkspace.matrixVisible()) {
+        macro_position_valid_.fill(false);
+        syncClipWorkspaceOptValue();
         return;
     }
 

@@ -98,6 +98,10 @@ project::ProjectSnapshot makeSnapshot() {
             snapshot.clips.residentSlots[track] = 0U;
         }
     }
+    // Enabled routing and Clip occupancy are independent: Track 12 is an
+    // intentionally empty launcher column and must survive persistence.
+    snapshot.clips.residentSlots[12U] =
+        sequencer::SequencerClipGridState::INVALID_SLOT;
     snapshot.sequencer.flat.tracks[6].note[0] = 64U;
     snapshot.sequencer.flat.tracks[6].velocity[0] = 103U;
     snapshot.drumTracks = core::app::makeExtmemUnique<
@@ -386,6 +390,8 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     assert(cycleNode != nullptr);
     assert(cycleNode->gateOffset == 17);
     assert(loaded.clips.residentSlots[6U] == 0U);
+    assert(loaded.clips.residentSlots[12U] ==
+           sequencer::SequencerClipGridState::INVALID_SLOT);
     const auto* loadedInstrumentClip = loaded.clips.documents[
         sequencer::SequencerClipGridState::cellIndex({0U, 1U})
     ].get();

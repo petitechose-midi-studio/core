@@ -307,17 +307,37 @@ FLASHMEM bool CoreState::deleteSequencerClip(
     sequencer::SequencerClipAddress target
 ) {
     if (!closeClipMutationBoundary(*this) ||
-        sequencerClips.isResident(target) ||
-        sequencerClipLaunches.references(target)) {
+        !sequencer::SequencerClipGridState::validAddress(target) ||
+        !sequencerClips.isOccupied(target)) {
         return false;
     }
-    auto change = sequencer::prepareSequencerClipDeleteChange(
-        sequencerClips, target);
+    const bool resident = sequencerClips.isResident(target);
+    const uint16_t trackBit = static_cast<uint16_t>(1U << target.track);
+    if (resident) {
+        if (statusBar.playing.get() ||
+            (sequencerClipLaunches.pendingTrackMask() & trackBit) != 0U ||
+            (sequencerClipLaunches.stagedTrackMask() & trackBit) != 0U) {
+            return false;
+        }
+    } else if (sequencerClipLaunches.references(target)) {
+        return false;
+    }
+    auto change = resident
+        ? sequencer::prepareSequencerResidentClipDeleteChange(
+              sequencerClips, sequencerTracks, sequencer, target)
+        : sequencer::prepareSequencerClipDeleteChange(
+              sequencerClips, target);
     if (!change || !sequencerHistory.canRecordClipStructure(*change) ||
         !sequencer::applySequencerClipStructureChange(
-            sequencerClips, *change, true)) {
+            sequencerClips,
+            sequencerTracks,
+            sequencer,
+            *change,
+            true)) {
         return false;
     }
+    sequencerClipLaunches.synchronizeEnabledTracks(
+        sequencerClips, sequencerTracks.currentEnabledMask());
     sequencerHistory.commitAdmittedClipStructure(std::move(change));
     markSequencerProjectMutated_();
     return true;

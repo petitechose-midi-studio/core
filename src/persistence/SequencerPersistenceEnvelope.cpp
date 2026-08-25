@@ -1516,7 +1516,8 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
     }
     return state::sequencer::restoreSequencerClipGridSnapshot(
         clips,
-        std::move(decodedClips)
+        std::move(decodedClips),
+        trackBank.currentEnabledMask()
     );
 }
 

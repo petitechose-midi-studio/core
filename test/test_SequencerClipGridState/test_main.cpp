@@ -78,7 +78,8 @@ void test_sparse_grid_capacity_and_snapshot_are_exact() {
     seq::SequencerClipGridSnapshot snapshot;
     assert(seq::captureSequencerClipGridSnapshot(grid, snapshot));
     seq::SequencerClipGridState restored;
-    assert(seq::applySequencerClipGridSnapshot(restored, snapshot));
+    assert(seq::applySequencerClipGridSnapshot(
+        restored, snapshot, grid.enabledTrackMask()));
     assert(restored.inactiveDocumentCount() == grid.inactiveDocumentCount());
     assert(restored.occupiedCount() == grid.occupiedCount());
     for (uint8_t track = 0U; track < seq::SequencerClipGridState::TRACK_COUNT; ++track) {
@@ -206,7 +207,8 @@ void test_launcher_metadata_survives_snapshot_move_and_history() {
     seq::SequencerClipGridSnapshot snapshot;
     assert(seq::captureSequencerClipGridSnapshot(grid, snapshot));
     seq::SequencerClipGridState restored;
-    assert(seq::applySequencerClipGridSnapshot(restored, snapshot));
+    assert(seq::applySequencerClipGridSnapshot(
+        restored, snapshot, grid.enabledTrackMask()));
     assert(restored.clipBehavior({0U, 1U}) == clipBehavior);
     assert(restored.isStop({0U, 3U}));
     assert(restored.sceneBehavior(1U) == sceneBehavior);
@@ -488,7 +490,14 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
 
     assert(state.switchSequencerClipForEditing({0U, 1U}));
     assert(state.sequencerClips.residentSlot(0U) == 1U);
-    assert(!state.deleteSequencerClip({0U, 1U}));
+    assert(state.deleteSequencerClip({0U, 1U}));
+    assert(state.sequencerClips.residentSlot(0U) ==
+           seq::SequencerClipGridState::INVALID_SLOT);
+    assert(state.sequencerTracks.isTrackEnabled(0U));
+    assert(state.undoSequencerHistory());
+    assert(state.sequencerClips.residentSlot(0U) == 1U);
+    assert(state.redoSequencerHistory());
+    assert(state.undoSequencerHistory());
     // Editing residency and musical activation are deliberately independent:
     // Clip 0 still feeds the runtime until Clip 1's launch is published.
     assert(!state.deleteSequencerClip({0U, 0U}));
@@ -507,8 +516,26 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
     assert(state.undoSequencerHistory());
     assert(state.sequencerClips.isOccupied({0U, 0U}));
 
+    assert(state.deleteSequencerClip({0U, 0U}));
+    assert(state.deleteSequencerClip({0U, 1U}));
+    assert(state.sequencerTracks.isTrackEnabled(0U));
+    assert(state.sequencerClips.residentSlot(0U) ==
+           seq::SequencerClipGridState::INVALID_SLOT);
+    assert(state.sequencerClips.occupiedCount() == 0U);
+    assert(state.sequencerClipLaunches.stopped(0U));
+    assert(state.undoSequencerHistory());
+    assert(state.sequencerClips.isResident({0U, 1U}));
+    assert(state.redoSequencerHistory());
+    assert(state.sequencerClips.occupiedCount() == 0U);
+
+    assert(state.createSequencerClip({0U, 3U}));
+    assert(state.sequencerClips.residentSlot(0U) ==
+           seq::SequencerClipGridState::INVALID_SLOT);
+    assert(state.switchSequencerClipForEditing({0U, 3U}));
+    assert(state.sequencerClips.isResident({0U, 3U}));
+
     assert(state.setSharedTrackState(0x0003U, 0U));
-    assert(state.duplicateSequencerClip({0U, 1U}, {1U, 1U}));
+    assert(state.duplicateSequencerClip({0U, 3U}, {1U, 1U}));
     assert(state.sequencerClips.isOccupied({1U, 1U}));
     assert(state.moveSequencerClip({1U, 1U}, {0U, 2U}));
     assert(!state.sequencerClips.isOccupied({1U, 1U}));
@@ -517,7 +544,7 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
     assert(state.sequencerClips.isOccupied({1U, 1U}));
     assert(!state.sequencerClips.isOccupied({0U, 2U}));
     assert(state.redoSequencerHistory());
-    assert(!state.moveSequencerClip({0U, 1U}, {1U, 2U}));
+    assert(!state.moveSequencerClip({0U, 3U}, {1U, 2U}));
 
     assert(state.sequencerTracks.setTrackKind(
         1U,
@@ -525,7 +552,7 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
         true,
         seq::DrumKitPreset::GENERAL_MIDI
     ));
-    assert(!state.duplicateSequencerClip({0U, 1U}, {1U, 2U}));
+    assert(!state.duplicateSequencerClip({0U, 3U}, {1U, 2U}));
     std::cout << "[PASS] Core Clip API preserves structural history\n";
 }
 

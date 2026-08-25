@@ -47,8 +47,16 @@ private:
 
         std::array<uint8_t, COLUMNS * ROWS> velocity{};
         std::array<uint32_t, ROWS> onsetMask{};
+        uint16_t playStartTick = 0U;
+        uint16_t loopStartTick = 0U;
+        uint16_t loopEndTick = 0U;
         uint8_t loopColumn = INVALID_COLUMN;
         bool content = false;
+    };
+
+    struct PlaybackHeadCache {
+        lv_area_t area{};
+        bool valid = false;
     };
 
     static void onDraw(lv_event_t* event);
@@ -62,6 +70,10 @@ private:
         core::state::sequencer::ClipWorkspaceUiState::VISIBLE_TRACKS *
             core::state::sequencer::ClipWorkspaceUiState::VISIBLE_ROWS>
         previews_{};
+    std::array<
+        PlaybackHeadCache,
+        core::state::sequencer::ClipWorkspaceUiState::VISIBLE_TRACKS>
+        playback_heads_{};
 };
 
 }  // namespace core::ui::sequencer
