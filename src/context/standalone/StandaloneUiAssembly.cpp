@@ -537,9 +537,8 @@ void StandaloneUiAssembly::renderGlobalTrackStrip() {
             );
         }
     }
-    if (launcherMatrixVisible) return;
-
     applyOverlayExclusivity();
+    if (launcherMatrixVisible) return;
     if (overlay_exclusive_mode_) {
         return;
     }
