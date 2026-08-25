@@ -28,6 +28,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
     last_refresh_succeeded_ = false;
     const uint8_t currentIndex = active_index_;
     const uint8_t writeIndex = static_cast<uint8_t>(currentIndex ^ 0x1U);
+    const bool forceRefresh = force_refresh_[writeIndex];
     auto& runtimeSnapshot = snapshots_[writeIndex];
     auto& writeSignatures = track_signatures_[writeIndex];
     auto& clipSourceSignatures = clip_source_signatures_[writeIndex];
@@ -80,7 +81,12 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
                 ? clipSource.generation
                 : residentPattern.ccLaneRevision.get();
             auto& signature = laneSourceSignatures[i];
-            if (signature.matches(source, sourceRevision)) {
+            if (forceRefresh && source == nullptr) {
+                signature.identity = nullptr;
+                signature.revision = sourceRevision;
+                continue;
+            }
+            if (!forceRefresh && signature.matches(source, sourceRevision)) {
                 continue;
             }
             if (source == nullptr) {
@@ -130,7 +136,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
                 prepared,
                 clipSource.document->clip
             );
-            if (clipSourceSignatures[i].matches(clipSource) &&
+            if (!forceRefresh && clipSourceSignatures[i].matches(clipSource) &&
                 writeSignatures[i].matches(signature)) {
                 continue;
             }
@@ -149,7 +155,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
                 runtimeSnapshot.projectScaleSettings,
                 projectTiming
             );
-            if (clipSourceSignatures[i].matches(clipSource) &&
+            if (!forceRefresh && clipSourceSignatures[i].matches(clipSource) &&
                 writeSignatures[i].matches(signature)) {
                 continue;
             }
@@ -178,6 +184,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
         writeSignatures[i] = signature;
     }
 
+    force_refresh_[writeIndex] = false;
     last_refresh_succeeded_ = true;
     return writeIndex;
 }
@@ -234,7 +241,8 @@ FLASHMEM bool SequencerRuntimeSnapshotBank::refreshDrumTracks_(
         const uint32_t contentRevision = clipSource.document != nullptr
             ? sourceGeneration
             : track_bank_.drumTrackRevision(track);
-        if (slot->sourceSlots[track] == sourceSlot &&
+        if (!force_refresh_[slotIndex] &&
+            slot->sourceSlots[track] == sourceSlot &&
             slot->sourceGenerations[track] == sourceGeneration &&
             slot->sourceRevisions[track] == contentRevision) {
             continue;

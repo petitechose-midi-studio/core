@@ -190,6 +190,9 @@ oc::note::sequencer::StepSequencerPlaybackRegion runtimePlaybackRegion(
     const uint16_t ticksPerStep = core::state::sequencer::sequencerTicksPerStep(
         source.stepsPerBeat
     );
+    if (ticksPerStep == 0U) {
+        return oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(length);
+    }
     const oc::note::sequencer::StepSequencerPlaybackRegion region{
         length,
         static_cast<uint8_t>(clip.playStartTick / ticksPerStep),

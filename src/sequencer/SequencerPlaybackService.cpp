@@ -233,7 +233,6 @@ void SequencerPlaybackService::update(
 ) {
     OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
     OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
-    runtime_transport_tick_ = tick;
     runtime_transport_playing_ = playing;
     const bool phaseClockValid = playing && tickPeriodUs != 0U && nowUs != 0U;
     if (phaseClockValid) {
@@ -246,6 +245,7 @@ void SequencerPlaybackService::update(
     } else {
         runtime_tick_anchor_valid_ = false;
     }
+    runtime_transport_tick_ = tick;
     for (uint8_t track = 0U; track < track_event_sinks_.size(); ++track) {
         auto& sink = track_event_sinks_[track];
         if (sink) {

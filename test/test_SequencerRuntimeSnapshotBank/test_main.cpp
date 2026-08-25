@@ -90,6 +90,32 @@ void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
     std::cout << "[PASS] test_refresh_keeps_alternating_buffers_current_without_full_copy\n";
 }
 
+void test_invalidate_refreshes_both_buffers_after_project_replacement() {
+    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
+
+    sequencer.pattern.note[0] = 60U;
+    uint8_t index = bank.refresh();
+    bank.commit(index);
+    index = bank.refresh();
+    bank.commit(index);
+
+    // Project files restore authored revisions, so content may change while
+    // presenting the same signature to both alternating runtime buffers.
+    sequencer.pattern.note[0] = 72U;
+    bank.invalidate();
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].note[0] == 72U);
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].note[0] == 72U);
+
+    std::cout << "[PASS] project replacement invalidates both runtime buffers\n";
+}
+
 void test_region_markers_invalidate_both_flat_runtime_buffers() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
@@ -492,6 +518,7 @@ int main() {
     test_refresh_captures_active_editor_state();
     test_refresh_preserves_active_snapshot_until_commit();
     test_refresh_keeps_alternating_buffers_current_without_full_copy();
+    test_invalidate_refreshes_both_buffers_after_project_replacement();
     test_region_markers_invalidate_both_flat_runtime_buffers();
     test_refresh_skips_unchanged_cc_lane_payloads_per_buffer();
     test_refresh_captures_inactive_bank_track();

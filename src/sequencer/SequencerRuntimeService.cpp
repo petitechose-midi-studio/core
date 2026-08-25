@@ -433,6 +433,7 @@ bool SequencerRuntimeService::consumeProjectRuntimeReset_() {
     stopPlayback_();
     realtime_lane_->playback.resetCcProject();
     runtime_graph_bank_.releaseAllRetired();
+    snapshot_bank_.invalidate();
     consumed_runtime_project_revision_ = revision;
     return true;
 }

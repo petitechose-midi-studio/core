@@ -315,6 +315,15 @@ FLASHMEM state::sequencer::SequencerClipPlaybackRegion snapshotPlaybackRegion(
     const uint16_t ticksPerStep = state::sequencer::sequencerTicksPerStep(
         snapshot.stepsPerBeat
     );
+    if (ticksPerStep == 0U) {
+        return state::sequencer::SequencerClipPlaybackRegion::fullLength(
+            std::clamp<uint8_t>(
+                snapshot.length,
+                state::sequencer::SequencerClipPlaybackRegion::MIN_CONTENT_LENGTH,
+                state::sequencer::SequencerClipPlaybackRegion::MAX_CONTENT_LENGTH
+            )
+        );
+    }
     const state::sequencer::SequencerClipPlaybackRegion region{
         snapshot.length,
         static_cast<uint8_t>(clip.playStartTick / ticksPerStep),

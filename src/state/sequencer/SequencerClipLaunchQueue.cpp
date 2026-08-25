@@ -194,9 +194,7 @@ FLASHMEM uint32_t SequencerClipLaunchQueue::nextBoundaryTick_(
         ? kTicksPerBeat
         : kTicksPerBar;
     const uint32_t remainder = transport_tick_ % unit;
-    return remainder == 0U
-        ? transport_tick_
-        : transport_tick_ + (unit - remainder);
+    return transport_tick_ + (unit - remainder);
 }
 
 FLASHMEM uint8_t SequencerClipLaunchQueue::beatsRemaining_(

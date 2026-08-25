@@ -92,6 +92,7 @@ public:
         core::state::sequencer::SequencerClipRuntimeSources sources{};
         return refresh(sources);
     }
+    void invalidate() { force_refresh_.fill(true); }
     void commit(uint8_t snapshotIndex);
 
     const Snapshot& snapshot(uint8_t snapshotIndex) const;
@@ -153,6 +154,7 @@ private:
     std::array<TrackSignatures, 2> track_signatures_{};
     std::array<ClipSourceSignatures, 2> clip_source_signatures_{};
     std::array<LaneSourceSignatures, 2> lane_source_signatures_{};
+    std::array<bool, 2> force_refresh_{true, true};
     std::array<
         core::app::ExtmemUniquePtr<SequencerCcLaneRuntimeProjectSnapshot>,
         2
