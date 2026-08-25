@@ -54,6 +54,13 @@ void test_clip_launcher_left_strip_exposes_region_and_selection_actions() {
     assert(props.slots[1].icon == standalone::icons::CLIP);
     assert(props.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
 
+    launcher.focusTrackHeader(0U);
+    props = core::ui::sequencer::buildSequencerLeftActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[2].icon == standalone::icons::TRACK_SOLO);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
     launcher.beginSelection(0U, 0U);
     props = core::ui::sequencer::buildSequencerLeftActionStripProps(
         sourceFor(state, false)

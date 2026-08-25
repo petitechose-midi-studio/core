@@ -80,6 +80,7 @@ private:
     [[nodiscard]] uint8_t lastNavigableScene() const;
     void launchScene(uint8_t slot);
     void stopTrack(uint8_t track, bool immediate);
+    void toggleTrackSolo();
     bool enterClip(core::state::sequencer::SequencerClipAddress address);
     bool selectClipForEditing(
         core::state::sequencer::SequencerClipAddress address

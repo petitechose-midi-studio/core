@@ -8,6 +8,7 @@
 
 #include "config/Timing.hpp"
 #include "state/project/ProjectDomainRules.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
@@ -734,9 +735,25 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         const auto& launcher = source.sequencer.clipWorkspace;
         for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
         if (!launcher.selectionActive()) {
-            if (launcher.editorActive() || !launcher.clipFocused()) {
+            if (launcher.editorActive()) {
                 return props;
             }
+            if (launcher.trackHeaderFocused()) {
+                if (!source.tracks.isTrackEnabled(launcher.focusedTrack)) {
+                    return props;
+                }
+                const bool muted = core::state::project::projectTrackMuted(
+                    source.projectTracks,
+                    launcher.focusedTrack
+                );
+                props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::TRACK_MUTE,
+                    muted ? Visual::ARMED : Visual::ACTIVE,
+                    muted ? Tone::WARNING : Tone::NEUTRAL
+                );
+                return props;
+            }
+            if (!launcher.clipFocused()) return props;
             props.slots[0] = core::ui::makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_BACKWARD,
                 Visual::ACTIVE,

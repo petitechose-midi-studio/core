@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
@@ -124,7 +125,23 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         }
         if (source.trackNavigation.selection.active.get()) return props;
         if (!launcher.selectionActive()) {
-            if (launcher.trackHeaderFocused()) return props;
+            if (launcher.trackHeaderFocused()) {
+                if (!source.tracks.isTrackEnabled(launcher.focusedTrack)) {
+                    return props;
+                }
+                const bool soloed = core::state::project::projectTrackSoloed(
+                    source.projectTracks,
+                    launcher.focusedTrack
+                );
+                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::TRACK_SOLO,
+                    soloed ? Visual::ARMED : Visual::ACTIVE,
+                    soloed
+                        ? core::ui::ContextActionStripTone::POSITIVE
+                        : core::ui::ContextActionStripTone::NEUTRAL
+                );
+                return props;
+            }
             const core::state::sequencer::SequencerClipAddress focused{
                 launcher.focusedTrack,
                 launcher.focusedSlot,

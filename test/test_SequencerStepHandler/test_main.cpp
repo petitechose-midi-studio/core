@@ -670,8 +670,16 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
     assert(h.state.sequencerClips.clipBehavior(address).follow ==
            seq::SequencerLauncherFollowChoice::NEXT);
 
+    launcher.focusScene(0U);
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(launcher.quickTargetFocus == seq::ClipWorkspaceFocus::SCENE);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.sequencerClips.sceneBehavior(0U).length == 8U);
+
     std::cout
-        << "[PASS] Clip Launcher LEFT_CENTER arms quick OPT editing\n";
+        << "[PASS] Clip and Scene LEFT_CENTER arm quick OPT editing\n";
 }
 
 void test_clip_launcher_direct_pattern_and_short_create_actions() {
@@ -694,6 +702,14 @@ void test_clip_launcher_direct_pattern_and_short_create_actions() {
     assert(!launcher.editorActive());
     assert(h.state.sequencerClips.isOccupied({0U, 1U}));
 
+    launcher.focus(0U, 2U);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencerClips.isOccupied({0U, 2U}));
+    assert(launcher.patternVisible());
+    assert(launcher.returnTrack == 0U && launcher.returnSlot == 2U);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(launcher.matrixVisible());
+
     const uint8_t addScene = h.state.sequencerClips.lastNavigableScene();
     launcher.focusScene(addScene);
     h.tap(Config::ButtonID::NAV);
@@ -703,7 +719,49 @@ void test_clip_launcher_direct_pattern_and_short_create_actions() {
     assert(launcher.editor == seq::ClipWorkspaceEditor::SLOT_ACTION);
 
     std::cout
-        << "[PASS] Clip Launcher separates Pattern entry and direct creation\n";
+        << "[PASS] Clip Launcher separates explicit and direct creation\n";
+}
+
+void test_clip_launcher_performance_actions_fire_on_press() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    assert(h.state.createSequencerClip({0U, 1U}));
+    launcher.focus(0U, 0U);
+    h.state.statusBar.playing.set(true);
+
+    h.press(Config::MACRO_BUTTONS[4]);
+    assert(h.state.sequencerClipLaunches.telemetry(0U).queuedSlot == 1U);
+    h.release(Config::MACRO_BUTTONS[4]);
+
+    launcher.focusTrackHeader(0U);
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(core::state::project::projectTrackMuted(
+        h.state.projectTracks,
+        0U
+    ));
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(core::state::project::projectTrackSoloed(
+        h.state.projectTracks,
+        0U
+    ));
+
+    std::cout << "[PASS] Clip Launcher performance actions fire directly\n";
+}
+
+void test_clip_launcher_long_nav_only_selects_existing_structures() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    launcher.focusScene(0U);
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+
+    assert(launcher.sceneFocused());
+    assert(!launcher.editorActive());
+    assert(!launcher.selectionActive());
+
+    std::cout << "[PASS] Clip Launcher long NAV has no hidden Scene action\n";
 }
 
 void test_clip_launcher_can_remove_the_last_clip_without_removing_track() {
@@ -9932,6 +9990,8 @@ int main() {
     test_clip_launcher_nav_turn_moves_horizontally_without_launching();
     test_clip_launcher_left_center_arms_quick_property_for_opt();
     test_clip_launcher_direct_pattern_and_short_create_actions();
+    test_clip_launcher_performance_actions_fire_on_press();
+    test_clip_launcher_long_nav_only_selects_existing_structures();
     test_clip_launcher_can_remove_the_last_clip_without_removing_track();
     test_clip_launcher_places_copy_and_move_across_tracks();
     test_inactive_clip_workspace_does_not_steal_shared_navigation_focus();

@@ -283,7 +283,10 @@ void formatClipQuickActionValue(
         ui.quickTargetTrack,
         ui.quickTargetSlot,
     };
-    const auto behavior = source.clips.clipBehavior(address);
+    const auto behavior = ui.quickTargetFocus ==
+            core::state::sequencer::ClipWorkspaceFocus::SCENE
+        ? source.clips.sceneBehavior(ui.quickTargetSlot)
+        : source.clips.clipBehavior(address);
     using Action = core::state::sequencer::ClipWorkspaceQuickAction;
     switch (ui.quickAction) {
         case Action::LENGTH:

@@ -809,6 +809,7 @@ struct ClipWorkspaceUiState {
     bool quickSelectorVisible = false;
     bool quickPropertyArmed = false;
     bool quickFeedbackVisible = false;
+    ClipWorkspaceFocus quickTargetFocus = ClipWorkspaceFocus::CLIP;
     uint8_t quickTargetTrack = 0U;
     uint8_t quickTargetSlot = 0U;
     uint32_t quickFeedbackHideAtMs = 0U;

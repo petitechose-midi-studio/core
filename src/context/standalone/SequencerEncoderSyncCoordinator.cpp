@@ -566,13 +566,18 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncClipWorkspaceOptValue() {
         workspace.quickTargetTrack,
         workspace.quickTargetSlot,
     };
-    if (!clips_.isOccupied(address)) {
+    const bool sceneTarget = workspace.quickTargetFocus ==
+        core::state::sequencer::ClipWorkspaceFocus::SCENE;
+    if ((!sceneTarget && !clips_.isOccupied(address)) ||
+        (sceneTarget && !clips_.sceneUsed(workspace.quickTargetSlot))) {
         invalidateOptEncoderCache();
         return;
     }
     ensureOptEncoderConfig(clipQuickEncoderConfig(workspace.quickAction));
     syncOptPosition(clipQuickValueToNormalized(
-        clips_.clipBehavior(address),
+        sceneTarget
+            ? clips_.sceneBehavior(workspace.quickTargetSlot)
+            : clips_.clipBehavior(address),
         workspace.quickAction
     ));
 }

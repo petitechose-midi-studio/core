@@ -228,7 +228,8 @@ void test_selection_strip_projection_contract() {
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[0].icon == standalone::icons::TRACK_MUTE);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
     assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 
@@ -239,7 +240,7 @@ void test_selection_strip_projection_contract() {
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
     assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
     assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 

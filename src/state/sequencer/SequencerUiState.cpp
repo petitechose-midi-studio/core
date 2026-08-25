@@ -562,6 +562,7 @@ FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     quickSelectorVisible = false;
     quickPropertyArmed = false;
     quickFeedbackVisible = false;
+    quickTargetFocus = ClipWorkspaceFocus::CLIP;
     quickTargetTrack = std::min<uint8_t>(activeTrack, TRACK_COUNT - 1U);
     quickTargetSlot = 0U;
     quickFeedbackHideAtMs = 0U;
@@ -666,6 +667,7 @@ FLASHMEM void ClipWorkspaceUiState::focusTrackHeader(uint8_t track) {
 
 FLASHMEM void ClipWorkspaceUiState::showQuickSelector() {
     quickAction = ClipWorkspaceQuickAction::EDIT;
+    quickTargetFocus = focusArea;
     quickTargetTrack = focusedTrack;
     quickTargetSlot = focusedSlot;
     quickPropertyArmed = false;
