@@ -20,6 +20,65 @@ FLASHMEM uint32_t clipWorkspaceFeedbackDeadline(
     return nowMs + duration;
 }
 
+FLASHMEM void keepClipWorkspaceTrackVisible(ClipWorkspaceUiState& state) {
+    if (state.focusedTrack < state.firstVisibleTrack) {
+        state.firstVisibleTrack = state.focusedTrack;
+    } else if (state.focusedTrack >=
+               state.firstVisibleTrack + ClipWorkspaceUiState::VISIBLE_TRACKS) {
+        state.firstVisibleTrack = static_cast<uint8_t>(
+            state.focusedTrack - ClipWorkspaceUiState::VISIBLE_TRACKS + 1U
+        );
+    }
+    state.firstVisibleTrack = std::min<uint8_t>(
+        state.firstVisibleTrack,
+        ClipWorkspaceUiState::TRACK_COUNT -
+            ClipWorkspaceUiState::VISIBLE_TRACKS
+    );
+}
+
+FLASHMEM void keepClipWorkspaceSlotVisible(ClipWorkspaceUiState& state) {
+    if (state.focusedSlot < state.firstVisibleSlot) {
+        state.firstVisibleSlot = state.focusedSlot;
+    } else if (state.focusedSlot >=
+               state.firstVisibleSlot + ClipWorkspaceUiState::VISIBLE_ROWS) {
+        state.firstVisibleSlot = static_cast<uint8_t>(
+            state.focusedSlot - ClipWorkspaceUiState::VISIBLE_ROWS + 1U
+        );
+    }
+    state.firstVisibleSlot = std::min<uint8_t>(
+        state.firstVisibleSlot,
+        ClipWorkspaceUiState::SLOT_COUNT - ClipWorkspaceUiState::VISIBLE_ROWS
+    );
+}
+
+FLASHMEM void focusClipWithoutPublishing(
+    ClipWorkspaceUiState& state,
+    uint8_t track,
+    uint8_t slot
+) {
+    state.focusedTrack = std::min<uint8_t>(
+        track,
+        ClipWorkspaceUiState::TRACK_COUNT - 1U
+    );
+    state.focusedSlot = std::min<uint8_t>(
+        slot,
+        ClipWorkspaceUiState::SLOT_COUNT - 1U
+    );
+    state.focusArea = ClipWorkspaceFocus::CLIP;
+    keepClipWorkspaceTrackVisible(state);
+    keepClipWorkspaceSlotVisible(state);
+    state.feedback = ClipWorkspaceFeedback::NONE;
+    state.feedbackHideAtMs = 0U;
+}
+
+FLASHMEM void clearQuickControlWithoutPublishing(ClipWorkspaceUiState& state) {
+    state.quickAction = ClipWorkspaceQuickAction::EDIT;
+    state.quickSelectorVisible = false;
+    state.quickPropertyArmed = false;
+    state.quickFeedbackVisible = false;
+    state.quickFeedbackHideAtMs = 0U;
+}
+
 }  // namespace
 
 FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState() = default;
@@ -608,36 +667,12 @@ FLASHMEM void ClipWorkspaceUiState::focus(
     uint8_t track,
     uint8_t slot
 ) {
-    track = std::min<uint8_t>(track, TRACK_COUNT - 1U);
-    slot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
-    const bool changed = focusedTrack != track || focusedSlot != slot ||
+    const uint8_t nextTrack = std::min<uint8_t>(track, TRACK_COUNT - 1U);
+    const uint8_t nextSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
+    const bool changed = focusedTrack != nextTrack || focusedSlot != nextSlot ||
         focusArea != ClipWorkspaceFocus::CLIP ||
         feedback != ClipWorkspaceFeedback::NONE;
-    focusedTrack = track;
-    focusedSlot = slot;
-    focusArea = ClipWorkspaceFocus::CLIP;
-    if (focusedTrack < firstVisibleTrack) firstVisibleTrack = focusedTrack;
-    if (focusedTrack >= firstVisibleTrack + VISIBLE_TRACKS) {
-        firstVisibleTrack = static_cast<uint8_t>(
-            focusedTrack - VISIBLE_TRACKS + 1U
-        );
-    }
-    firstVisibleTrack = std::min<uint8_t>(
-        firstVisibleTrack,
-        TRACK_COUNT - VISIBLE_TRACKS
-    );
-    if (focusedSlot < firstVisibleSlot) firstVisibleSlot = focusedSlot;
-    if (focusedSlot >= firstVisibleSlot + VISIBLE_ROWS) {
-        firstVisibleSlot = static_cast<uint8_t>(
-            focusedSlot - VISIBLE_ROWS + 1U
-        );
-    }
-    firstVisibleSlot = std::min<uint8_t>(
-        firstVisibleSlot,
-        SLOT_COUNT - VISIBLE_ROWS
-    );
-    feedback = ClipWorkspaceFeedback::NONE;
-    feedbackHideAtMs = 0U;
+    focusClipWithoutPublishing(*this, nextTrack, nextSlot);
     if (changed) bump();
 }
 
@@ -648,16 +683,7 @@ FLASHMEM void ClipWorkspaceUiState::focusScene(uint8_t slot) {
         feedback != ClipWorkspaceFeedback::NONE;
     focusedSlot = slot;
     focusArea = ClipWorkspaceFocus::SCENE;
-    if (focusedSlot < firstVisibleSlot) firstVisibleSlot = focusedSlot;
-    if (focusedSlot >= firstVisibleSlot + VISIBLE_ROWS) {
-        firstVisibleSlot = static_cast<uint8_t>(
-            focusedSlot - VISIBLE_ROWS + 1U
-        );
-    }
-    firstVisibleSlot = std::min<uint8_t>(
-        firstVisibleSlot,
-        SLOT_COUNT - VISIBLE_ROWS
-    );
+    keepClipWorkspaceSlotVisible(*this);
     feedback = ClipWorkspaceFeedback::NONE;
     feedbackHideAtMs = 0U;
     if (changed) bump();
@@ -670,16 +696,7 @@ FLASHMEM void ClipWorkspaceUiState::focusTrackHeader(uint8_t track) {
         feedback != ClipWorkspaceFeedback::NONE;
     focusedTrack = track;
     focusArea = ClipWorkspaceFocus::TRACK_HEADER;
-    if (focusedTrack < firstVisibleTrack) firstVisibleTrack = focusedTrack;
-    if (focusedTrack >= firstVisibleTrack + VISIBLE_TRACKS) {
-        firstVisibleTrack = static_cast<uint8_t>(
-            focusedTrack - VISIBLE_TRACKS + 1U
-        );
-    }
-    firstVisibleTrack = std::min<uint8_t>(
-        firstVisibleTrack,
-        TRACK_COUNT - VISIBLE_TRACKS
-    );
+    keepClipWorkspaceTrackVisible(*this);
     feedback = ClipWorkspaceFeedback::NONE;
     feedbackHideAtMs = 0U;
     if (changed) bump();
@@ -728,11 +745,7 @@ FLASHMEM void ClipWorkspaceUiState::clearQuickControl() {
         !quickFeedbackVisible) {
         return;
     }
-    quickAction = ClipWorkspaceQuickAction::EDIT;
-    quickSelectorVisible = false;
-    quickPropertyArmed = false;
-    quickFeedbackVisible = false;
-    quickFeedbackHideAtMs = 0U;
+    clearQuickControlWithoutPublishing(*this);
     bump();
 }
 
@@ -910,7 +923,7 @@ FLASHMEM void ClipWorkspaceUiState::beginSelection(
     uint8_t track,
     uint8_t slot
 ) {
-    focus(track, slot);
+    focusClipWithoutPublishing(*this, track, slot);
     sourceTrack = focusedTrack;
     sourceSlot = focusedSlot;
     operation = ClipWorkspaceOperation::SELECT;
@@ -932,7 +945,7 @@ FLASHMEM void ClipWorkspaceUiState::beginPlacement(
     operation = next;
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
-    focus(destinationTrack, destinationSlot);
+    focusClipWithoutPublishing(*this, destinationTrack, destinationSlot);
     bump();
 }
 
@@ -940,7 +953,7 @@ FLASHMEM bool ClipWorkspaceUiState::backOperation() {
     if (!selectionActive()) return false;
     if (placementActive()) {
         operation = ClipWorkspaceOperation::SELECT;
-        focus(sourceTrack, sourceSlot);
+        focusClipWithoutPublishing(*this, sourceTrack, sourceSlot);
     } else {
         operation = ClipWorkspaceOperation::BROWSE;
         feedback = ClipWorkspaceFeedback::NONE;
@@ -961,23 +974,7 @@ FLASHMEM void ClipWorkspaceUiState::completeOperation(
     operation = ClipWorkspaceOperation::BROWSE;
     sourceTrack = std::min<uint8_t>(track, TRACK_COUNT - 1U);
     sourceSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
-    focusedTrack = sourceTrack;
-    focusedSlot = sourceSlot;
-    focusArea = ClipWorkspaceFocus::CLIP;
-    if (focusedTrack < firstVisibleTrack) firstVisibleTrack = focusedTrack;
-    if (focusedTrack >= firstVisibleTrack + VISIBLE_TRACKS) {
-        firstVisibleTrack = static_cast<uint8_t>(
-            focusedTrack - VISIBLE_TRACKS + 1U);
-    }
-    firstVisibleTrack = std::min<uint8_t>(
-        firstVisibleTrack, TRACK_COUNT - VISIBLE_TRACKS);
-    if (focusedSlot < firstVisibleSlot) firstVisibleSlot = focusedSlot;
-    if (focusedSlot >= firstVisibleSlot + VISIBLE_ROWS) {
-        firstVisibleSlot = static_cast<uint8_t>(
-            focusedSlot - VISIBLE_ROWS + 1U);
-    }
-    firstVisibleSlot = std::min<uint8_t>(
-        firstVisibleSlot, SLOT_COUNT - VISIBLE_ROWS);
+    focusClipWithoutPublishing(*this, sourceTrack, sourceSlot);
     feedback = result;
     feedbackHideAtMs = clipWorkspaceFeedbackDeadline(result, nowMs);
     removeHoldStartedAtMs = 0U;
@@ -1008,10 +1005,8 @@ FLASHMEM void ClipWorkspaceUiState::enterPattern(
 ) {
     returnTrack = std::min<uint8_t>(track, TRACK_COUNT - 1U);
     returnSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
-    focusedTrack = returnTrack;
-    focusedSlot = returnSlot;
-    focusArea = ClipWorkspaceFocus::CLIP;
-    clearQuickControl();
+    focusClipWithoutPublishing(*this, returnTrack, returnSlot);
+    clearQuickControlWithoutPublishing(*this);
     route = ClipWorkspaceRoute::PATTERN;
     operation = ClipWorkspaceOperation::BROWSE;
     removeHoldStartedAtMs = 0U;
@@ -1025,24 +1020,8 @@ FLASHMEM bool ClipWorkspaceUiState::returnToMatrix() {
     if (matrixVisible()) return false;
     route = ClipWorkspaceRoute::MATRIX;
     operation = ClipWorkspaceOperation::BROWSE;
-    focusedTrack = returnTrack;
-    focusedSlot = returnSlot;
-    focusArea = ClipWorkspaceFocus::CLIP;
-    clearQuickControl();
-    if (focusedTrack < firstVisibleTrack) firstVisibleTrack = focusedTrack;
-    if (focusedTrack >= firstVisibleTrack + VISIBLE_TRACKS) {
-        firstVisibleTrack = static_cast<uint8_t>(
-            focusedTrack - VISIBLE_TRACKS + 1U);
-    }
-    firstVisibleTrack = std::min<uint8_t>(
-        firstVisibleTrack, TRACK_COUNT - VISIBLE_TRACKS);
-    if (focusedSlot < firstVisibleSlot) firstVisibleSlot = focusedSlot;
-    if (focusedSlot >= firstVisibleSlot + VISIBLE_ROWS) {
-        firstVisibleSlot = static_cast<uint8_t>(
-            focusedSlot - VISIBLE_ROWS + 1U);
-    }
-    firstVisibleSlot = std::min<uint8_t>(
-        firstVisibleSlot, SLOT_COUNT - VISIBLE_ROWS);
+    focusClipWithoutPublishing(*this, returnTrack, returnSlot);
+    clearQuickControlWithoutPublishing(*this);
     feedback = ClipWorkspaceFeedback::NONE;
     feedbackHideAtMs = 0U;
     bump();

@@ -422,6 +422,32 @@ void test_clip_launcher_placement_navigation_moves_across_tracks() {
     assert(!state.backOperation());
 }
 
+void test_clip_launcher_compound_gestures_publish_once() {
+    namespace seq = core::state::sequencer;
+    seq::ClipWorkspaceUiState state;
+    state.reset(0U);
+
+    uint32_t revision = state.revision.get();
+    state.beginSelection(3U, 2U);
+    assert(state.revision.get() == ++revision);
+
+    state.beginPlacement(
+        seq::ClipWorkspaceOperation::MOVE_DESTINATION,
+        4U,
+        5U
+    );
+    assert(state.revision.get() == ++revision);
+    assert(state.backOperation());
+    assert(state.revision.get() == ++revision);
+
+    state.showQuickSelector();
+    revision = state.revision.get();
+    state.enterPattern(3U, 2U);
+    assert(state.revision.get() == ++revision);
+    assert(state.returnToMatrix());
+    assert(state.revision.get() == ++revision);
+}
+
 void test_preset_library_keeps_only_the_active_domain_payload() {
     namespace seq = core::state::sequencer;
     using Library = seq::SequencerPresetLibrarySessionState;
@@ -545,6 +571,7 @@ int main() {
     test_clip_launcher_operation_feedback_expires();
     test_clip_launcher_returns_to_the_exact_clip_address();
     test_clip_launcher_placement_navigation_moves_across_tracks();
+    test_clip_launcher_compound_gestures_publish_once();
     test_preset_library_keeps_only_the_active_domain_payload();
     test_preset_library_entry_policy_matches_the_visible_editor_surface();
 
