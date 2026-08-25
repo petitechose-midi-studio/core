@@ -249,13 +249,9 @@ void SequencerRuntimeService::update() {
     const auto clipLaunchPublication =
         clip_launches_.captureRuntimePublication(
             clip_grid_state_, clockDomain.transport.playing);
-    core::state::sequencer::SequencerClipRuntimeSources runtimeSources{};
-    const bool runtimeSourcesValid = clip_launches_.captureRuntimeSources(
-        clip_grid_state_, runtimeSources);
 
     const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
-    bool runtimePublicationDue =
-        runtimeSourcesValid && clip_launches_.stagedTrackMask() == 0U;
+    bool runtimePublicationDue = clip_launches_.stagedTrackMask() == 0U;
 #ifdef ARDUINO
     runtimePublicationDue = runtimePublicationDue && runtimePublicationDue_(
         nowUs,
@@ -263,6 +259,11 @@ void SequencerRuntimeService::update() {
             !clipLaunchPublication.empty()
     );
 #endif
+    core::state::sequencer::SequencerClipRuntimeSources runtimeSources{};
+    if (runtimePublicationDue) {
+        runtimePublicationDue = clip_launches_.captureRuntimeSources(
+            clip_grid_state_, runtimeSources);
+    }
     bool graphGenerationReady = false;
     uint8_t snapshotIndex = snapshot_bank_.activeIndex();
     const uint8_t previousSnapshotIndex = snapshotIndex;

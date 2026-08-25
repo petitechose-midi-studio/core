@@ -17,6 +17,11 @@ constexpr uint16_t trackBit(uint8_t track) noexcept {
     return static_cast<uint16_t>(1U << track);
 }
 
+constexpr bool isFollowOrigin(SequencerClipLaunchOrigin origin) noexcept {
+    return origin == SequencerClipLaunchOrigin::CLIP_FOLLOW ||
+        origin == SequencerClipLaunchOrigin::SCENE_FOLLOW;
+}
+
 FLASHMEM uint32_t mixFollowSeed(uint32_t value) noexcept {
     value ^= value >> 16U;
     value *= 0x7FEB352DU;
@@ -184,7 +189,8 @@ bool SequencerClipLaunchQueue::due_(uint32_t now, uint32_t deadline) noexcept {
 
 FLASHMEM uint32_t SequencerClipLaunchQueue::nextBoundaryTick_(
     SequencerClipLaunchQuantization quantization,
-    bool transportPlaying
+    bool transportPlaying,
+    bool includeCurrent
 ) const noexcept {
     if (!transportPlaying ||
         quantization == SequencerClipLaunchQuantization::IMMEDIATE) {
@@ -194,6 +200,7 @@ FLASHMEM uint32_t SequencerClipLaunchQueue::nextBoundaryTick_(
         ? kTicksPerBeat
         : kTicksPerBar;
     const uint32_t remainder = transport_tick_ % unit;
+    if (includeCurrent && remainder == 0U) return transport_tick_;
     return transport_tick_ + (unit - remainder);
 }
 
@@ -288,6 +295,8 @@ FLASHMEM void SequencerClipLaunchQueue::reset(
         rollback_previous_snapshot_index_ = 0U;
         rollback_generation_ = 0U;
         next_generation_ = 0U;
+        last_follow_process_tick_ = 0U;
+        follow_process_started_ = false;
         enabled_track_mask_ = enabledTrackMask;
         published_beat_ = 0U;
         active_scene_ = SequencerClipGridState::INVALID_SLOT;
@@ -533,7 +542,11 @@ FLASHMEM bool SequencerClipLaunchQueue::requestWithOrigin_(
         : SequencerClipLaunchQuantization::IMMEDIATE;
     current.targetSlot = target.slot;
     current.sourceGeneration = clips.generation(target);
-    current.dueTick = nextBoundaryTick_(current.quantization, transportPlaying);
+    current.dueTick = nextBoundaryTick_(
+        current.quantization,
+        transportPlaying,
+        isFollowOrigin(origin)
+    );
     current.generation = next_generation_;
     current.groupGeneration = 0U;
     current.loopTicks = loopTicks == 0U ? kTicksPerBar : loopTicks;
@@ -595,7 +608,11 @@ FLASHMEM bool SequencerClipLaunchQueue::requestStop(
         ? quantization
         : SequencerClipLaunchQuantization::IMMEDIATE;
     current.targetSlot = sourceSlot;
-    current.dueTick = nextBoundaryTick_(current.quantization, transportPlaying);
+    current.dueTick = nextBoundaryTick_(
+        current.quantization,
+        transportPlaying,
+        isFollowOrigin(origin)
+    );
     current.generation = next_generation_;
     plan.queuedMask = static_cast<uint16_t>(plan.queuedMask | trackBit(track));
     commitDesiredPlan_(plan);
@@ -659,7 +676,8 @@ FLASHMEM bool SequencerClipLaunchQueue::requestSceneWithOrigin_(
         : SequencerClipLaunchQuantization::IMMEDIATE;
     const uint32_t dueTick = nextBoundaryTick_(
         effectiveQuantization,
-        transportPlaying
+        transportPlaying,
+        isFollowOrigin(origin)
     );
     uint16_t expectedMask = 0U;
     enabledTrackMask = static_cast<uint16_t>(enabledTrackMask & ALL_TRACKS_MASK);
@@ -732,7 +750,16 @@ void SequencerClipLaunchQueue::processFollowActions(
     bool transportPlaying,
     const std::array<uint32_t, TRACK_COUNT>* loopTicks
 ) {
-    if (!transportPlaying) return;
+    if (!transportPlaying) {
+        follow_process_started_ = false;
+        return;
+    }
+    if (follow_process_started_ &&
+        last_follow_process_tick_ == transport_tick_) {
+        return;
+    }
+    last_follow_process_tick_ = transport_tick_;
+    follow_process_started_ = true;
     std::array<SequencerLauncherFollowChoice, TRACK_COUNT> clipChoices{};
     std::array<uint8_t, TRACK_COUNT> clipCurrentSlots{};
     std::array<uint32_t, TRACK_COUNT> clipSeeds{};
@@ -958,12 +985,18 @@ bool SequencerClipLaunchQueue::captureRuntimeSources(
     const SequencerClipGridState& clips,
     SequencerClipRuntimeSources& out
 ) const noexcept {
+    std::array<uint8_t, TRACK_COUNT> slots{};
+    {
+        oc::realtime::InterruptGuard lock;
+        for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+            const auto& entry = entries_[track];
+            const bool targetClip = entry.phase == Phase::QUEUED &&
+                entry.action == SequencerClipLaunchAction::CLIP;
+            slots[track] = targetClip ? entry.targetSlot : entry.activeSlot;
+        }
+    }
     for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
-        const auto& entry = entries_[track];
-        const bool targetClip = entry.phase == Phase::QUEUED &&
-            entry.action == SequencerClipLaunchAction::CLIP;
-        const uint8_t slot = targetClip ? entry.targetSlot : entry.activeSlot;
-        const SequencerClipAddress address{track, slot};
+        const SequencerClipAddress address{track, slots[track]};
         auto& source = out[track];
         source = {
             .address = address,

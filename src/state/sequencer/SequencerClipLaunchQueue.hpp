@@ -290,7 +290,8 @@ private:
     static bool due_(uint32_t now, uint32_t deadline) noexcept;
     uint32_t nextBoundaryTick_(
         SequencerClipLaunchQuantization quantization,
-        bool transportPlaying
+        bool transportPlaying,
+        bool includeCurrent = false
     ) const noexcept;
     uint8_t beatsRemaining_(uint32_t dueTick) const noexcept;
     uint8_t queuedRemainingQ8_(
@@ -338,6 +339,8 @@ private:
     uint32_t next_generation_ = 0U;
     volatile uint32_t transport_tick_ = 0U;
     volatile bool transport_playing_ = false;
+    uint32_t last_follow_process_tick_ = 0U;
+    bool follow_process_started_ = false;
     uint16_t enabled_track_mask_ = 0U;
     uint32_t published_beat_ = 0U;
     volatile uint8_t active_scene_ = SequencerClipGridState::INVALID_SLOT;
