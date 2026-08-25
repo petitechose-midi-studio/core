@@ -76,11 +76,11 @@ FLASHMEM bool publishActiveClipMutation(
 }  // namespace
 
 FLASHMEM uint16_t sequencerTicksPerStep(uint8_t stepsPerBeat) noexcept {
-    const uint8_t safe = stepsPerBeat == 0U
-        ? SequencerPatternState::DEFAULT_STEPS_PER_BEAT
-        : std::min<uint8_t>(stepsPerBeat, oc::note::clock::PPQN);
-    if (oc::note::clock::PPQN % safe != 0U) return 0U;
-    return static_cast<uint16_t>(oc::note::clock::PPQN / safe);
+    if (stepsPerBeat == 0U || stepsPerBeat > oc::note::clock::PPQN ||
+        oc::note::clock::PPQN % stepsPerBeat != 0U) {
+        return 0U;
+    }
+    return static_cast<uint16_t>(oc::note::clock::PPQN / stepsPerBeat);
 }
 
 FLASHMEM uint16_t patternContentEndTick(

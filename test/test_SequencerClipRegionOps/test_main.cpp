@@ -17,6 +17,7 @@ using core::state::sequencer::clipPlaybackRegion;
 using core::state::sequencer::insertedClipPlaybackRegion;
 using core::state::sequencer::removedClipPlaybackRegion;
 using core::state::sequencer::resizedClipPlaybackRegion;
+using core::state::sequencer::sequencerTicksPerStep;
 using core::state::sequencer::setClipPlaybackRegion;
 
 void expectRegion(
@@ -44,6 +45,28 @@ void test_default_and_rejected_regions_leave_state_canonical() {
     assert(!setClipPlaybackRegion(pattern, clip, {0, 0, 0, 0}));
     expectRegion(clipPlaybackRegion(pattern, clip), 8, 0, 0, 8);
     assert(pattern.patternTimingRevision.get() == revision);
+}
+
+void test_division_conversion_rejects_noncanonical_values() {
+    assert(sequencerTicksPerStep(0U) == 0U);
+    assert(sequencerTicksPerStep(5U) == 0U);
+    assert(sequencerTicksPerStep(25U) == 0U);
+    assert(sequencerTicksPerStep(4U) == 6U);
+
+    SequencerPatternState pattern;
+    SequencerClipState clip;
+    const uint8_t division = pattern.stepsPerBeat.get();
+    assert(!core::state::sequencer::setClipPatternStepsPerBeat(
+        pattern,
+        clip,
+        0U
+    ));
+    assert(!core::state::sequencer::setClipPatternStepsPerBeat(
+        pattern,
+        clip,
+        25U
+    ));
+    assert(pattern.stepsPerBeat.get() == division);
 }
 
 void test_set_and_resize_are_single_timing_mutations() {
@@ -175,6 +198,7 @@ void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
 
 int main() {
     test_default_and_rejected_regions_leave_state_canonical();
+    test_division_conversion_rejects_noncanonical_values();
     test_set_and_resize_are_single_timing_mutations();
     test_pure_resize_preserves_partial_loop_and_extends_full_loop();
     test_insert_and_remove_shift_or_collapse_each_boundary();
