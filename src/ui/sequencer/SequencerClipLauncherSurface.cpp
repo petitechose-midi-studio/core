@@ -973,15 +973,17 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         static_cast<lv_coord_t>(surface.x1 + sceneRailWidth - 1),
         static_cast<lv_coord_t>(surface.y1 + headerHeight - 1),
     };
-    drawRect(
-        layer,
-        areaHeader,
-        theme::color::SURFACE_RAISED,
-        LV_OPA_COVER,
-        theme::color::BORDER_SUBTLE,
-        1,
-        LV_OPA_COVER
-    );
+    if (areasOverlap(areaHeader, layer->_clip_area)) {
+        drawRect(
+            layer,
+            areaHeader,
+            theme::color::SURFACE_RAISED,
+            LV_OPA_COVER,
+            theme::color::BORDER_SUBTLE,
+            1,
+            LV_OPA_COVER
+        );
+    }
     for (uint8_t row = 0U;
          row < seq::ClipWorkspaceUiState::VISIBLE_ROWS;
          ++row) {
@@ -994,6 +996,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             static_cast<lv_coord_t>(surface.x1 + sceneRailWidth - 1),
             static_cast<lv_coord_t>(y + rowHeight - gap - 1),
         };
+        if (!areasOverlap(rail, layer->_clip_area)) continue;
         bool sceneUsed = false;
         for (uint8_t track = 0U;
              track < seq::SequencerClipGridState::TRACK_COUNT;
@@ -1073,16 +1076,19 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
     );
     const lv_coord_t bankX1 = static_cast<lv_coord_t>(gridX - gap);
     const lv_coord_t bankX2 = static_cast<lv_coord_t>(gridX - 1);
-    drawRect(
-        layer,
-        {bankX1, bankY1, bankX2, bankY2},
-        theme::color::ACTIVE,
-        LV_OPA_80,
-        theme::color::ACTIVE,
-        0,
-        LV_OPA_TRANSP,
-        0
-    );
+    const lv_area_t bankArea{bankX1, bankY1, bankX2, bankY2};
+    if (areasOverlap(bankArea, layer->_clip_area)) {
+        drawRect(
+            layer,
+            bankArea,
+            theme::color::ACTIVE,
+            LV_OPA_80,
+            theme::color::ACTIVE,
+            0,
+            LV_OPA_TRANSP,
+            0
+        );
+    }
 
     for (uint8_t column = 0U;
          column < seq::ClipWorkspaceUiState::VISIBLE_TRACKS;
@@ -1099,125 +1105,136 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         const lv_coord_t x = static_cast<lv_coord_t>(
             gridX + column * (columnWidth + gap)
         );
+        const lv_area_t columnArea{
+            .x1 = x,
+            .y1 = surface.y1,
+            .x2 = static_cast<lv_coord_t>(x + columnWidth - 1),
+            .y2 = surface.y2,
+        };
+        if (!areasOverlap(columnArea, layer->_clip_area)) continue;
         const lv_area_t header{
             .x1 = x,
             .y1 = surface.y1,
             .x2 = static_cast<lv_coord_t>(x + columnWidth - 1),
             .y2 = static_cast<lv_coord_t>(surface.y1 + headerHeight - 1),
         };
+        const auto telemetry = props_.launches->telemetry(track);
         const bool headerFocused = selectingTracks
             ? props_.trackNavigation->selection.cursorIndex.get() == track
             : ui.trackHeaderFocused() && ui.focusedTrack == track;
         const bool headerSelected = selectingTracks &&
             (props_.trackNavigation->selection.selectedMask.get() &
              static_cast<uint16_t>(1U << track)) != 0U;
-        const uint8_t activity = enabled && props_.statusBar != nullptr
-            ? props_.statusBar->trackNoteActivity[track].get()
-            : 0U;
-        drawRect(
-            layer,
-            header,
-            headerSelected
-                ? theme::color::SURFACE_RAISED
-                : theme::color::SURFACE_IDLE,
-            navigable ? LV_OPA_COVER : LV_OPA_20,
-            headerFocused
-                ? theme::color::TEXT_PRIMARY
-                : theme::color::BORDER_SUBTLE,
-            headerFocused ? 2 : 1,
-            navigable ? LV_OPA_COVER : LV_OPA_20
-        );
-        if (activity != 0U) {
-            const lv_area_t pulse{
-                static_cast<lv_coord_t>(header.x1 + 1),
-                static_cast<lv_coord_t>(header.y1 + 1),
-                static_cast<lv_coord_t>(header.x2 - 1),
-                static_cast<lv_coord_t>(header.y2 - 1),
-            };
+        if (areasOverlap(header, layer->_clip_area)) {
+            const uint8_t activity = enabled && props_.statusBar != nullptr
+                ? props_.statusBar->trackNoteActivity[track].get()
+                : 0U;
             drawRect(
                 layer,
-                pulse,
+                header,
+                headerSelected
+                    ? theme::color::SURFACE_RAISED
+                    : theme::color::SURFACE_IDLE,
+                navigable ? LV_OPA_COVER : LV_OPA_20,
+                headerFocused
+                    ? theme::color::TEXT_PRIMARY
+                    : theme::color::BORDER_SUBTLE,
+                headerFocused ? 2 : 1,
+                navigable ? LV_OPA_COVER : LV_OPA_20
+            );
+            if (activity != 0U) {
+                const lv_area_t pulse{
+                    static_cast<lv_coord_t>(header.x1 + 1),
+                    static_cast<lv_coord_t>(header.y1 + 1),
+                    static_cast<lv_coord_t>(header.x2 - 1),
+                    static_cast<lv_coord_t>(header.y2 - 1),
+                };
+                drawRect(
+                    layer,
+                    pulse,
+                    trackColor,
+                    static_cast<lv_opa_t>(
+                        32U + (static_cast<uint16_t>(activity) * 64U) / 127U
+                    ),
+                    trackColor,
+                    0,
+                    LV_OPA_TRANSP,
+                    2
+                );
+            }
+            const bool queuedStop = enabled &&
+                telemetry.status ==
+                    seq::SequencerClipLaunchStatus::QUEUED &&
+                telemetry.action ==
+                    seq::SequencerClipLaunchAction::STOP &&
+                telemetry.queuedSlot ==
+                    seq::SequencerClipGridState::INVALID_SLOT;
+            drawRect(
+                layer,
+                lv_area_t{
+                    .x1 = header.x1,
+                    .y1 = header.y1,
+                    .x2 = static_cast<lv_coord_t>(header.x1 + 2),
+                    .y2 = header.y2,
+                },
                 trackColor,
-                static_cast<lv_opa_t>(
-                    32U + (static_cast<uint16_t>(activity) * 64U) / 127U
-                ),
+                enabled ? LV_OPA_COVER : LV_OPA_30,
                 trackColor,
                 0,
                 LV_OPA_TRANSP,
-                2
+                0
             );
-        }
-        const auto telemetry = props_.launches->telemetry(track);
-        const bool queuedStop = enabled &&
-            telemetry.status == seq::SequencerClipLaunchStatus::QUEUED &&
-            telemetry.action == seq::SequencerClipLaunchAction::STOP &&
-            telemetry.queuedSlot ==
-                seq::SequencerClipGridState::INVALID_SLOT;
-        drawRect(
-            layer,
-            lv_area_t{
-                .x1 = header.x1,
-                .y1 = header.y1,
-                .x2 = static_cast<lv_coord_t>(header.x1 + 2),
-                .y2 = header.y2,
-            },
-            trackColor,
-            enabled ? LV_OPA_COVER : LV_OPA_30,
-            trackColor,
-            0,
-            LV_OPA_TRANSP,
-            0
-        );
-        const lv_coord_t headerCenterX = static_cast<lv_coord_t>(
-            (header.x1 + header.x2) / 2
-        );
-        const lv_coord_t headerCenterY = static_cast<lv_coord_t>(
-            (header.y1 + header.y2) / 2
-        );
-        if (addSlot) {
-            drawText(
-                layer,
-                header,
-                standalone::icons::ACTION_CREATE,
-                theme::color::TEXT_SECONDARY,
-                LV_OPA_60,
-                standalone_fonts.icons_16
+            const lv_coord_t headerCenterX = static_cast<lv_coord_t>(
+                (header.x1 + header.x2) / 2
             );
-        } else if (enabled && telemetry.stopped) {
-            drawSquare(
-                layer,
-                headerCenterX,
-                headerCenterY,
-                7,
-                theme::color::DESTRUCTIVE
+            const lv_coord_t headerCenterY = static_cast<lv_coord_t>(
+                (header.y1 + header.y2) / 2
             );
-        } else if (queuedStop) {
-            drawSquare(
-                layer,
-                headerCenterX,
-                headerCenterY,
-                6,
-                theme::color::ROUTING
-            );
-            drawCountdownRing(
-                layer,
-                headerCenterX,
-                headerCenterY,
-                8,
-                telemetry.queuedRemainingQ8,
-                theme::color::ROUTING
-            );
-        } else if (enabled) {
-            drawText(
-                layer,
-                header,
-                props_.tracks->isDrumTrack(track)
-                    ? standalone::icons::DRUM_GENERIC
-                    : standalone::icons::NOTE,
-                activity != 0U ? theme::color::TEXT_PRIMARY : trackColor,
-                LV_OPA_COVER,
-                standalone_fonts.icons_16
-            );
+            if (addSlot) {
+                drawText(
+                    layer,
+                    header,
+                    standalone::icons::ACTION_CREATE,
+                    theme::color::TEXT_SECONDARY,
+                    LV_OPA_60,
+                    standalone_fonts.icons_16
+                );
+            } else if (enabled && telemetry.stopped) {
+                drawSquare(
+                    layer,
+                    headerCenterX,
+                    headerCenterY,
+                    7,
+                    theme::color::DESTRUCTIVE
+                );
+            } else if (queuedStop) {
+                drawSquare(
+                    layer,
+                    headerCenterX,
+                    headerCenterY,
+                    6,
+                    theme::color::ROUTING
+                );
+                drawCountdownRing(
+                    layer,
+                    headerCenterX,
+                    headerCenterY,
+                    8,
+                    telemetry.queuedRemainingQ8,
+                    theme::color::ROUTING
+                );
+            } else if (enabled) {
+                drawText(
+                    layer,
+                    header,
+                    props_.tracks->isDrumTrack(track)
+                        ? standalone::icons::DRUM_GENERIC
+                        : standalone::icons::NOTE,
+                    activity != 0U ? theme::color::TEXT_PRIMARY : trackColor,
+                    LV_OPA_COVER,
+                    standalone_fonts.icons_16
+                );
+            }
         }
         for (uint8_t row = 0U;
              row < seq::ClipWorkspaceUiState::VISIBLE_ROWS;
@@ -1225,6 +1242,16 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             const uint8_t slot = static_cast<uint8_t>(
                 ui.firstVisibleSlot + row
             );
+            const lv_coord_t y = static_cast<lv_coord_t>(
+                surface.y1 + headerHeight + gap + row * rowHeight
+            );
+            const lv_area_t cell{
+                .x1 = x,
+                .y1 = y,
+                .x2 = static_cast<lv_coord_t>(x + columnWidth - 1),
+                .y2 = static_cast<lv_coord_t>(y + rowHeight - gap - 1),
+            };
+            if (!areasOverlap(cell, layer->_clip_area)) continue;
             const seq::SequencerClipAddress address{track, slot};
             const auto kind = enabled
                 ? props_.clips->slotKind(address)
@@ -1245,15 +1272,6 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             const bool queued = trackQueued && telemetry.queuedSlot == slot;
             const bool outgoing = active && trackQueued &&
                 telemetry.queuedSlot != slot;
-            const lv_coord_t y = static_cast<lv_coord_t>(
-                surface.y1 + headerHeight + gap + row * rowHeight
-            );
-            const lv_area_t cell{
-                .x1 = x,
-                .y1 = y,
-                .x2 = static_cast<lv_coord_t>(x + columnWidth - 1),
-                .y2 = static_cast<lv_coord_t>(y + rowHeight - gap - 1),
-            };
             const bool rowAvailable = slot <= lastScene;
             const bool disabledSecondary = !enabled || !rowAvailable;
             drawRect(
@@ -1304,8 +1322,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                         static_cast<lv_coord_t>(cell.x2 - 4),
                         static_cast<lv_coord_t>(cell.y2 - 5),
                     };
-                    if (preview.content &&
-                        areasOverlap(previewArea, layer->_clip_area)) {
+                    if (preview.content) {
                         const lv_coord_t previewWidth = static_cast<lv_coord_t>(
                             lv_area_get_width(&previewArea)
                         );
@@ -1580,16 +1597,23 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         if (local < seq::ClipWorkspaceUiState::VISIBLE_ROWS) {
             const lv_coord_t y = static_cast<lv_coord_t>(
                 surface.y1 + headerHeight + gap + local * rowHeight);
-            drawRect(
-                layer,
-                {surface.x1, y, surface.x2,
-                 static_cast<lv_coord_t>(y + rowHeight - gap - 1)},
-                theme::color::BACKGROUND,
-                LV_OPA_TRANSP,
-                theme::color::TEXT_PRIMARY,
-                2,
-                LV_OPA_COVER
-            );
+            const lv_area_t rowArea{
+                surface.x1,
+                y,
+                surface.x2,
+                static_cast<lv_coord_t>(y + rowHeight - gap - 1),
+            };
+            if (areasOverlap(rowArea, layer->_clip_area)) {
+                drawRect(
+                    layer,
+                    rowArea,
+                    theme::color::BACKGROUND,
+                    LV_OPA_TRANSP,
+                    theme::color::TEXT_PRIMARY,
+                    2,
+                    LV_OPA_COVER
+                );
+            }
         }
     }
 
@@ -1600,23 +1624,25 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             static_cast<lv_coord_t>(surface.x2 - 6),
             static_cast<lv_coord_t>(surface.y2 - 3),
         };
-        drawRect(
-            layer,
-            toast,
-            theme::color::SURFACE_RAISED,
-            LV_OPA_COVER,
-            theme::color::ROUTING,
-            1,
-            LV_OPA_COVER
-        );
-        drawText(
-            layer,
-            toast,
-            "QUEUE REPLACED",
-            theme::color::ROUTING,
-            LV_OPA_COVER,
-            fonts.meta_label()
-        );
+        if (areasOverlap(toast, layer->_clip_area)) {
+            drawRect(
+                layer,
+                toast,
+                theme::color::SURFACE_RAISED,
+                LV_OPA_COVER,
+                theme::color::ROUTING,
+                1,
+                LV_OPA_COVER
+            );
+            drawText(
+                layer,
+                toast,
+                "QUEUE REPLACED",
+                theme::color::ROUTING,
+                LV_OPA_COVER,
+                fonts.meta_label()
+            );
+        }
     }
 }
 
