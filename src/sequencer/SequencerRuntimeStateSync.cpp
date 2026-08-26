@@ -126,13 +126,12 @@ FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
     ProjectTimingContext projectTiming
 ) {
-    const auto region = core::state::sequencer::clipPlaybackRegion(source, clip);
     return {
         .length = source.length.get(),
-        .playStart = region.playStart,
-        .loopStart = region.loopStart,
-        .loopEnd = region.loopEnd,
         .stepsPerBeat = source.stepsPerBeat.get(),
+        .playStartTick = clip.playStartTick,
+        .loopStartTick = clip.loopStartTick,
+        .loopEndTick = clip.loopEndTick,
         .enabledMask = source.enabledMask.get(),
         .stepDataRevision = source.stepDataRevision.get(),
         .patternVariationRevision = source.patternVariationRevision.get(),
@@ -156,13 +155,12 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternSnapshot& source,
     const core::state::sequencer::SequencerClipSnapshot& clip
 ) {
-    const auto region = runtimePlaybackRegion(source, clip);
     return {
         .length = source.length,
-        .playStart = region.playStart,
-        .loopStart = region.loopStart,
-        .loopEnd = region.loopEnd,
         .stepsPerBeat = source.stepsPerBeat,
+        .playStartTick = clip.playStartTick,
+        .loopStartTick = clip.loopStartTick,
+        .loopEndTick = clip.loopEndTick,
         .enabledMask = source.enabledMask,
         .stepDataRevision = source.stepDataRevision,
         .patternVariationRevision = source.patternVariationRevision,
