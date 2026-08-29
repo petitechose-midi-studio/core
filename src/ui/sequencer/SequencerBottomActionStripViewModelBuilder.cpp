@@ -772,8 +772,18 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             launcher.sourceTrack,
             launcher.sourceSlot,
         };
+        if (launcher.removePending()) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_REMOVE,
+                Visual::ARMED,
+                Tone::DESTRUCTIVE
+            );
+            props.slots[1] =
+                core::ui::makeStructureSelectionCountStripSlot(1U);
+            return props;
+        }
         const bool removable = !launcher.placementActive() &&
-            core::state::sequencer::canDeleteSequencerClip(
+            core::state::sequencer::canRequestSequencerClipDelete(
                 source.clips,
                 source.clipLaunches,
                 sourceAddress,

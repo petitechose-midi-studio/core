@@ -58,6 +58,7 @@ FLASHMEM void ClipWorkspaceHandler::update() {
     const uint32_t nowMs = core::time_compat::millis();
     workspace.updateQuickFeedback(nowMs);
     workspace.updateFeedback(nowMs);
+    if (workspace.removePending()) finishPendingRemove();
     if (core_.activeView.get() != core::ui::ViewType::CLIPS) {
         if (horizontal_navigation_gesture_.active()) {
             horizontal_navigation_gesture_.cancel();
@@ -948,8 +949,58 @@ FLASHMEM void ClipWorkspaceHandler::applyRemove() {
         return;
     }
     const auto source = sourceAddress();
-    if (!core_.deleteSequencerClip(source)) {
+    const bool playing = core_.statusBar.playing.get();
+    if (seq::canDeleteSequencerClip(
+            core_.sequencerClips,
+            core_.sequencerClipLaunches,
+            source,
+            playing)) {
+        if (!core_.deleteSequencerClip(source)) {
+            ui.clearRemoveHold();
+            showFeedback(seq::ClipWorkspaceFeedback::FAILED);
+            return;
+        }
+        ui.completeOperation(
+            source.track,
+            source.slot,
+            seq::ClipWorkspaceFeedback::REMOVED,
+            core::time_compat::millis()
+        );
+        syncNavigationFocus();
+        return;
+    }
+    if (!seq::canRequestSequencerClipDelete(
+            core_.sequencerClips,
+            core_.sequencerClipLaunches,
+            source,
+            playing) ||
+        !core_.requestSequencerTrackStop(
+            source.track,
+            seq::SequencerClipLaunchQuantization::IMMEDIATE)) {
         ui.clearRemoveHold();
+        showFeedback(seq::ClipWorkspaceFeedback::FAILED);
+        return;
+    }
+    ui.beginPendingRemoval();
+}
+
+FLASHMEM void ClipWorkspaceHandler::endRemove() {
+    if (!matrixAvailable()) return;
+    core_.sequencer.clipWorkspace.clearRemoveHold();
+}
+
+FLASHMEM void ClipWorkspaceHandler::finishPendingRemove() {
+    auto& ui = core_.sequencer.clipWorkspace;
+    if (!ui.removePending()) return;
+    const auto source = sourceAddress();
+    const uint16_t trackBit = static_cast<uint16_t>(1U << source.track);
+    if (core_.sequencerClipLaunches.references(source) ||
+        (core_.sequencerClipLaunches.pendingTrackMask() & trackBit) != 0U ||
+        (core_.sequencerClipLaunches.stagedTrackMask() & trackBit) != 0U) {
+        return;
+    }
+    if (!core_.deleteSequencerClip(source)) {
+        (void)ui.backOperation();
         showFeedback(seq::ClipWorkspaceFeedback::FAILED);
         return;
     }
@@ -960,11 +1011,6 @@ FLASHMEM void ClipWorkspaceHandler::applyRemove() {
         core::time_compat::millis()
     );
     syncNavigationFocus();
-}
-
-FLASHMEM void ClipWorkspaceHandler::endRemove() {
-    if (!matrixAvailable()) return;
-    core_.sequencer.clipWorkspace.clearRemoveHold();
 }
 
 FLASHMEM void ClipWorkspaceHandler::back() {

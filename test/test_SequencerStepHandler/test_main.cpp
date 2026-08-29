@@ -789,6 +789,46 @@ void test_clip_launcher_can_remove_the_last_clip_without_removing_track() {
         << "[PASS] Clip Launcher removes its last Clip but keeps the Track\n";
 }
 
+void test_clip_launcher_stops_then_removes_the_active_clip_during_playback() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    auto& launches = h.state.sequencerClipLaunches;
+    launcher.reset(0U);
+    launcher.focus(0U, 0U);
+    h.state.statusBar.playing.set(true);
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+
+    assert(launcher.removePending());
+    assert(h.state.sequencerClips.isOccupied({0U, 0U}));
+    const auto publication = launches.captureRuntimePublication(
+        h.state.sequencerClips,
+        true
+    );
+    assert(publication.queuedMask == 0x0001U);
+    launches.applyRuntimePublication(publication, 0U, 1U);
+    assert(launches.markAppliedFromRealtime(
+        0U,
+        publication.generations[0U]
+    ));
+    (void)launches.publishRealtimeTelemetry();
+
+    h.clipWorkspaceHandler.update();
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(!launcher.selectionActive());
+    assert(h.state.sequencerTracks.isTrackEnabled(0U));
+    assert(!h.state.sequencerClips.isOccupied({0U, 0U}));
+    assert(launches.stopped(0U));
+
+    std::cout
+        << "[PASS] Clip Launcher stops then removes its active Clip live\n";
+}
+
 void test_clip_launcher_places_copy_and_move_across_tracks() {
     SequencerStepHarness h(true);
     assert(h.state.setSharedTrackState(0x0003U, 0U));
@@ -9993,6 +10033,7 @@ int main() {
     test_clip_launcher_performance_actions_fire_on_press();
     test_clip_launcher_long_nav_only_selects_existing_structures();
     test_clip_launcher_can_remove_the_last_clip_without_removing_track();
+    test_clip_launcher_stops_then_removes_the_active_clip_during_playback();
     test_clip_launcher_places_copy_and_move_across_tracks();
     test_inactive_clip_workspace_does_not_steal_shared_navigation_focus();
     test_pattern_preview_owns_back_before_clip_launcher();

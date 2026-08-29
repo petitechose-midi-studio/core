@@ -64,7 +64,7 @@ void test_clip_launcher_selection_strip_reuses_structure_grammar() {
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].visualState == ContextActionStripVisualState::DISABLED);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
     state.statusBar.playing.set(false);
 
     launcher.beginPlacement(

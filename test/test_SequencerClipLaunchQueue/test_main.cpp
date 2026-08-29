@@ -203,6 +203,29 @@ void test_stopping_one_track_preserves_other_track_progress() {
     assert(queue.telemetry(1U).activePhaseQ8 == 0U);
 }
 
+void test_active_clip_delete_becomes_safe_after_its_track_stops() {
+    seq::SequencerClipGridState clips;
+    clips.reset(0x0003U);
+
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 0x0003U);
+    const seq::SequencerClipAddress active{0U, 0U};
+    assert(!seq::canDeleteSequencerClip(clips, queue, active, true));
+    assert(seq::canRequestSequencerClipDelete(clips, queue, active, true));
+
+    assert(queue.requestStop(
+        active.track,
+        true,
+        seq::SequencerClipLaunchQuantization::IMMEDIATE
+    ));
+    applyQueued(queue, clips, 0x0001U);
+
+    assert(queue.stopped(active.track));
+    assert(!queue.references(active));
+    assert(seq::canDeleteSequencerClip(clips, queue, active, true));
+    assert(!queue.stopped(1U));
+}
+
 void test_scene_plan_keeps_empty_tracks_and_supports_cancel_replace_stop() {
     seq::SequencerClipGridState clips;
     clips.reset(0x0003U);
@@ -471,6 +494,7 @@ int main() {
     test_stop_is_immediate_while_idle_and_new_tracks_are_synchronized();
     test_enabled_empty_track_releases_stale_active_clip();
     test_stopping_one_track_preserves_other_track_progress();
+    test_active_clip_delete_becomes_safe_after_its_track_stops();
     test_scene_plan_keeps_empty_tracks_and_supports_cancel_replace_stop();
     test_newest_manual_request_wins_and_direct_stop_has_priority();
     test_clip_and_scene_follow_actions_obey_priority();

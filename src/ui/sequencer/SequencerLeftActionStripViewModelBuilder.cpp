@@ -158,7 +158,8 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
             }
             return props;
         }
-        if (!launcher.placementActive()) {
+        if (launcher.operation == core::state::sequencer::
+                ClipWorkspaceOperation::SELECT) {
             const core::state::sequencer::SequencerClipAddress sourceAddress{
                 launcher.sourceTrack,
                 launcher.sourceSlot,

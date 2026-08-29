@@ -84,6 +84,7 @@ private:
     void showFeedback(
         core::state::sequencer::ClipWorkspaceFeedback feedback
     );
+    void finishPendingRemove();
     bool enterClip(core::state::sequencer::SequencerClipAddress address);
     bool selectClipForEditing(
         core::state::sequencer::SequencerClipAddress address

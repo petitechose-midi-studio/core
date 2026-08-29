@@ -992,6 +992,14 @@ FLASHMEM void ClipWorkspaceUiState::beginRemoveHold(uint32_t nowMs) {
     bump();
 }
 
+FLASHMEM void ClipWorkspaceUiState::beginPendingRemoval() {
+    if (operation != ClipWorkspaceOperation::SELECT) return;
+    operation = ClipWorkspaceOperation::REMOVE_PENDING;
+    removeHoldStartedAtMs = 0U;
+    removeHoldActive = false;
+    bump();
+}
+
 FLASHMEM void ClipWorkspaceUiState::clearRemoveHold() {
     if (!removeHoldActive && removeHoldStartedAtMs == 0U) return;
     removeHoldStartedAtMs = 0U;

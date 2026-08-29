@@ -744,6 +744,7 @@ enum class ClipWorkspaceFeedback : uint8_t {
 enum class ClipWorkspaceOperation : uint8_t {
     BROWSE = 0,
     SELECT,
+    REMOVE_PENDING,
     MOVE_DESTINATION,
     DUPLICATE_DESTINATION,
 };
@@ -847,6 +848,9 @@ struct ClipWorkspaceUiState {
             operation ==
                 ClipWorkspaceOperation::DUPLICATE_DESTINATION;
     }
+    [[nodiscard]] bool removePending() const {
+        return operation == ClipWorkspaceOperation::REMOVE_PENDING;
+    }
     [[nodiscard]] bool clipFocused() const {
         return focusArea == ClipWorkspaceFocus::CLIP;
     }
@@ -907,6 +911,7 @@ struct ClipWorkspaceUiState {
         uint32_t nowMs
     );
     void beginRemoveHold(uint32_t nowMs);
+    void beginPendingRemoval();
     void clearRemoveHold();
     void enterPattern(uint8_t track, uint8_t slot);
     bool returnToMatrix();

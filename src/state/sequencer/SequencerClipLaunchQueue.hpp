@@ -367,4 +367,12 @@ private:
     bool transportPlaying
 ) noexcept;
 
+/** True when Delete can complete directly or after stopping this active Clip. */
+[[nodiscard]] bool canRequestSequencerClipDelete(
+    const SequencerClipGridState& clips,
+    const SequencerClipLaunchQueue& launches,
+    SequencerClipAddress target,
+    bool transportPlaying
+) noexcept;
+
 }  // namespace core::state::sequencer
