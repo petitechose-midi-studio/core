@@ -1356,4 +1356,35 @@ FLASHMEM bool canRequestSequencerClipDelete(
         !launches.stopped(target.track);
 }
 
+FLASHMEM bool canMoveSequencerClipSelectionNow(
+    const SequencerClipGridState& clips,
+    const SequencerClipLaunchQueue& launches,
+    const SequencerClipSelectionMask& selection,
+    bool transportPlaying
+) noexcept {
+    const uint16_t pendingTracks = static_cast<uint16_t>(
+        launches.pendingTrackMask() | launches.stagedTrackMask());
+    bool selected = false;
+    for (uint8_t track = 0U;
+         track < SequencerClipGridState::TRACK_COUNT;
+         ++track) {
+        if (selection[track] == 0U) continue;
+        selected = true;
+        if ((pendingTracks & static_cast<uint16_t>(1U << track)) != 0U) {
+            return false;
+        }
+        for (uint8_t slot = 0U;
+             slot < SequencerClipGridState::SLOT_COUNT;
+            ++slot) {
+            const SequencerClipAddress source{track, slot};
+            if ((selection[track] & static_cast<uint8_t>(1U << slot)) == 0U ||
+                !launches.references(source)) {
+                continue;
+            }
+            if (transportPlaying || !clips.isResident(source)) return false;
+        }
+    }
+    return selected;
+}
+
 }  // namespace core::state::sequencer

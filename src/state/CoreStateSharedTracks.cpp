@@ -337,23 +337,54 @@ FLASHMEM bool CoreState::moveSequencerClip(
     sequencer::SequencerClipAddress source,
     sequencer::SequencerClipAddress destination
 ) {
-    if (!closeClipMutationBoundary(*this) ||
-        sequencerClipLaunches.references(source) ||
-        !sequencer::canTransferSequencerClip(
-            sequencerClips,
-            sequencerTracks,
-            source,
-            destination,
-            sequencer::SequencerClipStructureAction::MOVE)) {
+    if (!sequencer::SequencerClipGridState::validAddress(source) ||
+        !sequencer::SequencerClipGridState::validAddress(destination)) {
         return false;
     }
-    auto change = sequencer::prepareSequencerClipMoveChange(
-        sequencerClips, source, destination);
+    sequencer::SequencerClipSelectionMask selection{};
+    selection[source.track] = static_cast<uint8_t>(1U << source.slot);
+    return moveSequencerClips(
+        selection,
+        static_cast<int8_t>(
+            static_cast<int>(destination.track) - source.track),
+        static_cast<int8_t>(
+            static_cast<int>(destination.slot) - source.slot)
+    );
+}
+
+FLASHMEM bool CoreState::moveSequencerClips(
+    const sequencer::SequencerClipSelectionMask& selection,
+    int8_t trackOffset,
+    int8_t slotOffset
+) {
+    if (!closeClipMutationBoundary(*this) ||
+        !sequencer::canMoveSequencerClipSelectionNow(
+            sequencerClips,
+            sequencerClipLaunches,
+            selection,
+            statusBar.playing.get())) {
+        return false;
+    }
+
+    auto change = sequencer::prepareSequencerClipSelectionMoveChange(
+        sequencerClips,
+        sequencerTracks,
+        sequencer,
+        selection,
+        trackOffset,
+        slotOffset
+    );
     if (!change || !sequencerHistory.canRecordClipStructure(*change) ||
         !sequencer::applySequencerClipStructureChange(
-            sequencerClips, *change, true)) {
+            sequencerClips,
+            sequencerTracks,
+            sequencer,
+            *change,
+            true)) {
         return false;
     }
+    sequencerClipLaunches.synchronizeEnabledTracks(
+        sequencerClips, sequencerTracks.currentEnabledMask());
     sequencerHistory.commitAdmittedClipStructure(std::move(change));
     markSequencerProjectMutated_();
     return true;

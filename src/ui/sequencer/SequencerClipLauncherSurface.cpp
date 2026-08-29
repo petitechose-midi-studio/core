@@ -1262,7 +1262,11 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                 ui.focusedTrack == track &&
                 ui.focusedSlot == slot;
             const bool sourceSelected = ui.selectionActive() &&
+                ui.selected(track, slot);
+            const bool sourceAnchor = sourceSelected &&
                 ui.sourceTrack == track && ui.sourceSlot == slot;
+            const bool destinationSelected =
+                ui.moveDestinationContains(track, slot);
             const bool destinationFocused = ui.placementActive() && focused;
             const bool active = occupied && !telemetry.stopped &&
                 telemetry.activeSlot == slot;
@@ -1277,7 +1281,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             drawRect(
                 layer,
                 cell,
-                destinationFocused
+                destinationFocused || destinationSelected
                     ? theme::color::SURFACE_RAISED
                     : theme::color::SURFACE_IDLE,
                 disabledSecondary ? LV_OPA_20 : LV_OPA_COVER,
@@ -1285,10 +1289,14 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                         : outgoing ? theme::color::WARNING
                         : active ? theme::color::LIVE_TIME
                         : stop ? theme::color::DESTRUCTIVE
+                        : destinationSelected
+                            ? theme::color::POSITIVE
                         : sourceSelected
                             ? theme::color::BORDER_STRONG
                             : theme::color::BORDER_SUBTLE,
-                focused || sourceSelected || active || stop ? 2 : 1,
+                focused || sourceSelected || destinationSelected || active ||
+                        stop
+                    ? 2 : 1,
                 disabledSecondary ? LV_OPA_20 : LV_OPA_80
             );
 
@@ -1539,7 +1547,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     theme::color::LIVE_TIME
                 );
             }
-            if (sourceSelected) {
+            if (sourceAnchor) {
                 const char* sourceIcon = ui.operation ==
                         seq::ClipWorkspaceOperation::MOVE_DESTINATION
                     ? standalone::icons::ACTION_MOVE
@@ -1559,6 +1567,13 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                 );
             }
             if (destinationFocused) {
+                const bool moving = ui.operation ==
+                    seq::ClipWorkspaceOperation::MOVE_DESTINATION;
+                const bool occupiedConflict = (occupied || stop) &&
+                    !(moving && ui.selected(track, slot));
+                const bool unchanged = moving &&
+                    ui.focusedTrack == ui.sourceTrack &&
+                    ui.focusedSlot == ui.sourceSlot;
                 drawText(
                     layer,
                     lv_area_t{
@@ -1567,12 +1582,14 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                         .x2 = static_cast<lv_coord_t>(cell.x2 - 2),
                         .y2 = static_cast<lv_coord_t>(cell.y1 + 19),
                     },
-                    occupied
+                    occupiedConflict
                         ? standalone::icons::STATUS_CONFLICT
                         : standalone::icons::ACTION_PLACE_TARGET,
-                    occupied
+                    occupiedConflict
                         ? theme::color::DESTRUCTIVE
-                        : theme::color::POSITIVE,
+                        : unchanged
+                            ? theme::color::TEXT_DISABLED
+                            : theme::color::POSITIVE,
                     LV_OPA_COVER,
                     standalone_fonts.icons_14
                 );

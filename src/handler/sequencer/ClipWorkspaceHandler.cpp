@@ -121,8 +121,7 @@ FLASHMEM bool ClipWorkspaceHandler::editorAvailable() const {
 
 FLASHMEM bool ClipWorkspaceHandler::horizontalNavigationAvailable() const {
     return matrixAvailable() &&
-        (!core_.sequencer.clipWorkspace.selectionActive() ||
-         core_.sequencer.clipWorkspace.placementActive());
+        !core_.sequencer.clipWorkspace.removePending();
 }
 
 FLASHMEM bool ClipWorkspaceHandler::quickSelectorAvailable() const {
@@ -372,10 +371,10 @@ FLASHMEM void ClipWorkspaceHandler::moveHorizontal(float delta) {
     auto& ui = core_.sequencer.clipWorkspace;
     ui.clearQuickControl();
     const uint16_t navigableTracks = ui.placementActive()
-        ? seq::compatibleSequencerClipTrackMask(
-            core_.sequencerClips,
+        ? seq::compatibleSequencerClipSelectionTrackMask(
             core_.sequencerTracks,
-            sourceAddress())
+            ui.selectedClipMasks,
+            ui.sourceTrack)
         : core_.currentSharedTrackEnabledMask();
     const int steps = nav::turnSteps(delta);
     const int direction = steps < 0 ? -1 : 1;
@@ -434,7 +433,10 @@ FLASHMEM void ClipWorkspaceHandler::openFocusedPattern() {
 }
 
 FLASHMEM void ClipWorkspaceHandler::move(float delta) {
-    if (!matrixAvailable() || !nav::hasTurnDelta(delta)) return;
+    if (!matrixAvailable() || !nav::hasTurnDelta(delta) ||
+        core_.sequencer.clipWorkspace.removePending()) {
+        return;
+    }
     auto& ui = core_.sequencer.clipWorkspace;
     ui.clearQuickControl();
     const int steps = nav::turnSteps(delta);
@@ -609,7 +611,7 @@ FLASHMEM void ClipWorkspaceHandler::launchVisible(uint8_t macroIndex) {
     syncNavigationFocus();
     if (ui.operation == seq::ClipWorkspaceOperation::SELECT) {
         if (core_.sequencerClips.isOccupied(address)) {
-            ui.beginSelection(address.track, address.slot);
+            ui.toggleSelection(address.track, address.slot);
         }
         return;
     }
@@ -636,6 +638,16 @@ FLASHMEM void ClipWorkspaceHandler::launchVisible(uint8_t macroIndex) {
 FLASHMEM void ClipWorkspaceHandler::openFocused() {
     if (!matrixAvailable()) return;
     auto& ui = core_.sequencer.clipWorkspace;
+    if (ui.operation == seq::ClipWorkspaceOperation::SELECT) {
+        const seq::SequencerClipAddress address{
+            ui.focusedTrack,
+            ui.focusedSlot,
+        };
+        if (ui.clipFocused() && core_.sequencerClips.isOccupied(address)) {
+            ui.toggleSelection(address.track, address.slot);
+        }
+        return;
+    }
     if (ui.trackHeaderFocused()) {
         syncNavigationFocus();
         if (!core_.sequencerTracks.isTrackEnabled(ui.focusedTrack)) {
@@ -672,12 +684,6 @@ FLASHMEM void ClipWorkspaceHandler::openFocused() {
         return;
     }
     const seq::SequencerClipAddress address{ui.focusedTrack, ui.focusedSlot};
-    if (ui.operation == seq::ClipWorkspaceOperation::SELECT) {
-        if (core_.sequencerClips.isOccupied(address)) {
-            ui.beginSelection(address.track, address.slot);
-        }
-        return;
-    }
     if (ui.placementActive()) return;
     if (!core_.sequencerTracks.isTrackEnabled(address.track)) {
         ui.focus(address.track, 0U);
@@ -859,22 +865,28 @@ FLASHMEM void ClipWorkspaceHandler::beginMove() {
         ui.operation != seq::ClipWorkspaceOperation::SELECT) {
         return;
     }
-    const auto source = sourceAddress();
-    seq::SequencerClipAddress destination{};
-    if (core_.sequencerClipLaunches.references(source) ||
-        !seq::firstSequencerClipTransferDestination(
+    int8_t trackOffset = 0;
+    int8_t slotOffset = 0;
+    if (!seq::canMoveSequencerClipSelectionNow(
+            core_.sequencerClips,
+            core_.sequencerClipLaunches,
+            ui.selectedClipMasks,
+            core_.statusBar.playing.get()) ||
+        !seq::firstSequencerClipSelectionMoveOffset(
             core_.sequencerClips,
             core_.sequencerTracks,
-            source,
-            seq::SequencerClipStructureAction::MOVE,
-            destination)) {
+            core_.sequencer,
+            ui.selectedClipMasks,
+            trackOffset,
+            slotOffset)) {
         showFeedback(seq::ClipWorkspaceFeedback::FAILED);
         return;
     }
+    const auto source = sourceAddress();
     ui.beginPlacement(
         seq::ClipWorkspaceOperation::MOVE_DESTINATION,
-        destination.track,
-        destination.slot
+        source.track,
+        source.slot
     );
     syncNavigationFocus();
 }
@@ -883,6 +895,10 @@ FLASHMEM void ClipWorkspaceHandler::applyOrBeginDuplicate() {
     auto& ui = core_.sequencer.clipWorkspace;
     if (!matrixAvailable()) return;
     if (ui.operation == seq::ClipWorkspaceOperation::SELECT) {
+        if (ui.selectedCount() != 1U) {
+            showFeedback(seq::ClipWorkspaceFeedback::FAILED);
+            return;
+        }
         const auto source = sourceAddress();
         seq::SequencerClipAddress destination{};
         if (!seq::firstSequencerClipTransferDestination(
@@ -911,7 +927,12 @@ FLASHMEM void ClipWorkspaceHandler::applyOrBeginDuplicate() {
     const auto operation = ui.operation;
     const bool changed = operation ==
             seq::ClipWorkspaceOperation::MOVE_DESTINATION
-        ? core_.moveSequencerClip(source, destination)
+        ? core_.moveSequencerClips(
+            ui.selectedClipMasks,
+            static_cast<int8_t>(
+                static_cast<int>(destination.track) - source.track),
+            static_cast<int8_t>(
+                static_cast<int>(destination.slot) - source.slot))
         : core_.duplicateSequencerClip(source, destination);
     if (!changed) {
         showFeedback(seq::ClipWorkspaceFeedback::FAILED);
@@ -931,7 +952,8 @@ FLASHMEM void ClipWorkspaceHandler::applyOrBeginDuplicate() {
 FLASHMEM void ClipWorkspaceHandler::beginRemove(uint32_t nowMs) {
     auto& ui = core_.sequencer.clipWorkspace;
     if (!matrixAvailable() ||
-        ui.operation != seq::ClipWorkspaceOperation::SELECT) {
+        ui.operation != seq::ClipWorkspaceOperation::SELECT ||
+        ui.selectedCount() != 1U) {
         return;
     }
     const auto source = sourceAddress();

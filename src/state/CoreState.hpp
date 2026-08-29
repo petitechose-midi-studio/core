@@ -561,6 +561,10 @@ public:
     [[nodiscard]] bool moveSequencerClip(
         sequencer::SequencerClipAddress source,
         sequencer::SequencerClipAddress destination);
+    [[nodiscard]] bool moveSequencerClips(
+        const sequencer::SequencerClipSelectionMask& selection,
+        int8_t trackOffset,
+        int8_t slotOffset);
     [[nodiscard]] bool duplicateSequencerClip(
         sequencer::SequencerClipAddress source,
         sequencer::SequencerClipAddress destination);

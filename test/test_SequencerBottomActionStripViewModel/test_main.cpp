@@ -100,6 +100,38 @@ void test_clip_workspace_browse_strip_exposes_viewport_navigation() {
     assert(props.slots[2].iconRotated180);
 }
 
+void test_clip_launcher_multi_selection_exposes_one_group_move() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    assert(state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
+    auto& launcher = state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+    launcher.beginSelection(0U, 0U);
+    launcher.toggleSelection(0U, 1U);
+
+    auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(std::strcmp(props.slots[1].labelText.data(), "2 selected") == 0);
+    assert(props.slots[0].visualState ==
+           ContextActionStripVisualState::DISABLED);
+    assert(props.slots[2].visualState ==
+           ContextActionStripVisualState::DISABLED);
+
+    launcher.beginPlacement(
+        core::state::sequencer::ClipWorkspaceOperation::MOVE_DESTINATION,
+        0U,
+        1U
+    );
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[2].icon == standalone::icons::ACTION_PLACE_TARGET);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    std::cout << "[PASS] Clip Launcher exposes one group move action\n";
+}
+
 void test_clip_launcher_copy_uses_a_compatible_track_when_source_is_full() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
@@ -253,6 +285,7 @@ int main() {
     test_selection_strip_projection_contract();
     test_clip_workspace_browse_strip_exposes_viewport_navigation();
     test_clip_launcher_selection_strip_reuses_structure_grammar();
+    test_clip_launcher_multi_selection_exposes_one_group_move();
     test_clip_launcher_copy_uses_a_compatible_track_when_source_is_full();
     std::cout << "\nAll Sequencer bottom-action-strip tests passed.\n";
     return 0;

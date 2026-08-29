@@ -1,6 +1,7 @@
 #include "state/sequencer/SequencerClipGridState.hpp"
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <type_traits>
 #include <utility>
@@ -23,7 +24,7 @@ static_assert(sizeof(SequencerClipGridState) == 1608U,
 #else
 static_assert(sizeof(SequencerClipGridState) == 1604U, "Clip grid RAM drift");
 #endif
-static_assert(sizeof(SequencerClipStructureChange) == 24U, "Clip history RAM drift");
+static_assert(sizeof(SequencerClipStructureChange) == 28U, "Clip history RAM drift");
 static_assert(sizeof(oc::note::sequencer::StepSequencerGraph) == 14792U,
               "Clip graph RAM drift");
 static_assert(sizeof(SequencerCcLaneBank) == 840U, "Clip CC RAM drift");
@@ -927,6 +928,153 @@ FLASHMEM bool firstSequencerClipTransferDestination(
     return false;
 }
 
+FLASHMEM bool canMoveSequencerClipSelection(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerClipSelectionMask& selection,
+    int8_t trackOffset,
+    int8_t slotOffset
+) noexcept {
+    if ((trackOffset == 0 && slotOffset == 0) ||
+        active.stepContentDraft.active.get()) {
+        return false;
+    }
+
+    uint8_t count = 0U;
+    uint8_t addedInactive = 0U;
+    uint32_t addedRetainedBytes = 0U;
+    for (uint8_t track = 0U;
+         track < SequencerClipGridState::TRACK_COUNT;
+         ++track) {
+        if (selection[track] == 0U) continue;
+        for (uint8_t slot = 0U;
+             slot < SequencerClipGridState::SLOT_COUNT;
+            ++slot) {
+            const SequencerClipAddress source{track, slot};
+            if ((selection[track] & static_cast<uint8_t>(1U << slot)) == 0U) {
+                continue;
+            }
+            ++count;
+            const int destinationTrack =
+                static_cast<int>(track) + trackOffset;
+            const int destinationSlot =
+                static_cast<int>(slot) + slotOffset;
+            if (destinationTrack < 0 ||
+                destinationTrack >= SequencerClipGridState::TRACK_COUNT ||
+                destinationSlot < 0 ||
+                destinationSlot >= SequencerClipGridState::SLOT_COUNT ||
+                !grid.isOccupied(source) || !bank.isTrackEnabled(track) ||
+                !bank.isTrackEnabled(static_cast<uint8_t>(destinationTrack)) ||
+                bank.trackKind(track) != bank.trackKind(
+                    static_cast<uint8_t>(destinationTrack))) {
+                return false;
+            }
+            const SequencerClipAddress destination{
+                static_cast<uint8_t>(destinationTrack),
+                static_cast<uint8_t>(destinationSlot),
+            };
+            if (grid.slotKind(destination) != SequencerLauncherSlotKind::EMPTY &&
+                (selection[destination.track] & static_cast<uint8_t>(
+                    1U << destination.slot)) == 0U) {
+                return false;
+            }
+            const auto* document = grid.inactiveDocument(source);
+            if (document != nullptr && document->trackKind !=
+                    bank.trackKind(destination.track)) {
+                return false;
+            }
+            if (trackOffset != 0 && grid.isResident(source)) {
+                ++addedInactive;
+                addedRetainedBytes += canonicalTrackRetainedBytes(
+                    bank, active, track);
+            }
+        }
+    }
+    return count != 0U &&
+        count <= SequencerClipMoveBatch::MAX_COUNT &&
+        addedInactive <= SequencerClipGridState::MAX_INACTIVE_DOCUMENTS -
+            grid.inactiveDocumentCount() &&
+        addedRetainedBytes <=
+            SequencerClipGridState::MAX_INACTIVE_RETAINED_BYTES -
+                grid.inactiveRetainedBytes();
+}
+
+FLASHMEM bool firstSequencerClipSelectionMoveOffset(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerClipSelectionMask& selection,
+    int8_t& trackOffset,
+    int8_t& slotOffset
+) noexcept {
+    constexpr int maxTrackOffset = SequencerClipGridState::TRACK_COUNT - 1;
+    constexpr int maxSlotOffset = SequencerClipGridState::SLOT_COUNT - 1;
+    for (int distance = 1;
+         distance <= maxTrackOffset + maxSlotOffset;
+         ++distance) {
+        for (int track = -maxTrackOffset;
+             track <= maxTrackOffset;
+             ++track) {
+            for (int slot = -maxSlotOffset;
+                 slot <= maxSlotOffset;
+                 ++slot) {
+                if (std::abs(track) + std::abs(slot) != distance ||
+                    !canMoveSequencerClipSelection(
+                        grid,
+                        bank,
+                        active,
+                        selection,
+                        static_cast<int8_t>(track),
+                        static_cast<int8_t>(slot))) {
+                    continue;
+                }
+                trackOffset = static_cast<int8_t>(track);
+                slotOffset = static_cast<int8_t>(slot);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+FLASHMEM uint16_t compatibleSequencerClipSelectionTrackMask(
+    const SequencerTrackBankState& bank,
+    const SequencerClipSelectionMask& selection,
+    uint8_t anchorTrack
+) noexcept {
+    if (anchorTrack >= SequencerClipGridState::TRACK_COUNT) return 0U;
+    uint16_t mask = 0U;
+    for (uint8_t candidate = 0U;
+         candidate < SequencerClipGridState::TRACK_COUNT;
+         ++candidate) {
+        const int offset = static_cast<int>(candidate) - anchorTrack;
+        bool compatible = true;
+        bool selected = false;
+        for (uint8_t source = 0U;
+             source < SequencerClipGridState::TRACK_COUNT;
+             ++source) {
+            if (selection[source] == 0U) continue;
+            selected = true;
+            const int destination = static_cast<int>(source) + offset;
+            if (destination < 0 ||
+                destination >= SequencerClipGridState::TRACK_COUNT ||
+                !bank.isTrackEnabled(source) ||
+                !bank.isTrackEnabled(static_cast<uint8_t>(destination)) ||
+                bank.trackKind(source) !=
+                    bank.trackKind(static_cast<uint8_t>(destination))) {
+                compatible = false;
+                break;
+            }
+        }
+        if (selected && compatible) {
+            mask = static_cast<uint16_t>(
+                mask | static_cast<uint16_t>(1U << candidate));
+        }
+    }
+    return mask;
+}
+
 FLASHMEM uint32_t sequencerClipDocumentRetainedBytes(
     const SequencerClipDocument& document
 ) noexcept {
@@ -1069,12 +1217,160 @@ FLASHMEM SequencerClipStructureChangePtr prepareSequencerClipMoveChange(
     return change;
 }
 
+FLASHMEM SequencerClipStructureChangePtr
+prepareSequencerClipSelectionMoveChange(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerClipSelectionMask& selection,
+    int8_t trackOffset,
+    int8_t slotOffset
+) {
+    if (!canMoveSequencerClipSelection(
+            grid, bank, active, selection, trackOffset, slotOffset)) {
+        return {};
+    }
+    auto batch = core::app::makeExtmemUniqueCold<SequencerClipMoveBatch>();
+    if (!batch) return {};
+
+    const int firstTrack = trackOffset > 0
+        ? SequencerClipGridState::TRACK_COUNT - 1 : 0;
+    const int lastTrack = trackOffset > 0
+        ? -1 : SequencerClipGridState::TRACK_COUNT;
+    const int trackStep = trackOffset > 0 ? -1 : 1;
+    const int firstSlot = slotOffset > 0
+        ? SequencerClipGridState::SLOT_COUNT - 1 : 0;
+    const int lastSlot = slotOffset > 0
+        ? -1 : SequencerClipGridState::SLOT_COUNT;
+    const int slotStep = slotOffset > 0 ? -1 : 1;
+    uint32_t retainedBytes = static_cast<uint32_t>(
+        sizeof(SequencerClipStructureChange) +
+        sizeof(SequencerClipMoveBatch) +
+        2U * kExtmemAllocationOverheadEstimate);
+    uint16_t retainedSpans = 2U;
+    for (int track = firstTrack; track != lastTrack; track += trackStep) {
+        for (int slot = firstSlot; slot != lastSlot; slot += slotStep) {
+            const SequencerClipAddress source{
+                static_cast<uint8_t>(track),
+                static_cast<uint8_t>(slot),
+            };
+            if ((selection[source.track] & static_cast<uint8_t>(
+                    1U << source.slot)) == 0U) {
+                continue;
+            }
+            auto& entry = batch->entries[batch->count++];
+            entry.source = source;
+            entry.destination = {
+                static_cast<uint8_t>(track + trackOffset),
+                static_cast<uint8_t>(slot + slotOffset),
+            };
+            entry.behavior = grid.clipBehavior(source);
+            if (trackOffset == 0 || !grid.isResident(source)) continue;
+
+            entry.residentTransfer = true;
+            const auto kind = bank.trackKind(source.track);
+            if (!createEmptySequencerClipDocument(
+                    kind,
+                    kind == SequencerTrackKind::DRUM
+                        ? &bank.drumTrack(source.track)
+                        : nullptr,
+                    entry.residentExchange)) {
+                return {};
+            }
+            retainedBytes += std::max(
+                sequencerClipDocumentRetainedBytes(*entry.residentExchange),
+                canonicalTrackRetainedBytes(bank, active, source.track)
+            );
+            retainedSpans = static_cast<uint16_t>(
+                retainedSpans + std::max(
+                    sequencerClipDocumentRetainedSpans(
+                        *entry.residentExchange),
+                    canonicalTrackRetainedSpans(
+                        bank, active, source.track)
+                )
+            );
+        }
+    }
+
+    if (batch->count == 1U &&
+        !batch->entries[0U].residentTransfer) {
+        return prepareSequencerClipMoveChange(
+            grid,
+            batch->entries[0U].source,
+            batch->entries[0U].destination
+        );
+    }
+
+    auto change = core::app::makeExtmemUniqueCold<SequencerClipStructureChange>();
+    if (!change) return {};
+    change->action = SequencerClipStructureAction::MOVE;
+    change->source = batch->entries[0U].source;
+    change->destination = batch->entries[0U].destination;
+    change->retainedBytes = retainedBytes;
+    change->retainedSpans = retainedSpans;
+    change->moveBatch = std::move(batch);
+    return change;
+}
+
+FLASHMEM bool applySequencerClipMoveBatch(
+    SequencerClipGridState& grid,
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    SequencerClipMoveBatch& batch,
+    bool after
+) noexcept {
+    if (batch.count == 0U || batch.count > batch.entries.size()) return false;
+    for (uint8_t offset = 0U; offset < batch.count; ++offset) {
+        const uint8_t index = after
+            ? offset
+            : static_cast<uint8_t>(batch.count - 1U - offset);
+        auto& entry = batch.entries[index];
+        const auto from = after ? entry.source : entry.destination;
+        const auto to = after ? entry.destination : entry.source;
+        if (!entry.residentTransfer) {
+            if (!grid.moveClip(from, to)) return false;
+            continue;
+        }
+        if (after) {
+            if (entry.residentExchange == nullptr ||
+                !grid.isResident(entry.source) ||
+                !exchangeCanonicalTrackDocument(
+                    bank,
+                    active,
+                    entry.source.track,
+                    *entry.residentExchange) ||
+                !grid.clearResident(entry.source) ||
+                !grid.installInactiveDocument(
+                    entry.destination,
+                    std::move(entry.residentExchange))) {
+                return false;
+            }
+            if (!(entry.behavior == SequencerLauncherBehavior{}) &&
+                !grid.setClipBehavior(entry.destination, entry.behavior)) {
+                return false;
+            }
+            continue;
+        }
+        entry.residentExchange = grid.removeInactiveDocument(entry.destination);
+        if (!entry.residentExchange ||
+            !exchangeCanonicalTrackDocument(
+                bank,
+                active,
+                entry.source.track,
+                *entry.residentExchange) ||
+            !grid.restoreResident(entry.source, entry.behavior)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 FLASHMEM bool applySequencerClipStructureChange(
     SequencerClipGridState& grid,
     SequencerClipStructureChange& change,
     bool after
 ) noexcept {
-    if (change.resident) return false;
+    if (change.resident || change.moveBatch != nullptr) return false;
     if (change.afterApplied == after) return false;
 
     switch (change.action) {
@@ -1128,6 +1424,15 @@ FLASHMEM bool applySequencerClipStructureChange(
     SequencerClipStructureChange& change,
     bool after
 ) noexcept {
+    if (change.moveBatch != nullptr) {
+        if (change.action != SequencerClipStructureAction::MOVE ||
+            change.afterApplied == after || !applySequencerClipMoveBatch(
+                grid, bank, active, *change.moveBatch, after)) {
+            return false;
+        }
+        change.afterApplied = after;
+        return true;
+    }
     if (!change.resident) {
         return applySequencerClipStructureChange(grid, change, after);
     }

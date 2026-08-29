@@ -658,6 +658,7 @@ FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     returnSlot = focusedSlot;
     sourceTrack = focusedTrack;
     sourceSlot = focusedSlot;
+    selectedClipMasks.fill(0U);
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
     bump();
@@ -764,7 +765,7 @@ FLASHMEM void ClipWorkspaceUiState::moveVertical(
     uint8_t lastSlot
 ) {
     if (direction == 0 || editorActive()) return;
-    if (placementActive()) {
+    if (selectionActive()) {
         const int next = std::clamp(
             static_cast<int>(focusedSlot) + direction,
             0,
@@ -803,8 +804,7 @@ FLASHMEM void ClipWorkspaceUiState::moveHorizontal(
     int direction,
     uint16_t enabledTrackMask
 ) {
-    if (direction == 0 || editorActive() ||
-        (selectionActive() && !placementActive())) {
+    if (direction == 0 || editorActive()) {
         return;
     }
     if (sceneFocused()) {
@@ -835,7 +835,7 @@ FLASHMEM void ClipWorkspaceUiState::moveHorizontal(
         }
         return;
     }
-    if (direction < 0 && !placementActive()) focusScene(focusedSlot);
+    if (direction < 0 && !selectionActive()) focusScene(focusedSlot);
 }
 
 FLASHMEM uint8_t ClipWorkspaceUiState::viewportIndex() const {
@@ -926,10 +926,79 @@ FLASHMEM void ClipWorkspaceUiState::beginSelection(
     focusClipWithoutPublishing(*this, track, slot);
     sourceTrack = focusedTrack;
     sourceSlot = focusedSlot;
+    selectedClipMasks.fill(0U);
+    selectedClipMasks[sourceTrack] = static_cast<uint8_t>(
+        1U << sourceSlot);
     operation = ClipWorkspaceOperation::SELECT;
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
     bump();
+}
+
+FLASHMEM void ClipWorkspaceUiState::toggleSelection(
+    uint8_t track,
+    uint8_t slot
+) {
+    if (operation != ClipWorkspaceOperation::SELECT ||
+        track >= TRACK_COUNT || slot >= SLOT_COUNT) {
+        return;
+    }
+    focusClipWithoutPublishing(*this, track, slot);
+    selectedClipMasks[track] ^= static_cast<uint8_t>(1U << slot);
+    if (selectedCount() == 0U) {
+        operation = ClipWorkspaceOperation::BROWSE;
+        bump();
+        return;
+    }
+    if (!selected(sourceTrack, sourceSlot)) {
+        for (uint8_t nextTrack = 0U; nextTrack < TRACK_COUNT; ++nextTrack) {
+            for (uint8_t nextSlot = 0U; nextSlot < SLOT_COUNT; ++nextSlot) {
+                if (!selected(nextTrack, nextSlot)) continue;
+                sourceTrack = nextTrack;
+                sourceSlot = nextSlot;
+                bump();
+                return;
+            }
+        }
+    }
+    bump();
+}
+
+FLASHMEM bool ClipWorkspaceUiState::selected(
+    uint8_t track,
+    uint8_t slot
+) const {
+    return track < TRACK_COUNT && slot < SLOT_COUNT &&
+        (selectedClipMasks[track] &
+         static_cast<uint8_t>(1U << slot)) != 0U;
+}
+
+FLASHMEM uint8_t ClipWorkspaceUiState::selectedCount() const {
+    uint8_t count = 0U;
+    for (const uint8_t mask : selectedClipMasks) {
+        for (uint8_t bit = mask; bit != 0U; bit >>= 1U) {
+            count = static_cast<uint8_t>(count + (bit & 1U));
+        }
+    }
+    return count;
+}
+
+FLASHMEM bool ClipWorkspaceUiState::moveDestinationContains(
+    uint8_t track,
+    uint8_t slot
+) const {
+    if (operation != ClipWorkspaceOperation::MOVE_DESTINATION) return false;
+    if (focusedTrack == sourceTrack && focusedSlot == sourceSlot) return false;
+    const int sourceTrackForCell = static_cast<int>(track) -
+        (static_cast<int>(focusedTrack) - static_cast<int>(sourceTrack));
+    const int sourceSlotForCell = static_cast<int>(slot) -
+        (static_cast<int>(focusedSlot) - static_cast<int>(sourceSlot));
+    return sourceTrackForCell >= 0 && sourceTrackForCell < TRACK_COUNT &&
+        sourceSlotForCell >= 0 && sourceSlotForCell < SLOT_COUNT &&
+        selected(
+            static_cast<uint8_t>(sourceTrackForCell),
+            static_cast<uint8_t>(sourceSlotForCell)
+        );
 }
 
 FLASHMEM void ClipWorkspaceUiState::beginPlacement(
@@ -956,6 +1025,7 @@ FLASHMEM bool ClipWorkspaceUiState::backOperation() {
         focusClipWithoutPublishing(*this, sourceTrack, sourceSlot);
     } else {
         operation = ClipWorkspaceOperation::BROWSE;
+        selectedClipMasks.fill(0U);
         feedback = ClipWorkspaceFeedback::NONE;
         feedbackHideAtMs = 0U;
     }
@@ -972,6 +1042,7 @@ FLASHMEM void ClipWorkspaceUiState::completeOperation(
     uint32_t nowMs
 ) {
     operation = ClipWorkspaceOperation::BROWSE;
+    selectedClipMasks.fill(0U);
     sourceTrack = std::min<uint8_t>(track, TRACK_COUNT - 1U);
     sourceSlot = std::min<uint8_t>(slot, SLOT_COUNT - 1U);
     focusClipWithoutPublishing(*this, sourceTrack, sourceSlot);

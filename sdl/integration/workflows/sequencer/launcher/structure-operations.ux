@@ -11,7 +11,7 @@
 # Expect: semantic:clip_selected:effect=enter_clip_selection, semantic:clip_selected:projection=selected
 # Expect: semantic:duplicate_target:effect=begin_duplicate_clip, semantic:duplicate_target:projection=duplicate_destination
 # Expect: semantic:clip_duplicated:effect=duplicate_clip, semantic:clip_duplicated:outcome=applied
-# Expect: semantic:move_target:effect=begin_move_clip, semantic:move_target:projection=move_destination
+# Expect: semantic:move_target:effect=focus_clip, semantic:move_target:projection=move_destination
 # Expect: semantic:clip_moved:effect=move_clip, semantic:clip_moved:outcome=applied
 # Expect: semantic:clip_removed:effect=remove_clip, semantic:clip_removed:outcome=applied
 
@@ -41,15 +41,16 @@
 3800 tick
 3880 button NAV up
 3980 tap LEFT_CENTER 60
-4220 capture screen move_target
-4320 tap BOTTOM_RIGHT 60
-4580 capture screen clip_moved
+4140 encoder NAV 0.01
+4380 capture screen move_target
+4480 tap BOTTOM_RIGHT 60
+4740 capture screen clip_moved
 
 # Removal remains guarded and is committed only after the hold threshold.
-4680 button NAV down
-5740 tick
-5820 button NAV up
-5920 button BOTTOM_LEFT down
-6980 tick
-7140 capture screen clip_removed
-7200 button BOTTOM_LEFT up
+4840 button NAV down
+5900 tick
+5980 button NAV up
+6080 button BOTTOM_LEFT down
+7140 tick
+7300 capture screen clip_removed
+7360 button BOTTOM_LEFT up

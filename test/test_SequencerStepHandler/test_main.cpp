@@ -871,6 +871,42 @@ void test_clip_launcher_places_copy_and_move_across_tracks() {
     std::cout << "[PASS] Clip Launcher places copy and move across Tracks\n";
 }
 
+void test_clip_launcher_moves_a_multi_selection_with_one_undo() {
+    SequencerStepHarness h(true);
+    assert(h.state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+    launcher.focus(0U, 0U);
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    assert(launcher.selectedCount() == 1U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(launcher.focusedSlot == 1U);
+    h.tap(Config::ButtonID::NAV);
+    assert(launcher.selectedCount() == 2U);
+
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(launcher.operation == seq::ClipWorkspaceOperation::MOVE_DESTINATION);
+    assert(launcher.focusedSlot == 0U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(launcher.focusedSlot == 1U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(!launcher.selectionActive());
+    assert(!h.state.sequencerClips.isOccupied({0U, 0U}));
+    assert(h.state.sequencerClips.isOccupied({0U, 1U}));
+    assert(h.state.sequencerClips.isOccupied({0U, 2U}));
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerClips.isOccupied({0U, 0U}));
+    assert(h.state.sequencerClips.isOccupied({0U, 1U}));
+    assert(!h.state.sequencerClips.isOccupied({0U, 2U}));
+
+    std::cout << "[PASS] Clip Launcher moves a selection with one Undo\n";
+}
+
 void test_inactive_clip_workspace_does_not_steal_shared_navigation_focus() {
     SequencerStepHarness h(true);
     assert(h.state.sequencer.clipWorkspace.matrixVisible());
@@ -10035,6 +10071,7 @@ int main() {
     test_clip_launcher_can_remove_the_last_clip_without_removing_track();
     test_clip_launcher_stops_then_removes_the_active_clip_during_playback();
     test_clip_launcher_places_copy_and_move_across_tracks();
+    test_clip_launcher_moves_a_multi_selection_with_one_undo();
     test_inactive_clip_workspace_does_not_steal_shared_navigation_focus();
     test_pattern_preview_owns_back_before_clip_launcher();
     test_cc_lane_owns_back_before_clip_launcher();

@@ -375,4 +375,12 @@ private:
     bool transportPlaying
 ) noexcept;
 
+/** True when every selected Clip can move without racing playback state. */
+[[nodiscard]] bool canMoveSequencerClipSelectionNow(
+    const SequencerClipGridState& clips,
+    const SequencerClipLaunchQueue& launches,
+    const SequencerClipSelectionMask& selection,
+    bool transportPlaying
+) noexcept;
+
 }  // namespace core::state::sequencer

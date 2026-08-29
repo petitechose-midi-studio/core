@@ -831,6 +831,7 @@ struct ClipWorkspaceUiState {
     uint8_t returnSlot = 0U;
     uint8_t sourceTrack = 0U;
     uint8_t sourceSlot = 0U;
+    std::array<uint8_t, TRACK_COUNT> selectedClipMasks{};
     uint32_t removeHoldStartedAtMs = 0U;
     bool removeHoldActive = false;
 
@@ -898,6 +899,13 @@ struct ClipWorkspaceUiState {
         uint8_t quantization
     );
     void beginSelection(uint8_t track, uint8_t slot);
+    void toggleSelection(uint8_t track, uint8_t slot);
+    [[nodiscard]] bool selected(uint8_t track, uint8_t slot) const;
+    [[nodiscard]] uint8_t selectedCount() const;
+    [[nodiscard]] bool moveDestinationContains(
+        uint8_t track,
+        uint8_t slot
+    ) const;
     void beginPlacement(
         ClipWorkspaceOperation next,
         uint8_t destinationTrack,

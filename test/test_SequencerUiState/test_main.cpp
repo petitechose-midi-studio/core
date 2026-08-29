@@ -422,6 +422,38 @@ void test_clip_launcher_placement_navigation_moves_across_tracks() {
     assert(!state.backOperation());
 }
 
+void test_clip_launcher_selection_translates_as_one_shape() {
+    namespace seq = core::state::sequencer;
+    seq::ClipWorkspaceUiState state;
+    state.reset(0U);
+    state.beginSelection(1U, 1U);
+    state.focus(1U, 2U);
+    state.toggleSelection(1U, 2U);
+
+    assert(state.selectedCount() == 2U);
+    assert(state.selected(1U, 1U));
+    assert(state.selected(1U, 2U));
+    state.beginPlacement(
+        seq::ClipWorkspaceOperation::MOVE_DESTINATION,
+        2U,
+        2U
+    );
+    assert(state.moveDestinationContains(2U, 2U));
+    assert(state.moveDestinationContains(2U, 3U));
+    assert(!state.moveDestinationContains(1U, 1U));
+
+    assert(state.backOperation());
+    assert(state.selectedCount() == 2U);
+    assert(state.focusedTrack == 1U && state.focusedSlot == 1U);
+    state.toggleSelection(1U, 1U);
+    assert(state.selectedCount() == 1U);
+    assert(state.sourceTrack == 1U && state.sourceSlot == 2U);
+    assert(state.backOperation());
+    assert(state.selectedCount() == 0U);
+
+    std::cout << "[PASS] Clip selection translates as one shape\n";
+}
+
 void test_clip_launcher_compound_gestures_publish_once() {
     namespace seq = core::state::sequencer;
     seq::ClipWorkspaceUiState state;
@@ -571,6 +603,7 @@ int main() {
     test_clip_launcher_operation_feedback_expires();
     test_clip_launcher_returns_to_the_exact_clip_address();
     test_clip_launcher_placement_navigation_moves_across_tracks();
+    test_clip_launcher_selection_translates_as_one_shape();
     test_clip_launcher_compound_gestures_publish_once();
     test_preset_library_keeps_only_the_active_domain_payload();
     test_preset_library_entry_policy_matches_the_visible_editor_surface();

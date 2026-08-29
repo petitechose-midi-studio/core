@@ -295,7 +295,7 @@ public:
         SequencerClipAddress address
     );
 
-    /** Moves one Clip to an empty slot on the same Track without allocation. */
+    /** Moves one non-resident Clip, or one resident Clip inside its Track. */
     [[nodiscard]] bool moveClip(
         SequencerClipAddress source,
         SequencerClipAddress destination
@@ -370,11 +370,10 @@ private:
 };
 
 /**
- * Shared capability contract for Clip move/duplicate placement.
+ * Allocation-free capability contract for one direct Clip transfer.
  *
- * Cross-Track transfer is intentionally kind-preserving. A resident Clip may
- * move inside its Track, but cannot leave it; enabled Tracks may otherwise be
- * empty and retain only their routing identity.
+ * Cross-Track transfer is kind-preserving. Resident cross-Track moves use the
+ * selection API below because they must exchange canonical Track ownership.
  */
 [[nodiscard]] bool canTransferSequencerClip(
     const SequencerClipGridState& grid,
@@ -398,6 +397,53 @@ private:
     SequencerClipAddress& out
 ) noexcept;
 
+using SequencerClipSelectionMask =
+    std::array<uint8_t, SequencerClipGridState::TRACK_COUNT>;
+
+struct SequencerClipMoveEntry {
+    SequencerClipAddress source{};
+    SequencerClipAddress destination{};
+    SequencerLauncherBehavior behavior{};
+    bool residentTransfer = false;
+    SequencerClipDocumentPtr residentExchange;
+};
+
+struct SequencerClipMoveBatch {
+    static constexpr uint8_t MAX_COUNT =
+        SequencerClipGridState::MAX_INACTIVE_DOCUMENTS +
+        SequencerClipGridState::TRACK_COUNT;
+
+    std::array<SequencerClipMoveEntry, MAX_COUNT> entries{};
+    uint8_t count = 0U;
+};
+
+using SequencerClipMoveBatchPtr =
+    core::app::ExtmemUniquePtr<SequencerClipMoveBatch>;
+
+[[nodiscard]] bool canMoveSequencerClipSelection(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerClipSelectionMask& selection,
+    int8_t trackOffset,
+    int8_t slotOffset
+) noexcept;
+
+[[nodiscard]] bool firstSequencerClipSelectionMoveOffset(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerClipSelectionMask& selection,
+    int8_t& trackOffset,
+    int8_t& slotOffset
+) noexcept;
+
+[[nodiscard]] uint16_t compatibleSequencerClipSelectionTrackMask(
+    const SequencerTrackBankState& bank,
+    const SequencerClipSelectionMask& selection,
+    uint8_t anchorTrack
+) noexcept;
+
 struct SequencerClipStructureChange {
     SequencerClipStructureAction action = SequencerClipStructureAction::CREATE;
     SequencerClipAddress source{};
@@ -408,6 +454,7 @@ struct SequencerClipStructureChange {
     bool resident = false;
     SequencerLauncherBehavior behavior{};
     SequencerClipDocumentPtr document;
+    SequencerClipMoveBatchPtr moveBatch;
 };
 
 using SequencerClipStructureChangePtr =
@@ -440,6 +487,16 @@ prepareSequencerClipMoveChange(
     const SequencerClipGridState& grid,
     SequencerClipAddress source,
     SequencerClipAddress destination
+);
+
+[[nodiscard]] SequencerClipStructureChangePtr
+prepareSequencerClipSelectionMoveChange(
+    const SequencerClipGridState& grid,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerClipSelectionMask& selection,
+    int8_t trackOffset,
+    int8_t slotOffset
 );
 
 [[nodiscard]] uint32_t sequencerClipDocumentRetainedBytes(

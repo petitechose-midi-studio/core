@@ -1581,7 +1581,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
     }
 
     const auto& ui = sequencer_.clipWorkspace;
-    if (navPress && !ui.selectionActive() &&
+    if (navPress && !ui.removePending() &&
         !sequencer_.drumSequencer.pickerVisible()) {
         retained_horizontal_navigation_ = true;
         retained_horizontal_navigation_rotated_ = false;
@@ -1939,7 +1939,7 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
             return true;
         }
         if (ui.selectionActive()) {
-            out.effect = "keep_clip_selection";
+            out.effect = "toggle_clip_selection";
             out.intent = Intent::ENTER_SELECTION;
             return true;
         }

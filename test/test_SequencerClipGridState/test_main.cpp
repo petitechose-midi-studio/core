@@ -280,15 +280,11 @@ void test_resident_switch_preserves_both_clip_documents() {
     const uint32_t retainedBeforeSwitch = grid.inactiveRetainedBytes();
     const uint32_t contentRevisionBeforeSwitch = active.contentView.revision.get();
 
-#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         assert(seq::switchResidentSequencerClip(grid, bank, active, {0U, 1U}));
         assert(core::app::testing::extmemAllocationAttempt == 0U);
     }
-#else
-    assert(seq::switchResidentSequencerClip(grid, bank, active, {0U, 1U}));
-#endif
     // The shared revision publishes the content reset and the draft-session
     // reset. No caller-level refresh is needed after those two transitions.
     assert(active.contentView.revision.get() == contentRevisionBeforeSwitch + 2U);
@@ -491,6 +487,51 @@ void test_cross_track_transfer_is_kind_safe_and_preserves_residency() {
         << "[PASS] cross-Track Clip transfer preserves kind and residency\n";
 }
 
+void test_multi_clip_move_is_atomic_and_replays_as_one_change() {
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+
+    assert(state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
+    const seq::SequencerLauncherBehavior firstBehavior{
+        .length = 1U,
+        .follow = seq::SequencerLauncherFollowChoice::NEXT,
+        .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
+    };
+    const seq::SequencerLauncherBehavior secondBehavior{
+        .length = 2U,
+        .follow = seq::SequencerLauncherFollowChoice::PREVIOUS,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    };
+    assert(state.setSequencerClipBehavior({0U, 0U}, firstBehavior));
+    assert(state.setSequencerClipBehavior({0U, 1U}, secondBehavior));
+
+    seq::SequencerClipSelectionMask selection{};
+    selection[0U] = 0x03U;
+    assert(state.moveSequencerClips(selection, 0, 1));
+    assert(!state.sequencerClips.isOccupied({0U, 0U}));
+    assert(state.sequencerClips.isResident({0U, 1U}));
+    assert(state.sequencerClips.isOccupied({0U, 2U}));
+    assert(state.sequencerClips.clipBehavior({0U, 1U}) == firstBehavior);
+    assert(state.sequencerClips.clipBehavior({0U, 2U}) == secondBehavior);
+
+    assert(state.undoSequencerHistory());
+    assert(state.sequencerClips.isResident({0U, 0U}));
+    assert(state.sequencerClips.isOccupied({0U, 1U}));
+    assert(!state.sequencerClips.isOccupied({0U, 2U}));
+    assert(state.sequencerClips.clipBehavior({0U, 0U}) == firstBehavior);
+    assert(state.sequencerClips.clipBehavior({0U, 1U}) == secondBehavior);
+    assert(state.redoSequencerHistory());
+
+    assert(state.createSequencerClip({0U, 3U}));
+    selection[0U] = 0x06U;
+    assert(!state.moveSequencerClips(selection, 0, 1));
+    assert(state.sequencerClips.isOccupied({0U, 1U}));
+    assert(state.sequencerClips.isOccupied({0U, 2U}));
+    assert(state.sequencerClips.isOccupied({0U, 3U}));
+
+    std::cout << "[PASS] multi-Clip move is atomic and replays once\n";
+}
+
 void test_core_clip_api_keeps_structure_and_history_coherent() {
     test_support::CoreStorages storages;
     core::state::CoreState state(storages.settings);
@@ -564,7 +605,15 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
     assert(state.sequencerClips.isOccupied({1U, 1U}));
     assert(!state.sequencerClips.isOccupied({0U, 2U}));
     assert(state.redoSequencerHistory());
-    assert(!state.moveSequencerClip({0U, 3U}, {1U, 2U}));
+    assert(state.sequencerClips.isResident({0U, 3U}));
+    assert(state.moveSequencerClip({0U, 3U}, {1U, 2U}));
+    assert(!state.sequencerClips.isOccupied({0U, 3U}));
+    assert(state.sequencerClips.isOccupied({1U, 2U}));
+    assert(state.sequencerClips.residentSlot(0U) ==
+           seq::SequencerClipGridState::INVALID_SLOT);
+    assert(state.undoSequencerHistory());
+    assert(state.sequencerClips.isResident({0U, 3U}));
+    assert(!state.sequencerClips.isOccupied({1U, 2U}));
 
     assert(state.sequencerTracks.setTrackKind(
         1U,
@@ -589,6 +638,7 @@ int main() {
     test_history_targets_the_authored_clip_after_resident_switch();
     test_clip_structure_history_transfers_ownership_without_project_copies();
     test_cross_track_transfer_is_kind_safe_and_preserves_residency();
+    test_multi_clip_move_is_atomic_and_replays_as_one_change();
     test_core_clip_api_keeps_structure_and_history_coherent();
     std::cout << "All SequencerClipGridState tests passed.\n";
     return 0;

@@ -160,26 +160,24 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         }
         if (launcher.operation == core::state::sequencer::
                 ClipWorkspaceOperation::SELECT) {
-            const core::state::sequencer::SequencerClipAddress sourceAddress{
-                launcher.sourceTrack,
-                launcher.sourceSlot,
-            };
-            core::state::sequencer::SequencerClipAddress destination{};
+            int8_t trackOffset = 0;
+            int8_t slotOffset = 0;
             const bool hasDestination =
-                core::state::sequencer::
-                    firstSequencerClipTransferDestination(
-                        source.clips,
-                        source.tracks,
-                        sourceAddress,
-                        core::state::sequencer::
-                            SequencerClipStructureAction::MOVE,
-                        destination);
+                core::state::sequencer::canMoveSequencerClipSelectionNow(
+                    source.clips,
+                    source.clipLaunches,
+                    launcher.selectedClipMasks,
+                    source.statusBar.playing.get()) &&
+                core::state::sequencer::firstSequencerClipSelectionMoveOffset(
+                    source.clips,
+                    source.tracks,
+                    source.sequencer,
+                    launcher.selectedClipMasks,
+                    trackOffset,
+                    slotOffset);
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_MOVE,
-                source.clipLaunches.references(sourceAddress) ||
-                        !hasDestination
-                    ? Visual::DISABLED
-                    : Visual::ACTIVE
+                hasDestination ? Visual::ACTIVE : Visual::DISABLED
             );
         }
         return props;

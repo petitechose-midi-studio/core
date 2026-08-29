@@ -135,7 +135,9 @@ SequencerInteractionPolicy buildStepContentSelectorPolicy() {
     return policy;
 }
 
-SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContext& context) {
+FLASHMEM SequencerInteractionPolicy buildSelectionPolicy(
+    const SequencerInteractionContext& context
+) {
     SequencerInteractionPolicy policy{};
     const auto shared = core::state::buildStructureSelectionInteractionPolicy({
         .entryAvailable = false,
