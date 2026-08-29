@@ -387,7 +387,8 @@ void test_active_phase_and_live_behavior_follow_the_running_clip() {
 }
 
 uint8_t queuedClipForFollowChoice(
-    seq::SequencerLauncherFollowChoice choice
+    seq::SequencerLauncherFollowChoice choice,
+    uint8_t current = 0U
 ) {
     constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
     seq::SequencerClipGridState clips;
@@ -395,7 +396,7 @@ uint8_t queuedClipForFollowChoice(
     install(clips, 1U);
     install(clips, 3U);
     assert(clips.setStop({0U, 2U}));
-    assert(clips.setClipBehavior({0U, 0U}, {
+    assert(clips.setClipBehavior({0U, current}, {
         .length = 1U,
         .follow = choice,
         .quantization = seq::SequencerLauncherFollowQuantization::BAR,
@@ -403,6 +404,10 @@ uint8_t queuedClipForFollowChoice(
 
     seq::SequencerClipLaunchQueue queue;
     queue.reset(clips, 0x0001U);
+    if (current != 0U) {
+        assert(queue.request({0U, current}, clips, false));
+        applyQueued(queue, clips, 0x0001U, 0U);
+    }
     queue.updateTransportPosition(kBar, true);
     queue.processFollowActions(clips, 0x0001U, true);
     return queue.telemetry(0U).queuedSlot;
@@ -411,6 +416,10 @@ uint8_t queuedClipForFollowChoice(
 void test_relative_clip_follow_choices_are_sparse_and_deterministic() {
     assert(queuedClipForFollowChoice(
         seq::SequencerLauncherFollowChoice::NEXT) == 1U);
+    assert(queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::PREVIOUS) == 3U);
+    assert(queuedClipForFollowChoice(
+        seq::SequencerLauncherFollowChoice::PREVIOUS, 3U) == 1U);
     assert(queuedClipForFollowChoice(
         seq::SequencerLauncherFollowChoice::FIRST) == 0U);
 

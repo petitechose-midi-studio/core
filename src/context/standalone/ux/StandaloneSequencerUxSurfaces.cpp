@@ -1433,14 +1433,16 @@ FLASHMEM bool SequencerClipLauncherUxSurface::captureSemanticUxContext(
                 ? "none"
                 : follow == seq::SequencerLauncherFollowChoice::NEXT
                     ? "next"
-                    : follow == seq::SequencerLauncherFollowChoice::FIRST
-                        ? "first"
-                        : follow == seq::SequencerLauncherFollowChoice::
-                                RANDOM_OTHER
-                            ? "random_other"
+                    : follow == seq::SequencerLauncherFollowChoice::PREVIOUS
+                        ? "previous"
+                        : follow == seq::SequencerLauncherFollowChoice::FIRST
+                            ? "first"
                             : follow == seq::SequencerLauncherFollowChoice::
+                                RANDOM_OTHER
+                                ? "random_other"
+                                : follow == seq::SequencerLauncherFollowChoice::
                                     RANDOM_ANY
-                                ? "random_any" : nullptr;
+                                    ? "random_any" : nullptr;
             if (label != nullptr) {
                 std::snprintf(
                     out.valueLabel, sizeof(out.valueLabel), "%s", label

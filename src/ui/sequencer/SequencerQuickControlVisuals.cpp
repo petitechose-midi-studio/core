@@ -75,6 +75,9 @@ void formatLauncherFollowChoice(
         case Choice::NEXT:
             std::snprintf(buffer, size, "Next");
             return;
+        case Choice::PREVIOUS:
+            std::snprintf(buffer, size, "Previous");
+            return;
         case Choice::FIRST:
             std::snprintf(buffer, size, "First");
             return;

@@ -35,9 +35,10 @@ namespace {
 using Graph = oc::note::sequencer::StepSequencerGraph;
 constexpr uint32_t kExtmemAllocationOverheadEstimate = 16U;
 
-constexpr std::array<SequencerLauncherFollowChoice, 13U> kFollowChoices{{
+constexpr std::array<SequencerLauncherFollowChoice, 14U> kFollowChoices{{
     SequencerLauncherFollowChoice::NONE,
     SequencerLauncherFollowChoice::NEXT,
+    SequencerLauncherFollowChoice::PREVIOUS,
     SequencerLauncherFollowChoice::FIRST,
     SequencerLauncherFollowChoice::RANDOM_OTHER,
     SequencerLauncherFollowChoice::RANDOM_ANY,

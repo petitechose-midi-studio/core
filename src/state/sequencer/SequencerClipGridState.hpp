@@ -43,6 +43,7 @@ enum class SequencerLauncherFollowChoice : uint8_t {
     TARGET_6,
     TARGET_7,
     TARGET_8,
+    PREVIOUS = 0xFAU,
     RANDOM_ANY = 0xFBU,
     RANDOM_OTHER = 0xFCU,
     FIRST = 0xFDU,

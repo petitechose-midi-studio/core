@@ -52,6 +52,18 @@ uint8_t resolveFollowChoice(
         }
         return SequencerClipGridState::INVALID_SLOT;
     }
+    if (choice == SequencerLauncherFollowChoice::PREVIOUS) {
+        for (uint8_t offset = 1U;
+             offset <= SequencerClipGridState::SLOT_COUNT;
+             ++offset) {
+            const uint8_t slot = static_cast<uint8_t>(
+                (current + SequencerClipGridState::SLOT_COUNT - offset) %
+                SequencerClipGridState::SLOT_COUNT
+            );
+            if (isCandidate(slot)) return slot;
+        }
+        return SequencerClipGridState::INVALID_SLOT;
+    }
     if (choice == SequencerLauncherFollowChoice::FIRST) {
         for (uint8_t slot = 0U;
              slot < SequencerClipGridState::SLOT_COUNT;

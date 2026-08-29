@@ -248,6 +248,8 @@ void test_follow_choice_order_matches_the_editor_grammar() {
     assert(seq::stepSequencerLauncherFollowChoice(Choice::NONE, 1) ==
            Choice::NEXT);
     assert(seq::stepSequencerLauncherFollowChoice(Choice::NEXT, 1) ==
+           Choice::PREVIOUS);
+    assert(seq::stepSequencerLauncherFollowChoice(Choice::PREVIOUS, 1) ==
            Choice::FIRST);
     assert(seq::stepSequencerLauncherFollowChoice(Choice::FIRST, 1) ==
            Choice::RANDOM_OTHER);
