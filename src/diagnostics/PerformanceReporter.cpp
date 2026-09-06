@@ -54,8 +54,7 @@ void PerformanceReporter::update(uint32_t nowMs, bool playbackActive) {
         static_cast<uint32_t>(nowMs - windowStartedAtMs_) >=
         REPORT_INTERVAL_MS && reportPosition_ == reportCount_ &&
         reportDroppedSamples_ == 0U && reportDroppedMetrics_ == 0U &&
-        !reportDroppedPeaks_[0].label && !reportDroppedPeaks_[1].label &&
-        !reportDroppedPeaks_[2].label
+        !hasPendingDroppedPeaks_()
     ) {
         freezeWindow_(nowMs);
     }
@@ -112,15 +111,26 @@ void PerformanceReporter::enqueue_(const oc::diagnostics::PerformanceSample& sam
 // execution span that may explain it.
 void PerformanceReporter::retainDroppedPeak_(const oc::diagnostics::PerformanceSample& sample) {
     const char* label = sample.label ? sample.label : "<unnamed>";
-    const bool interval = std::strcmp(label, "midi.usb-service-gap") == 0 ||
-        std::strcmp(label, "midi.usb-queue-age") == 0 ||
-        std::strcmp(label, "sequencer.timer-entry-gap") == 0;
-    // A parent update/main.loop span must not hide its expensive child phase.
-    const bool reporterPhase = std::strcmp(label, "diagnostics.drain") == 0 ||
-        std::strcmp(label, "diagnostics.freeze") == 0 ||
-        std::strcmp(label, "diagnostics.report-line") == 0 ||
-        std::strcmp(label, "diagnostics.memory-line") == 0;
-    auto& peak = droppedPeaks_[interval ? 1U : (reporterPhase ? 2U : 0U)];
+    PeakDomain domain = PeakDomain::OTHER;
+    if (std::strcmp(label, "midi.usb-service-gap") == 0 ||
+        std::strcmp(label, "midi.usb-queue-age") == 0) {
+        domain = PeakDomain::USB_INTERVAL;
+    } else if (std::strncmp(label, "diagnostics.", 12U) == 0 &&
+               std::strcmp(label, "diagnostics.update") != 0) {
+        domain = PeakDomain::REPORTER;
+    } else if (std::strncmp(label, "display.", 8U) == 0) {
+        domain = PeakDomain::DISPLAY_WORK;
+    } else if ((std::strncmp(label, "main.", 5U) == 0 &&
+                std::strcmp(label, "main.loop") != 0) ||
+               std::strncmp(label, "app.", 4U) == 0) {
+        domain = PeakDomain::FOREGROUND;
+    } else if (std::strcmp(label, "sequencer.playback-cc") == 0) {
+        domain = PeakDomain::CC;
+    } else if (std::strncmp(label, "sequencer.timer", 15U) == 0 ||
+               std::strncmp(label, "sequencer.playback", 18U) == 0) {
+        domain = PeakDomain::TIMER;
+    }
+    auto& peak = droppedPeaks_[static_cast<size_t>(domain)];
     if (!peak.label || sample.elapsedUs > peak.elapsedUs) {
         peak = sample;
         peak.label = label;
@@ -261,6 +271,7 @@ bool PerformanceReporter::alwaysReport_(const char* label) {
     if (label == nullptr) return false;
     return std::strncmp(label, "memory.", 7U) == 0 ||
         std::strncmp(label, "diagnostics.", 12U) == 0 ||
+        std::strcmp(label, "display.lvgl.frame-deferred") == 0 ||
         std::strncmp(label, "display.ili9341.", 16U) == 0 ||
         std::strncmp(label, "midi.cc.global", 14U) == 0 ||
         std::strncmp(label, "midi.queue.", 11U) == 0 ||
@@ -325,10 +336,14 @@ void PerformanceReporter::freezeWindow_(uint32_t nowMs) {
     windowStartedAtMs_ = nowMs;
 }
 
+bool PerformanceReporter::hasPendingDroppedPeaks_() const {
+    return std::any_of(reportDroppedPeaks_.begin(), reportDroppedPeaks_.end(),
+        [](const auto& peak) { return peak.label != nullptr; });
+}
+
 void PerformanceReporter::reportNext_() {
     if (reportPosition_ == reportCount_ && reportDroppedSamples_ == 0 &&
-        reportDroppedMetrics_ == 0 && !reportDroppedPeaks_[0].label &&
-        !reportDroppedPeaks_[1].label && !reportDroppedPeaks_[2].label) return;
+        reportDroppedMetrics_ == 0 && !hasPendingDroppedPeaks_()) return;
     // Include overflow/peak warning writes, not just ordinary metric lines.
     OC_PERF_SCOPE(perfReport, "diagnostics.report-line");
     if (reportPosition_ < reportCount_) {

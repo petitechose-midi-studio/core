@@ -72,6 +72,7 @@ private:
     static void reportMetric_(const MetricWindow& metric, uint32_t windowEndMs);
     void freezeWindow_(uint32_t nowMs);
     void reportNext_();
+    bool hasPendingDroppedPeaks_() const;
     void resetAll_();
     void resetMetrics_();
 
@@ -91,10 +92,15 @@ private:
     uint32_t reportWindowEndMs_ = 0;
     uint32_t reportDroppedSamples_ = 0;
     uint32_t reportDroppedMetrics_ = 0;
-    // Duration, interval and reporter-phase peaks survive saturation separately.
-    // They are evidence of loss, not histogram samples.
-    std::array<oc::diagnostics::PerformanceSample, 3> droppedPeaks_{};
-    std::array<oc::diagnostics::PerformanceSample, 3> reportDroppedPeaks_{};
+    // Preserve child domains separately: main.loop must not erase evidence of
+    // a blocked refresh/state update, nor timer erase its CC phase. No histograms
+    // or per-event logs on overflow; these remain explicitly incomplete peaks.
+    enum class PeakDomain : uint8_t {
+        OTHER, USB_INTERVAL, REPORTER, DISPLAY_WORK, FOREGROUND, TIMER, CC, COUNT
+    };
+    static constexpr size_t PEAK_DOMAIN_COUNT = static_cast<size_t>(PeakDomain::COUNT);
+    std::array<oc::diagnostics::PerformanceSample, PEAK_DOMAIN_COUNT> droppedPeaks_{};
+    std::array<oc::diagnostics::PerformanceSample, PEAK_DOMAIN_COUNT> reportDroppedPeaks_{};
     uint8_t pendingMemorySections_ = 0;
     size_t sampleHead_ = 0;
     size_t sampleTail_ = 0;
