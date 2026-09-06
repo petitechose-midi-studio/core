@@ -3,6 +3,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "../../src/config/InputIDs.hpp"
@@ -530,6 +531,64 @@ void test_associates_capture_with_live_surface_context() {
     std::cout << "[PASS] test_associates_capture_with_live_surface_context\n";
 }
 
+void test_queued_properties_own_their_captured_text() {
+    class Provider : public core::validation::ux::SemanticUxContextProvider {
+    public:
+        void captureSemanticUxContext(
+            const oc::core::input::InputBindingTraceEvent&,
+            core::validation::ux::SemanticUxContext& out
+        ) const override {
+            out.mode = "macro.edit.modulation";
+            out.property = label;
+        }
+
+        char label[32] = "Record new shape";
+    } provider;
+
+    CapturingSink sink;
+    core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
+    core::validation::ux::setCurrentSemanticUxContextProvider(&provider);
+    recorder.onBindingTrace(dispatchedEncoder());
+    std::snprintf(provider.label, sizeof(provider.label), "%s", "Source depth");
+    recorder.onBindingTrace(dispatchedEncoder());
+    std::snprintf(provider.label, sizeof(provider.label), "%s", "Playback");
+    recorder.flush(2000, sequencerSnapshot());
+    core::validation::ux::clearCurrentSemanticUxContextProvider(&provider);
+
+    assert(sink.lines.size() == 2);
+    assert(contains(sink.lines[0], "\"pre_property\":\"Record new shape\""));
+    assert(contains(sink.lines[1], "\"pre_property\":\"Source depth\""));
+    assert(contains(sink.lines[0], "\"property\":\"Playback\""));
+    assert(contains(sink.lines[1], "\"property\":\"Playback\""));
+    std::cout << "[PASS] queued properties retain their own pre-dispatch labels\n";
+}
+
+void test_property_label_bounds_and_copy() {
+    using core::validation::ux::SemanticUxProperty;
+    static_assert(std::is_trivially_copyable_v<SemanticUxProperty>);
+    static_assert(sizeof(SemanticUxProperty) == 32);
+
+    SemanticUxProperty property;
+    assert(property == nullptr);
+    const std::string longest(31, 'x');
+    property = longest.c_str();
+    const auto copy = property;
+    property = nullptr;
+    assert(property == nullptr);
+    assert(std::strcmp(copy, longest.c_str()) == 0);
+
+    // The last UTF-8 glyph would straddle the fixed buffer's terminator.
+    const std::string oversized = std::string(30, 'x') + "\xc3\xa9";
+    property = oversized.c_str();
+    assert(property == nullptr);
+    property = "Velocit\xc3\xa9";
+    property = static_cast<const char*>(property);
+    assert(std::strcmp(property, "Velocit\xc3\xa9") == 0);
+    property = "";
+    assert(property == nullptr);
+    std::cout << "[PASS] property copies own complete, bounded UTF-8 labels\n";
+}
+
 void test_capture_keeps_causal_effect_with_live_surface_state() {
     CapturingSink sink;
     TransitioningEffectProvider provider;
@@ -703,6 +762,8 @@ int main() {
     test_non_finite_and_oversized_encoder_values_are_serialized_safely();
     test_writes_native_context_provider_fields();
     test_associates_capture_with_live_surface_context();
+    test_queued_properties_own_their_captured_text();
+    test_property_label_bounds_and_copy();
     test_capture_keeps_causal_effect_with_live_surface_state();
     test_capture_keeps_terminal_cancel_outcome_after_surface_exit();
     test_capture_context_reset_prevents_cross_scenario_claims();

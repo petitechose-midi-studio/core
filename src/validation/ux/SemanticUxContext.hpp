@@ -1,12 +1,36 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include <oc/core/input/InputBindingTrace.hpp>
 
 #include "state/interaction/ControllerInteractionContract.hpp"
 
 namespace core::validation::ux {
+
+// Unlike the static semantic tags below, a property can come from a temporary
+// presenter or an editable source name. Own it before the context is queued.
+class SemanticUxProperty {
+public:
+    SemanticUxProperty& operator=(const char* text) {
+        std::size_t length = 0;
+        while (text && length < sizeof(text_) && text[length]) ++length;
+        if (length > 0 && length < sizeof(text_)) {
+            std::memmove(text_, text, length + 1);
+        } else {
+            // Omit oversized labels atomically, never truncate a UTF-8 glyph.
+            text_[0] = '\0';
+        }
+        return *this;
+    }
+
+    operator const char*() const { return text_[0] ? text_ : nullptr; }
+
+private:
+    char text_[32] = {};
+};
 
 struct SemanticUxContext {
     core::state::interaction::ControllerIntent intent =
@@ -51,7 +75,7 @@ struct SemanticUxContext {
     bool hasTargetRoute = false;
     uint8_t targetRoute = 0;
     bool targetRouteValid = false;
-    const char* property = nullptr;
+    SemanticUxProperty property{};
     char valueLabel[16] = {};
     bool hasConflict = false;
     bool conflict = false;
