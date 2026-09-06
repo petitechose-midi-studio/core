@@ -1,8 +1,7 @@
 #include "sequencer/SequencerCcLaneRuntime.hpp"
 
-#include <algorithm>
-
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 #include "state/sequencer/SequencerCcLaneProjectionOps.hpp"
 
@@ -110,6 +109,7 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
     bool playing,
     SequencerCcLaneRuntimeFrame& out
 ) {
+    OC_PERF_SCOPE(perfFrame, "sequencer.cc.frame");
     pending_frame_ = {};
     pending_states_ = states_;
     pending_track_projection_states_ = track_projection_states_;
@@ -234,8 +234,12 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
             }
             continue;
         }
-        if (!core::state::sequencer::validSequencerCcLaneBank(*input.lanes) ||
-            input.step >= region.contentLength) {
+        bool validBank;
+        {
+            OC_PERF_SCOPE(perfValidation, "sequencer.cc.validate");
+            validBank = core::state::sequencer::validSequencerCcLaneBank(*input.lanes);
+        }
+        if (!validBank || input.step >= region.contentLength) {
             pending_frame_ = {};
             pending_frame_.status = SequencerCcLaneRuntimeStatus::INVALID_INPUT;
             out = pending_frame_;
@@ -286,8 +290,10 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
             uint8_t projectedValue = 0;
             const float fraction = static_cast<float>(input.tickInStep) /
                 static_cast<float>(input.ticksPerStep);
-            const bool hasProjection =
-                core::state::sequencer::projectSequencerCcLaneValue(
+            bool hasProjection;
+            {
+                OC_PERF_SCOPE(perfProjection, "sequencer.cc.project");
+                hasProjection = core::state::sequencer::projectSequencerCcLaneValue(
                     lane,
                     region,
                     playbackOrdinal,
@@ -295,6 +301,7 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
                     projectedValue,
                     &span
                 );
+            }
             if (!hasProjection) {
                 runtime.hasHeldValue = false;
                 runtime.hasResolvedDestination = false;
@@ -309,11 +316,16 @@ SequencerCcLaneRuntimeStatus SequencerCcLaneRuntime::buildMusicalTickFrame(
             const bool valueChanged = hadPreviousValue &&
                 runtime.heldValue != previousValue;
 
-            const auto resolved =
-                core::state::sequencer::resolveSequencerCcLaneDestination(
-                    lane,
+            core::state::sequencer::SequencerCcLaneRouteResolveResult resolved;
+            {
+                OC_PERF_SCOPE(perfRoute, "sequencer.cc.route");
+                // The complete bank was validated above; routing only needs
+                // the destination, not a second traversal of the 128 steps.
+                resolved = core::state::sequencer::resolveSequencerCcLaneDestination(
+                    lane.destination,
                     input.route
                 );
+            }
             if (!resolved.ok()) {
                 pending_frame_ = {};
                 pending_frame_.status =

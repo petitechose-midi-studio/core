@@ -517,9 +517,9 @@ void SequencerPlaybackService::processCcRuntime_(
     }
     if (musicalTickAdvanced) {
         auto& scratch = *cc_temporal_scratch_;
-        scratch.currentInputs = {};
         auto& inputs = scratch.currentInputs;
-        if (playing) {
+        {
+            OC_PERF_SCOPE(perfInputs, "sequencer.cc.inputs");
             for (uint8_t track = 0; track < inputs.size(); ++track) {
                 const auto clipLaunch = clip_launches_ != nullptr
                     ? clip_launches_->realtimeView(track)
@@ -586,24 +586,17 @@ void SequencerPlaybackService::processCcRuntime_(
             }
         }
 
-        scratch.currentFrame = {};
         auto& currentFrame = scratch.currentFrame;
         if (cc_lane_runtime_->buildMusicalTickFrame(
                 inputs,
                 playing,
                 currentFrame
             ) == SequencerCcLaneRuntimeStatus::OK) {
-            scratch.temporalFrame = {};
-            auto& temporalFrame = scratch.temporalFrame;
-            temporalFrame.lifecycleGenerations =
-                currentFrame.lifecycleGenerations;
-
+            OC_PERF_SCOPE(perfCompose, "sequencer.cc.compose");
             // Prepare every eligible negative-delay Track first, then seed and
-            // evaluate the predictive runtime exactly once. Previously this
-            // copied/reset the complete PSRAM runtime and rebuilt all 16 Tracks
-            // once per negative Track (up to 16 full passes per scheduler tick).
+            // evaluate the predictive runtime exactly once. No scratch copy is
+            // needed when all Tracks use their current musical position.
             uint16_t preparedPredictiveTracks = 0U;
-            scratch.predictiveInputs = inputs;
             auto& predictiveInputs = scratch.predictiveInputs;
             if (allowPredictiveLookahead && tickPeriodUs > 0U &&
                 cc_predictive_lane_runtime_ != nullptr) {
@@ -658,6 +651,7 @@ void SequencerPlaybackService::processCcRuntime_(
                         continue;
                     }
 
+                    if (preparedPredictiveTracks == 0U) predictiveInputs = inputs;
                     auto& projected = predictiveInputs[track];
                     projected.step = future.stepIndex;
                     projected.tickInStep = static_cast<uint8_t>(
@@ -676,7 +670,6 @@ void SequencerPlaybackService::processCcRuntime_(
                 }
             }
 
-            scratch.projectedFrame = {};
             auto& projectedFrame = scratch.projectedFrame;
             uint16_t projectedTracks = 0U;
             if (preparedPredictiveTracks != 0U &&
@@ -689,40 +682,46 @@ void SequencerPlaybackService::processCcRuntime_(
                 projectedTracks = preparedPredictiveTracks;
             }
 
-            for (uint8_t track = 0U; track < inputs.size(); ++track) {
-                const bool projected =
-                    (projectedTracks & static_cast<uint16_t>(1U << track)) != 0U;
-                const auto& sourceFrame = projected ? projectedFrame : currentFrame;
-                if (projected) {
-                    temporalFrame.predictiveAuthorMask |=
-                        UINT64_C(0x0F) <<
-                        static_cast<uint8_t>(
-                            track * SequencerCcLaneRuntime::LANE_COUNT
-                        );
-                }
-                for (uint8_t index = 0U;
-                     index < sourceFrame.candidateCount;
-                     ++index) {
-                    const auto& candidate = sourceFrame.candidates[index];
-                    if (candidate.author.stableAddress /
-                            SequencerCcLaneRuntime::LANE_COUNT != track) {
-                        continue;
+            auto& temporalFrame = scratch.temporalFrame;
+            if (projectedTracks != 0U) {
+                temporalFrame = {};
+                temporalFrame.lifecycleGenerations = currentFrame.lifecycleGenerations;
+                for (uint8_t track = 0U; track < inputs.size(); ++track) {
+                    const bool projected =
+                        (projectedTracks & static_cast<uint16_t>(1U << track)) != 0U;
+                    const auto& sourceFrame = projected ? projectedFrame : currentFrame;
+                    if (projected) {
+                        temporalFrame.predictiveAuthorMask |=
+                            UINT64_C(0x0F) <<
+                            static_cast<uint8_t>(
+                                track * SequencerCcLaneRuntime::LANE_COUNT
+                            );
                     }
-                    if (temporalFrame.candidateCount >=
-                        temporalFrame.candidates.size()) {
-                        temporalFrame.status =
-                            SequencerCcLaneRuntimeStatus::CAPACITY_EXCEEDED;
-                        break;
+                    for (uint8_t index = 0U;
+                         index < sourceFrame.candidateCount;
+                         ++index) {
+                        const auto& candidate = sourceFrame.candidates[index];
+                        if (candidate.author.stableAddress /
+                                SequencerCcLaneRuntime::LANE_COUNT != track) {
+                            continue;
+                        }
+                        if (temporalFrame.candidateCount >=
+                            temporalFrame.candidates.size()) {
+                            temporalFrame.status =
+                                SequencerCcLaneRuntimeStatus::CAPACITY_EXCEEDED;
+                            break;
+                        }
+                        const uint8_t output = temporalFrame.candidateCount++;
+                        temporalFrame.candidates[output] = candidate;
+                        temporalFrame.contributions[output] =
+                            sourceFrame.contributions[index];
                     }
-                    const uint8_t output = temporalFrame.candidateCount++;
-                    temporalFrame.candidates[output] = candidate;
-                    temporalFrame.contributions[output] =
-                        sourceFrame.contributions[index];
+                    if (!temporalFrame.ok()) break;
                 }
-                if (!temporalFrame.ok()) break;
             }
-            if (temporalFrame.ok()) {
-                (void)cc_coordinator_->publishSequencerLanes(temporalFrame);
+            const auto& publication = projectedTracks != 0U ? temporalFrame : currentFrame;
+            if (publication.ok()) {
+                (void)cc_coordinator_->publishSequencerLanes(publication);
             }
         }
         last_cc_tick_ = tick;

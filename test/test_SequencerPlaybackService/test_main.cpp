@@ -2696,10 +2696,157 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
         << "[PASS] unassigned inherited route suppresses stale CC; Pin stays valid\n";
 }
 
+void test_destination_resolution_keeps_whole_lane_validation_at_boundaries() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerCcLaneBank bank;
+    assert(seq::createSequencerCcLane(bank, 0U, {}).changed());
+    auto& lane = bank.lanes[0];
+    for (const auto policy : {seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK,
+                              seq::SequencerCcLaneRoutePolicy::PINNED}) {
+        lane.destination.routePolicy = policy;
+        lane.destination.pinnedChannel = 7U;
+        for (const uint8_t channel : {uint8_t{3}, uint8_t{255}}) {
+            const auto route = seq::makeSequencerCcTrackRoute(0U, channel);
+            const auto whole = seq::resolveSequencerCcLaneDestination(lane, route);
+            const auto destination = seq::resolveSequencerCcLaneDestination(lane.destination, route);
+            assert(whole.ok() && destination.ok());
+            assert(whole.destination.routeValidity == destination.destination.routeValidity);
+            assert(core::state::shared::sameMidiCcDestinationIdentity(
+                whole.destination.identity, destination.destination.identity));
+        }
+    }
+    const auto route = seq::makeSequencerCcTrackRoute(0U, 3U);
+    // The last event is outside the current 8-step playback region. It still
+    // belongs to the whole-lane boundary, but has no bearing on route mapping.
+    lane.activeMask.setBit(127U, true);
+    lane.values[127U] = 255U;
+    assert(!seq::resolveSequencerCcLaneDestination(lane, route).ok());
+    assert(seq::resolveSequencerCcLaneDestination(lane.destination, route).ok());
+    auto invalidRoute = route;
+    invalidRoute.channel = 16U;
+    assert(!seq::resolveSequencerCcLaneDestination(lane.destination, invalidRoute).ok());
+    lane.destination.minimum = 100U;
+    lane.destination.maximum = 10U;
+    assert(!seq::resolveSequencerCcLaneDestination(lane.destination, route).ok());
+    lane.occupied = false;
+    assert(seq::resolveSequencerCcLaneDestination(lane, invalidRoute).status ==
+           seq::SequencerCcLaneRouteResolveStatus::EMPTY_LANE);
+    std::cout << "[PASS] destination-only routing preserves whole-lane boundary checks\n";
+}
+
+void test_cc_runtime_rejects_complete_bad_bank_without_partial_holds() {
+    namespace seq = core::state::sequencer;
+    using core::sequencer::SequencerCcLaneRuntimeStatus;
+    std::array<seq::SequencerCcLaneBank, 2> banks{};
+    for (auto& bank : banks) {
+        assert(seq::createSequencerCcLane(bank, 0U, {}).changed());
+        assert(seq::setSequencerCcLaneEvent(bank, 0U, 0U, 31U).changed());
+    }
+    core::sequencer::SequencerCcLaneRuntime runtime;
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    for (uint8_t index = 0; index < banks.size(); ++index) {
+        auto& input = inputs[index == 0U ? 0U : 15U];
+        input.lanes = &banks[index];
+        input.route = seq::makeSequencerCcTrackRoute(0U, index);
+        input.patternLength = 8U;
+        input.enabled = true;
+        input.stepTriggered = true;
+    }
+    core::sequencer::SequencerCcLaneRuntimeFrame frame;
+    banks[1].lanes[0].activeMask.setBit(127U, true);
+    banks[1].lanes[0].values[127U] = 255U;
+    assert(runtime.buildMusicalTickFrame(inputs, true, frame) ==
+           SequencerCcLaneRuntimeStatus::INVALID_INPUT);
+    assert(frame.candidateCount == 0U && !runtime.hasHeldValue(0U, 0U));
+    banks[1].lanes[0].values[127U] = 31U;
+    assert(runtime.buildMusicalTickFrame(inputs, true, frame) == SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 2U && runtime.heldValue(0U, 0U) == 31U);
+    banks[0].lanes[0].values[0] = 90U;
+    // Even an inactive slot on a muted Track must remain canonical.
+    banks[1].lanes[3].transitions[47] = 255U;
+    inputs[15].muted = true;
+    inputs[15].stepTriggered = false;
+    assert(runtime.buildMusicalTickFrame(inputs, true, frame) ==
+           SequencerCcLaneRuntimeStatus::INVALID_INPUT);
+    assert(frame.candidateCount == 0U && runtime.heldValue(0U, 0U) == 31U);
+    std::cout << "[PASS] full CC bank validation remains atomic, including inactive/muted data\n";
+}
+
+void test_cc_composition_switches_between_current_predictive_and_fallback() {
+    namespace seq = core::state::sequencer;
+    SequencerState sequencer;
+    seq::SequencerTrackBankState bank;
+    core::state::project::ProjectNavigationState navigation;
+    core::state::StatusBarState status;
+    core::sequencer::RealtimeMidiQueue queue;
+    core::sequencer::SequencerRuntimeGraphBank graphs;
+    core::sequencer::SequencerRuntimeSnapshotBank snapshots{sequencer, bank, navigation};
+    constexpr std::array<uint8_t, 4> tracks{0U, 1U, 2U, 15U};
+    for (const auto track : tracks) {
+        auto& pattern = track == 0U ? sequencer.pattern : bank.track(track);
+        pattern.setContentLength(4U);
+        pattern.stepsPerBeat.set(4U);
+        auto* lanes = seq::ensureSequencerCcLaneBank(pattern);
+        assert(lanes);
+        seq::SequencerCcLaneDraft draft;
+        draft.destination.routePolicy = seq::SequencerCcLaneRoutePolicy::PINNED;
+        draft.destination.pinnedChannel = track;
+        assert(seq::createSequencerCcLane(*lanes, 0U, draft).changed());
+        assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 1U, 80U + track).changed());
+        pattern.bumpCcLaneRevision();
+    }
+    bank.syncSharedTrackState(0x8007U, 0U);
+    const auto& snapshot = refreshSnapshot(snapshots, graphs, sequencer, bank);
+    const auto* lanes = snapshots.laneSnapshot(snapshots.activeIndex());
+    assert(lanes);
+    auto project = makeProjectTracks(0x8007U);
+    project.midiChannels.fill(255U); // Pinned CC only; no Note engine output.
+    core::sequencer::SequencerCcLaneRuntime runtime, predictive;
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{queue};
+    SequencerTrackFixturePlaybackAdapter service{
+        sequencer, status, queue, graphs, nullptr, &runtime, &coordinator, &predictive};
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    // Reuse the same scratch across all modes: no stale predictive mask,
+    // candidate or input may survive a switch to the direct/fallback path.
+    for (uint8_t pass = 0U; pass < 5U; ++pass) {
+        service.resetCcProject();
+        queue.clear();
+        transport.messages.clear();
+        const bool allowPredictive = pass != 1U;
+        project.delayMs.fill(0);
+        project.delayMs[1] = project.delayMs[15] = pass == 2U ? 0 : pass == 3U ? -32767 : -2;
+        project.delayMs[2] = 2;
+        ++project.revision;
+        const bool anticipates = allowPredictive && project.delayMs[1] == -2;
+        std::array<uint8_t, 16> emitted{};
+        for (uint32_t tick = 0U; tick <= 8U; ++tick) {
+            const uint32_t nowUs = pass * 50000U + tick * 1000U;
+            service.update(snapshot, tick, true, nowUs, 1000U, false, lanes, &project, allowPredictive);
+            drainDue(queue, midi, nowUs, UINT32_MAX);
+            for (const auto& message : transport.messages) {
+                assert(message.type == core::sequencer::RealtimeMidiEventType::ControlChange);
+                const uint32_t dueTick = message.channel == 2U ? 8U :
+                    anticipates && (message.channel == 1U || message.channel == 15U) ? 4U : 6U;
+                assert(tick == dueTick);
+                assert(message.note == 74U && message.value == 80U + message.channel);
+                ++emitted[message.channel];
+            }
+            transport.messages.clear();
+        }
+        for (const auto track : tracks) assert(emitted[track] == 1U);
+        assert(queue.size() == 0U);
+    }
+    std::cout << "[PASS] mixed sparse CC tracks keep exact deadlines across composition modes\n";
+}
+
 }  // namespace
 
 int main() {
     installTimeProvider();
+    test_destination_resolution_keeps_whole_lane_validation_at_boundaries();
+    test_cc_runtime_rejects_complete_bad_bank_without_partial_holds();
+    test_cc_composition_switches_between_current_predictive_and_fallback();
     test_timer_control_does_not_wait_for_content_publication();
     test_track_engine_switches_between_melodic_and_drum_without_stale_notes();
     test_drum_preview_uses_captured_inputs_after_timer_stop();
