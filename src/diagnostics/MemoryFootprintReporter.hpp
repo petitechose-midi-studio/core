@@ -32,6 +32,11 @@ void trackExtmemAllocationFailure();
 DynamicMemorySnapshot dynamicMemorySnapshot();
 /** Emits one allocation-free PSRAM free/largest-block sample. */
 void recordDynamicMemorySample(const char* label);
+enum class MemoryReportSection : uint8_t {
+    LVGL, PSRAM, RAM2_HEAP, RAM2_ALLOCATOR, RAM1_STACK, COUNT
+};
+/** Foreground-only: inspect and log one section, yielding between runtime calls. */
+void logMemoryFootprintSection(const char* phase, MemoryReportSection section);
 void logMemoryFootprint(const char* phase);
 #endif
 

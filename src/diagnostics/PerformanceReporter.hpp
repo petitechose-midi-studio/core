@@ -9,6 +9,7 @@
 #if OC_ENABLE_STATS
 #include <oc/diagnostics/Performance.hpp>
 #include "app/ExtmemAllocator.hpp"
+#include "diagnostics/MemoryFootprintReporter.hpp"
 #endif
 
 namespace core::diagnostics {
@@ -16,7 +17,7 @@ namespace core::diagnostics {
 #if OC_ENABLE_STATS
 
 /**
- * Allocation-free aggregation for opt-in performance samples.
+ * Allocation-free steady-state aggregation for opt-in performance samples.
  *
  * Producers only enqueue compact samples through the framework diagnostics
  * sink. Aggregation and logging happen later from the application loop so
@@ -67,8 +68,9 @@ private:
         uint32_t percentile
     );
     static bool alwaysReport_(const char* label);
-    static void reportMetric_(const MetricWindow& metric);
-    void report_(uint32_t nowMs);
+    static void reportMetric_(const MetricWindow& metric, uint32_t windowEndMs);
+    void freezeWindow_(uint32_t nowMs);
+    void reportNext_();
     void resetAll_();
     void resetMetrics_();
 
@@ -77,6 +79,16 @@ private:
     // Foreground-only histograms need no fast-RAM residency. The producer
     // ring and its IRQ-protected indices remain in the RAM2 reporter.
     core::app::ExtmemUniquePtr<Metrics> metrics_;
+    // Swap windows instead of copying histograms or pausing collection while
+    // logging. Only one pending window is retained, in strict PSRAM.
+    core::app::ExtmemUniquePtr<Metrics> reportingMetrics_;
+    std::array<uint8_t, METRIC_CAPACITY> reportIndices_{};
+    size_t reportCount_ = 0;
+    size_t reportPosition_ = 0;
+    uint32_t reportWindowEndMs_ = 0;
+    uint32_t reportDroppedSamples_ = 0;
+    uint32_t reportDroppedMetrics_ = 0;
+    MemoryReportSection memorySection_ = MemoryReportSection::COUNT;
     size_t sampleHead_ = 0;
     size_t sampleTail_ = 0;
     size_t sampleCount_ = 0;

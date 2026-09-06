@@ -30,7 +30,8 @@ PerformanceReporter& performanceReporter() {
 
 void PerformanceReporter::begin() {
     if (!metrics_) metrics_ = core::app::makeExtmemUniqueCold<Metrics>();
-    if (!metrics_) {
+    if (!reportingMetrics_) reportingMetrics_ = core::app::makeExtmemUniqueCold<Metrics>();
+    if (!metrics_ || !reportingMetrics_) {
         OC_LOG_WARN("[Perf] disabled: PSRAM histogram allocation failed");
         return;
     }
@@ -44,15 +45,16 @@ void PerformanceReporter::end() {
 }
 
 void PerformanceReporter::update(uint32_t nowMs) {
-    if (!metrics_) return;
+    if (!metrics_ || !reportingMetrics_) return;
     drain_();
     if (windowStartedAtMs_ == 0) {
         windowStartedAtMs_ = nowMs;
     } else if (
         static_cast<uint32_t>(nowMs - windowStartedAtMs_) >=
-        REPORT_INTERVAL_MS
+        REPORT_INTERVAL_MS && reportPosition_ == reportCount_ &&
+        reportDroppedSamples_ == 0U && reportDroppedMetrics_ == 0U
     ) {
-        report_(nowMs);
+        freezeWindow_(nowMs);
     }
     if (lastMemoryReportAtMs_ == 0U) {
         lastMemoryReportAtMs_ = nowMs;
@@ -60,10 +62,18 @@ void PerformanceReporter::update(uint32_t nowMs) {
         static_cast<uint32_t>(nowMs - lastMemoryReportAtMs_) >=
         MEMORY_REPORT_INTERVAL_MS
     ) {
-        // This deliberately slow snapshot is kept outside measured scopes and
-        // infrequent enough not to dominate interaction profiling.
-        logMemoryFootprint("runtime-window");
+        memorySection_ = MemoryReportSection::LVGL;
         lastMemoryReportAtMs_ = nowMs;
+    }
+    // Return to the application (and USB service) after at most one log line.
+    // Memory sections are also spread out, never added to a performance line.
+    if (memorySection_ != MemoryReportSection::COUNT) {
+        OC_PERF_SCOPE(perfMemory, "diagnostics.memory-line");
+        logMemoryFootprintSection("runtime-window", memorySection_);
+        memorySection_ = static_cast<MemoryReportSection>(
+            static_cast<uint8_t>(memorySection_) + 1U);
+    } else {
+        reportNext_();
     }
 }
 
@@ -207,6 +217,7 @@ uint32_t PerformanceReporter::percentileUs_(
 bool PerformanceReporter::alwaysReport_(const char* label) {
     if (label == nullptr) return false;
     return std::strncmp(label, "memory.", 7U) == 0 ||
+        std::strncmp(label, "diagnostics.", 12U) == 0 ||
         std::strncmp(label, "display.ili9341.", 16U) == 0 ||
         std::strncmp(label, "midi.cc.global", 14U) == 0 ||
         std::strncmp(label, "midi.queue.", 11U) == 0 ||
@@ -222,9 +233,9 @@ bool PerformanceReporter::alwaysReport_(const char* label) {
         std::strstr(label, "overflow") != nullptr;
 }
 
-void PerformanceReporter::reportMetric_(const MetricWindow& metric) {
+void PerformanceReporter::reportMetric_(const MetricWindow& metric, uint32_t windowEndMs) {
     OC_LOG_INFO(
-        "[Perf] {} samples={} avg={}us p50<={}us p95<={}us p99<={}us max={}us unitA(avg/min/max)={}/{}/{} unitB(avg/min/max)={}/{}/{}",
+        "[Perf] {} samples={} avg={}us p50<={}us p95<={}us p99<={}us max={}us unitA(avg/min/max)={}/{}/{} unitB(avg/min/max)={}/{}/{} windowEnd={}ms",
         metric.label,
         metric.samples,
         static_cast<uint32_t>(metric.totalUs / metric.samples),
@@ -237,41 +248,55 @@ void PerformanceReporter::reportMetric_(const MetricWindow& metric) {
         metric.maxUnitA,
         static_cast<uint32_t>(metric.totalUnitB / metric.samples),
         metric.minUnitB,
-        metric.maxUnitB
+        metric.maxUnitB,
+        windowEndMs
     );
 }
 
-void PerformanceReporter::report_(uint32_t nowMs) {
-    const uint32_t droppedSamples = takeDroppedSamples_();
-    std::array<size_t, METRIC_CAPACITY> indices{};
+void PerformanceReporter::freezeWindow_(uint32_t nowMs) {
+    reportDroppedSamples_ = takeDroppedSamples_();
+    reportDroppedMetrics_ = droppedMetrics_;
+    reportWindowEndMs_ = nowMs;
     size_t activeCount = 0;
     for (size_t index = 0; index < metricCount_; ++index) {
-        if ((*metrics_)[index].samples > 0) indices[activeCount++] = index;
+        if ((*metrics_)[index].samples > 0) {
+            reportIndices_[activeCount++] = static_cast<uint8_t>(index);
+        }
     }
 
-    std::sort(indices.begin(), indices.begin() + activeCount, [this](size_t lhs, size_t rhs) {
+    std::sort(reportIndices_.begin(), reportIndices_.begin() + activeCount, [this](size_t lhs, size_t rhs) {
         return (*metrics_)[lhs].maxUs > (*metrics_)[rhs].maxUs;
     });
 
-    const size_t reportCount = std::min(activeCount, MAX_REPORTED_METRICS);
-    for (size_t order = 0; order < reportCount; ++order) {
-        reportMetric_((*metrics_)[indices[order]]);
+    reportCount_ = std::min(activeCount, MAX_REPORTED_METRICS);
+    for (size_t order = reportCount_; order < activeCount; ++order) {
+        const auto index = reportIndices_[order];
+        if (alwaysReport_((*metrics_)[index].label)) {
+            reportIndices_[reportCount_++] = index;
+        }
     }
-    for (size_t order = reportCount; order < activeCount; ++order) {
-        const auto& metric = (*metrics_)[indices[order]];
-        if (alwaysReport_(metric.label)) reportMetric_(metric);
-    }
-
-    if (droppedSamples > 0 || droppedMetrics_ > 0) {
-        OC_LOG_WARN(
-            "[Perf] diagnostics overflow samples={} metrics={}",
-            droppedSamples,
-            droppedMetrics_
-        );
-    }
-
+    reportPosition_ = 0;
+    metrics_.swap(reportingMetrics_);
     resetMetrics_();
     windowStartedAtMs_ = nowMs;
+}
+
+void PerformanceReporter::reportNext_() {
+    if (reportPosition_ < reportCount_) {
+        OC_PERF_SCOPE(perfReport, "diagnostics.report-line");
+        reportMetric_((*reportingMetrics_)[reportIndices_[reportPosition_++]], reportWindowEndMs_);
+        return;
+    }
+    if (reportDroppedSamples_ > 0 || reportDroppedMetrics_ > 0) {
+        OC_LOG_WARN(
+            "[Perf] diagnostics overflow samples={} metrics={} windowEnd={}ms",
+            reportDroppedSamples_,
+            reportDroppedMetrics_,
+            reportWindowEndMs_
+        );
+        reportDroppedSamples_ = 0;
+        reportDroppedMetrics_ = 0;
+    }
 }
 
 void PerformanceReporter::resetAll_() {
@@ -285,6 +310,12 @@ void PerformanceReporter::resetAll_() {
     resetMetrics_();
     windowStartedAtMs_ = 0;
     lastMemoryReportAtMs_ = 0;
+    reportCount_ = 0;
+    reportPosition_ = 0;
+    reportDroppedSamples_ = 0;
+    reportDroppedMetrics_ = 0;
+    reportWindowEndMs_ = 0;
+    memorySection_ = MemoryReportSection::COUNT;
 }
 
 void PerformanceReporter::resetMetrics_() {

@@ -357,128 +357,146 @@ FLASHMEM void recordDynamicMemorySample(const char* label) {
 }
 
 FLASHMEM void logMemoryFootprint(const char* phase) {
-    lv_mem_monitor_t lvgl{};
-    lv_mem_monitor(&lvgl);
-    auto& high = highWater();
-    high.maximumLvglUsed = std::max(
-        high.maximumLvglUsed,
-        static_cast<uint32_t>(lvgl.max_used)
-    );
-    high.maximumLvglFragmentation = std::max(
-        high.maximumLvglFragmentation,
-        lvgl.frag_pct
-    );
-    OC_LOG_INFO(
-        "[Perf][Memory][LVGL] phase={} total={}B free={}B maxUsed={}B used={}pct frag={}pct peakUsed={}B peakFrag={}pct",
-        phase ? phase : "unknown",
-        static_cast<uint32_t>(lvgl.total_size),
-        static_cast<uint32_t>(lvgl.free_size),
-        static_cast<uint32_t>(lvgl.max_used),
-        lvgl.used_pct,
-        lvgl.frag_pct,
-        high.maximumLvglUsed,
-        high.maximumLvglFragmentation
-    );
+    for (uint8_t index = 0; index < static_cast<uint8_t>(MemoryReportSection::COUNT); ++index) {
+        logMemoryFootprintSection(phase, static_cast<MemoryReportSection>(index));
+    }
+}
+
+FLASHMEM void logMemoryFootprintSection(const char* phase, MemoryReportSection section) {
+    if (section == MemoryReportSection::LVGL) {
+        lv_mem_monitor_t lvgl{};
+        lv_mem_monitor(&lvgl);
+        auto& high = highWater();
+        high.maximumLvglUsed = std::max(
+            high.maximumLvglUsed,
+            static_cast<uint32_t>(lvgl.max_used)
+        );
+        high.maximumLvglFragmentation = std::max(
+            high.maximumLvglFragmentation,
+            lvgl.frag_pct
+        );
+        OC_LOG_INFO(
+            "[Perf][Memory][LVGL] phase={} total={}B free={}B maxUsed={}B used={}pct frag={}pct peakUsed={}B peakFrag={}pct",
+            phase ? phase : "unknown",
+            static_cast<uint32_t>(lvgl.total_size),
+            static_cast<uint32_t>(lvgl.free_size),
+            static_cast<uint32_t>(lvgl.max_used),
+            lvgl.used_pct,
+            lvgl.frag_pct,
+            high.maximumLvglUsed,
+            high.maximumLvglFragmentation
+        );
+    }
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    const auto memory = dynamicMemorySnapshot();
-    const uint32_t allocated = memory.psramAllocatedBytes;
-    const uint32_t user = memory.psramUserBytes;
-    const uint32_t free = memory.psramFreeBytes;
-    const uint32_t largest = memory.psramLargestBlock;
-    const uint32_t blocks = memory.psramBlocks;
-    uint32_t peakUser = 0U;
-    uint32_t lowFree = 0U;
-    uint32_t lowLargest = 0U;
-    uint16_t fallbackLive = 0U;
-    uint16_t fallbackPeak = 0U;
-    uint32_t fallbackTotal = 0U;
-    {
-        oc::realtime::InterruptGuard lock;
-        peakUser = high.maximumPsramUser;
-        lowFree = high.minimumPsramFree;
-        lowLargest = high.minimumPsramLargestBlock;
-        fallbackLive = high.psramFallbackLive;
-        fallbackPeak = high.psramFallbackPeak;
-        fallbackTotal = high.psramFallbackTotal;
+    if (section == MemoryReportSection::PSRAM) {
+        auto& high = highWater();
+        const auto memory = dynamicMemorySnapshot();
+        const uint32_t allocated = memory.psramAllocatedBytes;
+        const uint32_t user = memory.psramUserBytes;
+        const uint32_t free = memory.psramFreeBytes;
+        const uint32_t largest = memory.psramLargestBlock;
+        const uint32_t blocks = memory.psramBlocks;
+        uint32_t peakUser = 0U;
+        uint32_t lowFree = 0U;
+        uint32_t lowLargest = 0U;
+        uint16_t fallbackLive = 0U;
+        uint16_t fallbackPeak = 0U;
+        uint32_t fallbackTotal = 0U;
+        {
+            oc::realtime::InterruptGuard lock;
+            peakUser = high.maximumPsramUser;
+            lowFree = high.minimumPsramFree;
+            lowLargest = high.minimumPsramLargestBlock;
+            fallbackLive = high.psramFallbackLive;
+            fallbackPeak = high.psramFallbackPeak;
+            fallbackTotal = high.psramFallbackTotal;
+        }
+        const int trackerStatus = !memory.trackerReady
+            ? -1
+            : (memory.trackerOverflow || !memory.psramLargestBlockValid ? -2 : 1);
+        OC_LOG_INFO(
+            "[Perf][Memory][PSRAM] phase={} status={} allocated={}B user={}B free={}B largest={}B largestValid={} blocks={} peakUser={}B lowFree={}B lowLargest={}B fallback(live/peak/total)={}/{}/{}",
+            phase ? phase : "unknown",
+            trackerStatus,
+            allocated,
+            user,
+            free,
+            largest,
+            memory.psramLargestBlockValid ? 1U : 0U,
+            blocks,
+            peakUser,
+            lowFree,
+            lowLargest,
+            fallbackLive,
+            fallbackPeak,
+            fallbackTotal
+        );
     }
-    const int trackerStatus = !memory.trackerReady
-        ? -1
-        : (memory.trackerOverflow || !memory.psramLargestBlockValid ? -2 : 1);
-    OC_LOG_INFO(
-        "[Perf][Memory][PSRAM] phase={} status={} allocated={}B user={}B free={}B largest={}B largestValid={} blocks={} peakUser={}B lowFree={}B lowLargest={}B fallback(live/peak/total)={}/{}/{}",
-        phase ? phase : "unknown",
-        trackerStatus,
-        allocated,
-        user,
-        free,
-        largest,
-        memory.psramLargestBlockValid ? 1U : 0U,
-        blocks,
-        peakUser,
-        lowFree,
-        lowLargest,
-        fallbackLive,
-        fallbackPeak,
-        fallbackTotal
-    );
 
-    const uintptr_t heapStart = reinterpret_cast<uintptr_t>(&_heap_start);
-    const uintptr_t heapEnd = reinterpret_cast<uintptr_t>(&_heap_end);
-    const uintptr_t heapBreak = reinterpret_cast<uintptr_t>(__brkval);
-    const bool heapRangeValid =
-        heapEnd >= heapStart && heapBreak >= heapStart && heapBreak <= heapEnd;
-    const uint32_t heapCapacity = static_cast<uint32_t>(
-        heapEnd >= heapStart ? heapEnd - heapStart : 0
-    );
-    const uint32_t heapHighWater = static_cast<uint32_t>(
-        heapRangeValid ? heapBreak - heapStart : 0
-    );
-    const uint32_t heapTailFree = static_cast<uint32_t>(
-        heapRangeValid ? heapEnd - heapBreak : 0
-    );
-    OC_LOG_INFO(
-        "[Perf][Memory][RAM2Heap] phase={} capacity={}B highWater={}B tailFree={}B",
-        phase ? phase : "unknown",
-        heapCapacity,
-        heapHighWater,
-        heapTailFree
-    );
+    if (section == MemoryReportSection::RAM2_HEAP) {
+        const uintptr_t heapStart = reinterpret_cast<uintptr_t>(&_heap_start);
+        const uintptr_t heapEnd = reinterpret_cast<uintptr_t>(&_heap_end);
+        const uintptr_t heapBreak = reinterpret_cast<uintptr_t>(__brkval);
+        const bool heapRangeValid =
+            heapEnd >= heapStart && heapBreak >= heapStart && heapBreak <= heapEnd;
+        const uint32_t heapCapacity = static_cast<uint32_t>(
+            heapEnd >= heapStart ? heapEnd - heapStart : 0
+        );
+        const uint32_t heapHighWater = static_cast<uint32_t>(
+            heapRangeValid ? heapBreak - heapStart : 0
+        );
+        const uint32_t heapTailFree = static_cast<uint32_t>(
+            heapRangeValid ? heapEnd - heapBreak : 0
+        );
+        OC_LOG_INFO(
+            "[Perf][Memory][RAM2Heap] phase={} capacity={}B highWater={}B tailFree={}B",
+            phase ? phase : "unknown",
+            heapCapacity,
+            heapHighWater,
+            heapTailFree
+        );
+    }
 
-    const struct mallinfo heapInfo = mallinfo();
-    OC_LOG_INFO(
-        "[Perf][Memory][RAM2Allocator] phase={} arena={}B used={}B free={}B freeChunks={} topFree={}B",
-        phase ? phase : "unknown",
-        static_cast<uint32_t>(heapInfo.arena),
-        static_cast<uint32_t>(heapInfo.uordblks),
-        static_cast<uint32_t>(heapInfo.fordblks),
-        static_cast<uint32_t>(heapInfo.ordblks),
-        static_cast<uint32_t>(heapInfo.keepcost)
-    );
+    if (section == MemoryReportSection::RAM2_ALLOCATOR) {
+        const struct mallinfo heapInfo = mallinfo();
+        OC_LOG_INFO(
+            "[Perf][Memory][RAM2Allocator] phase={} arena={}B used={}B free={}B freeChunks={} topFree={}B",
+            phase ? phase : "unknown",
+            static_cast<uint32_t>(heapInfo.arena),
+            static_cast<uint32_t>(heapInfo.uordblks),
+            static_cast<uint32_t>(heapInfo.fordblks),
+            static_cast<uint32_t>(heapInfo.ordblks),
+            static_cast<uint32_t>(heapInfo.keepcost)
+        );
+    }
 
-    const uintptr_t stackPointer = currentStackPointer();
-    const uintptr_t ram1StaticEnd =
-        reinterpret_cast<uintptr_t>(&_ebss) + STACK_MPU_GUARD_BYTES;
-    const uintptr_t stackTop = reinterpret_cast<uintptr_t>(&_estack);
-    const uintptr_t highWaterBoundary = stackHighWaterBoundary(high);
-    OC_LOG_INFO(
-        "[Perf][Memory][RAM1Stack] phase={} currentGap={}B highWaterGap={}B peakUsed={}B watermarked={}",
-        phase ? phase : "unknown",
-        static_cast<uint32_t>(
-            stackPointer >= ram1StaticEnd ? stackPointer - ram1StaticEnd : 0
-        ),
-        static_cast<uint32_t>(
-            highWaterBoundary >= ram1StaticEnd
-                ? highWaterBoundary - ram1StaticEnd
-                : 0U
-        ),
-        static_cast<uint32_t>(
-            highWaterBoundary > 0U && stackTop >= highWaterBoundary
-                ? stackTop - highWaterBoundary
-                : 0U
-        ),
-        highWaterBoundary > 0U ? 1U : 0U
-    );
+    if (section == MemoryReportSection::RAM1_STACK) {
+        auto& high = highWater();
+        const uintptr_t stackPointer = currentStackPointer();
+        const uintptr_t ram1StaticEnd =
+            reinterpret_cast<uintptr_t>(&_ebss) + STACK_MPU_GUARD_BYTES;
+        const uintptr_t stackTop = reinterpret_cast<uintptr_t>(&_estack);
+        const uintptr_t highWaterBoundary = stackHighWaterBoundary(high);
+        OC_LOG_INFO(
+            "[Perf][Memory][RAM1Stack] phase={} currentGap={}B highWaterGap={}B peakUsed={}B watermarked={}",
+            phase ? phase : "unknown",
+            static_cast<uint32_t>(
+                stackPointer >= ram1StaticEnd ? stackPointer - ram1StaticEnd : 0
+            ),
+            static_cast<uint32_t>(
+                highWaterBoundary >= ram1StaticEnd
+                    ? highWaterBoundary - ram1StaticEnd
+                    : 0U
+            ),
+            static_cast<uint32_t>(
+                highWaterBoundary > 0U && stackTop >= highWaterBoundary
+                    ? stackTop - highWaterBoundary
+                    : 0U
+            ),
+            highWaterBoundary > 0U ? 1U : 0U
+        );
+    }
 #endif
 }
 #endif
