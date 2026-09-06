@@ -9,6 +9,7 @@
 #include <ms/ui/font/CoreFonts.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
+#include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 
 #include "state/modulation/ModulationDepthParameterMapping.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
@@ -1211,6 +1212,12 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     } else if (!has_rendered_source_) {
         lv_obj_update_layout(root_);
     }
+
+    // Parent geometry is settled above. This synchronous update only changes
+    // our clipped, effect-free children; collect their damage once instead of
+    // traversing the display for every intermediate style/text/layout change.
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<1> invalidation(root_);
+    invalidation.include(root_);
 
     const bool sameContext = has_rendered_source_ &&
         rendered_source_id_ == props.source->id &&
