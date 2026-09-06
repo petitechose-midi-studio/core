@@ -679,15 +679,17 @@ FLASHMEM void SequencerStepEditOverlay::render(
         return;
     }
 
-    if (!visible_cache_) {
-        lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
+    const bool opening = !visible_cache_;
+    if (opening) {
+        // The presentation registry may already have revealed this root.
+        // Bind and lay out the shared editor before its first visible frame.
+        lv_obj_add_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(overlay_);
-        visible_cache_ = true;
     }
 
     const bool actionRowVisible = props.actionsVisible || props.chordDetailLayout;
 
-    if (has_rendered_props_cache_ &&
+    if (!opening && has_rendered_props_cache_ &&
         data_revision_cache_ == props.dataRevision &&
         selected_index_cache_ == props.selectedIndex &&
         actions_visible_cache_ == actionRowVisible &&
@@ -1139,8 +1141,13 @@ FLASHMEM void SequencerStepEditOverlay::render(
         }
     }
 
-    // LVGL batches any required layout with the next refresh. Do not force an
-    // immediate whole-screen layout from the state notification path.
+    // Only opening needs an immediate hidden layout. Live edits retain the
+    // ordinary coalesced refresh path, including its cached early return.
+    if (opening) {
+        lv_obj_update_layout(overlay_);
+        lv_obj_clear_flag(overlay_, LV_OBJ_FLAG_HIDDEN);
+        visible_cache_ = true;
+    }
     has_rendered_props_cache_ = true;
     data_revision_cache_ = props.dataRevision;
     selected_index_cache_ = props.selectedIndex;
