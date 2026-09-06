@@ -169,12 +169,18 @@ FLASHMEM MidiCcResolveStatus resolveMidiCcDestinations(
     }
 
     // All possible failures are resolved before publishing any output.
-    out = MidiCcResolutionTelemetry{};
     out.mode = mode;
     out.candidateCount = static_cast<uint16_t>(candidateCount);
+    out.destinationCount = 0;
+    out.loserCount = 0;
+    out.conflictCount = 0;
+    out.emissionCount = 0;
+    out.noRouteCount = 0;
+    // Counts delimit valid entries. Reused publication buffers may retain an
+    // inactive tail; do not clear the full product capacity on every CC frame.
     if (candidateCount == 0) return MidiCcResolveStatus::OK;
 
-    std::array<uint16_t, MidiCcResolutionTelemetry::MAX_CANDIDATES> indices{};
+    std::array<uint16_t, MidiCcResolutionTelemetry::MAX_CANDIDATES> indices;
     for (uint16_t i = 0; i < out.candidateCount; ++i) {
         indices[i] = i;
     }
@@ -187,6 +193,7 @@ FLASHMEM MidiCcResolveStatus resolveMidiCcDestinations(
         resolved.destination = winner.destination;
         resolved.winner = contributionFor(winner);
         resolved.firstLoser = out.loserCount;
+        resolved.loserCount = 0;
         resolved.finalValue = winner.localValue;
         resolved.shouldEmit = mode == MidiCcResolutionMode::LIVE &&
                               winner.destination.routeValidity == MidiCcRouteValidity::VALID;

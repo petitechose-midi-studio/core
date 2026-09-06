@@ -388,6 +388,47 @@ void test_capacity_is_exact_and_failures_publish_no_partial_frame() {
     std::cout << "[PASS] test_capacity_is_exact_and_failures_publish_no_partial_frame\n";
 }
 
+void test_reused_frame_shrinks_clears_counts_and_grows_without_stale_conflicts() {
+    std::array<MidiCcCandidate, MidiCcResolutionTelemetry::MAX_CANDIDATES> inputs;
+    for (uint16_t i = 0; i < inputs.size(); ++i) {
+        inputs[i] = candidate(MidiCcCandidateClass::MACRO_STATIC, i,
+                              static_cast<uint8_t>(i % 128U));
+    }
+    MidiCcResolutionTelemetry reused;
+    assert(resolveMidiCcDestinations(inputs.data(), inputs.size(),
+        MidiCcResolutionMode::LIVE, reused) == MidiCcResolveStatus::OK);
+    assert(reused.loserCount == MidiCcResolutionTelemetry::MAX_LOSERS);
+
+    // Reuse the same frame for a single unrouted author, then an empty frame.
+    inputs[0].destination.routeValidity = MidiCcRouteValidity::NO_ROUTE;
+    MidiCcResolutionTelemetry fresh;
+    assert(resolveMidiCcDestinations(inputs.data(), 1,
+        MidiCcResolutionMode::PREVIEW, fresh) == MidiCcResolveStatus::OK);
+    assert(resolveMidiCcDestinations(inputs.data(), 1,
+        MidiCcResolutionMode::PREVIEW, reused) == MidiCcResolveStatus::OK);
+    assert(sameTelemetry(fresh, reused));
+    assert(!reused.destinations[0].conflict);
+    assert(reused.noRouteCount == 1);
+    assert(resolveMidiCcDestinations(nullptr, 0,
+        MidiCcResolutionMode::LIVE, reused) == MidiCcResolveStatus::OK);
+    const MidiCcResolutionTelemetry empty{.mode = MidiCcResolutionMode::LIVE};
+    assert(sameTelemetry(empty, reused));
+
+    for (uint16_t i = 0; i < inputs.size(); ++i) {
+        inputs[i].destination.routeValidity = MidiCcRouteValidity::VALID;
+        inputs[i].destination.identity.channel = static_cast<uint8_t>(i / 128U);
+        inputs[i].destination.identity.controller = static_cast<uint8_t>(i % 128U);
+    }
+    assert(resolveMidiCcDestinations(inputs.data(), inputs.size(),
+        MidiCcResolutionMode::LIVE, reused) == MidiCcResolveStatus::OK);
+    assert(resolveMidiCcDestinations(inputs.data(), inputs.size(),
+        MidiCcResolutionMode::LIVE, fresh) == MidiCcResolveStatus::OK);
+    assert(sameTelemetry(fresh, reused));
+    assert(reused.destinationCount == inputs.size());
+    assert(reused.conflictCount == 0);
+    std::cout << "[PASS] test_reused_frame_shrinks_clears_counts_and_grows_without_stale_conflicts\n";
+}
+
 void test_result_is_independent_of_candidate_insertion_order() {
     const std::array<MidiCcCandidate, 11> forward{
         candidate(MidiCcCandidateClass::MACRO_STATIC, 8, 8, 2, 1, 10),
@@ -444,6 +485,7 @@ int main() {
     test_port_channel_and_cc_are_distinct_destination_identity();
     test_no_route_preserves_author_and_never_falls_through();
     test_capacity_is_exact_and_failures_publish_no_partial_frame();
+    test_reused_frame_shrinks_clears_counts_and_grows_without_stale_conflicts();
     test_result_is_independent_of_candidate_insertion_order();
 
     std::cout << "All MidiCcDestinationResolver tests passed\n";
