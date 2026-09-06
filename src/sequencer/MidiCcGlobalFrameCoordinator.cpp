@@ -461,12 +461,20 @@ bool MidiCcGlobalFrameCoordinator::resolveEffective_(
         return false;
     }
     auto& pendingTelemetry = *pendingTelemetryLease.telemetry;
-    result.resolveStatus = core::state::shared::resolveMidiCcDestinations(
-        combined_candidates_.data(),
-        combined_candidate_count_,
-        MidiCcResolutionMode::LIVE,
-        pendingTelemetry
-    );
+    {
+        // Keep global-resolve's historical total and isolate arbitration from
+        // desired-value matching, queue admission and telemetry publication.
+        OC_PERF_SCOPE(perfArbitrate, "midi.cc.global-arbitrate");
+        result.resolveStatus = core::state::shared::resolveMidiCcDestinations(
+            combined_candidates_.data(),
+            combined_candidate_count_,
+            MidiCcResolutionMode::LIVE,
+            pendingTelemetry
+        );
+        OC_PERF_UNITS(perfArbitrate, combined_candidate_count_,
+            result.resolveStatus == MidiCcResolveStatus::OK
+                ? pendingTelemetry.destinationCount : 0U);
+    }
     if (result.resolveStatus != MidiCcResolveStatus::OK) {
         OC_PERF_UNITS(perfResolve, combined_candidate_count_, 0U);
         result.status = MidiCcGlobalFrameStatus::RESOLVE_FAILED;

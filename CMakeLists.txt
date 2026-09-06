@@ -249,6 +249,7 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         test_ModulatorEnvelopeParameterMapping
         test_ModulatorEnvelopeTiming
         test_ModulatorLfoParameterMapping
+        test_PerformanceReporter
         test_PsramSpanTracker
         test_StandaloneSequencerRuntimeGate
         test_StorageQualificationProbe
@@ -377,6 +378,17 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             target_compile_definitions("${test_name}" PRIVATE
                 MS_STORAGE_QUALIFICATION=1
                 OC_ENABLE_STATS=1)
+        endif()
+        if(test_name STREQUAL test_PerformanceReporter)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/PerformanceReporter.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/diagnostics/Performance.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/log/Log.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/time/Time.cpp")
+            target_compile_definitions("${test_name}" PRIVATE
+                OC_ENABLE_STATS=1
+                "$<TARGET_PROPERTY:midi_studio_core_native,INTERFACE_COMPILE_DEFINITIONS>")
+            target_link_libraries("${test_name}" PRIVATE ms_core_compile_warnings)
         endif()
         if(test_name STREQUAL test_ModulatorSparklineModel)
             target_include_directories("${test_name}"

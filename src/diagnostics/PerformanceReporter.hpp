@@ -8,6 +8,7 @@
 
 #if OC_ENABLE_STATS
 #include <oc/diagnostics/Performance.hpp>
+#include "app/ExtmemAllocator.hpp"
 #endif
 
 namespace core::diagnostics {
@@ -72,7 +73,10 @@ private:
     void resetMetrics_();
 
     std::array<oc::diagnostics::PerformanceSample, SAMPLE_CAPACITY> samples_{};
-    std::array<MetricWindow, METRIC_CAPACITY> metrics_{};
+    using Metrics = std::array<MetricWindow, METRIC_CAPACITY>;
+    // Foreground-only histograms need no fast-RAM residency. The producer
+    // ring and its IRQ-protected indices remain in the RAM2 reporter.
+    core::app::ExtmemUniquePtr<Metrics> metrics_;
     size_t sampleHead_ = 0;
     size_t sampleTail_ = 0;
     size_t sampleCount_ = 0;
@@ -83,7 +87,7 @@ private:
     uint32_t lastMemoryReportAtMs_ = 0;
 };
 
-/** Returns the RAM2-backed diagnostics reporter singleton. */
+/** Returns the RAM2 collector with PSRAM-backed foreground histograms. */
 PerformanceReporter& performanceReporter();
 
 #endif

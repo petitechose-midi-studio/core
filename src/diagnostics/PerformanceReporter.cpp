@@ -29,6 +29,11 @@ PerformanceReporter& performanceReporter() {
 }
 
 void PerformanceReporter::begin() {
+    if (!metrics_) metrics_ = core::app::makeExtmemUniqueCold<Metrics>();
+    if (!metrics_) {
+        OC_LOG_WARN("[Perf] disabled: PSRAM histogram allocation failed");
+        return;
+    }
     resetAll_();
     oc::diagnostics::setPerformanceSink(this, receive_);
 }
@@ -39,6 +44,7 @@ void PerformanceReporter::end() {
 }
 
 void PerformanceReporter::update(uint32_t nowMs) {
+    if (!metrics_) return;
     drain_();
     if (windowStartedAtMs_ == 0) {
         windowStartedAtMs_ = nowMs;
@@ -131,18 +137,18 @@ PerformanceReporter::MetricWindow* PerformanceReporter::findOrCreateMetric_(
 ) {
     const char* effectiveLabel = label != nullptr ? label : "<unnamed>";
     for (size_t index = 0; index < metricCount_; ++index) {
-        auto& metric = metrics_[index];
+        auto& metric = (*metrics_)[index];
         if (metric.label == effectiveLabel || std::strcmp(metric.label, effectiveLabel) == 0) {
             return &metric;
         }
     }
 
-    if (metricCount_ >= metrics_.size()) {
+    if (metricCount_ >= metrics_->size()) {
         ++droppedMetrics_;
         return nullptr;
     }
 
-    auto& metric = metrics_[metricCount_++];
+    auto& metric = (*metrics_)[metricCount_++];
     metric = {};
     metric.label = effectiveLabel;
     return &metric;
@@ -208,7 +214,10 @@ bool PerformanceReporter::alwaysReport_(const char* label) {
         std::strncmp(label, "macro.take.commit.", 18U) == 0 ||
         std::strncmp(label, "persistence.project-codec.", 26U) == 0 ||
         std::strncmp(label, "persistence.project-control.", 28U) == 0 ||
-        std::strcmp(label, "sequencer.timer") == 0 ||
+        std::strncmp(label, "sequencer.timer", 15U) == 0 ||
+        std::strncmp(label, "sequencer.playback", 18U) == 0 ||
+        std::strcmp(label, "sequencer.clip-apply") == 0 ||
+        std::strncmp(label, "midi.usb-", 9U) == 0 ||
         std::strstr(label, "reject") != nullptr ||
         std::strstr(label, "overflow") != nullptr;
 }
@@ -237,19 +246,19 @@ void PerformanceReporter::report_(uint32_t nowMs) {
     std::array<size_t, METRIC_CAPACITY> indices{};
     size_t activeCount = 0;
     for (size_t index = 0; index < metricCount_; ++index) {
-        if (metrics_[index].samples > 0) indices[activeCount++] = index;
+        if ((*metrics_)[index].samples > 0) indices[activeCount++] = index;
     }
 
     std::sort(indices.begin(), indices.begin() + activeCount, [this](size_t lhs, size_t rhs) {
-        return metrics_[lhs].maxUs > metrics_[rhs].maxUs;
+        return (*metrics_)[lhs].maxUs > (*metrics_)[rhs].maxUs;
     });
 
     const size_t reportCount = std::min(activeCount, MAX_REPORTED_METRICS);
     for (size_t order = 0; order < reportCount; ++order) {
-        reportMetric_(metrics_[indices[order]]);
+        reportMetric_((*metrics_)[indices[order]]);
     }
     for (size_t order = reportCount; order < activeCount; ++order) {
-        const auto& metric = metrics_[indices[order]];
+        const auto& metric = (*metrics_)[indices[order]];
         if (alwaysReport_(metric.label)) reportMetric_(metric);
     }
 
@@ -279,9 +288,8 @@ void PerformanceReporter::resetAll_() {
 }
 
 void PerformanceReporter::resetMetrics_() {
-    for (size_t index = 0; index < metricCount_; ++index) {
-        metrics_[index] = {};
-    }
+    // findOrCreateMetric_ initializes each slot before reuse. Inactive slots
+    // need no second full histogram clear at the end of every window.
     metricCount_ = 0;
     droppedMetrics_ = 0;
 }

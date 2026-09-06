@@ -331,6 +331,7 @@ void SequencerPlaybackService::update(
         return;
     }
 
+    OC_PERF_SCOPE(perfEngines, "sequencer.playback-engines");
     for (uint8_t i = 0; i < track_engines_.size(); ++i) {
         const uint32_t localTick = playbackTick_(i, tick);
         // Engines schedule in clip time; deadlines remain physical microseconds.
@@ -503,6 +504,7 @@ void SequencerPlaybackService::processCcRuntime_(
 ) {
     if (cc_lane_runtime_ == nullptr || cc_coordinator_ == nullptr ||
         cc_temporal_scratch_ == nullptr) return;
+    OC_PERF_SCOPE(perfCc, "sequencer.playback-cc");
 
     const bool musicalTickAdvanced = playing &&
         (!cc_transport_playing_ || tick != last_cc_tick_);
@@ -748,6 +750,7 @@ void SequencerPlaybackService::syncRuntimeStates_(
     uint32_t tick,
     bool playing
 ) {
+    OC_PERF_SCOPE(perfSync, "sequencer.playback-sync");
     runtime_active_track_ =
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
             snapshot.activeTrack
@@ -852,6 +855,7 @@ void SequencerPlaybackService::reconcileProjectTracks_(
     uint32_t tickPeriodUs,
     bool allowPredictiveLookahead
 ) {
+    OC_PERF_SCOPE(perfReconcile, "sequencer.playback-reconcile");
     const uint16_t nextEnabled = projectTrackEnabledMask(projectTracks);
     const uint16_t nextAudible = projectTrackAudibleMask(projectTracks);
 
