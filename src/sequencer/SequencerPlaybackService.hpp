@@ -38,17 +38,11 @@ struct SequencerCcTemporalRuntimeScratch {
 
 static_assert(sizeof(SequencerCcTemporalRuntimeScratch) < 8U * 1024U);
 
-/** One PSRAM cache for the currently inspected Drum viewport only. */
+/** Foreground-only PSRAM cache for the currently inspected Drum viewport. */
 struct SequencerDrumResolvedProjectionCache {
     DrumResolvedPageSignature signature{};
     core::state::sequencer::DrumResolvedPageProjection projection{};
     bool valid = false;
-
-    void invalidate() {
-        signature = {};
-        projection.reset();
-        valid = false;
-    }
 };
 
 static_assert(sizeof(SequencerDrumResolvedProjectionCache) < 640U);
@@ -89,8 +83,9 @@ public:
         uint16_t drumLaneValidMask = 0U;
         uint16_t drumLaneDecisionValidMask = 0U;
         uint16_t drumLaneDecisionPlayedMask = 0U;
-        core::state::sequencer::DrumResolvedPageProjection
-            drumResolvedPage{};
+        // Borrowed immutable inputs; consume before the next foreground
+        // snapshot refresh or graph retirement, never retain across frames.
+        DrumResolvedPageSignature drumPreview{};
         bool drumPlaying = false;
     };
 

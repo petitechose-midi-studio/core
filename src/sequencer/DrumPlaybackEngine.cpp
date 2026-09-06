@@ -101,7 +101,7 @@ DrumPlaybackEngine::captureResolvedPageSignature(
 FLASHMEM void DrumPlaybackEngine::buildResolvedPageProjection(
     const DrumResolvedPageSignature& signature,
     drum::DrumResolvedPageProjection& out
-) const {
+) {
     out.reset();
     out.contextKey = static_cast<uint16_t>(
         (static_cast<uint16_t>(signature.page) << 8U) |

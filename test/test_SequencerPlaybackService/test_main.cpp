@@ -331,6 +331,79 @@ void test_track_engine_switches_between_melodic_and_drum_without_stale_notes() {
         << "[PASS] Track engine switches Melodic/Drum without stale notes\n";
 }
 
+void test_drum_preview_uses_captured_inputs_after_timer_stop() {
+    namespace seq = core::state::sequencer;
+    using core::sequencer::DrumPlaybackEngine;
+    using core::sequencer::SequencerPlaybackService;
+    SequencerState sequencer;
+    seq::SequencerTrackBankState bank;
+    core::state::project::ProjectNavigationState navigation;
+    core::state::StatusBarState status;
+    core::sequencer::RealtimeMidiQueue queue;
+    core::sequencer::SequencerRuntimeGraphBank graphBank;
+    core::sequencer::SequencerRuntimeSnapshotBank snapshots{
+        sequencer, bank, navigation,
+    };
+    assert(bank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
+    auto& drum = bank.drumTrack(0U);
+    assert(drum.kit.setLaneCount(1U));
+    assert(drum.pattern.setStepEnabled(0U, 0U, true));
+    assert(seq::createMicroSequence(
+        sequencer.pattern, seq::rootStepNodeId(0U), 2U).ok);
+    assert(drum.bindAdvancedRootSlot(0U, 0U, 0U));
+    bank.publishDrumMutation(0U);
+    sequencer.drumSequencer.bindTrack(0U, drum, bank);
+    sequencer.drumSequencer.enterGrid();
+    SequencerTrackFixturePlaybackAdapter service{
+        sequencer, status, queue, graphBank,
+    };
+    const auto& runtime = refreshSnapshot(
+        snapshots, graphBank, sequencer, bank);
+    service.update(runtime, 0U, true, 1000U, 1000U, false, nullptr,
+                   nullptr, false, snapshots.drumSnapshot(snapshots.activeIndex()));
+    const auto captured = service.takeUiProjectionSnapshot();
+    assert(captured.drumPreview.pattern != nullptr);
+    assert(captured.drumPreview.graph != nullptr);
+    assert(captured.drumPreview.playing);
+    // Capture is scalars/pointers only: no expanded grid inside the timer lock.
+    static_assert(sizeof(SequencerPlaybackService::UiProjectionSnapshot) < 192U);
+    seq::DrumResolvedPageProjection expected{};
+    DrumPlaybackEngine::buildResolvedPageProjection(captured.drumPreview, expected);
+    assert(expected.microLength[0] == 2U);
+    assert(expected.validMask != 0U);
+
+    // As at a realtime stop boundary: retire/reset the engine after capture,
+    // but keep the foreground-owned snapshots/graphs alive until publication.
+    service.stopTrack(0U);
+    service.publishUiProjection(captured, 1U);
+    assert(sequencer.drumSequencer.resolvedPage.matches(expected));
+    service.publishUiProjection(captured, 2U); // cached path
+    assert(sequencer.drumSequencer.resolvedPage.matches(expected));
+
+    auto stopped = service.takeUiProjectionSnapshot();
+    assert(!stopped.drumPreview.playing);
+    service.publishUiProjection(stopped, 3U);
+    assert(sequencer.drumSequencer.resolvedPage.validMask == 0U);
+    assert(sequencer.drumSequencer.resolvedPage.microLength[0] == 2U);
+    sequencer.drumSequencer.close();
+    service.publishUiState(4U);
+    assert(sequencer.drumSequencer.resolvedPage.matches({}));
+    sequencer.drumSequencer.bindTrack(0U, drum, bank);
+    sequencer.drumSequencer.enterGrid();
+    service.publishUiState(5U);
+    assert(sequencer.drumSequencer.resolvedPage.microLength[0] == 2U);
+
+    // Replacing Drum with the melodic variant destroys the original engine;
+    // no foreground refresh/retirement occurs, so captured data stays valid.
+    service.update(runtime, 1U, false, 2000U, 1000U, false);
+    service.publishUiProjection(captured, 6U);
+    assert(sequencer.drumSequencer.resolvedPage.matches(expected));
+    service.publishUiState(7U);
+    assert(sequencer.drumSequencer.resolvedPage.matches({}));
+
+    std::cout << "[PASS] Drum preview survives timer stop/engine replacement and viewport changes\n";
+}
+
 void setProjectTrackMix(
     core::sequencer::ProjectTrackRuntimeSnapshot& snapshot,
     uint16_t mutedMask,
@@ -2591,6 +2664,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
 int main() {
     installTimeProvider();
     test_track_engine_switches_between_melodic_and_drum_without_stale_notes();
+    test_drum_preview_uses_captured_inputs_after_timer_stop();
     test_canonical_project_track_contract_is_the_only_routing_authority();
     test_project_track_note_delay_positive_and_predictive_negative();
     test_negative_delay_tempo_change_rebuilds_future_plan_once();

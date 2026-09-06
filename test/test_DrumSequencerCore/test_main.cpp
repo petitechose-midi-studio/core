@@ -545,13 +545,8 @@ void test_advanced_cycle_states_follow_lane_loop_cycles() {
     engine.update(0U, true);
     const auto firstCycleSignature =
         engine.captureResolvedPageSignature(0U, 0U);
-    drum::DrumResolvedPageProjection firstCycle{};
-    engine.buildResolvedPageProjection(firstCycleSignature, firstCycle);
     const uint64_t firstCell =
         drum::DrumResolvedPageProjection::cellBit(0U, 0U);
-    assert((firstCycle.cyclePresentMask & firstCell) != 0U);
-    assert((firstCycle.validMask & firstCell) != 0U);
-    assert((firstCycle.playedMask & firstCell) == 0U);
 
     for (uint32_t tick = 1U; tick <= 6U; ++tick) {
         engine.update(tick, true);
@@ -559,6 +554,14 @@ void test_advanced_cycle_states_follow_lane_loop_cycles() {
     const auto secondCycleSignature =
         engine.captureResolvedPageSignature(0U, 0U);
     assert(!firstCycleSignature.matches(secondCycleSignature));
+    // Timer advancement between capture and expansion must not change the
+    // captured cycle's preview, including an inactive cycle state.
+    drum::DrumResolvedPageProjection firstCycle{};
+    DrumPlaybackEngine::buildResolvedPageProjection(
+        firstCycleSignature, firstCycle);
+    assert((firstCycle.cyclePresentMask & firstCell) != 0U);
+    assert((firstCycle.validMask & firstCell) != 0U);
+    assert((firstCycle.playedMask & firstCell) == 0U);
     drum::DrumResolvedPageProjection secondCycle{};
     engine.buildResolvedPageProjection(secondCycleSignature, secondCycle);
     assert((secondCycle.validMask & firstCell) != 0U);

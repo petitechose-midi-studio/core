@@ -124,9 +124,6 @@ void SequencerPlaybackService::handleActiveTrackSwitch_() {
 
     last_playhead_ = activeRuntimeState_().playheadStep;
     last_active_track_ = activeTrack;
-    if (drum_resolved_projection_cache_) {
-        drum_resolved_projection_cache_->invalidate();
-    }
 }
 
 FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
@@ -417,10 +414,6 @@ void SequencerPlaybackService::update(
 
 FLASHMEM void SequencerPlaybackService::stopTrack(uint8_t trackIndex) {
     resetTrackEngine_(trackIndex);
-    if (trackIndex == runtime_active_track_ &&
-        drum_resolved_projection_cache_) {
-        drum_resolved_projection_cache_->invalidate();
-    }
 }
 
 FLASHMEM void SequencerPlaybackService::completeStop() {
@@ -429,9 +422,6 @@ FLASHMEM void SequencerPlaybackService::completeStop() {
     publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
     last_playhead_ = -1;
     pending_ui_projection_.reset();
-    if (drum_resolved_projection_cache_) {
-        drum_resolved_projection_cache_->invalidate();
-    }
 }
 
 void SequencerPlaybackService::markCcTransportStopped() {
@@ -1051,6 +1041,27 @@ FLASHMEM void SequencerPlaybackService::publishUiState(uint32_t nowMs) {
 }
 
 FLASHMEM void SequencerPlaybackService::publishUiProjection(const UiProjectionSnapshot& projection, uint32_t nowMs) {
+    // Only the foreground owns this cache. A timer-side stop/switch can replace
+    // an engine during expansion, but not the borrowed immutable graph/data.
+    const auto& signature = projection.drumPreview;
+    if (drum_resolved_projection_cache_) {
+        auto& cache = *drum_resolved_projection_cache_;
+        if (!cache.valid || !cache.signature.matches(signature)) {
+            OC_PERF_SCOPE(perfDrumPreview, "sequencer.drum-ui-preview");
+            if (signature.pattern != nullptr) {
+                DrumPlaybackEngine::buildResolvedPageProjection(
+                    signature, cache.projection);
+            } else {
+                cache.projection.reset();
+            }
+            cache.signature = signature;
+            cache.valid = true;
+        }
+    }
+    const core::state::sequencer::DrumResolvedPageProjection emptyPreview{};
+    const auto& drumPreview = drum_resolved_projection_cache_
+        ? drum_resolved_projection_cache_->projection : emptyPreview;
+
     if (projection.noteOutPulse) {
         status_bar_.pulseNoteOut(nowMs);
     }
@@ -1075,7 +1086,7 @@ FLASHMEM void SequencerPlaybackService::publishUiProjection(const UiProjectionSn
         projection.drumLaneDecisionSteps,
         projection.drumLaneDecisionValidMask,
         projection.drumLaneDecisionPlayedMask,
-        projection.drumResolvedPage,
+        drumPreview,
         projection.drumPlaying
     );
 }
@@ -1111,24 +1122,12 @@ FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService
         const auto& drumUi = sequencer_.drumSequencer;
         const bool previewRequested = drumUi.gridVisible() &&
             drumUi.targetTrack == runtime_active_track_;
-        if (drum_resolved_projection_cache_ && previewRequested) {
-            auto& cache = *drum_resolved_projection_cache_;
-            const auto signature =
+        if (previewRequested) {
+            snapshot.drumPreview =
                 activeDrumEngine->captureResolvedPageSignature(
                     drumUi.page,
                     drumUi.laneWindowStart
                 );
-            if (!cache.valid || !cache.signature.matches(signature)) {
-                activeDrumEngine->buildResolvedPageProjection(
-                    signature,
-                    cache.projection
-                );
-                cache.signature = signature;
-                cache.valid = true;
-            }
-            snapshot.drumResolvedPage = cache.projection;
-        } else if (drum_resolved_projection_cache_) {
-            drum_resolved_projection_cache_->invalidate();
         }
         snapshot.drumPlaying = telemetry.playing;
     }

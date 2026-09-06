@@ -511,8 +511,8 @@ bool SequencerRuntimeService::uiProjectionDue_(uint32_t nowUs) {
     return ui_projection_deadline_.consumeIfDue(nowUs);
 }
 
-// The timer lane has already produced a bounded snapshot under lock. Mapping
-// that snapshot into observable UI signals is main-loop control-plane work.
+// Capture only bounded telemetry/preview inputs under lock. Expand Drum graphs
+// afterwards, before the next foreground snapshot refresh or graph retirement.
 FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
     uint32_t nowMs
 ) {
@@ -522,6 +522,8 @@ FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
 
     // Pull the timer-lane projection under lock, then publish it outside the ISR.
     {
+        // Declared first so measurement is recorded after IRQs are restored.
+        OC_PERF_SCOPE(perfUiCapture, "sequencer.timer-ui-capture");
         oc::realtime::InterruptGuard lock;
         uiProjection = realtime_lane_->playback.takeUiProjectionSnapshot();
         runtimeTelemetry = realtime_lane_->playback.copyActiveRuntimeTelemetry();
