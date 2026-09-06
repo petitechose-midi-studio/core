@@ -1,0 +1,29 @@
+# Same RAM-only fixture. Existing Track 1 pattern, no storage or new seed.
+# Focus the existing clip, open behaviour and Pattern, then return repeatedly.
+0 scenario bench-macro-v1
+20 assert_view MACRO
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_view CLIPS
+1020 marker launcher
+1200 encoder_value NAV 0.010
+1600 marker clip_focus
+1800 tap LEFT_CENTER 60
+2250 marker clip_behavior
+2500 tap LEFT_TOP 60
+2900 tap LEFT_BOTTOM 60
+3400 marker pattern
+3420 assert_mode sequencer.pattern
+4000 tap LEFT_TOP 60
+4500 marker launcher_return
+5000 tap LEFT_BOTTOM 60
+5500 assert_mode sequencer.pattern
+6000 tap LEFT_TOP 60
+6500 marker launcher_return_2
+7000 tap LEFT_BOTTOM 60
+7500 assert_mode sequencer.pattern
+8000 tap LEFT_TOP 60
+8500 marker launcher_return_3
+9000 transport stop

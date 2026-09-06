@@ -1,0 +1,39 @@
+# Same RAM-only fixture and active MIDI load as the macro benchmark.
+# Real Project navigation: tabs and nested Scale folder, no storage writes.
+0 scenario bench-macro-v1
+20 assert_view MACRO
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+550 encoder_value NAV 0.010
+700 encoder_value NAV 0.010
+850 button LEFT_TOP up
+1200 assert_view PROJECT
+1220 marker overview
+2400 assert_view PROJECT
+2600 button LEFT_CENTER down
+3200 encoder_value NAV 0.010
+3450 button LEFT_CENTER up
+3800 marker music
+3820 assert_view PROJECT
+4000 tap NAV 60
+4400 marker scale_folder
+4420 assert_view PROJECT
+4600 encoder_value NAV 0.010
+4800 encoder_value OPT 0.250
+5200 encoder_value OPT 0.750
+5600 tap LEFT_TOP 60
+6000 button LEFT_CENTER down
+6600 encoder_value NAV 0.010
+6850 button LEFT_CENTER up
+7200 marker transport
+7600 button LEFT_CENTER down
+8200 encoder_value NAV 0.010
+8450 button LEFT_CENTER up
+8800 marker routing
+9200 button LEFT_CENTER down
+9800 encoder_value NAV 0.010
+10050 button LEFT_CENTER up
+10400 marker storage
+10600 assert_view PROJECT
+11000 transport stop
