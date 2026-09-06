@@ -22,7 +22,7 @@
   },
   "memoryVectors": {
     "release-current": {
-      "itcmBanksMax": 9,
+      "itcmBanksMax": 10,
       "flash": {
         "codeMaxBytes": 1208320,
         "dataMaxBytes": 303104,
@@ -30,8 +30,8 @@
         "enforcement": "advisory"
       },
       "ram1": {
-        "variablesMaxBytes": 86016,
-        "itcmMaxBytes": 294912,
+        "variablesMaxBytes": 53248,
+        "itcmMaxBytes": 327680,
         "itcmSlackMinBytes": 0,
         "localAndStackFreeMinBytes": 143360
       },

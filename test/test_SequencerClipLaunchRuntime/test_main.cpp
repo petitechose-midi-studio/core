@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <vector>
 
 #include <oc/note/clock/ClockConstants.hpp>
 
@@ -102,7 +103,98 @@ struct Fixture {
         assert(launches.realtimeView(0U).disposition ==
                seq::SequencerClipLaunchRealtimeView::Disposition::STAGED);
     }
+
+    void play(uint32_t tick, bool playing = true) {
+        const auto index = snapshots.activeIndex();
+        playback.update(snapshots.activeSnapshot(), tick, playing,
+            1000U + tick * 1000U, 1000U, projectTracks(), false,
+            snapshots.laneSnapshot(index), false, snapshots.drumSnapshot(index));
+        launches.updateTransportPosition(tick, playing);
+    }
 };
+
+struct RecordedEvents : core::sequencer::RealtimeMidiQueueLifecycleObserver {
+    std::vector<core::sequencer::RealtimeMidiEvent> events;
+    void onRealtimeMidiEventEnqueued(const core::sequencer::RealtimeMidiEvent& event) override {
+        events.push_back(event);
+    }
+    void onRealtimeMidiEventRemoved(const core::sequencer::RealtimeMidiEvent&,
+        core::sequencer::RealtimeMidiQueueLifecycleReason) override {}
+    void onRealtimeMidiEventDispatched(const core::sequencer::RealtimeMidiEvent&) override {}
+};
+
+void test_beat_launch_starts_content_at_zero_with_physical_deadlines() {
+    Fixture fixture;
+    RecordedEvents recorded;
+    fixture.midiQueue.attachLifecycleObserver(recorded);
+    fixture.queueAndStage(seq::SequencerClipLaunchQuantization::BEAT);
+    fixture.play(18U);
+    assert(!fixture.playback.takeUiProjectionSnapshot().drumPlaying);
+    recorded.events.clear();
+    fixture.play(24U);
+    assert(fixture.playback.copyActiveRuntimeTelemetry().playheadStep == 0);
+    assert(fixture.launches.telemetry(0U).activeElapsedTicks == 0U);
+    bool heardStart = false;
+    for (const auto& event : recorded.events) {
+        if (event.type == core::sequencer::RealtimeMidiEventType::NoteOn) {
+            assert(event.note == 72U);
+            assert(event.deadlineUs == 25000U);
+            heardStart = true;
+        }
+    }
+    assert(heardStart);
+    fixture.play(30U);
+    assert(fixture.playback.copyActiveRuntimeTelemetry().playheadStep == 1);
+    assert(fixture.launches.playbackTick(0U, 30U) == 6U);
+    assert(fixture.launches.playbackTick(1U, 30U) == 30U);
+    fixture.play(30U, false);
+    fixture.play(0U);
+    assert(fixture.playback.copyActiveRuntimeTelemetry().playheadStep == 0);
+    assert(fixture.launches.telemetry(0U).activeElapsedTicks == 0U);
+    fixture.play(24U);
+    assert(fixture.playback.copyActiveRuntimeTelemetry().playheadStep == 4);
+    fixture.midiQueue.detachLifecycleObserver(recorded);
+}
+
+void test_drum_launch_uses_local_polymetric_lanes() {
+    Fixture fixture;
+    seq::DrumTrackState drum;
+    drum.reset();
+    assert(drum.kit.setLaneCount(2U));
+    assert(drum.pattern.setLaneTimingCustom(0U, 7U, 4U));
+    assert(drum.pattern.setLaneTimingCustom(1U, 8U, 2U));
+    assert(drum.pattern.setStepEnabled(0U, 0U, true));
+    assert(drum.pattern.setStepEnabled(1U, 0U, true));
+    seq::SequencerPatternState pattern;
+    seq::SequencerClipState clip;
+    seq::SequencerClipDocumentPtr document;
+    assert(seq::captureSequencerClipDocument(pattern, clip,
+        seq::SequencerTrackKind::DRUM, &drum, document));
+    assert(fixture.clips.removeInactiveDocument({0U, 1U}));
+    assert(fixture.clips.installInactiveDocument({0U, 1U}, std::move(document)));
+    RecordedEvents recorded;
+    fixture.midiQueue.attachLifecycleObserver(recorded);
+    fixture.queueAndStage(seq::SequencerClipLaunchQuantization::BEAT);
+    fixture.play(18U);
+    assert(!fixture.playback.takeUiProjectionSnapshot().drumPlaying);
+    recorded.events.clear();
+    fixture.play(24U);
+    auto ui = fixture.playback.takeUiProjectionSnapshot();
+    assert(ui.drumLaneSteps[0] == 0U && ui.drumLaneSteps[1] == 0U);
+    unsigned notes = 0;
+    for (const auto& event : recorded.events) {
+        if (event.type == core::sequencer::RealtimeMidiEventType::NoteOn) {
+            assert(event.deadlineUs == 25000U);
+            ++notes;
+        }
+    }
+    assert(notes == 2U);
+    for (uint32_t tick = 25U; tick <= 66U; ++tick) fixture.play(tick);
+    ui = fixture.playback.takeUiProjectionSnapshot();
+    assert(ui.drumLaneSteps[0] == 0U); // local 42: seven six-tick steps
+    assert(ui.drumLaneSteps[1] == 3U); // same origin, twelve ticks per step
+    fixture.midiQueue.detachLifecycleObserver(recorded);
+}
 
 void test_bar_launch_waits_for_bar_boundary() {
     Fixture fixture;
@@ -164,6 +256,8 @@ void test_beat_launch_applies_on_beat_boundary() {
 }  // namespace
 
 int main() {
+    test_drum_launch_uses_local_polymetric_lanes();
+    test_beat_launch_starts_content_at_zero_with_physical_deadlines();
     test_bar_launch_waits_for_bar_boundary();
     test_beat_launch_applies_on_beat_boundary();
     std::cout << "All SequencerClipLaunchRuntime tests passed\n";

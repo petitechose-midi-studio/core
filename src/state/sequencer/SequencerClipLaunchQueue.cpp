@@ -1187,6 +1187,15 @@ uint8_t SequencerClipLaunchQueue::activeSlot(uint8_t track) const noexcept {
         : SequencerClipGridState::INVALID_SLOT;
 }
 
+void SequencerClipLaunchQueue::resetPlaybackOriginsFromRealtime() noexcept {
+    for (auto& entry : entries_) {
+        entry.activeStartedTick = 0U;
+        entry.activeFollowScheduled = false;
+    }
+    active_scene_started_tick_ = 0U;
+    active_scene_follow_scheduled_ = false;
+}
+
 bool SequencerClipLaunchQueue::stopped(uint8_t track) const noexcept {
     return track >= TRACK_COUNT || entries_[track].stopped;
 }

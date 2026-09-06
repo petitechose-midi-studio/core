@@ -230,6 +230,11 @@ void SequencerPlaybackService::update(
 ) {
     OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
     OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
+    if (clip_launches_ != nullptr && playing &&
+        ((!runtime_transport_playing_ && tick == 0U) ||
+         static_cast<int32_t>(tick - runtime_transport_tick_) < 0)) {
+        clip_launches_->resetPlaybackOriginsFromRealtime();
+    }
     runtime_transport_playing_ = playing;
     const bool phaseClockValid = playing && tickPeriodUs != 0U && nowUs != 0U;
     if (phaseClockValid) {
@@ -259,12 +264,22 @@ void SequencerPlaybackService::update(
             );
         }
     }
-    runtime_drum_mask_ = drumSnapshot != nullptr
-        ? drumSnapshot->presentMask
-        : 0U;
+    runtime_drum_mask_ = 0U;
     for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
         const uint16_t trackBit = static_cast<uint16_t>(1U << track);
-        const bool drum = (runtime_drum_mask_ & trackBit) != 0U;
+        const auto launch = clip_launches_ != nullptr
+            ? clip_launches_->realtimeView(track)
+            : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+        using Disposition = core::state::sequencer::SequencerClipLaunchRealtimeView::Disposition;
+        const bool retained = launch.disposition == Disposition::FROZEN ||
+            (launch.disposition == Disposition::STAGED &&
+             !isClipLaunchBoundary_(launch.dueTick, tick, playing));
+        const auto* effectiveDrum = retained && runtime_snapshot_bank_ != nullptr
+            ? runtime_snapshot_bank_->drumSnapshot(launch.previousSnapshotIndex)
+            : drumSnapshot;
+        const bool drum = effectiveDrum != nullptr &&
+            (effectiveDrum->presentMask & trackBit) != 0U;
+        if (drum) runtime_drum_mask_ |= trackBit;
         if (selectTrackEngine_(track, drum) && playing && !drum) {
             runtime_resync_mask_ = static_cast<uint16_t>(
                 runtime_resync_mask_ | trackBit
@@ -317,6 +332,13 @@ void SequencerPlaybackService::update(
     }
 
     for (uint8_t i = 0; i < track_engines_.size(); ++i) {
+        const uint32_t localTick = playbackTick_(i, tick);
+        // Engines schedule in clip time; deadlines remain physical microseconds.
+        if (track_event_sinks_[i]) {
+            track_event_sinks_[i]->setTimeline(localTick, nowUs, tickPeriodUs,
+                projectTrackDeadlineOffsetUs(projectTracks, i, tickPeriodUs,
+                    allowPredictiveLookahead));
+        }
         auto* const trackEngine = melodicEngine_(i);
         auto* const drumEngine = drumEngine_(i);
         const uint16_t trackBit = static_cast<uint16_t>(1U << i);
@@ -345,7 +367,7 @@ void SequencerPlaybackService::update(
                     : runtime_graph_bank_.graphForTrack(i),
                 projectTrackChannel(projectTracks, i)
             );
-            drumEngine->update(tick, trackPlaying, nowUs, tickPeriodUs);
+            drumEngine->update(localTick, trackPlaying, nowUs, tickPeriodUs);
             continue;
         }
         if (trackEngine == nullptr) continue;
@@ -356,16 +378,16 @@ void SequencerPlaybackService::update(
             allowPredictiveLookahead
         );
         if (!trackPlaying || deadlineOffsetUs >= 0) {
-            trackEngine->update(tick, trackPlaying);
+            trackEngine->update(localTick, trackPlaying);
             continue;
         }
 
         const uint32_t horizon = emissionHorizonTick(
-            tick,
+            localTick,
             deadlineOffsetUs,
             tickPeriodUs
         );
-        if (horizon < tick) {
+        if (horizon < localTick) {
             // The note engine's public horizon is still an ordered uint32_t
             // interval and cannot encode a future point across rollover. Leave
             // its already-planned Note edges untouched for this bounded lead
@@ -375,7 +397,7 @@ void SequencerPlaybackService::update(
             continue;
         }
         if (trackEngine->updateWithEmissionHorizon(
-                tick,
+                localTick,
                 horizon,
                 true
             )) {
@@ -389,9 +411,9 @@ void SequencerPlaybackService::update(
         // published the same scheduler tick, so cancelling the whole Track
         // would remove a valid predictive CC and request a spurious retry.
         midi_queue_.cancelPendingNoteEvents(i);
-        trackEngine->resyncToTick(tick);
+        trackEngine->resyncToTick(localTick);
         (void)trackEngine->updateWithEmissionHorizon(
-            tick,
+            localTick,
             horizon,
             true
         );
@@ -514,7 +536,7 @@ void SequencerPlaybackService::processCcRuntime_(
                 const bool positionValid =
                     oc::note::sequencer::tryResolvePlaybackTick(
                         region,
-                        tick,
+                        playbackTick_(track, tick),
                         ticksPerStep,
                         position
                     );
@@ -804,8 +826,9 @@ void SequencerPlaybackService::syncRuntimeStates_(
 
         const uint16_t bit = static_cast<uint16_t>(1U << i);
         if ((runtime_resync_mask_ & bit) != 0U) {
-            if (playing && tick > 0U && trackEngine != nullptr) {
-                trackEngine->resyncToTick(tick - 1U);
+            const uint32_t localTick = playbackTick_(i, tick);
+            if (playing && localTick > 0U && trackEngine != nullptr) {
+                trackEngine->resyncToTick(localTick - 1U);
             }
             runtime_resync_mask_ = static_cast<uint16_t>(
                 runtime_resync_mask_ & static_cast<uint16_t>(~bit)
@@ -880,6 +903,10 @@ void SequencerPlaybackService::reconcileProjectTracks_(
     (void)nowUs;
 }
 
+uint32_t SequencerPlaybackService::playbackTick_(uint8_t trackIndex, uint32_t tick) const {
+    return clip_launches_ != nullptr ? clip_launches_->playbackTick(trackIndex, tick) : tick;
+}
+
 bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
                                                      uint32_t tick) const {
     if (trackIndex >= TRACK_COUNT) return true;
@@ -902,7 +929,7 @@ bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
     oc::note::sequencer::StepSequencerPlaybackTickPosition position{};
     if (!oc::note::sequencer::tryResolvePlaybackTick(
             region,
-            tick,
+            playbackTick_(trackIndex, tick),
             ticksPerStep,
             position
         )) {
@@ -944,7 +971,7 @@ void SequencerPlaybackService::applyStagedTrack_(
 ) {
     if (track_activations_ == nullptr ||
         !applyStagedTrackContent_(
-            snapshot, projectTracks, trackIndex, tick, playing)) return;
+            snapshot, projectTracks, trackIndex, playbackTick_(trackIndex, tick), playing)) return;
     track_activations_->markAppliedFromRealtime(trackIndex, generation);
 }
 
@@ -972,7 +999,7 @@ void SequencerPlaybackService::applyStagedClip_(
         return;
     }
     if (!applyStagedTrackContent_(
-            snapshot, projectTracks, trackIndex, tick, playing)) return;
+            snapshot, projectTracks, trackIndex, 0U, playing)) return;
     (void)clip_launches_->markAppliedFromRealtime(
         trackIndex, generation, tick);
 }
@@ -1024,14 +1051,9 @@ bool SequencerPlaybackService::applyStagedTrackContent_(
     const bool trackPlaying = playing &&
         (runtime_audible_mask_ & bit) != 0 &&
         track_runtime_states_[trackIndex].midiChannel <= 15U;
-    if (trackPlaying && engine != nullptr) {
-        if (tick == 0) {
-            engine->update(0, true);
-        } else {
-            // Seed one tick before the exact boundary so the new generation's
-            // first boundary step is scheduled, without replaying past events.
-            engine->resyncToTick(tick - 1U);
-        }
+    if (trackPlaying && engine != nullptr && tick != 0U) {
+        // The normal engine pass emits after the sink is anchored in clip time.
+        engine->resyncToTick(tick - 1U);
     }
     return true;
 }

@@ -180,6 +180,7 @@ private:
         uint32_t tickPeriodUs,
         bool allowPredictiveLookahead
     );
+    uint32_t playbackTick_(uint8_t trackIndex, uint32_t tick) const;
     bool isLocalLoopBoundary_(uint8_t trackIndex, uint32_t tick) const;
     static bool isClipLaunchBoundary_(
         uint32_t dueTick,

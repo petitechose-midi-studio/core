@@ -201,6 +201,12 @@ public:
         SequencerLauncherBehavior behavior
     ) noexcept;
     [[nodiscard]] uint8_t activeSlot(uint8_t track) const noexcept;
+    // Same origin for audio scheduling, preview and follow actions; timer-owned.
+    uint32_t playbackTick(uint8_t track, uint32_t transportTick) const noexcept {
+        return track < TRACK_COUNT
+            ? transportTick - entries_[track].activeStartedTick : transportTick;
+    }
+    void resetPlaybackOriginsFromRealtime() noexcept;
     [[nodiscard]] bool stopped(uint8_t track) const noexcept;
     [[nodiscard]] SequencerClipLaunchTelemetry telemetry(
         uint8_t track
