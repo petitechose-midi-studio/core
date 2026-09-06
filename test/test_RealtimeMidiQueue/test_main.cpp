@@ -533,6 +533,49 @@ public:
     std::vector<core::sequencer::RealtimeMidiEvent> dispatched;
 };
 
+void test_full_queue_compaction_preserves_callbacks_and_partial_drain_order() {
+    core::sequencer::RealtimeMidiQueue queue;
+    LifecycleObserver observer;
+    queue.attachLifecycleObserver(observer);
+    std::vector<core::sequencer::RealtimeMidiEvent> kept;
+    std::vector<core::sequencer::RealtimeMidiEvent> removed;
+    for (size_t i = 0; i < queue.capacity(); ++i) {
+        auto value = event(static_cast<core::sequencer::RealtimeMidiEventType>(i % 3U),
+            1000U + static_cast<uint32_t>(i), static_cast<uint8_t>(i % 128U),
+            static_cast<uint8_t>(i % 4U));
+        assert(queue.push(value));
+        if (value.trackIndex == 1U &&
+            value.type != core::sequencer::RealtimeMidiEventType::ControlChange) {
+            removed.push_back(value);
+        } else kept.push_back(value);
+    }
+    assert(queue.cancelPendingNoteEvents(1U) == removed.size());
+    assert(observer.removed.size() == removed.size());
+    for (size_t i = 0; i < removed.size(); ++i) {
+        assert(observer.removed[i].event.deadlineUs == removed[i].deadlineUs);
+        assert(observer.removed[i].reason ==
+            core::sequencer::RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
+    }
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    testClock.freezeAt(5000U);
+    queue.drainDue(midi, 5000U, 0U);
+    assert(queue.size() == kept.size() - 1U);
+    transport.acceptOutput = false;
+    queue.drainDue(midi, 5000U, UINT32_MAX);
+    assert(queue.size() == kept.size() - 1U);
+    transport.acceptOutput = true;
+    queue.drainDue(midi, 5000U, UINT32_MAX);
+    assert(queue.size() == 0U);
+    assert(observer.dispatched.size() == kept.size());
+    for (size_t i = 0; i < kept.size(); ++i) {
+        assert(observer.dispatched[i].deadlineUs == kept[i].deadlineUs);
+        assert(observer.dispatched[i].type == kept[i].type);
+        assert(observer.dispatched[i].trackIndex == kept[i].trackIndex);
+    }
+    queue.detachLifecycleObserver(observer);
+}
+
 void test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal() {
     core::sequencer::RealtimeMidiQueue queue;
     LifecycleObserver observer;
@@ -791,6 +834,7 @@ void test_packed_event_preserves_invalid_metadata_for_validation() {
 
 int main() {
     installTimeProvider();
+    test_full_queue_compaction_preserves_callbacks_and_partial_drain_order();
     test_zero_budget_completes_one_due_event();
     test_500us_budget_stops_on_exact_advancing_sample();
     test_lateness_boundaries_are_exact();

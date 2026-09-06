@@ -111,15 +111,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithNoteOffBat
         requiredEvictions - result.displacedNoteOnCount
     );
 
-    size_t index = 0;
-    while (index < count_) {
-        if (events_[index].trackIndex == trackIndex) {
-            remove_(index, RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
-            ++result.cancelledCount;
-            continue;
-        }
-        ++index;
-    }
+    result.cancelledCount = static_cast<uint16_t>(cancelPendingEvents(trackIndex));
     uint16_t noteOnsToEvict = result.displacedNoteOnCount;
     for (size_t i = count_; i > 0 && noteOnsToEvict > 0; --i) {
         const size_t candidate = i - 1U;
@@ -279,19 +271,31 @@ void RealtimeMidiQueue::insertNoFail_(const RealtimeMidiEvent& event) {
     }
 }
 
-uint32_t RealtimeMidiQueue::cancelPendingEvents(uint8_t trackIndex) {
-    uint32_t removed = 0;
-    size_t index = 0;
-
-    while (index < count_) {
-        if (events_[index].trackIndex == trackIndex) {
-            remove_(index, RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
-            removed += 1;
-            continue;
+template <typename Predicate>
+uint32_t RealtimeMidiQueue::removeIf_(
+    Predicate matches, RealtimeMidiQueueLifecycleReason reason
+) {
+    size_t kept = 0U;
+    for (size_t read = 0U; read < count_; ++read) {
+        const auto event = events_[read];
+        if (matches(event)) {
+            if (lifecycle_observer_ != nullptr) {
+                lifecycle_observer_->onRealtimeMidiEventRemoved(event, reason);
+            }
+        } else {
+            if (kept != read) events_[kept] = event;
+            ++kept;
         }
-
-        index += 1;
     }
+    const auto removed = static_cast<uint32_t>(count_ - kept);
+    count_ = kept;
+    return removed;
+}
+
+uint32_t RealtimeMidiQueue::cancelPendingEvents(uint8_t trackIndex) {
+    const auto removed = removeIf_([trackIndex](const RealtimeMidiEvent& event) {
+        return event.trackIndex == trackIndex;
+    }, RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
 
     if (removed > 0) {
         OC_PERF_RECORD("midi.queue.cancel-track", 0, removed, trackIndex);
@@ -300,19 +304,10 @@ uint32_t RealtimeMidiQueue::cancelPendingEvents(uint8_t trackIndex) {
 }
 
 uint32_t RealtimeMidiQueue::cancelPendingNoteEvents(uint8_t trackIndex) {
-    uint32_t removed = 0U;
-    size_t index = 0U;
-    while (index < count_) {
-        const auto type = events_[index].type;
-        if (events_[index].trackIndex == trackIndex &&
-            (type == RealtimeMidiEventType::NoteOn ||
-             type == RealtimeMidiEventType::NoteOff)) {
-            remove_(index, RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
-            ++removed;
-            continue;
-        }
-        ++index;
-    }
+    const auto removed = removeIf_([trackIndex](const RealtimeMidiEvent& event) {
+        return event.trackIndex == trackIndex &&
+            event.type != RealtimeMidiEventType::ControlChange;
+    }, RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
     if (removed > 0U) {
         OC_PERF_RECORD("midi.queue.cancel-track-notes", 0, removed, trackIndex);
     }
@@ -320,17 +315,9 @@ uint32_t RealtimeMidiQueue::cancelPendingNoteEvents(uint8_t trackIndex) {
 }
 
 uint32_t RealtimeMidiQueue::cancelControlChangeEvents() {
-    uint32_t removed = 0U;
-    size_t index = 0U;
-    while (index < count_) {
-        if (events_[index].type == RealtimeMidiEventType::ControlChange) {
-            remove_(index, RealtimeMidiQueueLifecycleReason::SOURCE_REPLACED);
-            ++removed;
-            continue;
-        }
-        ++index;
-    }
-    return removed;
+    return removeIf_([](const RealtimeMidiEvent& event) {
+        return event.type == RealtimeMidiEventType::ControlChange;
+    }, RealtimeMidiQueueLifecycleReason::SOURCE_REPLACED);
 }
 
 void RealtimeMidiQueue::clear() {
@@ -377,9 +364,9 @@ void RealtimeMidiQueue::drainDue(oc::api::MidiAPI& midi, uint32_t nowUs, uint32_
 #endif
     const uint32_t startUs = nowUs;
     uint32_t currentUs = nowUs;
-
-    while (count_ > 0 && due_(events_[0], currentUs)) {
-        const auto event = events_[0];
+    size_t consumed = 0U;
+    while (consumed < count_ && due_(events_[consumed], currentUs)) {
+        const auto event = events_[consumed];
         const int32_t deltaUs = oc::time::signedDeltaUs(currentUs, event.deadlineUs);
 
         if (event.type == RealtimeMidiEventType::NoteOn &&
@@ -389,7 +376,10 @@ void RealtimeMidiQueue::drainDue(oc::api::MidiAPI& midi, uint32_t nowUs, uint32_
                 diagnostics_.droppedLateNoteOnCount,
                 1
             );
-            remove_(0, RealtimeMidiQueueLifecycleReason::DROPPED_LATE);
+            if (lifecycle_observer_ != nullptr) {
+                lifecycle_observer_->onRealtimeMidiEventRemoved(
+                    event, RealtimeMidiQueueLifecycleReason::DROPPED_LATE);
+            }
         } else {
             if (!send_(midi, event)) {
                 diagnostics_.transportRejectedCount = realtimeMidiSaturatingAdd(
@@ -407,14 +397,17 @@ void RealtimeMidiQueue::drainDue(oc::api::MidiAPI& midi, uint32_t nowUs, uint32_
                     1
                 );
             }
-            erase_(0);
         }
-
+        ++consumed;
         currentUs = oc::time::isMicrosConfigured() ? oc::time::micros32() : nowUs;
         const uint32_t drainUs = currentUs - startUs;
         if (drainUs >= budgetUs) {
             break;
         }
+    }
+    if (consumed != 0U) {
+        std::move(events_.begin() + consumed, events_.begin() + count_, events_.begin());
+        count_ -= consumed;
     }
     OC_PERF_UNITS(perfDrain, queuedBefore, static_cast<uint32_t>(count_));
 }

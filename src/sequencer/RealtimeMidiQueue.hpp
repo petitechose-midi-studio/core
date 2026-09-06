@@ -29,6 +29,9 @@ enum class RealtimeMidiQueueLifecycleReason : uint8_t {
  * Global queue lifecycle observer, independent from the per-Track note
  * observer. The shared CC coordinator uses it to distinguish queued values
  * from values whose ownership was accepted by the MIDI transport.
+ * Callbacks are notifications within a queue transaction: they must not inspect
+ * or mutate this queue (including enqueue/cancel/drain). Dispatch observers and
+ * the MIDI transport have the same non-reentrant contract.
  */
 class RealtimeMidiQueueLifecycleObserver {
 public:
@@ -162,6 +165,8 @@ private:
     void insertNoFail_(const RealtimeMidiEvent& event);
     void erase_(size_t index);
     void remove_(size_t index, RealtimeMidiQueueLifecycleReason reason);
+    template <typename Predicate>
+    uint32_t removeIf_(Predicate matches, RealtimeMidiQueueLifecycleReason reason);
     bool send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& event);
     void recordRejectedBatch_(
         const RealtimeMidiEvent* events,
