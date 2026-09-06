@@ -54,7 +54,8 @@ void PerformanceReporter::update(uint32_t nowMs, bool playbackActive) {
         static_cast<uint32_t>(nowMs - windowStartedAtMs_) >=
         REPORT_INTERVAL_MS && reportPosition_ == reportCount_ &&
         reportDroppedSamples_ == 0U && reportDroppedMetrics_ == 0U &&
-        !reportDroppedPeaks_[0].label && !reportDroppedPeaks_[1].label
+        !reportDroppedPeaks_[0].label && !reportDroppedPeaks_[1].label &&
+        !reportDroppedPeaks_[2].label
     ) {
         freezeWindow_(nowMs);
     }
@@ -114,7 +115,12 @@ void PerformanceReporter::retainDroppedPeak_(const oc::diagnostics::PerformanceS
     const bool interval = std::strcmp(label, "midi.usb-service-gap") == 0 ||
         std::strcmp(label, "midi.usb-queue-age") == 0 ||
         std::strcmp(label, "sequencer.timer-entry-gap") == 0;
-    auto& peak = droppedPeaks_[interval ? 1U : 0U];
+    // A parent update/main.loop span must not hide its expensive child phase.
+    const bool reporterPhase = std::strcmp(label, "diagnostics.drain") == 0 ||
+        std::strcmp(label, "diagnostics.freeze") == 0 ||
+        std::strcmp(label, "diagnostics.report-line") == 0 ||
+        std::strcmp(label, "diagnostics.memory-line") == 0;
+    auto& peak = droppedPeaks_[interval ? 1U : (reporterPhase ? 2U : 0U)];
     if (!peak.label || sample.elapsedUs > peak.elapsedUs) {
         peak = sample;
         peak.label = label;
@@ -178,11 +184,15 @@ PerformanceReporter::MetricWindow* PerformanceReporter::findOrCreateMetric_(
     const char* label
 ) {
     const char* effectiveLabel = label != nullptr ? label : "<unnamed>";
+    // Most producers reuse a static label pointer. Do not walk PSRAM histogram
+    // headers and strcmp every preceding label for every incoming sample.
     for (size_t index = 0; index < metricCount_; ++index) {
-        auto& metric = (*metrics_)[index];
-        if (metric.label == effectiveLabel || std::strcmp(metric.label, effectiveLabel) == 0) {
-            return &metric;
-        }
+        if (metricLabels_[index] == effectiveLabel) return &(*metrics_)[index];
+    }
+    // Equal labels from distinct translation units still share one histogram.
+    for (size_t index = 0; index < metricCount_; ++index) {
+        if (std::strcmp(metricLabels_[index], effectiveLabel) == 0)
+            return &(*metrics_)[index];
     }
 
     if (metricCount_ >= metrics_->size()) {
@@ -190,6 +200,7 @@ PerformanceReporter::MetricWindow* PerformanceReporter::findOrCreateMetric_(
         return nullptr;
     }
 
+    metricLabels_[metricCount_] = effectiveLabel;
     auto& metric = (*metrics_)[metricCount_++];
     metric = {};
     metric.label = effectiveLabel;
@@ -286,6 +297,7 @@ void PerformanceReporter::reportMetric_(const MetricWindow& metric, uint32_t win
 }
 
 void PerformanceReporter::freezeWindow_(uint32_t nowMs) {
+    OC_PERF_SCOPE(perfFreeze, "diagnostics.freeze");
     reportDroppedSamples_ = takeDroppedSamples_();
     reportDroppedMetrics_ = droppedMetrics_;
     reportWindowEndMs_ = nowMs;
@@ -314,8 +326,12 @@ void PerformanceReporter::freezeWindow_(uint32_t nowMs) {
 }
 
 void PerformanceReporter::reportNext_() {
+    if (reportPosition_ == reportCount_ && reportDroppedSamples_ == 0 &&
+        reportDroppedMetrics_ == 0 && !reportDroppedPeaks_[0].label &&
+        !reportDroppedPeaks_[1].label && !reportDroppedPeaks_[2].label) return;
+    // Include overflow/peak warning writes, not just ordinary metric lines.
+    OC_PERF_SCOPE(perfReport, "diagnostics.report-line");
     if (reportPosition_ < reportCount_) {
-        OC_PERF_SCOPE(perfReport, "diagnostics.report-line");
         reportMetric_((*reportingMetrics_)[reportIndices_[reportPosition_++]], reportWindowEndMs_);
         return;
     }

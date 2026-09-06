@@ -83,16 +83,18 @@ private:
     // Swap windows instead of copying histograms or pausing collection while
     // logging. Only one pending window is retained, in strict PSRAM.
     core::app::ExtmemUniquePtr<Metrics> reportingMetrics_;
+    // Compact lookup stays in RAM2; histogram payload remains in PSRAM.
+    std::array<const char*, METRIC_CAPACITY> metricLabels_{};
     std::array<uint8_t, METRIC_CAPACITY> reportIndices_{};
     size_t reportCount_ = 0;
     size_t reportPosition_ = 0;
     uint32_t reportWindowEndMs_ = 0;
     uint32_t reportDroppedSamples_ = 0;
     uint32_t reportDroppedMetrics_ = 0;
-    // One duration peak and one interval/queue-age peak survive saturation.
+    // Duration, interval and reporter-phase peaks survive saturation separately.
     // They are evidence of loss, not histogram samples.
-    std::array<oc::diagnostics::PerformanceSample, 2> droppedPeaks_{};
-    std::array<oc::diagnostics::PerformanceSample, 2> reportDroppedPeaks_{};
+    std::array<oc::diagnostics::PerformanceSample, 3> droppedPeaks_{};
+    std::array<oc::diagnostics::PerformanceSample, 3> reportDroppedPeaks_{};
     uint8_t pendingMemorySections_ = 0;
     size_t sampleHead_ = 0;
     size_t sampleTail_ = 0;

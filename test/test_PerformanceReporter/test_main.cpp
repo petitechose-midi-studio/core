@@ -111,12 +111,14 @@ int main() {
     oc::diagnostics::recordPerformance({"smaller.duration", 22000, 0, 0});
     oc::diagnostics::recordPerformance({"midi.usb-service-gap", 130000, 7, 8});
     oc::diagnostics::recordPerformance({"midi.usb-queue-age", 119000, 0, 0});
+    oc::diagnostics::recordPerformance({"diagnostics.report-line", 118000, 0, 0});
     for (uint32_t now = 4200; now < 4204; ++now) reporter.update(now);
     pump(reporter, 6200);
     assert(output.find("overflow.test samples=256") != std::string::npos);
-    assert(output.find("diagnostics overflow samples=48 metrics=0") != std::string::npos);
+    assert(output.find("diagnostics overflow samples=49 metrics=0") != std::string::npos);
     assert(output.find("dropped-peak label=main.loop elapsed=120000us unitA=3 unitB=4") != std::string::npos);
     assert(output.find("dropped-peak label=midi.usb-service-gap elapsed=130000us") != std::string::npos);
+    assert(output.find("dropped-peak label=diagnostics.report-line elapsed=118000us") != std::string::npos);
     assert(output.find("main.loop samples=") == std::string::npos);
     output.clear();
     pump(reporter, 8200);
@@ -178,6 +180,16 @@ int main() {
         assert(output.substr(at, end - at).find("windowEnd=2010ms") != std::string::npos);
     }
     assert(output.find("late.foreground samples=1 avg=22us") != std::string::npos);
+    reporter.end();
+    reporter.begin();
+    output.clear();
+    static const char sameLabelA[] = "same.label";
+    static const char sameLabelB[] = "same.label";
+    reporter.update(1);
+    oc::diagnostics::recordPerformance({sameLabelA, 10, 0, 0});
+    oc::diagnostics::recordPerformance({sameLabelB, 20, 0, 0});
+    pump(reporter, 2001);
+    assert(output.find("same.label samples=2 avg=15us") != std::string::npos);
     reporter.end();
     std::cout << "PerformanceReporter: failure, reuse, critical metrics, windows and overflow OK\n";
 }
