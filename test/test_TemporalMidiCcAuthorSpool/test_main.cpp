@@ -407,6 +407,34 @@ void test_lane_generation_batch_cancels_once_and_keeps_neighbors() {
     std::cout << "[PASS] one-pass Lane lifecycle cancellation keeps neighbors\n";
 }
 
+void test_stop_lane_class_cancellation_preserves_other_classes_and_reuses_nodes() {
+    TemporalMidiCcAuthorSpool spool;
+    const std::array transitions{
+        update(100U, 0U, MidiCcCandidateClass::SEQUENCER_CC_LANE, 0U, 10U),
+        remove(100U, 15U, MidiCcCandidateClass::SEQUENCER_CC_LANE, 63U),
+        update(200U, 0U, MidiCcCandidateClass::SEQUENCER_CC_LANE, 0U, 11U),
+        update(100U, 15U, MidiCcCandidateClass::LIVE_MANUAL, 2047U, 20U),
+        update(100U, 15U, MidiCcCandidateClass::MACRO_STATIC, 2047U, 30U),
+    };
+    std::array<TemporalMidiCcAuthorTransition, 8> scratch{};
+    for (uint8_t repeat = 0; repeat < 3U; ++repeat) {
+        assert(spool.pushBatch(transitions.data(), transitions.size()).ok());
+        assert(spool.beginDue(100U, scratch.data(), scratch.size()).transferredCount == 4U);
+        assert(spool.cancelCandidateClass(MidiCcCandidateClass::SEQUENCER_CC_LANE) == 0U);
+        assert(spool.size() == transitions.size());
+        assert(spool.rollbackDue());
+        assert(spool.cancelCandidateClass(MidiCcCandidateClass::SEQUENCER_CC_LANE) == 3U);
+        assert(spool.cancelCandidateClass(MidiCcCandidateClass::SEQUENCER_CC_LANE) == 0U);
+        assert(spool.beginDue(200U, scratch.data(), scratch.size()).transferredCount == 2U);
+        assert(scratch[0].author.candidateClass == MidiCcCandidateClass::LIVE_MANUAL);
+        assert(scratch[1].author.candidateClass == MidiCcCandidateClass::MACRO_STATIC);
+        assert(spool.commitDue());
+        assert(spool.empty());
+    }
+    assert(spool.diagnostics().cancelledTransitionCount == 9U);
+    std::cout << "[PASS] Stop cancellation preserves persistent classes and pool reuse\n";
+}
+
 void test_worst_case_lane_batch_cancellation_measurement() {
     TemporalMidiCcAuthorSpool spool;
     static std::array<
@@ -552,6 +580,7 @@ int main() {
     test_complete_deadline_groups_and_multiple_batches();
     test_cancel_track_keeps_neighbors();
     test_lane_generation_batch_cancels_once_and_keeps_neighbors();
+    test_stop_lane_class_cancellation_preserves_other_classes_and_reuses_nodes();
     test_worst_case_lane_batch_cancellation_measurement();
     test_near_capacity_multi_deadline_preflight_measurement();
     test_clear_reinitializes_fixed_pool();

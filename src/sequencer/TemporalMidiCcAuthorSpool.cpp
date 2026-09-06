@@ -326,15 +326,16 @@ FLASHMEM size_t TemporalMidiCcAuthorSpool::cancelCandidateClass(
     MidiCcCandidateClass candidateClass
 ) {
     if (transaction_active_) return 0U;
+    if (candidateClass == MidiCcCandidateClass::SEQUENCER_CC_LANE) {
+        return cancelLaneAuthors(UINT64_MAX);
+    }
     size_t removed = 0U;
     // Computed and Static share one base slot, so either request deliberately
     // invalidates the complete base class. LIVE and Lane remain independent.
     const bool baseClass = candidateClass == MidiCcCandidateClass::MACRO_COMPUTED ||
                            candidateClass == MidiCcCandidateClass::MACRO_STATIC;
     for (uint16_t slotIndex = 0U; slotIndex < AUTHOR_SLOT_COUNT; ++slotIndex) {
-        const bool matches = candidateClass == MidiCcCandidateClass::SEQUENCER_CC_LANE
-            ? slotIndex < LANE_AUTHOR_SLOT_COUNT
-            : candidateClass == MidiCcCandidateClass::LIVE_MANUAL
+        const bool matches = candidateClass == MidiCcCandidateClass::LIVE_MANUAL
                 ? slotIndex >= LANE_AUTHOR_SLOT_COUNT &&
                       slotIndex < LANE_AUTHOR_SLOT_COUNT + LIVE_AUTHOR_SLOT_COUNT
                 : baseClass

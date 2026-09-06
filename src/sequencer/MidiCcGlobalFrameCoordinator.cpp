@@ -657,13 +657,19 @@ FLASHMEM void MidiCcGlobalFrameCoordinator::clearTrackAuthorStates_(
 }
 
 FLASHMEM void MidiCcGlobalFrameCoordinator::synchronizeStoppedLaneLogicalState_() {
+    constexpr uint16_t laneCount = TemporalMidiCcAuthorSpool::LANE_AUTHOR_SLOT_COUNT;
+    // Persistent authors keep their future logical values. Reuse the bounded
+    // active list instead of streaming all 4,160 PSRAM author records at Stop.
+    uint16_t retained = 0U;
+    for (uint16_t index = 0U; index < logical_active_slot_count_; ++index) {
+        const uint16_t slot = logical_active_slots_[index];
+        if (slot >= laneCount) logical_active_slots_[retained++] = slot;
+    }
+    logical_active_slot_count_ = retained;
     for (uint16_t slot = 0U;
-         slot < core::sequencer::TemporalMidiCcAuthorSpool::LANE_AUTHOR_SLOT_COUNT;
+         slot < laneCount;
          ++slot) {
         logical_authors_[slot] = effective_authors_[slot];
-    }
-    logical_active_slot_count_ = 0U;
-    for (uint16_t slot = 0U; slot < logical_authors_.size(); ++slot) {
         if (!logical_authors_[slot].present) continue;
         if (logical_active_slot_count_ < logical_active_slots_.size()) {
             logical_active_slots_[logical_active_slot_count_++] = slot;
