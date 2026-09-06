@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 
 #include <oc/state/Signal.hpp>
 
@@ -145,7 +146,8 @@ public:
         SequencerClipLaunchQuantization quantization,
         SequencerClipLaunchOrigin origin =
             SequencerClipLaunchOrigin::DIRECT_STOP,
-        uint8_t sourceSlot = SequencerClipGridState::INVALID_SLOT
+        uint8_t sourceSlot = SequencerClipGridState::INVALID_SLOT,
+        std::optional<uint32_t> intendedTick = std::nullopt
     );
     [[nodiscard]] bool requestScene(
         uint8_t slot,
@@ -207,6 +209,8 @@ public:
             ? transportTick - entries_[track].activeStartedTick : transportTick;
     }
     void resetPlaybackOriginsFromRealtime() noexcept;
+    void setPlaybackSpanFromRealtime(uint8_t track, uint16_t loopTicks,
+                                    uint16_t preludeTicks) noexcept;
     [[nodiscard]] bool stopped(uint8_t track) const noexcept;
     [[nodiscard]] SequencerClipLaunchTelemetry telemetry(
         uint8_t track
@@ -278,6 +282,7 @@ private:
         volatile uint16_t pendingLoopTicks = 0U;
         volatile uint32_t activeStartedTick = 0U;
         volatile uint16_t activeLoopTicks = 0U;
+        volatile uint16_t activePreludeTicks = 0U;
         volatile bool activeFollowScheduled = false;
         SequencerLauncherBehavior pendingBehavior{};
         SequencerLauncherBehavior activeBehavior{};
@@ -297,7 +302,8 @@ private:
     uint32_t nextBoundaryTick_(
         SequencerClipLaunchQuantization quantization,
         bool transportPlaying,
-        bool includeCurrent = false
+        bool includeCurrent = false,
+        std::optional<uint32_t> intendedTick = std::nullopt
     ) const noexcept;
     uint8_t beatsRemaining_(uint32_t dueTick) const noexcept;
     uint8_t queuedRemainingQ8_(
@@ -320,7 +326,8 @@ private:
         bool transportPlaying,
         SequencerClipLaunchQuantization quantization,
         uint16_t loopTicks,
-        SequencerClipLaunchOrigin origin
+        SequencerClipLaunchOrigin origin,
+        std::optional<uint32_t> intendedTick = std::nullopt
     );
     [[nodiscard]] bool requestSceneWithOrigin_(
         uint8_t slot,
@@ -329,7 +336,8 @@ private:
         bool transportPlaying,
         SequencerClipLaunchQuantization quantization,
         const std::array<uint16_t, TRACK_COUNT>* loopTicks,
-        SequencerClipLaunchOrigin origin
+        SequencerClipLaunchOrigin origin,
+        std::optional<uint32_t> intendedTick = std::nullopt
     );
     bool queueFallback_(
         uint8_t track,

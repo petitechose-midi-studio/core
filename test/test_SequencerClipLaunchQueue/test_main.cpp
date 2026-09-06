@@ -459,6 +459,56 @@ void test_relative_clip_follow_choices_are_sparse_and_deterministic() {
         seq::SequencerLauncherFollowChoice::RANDOM_ANY));
 }
 
+void test_follow_preparation_and_late_observation_retain_deadline() {
+    constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
+    for (const uint32_t observed : {kBar - 1U, kBar, kBar + 1U, kBar * 3U + 7U}) {
+        for (const bool scene : {false, true}) {
+            seq::SequencerClipGridState clips;
+            clips.reset(0x0001U);
+            install(clips, 1U);
+            const seq::SequencerLauncherBehavior behavior{
+                .length = 1U,
+                .follow = seq::SequencerLauncherFollowChoice::NEXT,
+                .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+            };
+            if (scene) assert(clips.setSceneBehavior(0U, behavior));
+            else assert(clips.setClipBehavior({0U, 0U}, behavior));
+            seq::SequencerClipLaunchQueue queue;
+            queue.reset(clips, 0x0001U);
+            if (scene) {
+                assert(queue.requestScene(0U, clips, 0x0001U, false));
+                applyQueued(queue, clips, 0x0001U, 0U);
+            }
+            queue.updateTransportPosition(observed, true);
+            queue.processFollowActions(clips, 0x0001U, true);
+            assert(queue.realtimeView(0U).dueTick == kBar);
+            assert(queue.telemetry(0U).queuedSlot == 1U);
+        }
+    }
+}
+
+void test_follow_counts_actual_clip_loops_after_single_prelude() {
+    seq::SequencerClipGridState clips;
+    clips.reset(1U);
+    install(clips, 1U);
+    assert(clips.setClipBehavior({0U, 0U}, {
+        .length = 2U,
+        .follow = seq::SequencerLauncherFollowChoice::NEXT,
+        .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
+    }));
+    seq::SequencerClipLaunchQueue queue;
+    queue.reset(clips, 1U);
+    queue.setPlaybackSpanFromRealtime(0U, 30U, 6U);
+    // Six intro ticks + two 30-tick loops -> 66, rounded to beat 72.
+    queue.updateTransportPosition(65U, true);
+    queue.processFollowActions(clips, 1U, true);
+    assert(queue.pendingTrackMask() == 0U);
+    queue.updateTransportPosition(71U, true);
+    queue.processFollowActions(clips, 1U, true);
+    assert(queue.realtimeView(0U).dueTick == 72U);
+    assert(queue.pendingTrackMask() == 1U);
+}
+
 void test_scene_next_skips_behavior_only_rows() {
     constexpr uint32_t kBar = 4U * oc::note::clock::PPQN;
     seq::SequencerClipGridState clips;
@@ -488,6 +538,8 @@ void test_scene_next_skips_behavior_only_rows() {
 }  // namespace
 
 int main() {
+    test_follow_counts_actual_clip_loops_after_single_prelude();
+    test_follow_preparation_and_late_observation_retain_deadline();
     test_quantized_lifecycle_and_replacement_rules();
     test_stale_target_is_cancelled_before_runtime_publication();
     test_missing_active_clip_queues_resident_fallback();

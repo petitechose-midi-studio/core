@@ -352,6 +352,13 @@ void SequencerPlaybackService::update(
         const bool clipFrozen = clipLaunch.disposition !=
             core::state::sequencer::SequencerClipLaunchRealtimeView::
                 Disposition::NORMAL;
+        if (clip_launches_ != nullptr && !clipFrozen) {
+            const auto& region = track_playback_regions_[i];
+            const uint16_t ticksPerStep = ccTicksPerStep_(snapshot.tracks[i]);
+            clip_launches_->setPlaybackSpanFromRealtime(i,
+                region.loopLength() * ticksPerStep,
+                region.preludeLength() * ticksPerStep);
+        }
         const auto* trackDrumSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
             ? runtime_snapshot_bank_->drumSnapshot(
                   clipLaunch.previousSnapshotIndex)
@@ -986,6 +993,8 @@ void SequencerPlaybackService::applyStagedClip_(
     if (clip_launches_ == nullptr) return;
     const auto launch = clip_launches_->realtimeView(trackIndex);
     if (launch.generation != generation) return;
+    const uint32_t originTick = playing ? launch.dueTick : tick;
+    OC_PERF_RECORD("sequencer.clip-apply", 0, tick - originTick, trackIndex);
     if (launch.action ==
         core::state::sequencer::SequencerClipLaunchAction::STOP) {
         if (trackIndex >= TRACK_COUNT) return;
@@ -995,13 +1004,13 @@ void SequencerPlaybackService::applyStagedClip_(
         }
         stopTrack(trackIndex);
         (void)clip_launches_->markAppliedFromRealtime(
-            trackIndex, generation, tick);
+            trackIndex, generation, originTick);
         return;
     }
     if (!applyStagedTrackContent_(
-            snapshot, projectTracks, trackIndex, 0U, playing)) return;
+            snapshot, projectTracks, trackIndex, tick - originTick, playing)) return;
     (void)clip_launches_->markAppliedFromRealtime(
-        trackIndex, generation, tick);
+        trackIndex, generation, originTick);
 }
 
 bool SequencerPlaybackService::applyStagedTrackContent_(

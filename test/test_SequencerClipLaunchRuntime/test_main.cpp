@@ -3,8 +3,10 @@
 #include <vector>
 
 #include <oc/note/clock/ClockConstants.hpp>
+#include <oc/impl/NullMidi.hpp>
 
 #include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/SequencerPlaybackService.hpp"
 #include "sequencer/SequencerRuntimeGraphBank.hpp"
 #include "sequencer/SequencerRuntimeSnapshotBank.hpp"
@@ -12,6 +14,9 @@
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
+#include "support/AdvancingMicrosClock.hpp"
 
 namespace seq = core::state::sequencer;
 
@@ -196,6 +201,115 @@ void test_drum_launch_uses_local_polymetric_lanes() {
     fixture.midiQueue.detachLifecycleObserver(recorded);
 }
 
+void test_late_launch_keeps_intended_phase_without_historical_note_burst() {
+    Fixture fixture;
+    RecordedEvents recorded;
+    fixture.midiQueue.attachLifecycleObserver(recorded);
+    fixture.queueAndStage(seq::SequencerClipLaunchQuantization::BAR);
+    fixture.play(97U);
+    assert(fixture.launches.telemetry(0U).activeElapsedTicks == 1U);
+    assert(fixture.playback.copyActiveRuntimeTelemetry().playheadStep == 0);
+    for (const auto& event : recorded.events) {
+        assert(event.type != core::sequencer::RealtimeMidiEventType::NoteOn);
+    }
+    fixture.play(102U);
+    assert(fixture.playback.copyActiveRuntimeTelemetry().playheadStep == 1);
+    fixture.midiQueue.detachLifecycleObserver(recorded);
+}
+
+void test_follow_chain_does_not_accumulate_foreground_delay() {
+    Fixture fixture;
+    const seq::SequencerLauncherBehavior behavior{
+        .length = 1U,
+        .follow = seq::SequencerLauncherFollowChoice::NEXT,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    };
+    assert(fixture.clips.setClipBehavior({0U, 0U}, behavior));
+    assert(fixture.clips.setClipBehavior({0U, 1U}, behavior));
+    fixture.launches.reset(fixture.clips, 1U);
+    for (uint32_t transition = 1U; transition <= 32U; ++transition) {
+        const uint32_t due = transition * 96U;
+        fixture.launches.updateTransportPosition(due - 1U, true);
+        fixture.launches.processFollowActions(fixture.clips, 1U, true);
+        assert(fixture.launches.realtimeView(0U).dueTick == due);
+        fixture.publishCurrent(1U);
+        fixture.play(due + 1U); // every foreground publication is late
+        assert(fixture.launches.telemetry(0U).activeElapsedTicks == 1U);
+        assert(fixture.launches.activeSlot(0U) == transition % 2U);
+        fixture.graphs.releaseRetired(fixture.launches.publishRealtimeTelemetry());
+    }
+}
+
+void test_clip_cc_and_notes_share_intro_loop_and_output_delay() {
+    test_support::AdvancingMicrosClock clock;
+    clock.install();
+    for (const int16_t delay : {-1, 0, 2}) {
+        Fixture fixture;
+        seq::SequencerPatternState pattern;
+        seq::SequencerClipState clip;
+        assert(seq::setClipPlaybackRegion(pattern, clip, {8U, 1U, 2U, 7U}));
+        pattern.note[1U] = 73U;
+        pattern.velocity[1U] = 100U;
+        pattern.gate[1U] = 400U;
+        pattern.setEnabled(1U, true);
+        pattern.bumpStepDataRevision();
+        auto* lanes = seq::ensureSequencerCcLaneBank(pattern);
+        assert(lanes);
+        seq::SequencerCcLaneDraft draft{};
+        draft.destination.controller = 74U;
+        assert(seq::createSequencerCcLane(*lanes, 0U, draft).changed());
+        assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 1U, 96U).changed());
+        pattern.ccLaneRevision.set(lanes->revision);
+        seq::SequencerClipDocumentPtr document;
+        assert(seq::captureSequencerClipDocument(pattern, clip,
+            seq::SequencerTrackKind::INSTRUMENT, nullptr, document));
+        assert(fixture.clips.removeInactiveDocument({0U, 1U}));
+        assert(fixture.clips.installInactiveDocument({0U, 1U}, std::move(document)));
+        fixture.queueAndStage(seq::SequencerClipLaunchQuantization::BEAT);
+        core::sequencer::SequencerCcLaneRuntime cc;
+        core::sequencer::SequencerCcLaneRuntime predictiveCc;
+        core::sequencer::MidiCcGlobalFrameCoordinator coordinator{fixture.midiQueue};
+        core::sequencer::SequencerPlaybackService playback{
+            fixture.sequencer, fixture.status, fixture.midiQueue, fixture.graphs,
+            nullptr, &cc, &coordinator, &predictiveCc, &fixture.snapshots, &fixture.launches};
+        struct Midi : oc::impl::NullMidi {
+            unsigned notes = 0U;
+            unsigned noteOffs = 0U;
+            bool ccReceived = false;
+            MidiOutputAcceptance sendCC(uint8_t, uint8_t controller, uint8_t value) override {
+                if (controller == 74U && value == 96U) ccReceived = true;
+                return MidiOutputAcceptance::ACCEPTED;
+            }
+            MidiOutputAcceptance sendNoteOn(uint8_t, uint8_t note, uint8_t) override {
+                assert(note == 73U);
+                assert(ccReceived);
+                ++notes;
+                return MidiOutputAcceptance::ACCEPTED;
+            }
+            MidiOutputAcceptance sendNoteOff(uint8_t, uint8_t note, uint8_t) override {
+                if (note == 73U) ++noteOffs;
+                return MidiOutputAcceptance::ACCEPTED;
+            }
+        } midiTransport;
+        oc::api::MidiAPI midi{midiTransport};
+        auto routes = projectTracks();
+        routes.delayMs[0] = delay;
+        for (uint32_t tick = 24U; tick <= 66U; ++tick) {
+            const auto index = fixture.snapshots.activeIndex();
+            const uint32_t now = 1000U + tick * 1000U;
+            clock.freezeAt(now);
+            playback.update(fixture.snapshots.activeSnapshot(), tick, true,
+                now, 1000U, routes, false, fixture.snapshots.laneSnapshot(index),
+                true, fixture.snapshots.drumSnapshot(index));
+            fixture.midiQueue.drainDue(midi, now, UINT32_MAX);
+        }
+        assert(midiTransport.ccReceived && midiTransport.notes == 1U);
+        assert(midiTransport.noteOffs == 1U);
+        assert(playback.copyActiveRuntimeTelemetry().playheadStep == 3);
+    }
+    oc::time::setMicrosProvider(nullptr);
+}
+
 void test_bar_launch_waits_for_bar_boundary() {
     Fixture fixture;
     fixture.queueAndStage(seq::SequencerClipLaunchQuantization::BAR);
@@ -256,6 +370,9 @@ void test_beat_launch_applies_on_beat_boundary() {
 }  // namespace
 
 int main() {
+    test_clip_cc_and_notes_share_intro_loop_and_output_delay();
+    test_follow_chain_does_not_accumulate_foreground_delay();
+    test_late_launch_keeps_intended_phase_without_historical_note_burst();
     test_drum_launch_uses_local_polymetric_lanes();
     test_beat_launch_starts_content_at_zero_with_physical_deadlines();
     test_bar_launch_waits_for_bar_boundary();

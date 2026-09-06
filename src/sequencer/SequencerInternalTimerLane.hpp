@@ -36,6 +36,7 @@ public:
     void publishTransportConfig(const MidiClockSyncRuntimeConfig& config);
     // Single realtime owner; also callable by deterministic native runners.
     void processRealtime();
+    uint32_t transportTick() const;
 
 private:
     void drainRealtimeMidiQueue_(uint32_t nowUs);

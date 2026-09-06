@@ -58,6 +58,11 @@ void SequencerInternalTimerLane::publishTransportConfig(const MidiClockSyncRunti
     config_ = config;
 }
 
+uint32_t SequencerInternalTimerLane::transportTick() const {
+    oc::realtime::InterruptGuard lock;
+    return config_.playing && !clock_.isPlaying() ? 0U : clock_.tick();
+}
+
 void SequencerInternalTimerLane::processRealtime() {
     core::diagnostics::storage_qualification::timerPulse();
     OC_PERF_SCOPE(perfTimer, "sequencer.timer");

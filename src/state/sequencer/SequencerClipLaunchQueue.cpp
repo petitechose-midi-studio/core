@@ -12,6 +12,9 @@ namespace {
 
 constexpr uint32_t kTicksPerBeat = oc::note::clock::PPQN;
 constexpr uint32_t kTicksPerBar = 4U * kTicksPerBeat;
+// Give publication one musical tick of lead, without retaining a whole bar of
+// snapshots. Missed windows keep the intended deadline instead of re-quantizing.
+constexpr uint32_t kFollowPrepareTicks = 1U;
 
 constexpr uint16_t trackBit(uint8_t track) noexcept {
     return static_cast<uint16_t>(1U << track);
@@ -202,18 +205,20 @@ bool SequencerClipLaunchQueue::due_(uint32_t now, uint32_t deadline) noexcept {
 FLASHMEM uint32_t SequencerClipLaunchQueue::nextBoundaryTick_(
     SequencerClipLaunchQuantization quantization,
     bool transportPlaying,
-    bool includeCurrent
+    bool includeCurrent,
+    std::optional<uint32_t> intendedTick
 ) const noexcept {
+    const uint32_t requestedTick = intendedTick.value_or(transport_tick_);
     if (!transportPlaying ||
         quantization == SequencerClipLaunchQuantization::IMMEDIATE) {
-        return transport_tick_;
+        return requestedTick;
     }
     const uint32_t unit = quantization == SequencerClipLaunchQuantization::BEAT
         ? kTicksPerBeat
         : kTicksPerBar;
-    const uint32_t remainder = transport_tick_ % unit;
-    if (includeCurrent && remainder == 0U) return transport_tick_;
-    return transport_tick_ + (unit - remainder);
+    const uint32_t remainder = requestedTick % unit;
+    if (includeCurrent && remainder == 0U) return requestedTick;
+    return requestedTick + (unit - remainder);
 }
 
 FLASHMEM uint8_t SequencerClipLaunchQueue::beatsRemaining_(
@@ -277,6 +282,7 @@ FLASHMEM void SequencerClipLaunchQueue::resetEntry_(
             SequencerClipGridState::SLOT_COUNT
         ? kTicksPerBar : 0U;
     entry.activeFollowScheduled = false;
+    entry.activePreludeTicks = 0U;
     entry.pendingBehavior = {};
     entry.activeBehavior = entry.activeSlot <
             SequencerClipGridState::SLOT_COUNT
@@ -522,7 +528,8 @@ FLASHMEM bool SequencerClipLaunchQueue::requestWithOrigin_(
     bool transportPlaying,
     SequencerClipLaunchQuantization quantization,
     uint16_t loopTicks,
-    SequencerClipLaunchOrigin origin
+    SequencerClipLaunchOrigin origin,
+    std::optional<uint32_t> intendedTick
 ) {
     if (!SequencerClipGridState::validAddress(target) ||
         clips.slotKind(target) != SequencerLauncherSlotKind::CLIP) {
@@ -557,7 +564,8 @@ FLASHMEM bool SequencerClipLaunchQueue::requestWithOrigin_(
     current.dueTick = nextBoundaryTick_(
         current.quantization,
         transportPlaying,
-        isFollowOrigin(origin)
+        isFollowOrigin(origin),
+        intendedTick
     );
     current.generation = next_generation_;
     current.groupGeneration = 0U;
@@ -591,7 +599,8 @@ FLASHMEM bool SequencerClipLaunchQueue::requestStop(
     bool transportPlaying,
     SequencerClipLaunchQuantization quantization,
     SequencerClipLaunchOrigin origin,
-    uint8_t sourceSlot
+    uint8_t sourceSlot,
+    std::optional<uint32_t> intendedTick
 ) {
     if (track >= TRACK_COUNT) return false;
     DesiredPlan plan;
@@ -623,7 +632,8 @@ FLASHMEM bool SequencerClipLaunchQueue::requestStop(
     current.dueTick = nextBoundaryTick_(
         current.quantization,
         transportPlaying,
-        isFollowOrigin(origin)
+        isFollowOrigin(origin),
+        intendedTick
     );
     current.generation = next_generation_;
     plan.queuedMask = static_cast<uint16_t>(plan.queuedMask | trackBit(track));
@@ -653,7 +663,8 @@ FLASHMEM bool SequencerClipLaunchQueue::requestSceneWithOrigin_(
     bool transportPlaying,
     SequencerClipLaunchQuantization quantization,
     const std::array<uint16_t, TRACK_COUNT>* loopTicks,
-    SequencerClipLaunchOrigin origin
+    SequencerClipLaunchOrigin origin,
+    std::optional<uint32_t> intendedTick
 ) {
     if (slot >= SequencerClipGridState::SLOT_COUNT) return false;
     DesiredPlan plan;
@@ -689,7 +700,8 @@ FLASHMEM bool SequencerClipLaunchQueue::requestSceneWithOrigin_(
     const uint32_t dueTick = nextBoundaryTick_(
         effectiveQuantization,
         transportPlaying,
-        isFollowOrigin(origin)
+        isFollowOrigin(origin),
+        intendedTick
     );
     uint16_t expectedMask = 0U;
     enabledTrackMask = static_cast<uint16_t>(enabledTrackMask & ALL_TRACKS_MASK);
@@ -775,6 +787,7 @@ void SequencerClipLaunchQueue::processFollowActions(
     std::array<SequencerLauncherFollowChoice, TRACK_COUNT> clipChoices{};
     std::array<uint8_t, TRACK_COUNT> clipCurrentSlots{};
     std::array<uint32_t, TRACK_COUNT> clipSeeds{};
+    std::array<uint32_t, TRACK_COUNT> clipDeadlines{};
     std::array<SequencerLauncherFollowQuantization, TRACK_COUNT>
         clipQuantizations{};
     clipChoices.fill(SequencerLauncherFollowChoice::NONE);
@@ -783,6 +796,7 @@ void SequencerClipLaunchQueue::processFollowActions(
         SequencerLauncherFollowChoice::NONE;
     uint8_t sceneCurrentSlot = SequencerClipGridState::INVALID_SLOT;
     uint32_t sceneSeed = 0U;
+    uint32_t sceneDeadline = 0U;
     SequencerLauncherFollowQuantization sceneQuantization =
         SequencerLauncherFollowQuantization::GLOBAL;
     {
@@ -794,28 +808,37 @@ void SequencerClipLaunchQueue::processFollowActions(
                 entry.activeLoopTicks == 0U) {
                 continue;
             }
-            const uint32_t deadline = entry.activeStartedTick +
+            const uint32_t endTick = entry.activeStartedTick +
+                entry.activePreludeTicks +
                 static_cast<uint32_t>(entry.activeBehavior.length) *
                     entry.activeLoopTicks;
-            if (!due_(transport_tick_, deadline)) continue;
+            const uint32_t deadline = nextBoundaryTick_(
+                followQuantization_(entry.activeBehavior.quantization),
+                true, true, endTick);
+            if (!due_(transport_tick_ + kFollowPrepareTicks, deadline)) continue;
             entry.activeFollowScheduled = true;
             clipChoices[track] = entry.activeBehavior.follow;
+            clipDeadlines[track] = deadline;
             clipCurrentSlots[track] = entry.activeSlot;
-            clipSeeds[track] = transport_tick_ ^ entry.activeStartedTick ^
+            clipSeeds[track] = deadline ^ entry.activeStartedTick ^
                 (static_cast<uint32_t>(track + 1U) * 0x9E3779B9U) ^
                 static_cast<uint32_t>(entry.activeSlot + 1U);
             clipQuantizations[track] = entry.activeBehavior.quantization;
         }
         if (!active_scene_follow_scheduled_ &&
             active_scene_behavior_.enabled()) {
-            const uint32_t deadline = active_scene_started_tick_ +
+            const uint32_t endTick = active_scene_started_tick_ +
                 static_cast<uint32_t>(active_scene_behavior_.length) *
                     kTicksPerBar;
-            if (due_(transport_tick_, deadline)) {
+            const uint32_t deadline = nextBoundaryTick_(
+                followQuantization_(active_scene_behavior_.quantization),
+                true, true, endTick);
+            if (due_(transport_tick_ + kFollowPrepareTicks, deadline)) {
                 active_scene_follow_scheduled_ = true;
                 sceneChoice = active_scene_behavior_.follow;
+                sceneDeadline = deadline;
                 sceneCurrentSlot = active_scene_;
-                sceneSeed = transport_tick_ ^ active_scene_started_tick_ ^
+                sceneSeed = deadline ^ active_scene_started_tick_ ^
                     (static_cast<uint32_t>(active_scene_ + 1U) *
                      0x85EBCA6BU);
                 sceneQuantization = active_scene_behavior_.quantization;
@@ -842,7 +865,8 @@ void SequencerClipLaunchQueue::processFollowActions(
                 true,
                 followQuantization_(clipQuantizations[track]),
                 SequencerClipLaunchOrigin::CLIP_FOLLOW,
-                target.slot
+                target.slot,
+                clipDeadlines[track]
             );
         } else {
             (void)requestWithOrigin_(
@@ -851,7 +875,8 @@ void SequencerClipLaunchQueue::processFollowActions(
                 true,
                 followQuantization_(clipQuantizations[track]),
                 loopTicks != nullptr ? (*loopTicks)[track] : 0U,
-                SequencerClipLaunchOrigin::CLIP_FOLLOW
+                SequencerClipLaunchOrigin::CLIP_FOLLOW,
+                clipDeadlines[track]
             );
         }
     }
@@ -873,7 +898,8 @@ void SequencerClipLaunchQueue::processFollowActions(
             true,
             followQuantization_(sceneQuantization),
             loopTicks,
-            SequencerClipLaunchOrigin::SCENE_FOLLOW
+            SequencerClipLaunchOrigin::SCENE_FOLLOW,
+            sceneDeadline
         );
     }
 }
@@ -1084,6 +1110,7 @@ bool SequencerClipLaunchQueue::markAppliedFromRealtime(
         entry.stopped = false;
         entry.activeBehavior = entry.pendingBehavior;
         entry.activeLoopTicks = entry.pendingLoopTicks;
+        entry.activePreludeTicks = 0U;
         entry.activeStartedTick = tick;
         entry.activeFollowScheduled = false;
     } else {
@@ -1196,6 +1223,14 @@ void SequencerClipLaunchQueue::resetPlaybackOriginsFromRealtime() noexcept {
     active_scene_follow_scheduled_ = false;
 }
 
+void SequencerClipLaunchQueue::setPlaybackSpanFromRealtime(
+    uint8_t track, uint16_t loopTicks, uint16_t preludeTicks
+) noexcept {
+    if (track >= TRACK_COUNT || entries_[track].stopped) return;
+    entries_[track].activeLoopTicks = loopTicks;
+    entries_[track].activePreludeTicks = preludeTicks;
+}
+
 bool SequencerClipLaunchQueue::stopped(uint8_t track) const noexcept {
     return track >= TRACK_COUNT || entries_[track].stopped;
 }
@@ -1221,6 +1256,7 @@ FLASHMEM SequencerClipLaunchTelemetry SequencerClipLaunchQueue::telemetry(
     if (transport_playing_ && !entry.stopped &&
         entry.activeBehavior.enabled() && loopTicks != 0U) {
         const uint32_t duration =
+            entry.activePreludeTicks +
             static_cast<uint32_t>(entry.activeBehavior.length) * loopTicks;
         const uint32_t elapsed = transport_tick_ - entry.activeStartedTick;
         if (duration != 0U && elapsed < duration) {

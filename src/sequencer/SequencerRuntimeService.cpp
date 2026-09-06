@@ -210,9 +210,13 @@ void SequencerRuntimeService::update() {
     }
 #endif
 
-    // The hardware timer owns the internal transport on Teensy. In that mode
-    // MidiClockSyncService deliberately exposes tick zero, so retain the last
-    // timer projection instead of overwriting the launcher clock here.
+    // Follow planning uses transport time, never the cadence of the UI snapshot.
+#ifdef ARDUINO
+    if (clockDomain.timerOwnsTransport) {
+        clip_launches_.updateTransportPosition(
+            realtime_lane_->timer.transportTick(), clockConfig.playing);
+    }
+#endif
     if (!clockDomain.timerOwnsTransport) {
         clip_launches_.updateTransportPosition(
             clockDomain.transport.tick,
