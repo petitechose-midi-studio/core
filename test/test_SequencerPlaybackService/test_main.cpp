@@ -20,6 +20,7 @@
 #include "../../src/sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "../../src/sequencer/SequencerCcLaneRuntime.hpp"
 #include "../../src/sequencer/SequencerPlaybackService.hpp"
+#include "../../src/sequencer/SequencerInternalTimerLane.hpp"
 #include "../../src/sequencer/SequencerRuntimeGraphBank.hpp"
 #include "../../src/sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "../../src/state/CoreState.hpp"
@@ -402,6 +403,42 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
     assert(sequencer.drumSequencer.resolvedPage.matches({}));
 
     std::cout << "[PASS] Drum preview survives timer stop/engine replacement and viewport changes\n";
+}
+
+void test_timer_control_does_not_wait_for_content_publication() {
+    SequencerState sequencer;
+    core::state::sequencer::SequencerTrackBankState bank;
+    core::state::project::ProjectNavigationState navigation;
+    core::state::project::ProjectTrackState project;
+    core::state::StatusBarState status;
+    core::sequencer::RealtimeMidiQueue queue;
+    core::sequencer::SequencerRuntimeGraphBank graphs;
+    core::sequencer::SequencerRuntimeSnapshotBank snapshots{sequencer, bank, navigation};
+    core::sequencer::ProjectTrackRuntimeSnapshotBank projectSnapshots;
+    const auto& runtime = refreshSnapshot(snapshots, graphs, sequencer, bank);
+    assert(projectSnapshots.publish(snapshots.activeIndex(), project, runtime.enabledMask));
+    core::sequencer::SequencerPlaybackService playback{sequencer, status, queue, graphs};
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::SequencerInternalTimerLane timer{
+        midi, queue, snapshots, projectSnapshots, playback};
+    core::sequencer::MidiClockSyncRuntimeConfig config;
+    const auto contentIndex = snapshots.activeIndex();
+    for (const bool playing : {true, false, true, false}) {
+        config.playing = playing;
+        config.tempo = playing ? 175.0f : 90.0f;
+        timer.publishTransportConfig(config);
+        timer.processRealtime();
+        assert(snapshots.activeIndex() == contentIndex);
+        assert(playback.takeUiProjectionSnapshot().transportPlaying == playing);
+        // Publishing/rolling back content must not restore an old transport.
+        (void)refreshSnapshot(snapshots, graphs, sequencer, bank);
+        assert(projectSnapshots.publish(snapshots.activeIndex(), project, runtime.enabledMask));
+        timer.processRealtime();
+        assert(playback.takeUiProjectionSnapshot().transportPlaying == playing);
+        snapshots.commit(contentIndex);
+    }
+    std::cout << "[PASS] Timer control remains live without content publication and across bank swaps\n";
 }
 
 void setProjectTrackMix(
@@ -2663,6 +2700,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
 
 int main() {
     installTimeProvider();
+    test_timer_control_does_not_wait_for_content_publication();
     test_track_engine_switches_between_melodic_and_drum_without_stale_notes();
     test_drum_preview_uses_captured_inputs_after_timer_stop();
     test_canonical_project_track_contract_is_the_only_routing_authority();

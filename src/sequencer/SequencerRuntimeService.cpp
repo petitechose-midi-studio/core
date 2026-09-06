@@ -203,6 +203,12 @@ void SequencerRuntimeService::update() {
         OC_PERF_SCOPE(perfClock, "sequencer.clock-domain");
         clockDomain = updateClockDomainOwnership_(clockConfig, nowMs);
     }
+#ifdef ARDUINO
+    if (clockDomain.timerOwnsTransport) {
+        // Control must not wait for allocation, STAGED content or rollback.
+        realtime_lane_->timer.publishTransportConfig(clockConfig);
+    }
+#endif
 
     // The hardware timer owns the internal transport on Teensy. In that mode
     // MidiClockSyncService deliberately exposes tick zero, so retain the last
@@ -221,19 +227,8 @@ void SequencerRuntimeService::update() {
     if (!clipRollback.empty()) {
         runtime_graph_bank_.rollbackRetained(
             clipRollback.trackMask,
-            [this, &clockConfig, &clockDomain, &clipRollback]() {
-#ifdef ARDUINO
-                if (clockDomain.timerOwnsTransport) {
-                    realtime_lane_->timer.publishRealtimeInputs(
-                        clockConfig,
-                        clipRollback.previousSnapshotIndex
-                    );
-                } else {
-                    snapshot_bank_.commit(clipRollback.previousSnapshotIndex);
-                }
-#else
+            [this, &clipRollback]() {
                 snapshot_bank_.commit(clipRollback.previousSnapshotIndex);
-#endif
                 clip_launches_.applyRollbackPublication(clipRollback);
             }
         );
@@ -301,16 +296,12 @@ void SequencerRuntimeService::update() {
         if (graphGenerationReady) {
             runtime_graph_bank_.publishPrepared([
                 this,
-                &clockConfig,
                 snapshotIndex,
                 previousSnapshotIndex,
                 &activationPublication,
                 &clipLaunchPublication
             ]() {
-                realtime_lane_->timer.publishRealtimeInputs(
-                    clockConfig,
-                    snapshotIndex
-                );
+                snapshot_bank_.commit(snapshotIndex);
                 track_activations_.applyRuntimePublication(activationPublication);
                 clip_launches_.applyRuntimePublication(
                     clipLaunchPublication,

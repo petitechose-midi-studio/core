@@ -36,7 +36,7 @@ bool SequencerInternalTimerLane::start() {
     entry_seen_ = false;
 #endif
     running_ = timer_.begin(
-        [this]() { onTimer_(); },
+        [this]() { processRealtime(); },
         Config::Timing::SEQUENCER_REALTIME_PERIOD_US
     );
     return running_;
@@ -53,13 +53,12 @@ void SequencerInternalTimerLane::stop() {
     last_tick_sent_ = 0;
 }
 
-void SequencerInternalTimerLane::publishRealtimeInputs(const MidiClockSyncRuntimeConfig& config,
-                                                       uint8_t snapshotIndex) {
-    configs_[snapshotIndex] = config;
-    snapshot_bank_.commit(snapshotIndex);
+void SequencerInternalTimerLane::publishTransportConfig(const MidiClockSyncRuntimeConfig& config) {
+    oc::realtime::InterruptGuard lock;
+    config_ = config;
 }
 
-void SequencerInternalTimerLane::onTimer_() {
+void SequencerInternalTimerLane::processRealtime() {
     core::diagnostics::storage_qualification::timerPulse();
     OC_PERF_SCOPE(perfTimer, "sequencer.timer");
 #if OC_ENABLE_STATS
@@ -73,7 +72,7 @@ void SequencerInternalTimerLane::onTimer_() {
 #endif
     const uint8_t inputIndex = snapshot_bank_.activeIndex();
     const auto& snapshot = snapshot_bank_.activeSnapshot();
-    const auto config = configs_[inputIndex];
+    const auto config = config_;
 
     clock_.setBpm(config.tempo);
     clock_.setPlaying(config.playing);
