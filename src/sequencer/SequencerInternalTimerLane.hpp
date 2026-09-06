@@ -30,6 +30,7 @@ public:
                                SequencerRuntimeSnapshotBank& snapshotBank,
                                const ProjectTrackRuntimeSnapshotBank& projectTrackSnapshots,
                                SequencerPlaybackService& playback);
+    ~SequencerInternalTimerLane() { stop(); }
 
     bool start();
     void stop();

@@ -143,6 +143,7 @@ public:
     void attachLifecycleObserver(RealtimeMidiQueueLifecycleObserver& observer);
     void detachLifecycleObserver(RealtimeMidiQueueLifecycleObserver& observer);
     size_t size() const { return count_; }
+    bool hasDue(uint32_t nowUs) const { return count_ != 0 && due_(events_[0], nowUs); }
     size_t capacity() const { return events_.size(); }
     const RealtimeMidiQueueDiagnostics& diagnostics() const {
         return diagnostics_;

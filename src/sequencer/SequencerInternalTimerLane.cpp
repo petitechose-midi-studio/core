@@ -39,10 +39,21 @@ bool SequencerInternalTimerLane::start() {
         [this]() { processRealtime(); },
         Config::Timing::SEQUENCER_REALTIME_PERIOD_US
     );
+    if (running_) {
+        midi_.setOutputRefill([](void* context, uint32_t budgetUs) {
+            auto& lane = *static_cast<SequencerInternalTimerLane*>(context);
+            // Output IRQ is below the timer. Serialize just this bounded queue
+            // transaction (including dispatch observers), not SDK submission.
+            oc::realtime::InterruptGuard lock;
+            lane.midi_queue_.drainDue(lane.midi_, core::time_compat::micros(), budgetUs);
+            return lane.midi_queue_.hasDue(core::time_compat::micros());
+        }, this);
+    }
     return running_;
 }
 
 void SequencerInternalTimerLane::stop() {
+    midi_.setOutputRefill(nullptr, nullptr);
     if (running_) {
         timer_.end();
         running_ = false;
