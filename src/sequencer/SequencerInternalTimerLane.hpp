@@ -50,6 +50,10 @@ private:
     bool running_ = false;
     bool playing_ = false;
     uint32_t last_tick_sent_ = 0;
+#if OC_ENABLE_STATS
+    uint32_t last_entry_us_ = 0;
+    bool entry_seen_ = false;
+#endif
 };
 
 }  // namespace core::sequencer

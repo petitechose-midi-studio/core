@@ -32,6 +32,9 @@ bool SequencerInternalTimerLane::start() {
     playing_ = false;
     last_tick_sent_ = 0;
     timer_.setPriority(Config::Timing::SEQUENCER_REALTIME_IRQ_PRIORITY);
+#if OC_ENABLE_STATS
+    entry_seen_ = false;
+#endif
     running_ = timer_.begin(
         [this]() { onTimer_(); },
         Config::Timing::SEQUENCER_REALTIME_PERIOD_US
@@ -59,6 +62,15 @@ void SequencerInternalTimerLane::publishRealtimeInputs(const MidiClockSyncRuntim
 void SequencerInternalTimerLane::onTimer_() {
     core::diagnostics::storage_qualification::timerPulse();
     OC_PERF_SCOPE(perfTimer, "sequencer.timer");
+#if OC_ENABLE_STATS
+    const uint32_t entryUs = core::time_compat::micros();
+    if (entry_seen_) {
+        OC_PERF_RECORD("sequencer.timer-entry-gap", entryUs - last_entry_us_,
+                       Config::Timing::SEQUENCER_REALTIME_PERIOD_US, 0U);
+    }
+    last_entry_us_ = entryUs;
+    entry_seen_ = true;
+#endif
     const uint8_t inputIndex = snapshot_bank_.activeIndex();
     const auto& snapshot = snapshot_bank_.activeSnapshot();
     const auto config = configs_[inputIndex];
