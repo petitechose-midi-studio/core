@@ -240,6 +240,36 @@ void test_follow_chain_does_not_accumulate_foreground_delay() {
     }
 }
 
+void test_late_scene_stop_member_keeps_the_shared_follow_origin() {
+    Fixture fixture;
+    fixture.clips.synchronizeEnabledTracks(3U);
+    assert(fixture.clips.setStop({1U, 1U}));
+    assert(fixture.clips.setSceneBehavior(1U, {
+        .length = 1U,
+        .follow = seq::SequencerLauncherFollowChoice::NEXT,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    }));
+    fixture.launches.reset(fixture.clips, 3U);
+    fixture.launches.updateTransportPosition(1U, true);
+    assert(fixture.launches.requestScene(1U, fixture.clips, 3U, true));
+    fixture.publishCurrent(3U);
+    auto routes = projectTracks();
+    routes.enabledMask = routes.audibleMask = 3U;
+    const auto index = fixture.snapshots.activeIndex();
+    fixture.playback.update(fixture.snapshots.activeSnapshot(), 97U, true,
+        98000U, 1000U, routes, false, fixture.snapshots.laneSnapshot(index),
+        false, fixture.snapshots.drumSnapshot(index));
+    fixture.launches.publishRealtimeTelemetry();
+    assert(fixture.launches.activeSlot(0U) == 1U);
+    assert(fixture.launches.stopped(1U));
+    assert(fixture.launches.sceneTelemetry().activeScene == 1U);
+    fixture.launches.updateTransportPosition(191U, true);
+    fixture.launches.processFollowActions(fixture.clips, 3U, true);
+    // The Stop member applies last, but must not move the scene origin to 97.
+    assert(fixture.launches.pendingTrackMask() != 0U);
+    assert(fixture.launches.realtimeView(0U).dueTick == 192U);
+}
+
 void test_clip_cc_and_notes_share_intro_loop_and_output_delay() {
     test_support::AdvancingMicrosClock clock;
     clock.install();
@@ -370,6 +400,7 @@ void test_beat_launch_applies_on_beat_boundary() {
 }  // namespace
 
 int main() {
+    test_late_scene_stop_member_keeps_the_shared_follow_origin();
     test_clip_cc_and_notes_share_intro_loop_and_output_delay();
     test_follow_chain_does_not_accumulate_foreground_delay();
     test_late_launch_keeps_intended_phase_without_historical_note_burst();
