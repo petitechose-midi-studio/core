@@ -13,11 +13,11 @@ std::string output;
 uint32_t memoryReports = 0;
 std::array<uint32_t, 5> memorySections{};
 
-void pump(core::diagnostics::PerformanceReporter& reporter, uint32_t now) {
+void pump(core::diagnostics::PerformanceReporter& reporter, uint32_t now, bool playing = false) {
     for (uint32_t tick = now; tick < now + 120U; ++tick) {
         const auto begin = output.size();
         const auto beforeMemory = memoryReports;
-        reporter.update(tick);
+        reporter.update(tick, playing);
         const auto lines = std::count(output.begin() + begin, output.end(), '\n');
         assert(lines + memoryReports - beforeMemory <= 1U);
     }
@@ -102,13 +102,38 @@ int main() {
     assert(output.find("sequencer.clip-apply") == std::string::npos);
 
     output.clear();
+    reporter.end();
+    reporter.begin();
     for (int i = 0; i < 300; ++i) {
         oc::diagnostics::recordPerformance({"overflow.test", 1, 0, 0});
     }
+    oc::diagnostics::recordPerformance({"main.loop", 120000, 3, 4});
+    oc::diagnostics::recordPerformance({"smaller.duration", 22000, 0, 0});
+    oc::diagnostics::recordPerformance({"midi.usb-service-gap", 130000, 7, 8});
+    oc::diagnostics::recordPerformance({"midi.usb-queue-age", 119000, 0, 0});
     for (uint32_t now = 4200; now < 4204; ++now) reporter.update(now);
-    pump(reporter, 6001);
+    pump(reporter, 6200);
     assert(output.find("overflow.test samples=256") != std::string::npos);
-    assert(output.find("diagnostics overflow samples=44 metrics=0") != std::string::npos);
+    assert(output.find("diagnostics overflow samples=48 metrics=0") != std::string::npos);
+    assert(output.find("dropped-peak label=main.loop elapsed=120000us unitA=3 unitB=4") != std::string::npos);
+    assert(output.find("dropped-peak label=midi.usb-service-gap elapsed=130000us") != std::string::npos);
+    assert(output.find("main.loop samples=") == std::string::npos);
+    output.clear();
+    pump(reporter, 8200);
+    assert(output.find("dropped-peak") == std::string::npos);
+
+    // Exhaust the histogram table without exhausting the ingress ring.
+    reporter.end();
+    reporter.begin();
+    std::array<std::string, 96> labels;
+    for (size_t i = 0; i < labels.size(); ++i) {
+        labels[i] = "metric." + std::to_string(i);
+        oc::diagnostics::recordPerformance({labels[i].c_str(), 1, 0, 0});
+    }
+    pump(reporter, 1);
+    oc::diagnostics::recordPerformance({"unregistered.long-span", 42000, 1, 2});
+    pump(reporter, 2001);
+    assert(output.find("dropped-peak label=unregistered.long-span elapsed=42000us") != std::string::npos);
 
     reporter.end();
     core::app::testing::failExtmemAllocationOn(1);
@@ -119,6 +144,19 @@ int main() {
     pump(reporter, 30001);
     assert(memoryReports == 5);
     for (auto count : memorySections) assert(count == 1);
+    reporter.end();
+    reporter.begin();
+    memoryReports = 0;
+    memorySections = {};
+    reporter.update(1, true);
+    pump(reporter, 30001, true);
+    assert(memoryReports == 4);
+    assert(memorySections[0] == 0); // No LVGL allocation walk during playback.
+    pump(reporter, 32001, true);
+    assert(memoryReports == 4);
+    pump(reporter, 34001, false);
+    assert(memoryReports == 5);
+    assert(memorySections[0] == 1); // Deferred scan performed once after stop.
     reporter.end();
     output.clear();
     oc::diagnostics::recordPerformance({"after.end", 1, 0, 0});

@@ -780,6 +780,18 @@ static FLASHMEM void initApp() {
             );
         });
     app->begin();
+    // LVGL emits this in the foreground after each region callback, not in
+    // the display DMA ISR. Drain only output: polling input here could reenter
+    // UI handlers while LVGL is rendering. The API outlives the display hook.
+    lv_display_add_event_cb(
+        lvgl->getDisplay(),
+        [](lv_event_t* event) {
+            static_cast<oc::api::MidiAPI*>(lv_event_get_user_data(event))
+                ->serviceOutput();
+        },
+        LV_EVENT_FLUSH_FINISH,
+        app->midiAPI()
+    );
 #if OC_ENABLE_STATS
     core::diagnostics::logMemoryFootprint("ui-ready");
 #endif
@@ -942,14 +954,18 @@ void loop() {
         // Use actual elapsed foreground time while retaining LVGL phase and
         // consuming at most one service deadline in this pass.
         if (lvglDeadline.consumeIfDue(micros())) {
+            app->midiAPI()->serviceOutput();
             lvgl->refresh();
         }
     }
     core::diagnostics::storage_qualification::foregroundEnd();
 
 #if OC_ENABLE_STATS
-    core::diagnostics::performanceReporter().update(millis());
+    core::diagnostics::performanceReporter().update(
+        millis(), coreState->statusBar.playing.get());
 #endif
     core::diagnostics::storage_qualification::update();
+    // Do not accumulate display/diagnostics latency with the next input turn.
+    app->midiAPI()->serviceOutput();
 #endif
 }

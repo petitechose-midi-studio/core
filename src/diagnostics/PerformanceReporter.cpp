@@ -44,15 +44,17 @@ void PerformanceReporter::end() {
     resetAll_();
 }
 
-void PerformanceReporter::update(uint32_t nowMs) {
+void PerformanceReporter::update(uint32_t nowMs, bool playbackActive) {
     if (!metrics_ || !reportingMetrics_) return;
+    OC_PERF_SCOPE(perfUpdate, "diagnostics.update");
     drain_();
     if (windowStartedAtMs_ == 0) {
         windowStartedAtMs_ = nowMs;
     } else if (
         static_cast<uint32_t>(nowMs - windowStartedAtMs_) >=
         REPORT_INTERVAL_MS && reportPosition_ == reportCount_ &&
-        reportDroppedSamples_ == 0U && reportDroppedMetrics_ == 0U
+        reportDroppedSamples_ == 0U && reportDroppedMetrics_ == 0U &&
+        !reportDroppedPeaks_[0].label && !reportDroppedPeaks_[1].label
     ) {
         freezeWindow_(nowMs);
     }
@@ -62,19 +64,26 @@ void PerformanceReporter::update(uint32_t nowMs) {
         static_cast<uint32_t>(nowMs - lastMemoryReportAtMs_) >=
         MEMORY_REPORT_INTERVAL_MS
     ) {
-        memorySection_ = MemoryReportSection::LVGL;
+        pendingMemorySections_ =
+            (1U << static_cast<uint8_t>(MemoryReportSection::COUNT)) - 1U;
         lastMemoryReportAtMs_ = nowMs;
     }
     // Return to the application (and USB service) after at most one log line.
     // Memory sections are also spread out, never added to a performance line.
-    if (memorySection_ != MemoryReportSection::COUNT) {
+    for (uint8_t index = 0; index < static_cast<uint8_t>(MemoryReportSection::COUNT); ++index) {
+        const auto section = static_cast<MemoryReportSection>(index);
+        const uint8_t bit = 1U << index;
+        if ((pendingMemorySections_ & bit) == 0U) continue;
+        // lv_mem_monitor walks every LVGL allocation; its report reached 7.65 ms.
+        // Defer this request until stopped; other memory sections stay live.
+        // Never present a stale LVGL snapshot as current.
+        if (playbackActive && section == MemoryReportSection::LVGL) continue;
+        pendingMemorySections_ &= static_cast<uint8_t>(~bit);
         OC_PERF_SCOPE(perfMemory, "diagnostics.memory-line");
-        logMemoryFootprintSection("runtime-window", memorySection_);
-        memorySection_ = static_cast<MemoryReportSection>(
-            static_cast<uint8_t>(memorySection_) + 1U);
-    } else {
-        reportNext_();
+        logMemoryFootprintSection("runtime-window", section);
+        return;
     }
+    reportNext_();
 }
 
 void PerformanceReporter::receive_(
@@ -88,12 +97,28 @@ void PerformanceReporter::enqueue_(const oc::diagnostics::PerformanceSample& sam
     oc::realtime::InterruptGuard lock;
     if (sampleCount_ >= samples_.size()) {
         ++droppedSamples_;
+        retainDroppedPeak_(sample);
         return;
     }
 
     samples_[sampleTail_] = sample;
     sampleTail_ = (sampleTail_ + 1U) % samples_.size();
     ++sampleCount_;
+}
+
+// Caller holds the producer lock. No logging, allocation or histogram work.
+// Separate intervals from durations so USB starvation does not hide the
+// execution span that may explain it.
+void PerformanceReporter::retainDroppedPeak_(const oc::diagnostics::PerformanceSample& sample) {
+    const char* label = sample.label ? sample.label : "<unnamed>";
+    const bool interval = std::strcmp(label, "midi.usb-service-gap") == 0 ||
+        std::strcmp(label, "midi.usb-queue-age") == 0 ||
+        std::strcmp(label, "sequencer.timer-entry-gap") == 0;
+    auto& peak = droppedPeaks_[interval ? 1U : 0U];
+    if (!peak.label || sample.elapsedUs > peak.elapsedUs) {
+        peak = sample;
+        peak.label = label;
+    }
 }
 
 bool PerformanceReporter::dequeue_(oc::diagnostics::PerformanceSample& sample) {
@@ -110,16 +135,23 @@ uint32_t PerformanceReporter::takeDroppedSamples_() {
     oc::realtime::InterruptGuard lock;
     const uint32_t dropped = droppedSamples_;
     droppedSamples_ = 0;
+    reportDroppedPeaks_ = droppedPeaks_;
+    droppedPeaks_ = {};
     return dropped;
 }
 
 void PerformanceReporter::drain_() {
+    OC_PERF_SCOPE(perfDrain, "diagnostics.drain");
     oc::diagnostics::PerformanceSample sample{};
     size_t drained = 0;
     while (drained < MAX_DRAIN_PER_UPDATE && dequeue_(sample)) {
         ++drained;
         auto* metric = findOrCreateMetric_(sample.label);
-        if (metric == nullptr) continue;
+        if (metric == nullptr) {
+            oc::realtime::InterruptGuard lock;
+            retainDroppedPeak_(sample);
+            continue;
+        }
 
         const bool first = metric->samples == 0U;
         ++metric->samples;
@@ -296,6 +328,16 @@ void PerformanceReporter::reportNext_() {
         );
         reportDroppedSamples_ = 0;
         reportDroppedMetrics_ = 0;
+        return;
+    }
+    for (auto& peak : reportDroppedPeaks_) {
+        if (!peak.label) continue;
+        OC_LOG_WARN(
+            "[Perf] diagnostics dropped-peak label={} elapsed={}us unitA={} unitB={} windowEnd={}ms",
+            peak.label, peak.elapsedUs, peak.unitA, peak.unitB, reportWindowEndMs_
+        );
+        peak = {};
+        return;
     }
 }
 
@@ -315,7 +357,9 @@ void PerformanceReporter::resetAll_() {
     reportDroppedSamples_ = 0;
     reportDroppedMetrics_ = 0;
     reportWindowEndMs_ = 0;
-    memorySection_ = MemoryReportSection::COUNT;
+    droppedPeaks_ = {};
+    reportDroppedPeaks_ = {};
+    pendingMemorySections_ = 0;
 }
 
 void PerformanceReporter::resetMetrics_() {

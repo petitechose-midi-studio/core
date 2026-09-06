@@ -27,7 +27,7 @@ class PerformanceReporter {
 public:
     void begin();
     void end();
-    void update(uint32_t nowMs);
+    void update(uint32_t nowMs, bool playbackActive = false);
 
 private:
     static constexpr size_t SAMPLE_CAPACITY = 256;
@@ -57,6 +57,7 @@ private:
 
     static void receive_(void* context, const oc::diagnostics::PerformanceSample& sample);
     void enqueue_(const oc::diagnostics::PerformanceSample& sample);
+    void retainDroppedPeak_(const oc::diagnostics::PerformanceSample& sample);
     bool dequeue_(oc::diagnostics::PerformanceSample& sample);
     uint32_t takeDroppedSamples_();
     void drain_();
@@ -88,7 +89,11 @@ private:
     uint32_t reportWindowEndMs_ = 0;
     uint32_t reportDroppedSamples_ = 0;
     uint32_t reportDroppedMetrics_ = 0;
-    MemoryReportSection memorySection_ = MemoryReportSection::COUNT;
+    // One duration peak and one interval/queue-age peak survive saturation.
+    // They are evidence of loss, not histogram samples.
+    std::array<oc::diagnostics::PerformanceSample, 2> droppedPeaks_{};
+    std::array<oc::diagnostics::PerformanceSample, 2> reportDroppedPeaks_{};
+    uint8_t pendingMemorySections_ = 0;
     size_t sampleHead_ = 0;
     size_t sampleTail_ = 0;
     size_t sampleCount_ = 0;
