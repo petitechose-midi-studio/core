@@ -10,12 +10,12 @@
 1800 assert_mode sequencer.pattern
 2000 button LEFT_CENTER down
 2300 marker quick_open
-2500 encoder_value OPT 0.002
-2700 encoder_value OPT 0.002
-2900 encoder_value OPT 0.002
-3100 encoder_value OPT -0.002
-3300 encoder_value OPT -0.002
-3500 encoder_value OPT -0.002
+2500 encoder_value OPT 0.25
+2700 encoder_value OPT 0.50
+2900 encoder_value OPT 0.75
+3100 encoder_value OPT 0.50
+3300 encoder_value OPT 0.25
+3500 encoder_value OPT 0.055
 3700 marker quick_adjusted
 4000 button LEFT_CENTER up
 4300 assert_mode sequencer.pattern
