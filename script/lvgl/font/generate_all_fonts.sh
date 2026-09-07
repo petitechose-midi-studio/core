@@ -40,14 +40,10 @@ NC='\033[0m'
 FONTS=(
     "InterDisplay/InterDisplay-Medium.ttf:12"
     "InterDisplay/InterDisplay-Bold.ttf:13"
-    "InterDisplay/InterDisplay-Bold.ttf:14"
-    "InterDisplay/InterDisplay-Bold.ttf:20"
-    "InterDisplay/InterDisplay-Light.ttf:14"
     "InterDisplay/InterDisplay-Medium.ttf:13"
     "InterDisplay/InterDisplay-Medium.ttf:14"
     "InterDisplay/InterDisplay-Regular.ttf:14"
     "InterDisplay/InterDisplay-SemiBold.ttf:14"
-    "JetBrainsMonoNL/JetBrainsMonoNL-Medium.ttf:13"
 )
 
 # --- Main ---
