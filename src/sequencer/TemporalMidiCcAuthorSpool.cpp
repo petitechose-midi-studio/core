@@ -237,138 +237,67 @@ bool TemporalMidiCcAuthorSpool::rollbackDue() {
     return true;
 }
 
-FLASHMEM size_t TemporalMidiCcAuthorSpool::cancelTrack(uint8_t trackIndex) {
-    if (transaction_active_ || trackIndex >= 16U) {
-        return 0U;
-    }
-
+template <typename Predicate>
+FLASHMEM size_t TemporalMidiCcAuthorSpool::cancelAuthorsIf_(Predicate matches) {
+    if (transaction_active_) return 0U;
     size_t writePosition = 0U;
     for (size_t readPosition = 0; readPosition < heap_count_; ++readPosition) {
         const uint16_t nodeIndex = heap_[readPosition];
-        if (nodes_[nodeIndex].transition.trackIndex != trackIndex) {
+        if (matches(nodes_[nodeIndex].transition)) {
+            uint16_t slotIndex = 0U;
+            const bool valid = authorSlotIndex(nodes_[nodeIndex].transition.author, slotIndex);
+            assert(valid);
+            auto& slot = author_slots_[slotIndex];
+            // Each predicate selects whole authors; no surviving node needs
+            // their links. Heap indices visit every released node exactly once.
+            slot.head = INVALID_INDEX;
+            slot.tail = INVALID_INDEX;
+            releaseNode_(nodeIndex);
+        } else {
             heap_[writePosition++] = nodeIndex;
         }
     }
     const size_t removed = heap_count_ - writePosition;
+    if (removed == 0U) return 0U;
     heap_count_ = writePosition;
-
-    for (uint16_t slotIndex = 0; slotIndex < AUTHOR_SLOT_COUNT; ++slotIndex) {
-        if (trackForSlot_(slotIndex) != trackIndex) {
-            continue;
-        }
-        auto& slot = author_slots_[slotIndex];
-        uint16_t nodeIndex = slot.head;
-        while (nodeIndex != INVALID_INDEX) {
-            const uint16_t next = nodes_[nodeIndex].nextAuthorNode;
-            releaseNode_(nodeIndex);
-            nodeIndex = next;
-        }
-        slot.head = INVALID_INDEX;
-        slot.tail = INVALID_INDEX;
-    }
     rebuildHeap_();
     diagnostics_.cancelledTransitionCount = saturatingAdd_(
         diagnostics_.cancelledTransitionCount,
         static_cast<uint32_t>(removed)
     );
     return removed;
+}
+
+FLASHMEM size_t TemporalMidiCcAuthorSpool::cancelTrack(uint8_t trackIndex) {
+    if (trackIndex >= 16U) return 0U;
+    return cancelAuthorsIf_([trackIndex](const auto& transition) {
+        return transition.trackIndex == trackIndex;
+    });
 }
 
 FLASHMEM size_t TemporalMidiCcAuthorSpool::cancelLaneAuthors(
     uint64_t laneAuthorMask
 ) {
-    if (transaction_active_ || laneAuthorMask == 0U) return 0U;
-
-    // Compact the heap once while every node and author chain is still valid.
-    // Releasing nodes first would let the free-list links overwrite the author
-    // links needed by the scan below.
-    size_t writePosition = 0U;
-    for (size_t readPosition = 0U; readPosition < heap_count_; ++readPosition) {
-        const uint16_t nodeIndex = heap_[readPosition];
-        uint16_t slotIndex = 0U;
-        const bool valid = authorSlotIndex(
-            nodes_[nodeIndex].transition.author,
-            slotIndex
-        );
-        assert(valid);
-        const bool cancelledLane = slotIndex < LANE_AUTHOR_SLOT_COUNT &&
-            (laneAuthorMask & (UINT64_C(1) << slotIndex)) != 0U;
-        if (!cancelledLane) heap_[writePosition++] = nodeIndex;
-    }
-    heap_count_ = writePosition;
-
-    size_t removed = 0U;
-    for (uint16_t slotIndex = 0U;
-         slotIndex < LANE_AUTHOR_SLOT_COUNT;
-         ++slotIndex) {
-        if ((laneAuthorMask & (UINT64_C(1) << slotIndex)) == 0U) continue;
-        auto& slot = author_slots_[slotIndex];
-        uint16_t nodeIndex = slot.head;
-        while (nodeIndex != INVALID_INDEX) {
-            const uint16_t next = nodes_[nodeIndex].nextAuthorNode;
-            releaseNode_(nodeIndex);
-            nodeIndex = next;
-            ++removed;
-        }
-        slot.head = INVALID_INDEX;
-        slot.tail = INVALID_INDEX;
-    }
-
-    rebuildHeap_();
-    diagnostics_.cancelledTransitionCount = saturatingAdd_(
-        diagnostics_.cancelledTransitionCount,
-        static_cast<uint32_t>(removed)
-    );
-    return removed;
+    if (laneAuthorMask == 0U) return 0U;
+    return cancelAuthorsIf_([laneAuthorMask](const auto& transition) {
+        return transition.author.candidateClass == MidiCcCandidateClass::SEQUENCER_CC_LANE &&
+            (laneAuthorMask & (UINT64_C(1) << transition.author.stableAddress)) != 0U;
+    });
 }
 
 FLASHMEM size_t TemporalMidiCcAuthorSpool::cancelCandidateClass(
     MidiCcCandidateClass candidateClass
 ) {
-    if (transaction_active_) return 0U;
-    if (candidateClass == MidiCcCandidateClass::SEQUENCER_CC_LANE) {
-        return cancelLaneAuthors(UINT64_MAX);
-    }
-    size_t removed = 0U;
     // Computed and Static share one base slot, so either request deliberately
     // invalidates the complete base class. LIVE and Lane remain independent.
     const bool baseClass = candidateClass == MidiCcCandidateClass::MACRO_COMPUTED ||
                            candidateClass == MidiCcCandidateClass::MACRO_STATIC;
-    for (uint16_t slotIndex = 0U; slotIndex < AUTHOR_SLOT_COUNT; ++slotIndex) {
-        const bool matches = candidateClass == MidiCcCandidateClass::LIVE_MANUAL
-                ? slotIndex >= LANE_AUTHOR_SLOT_COUNT &&
-                      slotIndex < LANE_AUTHOR_SLOT_COUNT + LIVE_AUTHOR_SLOT_COUNT
-                : baseClass
-                    ? slotIndex >= LANE_AUTHOR_SLOT_COUNT + LIVE_AUTHOR_SLOT_COUNT
-                    : false;
-        if (!matches) continue;
-        auto& slot = author_slots_[slotIndex];
-        uint16_t nodeIndex = slot.head;
-        while (nodeIndex != INVALID_INDEX) {
-            const uint16_t next = nodes_[nodeIndex].nextAuthorNode;
-            releaseNode_(nodeIndex);
-            nodeIndex = next;
-            ++removed;
-        }
-        slot.head = INVALID_INDEX;
-        slot.tail = INVALID_INDEX;
-    }
-
-    size_t writePosition = 0U;
-    for (size_t readPosition = 0U; readPosition < heap_count_; ++readPosition) {
-        const auto cls = nodes_[heap_[readPosition]].transition.author.candidateClass;
-        const bool matches = cls == candidateClass ||
+    return cancelAuthorsIf_([candidateClass, baseClass](const auto& transition) {
+        const auto cls = transition.author.candidateClass;
+        return cls == candidateClass ||
             (baseClass && (cls == MidiCcCandidateClass::MACRO_COMPUTED ||
                            cls == MidiCcCandidateClass::MACRO_STATIC));
-        if (!matches) heap_[writePosition++] = heap_[readPosition];
-    }
-    heap_count_ = writePosition;
-    rebuildHeap_();
-    diagnostics_.cancelledTransitionCount = saturatingAdd_(
-        diagnostics_.cancelledTransitionCount,
-        static_cast<uint32_t>(removed)
-    );
-    return removed;
+    });
 }
 
 FLASHMEM void TemporalMidiCcAuthorSpool::clear() {

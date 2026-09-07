@@ -470,6 +470,63 @@ void test_worst_case_lane_batch_cancellation_measurement() {
               << elapsedUs << " us (host, informational)\n";
 }
 
+void test_cancellation_paths_preserve_order_after_rollback_and_pool_reuse() {
+    const std::array transitions{
+        update(300U, 0U, MidiCcCandidateClass::SEQUENCER_CC_LANE, 0U, 0U),
+        update(100U, 15U, MidiCcCandidateClass::SEQUENCER_CC_LANE, 63U, 1U),
+        update(100U, 15U, MidiCcCandidateClass::LIVE_MANUAL, 2047U, 2U),
+        update(200U, 15U, MidiCcCandidateClass::MACRO_STATIC, 2047U, 3U),
+        update(100U, 15U, MidiCcCandidateClass::MACRO_COMPUTED, 2047U, 4U),
+        update(100U, 0U, MidiCcCandidateClass::MACRO_STATIC, 0U, 5U),
+        update(100U, 0U, MidiCcCandidateClass::SEQUENCER_CC_LANE, 0U, 6U),
+        update(100U, 0U, MidiCcCandidateClass::LIVE_MANUAL, 0U, 7U),
+    };
+    constexpr std::array<std::array<uint8_t, 6>, 4> expected{{
+        {5U, 6U, 7U, 0U}, {2U, 4U, 5U, 7U, 3U},
+        {1U, 4U, 5U, 6U, 3U, 0U}, {1U, 2U, 6U, 7U, 0U},
+    }};
+    constexpr std::array<size_t, 4> counts{4U, 5U, 6U, 5U};
+    for (size_t mode = 0U; mode < counts.size(); ++mode) {
+        TemporalMidiCcAuthorSpool spool;
+        const auto cancel = [&]() {
+            switch (mode) {
+                case 0U: return spool.cancelTrack(15U);
+                case 1U: return spool.cancelLaneAuthors(UINT64_C(1) | (UINT64_C(1) << 63U));
+                case 2U: return spool.cancelCandidateClass(MidiCcCandidateClass::LIVE_MANUAL);
+                default: return spool.cancelCandidateClass(MidiCcCandidateClass::MACRO_STATIC);
+            }
+        };
+        std::array<TemporalMidiCcAuthorTransition, 8> scratch{};
+        for (unsigned repeat = 0U; repeat < 3U; ++repeat) {
+            assert(spool.pushBatch(transitions.data(), transitions.size()).ok());
+            assert(spool.cancelTrack(8U) == 0U);
+            assert(spool.cancelTrack(16U) == 0U);
+            assert(spool.cancelLaneAuthors(0U) == 0U);
+            assert(spool.cancelCandidateClass(static_cast<MidiCcCandidateClass>(255U)) == 0U);
+            assert(spool.beginDue(100U, scratch.data(), scratch.size()).transferredCount == 6U);
+            assert(cancel() == 0U);
+            assert(spool.size() == transitions.size());
+            assert(spool.rollbackDue());
+            assert(cancel() == transitions.size() - counts[mode]);
+            assert(cancel() == 0U);
+            size_t index = 0U;
+            while (!spool.empty()) {
+                const auto due = spool.beginDue(300U, scratch.data(), scratch.size());
+                assert(due.ok() && due.transferredCount > 0U);
+                for (size_t i = 0U; i < due.transferredCount; ++i) {
+                    assert(index < counts[mode]);
+                    assert(scratch[i].localValue == expected[mode][index++]);
+                }
+                assert(spool.commitDue());
+            }
+            assert(index == counts[mode]);
+        }
+        assert(spool.diagnostics().cancelledTransitionCount ==
+               3U * (transitions.size() - counts[mode]));
+    }
+    std::cout << "[PASS] shared cancellation preserves ordering, transactions and reuse\n";
+}
+
 void test_near_capacity_multi_deadline_preflight_measurement() {
     TemporalMidiCcAuthorSpool spool;
     constexpr size_t kIncomingDeadlineCount = 16U;
@@ -582,6 +639,7 @@ int main() {
     test_lane_generation_batch_cancels_once_and_keeps_neighbors();
     test_stop_lane_class_cancellation_preserves_other_classes_and_reuses_nodes();
     test_worst_case_lane_batch_cancellation_measurement();
+    test_cancellation_paths_preserve_order_after_rollback_and_pool_reuse();
     test_near_capacity_multi_deadline_preflight_measurement();
     test_clear_reinitializes_fixed_pool();
     test_full_disjoint_frame_group_and_independent_manual_slot();
