@@ -630,30 +630,26 @@ uint32_t MidiCcGlobalFrameCoordinator::deadlineForAuthor_(
 FLASHMEM void MidiCcGlobalFrameCoordinator::clearTrackAuthorStates_(
     uint8_t trackIndex
 ) {
-    for (uint16_t slot = 0U; slot < logical_authors_.size(); ++slot) {
-        const bool matches =
-            (logical_authors_[slot].present &&
-             trackForAuthor_(logical_authors_[slot].candidate.author) == trackIndex) ||
-            (effective_authors_[slot].present &&
-             trackForAuthor_(effective_authors_[slot].candidate.author) == trackIndex);
-        if (!matches) continue;
-        logical_authors_[slot].present = false;
-        effective_authors_[slot].present = false;
-    }
-    logical_active_slot_count_ = 0U;
-    effective_active_slot_count_ = 0U;
-    for (uint16_t slot = 0U; slot < logical_authors_.size(); ++slot) {
-        if (!logical_authors_[slot].present) continue;
-        if (logical_active_slot_count_ < logical_active_slots_.size()) {
-            logical_active_slots_[logical_active_slot_count_++] = slot;
-        }
-    }
-    for (uint16_t slot = 0U; slot < effective_authors_.size(); ++slot) {
-        if (!effective_authors_[slot].present) continue;
-        if (effective_active_slot_count_ < effective_active_slots_.size()) {
-            effective_active_slots_[effective_active_slot_count_++] = slot;
-        }
-    }
+    OC_PERF_SCOPE(perfClear, "midi.cc.track-clear");
+    OC_PERF_UNITS(perfClear, logical_active_slot_count_, effective_active_slot_count_);
+    // Slot identity fixes Track ownership, even when logical future values and
+    // effective holds differ. Their bounded active lists are maintained on
+    // publication, deadline commit/rollback and Stop; do not scan PSRAM capacity.
+    const auto clearTrack = [trackIndex](auto& authors, auto& slots, uint16_t& count) {
+        const auto end = std::remove_if(slots.begin(), slots.begin() + count,
+            [&](uint16_t slot) {
+                auto& author = authors[slot];
+                if (author.present && trackForAuthor_(author.candidate.author) == trackIndex) {
+                    author.present = false;
+                }
+                return !author.present;
+            });
+        count = static_cast<uint16_t>(end - slots.begin());
+        // Preserve the canonical order previously produced by the full scan.
+        std::sort(slots.begin(), end);
+    };
+    clearTrack(logical_authors_, logical_active_slots_, logical_active_slot_count_);
+    clearTrack(effective_authors_, effective_active_slots_, effective_active_slot_count_);
 }
 
 FLASHMEM void MidiCcGlobalFrameCoordinator::synchronizeStoppedLaneLogicalState_() {
