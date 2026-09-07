@@ -428,6 +428,7 @@ FLASHMEM void ProjectModulatorWorkspace::createCard(uint8_t index) {
 FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     const ProjectModulatorWorkspaceProps& props
 ) {
+    OC_PERF_SCOPE(perfHeader, "ui.project.modulator.header");
     const auto& source = *props.source;
     const bool audition = props.session.audition();
     const bool existing = props.session.existingAudition();
@@ -562,6 +563,7 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
 FLASHMEM void ProjectModulatorWorkspace::renderCards(
     const ProjectModulatorWorkspaceProps& props
 ) {
+    OC_PERF_SCOPE(perfCards, "ui.project.modulator.cards");
     const auto layout = core::state::project::modulators::sourceWorkspaceLayout(
         props.source->kind,
         props.options,
@@ -894,6 +896,7 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
 FLASHMEM void ProjectModulatorWorkspace::renderCurve(
     const ProjectModulatorWorkspaceProps& props
 ) {
+    OC_PERF_SCOPE(perfCurve, "ui.project.modulator.curve");
     const lv_coord_t curveWidth = std::max<lv_coord_t>(
         1,
         lv_obj_get_width(root_) - 2 * HORIZONTAL_PAD
@@ -1208,8 +1211,10 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     if (!visible_) {
         lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
         visible_ = true;
+        OC_PERF_SCOPE(perfLayout, "ui.project.modulator.layout");
         lv_obj_update_layout(root_);
     } else if (!has_rendered_source_) {
+        OC_PERF_SCOPE(perfLayout, "ui.project.modulator.layout");
         lv_obj_update_layout(root_);
     }
 

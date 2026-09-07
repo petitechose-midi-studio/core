@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 #include <config/Timing.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
@@ -177,6 +178,7 @@ FLASHMEM ProjectView::~ProjectView() {
 }
 
 FLASHMEM void ProjectView::onActivate() {
+    OC_PERF_SCOPE(perfActivate, "ui.project.activate");
     if (!container_) return;
 
     // Bind the first presentation while hidden, not after revealing the tree.

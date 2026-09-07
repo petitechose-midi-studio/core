@@ -134,8 +134,10 @@ void ProjectView::renderModulators() {
                 .selectedIndex = state_refs_.navigation.focusedRow.get(),
             };
         }
-        modulator_workspace_->render(workspaceProps);
+        // Strips participate in the parent's flex layout. Set their visibility
+        // before the workspace reads its viewport, as for the other Project pages.
         renderModulatorActionStrips(workspaceProps.source);
+        modulator_workspace_->render(workspaceProps);
         return;
     }
     modulator_workspace_->render({.visible = false});
