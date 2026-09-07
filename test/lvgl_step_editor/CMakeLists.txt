@@ -41,7 +41,16 @@ add_executable(macro_knob macro_knob.cpp ../../src/ui/widget/MacroKnobWidget.cpp
     "${OC_ROOT}/ui-lvgl-components/src/widget/Label.cpp"
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
 add_executable(font_registry font_registry.cpp ../../../ui/src/ms/ui/font/CoreFonts.cpp)
-foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text property_selection_overlay macro_knob font_registry)
+add_executable(drum_surface drum_surface.cpp ../../src/ui/sequencer/DrumOverviewSurface.cpp
+    ../../src/state/sequencer/DrumSequencerUiState.cpp
+    ../../src/state/sequencer/DrumPatternState.cpp
+    ../../../ui/src/ms/ui/widget/TextOverflow.cpp
+    "${OC_ROOT}/ui-lvgl-components/src/widget/Label.cpp"
+    "${OC_ROOT}/framework/src/oc/state/NotificationQueue.cpp"
+    "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
+# Discard unused editing services while retaining the real projection/model.
+set_property(TARGET drum_surface PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text property_selection_overlay macro_knob font_registry drum_surface)
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
         "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
@@ -66,3 +75,4 @@ add_test(NAME cached_header_text COMMAND cached_header_text)
 add_test(NAME property_selection_overlay COMMAND property_selection_overlay)
 add_test(NAME macro_knob COMMAND macro_knob)
 add_test(NAME font_registry COMMAND font_registry)
+add_test(NAME drum_surface COMMAND drum_surface)

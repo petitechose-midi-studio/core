@@ -220,6 +220,12 @@ FLASHMEM void drawAdvancedContentBadges(
     }
 }
 
+constexpr int16_t microCursorIndex(uint8_t length, uint8_t phase, bool visible) {
+    return visible && length > 0U
+        ? static_cast<int16_t>((static_cast<uint16_t>(phase) * length) / 256U)
+        : -1;
+}
+
 FLASHMEM void drawMicroRail(
     lv_layer_t* layer,
     const lv_area_t& cellArea,
@@ -644,20 +650,12 @@ FLASHMEM void drawDrumStepCell(
     const bool hasMicroSequence = microLength > 0U;
     const bool hasCycleStates = projectionAvailable &&
         (resolvedPage.cyclePresentMask & resolvedCellBit) != 0U;
-    const bool microCursorVisible = microLength > 0U &&
+    const int16_t microCursor = microCursorIndex(
+        microLength, drumUi.playheadPhasesQ8[lane],
         drumUi.playbackActive &&
         (drumUi.playheadValidMask & laneBit) != 0U &&
-        drumUi.playheadSteps[lane] == step;
-    const uint8_t microCursor = microCursorVisible
-        ? std::min<uint8_t>(
-              static_cast<uint8_t>(microLength - 1U),
-              static_cast<uint8_t>(
-                  (static_cast<uint16_t>(drumUi.playheadPhasesQ8[lane]) *
-                   microLength) /
-                  256U
-              )
-          )
-        : 0U;
+        drumUi.playheadSteps[lane] == step);
+    const bool microCursorVisible = microCursor >= 0;
 
     // LVGL can ask this retained surface to redraw only a narrow playhead or
     // resolved-cell band. Avoid submitting every earlier cell merely because
@@ -1621,6 +1619,10 @@ FLASHMEM void DrumOverviewSurface::includeChanceCellDamage(
         return;
     }
 
+    // Root decisions only affect the chance marker below 100%. Advanced
+    // content has its own resolved-cell invalidation, independent of this.
+    if (projection.drumTrack->pattern.lanes[lane].probability[step] >= 100U) return;
+
     const lv_coord_t width = static_cast<lv_coord_t>(
         surface.x2 - surface.x1 + 1
     );
@@ -1778,7 +1780,21 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
                        next.resolvedPage.gate[cell] ||
                    previous.resolvedPage.nudge[cell] !=
                        next.resolvedPage.nudge[cell]));
-            if (resolvedChanged) {
+            const auto cursor = [&](const PlaybackSnapshot& snapshot) {
+                const uint8_t length = snapshot.resolvedPage.microLength[cell];
+                if (length == 0U) return int16_t{-1};
+                const uint16_t contextKey = static_cast<uint16_t>(
+                    (static_cast<uint16_t>(projection.page) << 8U) |
+                    projection.laneWindowStart);
+                return microCursorIndex(
+                    length,
+                    snapshot.playheadPhasesQ8[lane],
+                    snapshot.resolvedPage.contextKey == contextKey &&
+                    snapshot.playbackActive &&
+                    (snapshot.playheadValidMask & laneBit) != 0U &&
+                    snapshot.playheadSteps[lane] == projection.visibleStep(column));
+            };
+            if (resolvedChanged || cursor(previous) != cursor(next)) {
                 includeResolvedCellDamage(
                     row, column, surface, damage, hasDamage
                 );
