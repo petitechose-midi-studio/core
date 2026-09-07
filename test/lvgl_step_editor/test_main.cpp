@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
+#include "context/standalone/OverlayPresentationRegistry.hpp"
 #include <ms/ui/font/CoreFonts.hpp>
 
 CoreFonts fonts;
@@ -26,6 +27,36 @@ int main(int argc, char** argv) {
     lv_obj_remove_style_all(parent);
     lv_obj_set_size(parent, 320, 210);
     lv_obj_update_layout(parent);
+    {
+        core::context::standalone::OverlayPresentationRegistry registry(parent);
+        assert(registry.valid());
+        auto* surface = lv_obj_create(parent);
+        lv_obj_set_size(surface, LV_PCT(100), LV_PCT(100));
+        lv_obj_add_flag(surface, LV_OBJ_FLAG_HIDDEN);
+        // A hidden sub-panel is assembled after the editor's own constructor.
+        auto* keyboard = lv_obj_create(surface);
+        lv_obj_set_size(keyboard, LV_PCT(100), LV_PCT(100));
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        auto* key = lv_label_create(keyboard);
+        lv_label_set_text(key, "Q");
+        using Type = core::ui::OverlayType;
+        assert(registry.registerOverlay(Type::SEQ_STEP_EDIT, surface));
+        assert(lv_obj_get_width(key) > 0);
+        assert(lv_obj_get_height(key) == font->line_height);
+        assert(!lv_obj_is_visible(key));
+        assert(lv_obj_get_screen(surface) != lv_screen_active());
+        assert(registry.registerOverlay(Type::SEQ_DRUM_LANE_EDIT, surface));
+        registry.setPresented(Type::SEQ_STEP_EDIT, true);
+        assert(lv_obj_get_parent(surface) == parent);
+        registry.setPresented(Type::SEQ_DRUM_LANE_EDIT, true);
+        registry.setPresented(Type::SEQ_STEP_EDIT, false);
+        assert(lv_obj_is_visible(surface));
+        registry.setPresented(Type::SEQ_DRUM_LANE_EDIT, false);
+        assert(lv_obj_get_screen(surface) != lv_screen_active());
+        registry.setPresented(Type::SEQ_STEP_EDIT, true);
+        assert(lv_obj_get_parent(surface) == parent);
+        lv_obj_delete(surface);
+    }
     {
         core::ui::SequencerStepEditOverlay editor(parent);
         core::ui::SequencerStepEditOverlayProps props{

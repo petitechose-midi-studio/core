@@ -511,9 +511,6 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
         }
     }
-    // Settle the invariant geometry while constructing this hidden surface,
-    // rather than paying for its first layout in a musical interaction.
-    lv_obj_update_layout(overlay_);
 }
 
 FLASHMEM void SequencerStepEditOverlay::renderChip(

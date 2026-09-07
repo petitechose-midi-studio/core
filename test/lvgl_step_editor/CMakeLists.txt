@@ -7,6 +7,8 @@ set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory("${LVGL_DIR}" lvgl)
 add_executable(step_editor test_main.cpp
+    ../../src/context/standalone/OverlayPresentationRegistry.cpp
+    "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/RetainedSurfaceParkingLot.cpp"
     ../../src/ui/sequencer/SequencerStepEditOverlay.cpp
     ../../src/ui/sequencer/SequencerChordVoiceRail.cpp
     ../../src/ui/common/CompactMetricRow.cpp)
