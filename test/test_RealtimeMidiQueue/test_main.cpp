@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -878,10 +879,45 @@ void test_packed_event_preserves_invalid_metadata_for_validation() {
     std::cout << "[PASS] packed metadata keeps invalid values rejectable\n";
 }
 
+void test_admission_with_headroom_preserves_existing_events() {
+    using Queue = core::sequencer::RealtimeMidiQueue;
+    using Type = core::sequencer::RealtimeMidiEventType;
+    std::array<core::sequencer::RealtimeMidiEvent, Queue::MAX_QUEUE_DEPTH> batch{};
+    for (size_t i = 0; i < batch.size(); ++i) {
+        batch[i] = event(static_cast<Type>(i % 3U), 1000U + uint32_t(i), uint8_t(i % 128U));
+    }
+    for (const size_t depth : {0U, 128U, 512U, 1024U}) {
+        std::chrono::nanoseconds elapsed{};
+        Queue queue;
+        for (unsigned repetition = 0; repetition < 256; ++repetition) {
+            queue.clear();
+            assert(queue.pushBatch(batch.data(), depth).ok());
+            const auto start = std::chrono::steady_clock::now();
+            const auto accepted = queue.pushBatch(&batch[depth], 1);
+            elapsed += std::chrono::steady_clock::now() - start;
+            assert(accepted.ok());
+            assert(accepted.displacedNoteOnCount == 0 && accepted.displacedControlChangeCount == 0);
+            assert(queue.size() == depth + 1U);
+        }
+        MockMidiTransport transport;
+        oc::api::MidiAPI midi{transport};
+        testClock.freezeAt(3000U);
+        queue.drainDue(midi, 3000U, UINT32_MAX);
+        assert(transport.messages.size() == depth + 1U);
+        for (size_t i = 0; i <= depth; ++i) {
+            assert(transport.messages[i].type == batch[i].type);
+            assert(transport.messages[i].note == batch[i].note);
+        }
+        std::cout << "[MEASURE] admission depth=" << depth
+                  << " mean_ns=" << elapsed.count() / 256 << '\n';
+    }
+}
+
 }  // namespace
 
 int main() {
     installTimeProvider();
+    test_admission_with_headroom_preserves_existing_events();
     test_full_queue_compaction_preserves_callbacks_and_partial_drain_order();
     test_zero_budget_completes_one_due_event();
     test_500us_budget_stops_on_exact_advancing_sample();

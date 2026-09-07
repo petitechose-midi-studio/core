@@ -189,22 +189,21 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::pushBatchImpl_(
         }
     }
 
-    size_t survivorCount = 0;
-    size_t existingNoteOnCount = 0;
-    size_t existingControlChangeCount = 0;
-    for (size_t i = 0; i < count_; ++i) {
-        ++survivorCount;
-        if (events_[i].type == RealtimeMidiEventType::NoteOn) {
-            ++existingNoteOnCount;
-        } else if (events_[i].type == RealtimeMidiEventType::ControlChange) {
-            ++existingControlChangeCount;
-        }
-    }
-
-    const size_t totalRequested = survivorCount + count;
+    const size_t totalRequested = count_ + count;
     const size_t requiredEvictions = totalRequested > MAX_QUEUE_DEPTH
         ? totalRequested - MAX_QUEUE_DEPTH
         : 0;
+    size_t existingNoteOnCount = 0;
+    size_t existingControlChangeCount = 0;
+    if (requiredEvictions != 0) {
+        for (size_t i = 0; i < count_; ++i) {
+            if (events_[i].type == RealtimeMidiEventType::NoteOn) {
+                ++existingNoteOnCount;
+            } else if (events_[i].type == RealtimeMidiEventType::ControlChange) {
+                ++existingControlChangeCount;
+            }
+        }
+    }
     if (requiredEvictions > batchNoteOffCount ||
         requiredEvictions > existingNoteOnCount + existingControlChangeCount) {
         result.status = RealtimeMidiQueueBatchStatus::CAPACITY_EXCEEDED;
