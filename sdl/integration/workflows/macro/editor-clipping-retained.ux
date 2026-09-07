@@ -1,0 +1,17 @@
+# UX: a quick-property overlay must not clear a retained curve's clamp warning.
+# The source remains unchanged; opening/closing Left Center only changes chrome.
+# Expect: capture_changed:clipping_before=quick_property
+# Pixel regression: script/ux_assert_capture_equal.py <captures> clipping_before clipping_after
+0 scenario macro-performance-rail
+100 encoder MACRO_1 0.90
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1550 capture screen clipping_before
+1800 button LEFT_CENTER down
+2000 capture screen quick_property
+2200 button LEFT_CENTER up
+2450 capture screen clipping_after
+2700 tap LEFT_TOP 60
+2950 capture screen performance_return

@@ -567,11 +567,12 @@ FLASHMEM void MacroEditorOverlay::render(
         props.preview->modulationStored, props.preview->modulationPlayback,
         theme::color::MACRO_MODULATION
     );
-    renderGraph(
-        *props.preview,
-        selected,
-        props.previewRevision
-    );
+    // Quick-property chrome does not change the sampled curve. Preserve its
+    // aggregate clipping result when the child reuses its retained geometry.
+    if (renderedPreviewRevision_ != props.previewRevision ||
+        renderedSelectedDomain_ != selected) {
+        renderGraph(*props.preview, selected, props.previewRevision);
+    }
     renderedPreviewRevision_ = props.previewRevision;
     static constexpr std::array<const char*, 3> HINTS = {
         "Base + modulation = output",
