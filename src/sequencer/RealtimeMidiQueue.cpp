@@ -36,6 +36,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithNoteOffBat
     const oc::note::sequencer::StepBitMask128* activeNotesByChannel,
     size_t channelCount
 ) {
+    OC_PERF_SCOPE(perfNoteOffBatch, "midi.queue.note-off-batch");
     RealtimeMidiQueueBatchResult result{};
     if (trackIndex >= track_observers_.size() ||
         channelCount > 16U ||
@@ -47,6 +48,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithNoteOffBat
 
     size_t noteOffCount = 0;
     for (size_t channel = 0; channel < channelCount; ++channel) {
+        if (!activeNotesByChannel[channel].any()) continue;
         for (uint8_t note = 0; note < 128U; ++note) {
             if (activeNotesByChannel[channel].test(note)) ++noteOffCount;
         }
@@ -129,6 +131,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithNoteOffBat
     assert(noteOnsToEvict == 0 && controlsToEvict == 0);
 
     for (uint8_t channel = 0; channel < channelCount; ++channel) {
+        if (!activeNotesByChannel[channel].any()) continue;
         for (uint8_t note = 0; note < 128U; ++note) {
             if (!activeNotesByChannel[channel].test(note)) continue;
             RealtimeMidiEvent noteOff{};

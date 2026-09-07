@@ -502,6 +502,54 @@ void test_note_off_replacement_is_atomic_on_failure() {
     assert(queue.cancelPendingEvents(3) == 1);
 }
 
+void test_note_off_replacement_preserves_sparse_channels_and_empty_cancellation() {
+    using EventType = core::sequencer::RealtimeMidiEventType;
+    core::sequencer::RealtimeMidiQueue queue;
+    std::array<oc::note::sequencer::StepBitMask128, 16> active{};
+    constexpr std::array<uint8_t, 3> channels{0U, 7U, 15U};
+    constexpr std::array<uint8_t, 4> notes{0U, 63U, 64U, 127U};
+    for (const auto channel : channels) {
+        for (const auto note : notes) active[channel].setBit(note);
+    }
+    assert(queue.push(event(EventType::NoteOn, 1000U, 60U, 3U)));
+    assert(queue.push(ccEvent(1000U, 74U, 90U, 2U)));
+    const auto result = queue.replaceTrackEventsWithNoteOffBatch(
+        3U, 1000U, active.data(), active.size());
+    assert(result.ok());
+    assert(result.requestedCount == channels.size() * notes.size());
+    assert(result.cancelledCount == 1U);
+    assert(result.displacedNoteOnCount == 0U);
+    assert(result.displacedControlChangeCount == 0U);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, 1000U, UINT32_MAX);
+    assert(transport.messages.size() == result.requestedCount + 1U);
+    size_t index = 0U;
+    for (const auto channel : channels) {
+        for (const auto note : notes) {
+            const auto& message = transport.messages[index++];
+            assert(message.type == EventType::NoteOff);
+            assert(message.channel == channel && message.note == note);
+            assert(message.velocity == 0U);
+        }
+    }
+    assert(transport.messages.back().type == EventType::ControlChange);
+
+    active = {};
+    assert(queue.push(event(EventType::NoteOn, 2000U, 61U, 3U)));
+    assert(queue.push(event(EventType::NoteOn, 2000U, 62U, 2U)));
+    const auto empty = queue.replaceTrackEventsWithNoteOffBatch(
+        3U, 2000U, active.data(), active.size());
+    assert(empty.ok() && empty.requestedCount == 0U);
+    assert(empty.cancelledCount == 1U && queue.size() == 1U);
+    testClock.freezeAt(2000U);
+    queue.drainDue(midi, 2000U, UINT32_MAX);
+    assert(transport.messages.size() == result.requestedCount + 2U);
+    assert(transport.messages.back().type == EventType::NoteOn);
+    assert(transport.messages.back().note == 62U);
+}
+
 class LifecycleObserver final
     : public core::sequencer::RealtimeMidiQueueLifecycleObserver {
 public:
@@ -853,6 +901,7 @@ int main() {
     test_capacity_retains_full_envelope_and_one_safety_phase();
     test_note_off_batch_displaces_note_on_then_cc_never_note_off();
     test_note_off_replacement_is_atomic_on_failure();
+    test_note_off_replacement_preserves_sparse_channels_and_empty_cancellation();
     test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal();
     test_transport_rejection_retains_ownership_until_retry();
     test_saturating_diagnostic_counter();
