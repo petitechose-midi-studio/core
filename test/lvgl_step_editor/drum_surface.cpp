@@ -96,6 +96,31 @@ int main() {
             surface.render(props);
             checkPixels();
         }
+        // Resolved notes can cross several neighboring steps.
+        projection.resolvedPage.microLength[0] = 0;
+        for (uint16_t gate : {600, 50, 1000, 100}) {
+            projection.resolvedPage.gate[0] = gate;
+            surface.render(props);
+            checkPixels();
+        }
+        projection.resolvedPage.validMask = 3;
+        projection.resolvedPage.playedMask = 3;
+        projection.resolvedPage.cyclePresentMask = 3;
+        projection.resolvedPage.velocity[1] = 40;
+        projection.resolvedPage.gate[1] = 300;
+        for (int8_t nudge : {-90, 90, 0}) {
+            projection.resolvedPage.nudge[1] = nudge;
+            surface.render(props);
+            checkPixels();
+        }
+        // Adjacent/disjoint authored lanes retain exact repaint coverage.
+        for (uint8_t lane : {0, 1, 4, 7}) {
+            track.pattern.setStepEnabled(lane, lane, true);
+            track.pattern.setStepGate(lane, lane, 400);
+            ++props.authoredRevision;
+            surface.render(props);
+            checkPixels();
+        }
         lv_display_remove_event_cb_with_user_data(display, count, &invalidations);
     }
     lv_display_delete(display);

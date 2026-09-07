@@ -107,6 +107,8 @@ private:
         bool& hasDamage
     );
     void includeResolvedCellDamage(
+        const PlaybackSnapshot& previous,
+        const PlaybackSnapshot& next,
         uint8_t row,
         uint8_t column,
         const lv_area_t& surface,

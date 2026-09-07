@@ -1477,34 +1477,24 @@ FLASHMEM void DrumOverviewSurface::invalidateStaticDelta(
     lv_area_t surface{};
     lv_obj_get_coords(root_, &surface);
     const lv_coord_t laneHeight = drumLaneHeight(surface);
-    uint8_t firstChanged = 0xFFU;
-    for (uint8_t row = 0U; row <= STATIC_ROW_COUNT; ++row) {
-        const bool changed = row < STATIC_ROW_COUNT &&
-            previous[row] != next[row];
-        if (changed && firstChanged == 0xFFU) {
-            firstChanged = row;
-            continue;
-        }
-        if (changed || firstChanged == 0xFFU) continue;
-
-        const uint8_t lastChanged = static_cast<uint8_t>(row - 1U);
-        oc::ui::lvgl::invalidateStaticSurfaceArea(
-            root_,
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<STATIC_ROW_COUNT> batch(root_);
+    for (uint8_t row = 0U; row < STATIC_ROW_COUNT; ++row) {
+        if (previous[row] == next[row]) continue;
+        batch.include(
             lv_area_t{
                 .x1 = surface.x1,
                 .y1 = static_cast<lv_coord_t>(
-                    surface.y1 + firstChanged * laneHeight
+                    surface.y1 + row * laneHeight
                 ),
                 .x2 = surface.x2,
                 .y2 = std::min<lv_coord_t>(
                     surface.y2,
                     static_cast<lv_coord_t>(
-                        surface.y1 + (lastChanged + 1U) * laneHeight - 1
+                        surface.y1 + (row + 1U) * laneHeight - 1
                     )
                 ),
             }
         );
-        firstChanged = 0xFFU;
     }
 }
 
@@ -1647,6 +1637,8 @@ FLASHMEM void DrumOverviewSurface::includeChanceCellDamage(
 }
 
 FLASHMEM void DrumOverviewSurface::includeResolvedCellDamage(
+    const PlaybackSnapshot& previous,
+    const PlaybackSnapshot& next,
     uint8_t row,
     uint8_t column,
     const lv_area_t& surface,
@@ -1672,16 +1664,44 @@ FLASHMEM void DrumOverviewSurface::includeResolvedCellDamage(
     const lv_coord_t rowY = static_cast<lv_coord_t>(
         surface.y1 + row * laneHeight
     );
-    includeDamage(
-        damage,
-        hasDamage,
-        lv_area_t{
-            .x1 = cellX,
-            .y1 = rowY,
-            .x2 = static_cast<lv_coord_t>(cellX + cellWidth - 1),
-            .y2 = static_cast<lv_coord_t>(rowY + laneHeight - 1),
+    lv_area_t cellDamage{cellX, rowY,
+        static_cast<lv_coord_t>(cellX + cellWidth - 1),
+        static_cast<lv_coord_t>(rowY + laneHeight - 1)};
+    bool cellHasDamage = true;
+    const auto& projection = *renderedProps_.projection;
+    const uint8_t lane = projection.visibleLane(row);
+    const uint8_t step = projection.visibleStep(column);
+    const auto cell = core::state::sequencer::DrumResolvedPageProjection::cellIndex(row, column);
+    const auto bit = core::state::sequencer::DrumResolvedPageProjection::cellBit(row, column);
+    const bool advanced = ((previous.resolvedPage.cyclePresentMask |
+                           next.resolvedPage.cyclePresentMask) & bit) != 0U ||
+        previous.resolvedPage.microLength[cell] > 0U || next.resolvedPage.microLength[cell] > 0U;
+    if (advanced && projection.drumTrack->pattern.stepEnabled(lane, step)) {
+        const lv_coord_t gridStart = surface.x1 + DRUM_LABEL_WIDTH;
+        const lv_coord_t gridEnd = gridStart + cellWidth * DrumSequencerState::STEPS_PER_PAGE;
+        const auto includeHit = [&](uint8_t velocity, uint16_t gate, int8_t nudge) {
+            const auto geometry = buildDrumHitGeometry(
+                cellX, rowY, laneHeight, cellWidth, gridStart, gridEnd,
+                drum_hit_visual::build(velocity, gate, nudge, 0U, true));
+            includeDamage(cellDamage, cellHasDamage, geometry.hitArea);
+            if (geometry.nudgeVisible) includeDamage(cellDamage, cellHasDamage, geometry.nudgeArea);
+        };
+        // A resolved event can reveal the authored outline or extend beyond
+        // its cell. Cover both old and new spans using the drawing geometry.
+        const auto& authored = projection.drumTrack->pattern.lanes[lane];
+        const uint16_t contextKey = static_cast<uint16_t>(
+            (static_cast<uint16_t>(projection.page) << 8U) | projection.laneWindowStart);
+        includeHit(authored.velocity[step], authored.gate[step], authored.nudge[step]);
+        for (const auto* snapshot : {&previous, &next}) {
+            const auto& resolved = snapshot->resolvedPage;
+            if (snapshot->playbackActive && resolved.contextKey == contextKey &&
+                (resolved.validMask & bit) != 0U && (resolved.playedMask & bit) != 0U &&
+                (resolved.microLength[cell] > 0U || (resolved.cyclePresentMask & bit) != 0U)) {
+                includeHit(resolved.velocity[cell], resolved.gate[cell], resolved.nudge[cell]);
+            }
         }
-    );
+    }
+    includeDamage(damage, hasDamage, cellDamage);
 }
 
 FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
@@ -1796,7 +1816,7 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
             };
             if (resolvedChanged || cursor(previous) != cursor(next)) {
                 includeResolvedCellDamage(
-                    row, column, surface, damage, hasDamage
+                    previous, next, row, column, surface, damage, hasDamage
                 );
             }
         }
