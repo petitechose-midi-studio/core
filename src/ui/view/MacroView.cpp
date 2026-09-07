@@ -117,7 +117,7 @@ FLASHMEM void MacroView::onActivate() {
     if (!container_) return;
 
     RetainedViewRenderPolicy::show(container_);
-    markConfigDirtyIfChanged();
+    requestRender(RENDER_CONFIG_CHECK);
     if (render_scheduler_) render_scheduler_->resumePending(true);
 }
 
@@ -173,7 +173,7 @@ FLASHMEM bool MacroView::bindToState() {
                 requestHeaderRender();
                 requestLeftActionStripRender();
                 requestBottomActionStripRender();
-                markConfigDirtyIfChanged();
+                requestRender(RENDER_CONFIG_CHECK);
             }
         )
     );
@@ -247,7 +247,7 @@ FLASHMEM bool MacroView::bindToState() {
 
     subscriptions_.push_back(
         state_refs_.macroUi.automationEditRevision.subscribe([this](uint32_t) {
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
             requestSlotPropertyOverlayRender();
         })
     );
@@ -262,7 +262,7 @@ FLASHMEM bool MacroView::bindToState() {
 
     subscriptions_.push_back(
         state_refs_.macroUi.automationManualOverrideMask.subscribe([this](uint16_t) {
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
         })
     );
 
@@ -271,7 +271,7 @@ FLASHMEM bool MacroView::bindToState() {
             if (core::state::macro::macroRuntimeProjectionRevisionTargetsConfig(
                     revision
                 )) {
-                markConfigDirtyIfChanged();
+                requestRender(RENDER_CONFIG_CHECK);
                 return;
             }
             if (core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
@@ -299,13 +299,13 @@ FLASHMEM bool MacroView::bindToState() {
             requestHeaderRender();
             requestLeftActionStripRender();
             requestBottomActionStripRender();
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
         })
     );
 
     subscriptions_.push_back(
         state_refs_.macroUi.focusedMacroSlot.subscribe([this](uint8_t) {
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
         })
     );
 
@@ -404,7 +404,7 @@ FLASHMEM bool MacroView::bindToState() {
     subscriptions_.push_back(
         state_refs_.pages.enabledPageMaskSignal().subscribe([this](uint16_t) {
             requestHeaderRender();
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
         })
     );
 
@@ -412,7 +412,7 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.sharedTrackActive.subscribe([this](uint8_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
         })
     );
 
@@ -420,14 +420,14 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.pages.activePageIndexSignal().subscribe([this](uint8_t) {
             requestHeaderRender();
             requestBottomActionStripRender();
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
         })
     );
 
     subscriptions_.push_back(
         state_refs_.sharedTrackEnabledMask.subscribe([this](uint16_t) {
             requestHeaderRender();
-            markConfigDirtyIfChanged();
+            requestRender(RENDER_CONFIG_CHECK);
         })
     );
 
@@ -634,7 +634,7 @@ bool MacroView::markAutomationRecordingDirtyIfChanged(int dirtyIndex) {
     return recordingMembershipChanged;
 }
 
-void MacroView::markConfigDirtyIfChanged() {
+uint32_t MacroView::changedConfigFlags() const {
     const auto frame = buildMacroViewFrameState(modelSource());
     uint32_t flags = 0;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
@@ -652,7 +652,7 @@ void MacroView::markConfigDirtyIfChanged() {
             flags |= configRenderFlag(i);
         }
     }
-    requestRender(flags);
+    return flags;
 }
 
 void MacroView::markDirty(uint8_t index) {
@@ -676,6 +676,9 @@ void MacroView::processRenderFlags(uint32_t flags) {
         requestRender(flags);
         return;
     }
+    // Collapse configuration notifications with the same retained render gate
+    // as value updates; hidden/covered views keep the request, not a stale snapshot.
+    if ((flags & RENDER_CONFIG_CHECK) != 0) flags |= changedConfigFlags();
     const bool headerDirty = (flags & RENDER_HEADER) != 0;
     const bool leftActionStripDirty = (flags & RENDER_LEFT_ACTION_STRIP) != 0;
     const bool bottomActionStripDirty = (flags & RENDER_BOTTOM_ACTION_STRIP) != 0;

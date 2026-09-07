@@ -83,6 +83,7 @@ private:
         ((1U << MACRO_COUNT) - 1U) << VALUE_FLAG_SHIFT;
     static constexpr uint32_t RENDER_CONFIG_MASK =
         ((1U << MACRO_COUNT) - 1U) << CONFIG_FLAG_SHIFT;
+    static constexpr uint32_t RENDER_CONFIG_CHECK = 1U << (CONFIG_FLAG_SHIFT + MACRO_COUNT);
     static constexpr uint32_t RENDER_ALL =
         RENDER_HEADER | RENDER_LEFT_ACTION_STRIP | RENDER_BOTTOM_ACTION_STRIP |
         RENDER_SLOT_PROPERTY_OVERLAY | RENDER_VALUE_MASK | RENDER_CONFIG_MASK;
@@ -111,7 +112,7 @@ private:
     void markAllDirty();
     void markAllConfigDirty();
     bool markAutomationRecordingDirtyIfChanged(int dirtyIndex);
-    void markConfigDirtyIfChanged();
+    uint32_t changedConfigFlags() const;
     void markDirty(uint8_t index);
     static bool canDrainRender(void* context);
     static void drainRender(void* context, uint32_t flags);
