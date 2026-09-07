@@ -9,18 +9,24 @@ namespace core::state::sequencer {
 
 namespace {
 
-FLASHMEM bool eventAtOrdinal(
-    const SequencerCcLane& lane,
-    const oc::note::sequencer::StepSequencerPlaybackRegion& region,
-    uint32_t ordinal,
-    uint8_t& outStep
-) {
-    oc::note::sequencer::StepSequencerPlaybackPosition position{};
-    if (!oc::note::sequencer::tryResolvePlaybackOrdinal(region, ordinal, position)) {
-        return false;
+constexpr uint8_t NO_EVENT = 128U;
+
+// Search authored step ranges directly. Only the current playback position
+// needs an ordinal/loop division, not every candidate before and after it.
+FLASHMEM uint8_t firstEvent(const oc::note::sequencer::StepBitMask128& mask,
+                          uint8_t begin, uint8_t end) {
+    for (uint8_t step = begin; step < end; ++step) {
+        if (mask.test(step)) return step;
     }
-    outStep = position.stepIndex;
-    return lane.activeMask.test(position.stepIndex);
+    return NO_EVENT;
+}
+
+FLASHMEM uint8_t lastEvent(const oc::note::sequencer::StepBitMask128& mask,
+                         uint8_t begin, uint8_t end) {
+    while (end > begin) {
+        if (mask.test(--end)) return end;
+    }
+    return NO_EVENT;
 }
 
 }  // namespace
@@ -43,37 +49,24 @@ FLASHMEM bool resolveSequencerCcLaneProjectionSpan(
     }
 
     SequencerCcLaneProjectionSpan span{};
-    uint8_t sourceStep = current.stepIndex;
+    const bool repeatedLoop = !current.inPrelude && current.loopCycleIndex > 0U;
+    uint8_t sourceStep = lastEvent(lane.activeMask,
+        repeatedLoop ? region.loopStart : region.playStart, current.stepIndex + 1U);
     uint32_t sourceOrdinal = playbackOrdinal;
-    bool sourceFound = lane.activeMask.test(current.stepIndex);
-
-    const uint32_t maximumBack = current.inPrelude || current.loopCycleIndex == 0U
-        ? playbackOrdinal
-        : region.loopLength();
-    for (uint32_t distance = 1U; !sourceFound && distance <= maximumBack; ++distance) {
-        uint8_t candidateStep = 0;
-        const uint32_t candidateOrdinal = playbackOrdinal - distance;
-        if (!eventAtOrdinal(lane, region, candidateOrdinal, candidateStep)) continue;
-        sourceStep = candidateStep;
-        sourceOrdinal = candidateOrdinal;
-        sourceFound = true;
-    }
-    // A Prelude CC is authored once but, like any MIDI CC, its held value may
-    // remain audible until a Loop event replaces it. Do not wrap/retrigger the
-    // Prelude; retain only its original occurrence as the historical source.
-    if (!sourceFound && !current.inPrelude && current.loopCycleIndex > 0U) {
-        for (int step = static_cast<int>(region.loopStart) - 1;
-             step >= static_cast<int>(region.playStart);
-             --step) {
-            const uint8_t candidate = static_cast<uint8_t>(step);
-            if (!lane.activeMask.test(candidate)) continue;
-            sourceStep = candidate;
-            sourceOrdinal = static_cast<uint32_t>(candidate - region.playStart);
-            sourceFound = true;
-            break;
+    if (sourceStep != NO_EVENT) {
+        sourceOrdinal -= current.stepIndex - sourceStep;
+    } else if (repeatedLoop) {
+        sourceStep = lastEvent(lane.activeMask, current.stepIndex + 1U, region.loopEnd);
+        if (sourceStep != NO_EVENT) {
+            sourceOrdinal -= current.stepIndex - region.loopStart + region.loopEnd - sourceStep;
+        } else {
+            // An otherwise empty loop keeps the original Prelude CC held;
+            // it does not replay that event on each wrap.
+            sourceStep = lastEvent(lane.activeMask, region.playStart, region.loopStart);
+            if (sourceStep != NO_EVENT) sourceOrdinal = sourceStep - region.playStart;
         }
     }
-    if (!sourceFound) return false;
+    if (sourceStep == NO_EVENT) return false;
 
     span.sourceValid = true;
     span.sourceStep = sourceStep;
@@ -84,21 +77,17 @@ FLASHMEM bool resolveSequencerCcLaneProjectionSpan(
     ));
     span.transition = sequencerCcLaneTransition(lane, sourceStep);
 
-    const bool sourceInPrelude = sourceStep < region.loopStart;
-    const uint32_t maximumForward = sourceInPrelude
-        ? static_cast<uint32_t>(region.preludeLength()) + region.loopLength() -
-            sourceOrdinal - 1U
-        : region.loopLength();
-    for (uint32_t distance = 1U; distance <= maximumForward; ++distance) {
-        if (sourceOrdinal > UINT32_MAX - distance) break;
-        uint8_t candidateStep = 0;
-        const uint32_t candidateOrdinal = sourceOrdinal + distance;
-        if (!eventAtOrdinal(lane, region, candidateOrdinal, candidateStep)) continue;
+    uint8_t targetStep = firstEvent(lane.activeMask, sourceStep + 1U, region.loopEnd);
+    uint16_t distance = targetStep - sourceStep;
+    if (targetStep == NO_EVENT && sourceStep >= region.loopStart) {
+        targetStep = firstEvent(lane.activeMask, region.loopStart, sourceStep + 1U);
+        distance = region.loopEnd - sourceStep + targetStep - region.loopStart;
+    }
+    if (targetStep != NO_EVENT && sourceOrdinal <= UINT32_MAX - distance) {
         span.targetValid = true;
-        span.targetStep = candidateStep;
-        span.targetOrdinal = candidateOrdinal;
-        span.distanceToTarget = static_cast<uint16_t>(distance);
-        break;
+        span.targetStep = targetStep;
+        span.targetOrdinal = sourceOrdinal + distance;
+        span.distanceToTarget = distance;
     }
 
     out = span;

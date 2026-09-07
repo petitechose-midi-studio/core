@@ -121,6 +121,58 @@ void test_ui_representative_ordinal_separates_prelude_and_steady_loop() {
     assert(!seq::representativeSequencerCcLaneOrdinalForStep(region, 10, ordinal));
 }
 
+void test_projection_fingerprint() {
+    // Recorded before the neighbour-search refactor. Hash semantic fields,
+    // never padding: sparse/dense masks, all shapes, prelude, wraps, overflow.
+    uint64_t hash = 14695981039346656037ULL;
+    const auto retain = [&](uint32_t value) {
+        for (unsigned shift = 0; shift < 32; shift += 8) {
+            hash = (hash ^ static_cast<uint8_t>(value >> shift)) * 1099511628211ULL;
+        }
+    };
+    uint32_t seed = 0x6d696469U;
+    const auto random = [&]() { seed = seed * 1664525U + 1013904223U; return seed; };
+    for (unsigned trial = 0; trial < 2048; ++trial) {
+        const auto length = static_cast<uint8_t>(1U + random() % 128U);
+        const auto start = static_cast<uint8_t>(random() % length);
+        const auto loop = static_cast<uint8_t>(start + random() % (length - start));
+        const auto end = static_cast<uint8_t>(loop + 1U + random() % (length - loop));
+        const Region region{length, start, loop, end};
+        auto lane = makeLane();
+        seq::SequencerCcLaneBank bank{};
+        bank.lanes[0] = lane;
+        for (uint8_t step = 0; step < 128U; ++step) {
+            const auto bits = random();
+            if ((bits >> 16U) % (1U + trial % 32U) != 0U) continue;
+            (void)seq::setSequencerCcLaneEvent(bank, 0, step, static_cast<uint8_t>(bits % 128U));
+            (void)seq::setSequencerCcLaneTransition(bank, 0, step,
+                static_cast<seq::SequencerCcLaneTransition>((bits >> 8U) % 5U));
+        }
+        lane = bank.lanes[0];
+        for (uint32_t visit = 0; visit < 32U; ++visit) {
+            const uint32_t ordinal = visit < 16U ? visit
+                : visit < 24U ? region.preludeLength() + region.loopLength() + visit - 16U
+                : UINT32_MAX - (visit - 24U);
+            for (float fraction : {-0.25f, 0.0f, 0.25f, 0.75f, 1.0f, 1.25f}) {
+                uint8_t value = 199U;
+                seq::SequencerCcLaneProjectionSpan span{};
+                span.sourceOrdinal = 123U;
+                const bool valid = seq::projectSequencerCcLaneValue(
+                    lane, region, ordinal, fraction, value, &span);
+                retain(valid); retain(value);
+                retain(span.sourceOrdinal); retain(span.targetOrdinal);
+                retain(span.distanceToTarget); retain(span.elapsedAtOrdinal);
+                retain(span.sourceStep); retain(span.targetStep);
+                retain(static_cast<uint32_t>(span.transition));
+                retain(span.sourceValid); retain(span.targetValid);
+                if (!valid) assert(value == 199U && span.sourceOrdinal == 123U);
+            }
+        }
+    }
+    std::cout << "CC projection fingerprint=" << std::hex << hash << std::dec << '\n';
+    assert(hash == 0x65e19e50d911c632ULL);
+}
+
 }  // namespace
 
 int main() {
@@ -128,6 +180,7 @@ int main() {
     test_loop_wrap_never_targets_prelude_or_outside_events();
     test_before_first_event_is_silent_but_prelude_hold_persists();
     test_ui_representative_ordinal_separates_prelude_and_steady_loop();
+    test_projection_fingerprint();
     std::cout << "SequencerCcLaneProjectionOps tests passed\n";
     return 0;
 }
