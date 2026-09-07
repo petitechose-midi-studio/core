@@ -874,16 +874,15 @@ FLASHMEM void StepGrid::createTiles() {
             note_labels_[i],
             secondary_labels_[i],
             step_inline_icons_[i],
-            step_buttons_[i],
             geometry_.inlineIconWidth[i],
             geometry_.inlineIconHeight[i],
             onGeometryChangedEvent,
             this
         );
         tile_button_draw_contexts_[i] = TileButtonDrawContext{.grid = this, .tileIndex = i};
-        if (step_buttons_[i]) {
+        if (tiles_[i]) {
             lv_obj_add_event_cb(
-                step_buttons_[i],
+                tiles_[i],
                 onTileButtonDrawEvent,
                 LV_EVENT_DRAW_MAIN,
                 &tile_button_draw_contexts_[i]
@@ -940,8 +939,8 @@ FLASHMEM bool StepGrid::refreshStaticGeometry() {
                    geometry_.noteLayerWidth != noteLayerWidth ||
                    geometry_.noteLayerHeight != noteLayerHeight;
 
-    for (uint8_t i = 0; i < step_buttons_.size(); ++i) {
-        lv_obj_t* button = step_buttons_[i];
+    for (uint8_t i = 0; i < tiles_.size(); ++i) {
+        lv_obj_t* button = tiles_[i];
         if (!button) continue;
 
         lv_area_t buttonArea{};
@@ -1016,7 +1015,7 @@ FLASHMEM void StepGrid::onTileButtonDrawEvent(lv_event_t* event) {
 
     StepGrid* self = context->grid;
     const uint8_t tileIndex = context->tileIndex;
-    if (tileIndex >= self->step_buttons_.size()) return;
+    if (tileIndex >= self->tiles_.size()) return;
 
     lv_obj_t* button = lv_event_get_target_obj(event);
     if (!button) return;

@@ -25,26 +25,24 @@ int main() {
     lv_obj_t *root{}, *grid{}, *notes{};
     namespace widgets = core::ui::sequencer::grid::widgets;
     widgets::createRoot(parent, root, grid, notes, [](lv_event_t*) {}, nullptr);
-    std::array<lv_obj_t*, 8> tiles{}, buttons{};
+    std::array<lv_obj_t*, 8> tiles{};
     for (uint8_t i = 0; i < 8; ++i) {
         lv_obj_t *label{}, *secondary{}, *icon{};
         lv_coord_t width{}, height{};
-        widgets::createTile(i, grid, notes, tiles[i], label, secondary, icon, buttons[i],
+        widgets::createTile(i, grid, notes, tiles[i], label, secondary, icon,
                             width, height, [](lv_event_t*) {}, nullptr);
-        lv_obj_set_style_bg_color(buttons[i], lv_color_hex(0x20b060 + i * 0x100000), 0);
-        lv_obj_set_style_bg_opa(buttons[i], LV_OPA_70, 0);
-        lv_obj_set_style_border_opa(buttons[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(tiles[i], lv_color_hex(0x20b060 + i * 0x100000), 0);
+        lv_obj_set_style_bg_opa(tiles[i], LV_OPA_70, 0);
+        lv_obj_set_style_border_opa(tiles[i], LV_OPA_COVER, 0);
         assert(width > 0 && height > 0);
     }
+    // Frozen pixels from the original two-object tiles, including odd dimensions.
+    const std::array<uint64_t, 3> expectedHashes{
+        0xb0ce2037d36917e5ULL, 0x0aeeb53f7d9e4785ULL, 0x7504fac8669e4469ULL};
+    unsigned sizeIndex = 0;
     for (const auto size : {lv_point_t{304, 170}, lv_point_t{320, 176}, lv_point_t{283, 181}}) {
         lv_obj_set_size(parent, size.x, size.y);
         lv_refr_now(display);
-        for (uint8_t i = 0; i < 8; ++i) {
-            lv_area_t tile{}, button{};
-            lv_obj_get_coords(tiles[i], &tile);
-            lv_obj_get_coords(buttons[i], &button);
-            assert(tile.x1 == button.x1 && tile.y1 == button.y1 && tile.x2 == button.x2 && tile.y2 == button.y2);
-        }
         const auto first = pixels;
         lv_obj_invalidate(lv_screen_active());
         lv_refr_now(display);
@@ -52,9 +50,11 @@ int main() {
         uint64_t hash = 14695981039346656037ULL;
         for (const auto pixel : pixels) hash = ((hash ^ (pixel & 255U)) * 1099511628211ULL ^ (pixel >> 8U)) * 1099511628211ULL;
         std::printf("grid=%dx%d rgb565=%016llx\n", int(size.x), int(size.y), static_cast<unsigned long long>(hash));
+        assert(hash == expectedHashes[sizeIndex++]);
     }
     for (uint8_t i = 0; i < 8; ++i) {
-        assert(lv_obj_get_parent(buttons[i]) == tiles[i]);
+        assert(lv_obj_get_parent(tiles[i]) == grid);
+        assert(lv_obj_get_child_count(tiles[i]) == 0);
         assert(lv_obj_get_style_layout(tiles[i], LV_PART_MAIN) == LV_LAYOUT_NONE);
     }
     lv_display_delete(display);
