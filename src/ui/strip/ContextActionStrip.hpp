@@ -127,7 +127,6 @@ private:
     struct SlotWidgets {
         lv_obj_t* container = nullptr;
         lv_obj_t* indicator = nullptr;
-        lv_obj_t* content = nullptr;
         lv_obj_t* icon = nullptr;
         lv_obj_t* label = nullptr;
         bool hold_geometry_initialized = false;

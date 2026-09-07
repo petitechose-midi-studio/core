@@ -47,6 +47,12 @@ int main(int argc, char** argv) {
                 for (auto pixel : pixels) hash = ((hash ^ (pixel & 255U)) * 1099511628211ULL ^ (pixel >> 8U)) * 1099511628211ULL;
                 std::printf("strip=%u state=%u pass=%d rgb565=%016llx\n", unsigned(orientation), state, pass, static_cast<unsigned long long>(hash));
                 auto* slot = lv_obj_get_child(strip.getElement(), 0);
+                // The slot itself centers its content; no oversized wrapper.
+                assert(lv_obj_get_child_count(slot) == 3);
+                for (unsigned child = 1; child < 3; ++child) {
+                    auto* content = lv_obj_get_child(slot, child);
+                    assert(lv_obj_check_type(content, &lv_label_class));
+                }
                 assert(lv_obj_get_style_bg_opa(slot, LV_PART_MAIN) == LV_OPA_TRANSP);
                 if (!reference) {
                     lv_style_value_t value{};
