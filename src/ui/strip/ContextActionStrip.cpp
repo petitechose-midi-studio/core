@@ -69,10 +69,6 @@ FLASHMEM lv_opa_t contentOpacity(ContextActionStripVisualState state) {
     }
 }
 
-FLASHMEM lv_opa_t backgroundOpacity(ContextActionStripVisualState /*state*/) {
-    return LV_OPA_TRANSP;
-}
-
 FLASHMEM lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     switch (state) {
         case ContextActionStripVisualState::PRESSED:
@@ -343,9 +339,9 @@ FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
         return;
     }
 
-    if (!has_rendered_ || !rendered_props_.visible) {
+    const bool opening = !has_rendered_ || !rendered_props_.visible;
+    if (opening) {
         lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
     }
 
     for (size_t i = 0; i < slots_.size(); ++i) {
@@ -357,6 +353,8 @@ FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
     rendered_props_ = props;
     has_rendered_ = true;
     refreshHoldIndicators();
+    // Prepare the strip while hidden; one reveal invalidates its final content.
+    if (opening) lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
     updateHoldTimer();
 }
 
@@ -369,12 +367,9 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
     const uint32_t colorHex = toneColor(props.tone);
     const lv_color_t color = lv_color_hex(colorHex);
     const lv_opa_t textOpa = contentOpacity(props.visualState);
-    const lv_opa_t bgOpa = backgroundOpacity(props.visualState);
     const lv_opa_t accentOpa = indicatorOpacity(props.visualState);
     const bool showContent = contentVisible(props);
 
-    lv_obj_set_style_bg_color(slot.container, color, 0);
-    lv_obj_set_style_bg_opa(slot.container, bgOpa, 0);
     lv_obj_set_style_bg_color(slot.indicator, color, 0);
     lv_obj_set_style_bg_color(slot.indicator, color, LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(
