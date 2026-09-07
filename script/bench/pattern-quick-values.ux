@@ -1,0 +1,22 @@
+# RAM-only: adjust pattern length through its existing quick-property overlay.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.01
+600 button LEFT_TOP up
+1000 assert_view CLIPS
+1200 encoder_value NAV 0.01
+1500 tap LEFT_BOTTOM 60
+1800 assert_mode sequencer.pattern
+2000 button LEFT_CENTER down
+2300 marker quick_open
+2500 encoder_value OPT 0.002
+2700 encoder_value OPT 0.002
+2900 encoder_value OPT 0.002
+3100 encoder_value OPT -0.002
+3300 encoder_value OPT -0.002
+3500 encoder_value OPT -0.002
+3700 marker quick_adjusted
+4000 button LEFT_CENTER up
+4300 assert_mode sequencer.pattern
+4500 transport stop

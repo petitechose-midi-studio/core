@@ -36,17 +36,11 @@ uint32_t propertyColor(core::state::sequencer::StepProperty property) {
     return sequencer::semantic::colorForProperty(property);
 }
 
-template <size_t N>
-bool textChanged(std::array<char, N>& cache, const char* text) {
+bool setTextIfChanged(lv_obj_t* label, const char* text) {
     const char* next = text ? text : "";
-    return std::strncmp(cache.data(), next, N) != 0;
-}
-
-template <size_t N>
-void copyCachedText(std::array<char, N>& cache, const char* text) {
-    const char* next = text ? text : "";
-    std::strncpy(cache.data(), next, N - 1);
-    cache[N - 1] = '\0';
+    if (std::strcmp(lv_label_get_text(label), next) == 0) return false;
+    lv_label_set_text(label, next);
+    return true;
 }
 
 }  // namespace
@@ -175,34 +169,15 @@ FLASHMEM void StepPropertySelectionOverlay::render(
         ? (props.color == 0 ? TEXT_PRIMARY : props.color)
         : propertyColor(props.property);
     const bool valueVisible = value != nullptr && value[0] != '\0';
-    const bool contentChanged =
-        !has_rendered_ ||
-        rendered_custom_content_ != props.customContent ||
-        (!props.customContent && rendered_property_ != props.property) ||
-        rendered_color_ != color ||
-        rendered_icon_ != icon ||
-        textChanged(rendered_label_, label) ||
-        textChanged(rendered_value_, value);
-
-    if (contentChanged) {
-        standalone::icons::set(
-            icon_,
-            icon ? icon : "",
-            standalone::icons::Size::L
-        );
+    const char* iconText = icon ? icon : "";
+    needsLayout |= std::strcmp(lv_label_get_text(icon_), iconText) != 0;
+    standalone::icons::set(icon_, iconText, standalone::icons::Size::L);
+    needsLayout |= setTextIfChanged(label_, label);
+    needsLayout |= setTextIfChanged(value_, value);
+    if (!has_rendered_ || rendered_color_ != color) {
         lv_obj_set_style_text_color(icon_, lv_color_hex(color), 0);
-        lv_label_set_text(label_, label ? label : "");
-        copyCachedText(rendered_label_, label);
-        if (value_) {
-            lv_label_set_text(value_, value ? value : "");
-            copyCachedText(rendered_value_, value);
-        }
         rendered_color_ = color;
-        rendered_icon_ = icon;
-        rendered_property_ = props.property;
-        rendered_custom_content_ = props.customContent;
         has_rendered_ = true;
-        needsLayout = true;
     }
 
     if (value_) {

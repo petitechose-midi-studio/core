@@ -33,7 +33,10 @@ add_executable(cached_header_text cached_header_text.cpp
     ../../src/state/sequencer/SequencerCcLaneDomain.cpp
     ../../../ui/src/ms/ui/widget/TextOverflow.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
-foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text)
+add_executable(property_selection_overlay property_selection_overlay.cpp
+    ../../src/ui/sequencer/StepPropertySelectionOverlay.cpp
+    ../../src/ui/sequencer/StepPropertyVisuals.cpp)
+foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text property_selection_overlay)
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
         "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
@@ -55,3 +58,4 @@ add_test(NAME overlay_occlusion COMMAND overlay_occlusion)
 add_test(NAME pattern_preset_preview COMMAND pattern_preset_preview)
 add_test(NAME cc_lane_grid COMMAND cc_lane_grid)
 add_test(NAME cached_header_text COMMAND cached_header_text)
+add_test(NAME property_selection_overlay COMMAND property_selection_overlay)
