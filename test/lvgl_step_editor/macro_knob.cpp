@@ -67,6 +67,21 @@ int main() {
         lv_refr_now(display);
         assert(restored == pixels);
         assert(hash == 0x8000b04773fdc7e5ULL);
+        uint64_t configHash = 14695981039346656037ULL;
+        for (unsigned cc = 0; cc <= 127; ++cc) {
+            knob.setConfig(static_cast<uint8_t>(cc));
+            knob.setFocused((cc & 1U) != 0);
+            knob.setSelectionState((cc & 2U) != 0, false, false, false);
+            lv_refr_now(display);
+            const auto partial = pixels;
+            lv_obj_invalidate(lv_screen_active());
+            lv_refr_now(display);
+            assert(pixels == partial);
+            for (const auto pixel : pixels)
+                configHash = ((configHash ^ (pixel & 255U)) * 1099511628211ULL ^ (pixel >> 8U)) * 1099511628211ULL;
+        }
+        std::printf("config_checks=128 rgb565=%016llx\n", static_cast<unsigned long long>(configHash));
+        assert(configHash == 0xd6ea7f8b16244926ULL);
         std::printf("checks=%u rgb565=%016llx widget_bytes=%zu\n", checks,
                     static_cast<unsigned long long>(hash), sizeof(knob));
     }
