@@ -134,6 +134,7 @@ FLASHMEM core::ui::ContextSoftkeyBar& StandaloneUiAssembly::contextSoftkeyBar() 
 }
 
 FLASHMEM void StandaloneUiAssembly::activateMacroView() const {
+    preparePerformanceViewport();
     core::ui::RetainedViewRenderPolicy::attach(macro_view_->getElement(), views_host_);
     macro_view_->onActivate();
 }
@@ -146,6 +147,7 @@ FLASHMEM void StandaloneUiAssembly::deactivateMacroView() const {
 }
 
 FLASHMEM void StandaloneUiAssembly::activateSequencerView() const {
+    preparePerformanceViewport();
     core::ui::RetainedViewRenderPolicy::attach(
         sequencer_view_->getElement(), views_host_
     );
@@ -521,9 +523,7 @@ void StandaloneUiAssembly::requestGlobalTrackStripRenderReady() {
     scheduleGlobalTrackStripRender(true);
 }
 
-void StandaloneUiAssembly::renderGlobalTrackStrip() {
-    if (!global_track_strip_) return;
-
+void StandaloneUiAssembly::preparePerformanceViewport() const {
     const bool launcherMatrixVisible =
         core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
         core_state_.sequencer.clipWorkspace.matrixVisible();
@@ -539,13 +539,19 @@ void StandaloneUiAssembly::renderGlobalTrackStrip() {
                 global_track_strip_container_, LV_OBJ_FLAG_HIDDEN
             );
         }
-        // Settle the shared viewport before view timers read child geometry.
-        // This transition already moves the full view; one redraw replaces
-        // per-object damage from every intermediate layout pass.
+        // Settle the viewport before attaching the next retained view. Otherwise
+        // its children first resize against the previous view's strip height.
         if (viewportChanged) oc::ui::lvgl::updateLayoutWithFullRedraw(views_host_);
     }
+}
+
+void StandaloneUiAssembly::renderGlobalTrackStrip() {
+    if (!global_track_strip_) return;
+
+    preparePerformanceViewport();
     applyOverlayExclusivity();
-    if (launcherMatrixVisible) return;
+    if (core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
+        core_state_.sequencer.clipWorkspace.matrixVisible()) return;
     if (overlay_exclusive_mode_) {
         return;
     }

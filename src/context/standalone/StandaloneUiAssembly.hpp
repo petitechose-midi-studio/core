@@ -78,6 +78,7 @@ private:
     bool bindGlobalTrackStrip();
     void applyOverlayExclusivity();
     void scheduleGlobalTrackStripRender(bool ready = false);
+    void preparePerformanceViewport() const;
     void renderGlobalTrackStrip();
     void requestGlobalTrackStripRender();
     void requestGlobalTrackStripRenderReady();
