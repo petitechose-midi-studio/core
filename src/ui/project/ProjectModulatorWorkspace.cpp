@@ -7,6 +7,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
@@ -24,6 +25,8 @@
 
 namespace core::ui::project {
 namespace {
+
+using ms::ui::text::copyTruncatedIfChanged;
 
 namespace theme = standalone::theme;
 using namespace core::state::modulation;
@@ -76,25 +79,6 @@ FLASHMEM lv_obj_t* createLabel(
     lv_obj_set_style_text_align(label, align, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
     return label;
-}
-
-template <size_t Capacity>
-FLASHMEM bool copyText(
-    std::array<char, Capacity>& destination,
-    const char* source
-) {
-    static_assert(Capacity > 0U);
-    std::array<char, Capacity> next{};
-    if (source) {
-        size_t index = 0U;
-        while (index + 1U < Capacity && source[index] != '\0') {
-            next[index] = source[index];
-            ++index;
-        }
-    }
-    if (destination == next) return false;
-    destination = next;
-    return true;
 }
 
 FLASHMEM uint16_t normalizedToQ16(float value) {
@@ -435,7 +419,7 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     const bool enabled =
         (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     const bool recording = captureMatches(props);
-    if (copyText(titleText_, source.name.data())) {
+    if (copyTruncatedIfChanged(titleText_, source.name.data())) {
         lv_label_set_text_static(title_, titleText_.data());
     }
     standalone::icons::set(
@@ -651,13 +635,13 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
                 captureStatusLabel(props.capture->status)
             );
         }
-        if (copyText(card.iconText, row.icon.data())) {
+        if (copyTruncatedIfChanged(card.iconText, row.icon.data())) {
             lv_label_set_text_static(card.icon, card.iconText.data());
         }
-        if (copyText(card.labelText, row.key.data())) {
+        if (copyTruncatedIfChanged(card.labelText, row.key.data())) {
             lv_label_set_text_static(card.label, card.labelText.data());
         }
-        if (copyText(card.valueText, row.value.data())) {
+        if (copyTruncatedIfChanged(card.valueText, row.value.data())) {
             lv_label_set_text_static(card.value, card.valueText.data());
         }
 
@@ -1015,8 +999,8 @@ FLASHMEM void ProjectModulatorWorkspace::presentFeedback(
     const char* value
 ) {
     if (key == nullptr || value == nullptr) return;
-    copyText(editFeedbackKeyText_, key);
-    copyText(editFeedbackValueText_, value);
+    copyTruncatedIfChanged(editFeedbackKeyText_, key);
+    copyTruncatedIfChanged(editFeedbackValueText_, value);
     lv_label_set_text_static(edit_feedback_key_, editFeedbackKeyText_.data());
     lv_label_set_text_static(edit_feedback_value_, editFeedbackValueText_.data());
     lv_obj_clear_flag(edit_feedback_, LV_OBJ_FLAG_HIDDEN);
@@ -1078,16 +1062,16 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
             row
         );
     }
-    copyText(editFeedbackKeyText_, row.key.data());
-    if (item == Item::ATTACK) copyText(editFeedbackKeyText_, "Attack");
-    if (item == Item::DELAY) copyText(editFeedbackKeyText_, "Delay");
-    if (item == Item::HOLD) copyText(editFeedbackKeyText_, "Hold");
-    if (item == Item::DECAY) copyText(editFeedbackKeyText_, "Decay");
-    if (item == Item::SUSTAIN) copyText(editFeedbackKeyText_, "Sustain");
-    if (item == Item::RELEASE) copyText(editFeedbackKeyText_, "Release");
-    if (item == Item::SMOOTH) copyText(editFeedbackKeyText_, "Smooth");
-    if (item == Item::DEPTH) copyText(editFeedbackKeyText_, "Depth");
-    copyText(editFeedbackValueText_, row.value.data());
+    copyTruncatedIfChanged(editFeedbackKeyText_, row.key.data());
+    if (item == Item::ATTACK) copyTruncatedIfChanged(editFeedbackKeyText_, "Attack");
+    if (item == Item::DELAY) copyTruncatedIfChanged(editFeedbackKeyText_, "Delay");
+    if (item == Item::HOLD) copyTruncatedIfChanged(editFeedbackKeyText_, "Hold");
+    if (item == Item::DECAY) copyTruncatedIfChanged(editFeedbackKeyText_, "Decay");
+    if (item == Item::SUSTAIN) copyTruncatedIfChanged(editFeedbackKeyText_, "Sustain");
+    if (item == Item::RELEASE) copyTruncatedIfChanged(editFeedbackKeyText_, "Release");
+    if (item == Item::SMOOTH) copyTruncatedIfChanged(editFeedbackKeyText_, "Smooth");
+    if (item == Item::DEPTH) copyTruncatedIfChanged(editFeedbackKeyText_, "Depth");
+    copyTruncatedIfChanged(editFeedbackValueText_, row.value.data());
     const bool temporal = item == Item::DELAY || item == Item::ATTACK ||
         item == Item::HOLD || item == Item::DECAY ||
         item == Item::RELEASE || item == Item::SMOOTH;
@@ -1116,10 +1100,10 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
                 parameter
             ))
         );
-        copyText(editFeedbackValueText_, exact.data());
+        copyTruncatedIfChanged(editFeedbackValueText_, exact.data());
     }
     if (item == Item::TIMING && props.source->kind == ModulatorKind::ADSR) {
-        copyText(
+        copyTruncatedIfChanged(
             editFeedbackValueText_,
             modulatorAdsrTiming(props.source->parameters.adsr.traits) ==
                     ModulatorTimingMode::FREE
@@ -1136,7 +1120,7 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
         } else if (response == ModulatorAdsrCurve::SMOOTH) {
             curve = "Ease";
         }
-        copyText(editFeedbackValueText_, curve);
+        copyTruncatedIfChanged(editFeedbackValueText_, curve);
     }
     presentFeedback(
         editFeedbackKeyText_.data(),

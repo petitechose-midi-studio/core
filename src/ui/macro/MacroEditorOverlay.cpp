@@ -1,10 +1,10 @@
 #include "ui/macro/MacroEditorOverlay.hpp"
 
 #include <algorithm>
-#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 #include <oc/time/Time.hpp>
 
 #include "state/modulation/ProjectControlRuntime.hpp"
@@ -16,6 +16,8 @@
 
 namespace core::ui {
 namespace {
+
+using ms::ui::text::copyTruncatedIfChanged;
 
 namespace theme = standalone::theme;
 namespace state_mod = core::state::modulation;
@@ -29,19 +31,6 @@ constexpr lv_coord_t GRAPH_X = 8;
 constexpr lv_coord_t GRAPH_Y = 72;
 constexpr lv_coord_t GRAPH_WIDTH = 304;
 constexpr lv_coord_t GRAPH_HEIGHT = 92;
-
-template <size_t N>
-bool copyText(std::array<char, N>& destination, const char* source) {
-    static_assert(N > 1U);
-    const char* text = source ? source : "";
-    // Equality is based on the retained, displayable prefix. A source longer
-    // than the fixed label buffer must not retrigger the same LVGL update on
-    // every render.
-    if (std::strncmp(destination.data(), text, N - 1U) == 0) return false;
-    std::strncpy(destination.data(), text, N - 1U);
-    destination[N - 1U] = '\0';
-    return true;
-}
 
 FLASHMEM lv_obj_t* createLabel(lv_obj_t* parent,
                                const lv_font_t* font,
@@ -234,7 +223,7 @@ FLASHMEM void MacroEditorOverlay::renderTab(
 ) {
     if (index >= tabs_.size()) return;
     auto& tab = tabs_[index];
-    if (copyText(tab.valueText, value)) {
+    if (copyTruncatedIfChanged(tab.valueText, value)) {
         lv_label_set_text_static(tab.value, tab.valueText.data());
     }
     if (!tab.rendered || tab.color != color) {
@@ -549,10 +538,10 @@ FLASHMEM void MacroEditorOverlay::render(
     if (props.preview == nullptr) return;
     latest_live_ = props.live;
     renderedRevision_ = props.dataRevision;
-    if (copyText(titleText_, props.title)) {
+    if (copyTruncatedIfChanged(titleText_, props.title)) {
         lv_label_set_text_static(title_, titleText_.data());
     }
-    if (copyText(metaText_, props.meta)) {
+    if (copyTruncatedIfChanged(metaText_, props.meta)) {
         lv_label_set_text_static(meta_, metaText_.data());
     }
     const int selected = std::clamp(props.selectedDomain, 0, 2);
@@ -591,18 +580,18 @@ FLASHMEM void MacroEditorOverlay::render(
         const char* interactionIcon = props.interactionIcon
             ? props.interactionIcon
             : standalone::icons::KNOB;
-        if (copyText(interactionIconText_, interactionIcon)) {
+        if (copyTruncatedIfChanged(interactionIconText_, interactionIcon)) {
             lv_label_set_text_static(
                 interaction_icon_,
                 interactionIconText_.data()
             );
         }
-        if (copyText(interactionLabelText_, props.interactionLabel)) {
+        if (copyTruncatedIfChanged(interactionLabelText_, props.interactionLabel)) {
             lv_label_set_text_static(
                 interaction_label_, interactionLabelText_.data()
             );
         }
-        if (copyText(interactionValueText_, props.interactionValue)) {
+        if (copyTruncatedIfChanged(interactionValueText_, props.interactionValue)) {
             lv_label_set_text_static(
                 interaction_value_, interactionValueText_.data()
             );
