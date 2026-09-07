@@ -1,0 +1,36 @@
+# RAM-only Macro assignment -> source: change shape, navigate cards, edit rate,
+# let quick feedback expire, then return through the same parent chain.
+# Fixed 8.2-second musical use case; identical before and after each trial.
+0 scenario bench-macro-v1
+20 assert_view MACRO
+100 transport start
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1300 button LEFT_BOTTOM up
+1450 encoder_value NAV 0.010
+1570 encoder_value NAV 0.010
+1690 tap NAV 60
+1930 assert_mode macro.modulation_editor
+2030 tap NAV 60
+2350 assert_mode project.modulator_detail
+2400 marker shape_edit
+2450 encoder_value OPT 0.750
+2750 encoder_value OPT 0.250
+3050 marker card_navigation
+3100 encoder_value NAV 0.010
+3400 encoder_value NAV 0.010
+3700 encoder_value NAV 0.010
+4000 encoder_value NAV -0.010
+4300 encoder_value NAV -0.010
+4600 marker focused_edit
+4650 encoder_value OPT 0.250
+4950 encoder_value OPT 0.750
+5250 encoder_value OPT 0.500
+6500 marker feedback_expired
+6520 assert_mode project.modulator_detail
+6700 tap LEFT_TOP 60
+7000 assert_mode macro.modulation_editor
+7200 tap LEFT_TOP 60
+7500 assert_mode macro.edit
+8000 transport stop
+8200 marker done
