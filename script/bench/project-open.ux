@@ -1,0 +1,12 @@
+# User case: leave the playing macros, open Project overview.
+# Isolate first presentation from subsequent tab/field edits.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+550 encoder_value NAV 0.010
+700 encoder_value NAV 0.010
+850 button LEFT_TOP up
+1200 assert_view PROJECT
+1500 marker project_open
+2000 transport stop

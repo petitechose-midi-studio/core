@@ -179,6 +179,11 @@ FLASHMEM ProjectView::~ProjectView() {
 FLASHMEM void ProjectView::onActivate() {
     if (!container_) return;
 
+    // Bind the first presentation while hidden, not after revealing the tree.
+    // Live changes still use the coalesced scheduler below.
+    RetainedViewRenderPolicy::hide(container_);
+    render();
+    lv_obj_update_layout(container_);
     RetainedViewRenderPolicy::show(container_);
     if (render_scheduler_) {
         render_scheduler_->request(RENDER_CONTENT, true);
@@ -321,7 +326,7 @@ void ProjectView::requestModulatorCaptureRender() {
 }
 
 void ProjectView::render() {
-    if (!menu_ || !RetainedViewRenderPolicy::visible(container_)) return;
+    if (!menu_) return;
 
     const auto node = state_refs_.navigation.currentNode.get();
     const bool keyboardActive = isProjectNameEditorNode(node);
