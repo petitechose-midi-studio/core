@@ -295,6 +295,8 @@ void DrumPlaybackEngine::setPattern(
 }
 
 FLASHMEM void DrumPlaybackEngine::reset() {
+    // Close dispatched notes before discarding their scheduled NoteOff edges.
+    if (playing_) (void)emitAllNotesOff_(last_tick_);
     clearPendingNotes_();
     last_triggered_ordinals_.fill(UINT32_MAX);
     telemetry_.reset();
