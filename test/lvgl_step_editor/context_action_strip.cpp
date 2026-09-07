@@ -25,6 +25,39 @@ int main(int argc, char** argv) {
     auto* parent = lv_obj_create(lv_screen_active());
     lv_obj_remove_style_all(parent);
     lv_obj_set_size(parent, 320, 210);
+    {
+        auto* icon = lv_label_create(parent);
+        lv_font_t alternate = *font;
+        unsigned styleChanges = 0;
+        lv_obj_add_event_cb(icon, [](lv_event_t* event) {
+            ++*static_cast<unsigned*>(lv_event_get_user_data(event));
+        }, LV_EVENT_STYLE_CHANGED, &styleChanges);
+        standalone::icons::set(icon, "X");
+        lv_style_value_t localFont{};
+        assert(lv_obj_get_local_style_prop(icon, LV_STYLE_TEXT_FONT, &localFont, 0) == LV_STYLE_RES_FOUND);
+        assert(localFont.ptr == font);
+        lv_refr_now(display);
+        styleChanges = 0;
+        standalone::icons::set(icon, "X");
+        assert(styleChanges == 0); // A repeated icon must not reapply its font.
+        lv_obj_set_style_text_font(parent, &alternate, 0);
+        assert(lv_obj_get_style_text_font(icon, LV_PART_MAIN) == font);
+        standalone_fonts.icons_16 = &alternate;
+        standalone::icons::set(icon, "Y", standalone::icons::Size::L);
+        assert(lv_obj_get_style_text_font(icon, LV_PART_MAIN) == &alternate);
+        assert(std::strcmp(lv_label_get_text(icon), "Y") == 0);
+        char mutableText[] = "Z";
+        standalone::icons::set(icon, mutableText);
+        mutableText[0] = 'Q';
+        assert(std::strcmp(lv_label_get_text(icon), "Z") == 0);
+        standalone::icons::set(icon, mutableText);
+        assert(std::strcmp(lv_label_get_text(icon), "Q") == 0);
+        standalone::icons::set(icon, nullptr); // Preserve LVGL's explicit refresh.
+        assert(std::strcmp(lv_label_get_text(icon), "Q") == 0);
+        standalone_fonts.icons_16 = font;
+        lv_obj_set_style_text_font(parent, font, 0);
+        lv_obj_delete(icon);
+    }
     for (const auto orientation : {ContextActionStripOrientation::HORIZONTAL, ContextActionStripOrientation::VERTICAL}) {
         ContextActionStrip strip(parent, orientation, ContextActionStripVerticalLayout::SPREAD);
         for (unsigned state = 0; state <= 7; ++state) {
