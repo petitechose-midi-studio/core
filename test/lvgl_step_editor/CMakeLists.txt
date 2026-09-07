@@ -15,7 +15,8 @@ add_executable(step_editor test_main.cpp
 add_executable(track_navigation_strip track_navigation_strip.cpp
     ../../src/ui/common/TrackNavigationStrip.cpp
     ../../src/ui/common/AddSlotIcon.cpp)
-foreach(target step_editor track_navigation_strip)
+add_executable(step_grid_widgets step_grid_widgets.cpp ../../src/ui/sequencer/StepGridWidgets.cpp)
+foreach(target step_editor track_navigation_strip step_grid_widgets)
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
         "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
@@ -30,3 +31,4 @@ endforeach()
 enable_testing()
 add_test(NAME step_editor COMMAND step_editor)
 add_test(NAME track_navigation_strip COMMAND track_navigation_strip)
+add_test(NAME step_grid_widgets COMMAND step_grid_widgets)

@@ -35,9 +35,11 @@ FLASHMEM bool StandaloneUiAssembly::initialize() {
 
     if (!createViewContainer()) return false;
 
-    if (!createGlobalTrackStrip()) return false;
-
     if (!createViews()) return false;
+
+    // LVGL visits newer timers first. Project the shared frame before its
+    // views read geometry, so they settle against the final frame before drawing.
+    if (!createGlobalTrackStrip()) return false;
 
     if (overlay_curtain_) lv_obj_move_foreground(overlay_curtain_);
 
