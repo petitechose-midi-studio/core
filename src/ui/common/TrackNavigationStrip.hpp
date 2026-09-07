@@ -15,7 +15,7 @@ namespace core::ui {
  * Shared compact renderer for the 16-track navigation strip.
  *
  * Props carry active/preview/add/selection/activity state; the widget owns LVGL
- * objects and geometry caches for cursors and per-track cells.
+ * objects; cursor geometry follows the row's completed LVGL layout.
  */
 class TrackNavigationStrip : public oc::ui::lvgl::IWidget {
 public:
@@ -30,11 +30,10 @@ public:
 
 private:
     void createUI(lv_obj_t* parent);
-    void refreshItemGeometryCache_();
+    void updateCursors();
 
     struct ItemRenderCache {
         bool initialized = false;
-        lv_coord_t width = -1;
         uint32_t bgColor = 0;
         lv_opa_t bgOpa = LV_OPA_TRANSP;
         bool addVisible = false;
@@ -57,12 +56,8 @@ private:
     > destination_markers_{};
     std::array<add_slot_icon::ObjectPair, TrackNavigationStripProps::TRACK_COUNT> item_add_icons_{};
     std::array<ItemRenderCache, TrackNavigationStripProps::TRACK_COUNT> item_cache_{};
-    bool item_geometry_cache_initialized_ = false;
-    lv_coord_t cached_row_width_ = -1;
-    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_x_cache_{};
-    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_y_cache_{};
-    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_width_cache_{};
-    std::array<lv_coord_t, TrackNavigationStripProps::TRACK_COUNT> item_height_cache_{};
+    uint8_t active_track_ = TrackNavigationStripProps::TRACK_COUNT;
+    uint8_t focused_track_ = TrackNavigationStripProps::TRACK_COUNT;
     bool active_cursor_visible_cache_ = false;
     lv_coord_t active_cursor_x_cache_ = -1;
     lv_coord_t active_cursor_y_cache_ = -1;

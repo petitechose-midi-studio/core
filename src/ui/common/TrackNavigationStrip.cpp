@@ -48,18 +48,6 @@ FLASHMEM TrackNavigationStrip::~TrackNavigationStrip() {
     }
 }
 
-FLASHMEM void TrackNavigationStrip::refreshItemGeometryCache_() {
-    if (!items_row_) return;
-
-    for (uint8_t i = 0; i < items_.size(); ++i) {
-        item_x_cache_[i] = lv_obj_get_x(items_[i]);
-        item_y_cache_[i] = lv_obj_get_y(items_[i]);
-        item_width_cache_[i] = lv_obj_get_width(items_[i]);
-        item_height_cache_[i] = lv_obj_get_height(items_[i]);
-    }
-    item_geometry_cache_initialized_ = true;
-}
-
 FLASHMEM void TrackNavigationStrip::createUI(lv_obj_t* parent) {
     if (!parent) return;
 
@@ -141,26 +129,16 @@ FLASHMEM void TrackNavigationStrip::createUI(lv_obj_t* parent) {
     lv_obj_set_style_border_opa(current_cursor_, CURRENT_CURSOR_OPA, 0);
     lv_obj_set_style_radius(current_cursor_, 1, 0);
     lv_obj_add_flag(current_cursor_, LV_OBJ_FLAG_HIDDEN);
+
+    // Flex emits this after positioning its children. Do not force an early
+    // screen-wide layout while sibling views are still preparing their frame.
+    lv_obj_add_event_cb(items_row_, [](lv_event_t* event) {
+        static_cast<TrackNavigationStrip*>(lv_event_get_user_data(event))->updateCursors();
+    }, LV_EVENT_LAYOUT_CHANGED, this);
 }
 
 FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& props) {
     if (!container_ || !items_row_) return;
-
-    lv_coord_t rowWidth = lv_obj_get_width(items_row_);
-    if (rowWidth <= 0 || rowWidth != cached_row_width_) {
-        lv_obj_update_layout(items_row_);
-        rowWidth = lv_obj_get_width(items_row_);
-        if (rowWidth != cached_row_width_) {
-            cached_row_width_ = rowWidth;
-            for (auto& cache : item_cache_) {
-                cache.initialized = false;
-            }
-            item_geometry_cache_initialized_ = false;
-        }
-    }
-    if (!item_geometry_cache_initialized_) {
-        refreshItemGeometryCache_();
-    }
 
     for (uint8_t i = 0; i < items_.size(); ++i) {
         auto& cache = item_cache_[i];
@@ -177,19 +155,6 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
             (props.focusingTrack || props.selectingTrack) && isPreview;
         const bool selected =
             (props.selectedMask & trackBit) != 0U;
-        const lv_coord_t width = item_width_cache_[i];
-        if (!cache.initialized || cache.width != width) {
-            cache.width = width;
-            cache.bgColor = 0;
-            cache.bgOpa = LV_OPA_TRANSP;
-            cache.addVisible = false;
-            cache.borderWidth = -1;
-            cache.borderOpa = LV_OPA_TRANSP;
-            cache.outlineWidth = -1;
-            cache.outlineOpa = LV_OPA_TRANSP;
-            cache.destinationVisible = false;
-            cache.destinationColor = 0;
-        }
         const lv_color_t baseColor = lv_color_hex(enabled ? theme::color::trackColor(i)
                                                           : theme::color::INACTIVE);
         // Mute is authored and therefore darkened. A Track excluded only by
@@ -325,20 +290,33 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
         cache.initialized = true;
     }
 
+    const uint8_t activeTrack = props.activeTrack < items_.size() &&
+        (props.enabledMask & static_cast<uint16_t>(1U << props.activeTrack)) != 0
+        ? props.activeTrack : TrackNavigationStripProps::TRACK_COUNT;
+    const uint8_t focusedTrack = (props.focusingTrack || props.selectingTrack) &&
+        props.previewTrack < items_.size()
+        ? props.previewTrack : TrackNavigationStripProps::TRACK_COUNT;
+    if (activeTrack != active_track_ || focusedTrack != focused_track_) {
+        active_track_ = activeTrack;
+        focused_track_ = focusedTrack;
+        updateCursors();
+    }
+}
+
+FLASHMEM void TrackNavigationStrip::updateCursors() {
     if (active_cursor_) {
-        const bool showActiveCursor =
-            props.activeTrack < items_.size() &&
-            (props.enabledMask & static_cast<uint16_t>(1U << props.activeTrack)) != 0;
+        const bool showActiveCursor = active_track_ < items_.size();
         if (!showActiveCursor) {
             if (active_cursor_visible_cache_) {
                 lv_obj_add_flag(active_cursor_, LV_OBJ_FLAG_HIDDEN);
                 active_cursor_visible_cache_ = false;
             }
         } else {
-            const lv_coord_t itemX = item_x_cache_[props.activeTrack];
-            const lv_coord_t itemY = item_y_cache_[props.activeTrack];
-            const lv_coord_t itemW = item_width_cache_[props.activeTrack];
-            const lv_coord_t itemH = item_height_cache_[props.activeTrack];
+            auto* target = items_[active_track_];
+            const lv_coord_t itemX = lv_obj_get_x(target);
+            const lv_coord_t itemY = lv_obj_get_y(target);
+            const lv_coord_t itemW = lv_obj_get_width(target);
+            const lv_coord_t itemH = lv_obj_get_height(target);
             const lv_coord_t cursorWidth = std::max<lv_coord_t>(1, itemW - 2);
             const lv_coord_t cursorX = static_cast<lv_coord_t>(itemX + (itemW - cursorWidth) / 2);
             const lv_coord_t cursorY = static_cast<lv_coord_t>(itemY + itemH - ACTIVE_CURSOR_HEIGHT);
@@ -359,8 +337,7 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
         }
     }
 
-    const bool showCursor = (props.focusingTrack || props.selectingTrack) &&
-                            props.previewTrack < items_.size();
+    const bool showCursor = focused_track_ < items_.size();
     if (!showCursor || !current_cursor_) {
         if (current_cursor_ && current_cursor_visible_cache_) {
             lv_obj_add_flag(current_cursor_, LV_OBJ_FLAG_HIDDEN);
@@ -369,7 +346,7 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
         return;
     }
 
-    lv_obj_t* cursorTarget = items_[props.previewTrack];
+    lv_obj_t* cursorTarget = items_[focused_track_];
     if (!cursorTarget || lv_obj_has_flag(cursorTarget, LV_OBJ_FLAG_HIDDEN)) {
         if (current_cursor_visible_cache_) {
             lv_obj_add_flag(current_cursor_, LV_OBJ_FLAG_HIDDEN);
@@ -378,10 +355,10 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
         return;
     }
 
-    const lv_coord_t itemX = item_x_cache_[props.previewTrack];
-    const lv_coord_t itemY = item_y_cache_[props.previewTrack];
-    const lv_coord_t itemW = item_width_cache_[props.previewTrack];
-    const lv_coord_t itemH = item_height_cache_[props.previewTrack];
+    const lv_coord_t itemX = lv_obj_get_x(cursorTarget);
+    const lv_coord_t itemY = lv_obj_get_y(cursorTarget);
+    const lv_coord_t itemW = lv_obj_get_width(cursorTarget);
+    const lv_coord_t itemH = lv_obj_get_height(cursorTarget);
     const lv_opa_t cursorOpa = CURRENT_CURSOR_OPA;
 
     if (!current_cursor_visible_cache_) {

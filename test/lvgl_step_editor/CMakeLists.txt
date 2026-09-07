@@ -12,15 +12,21 @@ add_executable(step_editor test_main.cpp
     ../../src/ui/sequencer/SequencerStepEditOverlay.cpp
     ../../src/ui/sequencer/SequencerChordVoiceRail.cpp
     ../../src/ui/common/CompactMetricRow.cpp)
-target_compile_features(step_editor PRIVATE cxx_std_20)
-target_include_directories(step_editor PRIVATE ../../src ../../../ui/src ../../../device-support/src
-    "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
-    "${OC_ROOT}/note/src" "${OC_ROOT}/ui-lvgl-components/include")
-target_link_libraries(step_editor PRIVATE lvgl::lvgl)
-if(MSVC)
-    target_compile_options(step_editor PRIVATE /UNDEBUG)
-else()
-    target_compile_options(step_editor PRIVATE -UNDEBUG)
-endif()
+add_executable(track_navigation_strip track_navigation_strip.cpp
+    ../../src/ui/common/TrackNavigationStrip.cpp
+    ../../src/ui/common/AddSlotIcon.cpp)
+foreach(target step_editor track_navigation_strip)
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
+        "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
+        "${OC_ROOT}/note/src" "${OC_ROOT}/ui-lvgl-components/include")
+    target_link_libraries(${target} PRIVATE lvgl::lvgl)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(${target} PRIVATE -UNDEBUG)
+    endif()
+endforeach()
 enable_testing()
 add_test(NAME step_editor COMMAND step_editor)
+add_test(NAME track_navigation_strip COMMAND track_navigation_strip)
