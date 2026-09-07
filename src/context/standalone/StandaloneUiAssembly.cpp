@@ -239,10 +239,10 @@ FLASHMEM bool StandaloneUiAssembly::createViewContainer() {
     lv_obj_add_flag(full_view_host_, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_remove_flag(full_view_host_, LV_OBJ_FLAG_CLICKABLE);
 
-    // A single opaque object hides the active view below semi-transparent
-    // overlays. Toggling this leaf avoids propagating opacity changes through
-    // the complete active view tree.
-    overlay_curtain_ = lv_obj_create(mainZone);
+    // Cover the same bounds as the overlays, including the opaque bottom bar.
+    // A main-zone-only curtain cannot occlude a full-height invalidation: LVGL
+    // would draw the active view before covering it. The bottom bar stays above.
+    overlay_curtain_ = lv_obj_create(overlayRoot());
     if (!overlay_curtain_) {
         OC_LOG_ERROR("StandaloneUiAssembly: overlay curtain allocation failed");
         return false;
