@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from teensy_product_placement import (
+    DISPLAY_DIFF_ITCM_MARKERS,
     COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
     MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS,
     PAGE_STRUCTURE_BUILDER_FLASH_MARKERS,
@@ -111,6 +112,8 @@ def main() -> int:
 54856 1888 T core::sequencer::SequencerCcLaneRuntime::buildMusicalTickFrame(void)
 97048 752 T core::ui::MacroView::processRenderFlags(unsigned long)
 86548 702 T core::ui::StepGrid::renderTile(void)
+2048 1000 W T4Diff::DiffBuffT<ILI9341_T4::DiffBuffTraits>::_computeDiff(void)
+3072 400 W T4Diff::DiffBuffT<ILI9341_T4::DiffBuffTraits>::readDiff(void)
 539099136 153600 B ms::device_support::v1::buffers::lvgl
 """
     assert len(PAGE_STRUCTURE_BUILDER_FLASH_MARKERS) == 9
@@ -151,6 +154,14 @@ def main() -> int:
     assert "LVGL draw buffer must be one 320x240 RGB565 frame in RAM2" in violations
 
     valid_lines = valid.splitlines()
+    for marker in DISPLAY_DIFF_ITCM_MARKERS:
+        symbol_line = next(line for line in valid_lines if marker in line)
+        missing = "\n".join(line for line in valid_lines if marker not in line)
+        flash = valid.replace(symbol_line, symbol_line.replace(
+            symbol_line.split(maxsplit=1)[0], "1610618000", 1))
+        assert f"required realtime ITCM symbol is missing: {marker}" in product_placement_violations(missing)
+        assert f"realtime symbol must execute from ITCM: {marker}" in product_placement_violations(flash)
+
     for marker in (
         *PAGE_STRUCTURE_FLASH_MARKERS,
         *TRACK_STRUCTURE_FLASH_MARKERS,

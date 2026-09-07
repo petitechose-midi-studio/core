@@ -7,6 +7,11 @@ RAM2_START = 0x20200000
 RAM2_END = 0x20280000
 RGB565_FRAME_BYTES = 320 * 240 * 2
 
+DISPLAY_DIFF_ITCM_MARKERS = (
+    "T4Diff::DiffBuffT<ILI9341_T4::DiffBuffTraits>::_computeDiff(",
+    "T4Diff::DiffBuffT<ILI9341_T4::DiffBuffTraits>::readDiff(",
+)
+
 _NM_SYMBOL_RE = re.compile(r"^(\d+)\s+(\d+)\s+([A-Za-z])\s+(.+)$")
 
 PAGE_STRUCTURE_BUILDER_FLASH_MARKERS = (
@@ -245,6 +250,7 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
         violations.append("strict PSRAM allocation/lifecycle must execute from Flash")
 
     hot_markers = (
+        *DISPLAY_DIFF_ITCM_MARKERS,
         "core::handler::MacroValueHandler::handleValueChange(",
         "core::handler::MacroAutomationPlaybackService::update(",
         "core::sequencer::RealtimeMidiQueue::pushBatchImpl_(",

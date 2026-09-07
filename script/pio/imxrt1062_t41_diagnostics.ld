@@ -30,7 +30,7 @@ SECTIONS
 
 	.text.code : {
 		KEEP(*(.startup))
-		*(.flashmem*)
+		*(EXCLUDE_FILE (*DiffBuff.cpp.o) .flashmem*)
 		. = ALIGN(4);
 		KEEP(*(.init))
 		__preinit_array_start = .;
@@ -62,6 +62,8 @@ SECTIONS
 	.text.itcm : {
 		. = . + 32; /* MPU to trap NULL pointer deref */
 		*(.fastrun)
+		/* The library's diff/copy/scanline unit is a per-frame hot path. */
+		*DiffBuff.cpp.o(.flashmem*)
 		*(.text*)
 		*(SORT_NONE(.fini))
 		. = ALIGN(16);
