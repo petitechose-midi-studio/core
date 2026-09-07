@@ -561,7 +561,7 @@ FLASHMEM void SequencerView::bindTrackPastePreflightState() {
 }
 
 FLASHMEM void SequencerView::bindClipboardState() {
-    clipboard_watcher_.bind<&SequencerView::requestClipboardDependentRenders>(
+    clipboard_watcher_.bind<&SequencerView::requestStructureDependentRenders>(
         *this,
         10,
         "SequencerView.clipboard"
@@ -696,7 +696,7 @@ void SequencerView::requestTrackPastePreflightRender() {
     requestRender(RENDER_TRACK_PASTE_PREFLIGHT);
 }
 
-void SequencerView::requestClipboardDependentRenders() {
+void SequencerView::requestStructureDependentRenders() {
     requestRender(
         RENDER_HEADER_TOP |
         RENDER_HEADER_STRIP |

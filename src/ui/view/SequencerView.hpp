@@ -127,7 +127,7 @@ private:
     void requestGridTickRender();
     void requestClipActivityRender();
     void requestTrackPastePreflightRender();
-    void requestClipboardDependentRenders();
+    void requestStructureDependentRenders();
     static bool canDrainRender(void* context);
     static void drainRender(void* context, uint32_t flags);
     void markAllDirty();
