@@ -1704,6 +1704,8 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
           )
         : 0U;
 
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<
+        core::state::sequencer::DrumSequencerState::VISIBLE_LANE_COUNT> batch(root_);
     for (uint8_t row = 0U; row < visibleRowCount; ++row) {
         const uint8_t lane = projection.visibleLane(row);
         if (lane >= RUNTIME_LANE_CAPACITY) continue;
@@ -1783,7 +1785,7 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
             }
         }
         if (hasDamage) {
-            oc::ui::lvgl::invalidateStaticSurfaceArea(root_, damage);
+            batch.include(damage);
         }
     }
 }
