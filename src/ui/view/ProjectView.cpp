@@ -146,7 +146,7 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
         !menu_ || !menu_->getElement() || !modulator_registry_ ||
         !modulator_registry_->getElement() || !modulator_workspace_ ||
         !modulator_workspace_->valid() || !project_name_keyboard_ ||
-        !project_name_keyboard_->valid()) {
+        !project_name_keyboard_->valid() || !content_parking_host_) {
         return;
     }
     render_scheduler_ =
@@ -290,6 +290,20 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
     if (!bottom_action_strip_ || !bottom_action_strip_->getElement()) return;
 
     project_name_keyboard_.emplace(center_column_);
+    if (!content_parking_.initialize()) return;
+    content_parking_host_ = content_parking_.createHost();
+}
+
+void ProjectView::selectContent(lv_obj_t* active) {
+    // Hidden siblings still participate in LVGL's recursive layout traversal.
+    // Keep only the selected page in the flex host; retain the others off-screen.
+    using Parking = oc::ui::lvgl::RetainedSurfaceParkingLot;
+    for (auto* root : {menu_->getElement(), modulator_registry_->getElement(),
+                      modulator_workspace_->getElement(),
+                      project_name_keyboard_->getElement()}) {
+        if (root != active) Parking::park(root, content_parking_host_);
+    }
+    Parking::attach(active, center_column_);
 }
 
 FLASHMEM bool ProjectView::bindToState() {
@@ -361,6 +375,7 @@ void ProjectView::render() {
     renderProjectActionStrips(keyboardActive);
 
     if (keyboardActive) {
+        selectContent(project_name_keyboard_->getElement());
         if (menu_) menu_->hide();
         if (project_name_keyboard_) {
             project_name_keyboard_->render({
@@ -389,6 +404,7 @@ void ProjectView::render() {
         return;
     }
 
+    selectContent(menu_->getElement());
     const auto page = core::state::project::buildProjectMenuPage(
         state_refs_.navigation,
         [this]() {

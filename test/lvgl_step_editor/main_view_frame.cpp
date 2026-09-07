@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "ui/view/MainViewFrame.hpp"
+#include <oc/ui/lvgl/RetainedSurfaceParkingLot.hpp>
 
 int main() {
     lv_init();
@@ -52,6 +53,54 @@ int main() {
                 std::printf("frame=%dx%d header=%d rgb565=%016llx\n", int(dimensions.x), int(dimensions.y), headerHeight, static_cast<unsigned long long>(hash));
             }
         }
+    }
+    {
+        // Project pages are flex children, unlike the overlapping top-level views.
+        // Parking must preserve pixels, restore geometry, and isolate hidden layout.
+        oc::ui::lvgl::RetainedSurfaceParkingLot parking;
+        assert(parking.initialize());
+        auto* host = parking.createHost();
+        assert(host);
+        core::ui::MainViewFrame frame(parent);
+        frame.createInteractionRow();
+        frame.createCenterColumn();
+        auto* center = frame.centerColumn();
+        std::array<lv_obj_t*, 2> pages{};
+        for (size_t i = 0; i < pages.size(); ++i) {
+            pages[i] = lv_obj_create(center);
+            lv_obj_remove_style_all(pages[i]);
+            lv_obj_set_size(pages[i], LV_PCT(100), 0);
+            lv_obj_set_flex_grow(pages[i], 1);
+            lv_obj_set_style_bg_opa(pages[i], LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_color(pages[i], lv_color_hex(i ? 0x804020 : 0x204080), 0);
+            lv_obj_add_flag(pages[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        for (unsigned pass = 0; pass < 24; ++pass) {
+            const auto active = pass % 2;
+            const auto inactive = 1 - active;
+            lv_obj_set_size(parent, 280 + pass, 190 + pass);
+            for (auto* page : pages) {
+                parking.attach(page, center);
+                lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
+            }
+            lv_obj_remove_flag(pages[active], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_invalidate(lv_screen_active());
+            lv_refr_now(display);
+            const auto reference = pixels;
+            const auto hiddenWidth = lv_obj_get_width(pages[inactive]);
+            parking.park(pages[inactive], host);
+            lv_obj_invalidate(lv_screen_active());
+            lv_refr_now(display);
+            assert(reference == pixels);
+            assert(lv_obj_get_child_count(center) == 1);
+            assert(lv_obj_get_width(pages[active]) == 280 + pass);
+            assert(lv_obj_get_height(pages[active]) == 190 + pass);
+            lv_obj_set_width(parent, 310);
+            lv_obj_update_layout(center);
+            assert(lv_obj_get_width(pages[inactive]) == hiddenWidth);
+        }
+        // Page owners are destroyed before the parking lot, whichever parent owns them.
+        for (auto* page : pages) lv_obj_delete(page);
     }
     lv_display_delete(display);
     lv_deinit();

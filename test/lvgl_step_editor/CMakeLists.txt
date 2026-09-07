@@ -18,7 +18,8 @@ add_executable(track_navigation_strip track_navigation_strip.cpp
     ../../src/ui/common/AddSlotIcon.cpp)
 add_executable(step_grid_widgets step_grid_widgets.cpp ../../src/ui/sequencer/StepGridWidgets.cpp)
 add_executable(main_view_frame main_view_frame.cpp ../../src/ui/view/MainViewFrame.cpp
-    ../../../ui/src/ms/ui/component/LayoutView.cpp)
+    ../../../ui/src/ms/ui/component/LayoutView.cpp
+    "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/RetainedSurfaceParkingLot.cpp")
 add_executable(context_action_strip context_action_strip.cpp ../../src/ui/strip/ContextActionStrip.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/PausableTimer.cpp"
     "${OC_ROOT}/framework/src/oc/time/Time.cpp")

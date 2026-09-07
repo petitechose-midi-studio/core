@@ -110,6 +110,7 @@ void ProjectView::renderModulators() {
         : core::state::modulation::
               ProjectModulatorSourceSessionDescriptor{};
     if (sourceWorkspace) {
+        selectContent(modulator_workspace_->getElement());
         modulator_registry_->render({.visible = false});
         core::ui::project::ProjectModulatorWorkspaceProps workspaceProps{};
         if (source != nullptr && sourceSession.valid()) {
@@ -141,6 +142,7 @@ void ProjectView::renderModulators() {
         return;
     }
     modulator_workspace_->render({.visible = false});
+    selectContent(modulator_registry_->getElement());
 
     char meta[48]{};
     const auto guard = state_refs_.navigation.modulatorGuard.get();
