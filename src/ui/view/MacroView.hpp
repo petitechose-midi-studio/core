@@ -123,7 +123,6 @@ private:
     // correctness to a manually maintained exact subscription count.
     static constexpr size_t SUBSCRIPTION_CAPACITY = 64;
     oc::state::CheckedSubscriptionList<SUBSCRIPTION_CAPACITY> subscriptions_;
-    std::array<bool, MACRO_COUNT> rendered_automation_active_{};
     std::array<bool, MACRO_COUNT> rendered_automation_recording_{};
     std::array<bool, MACRO_COUNT> rendered_automation_manual_override_{};
     std::array<uint8_t, MACRO_COUNT> rendered_source_state_{};

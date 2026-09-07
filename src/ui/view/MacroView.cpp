@@ -40,7 +40,6 @@ uint8_t sourceStateBits(const MacroWidgetProps& props) {
 FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
     rendered_ccs_.fill(0xFF);
-    rendered_automation_active_.fill(false);
     rendered_automation_recording_.fill(false);
     rendered_automation_manual_override_.fill(false);
     rendered_source_state_.fill(0xFF);
@@ -748,16 +747,12 @@ void MacroView::processRenderFlags(uint32_t flags) {
                 if (configDirty || valueNeedsBatchFallback) {
                     invalidation.include(macros_[i]->getElement());
                 }
-                if (valueDirty || configDirty) {
-                    macros_[i]->setResolvedComponents(
-                        props.baseValue,
-                        props.modulationDelta,
-                        props.modulationDepth,
-                        props.value,
-                        props.clippedLow,
-                        props.clippedHigh
-                    );
-                }
+                macros_[i]->setResolvedComponents(
+                    props.baseValue,
+                    props.value,
+                    props.clippedLow,
+                    props.clippedHigh
+                );
                 if (configDirty) {
                     if (rendered_active_[i] != props.active ||
                         rendered_add_slot_[i] != props.addSlot) {
@@ -780,7 +775,6 @@ void MacroView::processRenderFlags(uint32_t flags) {
                             props.modulationSourceCount
                         );
                         rendered_source_state_[i] = nextSourceState;
-                        rendered_automation_active_[i] = props.automationActive;
                     }
                     if (rendered_automation_recording_[i] != props.automationRecording) {
                         macros_[i]->setAutomationRecording(props.automationRecording);

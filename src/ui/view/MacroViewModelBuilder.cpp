@@ -607,10 +607,6 @@ FLASHMEM MacroWidgetProps buildMacroWidgetPropsForDisplay(
     return {
         .value = visibleResolved,
         .baseValue = visibleBase,
-        .modulationDelta = projectedModulation,
-        .modulationDepth = controlSlotValid
-            ? controlSlot.primaryModulation.amount
-            : 0.0f,
         .modulationSourceCount = static_cast<uint8_t>(
             controlSlotValid
                 ? std::min<uint16_t>(controlSlot.modulationCount, 7U)
