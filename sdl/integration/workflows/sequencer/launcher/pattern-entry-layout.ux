@@ -1,0 +1,13 @@
+# Expect: semantic:pattern_first:mode=sequencer.pattern, semantic:pattern_second:mode=sequencer.pattern
+# Expect: capture_same:pattern_first=pattern_second
+0 scenario clip-launcher-v3
+200 encoder NAV 0.01
+500 capture screen clip_focus
+800 tap LEFT_BOTTOM 60
+1200 capture screen pattern_first
+1500 tap LEFT_TOP 60
+1900 capture screen returned
+2200 tap LEFT_BOTTOM 60
+2600 capture screen pattern_second
+2900 tap LEFT_TOP 60
+3300 capture screen returned_again

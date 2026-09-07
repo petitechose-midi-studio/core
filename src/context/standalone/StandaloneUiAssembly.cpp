@@ -528,6 +528,8 @@ void StandaloneUiAssembly::renderGlobalTrackStrip() {
         core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
         core_state_.sequencer.clipWorkspace.matrixVisible();
     if (global_track_strip_container_) {
+        const bool viewportChanged = launcherMatrixVisible !=
+            lv_obj_has_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN);
         if (launcherMatrixVisible) {
             lv_obj_add_flag(
                 global_track_strip_container_, LV_OBJ_FLAG_HIDDEN
@@ -537,6 +539,10 @@ void StandaloneUiAssembly::renderGlobalTrackStrip() {
                 global_track_strip_container_, LV_OBJ_FLAG_HIDDEN
             );
         }
+        // Settle the shared viewport before view timers read child geometry.
+        // This transition already moves the full view; one redraw replaces
+        // per-object damage from every intermediate layout pass.
+        if (viewportChanged) oc::ui::lvgl::updateLayoutWithFullRedraw(views_host_);
     }
     applyOverlayExclusivity();
     if (launcherMatrixVisible) return;
