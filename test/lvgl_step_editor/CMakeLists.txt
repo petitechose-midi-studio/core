@@ -22,7 +22,8 @@ add_executable(context_action_strip context_action_strip.cpp ../../src/ui/strip/
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/PausableTimer.cpp"
     "${OC_ROOT}/framework/src/oc/time/Time.cpp")
 add_executable(overlay_occlusion overlay_occlusion.cpp ../../../ui/src/ms/ui/ViewContainer.cpp)
-foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion)
+add_executable(pattern_preset_preview pattern_preset_preview.cpp)
+foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview)
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
         "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
@@ -41,3 +42,4 @@ add_test(NAME step_grid_widgets COMMAND step_grid_widgets)
 add_test(NAME main_view_frame COMMAND main_view_frame)
 add_test(NAME context_action_strip COMMAND context_action_strip)
 add_test(NAME overlay_occlusion COMMAND overlay_occlusion)
+add_test(NAME pattern_preset_preview COMMAND pattern_preset_preview)
