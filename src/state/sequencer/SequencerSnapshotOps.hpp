@@ -177,8 +177,6 @@ void mergeSnapshotIntoCurrent(
     const SequencerClipSnapshot& clipSnapshot
 );
 
-bool duplicatePatternForward(SequencerState& target);
-
 bool rotatePattern(SequencerState& target, int offsetSteps);
 
 /** Rotates one explicit Pattern owner without touching editor UI state. */

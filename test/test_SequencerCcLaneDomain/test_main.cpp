@@ -78,13 +78,7 @@ void testBulkPatternTransformsPreserveCcValuesAndTransitions() {
         0,
         seq::SequencerCcLaneTransition::EASE_IN_OUT
     ).changed());
-    const uint32_t beforeDuplicate = bank.revision;
-    assert(seq::duplicateSequencerCcLaneBankRange(bank, 0, 8, 8));
-    assert(bank.revision == beforeDuplicate + 1U);
-    assert(bank.lanes[0].activeMask.test(8));
-    assert(bank.lanes[0].values[8] == 20);
-    assert(seq::sequencerCcLaneTransition(bank.lanes[0], 8) ==
-           seq::SequencerCcLaneTransition::EASE_IN_OUT);
+    assert(seq::setSequencerCcLaneEvent(bank, 0, 8, 20).changed());
 
     const uint32_t beforeRotate = bank.revision;
     assert(seq::rotateSequencerCcLaneBank(bank, 16, 1));

@@ -608,64 +608,6 @@ FLASHMEM void mergeSnapshotIntoCurrent(
     target.pattern.bumpStepDataRevision();
 }
 
-FLASHMEM bool duplicatePatternForward(SequencerState& target) {
-    const uint8_t len = target.pattern.length.get();
-    if (len == 0 || len >= SequencerState::MAX_STEPS) return false;
-
-    const uint8_t targetStart = len;
-    const uint8_t copyCount = static_cast<uint8_t>(
-        std::min<uint16_t>(len, static_cast<uint16_t>(SequencerState::MAX_STEPS - targetStart))
-    );
-    if (copyCount == 0) return false;
-
-    auto mask = target.pattern.enabledMask.get();
-    bool dataChanged = false;
-
-    for (uint8_t i = 0; i < copyCount; ++i) {
-        const uint8_t src = i;
-        const uint8_t dst = static_cast<uint8_t>(targetStart + i);
-        const StepPayload sourceStep = readStep(target.pattern, src);
-
-        if (!sameStep(readStep(target.pattern, dst), sourceStep)) {
-            dataChanged = true;
-        }
-
-        writeStep(target.pattern, dst, sourceStep);
-
-        const bool srcEnabled = mask.test(src);
-        const bool dstEnabledBefore = mask.test(dst);
-        if (srcEnabled != dstEnabledBefore) {
-            dataChanged = true;
-        }
-
-        mask.setBit(dst, srcEnabled);
-    }
-
-    target.pattern.enabledMask.set(mask);
-
-    const uint8_t requiredLength = static_cast<uint8_t>(targetStart + copyCount);
-    if (target.pattern.ccLanes && duplicateSequencerCcLaneBankRange(
-            *target.pattern.ccLanes,
-            0,
-            targetStart,
-            copyCount
-        )) {
-        target.pattern.bumpCcLaneRevision();
-    }
-    if (requiredLength > len) {
-        (void)resizeClipPatternContent(target, requiredLength);
-    }
-
-    target.page.set(target.pageForStep(targetStart));
-    target.focusedStep.set(targetStart);
-
-    if (dataChanged) {
-        target.pattern.bumpStepDataRevision();
-    }
-
-    return true;
-}
-
 FLASHMEM bool rotatePatternState(SequencerPatternState& target, int offsetSteps) {
     const uint8_t len = target.length.get();
     if (len <= 1) return false;
