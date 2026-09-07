@@ -16,9 +16,13 @@
 
 namespace core::validation::benchmark {
 namespace {
-constexpr std::array<const char*, 62> names{
+constexpr std::array<const char*, 68> names{
     "app.context",
+    "app.input",
+    "app.midi-post-drain",
+    "app.midi-pre-drain",
     "app.notifications",
+    "app.pre-context-hooks",
     "benchmark.foreground-block",
     "display.ili9341.flush-region",
     "display.ili9341.submit-busy",
@@ -27,6 +31,7 @@ constexpr std::array<const char*, 62> names{
     "display.lvgl.flush-callback",
     "display.lvgl.frame-deferred",
     "display.lvgl.refresh",
+    "macro.automation-playback",
     "main.app-update",
     "main.core-state",
     "main.loop",
@@ -51,6 +56,7 @@ constexpr std::array<const char*, 62> names{
     "midi.usb-service-gap",
     "midi.usb-session-reset",
     "midi.usb-wake-age",
+    "project-control.evaluate",
     "sequencer.cc.compose",
     "sequencer.cc.frame",
     "sequencer.cc.inputs",
