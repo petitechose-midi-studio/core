@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 #include <src/misc/lv_area_private.h>
 
@@ -30,15 +30,6 @@ constexpr lv_coord_t STEP_LABEL_HEIGHT = 15;
 constexpr lv_coord_t VALUE_LABEL_TOP = 103;
 constexpr lv_coord_t VALUE_LABEL_HEIGHT = 15;
 constexpr lv_coord_t POINT_SIZE = 5;
-
-template <size_t N>
-FLASHMEM bool copyText(std::array<char, N>& destination, const char* source) {
-    const char* text = source ? source : "";
-    if (std::strncmp(destination.data(), text, N) == 0) return false;
-    std::strncpy(destination.data(), text, N - 1U);
-    destination[N - 1U] = '\0';
-    return true;
-}
 
 FLASHMEM lv_obj_t* createLabel(
     lv_obj_t* parent,
@@ -638,10 +629,10 @@ FLASHMEM void SequencerCcLaneGrid::render(
         rendered_ = false;
     }
 
-    if (copyText(titleText_, props.title)) {
+    if (ms::ui::text::copyTruncatedIfChanged(titleText_.data(), titleText_.size(), props.title)) {
         lv_label_set_text_static(title_, titleText_.data());
     }
-    if (copyText(metaText_, props.meta)) {
+    if (ms::ui::text::copyTruncatedIfChanged(metaText_.data(), metaText_.size(), props.meta)) {
         lv_label_set_text_static(meta_, metaText_.data());
     }
 
@@ -697,7 +688,7 @@ FLASHMEM void SequencerCcLaneGrid::render(
         }
         hint = contextualHint;
     }
-    if (copyText(hintText_, hint)) {
+    if (ms::ui::text::copyTruncatedIfChanged(hintText_.data(), hintText_.size(), hint)) {
         lv_label_set_text_static(hint_, hintText_.data());
     }
     if (statusColor_ != props.statusColor) {

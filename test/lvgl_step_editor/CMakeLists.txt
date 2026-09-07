@@ -25,8 +25,15 @@ add_executable(context_action_strip context_action_strip.cpp ../../src/ui/strip/
 add_executable(overlay_occlusion overlay_occlusion.cpp ../../../ui/src/ms/ui/ViewContainer.cpp)
 add_executable(pattern_preset_preview pattern_preset_preview.cpp)
 add_executable(cc_lane_grid cc_lane_grid.cpp ../../src/state/sequencer/SequencerCcLaneDomain.cpp
+    ../../../ui/src/ms/ui/widget/TextOverflow.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
-foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview cc_lane_grid)
+add_executable(cached_header_text cached_header_text.cpp
+    ../../src/ui/common/TrackHeaderRow.cpp ../../src/ui/common/AddSlotIcon.cpp
+    ../../src/ui/common/CompactMetricRow.cpp ../../src/ui/sequencer/SequencerCcLaneGrid.cpp
+    ../../src/state/sequencer/SequencerCcLaneDomain.cpp
+    ../../../ui/src/ms/ui/widget/TextOverflow.cpp
+    "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
+foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text)
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
         "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
@@ -47,3 +54,4 @@ add_test(NAME context_action_strip COMMAND context_action_strip)
 add_test(NAME overlay_occlusion COMMAND overlay_occlusion)
 add_test(NAME pattern_preset_preview COMMAND pattern_preset_preview)
 add_test(NAME cc_lane_grid COMMAND cc_lane_grid)
+add_test(NAME cached_header_text COMMAND cached_header_text)

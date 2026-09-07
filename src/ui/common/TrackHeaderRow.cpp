@@ -1,12 +1,12 @@
 #include "ui/common/TrackHeaderRow.hpp"
 
 #include <algorithm>
-#include <cstring>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -34,16 +34,9 @@ constexpr lv_opa_t ACTIVE_MIN_OPA = LV_OPA_70;
 
 template <size_t N>
 FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
-    if (!label) return;
-
-    const char* next = (text && text[0]) ? text : "";
-    if (std::strncmp(cache.data(), next, N) == 0) {
-        return;
+    if (label && ms::ui::text::copyTruncatedIfChanged(cache.data(), N, text)) {
+        lv_label_set_text(label, cache.data());
     }
-
-    std::strncpy(cache.data(), next, N - 1);
-    cache[N - 1] = '\0';
-    lv_label_set_text(label, cache.data());
 }
 
 }  // namespace
