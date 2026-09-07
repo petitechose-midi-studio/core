@@ -16,11 +16,6 @@ FLASHMEM MainViewFrame::MainViewFrame(lv_obj_t* parent) {
     body_ = layout_->content();
     if (!container_ || !header_ || !body_) return;
 
-    lv_obj_set_layout(header_, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(header_, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(header_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(header_, 0, 0);
-
     style::apply(body_).transparent().pad(0).noScroll();
     lv_obj_set_layout(body_, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(body_, LV_FLEX_FLOW_COLUMN);
