@@ -453,15 +453,9 @@ FLASHMEM void SequencerStructureNavigationWorkflow::navigateSelection(float delt
         auto& selection = sequencer_.structureUi.stepSelection;
         const uint8_t current = selection.cursorStep.get();
         const uint8_t maxCursor = maxStepCursor();
-        const int next = static_cast<int>(current) + direction;
-        uint8_t wrapped = 0;
-        if (next < 0) {
-            wrapped = maxCursor;
-        } else if (next > static_cast<int>(maxCursor)) {
-            wrapped = 0;
-        } else {
-            wrapped = static_cast<uint8_t>(next);
-        }
+        const auto wrapped = static_cast<uint8_t>(oc::util::wrapIndex(
+            static_cast<int>(current) + nav::turnSteps(delta),
+            static_cast<int>(maxCursor) + 1));
         selection.cursorStep.set(wrapped);
         sequencer_.focusedStep.set(wrapped);
         sequencer_.page.set(
@@ -536,15 +530,8 @@ FLASHMEM void SequencerStructureNavigationWorkflow::moveStep(float delta) {
         sequencer_.focusedStep.get(),
         static_cast<uint8_t>(length - 1U)
     );
-    const int next = static_cast<int>(current) + nav::turnStep(delta);
-    uint8_t wrapped = 0;
-    if (next < 0) {
-        wrapped = static_cast<uint8_t>(length - 1U);
-    } else if (next >= length) {
-        wrapped = 0;
-    } else {
-        wrapped = static_cast<uint8_t>(next);
-    }
+    const auto wrapped = static_cast<uint8_t>(oc::util::wrapIndex(
+        static_cast<int>(current) + nav::turnSteps(delta), length));
 
     sequencer_.focusedStep.set(wrapped);
     sequencer_.page.set(core::state::sequencer::activeContentPageForStep(wrapped));

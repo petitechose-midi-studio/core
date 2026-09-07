@@ -2616,17 +2616,42 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
 
     const bool selectionActive = isSelectionScope(policy.scope);
     out.mode = modeForScope(policy.scope);
-    out.target = selectionActive ? "step" : targetForPolicyScope(policy.scope);
+    out.target = targetForPolicyScope(policy.scope);
 
     uint8_t index = 0;
-    if (selectionActive) {
-        const auto& selection = sequencer_.structureUi.stepSelection;
-        const uint8_t step = selection.cursorStep.get();
-        out.mode = "sequencer.step_selection";
-        out.target = "step";
-        out.targetStep = static_cast<int16_t>(step);
-        out.property = selection.selected(step) ? "selected" : "cursor";
-        copyIndexLabel(out.valueLabel, step);
+    if (selectionActive || policyScopeTargetsStep(policy.scope)) {
+        if (policyScopeTargetsStep(policy.scope)) {
+            const auto& selection = sequencer_.structureUi.stepSelection;
+            index = selectionActive
+                ? selection.cursorStep.get()
+                : sequencer_.focusedStep.get();
+            out.targetStep = index;
+            out.targetCount = core::state::sequencer::activeContentLength(sequencer_);
+            out.targetPage = core::state::sequencer::activeContentPageForStep(index);
+            out.property = selectionActive
+                ? (selection.selected(index) ? "selected" : "cursor")
+                : "existing";
+            fillResolvedStepUxContext(
+                sequencer_, tracks_, index, sequencer_.activeStepProperty.get(), out);
+        } else {
+            const bool track = policyScopeTargetsTrack(policy.scope);
+            const auto& selection = track
+                ? track_navigation_.selection
+                : sequencer_.structureUi.pageSelection;
+            index = selection.cursorIndex.get();
+            out.targetCount = track
+                ? core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+                : core::state::sequencer::activeContentPageCount(sequencer_);
+            out.targetMask = selection.placementActive()
+                ? selection.destinationMask.get()
+                : selection.selectedMask.get();
+            out.property = selection.placementActive()
+                ? (selection.pasteBlocked.get() ? "blocked" : "placement")
+                : (core::state::shared::isEnabled(selection.selectedMask.get(), index)
+                       ? "selected" : "cursor");
+        }
+        out.targetIndex = index;
+        copyIndexLabel(out.valueLabel, index);
 
         out.effect = isButton(
             event,
@@ -2635,6 +2660,15 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         )
             ? armActionName(action)
             : actionName(action);
+        if (!selectionActive && trace_state_ &&
+            ((trace_state_->ignoreNextBottomRightRelease && isButton(
+                  event, Config::ButtonID::BOTTOM_RIGHT,
+                  oc::core::input::ButtonBindingType::RELEASE)) ||
+             (trace_state_->ignoreNextBottomLeftRelease && isButton(
+                  event, Config::ButtonID::BOTTOM_LEFT,
+                  oc::core::input::ButtonBindingType::RELEASE)))) {
+            markIgnored(out, "after_long_press");
+        }
         return true;
     }
 
