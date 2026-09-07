@@ -39,14 +39,9 @@ public:
     );
 
 private:
-    struct KeyWidgets {
-        lv_obj_t* label = nullptr;
-        lv_obj_t* shiftLabel = nullptr;
-    };
-
     void createLayout(lv_obj_t* parent);
     void renderKey(uint8_t index, bool selected);
-    void applyShiftVisibility(bool shiftActive);
+    void applyShift(bool shiftActive);
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* title_ = nullptr;
@@ -54,7 +49,7 @@ private:
     lv_obj_t* name_box_ = nullptr;
     lv_obj_t* name_label_ = nullptr;
     std::array<
-        KeyWidgets,
+        lv_obj_t*,
         core::state::interaction::TEXT_KEYBOARD_CELL_COUNT
     > keys_{};
     bool visible_ = false;
@@ -65,11 +60,11 @@ private:
 };
 
 static_assert(
-    sizeof(TextKeyboardView) <= 1024U,
+    sizeof(TextKeyboardView) <= 512U,
     "Text keyboard exceeds its retained PSRAM owner budget"
 );
 static_assert(
-    sizeof(void*) != 4U || sizeof(TextKeyboardView) <= 480U,
+    sizeof(void*) != 4U || sizeof(TextKeyboardView) <= 256U,
     "Text keyboard exceeds its Teensy PSRAM owner budget"
 );
 

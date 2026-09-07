@@ -25,6 +25,11 @@ constexpr lv_coord_t KEYBOARD_GRID_Y = 38;
 constexpr lv_coord_t KEYBOARD_ROW_CENTER_OFFSET =
     (KEYBOARD_KEY_W + KEYBOARD_KEY_GAP) / 2;
 constexpr lv_coord_t KEYBOARD_LABEL_Y_OFFSET = 0;
+// Static text keeps Shift allocation-free without a second LVGL label per key.
+constexpr char UPPERCASE[][2] PROGMEM = {
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"
+};
 
 FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, const char* text) {
     if (!label) return;
@@ -38,7 +43,7 @@ FLASHMEM void configureKeyLabel(lv_obj_t* label, const char* text) {
     if (!label) return;
 
     lv_obj_set_style_text_font(label, fonts.compact_label(), 0);
-    lv_label_set_text(label, text ? text : "");
+    lv_label_set_text_static(label, text ? text : "");
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(label, LV_ALIGN_CENTER, 0, KEYBOARD_LABEL_Y_OFFSET);
@@ -46,12 +51,6 @@ FLASHMEM void configureKeyLabel(lv_obj_t* label, const char* text) {
 
 FLASHMEM bool isLetter(char character) {
     return character >= 'a' && character <= 'z';
-}
-
-FLASHMEM char shiftedCharacter(char character) {
-    return isLetter(character)
-        ? static_cast<char>(character - 'a' + 'A')
-        : character;
 }
 
 FLASHMEM void setKeyTextStyle(lv_obj_t* label, bool selected) {
@@ -83,15 +82,7 @@ FLASHMEM TextKeyboardView::TextKeyboardView(lv_obj_t* parent) {
     if (!container_ || !title_ || !meta_ || !name_box_ || !name_label_) {
         return;
     }
-    for (uint8_t i = 0; i < keys_.size(); ++i) {
-        const auto& widgets = keys_[i];
-        const auto& cell =
-            core::state::interaction::textKeyboardCellAt(i);
-        if (!widgets.label ||
-            (isLetter(cell.character) && !widgets.shiftLabel)) {
-            return;
-        }
-    }
+    for (const auto* label : keys_) if (!label) return;
     initialized_ = true;
 }
 
@@ -194,7 +185,6 @@ FLASHMEM void TextKeyboardView::createLayout(lv_obj_t* parent) {
             (cell.columnSpan - 1U) * KEYBOARD_KEY_GAP
         );
 
-        auto& widgets = keys_[i];
         lv_obj_t* keyContainer = lv_obj_create(container_);
         if (!keyContainer) return;
         style::apply(keyContainer)
@@ -213,19 +203,9 @@ FLASHMEM void TextKeyboardView::createLayout(lv_obj_t* parent) {
             0
         );
 
-        widgets.label = lv_label_create(keyContainer);
-        if (!widgets.label) return;
-        configureKeyLabel(widgets.label, cell.label);
-        if (isLetter(cell.character)) {
-            char shiftedText[2] = {
-                shiftedCharacter(cell.character),
-                '\0'
-            };
-            widgets.shiftLabel = lv_label_create(keyContainer);
-            if (!widgets.shiftLabel) return;
-            configureKeyLabel(widgets.shiftLabel, shiftedText);
-            lv_obj_add_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
-        }
+        keys_[i] = lv_label_create(keyContainer);
+        if (!keys_[i]) return;
+        configureKeyLabel(keys_[i], cell.label);
         renderKey(i, false);
     }
 }
@@ -242,7 +222,7 @@ void TextKeyboardView::render(
     setLabelTextIfChanged(name_label_, props.name);
 
     if (rendered_shift_ != props.shiftActive) {
-        applyShiftVisibility(props.shiftActive);
+        applyShift(props.shiftActive);
         rendered_shift_ = props.shiftActive;
     }
 
@@ -261,29 +241,25 @@ void TextKeyboardView::renderKey(
 ) {
     if (index >= keys_.size()) return;
 
-    auto& widgets = keys_[index];
-    if (!widgets.label) return;
-    lv_obj_t* keyContainer = lv_obj_get_parent(widgets.label);
+    auto* label = keys_[index];
+    if (!label) return;
+    lv_obj_t* keyContainer = lv_obj_get_parent(label);
     if (!keyContainer) return;
 
     const auto state = selected
         ? InteractiveSurfaceState::FOCUSED
         : InteractiveSurfaceState::IDLE;
     applyInteractiveSurfaceChrome(keyContainer, state);
-    setKeyTextStyle(widgets.label, selected);
-    setKeyTextStyle(widgets.shiftLabel, selected);
+    setKeyTextStyle(label, selected);
 }
 
-FLASHMEM void TextKeyboardView::applyShiftVisibility(bool shiftActive) {
-    for (auto& widgets : keys_) {
-        if (!widgets.label || !widgets.shiftLabel) continue;
-        if (shiftActive) {
-            lv_obj_add_flag(widgets.label, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(widgets.label, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
-        }
+FLASHMEM void TextKeyboardView::applyShift(bool shiftActive) {
+    for (uint8_t i = 0; i < keys_.size(); ++i) {
+        const auto& cell = core::state::interaction::textKeyboardCellAt(i);
+        if (!keys_[i] || !isLetter(cell.character)) continue;
+        lv_label_set_text_static(
+            keys_[i], shiftActive ? UPPERCASE[cell.character - 'a'] : cell.label
+        );
     }
 }
 
@@ -295,10 +271,9 @@ FLASHMEM void TextKeyboardView::setVisible(bool visible) {
         return;
     }
 
-    if (rendered_shift_) applyShiftVisibility(false);
+    if (rendered_shift_) applyShift(false);
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-    rendered_selected_ =
-        core::state::interaction::TEXT_KEYBOARD_CELL_COUNT;
+    // Keep the rendered key so reopening can unhighlight it before moving focus.
     rendered_shift_ = false;
 }
 

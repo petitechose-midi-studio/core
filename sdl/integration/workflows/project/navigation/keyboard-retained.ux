@@ -1,0 +1,34 @@
+# Shared keyboard: move, shift, type, cancel, reopen; no save/SD operation.
+# Expect: capture_changed:initial=selected_w, capture_changed:selected_w=shifted
+# Expect: semantic:initial:value_label=save_as_name
+# Equality after reopening is checked by script/ux_assert_capture_equal.py.
+0 scenario macro-performance-rail
+200 button LEFT_TOP down
+400 encoder NAV 0.01
+500 encoder NAV 0.01
+600 encoder NAV 0.01
+800 button LEFT_TOP up
+1200 button LEFT_CENTER down
+1400 encoder NAV -0.01
+1700 button LEFT_CENTER up
+1900 encoder NAV 0.01
+2100 tap NAV 60
+2400 capture screen initial
+2600 encoder NAV 0.01
+2800 capture screen selected_w
+3000 button LEFT_CENTER down
+3200 capture screen shifted
+3400 tap NAV 60
+3600 capture screen typed_upper
+3800 button LEFT_CENTER up
+4000 capture screen unshifted
+4200 tap NAV 60
+4400 capture screen typed_lower
+4600 tap LEFT_TOP 60
+5000 tap NAV 60
+5300 capture screen reopened
+5500 button LEFT_CENTER down
+5700 capture screen reopened_shift
+5900 button LEFT_CENTER up
+6200 tap LEFT_TOP 60
+6500 capture screen returned
