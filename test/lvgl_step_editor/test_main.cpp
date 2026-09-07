@@ -119,6 +119,32 @@ int main(int argc, char** argv) {
             editor.render(props);
         }
     }
+    {
+        core::ui::SequencerChordVoiceRail rail;
+        rail.create(parent);
+        core::ui::SequencerChordVoiceRailProps props{
+            .visible = true, .itemCount = 2, .focusedItem = 1, .color = 0xFFAA20,
+        };
+        unsigned draws = 0;
+        lv_obj_add_event_cb(rail.element(), [](lv_event_t* event) {
+            ++*static_cast<unsigned*>(lv_event_get_user_data(event));
+        }, LV_EVENT_DRAW_MAIN, &draws);
+        for (const char* text : {"V2", "1234567", "123456789012345", "1234567other", "New", "", static_cast<const char*>(nullptr)}) {
+            props.items[1] = {.label = text, .value = text};
+            rail.render(props);
+            lv_refr_now(display);
+            const auto expected = pixels;
+            draws = 0;
+            rail.render(props);
+            lv_refr_now(display);
+            std::printf("rail text=%s repeated_draws=%u\n", text ? text : "(null)", draws);
+            if (!reference) assert(draws == 0);
+            assert(expected == pixels);
+            lv_obj_invalidate(rail.element());
+            lv_refr_now(display);
+            assert(expected == pixels);
+        }
+    }
     lv_display_delete(display);
     lv_deinit();
 }

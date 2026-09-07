@@ -11,6 +11,7 @@ add_executable(step_editor test_main.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/RetainedSurfaceParkingLot.cpp"
     ../../src/ui/sequencer/SequencerStepEditOverlay.cpp
     ../../src/ui/sequencer/SequencerChordVoiceRail.cpp
+    ../../../ui/src/ms/ui/widget/TextOverflow.cpp
     ../../src/ui/common/CompactMetricRow.cpp)
 add_executable(track_navigation_strip track_navigation_strip.cpp
     ../../src/ui/common/TrackNavigationStrip.cpp

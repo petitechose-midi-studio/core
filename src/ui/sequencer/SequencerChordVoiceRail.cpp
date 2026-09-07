@@ -1,10 +1,10 @@
 #include "ui/sequencer/SequencerChordVoiceRail.hpp"
 
 #include <algorithm>
-#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -18,15 +18,6 @@ constexpr lv_coord_t RAIL_HEIGHT = 42;
 constexpr lv_coord_t ITEM_GAP = 2;
 constexpr lv_coord_t ITEM_RADIUS = 3;
 constexpr lv_opa_t OPACITY_55 = static_cast<lv_opa_t>(140);
-
-template <std::size_t N>
-bool copyText(std::array<char, N>& destination, const char* source) {
-    const char* text = source ? source : "";
-    if (std::strncmp(destination.data(), text, N) == 0) return false;
-    std::strncpy(destination.data(), text, N - 1U);
-    destination[N - 1U] = '\0';
-    return true;
-}
 
 void drawRect(
     lv_layer_t* layer,
@@ -104,8 +95,10 @@ FLASHMEM void SequencerChordVoiceRail::render(
     for (std::size_t index = 0; index < items_.size(); ++index) {
         auto& cached = items_[index];
         const auto& incoming = props.items[index];
-        changed = copyText(cached.label, incoming.label) || changed;
-        changed = copyText(cached.value, incoming.value) || changed;
+        changed = ms::ui::text::copyTruncatedIfChanged(
+            cached.label.data(), cached.label.size(), incoming.label) || changed;
+        changed = ms::ui::text::copyTruncatedIfChanged(
+            cached.value.data(), cached.value.size(), incoming.value) || changed;
         if (cached.add != incoming.add ||
             cached.enabled != incoming.enabled) {
             cached.add = incoming.add;

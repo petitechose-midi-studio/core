@@ -1,10 +1,10 @@
 #include "ui/sequencer/SequencerPatternEditorOverlay.hpp"
 
 #include <algorithm>
-#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 
@@ -27,15 +27,6 @@ constexpr lv_coord_t FIELD_HEIGHT = 20;
 constexpr lv_opa_t OPACITY_15 = static_cast<lv_opa_t>(38);
 constexpr lv_opa_t OPACITY_35 = static_cast<lv_opa_t>(89);
 constexpr lv_opa_t OPACITY_55 = static_cast<lv_opa_t>(140);
-
-template <std::size_t N>
-bool copyText(std::array<char, N>& destination, const char* source) {
-    const char* text = source ? source : "";
-    if (std::strncmp(destination.data(), text, N) == 0) return false;
-    std::strncpy(destination.data(), text, N - 1U);
-    destination[N - 1U] = '\0';
-    return true;
-}
 
 FLASHMEM lv_obj_t* createLabel(
     lv_obj_t* parent,
@@ -274,9 +265,12 @@ FLASHMEM void SequencerPatternEditorOverlay::render(
     }
 
     bool headerChanged = false;
-    headerChanged = copyText(title_text_, props.title) || headerChanged;
-    headerChanged = copyText(meta_text_, props.meta) || headerChanged;
-    headerChanged = copyText(hint_text_, props.transientHint) || headerChanged;
+    headerChanged = ms::ui::text::copyTruncatedIfChanged(
+        title_text_.data(), title_text_.size(), props.title) || headerChanged;
+    headerChanged = ms::ui::text::copyTruncatedIfChanged(
+        meta_text_.data(), meta_text_.size(), props.meta) || headerChanged;
+    headerChanged = ms::ui::text::copyTruncatedIfChanged(
+        hint_text_.data(), hint_text_.size(), props.transientHint) || headerChanged;
     const uint32_t requestedAccentColor = props.accentColor == 0U
         ? theme::color::CONTENT_ACTIVE
         : props.accentColor;
@@ -297,8 +291,10 @@ FLASHMEM void SequencerPatternEditorOverlay::render(
     for (std::size_t index = 0; index < field_cache_.size(); ++index) {
         auto& cached = field_cache_[index];
         const auto& incoming = props.fields[index];
-        fieldsChanged = copyText(cached.icon, incoming.icon) || fieldsChanged;
-        fieldsChanged = copyText(cached.value, incoming.value) || fieldsChanged;
+        fieldsChanged = ms::ui::text::copyTruncatedIfChanged(
+            cached.icon.data(), cached.icon.size(), incoming.icon) || fieldsChanged;
+        fieldsChanged = ms::ui::text::copyTruncatedIfChanged(
+            cached.value.data(), cached.value.size(), incoming.value) || fieldsChanged;
         if (cached.color != incoming.color || cached.selected != incoming.selected) {
             cached.color = incoming.color;
             cached.selected = incoming.selected;
