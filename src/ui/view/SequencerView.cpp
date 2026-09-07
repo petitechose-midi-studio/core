@@ -40,6 +40,7 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
         !cc_lane_grid_ || !cc_lane_grid_->getElement()
         || !clip_launcher_surface_ || !clip_launcher_surface_->getElement()
         || !drum_overview_surface_ || !drum_overview_surface_->getElement()
+        || !content_parking_host_
     ) return;
     createTrackPastePreflightCard();
     if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
@@ -113,6 +114,8 @@ FLASHMEM void SequencerView::createGrid() {
         core::app::makeExtmemUnique<core::ui::sequencer::DrumOverviewSurface>(
             center_column_
         );
+    if (!content_parking_.initialize()) return;
+    content_parking_host_ = content_parking_.createHost();
 }
 
 FLASHMEM void SequencerView::createPropertySelectionOverlay() {
@@ -785,6 +788,8 @@ void SequencerView::render(uint32_t flags) {
             sequencer::sequencerPreviewingEmptyTrack(source);
         if (state_refs_.sequencer.clipWorkspace.matrixVisible()) {
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.clip-launcher");
+            oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                clip_launcher_surface_->getElement(), center_column_, content_parking_host_);
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             cc_lane_grid_->render({.visible = false});
             drum_overview_surface_->render({.visible = false});
@@ -804,6 +809,8 @@ void SequencerView::render(uint32_t flags) {
         } else if (!previewEmptyTrack &&
             core::state::sequencer::isDrumOverviewActive(
                 state_refs_.sequencer)) {
+            oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                drum_overview_surface_->getElement(), center_column_, content_parking_host_);
             clip_launcher_surface_->render({.visible = false});
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-overview");
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
@@ -822,11 +829,15 @@ void SequencerView::render(uint32_t flags) {
             const auto ccLaneProps =
                 sequencer::buildSequencerCcLaneGridProps(source);
             if (!previewEmptyTrack && ccLaneProps.visible) {
+                oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                    cc_lane_grid_->getElement(), center_column_, content_parking_host_);
                 OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
                 lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
                 cc_lane_grid_->render(ccLaneProps);
             } else {
                 const auto stepGridProps = sequencer::buildStepGridProps(source);
+                oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                    step_grid_->getElement(), center_column_, content_parking_host_);
                 OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.step-grid");
                 cc_lane_grid_->render({.visible = false});
                 lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);

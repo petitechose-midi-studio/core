@@ -88,7 +88,7 @@ int main() {
             lv_refr_now(display);
             const auto reference = pixels;
             const auto hiddenWidth = lv_obj_get_width(pages[inactive]);
-            parking.park(pages[inactive], host);
+            parking.select(pages[active], center, host);
             lv_obj_invalidate(lv_screen_active());
             lv_refr_now(display);
             assert(reference == pixels);

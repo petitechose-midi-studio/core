@@ -9,6 +9,7 @@
 
 #include <oc/state/StaticSignalWatcher.hpp>
 #include <oc/ui/lvgl/IView.hpp>
+#include <oc/ui/lvgl/RetainedSurfaceParkingLot.hpp>
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/StatusBarState.hpp"
@@ -157,6 +158,8 @@ private:
     core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
         render_scheduler_;
 
+    oc::ui::lvgl::RetainedSurfaceParkingLot content_parking_;
+    lv_obj_t* content_parking_host_ = nullptr;
     core::app::ExtmemUniquePtr<core::ui::MainViewFrame> frame_;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* body_container_ = nullptr;

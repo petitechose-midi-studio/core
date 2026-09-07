@@ -295,15 +295,8 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
 }
 
 void ProjectView::selectContent(lv_obj_t* active) {
-    // Hidden siblings still participate in LVGL's recursive layout traversal.
-    // Keep only the selected page in the flex host; retain the others off-screen.
-    using Parking = oc::ui::lvgl::RetainedSurfaceParkingLot;
-    for (auto* root : {menu_->getElement(), modulator_registry_->getElement(),
-                      modulator_workspace_->getElement(),
-                      project_name_keyboard_->getElement()}) {
-        if (root != active) Parking::park(root, content_parking_host_);
-    }
-    Parking::attach(active, center_column_);
+    oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+        active, center_column_, content_parking_host_);
 }
 
 FLASHMEM bool ProjectView::bindToState() {
