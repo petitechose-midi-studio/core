@@ -6,6 +6,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Screen.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
+#include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
@@ -487,21 +488,19 @@ FLASHMEM void StandaloneUiAssembly::applyOverlayExclusivity() {
     overlay_exclusive_mode_ = hasOverlay;
     lv_obj_t* bottomZone = view_container_ ? view_container_->getBottomZone() : nullptr;
 
-    if (hasOverlay) {
-        if (overlay_curtain_) {
-            lv_obj_set_style_bg_opa(overlay_curtain_, LV_OPA_COVER, 0);
-        }
-        if (bottomZone) {
-            lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_move_foreground(bottomZone);
-        }
-        return;
-    }
-
     if (overlay_curtain_) {
-        lv_obj_set_style_bg_opa(overlay_curtain_, LV_OPA_TRANSP, 0);
+        // Fixed, effect-free leaf: only its pixels change, not its geometry.
+        // Keep this scope separate from the bottom bar's visibility callbacks.
+        oc::ui::lvgl::StaticSurfaceInvalidationBatch<1> damage(overlay_curtain_);
+        damage.include(overlay_curtain_);
+        lv_obj_set_style_bg_opa(
+            overlay_curtain_, hasOverlay ? LV_OPA_COVER : LV_OPA_TRANSP, 0
+        );
     }
-    if (bottomZone) lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+    if (bottomZone) {
+        lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+        if (hasOverlay) lv_obj_move_foreground(bottomZone);
+    }
 }
 
 void StandaloneUiAssembly::scheduleGlobalTrackStripRender(bool ready) {
