@@ -74,6 +74,9 @@
 *ProductFileTransactionJournal.cpp.o(.text* .rodata*)
 *ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)
 *ProductAssetFileStore.cpp.o(.text* .rodata*)
+/* Preset paging and mutations are storage boundaries; their local sort
+ * templates must stay beside the FLASHMEM entry points, not in ITCM. */
+*PatternPresetFileStore.cpp.o(.text* .rodata*)
 *ProductFileService.cpp.o(.text* .rodata*)
 *ProjectWorkspacePool.cpp.o(.text* .rodata*)
 *ProductPersistenceCoordinator.cpp.o(.text* .rodata*)

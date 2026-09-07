@@ -4,6 +4,8 @@
 
 #include <array>
 #include <cassert>
+#include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -166,6 +168,20 @@ void testPatternPresetFileStoreRoundTrip() {
     assert(std::strcmp(entries[0].id, "pattern-preset-001") == 0);
     assert(std::strcmp(entries[0].semanticName, "Broken pulse") == 0);
 
+    assert(store.createFolder("Beats"));
+    const auto mixed = listSettled(files, catalog, store, entries, 4U);
+    assert(mixed && mixed.value().count == 2U);
+    assert(std::strcmp(entries[0].id, "@Beats") == 0);
+    assert(std::strcmp(entries[1].id, "pattern-preset-001") == 0);
+    const auto afterFolder = store.listPage(entries, 4U, "@Beats",
+        PatternPresetFilePageDirection::FORWARD);
+    assert(afterFolder && afterFolder.value().count == 1U);
+    assert(std::strcmp(entries[0].id, "pattern-preset-001") == 0);
+    const auto beforeAsset = store.listPage(entries, 4U, "pattern-preset-001",
+        PatternPresetFilePageDirection::BACKWARD);
+    assert(beforeAsset && beforeAsset.value().count == 1U);
+    assert(std::strcmp(entries[0].id, "@Beats") == 0);
+
     char nextId[seq::SEQUENCER_PRESET_TECHNICAL_ID_SIZE]{};
     assert(store.nextPresetId(nextId, sizeof(nextId)));
     assert(std::strcmp(nextId, "pattern-preset-002") == 0);
@@ -255,10 +271,64 @@ void testPatternPresetFolderLifecycle() {
     std::cout << "[PASS] PatternPresetFileStore folder lifecycle\n";
 }
 
+void testDenseFolderPagination() {
+    using core::persistence::compareProductCatalogNames;
+    assert(compareProductCatalogNames("Beats", "beats") == 0);
+    assert(compareProductCatalogNames("", "Beat") < 0);
+    assert(compareProductCatalogNames("Beat", "beats") < 0);
+    assert(compareProductCatalogNames("b", "A") > 0);
+    assert(compareProductCatalogNames("\x80", "z") > 0);
+    resetTestRoot();
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    assert(filesystem.init());
+    ProductFileService files(filesystem);
+    assert(files.init());
+    ProductDirectoryCatalog catalog(files);
+    PatternPresetFileStore store(files, catalog);
+    for (unsigned i = ProductDirectoryCatalog::MAX_ENTRIES; i > 0; --i) {
+        char name[16]{};
+        std::snprintf(name, sizeof(name), "Folder%03u", i - 1U);
+        assert(store.createFolder(name));
+    }
+    std::array<PatternPresetFileListEntry, 8> entries{};
+    assert(listFoldersSettled(files, catalog, store, entries.data(), entries.size()));
+    for (const bool foldersOnly : {false, true}) {
+        const auto list = [&](const char* anchor, PatternPresetFilePageDirection direction) {
+            return foldersOnly
+                ? store.listFoldersPage(entries.data(), entries.size(), anchor, direction)
+                : store.listPage(entries.data(), entries.size(), anchor, direction);
+        };
+        for (const auto direction : {PatternPresetFilePageDirection::FORWARD,
+                                     PatternPresetFilePageDirection::BACKWARD}) {
+            const auto start = std::chrono::steady_clock::now();
+            const auto page = list("@Folder247", direction);
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            assert(page && page.value().count == entries.size());
+            assert(page.value().totalCount == ProductDirectoryCatalog::MAX_ENTRIES);
+            assert(page.value().hasPrevious);
+            assert(page.value().hasNext == (direction == PatternPresetFilePageDirection::BACKWARD));
+            const unsigned begin = direction == PatternPresetFilePageDirection::FORWARD ? 248U : 239U;
+            for (unsigned i = 0; i < entries.size(); ++i) {
+                char expected[16]{};
+                std::snprintf(expected, sizeof(expected), "@Folder%03u", begin + i);
+                assert(std::strcmp(entries[i].id, expected) == 0);
+            }
+            std::cout << "[MEASURE] folder-page only=" << foldersOnly
+                      << " direction=" << unsigned(direction) << " us="
+                      << std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count() << '\n';
+        }
+        assert(!list("@Missing", PatternPresetFilePageDirection::FORWARD));
+        const auto empty = list("@Folder000", PatternPresetFilePageDirection::BACKWARD);
+        assert(empty && empty.value().count == 0 && !empty.value().hasPrevious);
+    }
+    resetTestRoot();
+}
+
 }  // namespace
 
 int main() {
     testPatternPresetFileStoreRoundTrip();
     testPatternPresetFolderLifecycle();
+    testDenseFolderPagination();
     return 0;
 }

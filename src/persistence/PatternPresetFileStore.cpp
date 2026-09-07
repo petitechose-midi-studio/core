@@ -1,6 +1,7 @@
 #include "persistence/PatternPresetFileStore.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <utility>
@@ -14,20 +15,6 @@ using Entry = PatternPresetFileListEntry;
 using EntryKind = ProductDirectoryAssetEntryKind;
 using Direction = PatternPresetFilePageDirection;
 
-FLASHMEM int compareTextCaseFolded(const char* lhs, const char* rhs) {
-    size_t index = 0U;
-    while (lhs[index] != '\0' && rhs[index] != '\0') {
-        auto left = static_cast<unsigned char>(lhs[index]);
-        auto right = static_cast<unsigned char>(rhs[index]);
-        if (left >= 'A' && left <= 'Z') left += 32U;
-        if (right >= 'A' && right <= 'Z') right += 32U;
-        if (left != right) return left < right ? -1 : 1;
-        ++index;
-    }
-    if (lhs[index] == rhs[index]) return 0;
-    return lhs[index] == '\0' ? -1 : 1;
-}
-
 FLASHMEM bool visibleFolder(
     const oc::interface::DirectoryEntry& entry
 ) {
@@ -38,41 +25,22 @@ FLASHMEM bool visibleFolder(
         );
 }
 
-FLASHMEM uint16_t folderCount(
+using FolderIndices = std::array<uint16_t, ProductDirectoryCatalog::MAX_ENTRIES>;
+
+FLASHMEM uint16_t sortFolderIndices(
     const oc::interface::DirectoryEntry* entries,
-    uint16_t count
+    uint16_t count,
+    FolderIndices& indices
 ) {
     uint16_t result = 0U;
     for (uint16_t index = 0U; index < count; ++index) {
-        if (visibleFolder(entries[index])) ++result;
+        if (visibleFolder(entries[index])) indices[result++] = index;
     }
+    std::sort(indices.begin(), indices.begin() + result, [entries](uint16_t lhs, uint16_t rhs) {
+        const int comparison = compareProductCatalogNames(entries[lhs].name, entries[rhs].name);
+        return comparison < 0 || (comparison == 0 && lhs < rhs);
+    });
     return result;
-}
-
-FLASHMEM const oc::interface::DirectoryEntry* folderAtRank(
-    const oc::interface::DirectoryEntry* entries,
-    uint16_t count,
-    uint16_t wantedRank
-) {
-    for (uint16_t index = 0U; index < count; ++index) {
-        const auto& candidate = entries[index];
-        if (!visibleFolder(candidate)) continue;
-        uint16_t rank = 0U;
-        for (uint16_t otherIndex = 0U; otherIndex < count; ++otherIndex) {
-            const auto& other = entries[otherIndex];
-            if (!visibleFolder(other)) continue;
-            const int comparison = compareTextCaseFolded(
-                other.name,
-                candidate.name
-            );
-            if (comparison < 0 ||
-                (comparison == 0 && otherIndex < index)) {
-                ++rank;
-            }
-        }
-        if (rank == wantedRank) return &candidate;
-    }
-    return nullptr;
 }
 
 FLASHMEM bool copyFolderEntry(
@@ -282,7 +250,8 @@ PatternPresetFileStore::listPage(
         });
     }
 
-    const uint16_t folders = folderCount(raw, rawCount);
+    FolderIndices folderIndices;
+    const uint16_t folders = sortFolderIndices(raw, rawCount, folderIndices);
     const uint16_t total = static_cast<uint16_t>(folders + assetCount);
     uint16_t anchorIndex = 0U;
     const bool hasAnchor = anchorExclusive != nullptr &&
@@ -291,9 +260,8 @@ PatternPresetFileStore::listPage(
         bool found = false;
         if (anchorExclusive[0] == FOLDER_ENTRY_PREFIX) {
             for (uint16_t rank = 0U; rank < folders; ++rank) {
-                const auto* folder = folderAtRank(raw, rawCount, rank);
-                if (folder != nullptr &&
-                    std::strcmp(folder->name, anchorExclusive + 1U) == 0) {
+                const auto& folder = raw[folderIndices[rank]];
+                if (std::strcmp(folder.name, anchorExclusive + 1U) == 0) {
                     anchorIndex = rank;
                     found = true;
                     break;
@@ -339,9 +307,7 @@ PatternPresetFileStore::listPage(
     for (uint16_t index = begin; index < end; ++index) {
         bool copied = false;
         if (index < folders) {
-            const auto* folder = folderAtRank(raw, rawCount, index);
-            copied = folder != nullptr &&
-                copyFolderEntry(*folder, entries[result.count]);
+            copied = copyFolderEntry(raw[folderIndices[index]], entries[result.count]);
         } else {
             entries[result.count] = assets[index - folders];
             copied = true;
@@ -396,7 +362,8 @@ PatternPresetFileStore::listFoldersPage(
             "pattern folder catalog not ready",
         });
     }
-    const uint16_t total = folderCount(raw, rawCount);
+    FolderIndices folderIndices;
+    const uint16_t total = sortFolderIndices(raw, rawCount, folderIndices);
     const bool hasAnchor = anchorExclusive != nullptr &&
         anchorExclusive[0] != '\0';
     uint16_t anchorIndex = 0U;
@@ -409,9 +376,8 @@ PatternPresetFileStore::listFoldersPage(
         }
         bool found = false;
         for (uint16_t rank = 0U; rank < total; ++rank) {
-            const auto* folder = folderAtRank(raw, rawCount, rank);
-            if (folder != nullptr &&
-                std::strcmp(folder->name, anchorExclusive + 1U) == 0) {
+            const auto& folder = raw[folderIndices[rank]];
+            if (std::strcmp(folder.name, anchorExclusive + 1U) == 0) {
                 anchorIndex = rank;
                 found = true;
                 break;
@@ -446,9 +412,7 @@ PatternPresetFileStore::listFoldersPage(
     PatternPresetFileListResult result{};
     result.totalCount = total;
     for (uint16_t rank = begin; rank < end; ++rank) {
-        const auto* folder = folderAtRank(raw, rawCount, rank);
-        if (folder != nullptr &&
-            copyFolderEntry(*folder, entries[result.count])) {
+        if (copyFolderEntry(raw[folderIndices[rank]], entries[result.count])) {
             ++result.count;
         }
     }

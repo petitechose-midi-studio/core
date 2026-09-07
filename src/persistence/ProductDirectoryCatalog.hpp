@@ -10,6 +10,9 @@
 
 namespace core::persistence {
 
+/** Locale-independent ASCII case-folded order shared by assets and folders. */
+int compareProductCatalogNames(const char* lhs, const char* rhs);
+
 enum class ProductDirectoryAssetEntryKind : uint8_t {
     ASSET = 0,
     FOLDER,
