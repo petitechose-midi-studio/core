@@ -88,6 +88,8 @@ int main() {
             lv_refr_now(display);
             const auto reference = pixels;
             const auto hiddenWidth = lv_obj_get_width(pages[inactive]);
+            parking.select(nullptr, center, host);
+            assert(lv_obj_get_child_count(center) == 0);
             parking.select(pages[active], center, host);
             lv_obj_invalidate(lv_screen_active());
             lv_refr_now(display);

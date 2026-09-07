@@ -116,6 +116,8 @@ FLASHMEM void SequencerView::createGrid() {
         );
     if (!content_parking_.initialize()) return;
     content_parking_host_ = content_parking_.createHost();
+    oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+        nullptr, center_column_, content_parking_host_);
 }
 
 FLASHMEM void SequencerView::createPropertySelectionOverlay() {
