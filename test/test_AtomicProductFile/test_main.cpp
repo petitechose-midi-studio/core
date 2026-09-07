@@ -795,6 +795,58 @@ void test_two_successive_transactions_reuse_bounded_slots() {
     std::cout << "[PASS] test_two_successive_transactions_reuse_bounded_slots\n";
 }
 
+void test_replacement_rejects_invalid_input_before_touching_media() {
+    resetTestRoot();
+    BoundaryFaultFileSystem backend(testRoot().string().c_str());
+    ProductFileService files(backend);
+    assert(files.init());
+    seedCurrent(files);
+    writeRaw(productPath(TEMPORARY), FINAL_DATA, sizeof(FINAL_DATA));
+    struct Case {
+        const uint8_t* data;
+        uint32_t size;
+        uint32_t chunk;
+        const char* current;
+        const char* backup;
+        const char* temporary;
+    };
+    const Case cases[] = {
+        {NEW_DATA, 0U, 7U, CURRENT, BACKUP, TEMPORARY},
+        {NEW_DATA, sizeof(NEW_DATA), 0U, CURRENT, BACKUP, TEMPORARY},
+        {nullptr, sizeof(NEW_DATA), 7U, CURRENT, BACKUP, TEMPORARY},
+        {NEW_DATA, sizeof(NEW_DATA), 7U, CURRENT, BACKUP, CURRENT},
+        {NEW_DATA, sizeof(NEW_DATA), 7U, CURRENT, "projects/ATOMIC.BIN", TEMPORARY},
+        {NEW_DATA, sizeof(NEW_DATA), 7U, CURRENT, BACKUP,
+            core::persistence::PRODUCT_FILE_JOURNAL_SLOT_A},
+        {NEW_DATA, sizeof(NEW_DATA), 7U, "projects/~atomic.bin", BACKUP, TEMPORARY},
+    };
+    for (const auto& input : cases) {
+        const auto identity = files.storageIdentity();
+        auto acquired = files.acquireMutation(ProductMutationOwner::PROJECT);
+        assert(acquired);
+        auto lease = std::move(acquired.value());
+        core::persistence::ProductPersistenceWorkUsage usage{};
+        {
+            auto measuring = files.measurePersistenceWork(usage);
+            assert(measuring);
+            const auto result = core::persistence::replaceProductFileAtomically(
+                files, lease, {DIRECTORY, input.current, input.backup, input.temporary},
+                input.data, input.size, input.chunk);
+            assert(!result && result.error().code == ErrorCode::INVALID_ARGUMENT);
+        }
+        assert(usage.filesystemCalls == 0U);
+        assert(files.releaseMutation(lease));
+        assert(files.storageIdentity() == identity);
+        assertFileEquals(files, OLD_DATA, sizeof(OLD_DATA));
+        uint8_t actual[sizeof(FINAL_DATA)]{};
+        const auto read = files.read(TEMPORARY, 0U, actual, sizeof(actual));
+        assert(read && read.value() == sizeof(actual));
+        assert(std::memcmp(actual, FINAL_DATA, sizeof(actual)) == 0);
+        assert(missing(files, core::persistence::PRODUCT_FILE_JOURNAL_SLOT_A));
+    }
+    std::cout << "[PASS] invalid replacement leaves current, temporary and identity intact\n";
+}
+
 void test_cooperative_commit_uses_one_bounded_durable_phase_per_advance() {
     static_assert(sizeof(core::persistence::ProductFileCommitPlan) <= 2048U);
     resetTestRoot();
@@ -999,6 +1051,7 @@ int main() {
     test_create_rollback_does_not_restore_stale_backup();
     test_metadata_alias_and_nondistinct_paths_are_rejected();
     test_two_successive_transactions_reuse_bounded_slots();
+    test_replacement_rejects_invalid_input_before_touching_media();
     test_cooperative_commit_uses_one_bounded_durable_phase_per_advance();
     test_cooperative_recovery_uses_one_bounded_durable_phase_per_advance();
     test_cooperative_recovery_restores_newly_created_backup_after_bad_promotion();
