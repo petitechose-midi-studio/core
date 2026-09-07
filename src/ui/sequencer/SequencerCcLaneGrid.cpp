@@ -7,6 +7,7 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
+#include <src/misc/lv_area_private.h>
 
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -124,6 +125,14 @@ FLASHMEM void drawLabel(
     dsc.opa = opacity;
     dsc.align = alignment;
     lv_draw_label(layer, &dsc, &area);
+}
+
+FLASHMEM void drawCellValue(lv_layer_t* layer, const lv_area_t& area,
+                           int value, uint32_t color, lv_opa_t opacity) {
+    if (!lv_area_is_on(&area, &layer->_clip_area)) return;
+    char text[5] = "--";
+    if (value >= 0) std::snprintf(text, sizeof(text), "%u", static_cast<unsigned>(value));
+    drawLabel(layer, area, text, color, opacity);
 }
 
 FLASHMEM bool sameStaticCell(
@@ -279,6 +288,7 @@ FLASHMEM void SequencerCcLaneGrid::drawTransitionChoice(
     core::state::sequencer::SequencerCcLaneTransition transition,
     bool selected
 ) {
+    if (!lv_area_is_on(&area, &layer->_clip_area)) return;
     using Transition = core::state::sequencer::SequencerCcLaneTransition;
     if (selected) {
         drawRect(
@@ -401,6 +411,14 @@ FLASHMEM void SequencerCcLaneGrid::drawCurveSegment(
         surfaceArea.x1 + CURVE_FIRST_X +
         static_cast<lv_coord_t>(index) * CELL_PITCH
     );
+    // Conservative stroke bounds: avoid preparing a polyline when only the
+    // playhead strip (or another cell) is being refreshed.
+    const lv_area_t curveArea{
+        startX - width, surfaceArea.y1 + CURVE_TOP - width,
+        startX + CELL_PITCH + width,
+        surfaceArea.y1 + CURVE_TOP + CURVE_HEIGHT - 1 + width,
+    };
+    if (!lv_area_is_on(&curveArea, &layer->_clip_area)) return;
     for (uint8_t point = 0; point < count; ++point) {
         const auto& sample = segment.points[point];
         draw_points_[point] = {
@@ -510,6 +528,7 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
             .x2 = static_cast<lv_coord_t>(x + CELL_WIDTH - 1),
             .y2 = static_cast<lv_coord_t>(surfaceArea.y1 + GRID_HEIGHT - 2),
         };
+        if (!lv_area_is_on(&cellArea, &layer->_clip_area)) continue;
         if (cell.focused) {
             drawRect(
                 layer,
@@ -536,13 +555,6 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
             );
         }
 
-        char stepText[4] = {};
-        std::snprintf(
-            stepText,
-            sizeof(stepText),
-            "%u",
-            static_cast<unsigned>(cell.step + 1U)
-        );
         const lv_area_t stepArea{
             .x1 = x,
             .y1 = static_cast<lv_coord_t>(surfaceArea.y1 + STEP_LABEL_TOP),
@@ -551,22 +563,15 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
                 surfaceArea.y1 + STEP_LABEL_TOP + STEP_LABEL_HEIGHT - 1
             ),
         };
-        drawLabel(
+        drawCellValue(
             layer,
             stepArea,
-            stepText,
+            cell.step + 1U,
             theme::color::TEXT_SECONDARY,
             cell.focused ? LV_OPA_COVER : LV_OPA_70
         );
 
-        char valueText[5] = "--";
         if (cell.authored) {
-            std::snprintf(
-                valueText,
-                sizeof(valueText),
-                "%u",
-                static_cast<unsigned>(cell.value)
-            );
             const lv_coord_t pointX = static_cast<lv_coord_t>(
                 x + CURVE_FIRST_X - POINT_SIZE / 2
             );
@@ -594,10 +599,10 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
                 surfaceArea.y1 + VALUE_LABEL_TOP + VALUE_LABEL_HEIGHT - 1
             ),
         };
-        drawLabel(
+        drawCellValue(
             layer,
             valueArea,
-            valueText,
+            cell.authored ? cell.value : -1,
             theme::color::TEXT_PRIMARY,
             cell.focused
                 ? LV_OPA_COVER
