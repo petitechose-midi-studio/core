@@ -115,8 +115,6 @@ private:
     void ensureRenderScheduler();
     void requestRender(uint32_t flags, bool ready = false);
     void resumePendingRender();
-    void requestHeaderTopRender();
-    void requestHeaderStripRender();
     void requestHeaderAndLeftRender();
     void requestHeaderStripAndLeftRender();
     void requestStructureSelectionRender();

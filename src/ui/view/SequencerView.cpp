@@ -612,14 +612,6 @@ void SequencerView::resumePendingRender() {
     if (render_scheduler_) render_scheduler_->resumePending(true);
 }
 
-void SequencerView::requestHeaderTopRender() {
-    requestRender(RENDER_HEADER_TOP);
-}
-
-void SequencerView::requestHeaderStripRender() {
-    requestRender(RENDER_HEADER_STRIP);
-}
-
 void SequencerView::requestHeaderAndLeftRender() {
     requestRender(
         RENDER_HEADER_TOP |
@@ -673,6 +665,10 @@ void SequencerView::requestGridRender() {
 
 void SequencerView::requestGridTickRender() {
     if (state_refs_.sequencer.clipWorkspace.matrixVisible()) {
+        if (!canDrainRender(this)) {
+            requestRender(RENDER_GRID);
+            return;
+        }
         if (clip_launcher_surface_) {
             clip_launcher_surface_->invalidatePlaybackProgress();
         }
