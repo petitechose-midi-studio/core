@@ -924,7 +924,7 @@ FLASHMEM bool StepGrid::refreshStaticGeometry() {
         geometry_.noteLayerWidth != noteLayerWidth ||
         geometry_.noteLayerHeight != noteLayerHeight) {
         OC_PERF_SCOPE(perfLayout, "ui.step-grid.layout");
-        lv_obj_update_layout(container_);
+        oc::ui::lvgl::updateLayoutWithFullRedraw(container_);
         containerWidth = lv_obj_get_width(container_);
         containerHeight = lv_obj_get_height(container_);
         noteLayerWidth = lv_obj_get_width(note_layer_);
