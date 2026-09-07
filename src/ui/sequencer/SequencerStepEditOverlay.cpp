@@ -64,6 +64,9 @@ FLASHMEM lv_obj_t* createLabel(lv_obj_t* parent,
         lv_obj_set_style_text_font(label, font, 0);
     }
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+    // Text is single-line. Avoid intrinsic height propagation through the
+    // nested content-sized rows/columns on every first editor layout.
+    lv_obj_set_height(label, lv_obj_get_style_text_font(label, LV_PART_MAIN)->line_height);
     return label;
 }
 
@@ -101,21 +104,18 @@ bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text
 template <size_t N>
 bool setCachedIcon(lv_obj_t* label,
                    std::array<char, N>& cache,
-                   standalone::icons::Size& sizeCache,
                    const char* icon,
-                   standalone::icons::Size size,
                    bool valid) {
     if (!label) return false;
     const char* next = icon ? icon : "";
     const bool textChanged = std::strncmp(cache.data(), next, N) != 0;
-    if (valid && !textChanged && sizeCache == size) return false;
+    if (valid && !textChanged) return false;
 
     if (textChanged) {
         std::strncpy(cache.data(), next, N - 1);
         cache[N - 1] = '\0';
     }
-    standalone::icons::set(label, cache.data(), size);
-    sizeCache = size;
+    standalone::icons::set(label, cache.data(), standalone::icons::Size::L);
     return true;
 }
 
@@ -261,8 +261,22 @@ FLASHMEM void SequencerStepEditOverlay::createChipWidgets(
 
     widgets.value = createLabel(widgets.box, valueFont, TEXT_PRIMARY);
     lv_obj_set_width(widgets.value, LV_PCT(100));
-    lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
+    updateChipHeight(widgets);
+}
+
+void SequencerStepEditOverlay::updateChipHeight(ChipWidgets& widgets) {
+    const auto iconHeight = lv_obj_get_style_text_font(widgets.icon, LV_PART_MAIN)->line_height;
+    const auto valueHeight = lv_obj_get_style_text_font(widgets.value, LV_PART_MAIN)->line_height;
+    lv_obj_set_height(widgets.icon, iconHeight);
+    lv_obj_set_height(widgets.value, valueHeight);
+    // Two single-line children: the row height depends on fonts and spacing,
+    // never on text width. Break the nested flex content-size dependency here.
+    lv_obj_set_height(widgets.box, iconHeight + valueHeight +
+        lv_obj_get_style_pad_top(widgets.box, LV_PART_MAIN) +
+        lv_obj_get_style_pad_bottom(widgets.box, LV_PART_MAIN) +
+        lv_obj_get_style_pad_row(widgets.box, LV_PART_MAIN) +
+        2 * lv_obj_get_style_border_width(widgets.box, LV_PART_MAIN));
 }
 
 FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
@@ -352,7 +366,6 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_clear_flag(summary_column_, LV_OBJ_FLAG_SCROLLABLE);
 
     title_ = createLabel(summary_column_, fonts.context_title(), TEXT_PRIMARY);
-    lv_obj_set_size(title_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
     title_separator_ = createLabel(
         summary_column_, fonts.compact_label(), TEXT_SECONDARY, LV_OPA_50
@@ -363,18 +376,15 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     context_ = createLabel(
         summary_column_, fonts.compact_label(), TEXT_SECONDARY, LV_OPA_COVER
     );
-    lv_obj_set_size(context_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_add_flag(context_, LV_OBJ_FLAG_HIDDEN);
 
     if (!header_metric_row_.create(header_row_)) return;
 
     meta_ = createLabel(header_row_, fonts.meta_label(), TEXT_SECONDARY, LV_OPA_80);
-    lv_obj_set_size(meta_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(meta_, LV_TEXT_ALIGN_RIGHT, 0);
 
     focus_label_ = createLabel(panel_, fonts.compact_selected(), TEXT_PRIMARY, LV_OPA_COVER);
     lv_obj_set_width(focus_label_, LV_PCT(100));
-    lv_obj_set_height(focus_label_, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(focus_label_, LV_TEXT_ALIGN_CENTER, 0);
 
     chord_preview_ = lv_obj_create(panel_);
@@ -446,12 +456,10 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
 
     chord_preview_name_ =
         createLabel(chord_preview_, fonts.compact_selected(), TEXT_PRIMARY, LV_OPA_COVER);
-    lv_obj_set_size(chord_preview_name_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_add_flag(chord_preview_name_, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 
     chord_preview_detail_ =
         createLabel(chord_preview_, fonts.meta_label(), TEXT_SECONDARY, LV_OPA_80);
-    lv_obj_set_size(chord_preview_detail_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_left(chord_preview_detail_, CHIP_GAP, 0);
 
     trigger_row_ = createChipRow(panel_);
@@ -495,7 +503,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             widgets,
             action_row_,
             CHIP_PAD,
-            standalone_fonts.icons_14,
+            standalone_fonts.icons_16,
             TEXT_PRIMARY,
             fonts.compact_label()
         );
@@ -503,6 +511,9 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
             lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    // Settle the invariant geometry while constructing this hidden surface,
+    // rather than paying for its first layout in a musical interaction.
+    lv_obj_update_layout(overlay_);
 }
 
 FLASHMEM void SequencerStepEditOverlay::renderChip(
@@ -510,8 +521,7 @@ FLASHMEM void SequencerStepEditOverlay::renderChip(
     ChipRenderCache& cache,
     const SequencerStepEditPropertyChip& chip,
     bool selected,
-    bool active,
-    standalone::icons::Size iconSize
+    bool active
 ) {
     if (!widgets.box || !widgets.icon || !widgets.value) return;
 
@@ -545,15 +555,9 @@ FLASHMEM void SequencerStepEditOverlay::renderChip(
     }
     if (stateChanged) {
         applyInteractiveSurfaceState(widgets.box, selected, active);
-        if (iconSize != standalone::icons::Size::L) {
-            lv_obj_set_style_text_font(
-                widgets.value,
-                selected ? fonts.compact_selected() : fonts.compact_label(),
-                0
-            );
-        }
     }
-    setCachedIcon(widgets.icon, cache.icon, cache.iconSize, icon, iconSize, cache.valid);
+    setCachedIcon(widgets.icon, cache.icon, icon, cache.valid);
+    if (stateChanged) updateChipHeight(widgets);
     if (cache.iconOpa != static_cast<int16_t>(iconOpa)) {
         lv_obj_set_style_text_opa(widgets.icon, iconOpa, 0);
     }
@@ -569,7 +573,6 @@ FLASHMEM void SequencerStepEditOverlay::renderChip(
 
     cache.color = color;
     cache.iconOpa = static_cast<int16_t>(iconOpa);
-    cache.iconSize = iconSize;
     cache.selected = selected;
     cache.active = active;
     cache.valid = true;
@@ -630,11 +633,10 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
     setCachedIcon(
         widgets.icon,
         cache.icon,
-        cache.iconSize,
         icon,
-        standalone::icons::Size::L,
         cache.valid
     );
+    if (stateChanged) updateChipHeight(widgets);
     if (cache.iconOpa != static_cast<int16_t>(iconOpa)) {
         lv_obj_set_style_text_opa(widgets.icon, iconOpa, 0);
     }
@@ -650,7 +652,6 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
 
     cache.color = color;
     cache.iconOpa = static_cast<int16_t>(iconOpa);
-    cache.iconSize = standalone::icons::Size::L;
     cache.selected = selected;
     cache.active = active;
     cache.valid = true;
@@ -1029,8 +1030,7 @@ FLASHMEM void SequencerStepEditOverlay::render(
                 SequencerStepEditVisualSlot::STATE,
                 props.selectedIndex == core::state::sequencer::step_edit_rows::ACTIVATED
             ),
-            true,
-            standalone::icons::Size::L
+            true
         );
         renderChip(
             trigger_widgets_[TRIGGER_CHANCE_INDEX],
@@ -1041,8 +1041,7 @@ FLASHMEM void SequencerStepEditOverlay::render(
                 SequencerStepEditVisualSlot::CHANCE,
                 selectedProperty == CHANCE_INDEX
             ),
-            props.enabled,
-            standalone::icons::Size::L
+            props.enabled
         );
     }
 
@@ -1080,8 +1079,7 @@ FLASHMEM void SequencerStepEditOverlay::render(
             property_cache_[i],
             props.properties[propertyIndex],
             selectedVisualSlot(props, slot, selectedProperty == propertyIndex),
-            props.enabled && props.properties[propertyIndex].active,
-            standalone::icons::Size::L
+            props.enabled && props.properties[propertyIndex].active
         );
     }
 

@@ -12,6 +12,8 @@ int main(int argc, char** argv) {
     const bool reference = argc > 1 && std::strcmp(argv[1], "--reference") == 0;
     lv_init();
     auto* font = const_cast<lv_font_t*>(LV_FONT_DEFAULT);
+    auto tallerSelectedFont = *font;
+    tallerSelectedFont.line_height += 2;
     fonts.inter_12_medium = fonts.inter_13_medium = fonts.inter_13_bold = font;
     fonts.inter_14_medium = fonts.inter_14_semibold = font;
     standalone_fonts.icons_12 = standalone_fonts.icons_14 = standalone_fonts.icons_16 = font;
@@ -40,7 +42,7 @@ int main(int argc, char** argv) {
             const auto* opening = static_cast<const bool*>(lv_event_get_user_data(e));
             if (*opening) assert(!lv_obj_is_visible(lv_event_get_target_obj(e)));
         }, LV_EVENT_SIZE_CHANGED, &opening);
-        for (int pass = 0; pass < 4; ++pass) {
+        for (int pass = 0; pass < 6; ++pass) {
             editor.render({.visible = false});
             // Reopen unchanged, then resize/rebind, then use the chord layout.
             if (pass == 2) {
@@ -52,6 +54,14 @@ int main(int argc, char** argv) {
                 ++props.dataRevision;
                 props.chordDetailLayout = true;
             }
+            if (pass == 4) {
+                ++props.dataRevision;
+                props.chordDetailLayout = false;
+                props.actions[0] = {.key = "Chord", .value = "Chord", .icon = "C"};
+                props.selectedIndex = core::state::sequencer::step_edit_rows::CHORD;
+                fonts.inter_13_bold = &tallerSelectedFont;
+            }
+            if (pass == 5) props.selectedIndex = 0;
             // Mirror the real registry's early reveal before presenter render.
             lv_obj_clear_flag(editor.getElement(), LV_OBJ_FLAG_HIDDEN);
             opening = !reference;
@@ -63,6 +73,12 @@ int main(int argc, char** argv) {
             lv_obj_invalidate(lv_screen_active());
             lv_refr_now(display);
             assert(first == pixels);
+            if (pass >= 4) {
+                auto* row = lv_obj_get_child(lv_obj_get_child(editor.getElement(), 0), -1);
+                auto* value = lv_obj_get_child(lv_obj_get_child(row, 0), 1);
+                assert(lv_obj_get_height(value) ==
+                       (pass == 4 ? tallerSelectedFont.line_height : font->line_height));
+            }
             uint64_t hash = 14695981039346656037ULL;
             for (auto pixel : pixels) {
                 hash = (hash ^ (pixel & 255U)) * 1099511628211ULL;
