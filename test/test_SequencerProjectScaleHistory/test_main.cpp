@@ -10,6 +10,7 @@
 
 #include <array>
 #include <iostream>
+#include "state/sequencer/SequencerHistory.hpp"
 #include <new>
 
 #include "app/ExtmemAllocator.hpp"
@@ -72,39 +73,36 @@ void operator delete[](void* memory, std::size_t) noexcept { ::operator delete(m
 
 namespace {
 
+struct ScaleMutationResult {
+    bool changed = false;
+    core::state::sequencer::SequencerChordContextProjectionStats projection{};
+};
+ScaleMutationResult applyScaleTransition(
+    core::state::sequencer::SequencerTrackBankState& bank,
+    core::state::sequencer::SequencerState& active,
+    oc::note::sequencer::StepSequencerScaleSettings target) {
+    namespace seq = core::state::sequencer;
+    seq::SequencerClipGridState clips;
+    ScaleMutationResult result;
+    auto change = seq::prepareHistoryProjectScaleChange(bank, active, clips, target, result.projection);
+    if (change) result.changed = seq::applyHistoryProjectScaleChange(*change, bank, active, &clips, true);
+    return result;
+}
+
+
+
 namespace seq = core::state::sequencer;
 namespace tx = test_support::sequencer_transaction;
 namespace catalog = core::state::sequencer::scale_catalog;
 
-using Owner = seq::SequencerPreparedFullBankEditOwner;
-using Outcome = seq::SequencerPreparedFullBankEditOutcome;
+using Owner = seq::SequencerProjectScaleEditOwner;
+using Outcome = seq::SequencerProjectScaleEditOutcome;
 using ScaleSettings = oc::note::sequencer::StepSequencerScaleSettings;
 
 constexpr uint8_t kActiveTrack = 0U;
 constexpr uint8_t kStep = 0U;
-constexpr std::size_t kMaximumAllocationAttempts = 99U;
-constexpr std::size_t kArmAllocationHeaderBytes = 16U;
-constexpr std::size_t kArmFullBankChangeBytes = 27152U;
-constexpr std::size_t kArmTrackBankRootBytes = 209976U;
-constexpr std::size_t kArmSequencerRootBytes = 17632U;
-constexpr std::size_t kArmGraphBytes = 14792U;
-constexpr std::size_t kArmCcBytes = 840U;
-
-static_assert(
-    kArmFullBankChangeBytes + kArmTrackBankRootBytes + kArmSequencerRootBytes +
-            3U * 16U * (kArmGraphBytes + kArmCcBytes) +
-            kMaximumAllocationAttempts * kArmAllocationHeaderBytes ==
-        1006680U,
-    "LOCK-P: prepared FullBank scale caller peak changed"
-);
-
-#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(seq::SequencerHistoryFullBankChange) == kArmFullBankChangeBytes);
-static_assert(sizeof(seq::SequencerTrackBankState) == kArmTrackBankRootBytes);
-static_assert(sizeof(seq::SequencerState) == kArmSequencerRootBytes);
-static_assert(sizeof(oc::note::sequencer::StepSequencerGraph) == kArmGraphBytes);
-static_assert(sizeof(seq::SequencerCcLaneBank) == kArmCcBytes);
-#endif
+// A root-only transition keeps degree formulas unchanged, even with 16 Graph/CC pairs.
+constexpr std::size_t kMaximumAllocationAttempts = 1U;
 
 struct Harness {
     test_support::CoreStorages storages;
@@ -293,6 +291,7 @@ void initializeTopology(
             authorPayload(h.state.sequencerTracks.track(track), kind, track);
         }
     }
+    h.state.sequencerClips.synchronizeEnabledTracks(h.state.sequencerTracks.currentEnabledMask());
     settle(h);
 }
 
@@ -596,7 +595,7 @@ void test_state_operation_rows_revisions_overrides_and_scratch() {
         changedChoice(1U, current)
     ).target;
 
-    const auto result = seq::applyProjectScaleTransition(bank, active, target);
+    const auto result = applyScaleTransition(bank, active, target);
     assert(result.changed);
     assert(result.projection.failures == 0U);
     assert(sameScale(bank.projectScaleSettings(), target));
@@ -622,7 +621,7 @@ void test_state_operation_rows_revisions_overrides_and_scratch() {
 
     const auto stableEditor = revisions(active.pattern);
     const auto stableProjectRevision = bank.projectScaleRevisionSignal().get();
-    const auto noChange = seq::applyProjectScaleTransition(bank, active, target);
+    const auto noChange = applyScaleTransition(bank, active, target);
     assert(!noChange.changed);
     assertRevisionDelta(active.pattern, stableEditor, 0U);
     assert(bank.projectScaleRevisionSignal().get() == stableProjectRevision);
@@ -819,7 +818,7 @@ void test_project_owner_rows_and_payload_topologies_commit_exactly() {
     std::cout << "[PASS] Project owner rows and all payload topologies commit exactly\n";
 }
 
-void test_near_budget_scale_commit_prunes_before_publishing() {
+void test_scale_edits_retain_only_their_context() {
     Harness h;
     initializeTopology(h, PayloadKind::GraphAndCc, true);
 
@@ -829,9 +828,9 @@ void test_near_budget_scale_commit_prunes_before_publishing() {
         Owner::ProjectScale, 0U, firstChoice);
     assert(first.outcome == Outcome::Committed);
     const std::size_t firstRetained = h.state.sequencerHistory.retainedBytes();
-    assert(firstRetained > seq::SequencerHistoryService::RETAINED_BYTE_BUDGET / 2U);
+    assert(firstRetained < 4096U);
     assert(firstRetained <= seq::SequencerHistoryService::RETAINED_BYTE_BUDGET);
-    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::FullBank) == 1U);
+    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::ProjectScale) == 1U);
     const uintptr_t firstIdentity = h.state.sequencerHistory.projectHistoryUndoIdentity();
     assert(firstIdentity != 0U);
 
@@ -842,16 +841,14 @@ void test_near_budget_scale_commit_prunes_before_publishing() {
     assert(second.outcome == Outcome::Committed);
     assert(h.state.sequencerHistory.retainedBytes() <=
            seq::SequencerHistoryService::RETAINED_BYTE_BUDGET);
-    // Two maximal entries overlap during preparation, but only the newest can
-    // remain under the retained-byte cap. Admission is pre-live; pruning is
-    // part of the trusted ownership transfer.
-    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::FullBank) == 1U);
+    // Independent scale edits now fit together without retaining Graph/CC banks.
+    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::ProjectScale) == 2U);
     assert(h.state.sequencerHistory.projectHistoryUndoIdentity() != firstIdentity);
     assert(h.state.undoSequencerHistory());
     assert(sameScale(
         h.state.sequencerTracks.projectScaleSettings(), scaleAfterFirst));
 
-    std::cout << "[PASS] near-budget typed commit prunes the oldest maximal entry\n";
+    std::cout << "[PASS] scale edits retain context without copying unrelated payloads\n";
 }
 
 void test_maximum_topology_fail_nth_is_exact_and_atomic() {
@@ -904,31 +901,9 @@ void test_maximum_topology_fail_nth_is_exact_and_atomic() {
 
         assert(!allocation_trace::overflow);
         assert(allocation_trace::count == kMaximumAllocationAttempts);
-        std::size_t request = 0U;
-        assert(allocation_trace::requests[request++] ==
-               sizeof(seq::SequencerHistoryFullBankChange));
-        for (uint8_t pass = 0U; pass < 2U; ++pass) {
-            for (uint8_t owner = 0U;
-                 owner < seq::SequencerTrackBankState::TRACK_COUNT;
-                 ++owner) {
-                assert(allocation_trace::requests[request++] ==
-                       sizeof(oc::note::sequencer::StepSequencerGraph));
-                assert(allocation_trace::requests[request++] ==
-                       sizeof(seq::SequencerCcLaneBank));
-            }
-        }
-        assert(allocation_trace::requests[request++] ==
-               sizeof(seq::SequencerTrackBankState));
-        assert(allocation_trace::requests[request++] == sizeof(seq::SequencerState));
-        for (uint8_t owner = 0U;
-             owner < seq::SequencerTrackBankState::TRACK_COUNT;
-             ++owner) {
-            assert(allocation_trace::requests[request++] ==
-                   sizeof(oc::note::sequencer::StepSequencerGraph));
-            assert(allocation_trace::requests[request++] ==
-                   sizeof(seq::SequencerCcLaneBank));
-        }
-        assert(request == kMaximumAllocationAttempts);
+        assert(allocation_trace::requests[0] == sizeof(seq::SequencerHistoryProjectScaleChange));
+        std::cout << "[MEASURE] root-only allocation count=" << allocation_trace::count
+                  << " bytes=" << allocation_trace::requests[0] << "\n";
     }
     tx::assertFailureInjectionReset();
 
@@ -946,18 +921,265 @@ void test_maximum_topology_fail_nth_is_exact_and_atomic() {
     assert(h.state.projectHistory.undoCount() == stateBefore.projectUndoCount + 1U);
     assertProjectScaleDescriptor(h);
 
-    std::cout << "[PASS] Project owner is atomic for fail-1..99 and pass armed at 100\n";
+    std::cout << "[PASS] Project scale context is atomic for fail-1 and passes armed at 2\n";
+}
+
+using ChordSpec = oc::note::sequencer::StepSequencerChordSpec;
+using ChordBasis = oc::note::sequencer::StepSequencerChordIntervalBasis;
+
+ChordSpec degreeChord() {
+    auto chord = ChordSpec::semantic(oc::note::sequencer::StepSequencerChordHarmony::Custom,
+        3U, oc::note::sequencer::StepSequencerChordVoicing::Close, 0, ChordBasis::ScaleDegrees);
+    chord.setCustomInterval(1U, 2U);
+    chord.setCustomInterval(2U, 4U);
+    return chord;
+}
+int chromaticChoice() {
+    return catalog::scaleTypeIndex(oc::note::sequencer::StepSequencerScaleType::Chromatic);
+}
+void authorProjectChords(Harness& h) {
+    initializeTopology(h, PayloadKind::GraphAndCc, true);
+    for (uint8_t track = 0U; track < 16U; ++track) {
+        auto& pattern = seq::mutableCanonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, track);
+        assert(seq::setNodeChordSpec(pattern, seq::rootStepNodeId(0U), degreeChord()));
+    }
+    settle(h);
+}
+
+void test_exact_chords_failures_and_allocation_free_replay() {
+    Harness h;
+    authorProjectChords(h);
+    const auto before = captureExactLiveProof(h);
+    const auto beforePayload = captureCanonicalPayloadProof(h);
+    for (std::size_t ordinal = 1U; ordinal <= 2U; ++ordinal) {
+        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+        assert(h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, chromaticChoice()).outcome
+               == Outcome::ResourceUnavailable);
+        tx::assertFailureConsumed(ordinal);
+        assertExactLiveProof(h, before);
+    }
+    {
+        allocation_trace::Scope trace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(3U);
+        auto result = h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, chromaticChoice());
+        assert(result.outcome == Outcome::Committed && result.projection.changed == 16U);
+        tx::assertMaxPlusOneStillArmed(2U);
+        assert(allocation_trace::count == 2U);
+        assert(allocation_trace::requests[1] == 16U * sizeof(seq::SequencerProjectScaleChordChange));
+        std::cout << "[MEASURE] 16 projected chords allocations=2 bytes="
+                  << allocation_trace::requests[0] + allocation_trace::requests[1] << "\n";
+    }
+    const auto afterPayload = captureCanonicalPayloadProof(h);
+    assert(afterPayload.graph != beforePayload.graph);
+    assert(afterPayload.cc == beforePayload.cc);
+    for (bool redo : {false, true}) {
+        assert(seq::beginStepContentDraft(h.state.sequencer,
+            seq::SequencerStepContentDraftKind::CHORD, 0U, seq::rootStepNodeId(0U)));
+        const auto undoCount = h.state.sequencerHistory.undoCount();
+        const auto redoCount = h.state.sequencerHistory.redoCount();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            assert(!(redo ? h.state.redoSequencerHistory() : h.state.undoSequencerHistory()));
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        assert(h.state.sequencerHistory.undoCount() == undoCount);
+        assert(h.state.sequencerHistory.redoCount() == redoCount);
+        seq::abandonStepContentDraft(h.state.sequencer);
+        assert(redo ? h.state.redoSequencerHistory() : h.state.undoSequencerHistory());
+    }
+    for (unsigned pass = 0U; pass < 3U; ++pass) {
+        allocation_trace::Scope trace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(h.state.undoSequencerHistory());
+        assertCanonicalPayloadProof(h, beforePayload);
+        assert(h.state.redoSequencerHistory());
+        assertCanonicalPayloadProof(h, afterPayload);
+        assert(allocation_trace::count == 0U);
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    assert(h.state.sequencer.pattern.graph.get() == before.editor.graphOwner);
+    assert(h.state.sequencer.pattern.ccLanes.get() == before.editor.ccOwner);
+    std::cout << "[PASS] exact chords, fail-1..2 and repeated allocation-free Undo/Redo\n";
+}
+
+void test_scale_admission_and_late_drift_are_atomic() {
+    Harness h;
+    authorProjectChords(h);
+    core::state::project::ProjectHistoryEventSink reject;
+    reject.canRetain = [](void*, core::state::project::ProjectHistoryDomain,
+                          core::state::project::ProjectHistoryRetainedUsage) { return false; };
+    h.state.sequencerHistory.setProjectHistoryEventSink(&reject);
+    const auto before = captureExactLiveProof(h);
+    assert(h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, chromaticChoice()).outcome
+           == Outcome::HistoryUnavailable);
+    assertExactLiveProof(h, before);
+    h.state.sequencerHistory.setProjectHistoryEventSink(nullptr);
+
+    auto target = seq::resolveProjectScaleChoice(h.state.sequencerTracks.projectScaleSettings(),
+                                                1U, chromaticChoice()).target;
+    seq::SequencerChordContextProjectionStats stats;
+    auto change = seq::prepareHistoryProjectScaleChange(h.state.sequencerTracks, h.state.sequencer,
+                                                        h.state.sequencerClips, target, stats);
+    assert(change && change->chordCount == 16U);
+    auto& last = h.state.sequencerTracks.track(15U).graph->stepNodes[0U].chordSpec;
+    last.setCustomInterval(1U, 1U);
+    const auto drifted = captureExactLiveProof(h);
+    assert(!seq::applyHistoryProjectScaleChange(*change, h.state.sequencerTracks,
+                                               h.state.sequencer, &h.state.sequencerClips, true));
+    assertExactLiveProof(h, drifted);
+    last = degreeChord();
+    assert(seq::applyHistoryProjectScaleChange(*change, h.state.sequencerTracks,
+                                              h.state.sequencer, &h.state.sequencerClips, true));
+}
+
+void test_nonresident_clips_and_navigation_replay() {
+    Harness h;
+    authorProjectChords(h);
+    assert(h.state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
+    auto* inactive = h.state.sequencerClips.inactiveDocument({0U, 1U});
+    assert(inactive);
+    const auto inactiveBefore = hashBytes(inactive->graph.get(), sizeof(*inactive->graph));
+    const auto residentBefore = graphHash(h.state.sequencer.pattern);
+    assert(h.state.clearProjectHistory());
+    settle(h);
+    auto result = h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, chromaticChoice());
+    assert(result.outcome == Outcome::Committed && result.projection.changed == 17U);
+    const auto inactiveAfter = hashBytes(inactive->graph.get(), sizeof(*inactive->graph));
+    const auto residentAfter = graphHash(h.state.sequencer.pattern);
+    assert(inactiveBefore != inactiveAfter);
+    assert(h.state.switchSequencerClipForEditing({0U, 1U}));
+    assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 1U));
+    assert(h.state.deleteSequencerClip({0U, 1U}));
+    assert(h.state.undoSequencerHistory());
+    h.state.sequencer.focusedStep.set(3U);
+    const auto* owner = h.state.sequencerTracks.track(0U).graph.get();
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
+        assert(h.state.sequencerClips.residentSlot(0U) == 1U);
+        assert(h.state.sequencer.focusedStep.get() == 3U);
+        assert(graphHash(h.state.sequencerTracks.track(0U)) == inactiveBefore);
+        auto* doc = h.state.sequencerClips.inactiveDocument({0U, 0U});
+        assert(hashBytes(doc->graph.get(), sizeof(*doc->graph)) == residentBefore);
+        assert(h.state.redoSequencerHistory());
+        assert(graphHash(h.state.sequencerTracks.track(0U)) == inactiveAfter);
+        assert(hashBytes(doc->graph.get(), sizeof(*doc->graph)) == residentAfter);
+        assert(h.state.sequencerTracks.track(0U).graph.get() == owner);
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    std::cout << "[PASS] nonresident clips project and replay at their logical address after navigation\n";
+}
+
+void test_dense_chords_and_retained_budget() {
+    Harness h;
+    authorProjectChords(h);
+    for (uint8_t track = 0U; track < 16U; ++track) {
+        auto& graph = *seq::mutableCanonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, track).graph;
+        graph.stepNodeCount = static_cast<uint16_t>(graph.stepNodes.size());
+        for (auto& node : graph.stepNodes) {
+            node.flags |= oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
+            node.chordSpec = degreeChord();
+        }
+    }
+    settle(h);
+    const auto before = captureCanonicalPayloadProof(h);
+    {
+        allocation_trace::Scope trace;
+        auto result = h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, chromaticChoice());
+        assert(result.outcome == Outcome::Committed && result.projection.changed == 8192U);
+        assert(allocation_trace::count == 2U);
+        assert(allocation_trace::requests[1] == 8192U * sizeof(seq::SequencerProjectScaleChordChange));
+        std::cout << "[MEASURE] 8192 projected chords allocations=2 bytes="
+                  << allocation_trace::requests[0] + allocation_trace::requests[1] << "\n";
+    }
+    assert(h.state.undoSequencerHistory());
+    assertCanonicalPayloadProof(h, before);
+    assert(h.state.clearProjectHistory());
+    // The grid admits at most 16 inactive documents. Fill this real bound;
+    // four dense entries exceed the history byte budget despite fitting its scope limit.
+    for (uint8_t track = 0U; track < 16U; ++track) {
+        seq::SequencerClipDocumentPtr doc;
+        const auto& pattern = seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, track);
+        assert(seq::captureSequencerClipDocument(pattern,
+            seq::canonicalTrackClip(h.state.sequencerTracks, h.state.sequencer, track),
+            seq::SequencerTrackKind::INSTRUMENT, nullptr, doc));
+        doc->ccLanes.reset();
+        assert(h.state.sequencerClips.installInactiveDocument({track, 1U}, std::move(doc)));
+    }
+    settle(h);
+    const auto* last = h.state.sequencerClips.inactiveDocument({15U, 1U});
+    for (unsigned edit = 0U; edit < 4U; ++edit) {
+        const int choice = edit % 2U == 0U ? chromaticChoice() :
+            catalog::scaleTypeIndex(oc::note::sequencer::StepSequencerScaleType::HarmonicMinor);
+        auto result = h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, choice);
+        assert(result.outcome == Outcome::Committed && result.projection.changed == 16384U);
+        assert(h.state.sequencerHistory.retainedBytes() <= seq::SequencerHistoryService::RETAINED_BYTE_BUDGET);
+    }
+    const auto lastHash = hashBytes(last->graph.get(), sizeof(*last->graph));
+    assert(h.state.sequencerHistory.undoCount() == 3U);
+    assert(h.state.projectHistory.undoCount() == 3U);
+    assert(h.state.sequencerHistory.retainedSpans() == 6U);
+    for (unsigned edit = 0U; edit < 3U; ++edit) assert(h.state.undoSequencerHistory());
+    assert(!h.state.undoSequencerHistory());
+    for (unsigned edit = 0U; edit < 3U; ++edit) assert(h.state.redoSequencerHistory());
+    assert(hashBytes(last->graph.get(), sizeof(*last->graph)) == lastHash);
+    std::cout << "[PASS] 32 dense patterns prune exactly at the retained-byte budget\n";
+}
+
+void test_nested_lossy_projection_and_empty_disabled_overrides() {
+    Harness h;
+    authorProjectChords(h);
+    auto source = h.state.sequencerTracks.projectScaleSettings();
+    source.type = oc::note::sequencer::StepSequencerScaleType::Chromatic;
+    assert(h.state.sequencerTracks.setProjectScaleSettings(source));
+    auto& pattern = h.state.sequencer.pattern;
+    const auto micro = seq::createMicroSequence(pattern, 0U, 2U);
+    assert(micro.ok);
+    const auto child = pattern.graph->sequences[micro.id].firstStepNode;
+    const auto cycle = seq::createCycleStateSet(pattern, child, 2U);
+    assert(cycle.ok);
+    const auto leaf = pattern.graph->cycleSets[cycle.id].firstStateNode;
+    auto chromatic = degreeChord();
+    chromatic = ChordSpec::semantic(oc::note::sequencer::StepSequencerChordHarmony::Custom,
+        3U, oc::note::sequencer::StepSequencerChordVoicing::Close, 0, ChordBasis::ChromaticSemitones);
+    chromatic.setCustomInterval(1U, 1U);
+    chromatic.setCustomInterval(2U, 6U);
+    assert(seq::setNodeChordSpec(pattern, child, chromatic));
+    assert(seq::setNodeChordSpec(pattern, leaf, chromatic));
+    assert(seq::setNodeNoteOffset(pattern, child, 2));
+    assert(h.state.sequencerTracks.track(2U).setPatternScalePolicy(seq::SequencerPatternScalePolicy::OVERRIDE));
+    h.state.sequencerTracks.track(3U).graph->enabled = false;
+    assert(h.state.sequencerClips.clearResident({15U, 0U}));
+    settle(h);
+    const auto before = captureCanonicalPayloadProof(h);
+    const auto choice = catalog::scaleTypeIndex(oc::note::sequencer::StepSequencerScaleType::HarmonicMinor);
+    const auto result = h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, choice);
+    assert(result.outcome == Outcome::Committed && result.projection.changed >= 2U);
+    assert(result.projection.hasAdaptations());
+    const auto after = captureCanonicalPayloadProof(h);
+    assert(after.graph[2U] == before.graph[2U] && after.graph[3U] == before.graph[3U]);
+    assert(h.state.undoSequencerHistory());
+    assertCanonicalPayloadProof(h, before);
+    assert(h.state.redoSequencerHistory());
+    assertCanonicalPayloadProof(h, after);
+    assert(h.state.sequencerClips.residentSlot(15U) == seq::SequencerClipGridState::INVALID_SLOT);
 }
 
 }  // namespace
 
 int main() {
+    test_dense_chords_and_retained_budget();
+    test_nested_lossy_projection_and_empty_disabled_overrides();
+    test_exact_chords_failures_and_allocation_free_replay();
+    test_scale_admission_and_late_drift_are_atomic();
+    test_nonresident_clips_and_navigation_replay();
     test_state_operation_rows_revisions_overrides_and_scratch();
     test_project_no_change_bypasses_history_and_allocation();
     test_active_draft_rejects_changed_project_choice();
     test_project_owner_rows_and_payload_topologies_commit_exactly();
-    test_near_budget_scale_commit_prunes_before_publishing();
+    test_scale_edits_retain_only_their_context();
     test_maximum_topology_fail_nth_is_exact_and_atomic();
-    std::cout << "All SequencerPreparedFullBankScaleTransaction tests passed.\n";
+    std::cout << "All SequencerProjectScaleHistory tests passed.\n";
     return 0;
 }

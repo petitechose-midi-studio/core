@@ -4689,7 +4689,7 @@ void test_created_page_is_undoable_and_redoable() {
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::PatternOnly) == 1);
     assert(h.state.sequencerHistory.undoCount(
-               core::state::sequencer::SequencerHistoryScope::FullBank) == 0);
+               core::state::sequencer::SequencerHistoryScope::ProjectScale) == 0);
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.length.get() == 8);
@@ -6944,7 +6944,7 @@ void test_created_track_is_undoable_and_redoable() {
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 1);
     assert(h.state.sequencerHistory.undoCount(
-               core::state::sequencer::SequencerHistoryScope::FullBank) == 0);
+               core::state::sequencer::SequencerHistoryScope::ProjectScale) == 0);
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0001);
@@ -7717,7 +7717,7 @@ void test_child_page_selection_reset_shallow_commits_pattern_only_and_replays() 
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::Structure) == 0U);
-    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::FullBank) == 0U);
+    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::ProjectScale) == 0U);
 
     assert(h.state.undoSequencerHistory());
     test_support::drainNotifications();
@@ -7817,7 +7817,7 @@ void test_child_page_selection_deep_reset_removes_descendants_and_replays() {
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::Structure) == 0U);
-    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::FullBank) == 0U);
+    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::ProjectScale) == 0U);
 
     assert(h.state.undoSequencerHistory());
     test_support::drainNotifications();

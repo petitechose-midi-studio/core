@@ -215,10 +215,10 @@ abortPreparedPatternEditFromCoreState(
         ->abortSequencerPreparedPatternEdit(owner, key);
 }
 
-FLASHMEM core::state::sequencer::SequencerPreparedFullBankEditResult
+FLASHMEM core::state::sequencer::SequencerProjectScaleEditResult
 applyPreparedProjectScaleChoiceFromCoreState(
     void* context,
-    core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+    core::state::sequencer::SequencerProjectScaleEditOwner owner,
     uint8_t row,
     int choiceIndex
 ) {
@@ -459,9 +459,9 @@ SequencerHistoryDomainServices::abortPreparedPatternEdit(
                : Outcome::Failed;
 }
 
-FLASHMEM core::state::sequencer::SequencerPreparedFullBankEditResult
+FLASHMEM core::state::sequencer::SequencerProjectScaleEditResult
 SequencerHistoryDomainServices::applyPreparedProjectScaleChoice(
-    core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+    core::state::sequencer::SequencerProjectScaleEditOwner owner,
     uint8_t row,
     int choiceIndex
 ) const {

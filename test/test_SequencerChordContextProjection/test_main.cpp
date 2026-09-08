@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include "state/sequencer/SequencerHistory.hpp"
 #include <string>
 
 #include <oc/note/sequencer/StepSequencerChord.hpp>
@@ -315,13 +316,13 @@ void test_project_projection_skips_pattern_overrides() {
     );
     const auto overrideBefore = chordAt(bank.track(2), 0);
 
-    const auto stats =
-        core::state::sequencer::projectInheritedChordContexts(
-            bank,
-            active,
-            chromaticScale(),
-            fHarmonicMinor()
-        );
+    namespace seq = core::state::sequencer;
+    (void)bank.setProjectScaleSettings(chromaticScale());
+    seq::SequencerClipGridState clips;
+    seq::SequencerChordContextProjectionStats stats;
+    auto change = seq::prepareHistoryProjectScaleChange(bank, active, clips, fHarmonicMinor(), stats);
+    assert(change);
+    assert(seq::applyHistoryProjectScaleChange(*change, bank, active, &clips, true));
 
     assert(stats.patternsVisited == 2);
     assert(stats.projected == 2);
@@ -340,7 +341,7 @@ void test_project_projection_skips_pattern_overrides() {
         << "[PASS] Project projection skips Pattern overrides\n";
 }
 
-void test_project_projection_keeps_active_chord_draft_coherent() {
+void test_pattern_projection_keeps_active_chord_draft_coherent() {
     using core::state::sequencer::SequencerStepContentDraftKind;
 
     core::state::sequencer::SequencerState active;
@@ -365,11 +366,11 @@ void test_project_projection_keeps_active_chord_draft_coherent() {
     ));
 
     const auto stats =
-        core::state::sequencer::projectInheritedChordContexts(
-            bank,
+        core::state::sequencer::projectPatternChordContext(
             active,
             chromaticScale(),
-            fHarmonicMinor()
+            fHarmonicMinor(),
+            active.pattern.pitchEditMode, active.pattern.pitchEditMode
         );
 
     assert(
@@ -387,7 +388,7 @@ void test_project_projection_keeps_active_chord_draft_coherent() {
     assert(stats.changed == 1U);
 
     std::cout
-        << "[PASS] Project projection keeps active Chord draft coherent\n";
+        << "[PASS] Pattern projection keeps active Chord draft coherent\n";
 }
 
 void test_graphless_chord_draft_uses_the_canonical_projector() {
@@ -505,7 +506,7 @@ int main() {
     test_scale_to_scale_preserves_raw_degree_formula();
     test_nested_projection_uses_resolved_child_root();
     test_project_projection_skips_pattern_overrides();
-    test_project_projection_keeps_active_chord_draft_coherent();
+    test_pattern_projection_keeps_active_chord_draft_coherent();
     test_graphless_chord_draft_uses_the_canonical_projector();
     test_projection_feedback_is_lossy_only();
     std::cout

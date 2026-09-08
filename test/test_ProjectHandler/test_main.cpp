@@ -411,7 +411,7 @@ void test_music_scale_root_is_wired_and_undoable() {
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.sequencerTracks.projectScaleSettings().root == 6);
-    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 1);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::ProjectScale) == 1);
 
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
@@ -431,7 +431,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.state.sequencerTracks.projectScaleSettings().root == 11U);
-    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 1U);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::ProjectScale) == 1U);
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
 
@@ -440,7 +440,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
     const std::size_t retainedBefore = h.state.sequencerHistory.retainedBytes();
     const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
 
-    // NAV is the stepped Project surface. Its first FullBank allocation fails
+    // NAV is the stepped Project surface. Its first Project-scale allocation fails
     // before any scale, History, redo-branch or dirty/save mutation.
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -456,7 +456,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
                        "Memory unavailable - unchanged") == 0);
 
     // OPT is the normalized Project surface. An exact value is a pre-boundary
-    // no-op and therefore never probes FullBank allocation or consumes redo.
+    // no-op and therefore never probes Project-scale allocation or consumes redo.
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         h.turn(Config::EncoderID::OPT, 5.0f / 11.0f);
@@ -470,7 +470,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
 
     // An unsealed predecessor cannot be crossed by Project Scale. The
     // handler keeps the current choice and publishes the History-specific
-    // lifecycle reason without probing FullBank allocation.
+    // lifecycle reason without probing Project-scale allocation.
     assert(core::state::sequencer::sequencerHistoryOpenAccepted(
         h.state.beginOrContinueSequencerPatternHistoryCoalescing(
             0U, core::state::sequencer::StepProperty::NOTE, 100U,
@@ -930,7 +930,7 @@ void test_new_project_resets_musical_project_state() {
     assert(h.state.statusBar.tempo.get() == 120.0f);
     assert(h.state.statusBar.tempoDisplay.get() == 120.0f);
     assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
-    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 0);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::ProjectScale) == 0);
 
     std::cout << "[PASS] test_new_project_resets_musical_project_state\n";
 }

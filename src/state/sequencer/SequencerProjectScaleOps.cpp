@@ -1,6 +1,8 @@
 #include "state/sequencer/SequencerProjectScaleOps.hpp"
 
 #include <algorithm>
+#include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 #include <config/PlatformCompat.hpp>
 
@@ -57,40 +59,82 @@ FLASHMEM SequencerProjectScaleChoice resolveProjectScaleChoice(
     return choice;
 }
 
-FLASHMEM SequencerProjectScaleMutationResult applyProjectScaleTransition(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    ScaleSettings target
-) {
-    ScaleSettings source = bank.projectScaleSettings();
-    source.clamp();
-    target.clamp();
-    if (sameScaleSettings(source, target)) return {};
+namespace {
 
-    SequencerProjectScaleMutationResult result{};
-    result.projection = projectInheritedChordContexts(
-        bank,
-        active,
-        source,
-        target
-    );
+using Graph = oc::note::sequencer::StepSequencerGraph;
+using Chord = oc::note::sequencer::StepSequencerChordSpec;
 
-    if (!bank.setProjectScaleSettings(target)) return result;
-
-    if (!isPatternScaleOverride(active.pattern.scalePolicy)) {
-        active.pattern.bumpPatternScaleRevision();
-        active.invalidateVariationTelemetry();
-    }
-
-    // The selected bank slot is never canonical. Legacy synchronization may
-    // have materialized cold owners there; discard them only after a committed
-    // state transition and never attribute a musical revision to the scratch.
-    auto& activeScratch = bank.track(bank.activeTrackIndex());
-    activeScratch.graph.reset();
-    activeScratch.ccLanes.reset();
-
-    result.changed = true;
-    return result;
+struct ChordWriter {
+    SequencerProjectScaleChordChange* chords;
+    uint32_t count = 0U;
+};
+FLASHMEM void writeProjectedChord(void* context, uint16_t node,
+                                 const Chord& before, const Chord& after) {
+    auto& writer = *static_cast<ChordWriter*>(context);
+    writer.chords[writer.count++] = {node, before, after};
 }
+
+}  // namespace
+
+FLASHMEM SequencerHistoryProjectScaleChangePtr prepareHistoryProjectScaleChange(
+    const SequencerTrackBankState& bank, const SequencerState& active,
+    const SequencerClipGridState& clips, ScaleSettings target,
+    SequencerChordContextProjectionStats& projection
+) {
+    projection = {};
+    target.clamp();
+    if (sameScaleSettings(bank.projectScaleSettings(), target)) return {};
+    auto change = core::app::makeExtmemUniqueCold<SequencerHistoryProjectScaleChange>();
+    if (!change) return {};
+    change->before = bank.projectScaleSettings();
+    change->after = target;
+    change->projectScaleRevision = bank.projectScaleRevisionSignal().get();
+
+    // Both passes are read-only. Count first, then allocate exactly the changed
+    // formulas. There is no full Graph copy, maximum-size chord buffer or live rollback.
+    for (uint8_t pass = 0U; pass < 2U; ++pass) {
+        ChordWriter writer{change->chords.get()};
+        uint16_t patternIndex = 0U;
+        auto visit = [&](SequencerClipAddress address, const auto& notes, uint8_t length,
+                         const Graph* graph, SequencerPitchEditMode mode,
+                         SequencerPatternScalePolicy policy, uint32_t graphRevision,
+                         uint32_t scaleRevision) {
+            if (isPatternScaleOverride(policy)) return;
+            const auto stats = visitProjectedPatternChords(
+                notes, length, graph, mode, change->before, target,
+                pass == 0U ? nullptr : writeProjectedChord, &writer);
+            if (pass == 0U) {
+                change->patterns[patternIndex] = {
+                    address, static_cast<uint16_t>(stats.changed), change->chordCount, graphRevision, scaleRevision};
+                change->chordCount += stats.changed;
+                projection.merge(stats);
+            }
+            ++patternIndex;
+        };
+        for (uint8_t track = 0U; track < SequencerTrackBankState::TRACK_COUNT; ++track) {
+            const auto& pattern = canonicalTrackPattern(bank, active, track);
+            visit({track, clips.residentSlot(track)}, pattern.note, pattern.length.get(),
+                  pattern.graph.get(), pattern.pitchEditMode, pattern.scalePolicy,
+                  pattern.graphRevision.get(), pattern.patternScaleRevision.get());
+            for (uint8_t slot = 0U; slot < SequencerClipGridState::SLOT_COUNT; ++slot) {
+                const SequencerClipAddress address{track, slot};
+                const auto* doc = clips.inactiveDocument(address);
+                if (doc == nullptr) continue;
+                visit(address, doc->pattern.note, doc->pattern.length, doc->graph.get(),
+                      doc->pattern.pitchEditMode, doc->pattern.scalePolicy,
+                      doc->pattern.graphRevision, doc->pattern.patternScaleRevision);
+            }
+        }
+        change->patternCount = patternIndex;
+        if (pass == 0U) {
+            if (change->chordCount == 0U) break;
+            change->chords = core::app::makeExtmemUniqueArrayForOverwrite<
+                SequencerProjectScaleChordChange>(change->chordCount);
+            if (!change->chords) return {};
+        }
+    }
+    return change;
+}
+
 
 }  // namespace core::state::sequencer

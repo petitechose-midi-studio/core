@@ -273,7 +273,7 @@ void initializePayload(Harness& h, InitialPayload payload) {
     assert((seq::sequencerCcLaneView(pattern) != nullptr) == hasInitialCc(payload));
 }
 
-void restoreThroughCanonicalFullBankSnapshot(Harness& h) {
+void restoreThroughCanonicalBankSnapshot(Harness& h) {
     auto snapshot = core::state::project::captureProjectSnapshotOwned(h.state);
     assert(snapshot != nullptr);
     assert(core::state::project::applyProjectSnapshot(h.state, *snapshot));
@@ -472,7 +472,7 @@ void test_same_key_continuation_and_commit_allocate_nothing() {
 void test_restored_active_scratch_coalesces_flat_step_property_edits() {
     Harness h;
     initializePayload(h, InitialPayload::GraphAndCc);
-    restoreThroughCanonicalFullBankSnapshot(h);
+    restoreThroughCanonicalBankSnapshot(h);
 
     const auto* const editorGraphOwner = h.state.sequencer.pattern.graph.get();
     const auto* const editorCcOwner = h.state.sequencer.pattern.ccLanes.get();

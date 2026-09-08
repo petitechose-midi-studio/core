@@ -445,8 +445,8 @@ public:
      * restore its captured Before state through the same provisional sink.
      */
     void publishPreparedSequencerPreview();
-    sequencer::SequencerPreparedFullBankEditResult applyPreparedProjectScaleChoice(
-        sequencer::SequencerPreparedFullBankEditOwner owner,
+    sequencer::SequencerProjectScaleEditResult applyPreparedProjectScaleChoice(
+        sequencer::SequencerProjectScaleEditOwner owner,
         uint8_t row,
         int choiceIndex
     );

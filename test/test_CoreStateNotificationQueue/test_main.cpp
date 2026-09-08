@@ -224,7 +224,7 @@ void configurePattern(SequencerPatternState& pattern, uint8_t track) {
     pattern.setPatternNudgePercent(8 - static_cast<int>(track));
 }
 
-void prepareStoredFullBank(CoreState& state) {
+void prepareStoredProjectBank(CoreState& state) {
     state.sequencerTracks.syncSharedTrackState(0xFFFFU, 0);
 
     configurePattern(state.sequencer.pattern, 0);
@@ -269,7 +269,7 @@ void sampleQueue(oc::state::NotificationQueue& queue, size_t& peakPending) {
     assert(queue.pendingCount() <= oc::state::NotificationQueue::maxPending());
 }
 
-void test_full_bank_project_apply_stays_within_notification_capacity() {
+void test_project_snapshot_apply_stays_within_notification_capacity() {
     static_assert(
         oc::state::NotificationQueue::maxPending() == 96,
         "MIDI Studio requires headroom above its measured 64-entry atomic wave"
@@ -291,7 +291,7 @@ void test_full_bank_project_apply_stays_within_notification_capacity() {
         stagedStorage.settings
     );
 
-    prepareStoredFullBank(staged);
+    prepareStoredProjectBank(staged);
     prepareDifferentLiveBank(state);
 
     core::state::project::ProjectSnapshot snapshot;
@@ -388,7 +388,7 @@ void test_musical_project_reset_stays_within_notification_capacity() {
 
 int main() {
     std::cout.setf(std::ios::unitbuf);
-    test_full_bank_project_apply_stays_within_notification_capacity();
+    test_project_snapshot_apply_stays_within_notification_capacity();
     test_musical_project_reset_stays_within_notification_capacity();
     std::cout << "All CoreState notification queue tests passed.\n";
     return 0;

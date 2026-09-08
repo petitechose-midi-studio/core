@@ -12,8 +12,8 @@ namespace {
 
 FLASHMEM bool acceptProjectScaleResult(
     core::state::project::ProjectNavigationState& navigation,
-    core::state::sequencer::SequencerPreparedFullBankEditOutcome outcome) {
-    using Outcome = core::state::sequencer::SequencerPreparedFullBankEditOutcome;
+    core::state::sequencer::SequencerProjectScaleEditOutcome outcome) {
+    using Outcome = core::state::sequencer::SequencerProjectScaleEditOutcome;
     switch (outcome) {
         case Outcome::Committed:
         case Outcome::NoChange: return true;
@@ -140,7 +140,7 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
     if (next == current) return true;
 
     const auto result = history_.applyPreparedProjectScaleChoice(
-        core::state::sequencer::SequencerPreparedFullBankEditOwner::ProjectScale,
+        core::state::sequencer::SequencerProjectScaleEditOwner::ProjectScale,
         row,
         next
     );
@@ -323,7 +323,7 @@ FLASHMEM bool ProjectHandler::setFocusedMusicScaleValue(float normalized) {
     if (next == current) return true;
 
     const auto result = history_.applyPreparedProjectScaleChoice(
-        core::state::sequencer::SequencerPreparedFullBankEditOwner::ProjectScale,
+        core::state::sequencer::SequencerProjectScaleEditOwner::ProjectScale,
         row,
         next
     );

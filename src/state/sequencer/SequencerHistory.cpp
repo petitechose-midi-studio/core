@@ -80,12 +80,7 @@ FLASHMEM void SequencerHistoryPatternChange::clearPreparedPayloadOwnerProof() {
     ::new (static_cast<void*>(&auxiliary.activation)) SequencerHistoryPatternActivationMetadata{};
 }
 
-FLASHMEM SequencerHistoryFullBankChange::SequencerHistoryFullBankChange() = default;
-FLASHMEM SequencerHistoryFullBankChange::~SequencerHistoryFullBankChange() = default;
-FLASHMEM SequencerHistoryFullBankChange::SequencerHistoryFullBankChange(
-    SequencerHistoryFullBankChange&&) noexcept = default;
-FLASHMEM SequencerHistoryFullBankChange& SequencerHistoryFullBankChange::operator=(
-    SequencerHistoryFullBankChange&&) noexcept = default;
+
 
 FLASHMEM SequencerHistoryDrumChangePtr prepareHistoryDrumChangeBefore(
     const SequencerTrackBankState& bank,
@@ -225,6 +220,24 @@ using oc::note::sequencer::StepSequencerStepNode;
 #else
     for (;;) {}
 #endif
+}
+
+struct ScaleTarget {
+    SequencerPatternState* live = nullptr;
+    SequencerClipDocument* document = nullptr;
+    Graph* graph() const { return live ? live->graph.get() : document->graph.get(); }
+    bool inherits() const {
+        return !isPatternScaleOverride(live ? live->scalePolicy : document->pattern.scalePolicy);
+    }
+};
+
+FLASHMEM ScaleTarget scaleTarget(SequencerTrackBankState& bank, SequencerState& active,
+                                SequencerClipGridState& clips, SequencerClipAddress address) {
+    if (address.track >= SequencerTrackBankState::TRACK_COUNT) return {};
+    if (clips.residentSlot(address.track) == address.slot) {
+        return {&mutableCanonicalTrackPattern(bank, active, address.track), nullptr};
+    }
+    return {nullptr, clips.inactiveDocument(address)};
 }
 
 FLASHMEM bool sameScaleSettings(oc::note::sequencer::StepSequencerScaleSettings lhs,
@@ -653,8 +666,8 @@ FLASHMEM uint8_t scopeLimit(SequencerHistoryScope scope) {
             return SequencerHistoryService::PATTERN_ENTRY_LIMIT;
         case SequencerHistoryScope::Structure:
             return SequencerHistoryService::STRUCTURE_ENTRY_LIMIT;
-        case SequencerHistoryScope::FullBank:
-            return SequencerHistoryService::FULL_BANK_ENTRY_LIMIT;
+        case SequencerHistoryScope::ProjectScale:
+            return SequencerHistoryService::PROJECT_SCALE_ENTRY_LIMIT;
         case SequencerHistoryScope::Drum:
             return SequencerHistoryService::DRUM_ENTRY_LIMIT;
         case SequencerHistoryScope::ClipStructure:
@@ -714,43 +727,13 @@ FLASHMEM uint16_t patternSnapshotRetainedSpans(
     );
 }
 
-FLASHMEM size_t trackBankSnapshotRetainedBytes(const SequencerHistoryTrackBankSnapshot& snapshot) {
-    size_t bytes = graphRetainedBytes(snapshot.editorGraph);
-    for (const auto& graph : snapshot.bankGraphs) { bytes += graphRetainedBytes(graph); }
-    bytes += ccLaneRetainedBytes(snapshot.editorCcLanes);
-    for (const auto& lanes : snapshot.bankCcLanes) { bytes += ccLaneRetainedBytes(lanes); }
-    return bytes;
+FLASHMEM size_t projectScaleChangeRetainedBytes(const SequencerHistoryProjectScaleChange& change) {
+    return sizeof(change) + kExtmemAllocationOverheadEstimate +
+        (change.chords ? change.chordCount * sizeof(SequencerProjectScaleChordChange) +
+                         kExtmemAllocationOverheadEstimate : 0U);
 }
-
-FLASHMEM uint16_t trackBankSnapshotRetainedSpans(
-    const SequencerHistoryTrackBankSnapshot& snapshot
-) {
-    uint16_t spans = graphRetainedSpans(snapshot.editorGraph);
-    for (const auto& graph : snapshot.bankGraphs) {
-        spans = static_cast<uint16_t>(spans + graphRetainedSpans(graph));
-    }
-    spans = static_cast<uint16_t>(
-        spans + ccLaneRetainedSpans(snapshot.editorCcLanes)
-    );
-    for (const auto& lanes : snapshot.bankCcLanes) {
-        spans = static_cast<uint16_t>(spans + ccLaneRetainedSpans(lanes));
-    }
-    return spans;
-}
-
-FLASHMEM size_t fullBankChangeRetainedBytes(const SequencerHistoryFullBankChange& change) {
-    return sizeof(SequencerHistoryFullBankChange) + kExtmemAllocationOverheadEstimate +
-           trackBankSnapshotRetainedBytes(change.before) +
-           trackBankSnapshotRetainedBytes(change.after);
-}
-
-FLASHMEM uint16_t fullBankChangeRetainedSpans(
-    const SequencerHistoryFullBankChange& change
-) {
-    return static_cast<uint16_t>(
-        1U + trackBankSnapshotRetainedSpans(change.before) +
-        trackBankSnapshotRetainedSpans(change.after)
-    );
+FLASHMEM uint16_t projectScaleChangeRetainedSpans(const SequencerHistoryProjectScaleChange& change) {
+    return change.chords ? 2U : 1U;
 }
 
 FLASHMEM size_t
@@ -900,9 +883,9 @@ FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
         case SequencerHistoryScope::Structure:
             if (!entry.structure) return 0;
             return structureChangeRetainedBytes(*entry.structure);
-        case SequencerHistoryScope::FullBank:
-            if (!entry.fullBank) return 0;
-            return fullBankChangeRetainedBytes(*entry.fullBank);
+        case SequencerHistoryScope::ProjectScale:
+            if (!entry.projectScale) return 0;
+            return projectScaleChangeRetainedBytes(*entry.projectScale);
         case SequencerHistoryScope::Drum:
             return entry.drum ? drumChangeRetainedBytes(*entry.drum) : 0U;
         case SequencerHistoryScope::ClipStructure:
@@ -923,9 +906,9 @@ FLASHMEM uint16_t entryRetainedSpans(const SequencerHistoryEntry& entry) {
             return entry.structure
                 ? structureChangeRetainedSpans(*entry.structure)
                 : 0U;
-        case SequencerHistoryScope::FullBank:
-            return entry.fullBank
-                ? fullBankChangeRetainedSpans(*entry.fullBank)
+        case SequencerHistoryScope::ProjectScale:
+            return entry.projectScale
+                ? projectScaleChangeRetainedSpans(*entry.projectScale)
                 : 0U;
         case SequencerHistoryScope::Drum:
             return entry.drum ? drumChangeRetainedSpans(*entry.drum) : 0U;
@@ -975,8 +958,8 @@ FLASHMEM uintptr_t projectHistoryIdentity(const SequencerHistoryEntry& entry) {
             return reinterpret_cast<uintptr_t>(entry.pattern.get());
         case SequencerHistoryScope::Structure:
             return reinterpret_cast<uintptr_t>(entry.structure.get());
-        case SequencerHistoryScope::FullBank:
-            return reinterpret_cast<uintptr_t>(entry.fullBank.get());
+        case SequencerHistoryScope::ProjectScale:
+            return reinterpret_cast<uintptr_t>(entry.projectScale.get());
         case SequencerHistoryScope::Drum:
             return reinterpret_cast<uintptr_t>(entry.drum.get());
         case SequencerHistoryScope::ClipStructure:
@@ -1220,9 +1203,8 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
                 *clips, bank, active, *entry.clipStructure, after);
     }
 
-    if (!entry.fullBank) return false;
-    return applyHistorySnapshot(bank, active,
-                                after ? entry.fullBank->after : entry.fullBank->before);
+    return entry.projectScale && applyHistoryProjectScaleChange(
+        *entry.projectScale, bank, active, clips, after);
 }
 
 FLASHMEM SequencerHistoryDescriptor descriptorForEntry(const SequencerHistoryEntry& entry) {
@@ -1238,8 +1220,8 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(const SequencerHistoryEnt
         return descriptor;
     }
 
-    if (entry.scope == SequencerHistoryScope::FullBank && entry.fullBank) {
-        descriptor = entry.fullBank->descriptor;
+    if (entry.scope == SequencerHistoryScope::ProjectScale && entry.projectScale) {
+        descriptor = entry.projectScale->descriptor;
         return descriptor;
     }
 
@@ -1274,7 +1256,7 @@ FLASHMEM SequencerHistoryDescriptor descriptorForEntry(const SequencerHistoryEnt
         return descriptor;
     }
 
-    descriptor.kind = SequencerHistoryActionKind::FullBank;
+    descriptor.kind = SequencerHistoryActionKind::ProjectScaleSettings;
     return descriptor;
 }
 
@@ -1328,6 +1310,64 @@ FLASHMEM void captureFlatPatternHistory(
 }
 
 }  // namespace
+
+FLASHMEM bool applyHistoryProjectScaleChange(
+    const SequencerHistoryProjectScaleChange& change,
+    SequencerTrackBankState& bank, SequencerState& active,
+    SequencerClipGridState* clips, bool after
+) {
+    if (clips == nullptr || active.stepContentDraft.active.get() ||
+        !sameScaleSettings(bank.projectScaleSettings(), after ? change.before : change.after)) {
+        return false;
+    }
+    // Validate ALL addresses and expected formulas before the first live write.
+    // Later chronological operations may have replaced owners or moved residence.
+    for (uint16_t i = 0U; i < change.patternCount; ++i) {
+        const auto& item = change.patterns[i];
+        const auto target = scaleTarget(bank, active, *clips, item.address);
+        if ((!target.live && !target.document) || !target.inherits()) return false;
+        const auto* graph = target.graph();
+        for (uint16_t n = 0U; n < item.chordCount; ++n) {
+            const auto& chord = change.chords[item.firstChord + n];
+            if (!graph || chord.node >= graph->stepNodeCount || chord.node >= graph->stepNodes.size()) {
+                return false;
+            }
+            const auto& node = graph->stepNodes[chord.node];
+            const auto& expected = after ? chord.before : chord.after;
+            if (!node.has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL) ||
+                std::memcmp(&node.chordSpec, &expected, sizeof(expected)) != 0) return false;
+        }
+    }
+
+    const auto settings = after ? change.after : change.before;
+    (void)bank.setProjectScaleSettings(settings);
+    bank.projectScaleRevisionSignal().set(change.projectScaleRevision + (after ? 1U : 0U));
+    for (uint16_t i = 0U; i < change.patternCount; ++i) {
+        const auto& item = change.patterns[i];
+        const auto target = scaleTarget(bank, active, *clips, item.address);
+        for (uint16_t n = 0U; n < item.chordCount; ++n) {
+            const auto& chord = change.chords[item.firstChord + n];
+            target.graph()->stepNodes[chord.node].chordSpec = after ? chord.after : chord.before;
+        }
+        const uint32_t graphRevision = item.graphRevision + (after && item.chordCount ? 1U : 0U);
+        const uint32_t scaleRevision = item.scaleRevision + (after ? 1U : 0U);
+        if (target.live) {
+            target.live->graphRevision.set(graphRevision);
+            target.live->patternScaleRevision.set(scaleRevision);
+        } else {
+            target.document->pattern.graphRevision = graphRevision;
+            target.document->pattern.patternScaleRevision = scaleRevision;
+            target.document->pattern.effectiveScaleSettings = settings;
+            (void)clips->markInactiveDocumentMutated(item.address);
+        }
+    }
+    if (!isPatternScaleOverride(active.pattern.scalePolicy)) active.invalidateVariationTelemetry();
+    auto& scratch = bank.track(bank.activeTrackIndex());
+    scratch.graph.reset();
+    scratch.ccLanes.reset();
+    return true;
+}
+
 
 FLASHMEM bool captureHistorySnapshot(const SequencerState& source,
                                      SequencerHistoryPatternSnapshot& out) {
@@ -1834,7 +1874,7 @@ FLASHMEM bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankSt
     // immediately before publication.
     if (storage == SequencerHistoryPatternStorage::FlatOnly) {
         // The active bank slot is noncanonical scratch and may intentionally
-        // have no cold owners after FullBank restoration. The enclosing Core
+        // have no cold owners after snapshot restoration. The enclosing Core
         // transaction validates the canonical editor owner proof separately.
         return true;
     }
@@ -2122,84 +2162,6 @@ FLASHMEM bool restorePreparedHistoryPatternBefore(
     return true;
 }
 
-FLASHMEM SequencerHistoryFullBankChangePtr prepareHistoryFullBankChangeBefore(
-    const SequencerTrackBankState& bank, const SequencerState& active,
-    SequencerHistoryDescriptor descriptor) {
-    auto change = core::app::makeExtmemUnique<SequencerHistoryFullBankChange>();
-    if (!change || !captureHistorySnapshot(bank, active, change->before)) { return nullptr; }
-    change->descriptor = descriptor;
-    return change;
-}
-
-FLASHMEM bool reservePreparedHistoryFullBankAfter(const SequencerTrackBankState& bank,
-                                                  const SequencerState& active,
-                                                  SequencerHistoryFullBankChange& change) {
-    return reserveHistoryTrackBankSnapshotStorage(bank, active, change.after);
-}
-
-FLASHMEM bool capturePreparedHistoryFullBankAfterUsingReservedStorage(
-    const SequencerTrackBankState& bank, const SequencerState& active,
-    SequencerHistoryFullBankChange& change) {
-    return captureHistoryTrackBankSnapshotUsingReservedStorage(bank, active, change.after);
-}
-
-FLASHMEM bool populatePreparedHistoryFullBankStaging(
-    const SequencerTrackBankState& liveBank,
-    const SequencerState& liveActive,
-    const SequencerHistoryTrackBankSnapshot& before,
-    SequencerTrackBankState& stagedBank,
-    SequencerState& stagedActive
-) {
-    const uint8_t activeTrack = before.flat.activeTrack;
-    if (activeTrack >= SequencerTrackBankState::TRACK_COUNT ||
-        liveBank.activeTrackIndex() != activeTrack) {
-        return false;
-    }
-
-    applyTrackBankSnapshot(stagedBank, stagedActive, before.flat);
-    restoreFocus(stagedActive, before.focusedStep);
-    restoreActiveStepProperty(stagedActive, before.activeStepProperty);
-
-    if (!copyGraph(stagedActive.pattern, before.editorGraph.get(),
-                   before.flat.tracks[activeTrack].graphRevision)) {
-        return false;
-    }
-    SequencerCcLaneBankPtr editorCcLanes;
-    if (!cloneSequencerCcLaneBank(editorCcLanes, before.editorCcLanes.get())) {
-        return false;
-    }
-    installSequencerCcLaneBank(stagedActive.pattern, std::move(editorCcLanes));
-    synchronizeHistoryPatternRevisionSignals(
-        stagedActive.pattern,
-        before.flat.tracks[activeTrack],
-        liveActive.pattern.ccLaneRevision.get()
-    );
-
-    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if (i == activeTrack) continue;
-        auto& target = stagedBank.track(i);
-        if (!copyGraph(target, before.bankGraphs[i].get(),
-                       before.flat.tracks[i].graphRevision)) {
-            return false;
-        }
-        SequencerCcLaneBankPtr ccLanes;
-        if (!cloneSequencerCcLaneBank(ccLanes, before.bankCcLanes[i].get())) {
-            return false;
-        }
-        installSequencerCcLaneBank(target, std::move(ccLanes));
-        synchronizeHistoryPatternRevisionSignals(
-            target,
-            before.flat.tracks[i],
-            liveBank.track(i).ccLaneRevision.get()
-        );
-    }
-
-    auto& activeScratch = stagedBank.track(activeTrack);
-    activeScratch.graph.reset();
-    activeScratch.ccLanes.reset();
-    return true;
-}
-
 FLASHMEM bool SequencerHistoryService::canRecordPattern(
     const SequencerHistoryPatternChange& change) const {
     if (change.storage == SequencerHistoryPatternStorage::FlatOnly) {
@@ -2308,13 +2270,14 @@ FLASHMEM void SequencerHistoryService::commitAdmittedClipStructure(
     commitPreparedEntry(std::move(entry));
 }
 
-FLASHMEM bool SequencerHistoryService::canRecordFullBank(
-    const SequencerHistoryFullBankChange& change) const {
+FLASHMEM bool SequencerHistoryService::canRecordProjectScale(
+    const SequencerHistoryProjectScaleChange& change) const {
     const RetainedUsage incoming{
-        .bytes = static_cast<uint32_t>(fullBankChangeRetainedBytes(change)),
-        .spans = fullBankChangeRetainedSpans(change),
+        .bytes = static_cast<uint32_t>(projectScaleChangeRetainedBytes(change)),
+        .spans = projectScaleChangeRetainedSpans(change),
     };
-    return !sameMusicalHistorySnapshot(change.before, change.after) &&
+    return (change.before.root != change.after.root ||
+            change.before.type != change.after.type || change.before.mode != change.after.mode) &&
         incomingEntryFitsRetainedBudget(incoming) &&
         (project_history_sink_ == nullptr ||
          project_history_sink_->admitsRetainedUsage(
@@ -2323,18 +2286,18 @@ FLASHMEM bool SequencerHistoryService::canRecordFullBank(
          ));
 }
 
-FLASHMEM void SequencerHistoryService::commitAdmittedFullBank(
-    SequencerHistoryFullBankChangePtr change) {
+FLASHMEM void SequencerHistoryService::commitAdmittedProjectScale(
+    SequencerHistoryProjectScaleChangePtr change) {
     assert(change);
     if (!change) return;
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
-        change->descriptor.kind = SequencerHistoryActionKind::FullBank;
+        change->descriptor.kind = SequencerHistoryActionKind::ProjectScaleSettings;
     }
 
     SequencerHistoryEntry entry;
-    entry.scope = SequencerHistoryScope::FullBank;
-    entry.fullBank = std::move(change);
+    entry.scope = SequencerHistoryScope::ProjectScale;
+    entry.projectScale = std::move(change);
     commitPreparedEntry(std::move(entry));
 }
 

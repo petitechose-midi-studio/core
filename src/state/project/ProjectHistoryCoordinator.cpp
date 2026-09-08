@@ -138,8 +138,6 @@ FLASHMEM const char* sequencerActionLabel(uint8_t rawKind) {
             return "Remove CC Lane";
         case Kind::CcLaneTransitionEdit:
             return "CC Lane Curve";
-        case Kind::FullBank:
-            return "Sequencer Set";
         case Kind::PatternRandomize:
             return "Pattern Randomize";
         case Kind::DrumStepToggle:

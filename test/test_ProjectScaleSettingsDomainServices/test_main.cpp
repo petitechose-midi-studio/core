@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include "state/sequencer/SequencerHistory.hpp"
 
 #include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "../../src/handler/project/ProjectScaleSettingsDomainServices.hpp"
@@ -7,6 +8,24 @@
 #include "../../src/state/sequencer/SequencerProjectScaleOps.hpp"
 
 namespace {
+
+struct ScaleMutationResult {
+    bool changed = false;
+    core::state::sequencer::SequencerChordContextProjectionStats projection{};
+};
+ScaleMutationResult applyScaleTransition(
+    core::state::sequencer::SequencerTrackBankState& bank,
+    core::state::sequencer::SequencerState& active,
+    oc::note::sequencer::StepSequencerScaleSettings target) {
+    namespace seq = core::state::sequencer;
+    seq::SequencerClipGridState clips;
+    ScaleMutationResult result;
+    auto change = seq::prepareHistoryProjectScaleChange(bank, active, clips, target, result.projection);
+    if (change) result.changed = seq::applyHistoryProjectScaleChange(*change, bank, active, &clips, true);
+    return result;
+}
+
+
 
 using oc::note::sequencer::StepSequencerScaleConstraintMode;
 using oc::note::sequencer::StepSequencerScaleType;
@@ -61,7 +80,7 @@ void authorScalePolicyChord(
     ));
 }
 
-core::state::sequencer::SequencerProjectScaleMutationResult
+ScaleMutationResult
 applyProjectScaleChoice(
     core::state::sequencer::SequencerTrackBankState& trackBank,
     core::state::sequencer::SequencerState& sequencer,
@@ -75,7 +94,7 @@ applyProjectScaleChoice(
     );
     assert(choice.valid);
     if (!choice.changes) return {};
-    return core::state::sequencer::applyProjectScaleTransition(
+    return applyScaleTransition(
         trackBank,
         sequencer,
         choice.target

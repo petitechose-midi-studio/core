@@ -11,16 +11,16 @@
 namespace core::state::sequencer {
 
 struct SequencerChordContextProjectionStats {
-    uint16_t patternsVisited = 0;
-    uint16_t localChordsVisited = 0;
-    uint16_t projected = 0;
-    uint16_t changed = 0;
-    uint16_t exact = 0;
-    uint16_t adapted = 0;
-    uint16_t directionLimited = 0;
-    uint16_t rangeLimited = 0;
-    uint16_t failures = 0;
-    uint16_t droppedVoices = 0;
+    uint32_t patternsVisited = 0;
+    uint32_t localChordsVisited = 0;
+    uint32_t projected = 0;
+    uint32_t changed = 0;
+    uint32_t exact = 0;
+    uint32_t adapted = 0;
+    uint32_t directionLimited = 0;
+    uint32_t rangeLimited = 0;
+    uint32_t failures = 0;
+    uint32_t droppedVoices = 0;
 
     void merge(const SequencerChordContextProjectionStats& other);
 
@@ -31,6 +31,20 @@ struct SequencerChordContextProjectionStats {
                droppedVoices != 0U || failures != 0U;
     }
 };
+
+// Read-only projection: the visitor receives only changed formulas. The same
+// traversal drives live edits and exact, detached Project-scale history.
+using SequencerProjectedChordVisitor = void (*)(
+    void*, uint16_t,
+    const oc::note::sequencer::StepSequencerChordSpec&,
+    const oc::note::sequencer::StepSequencerChordSpec&);
+SequencerChordContextProjectionStats visitProjectedPatternChords(
+    const std::array<uint8_t, SequencerPatternState::MAX_STEPS>& notes,
+    uint8_t length, const oc::note::sequencer::StepSequencerGraph* graph,
+    SequencerPitchEditMode mode,
+    oc::note::sequencer::StepSequencerScaleSettings source,
+    oc::note::sequencer::StepSequencerScaleSettings target,
+    SequencerProjectedChordVisitor visitor, void* context);
 
 /**
  * Re-encodes every local Chord formula whose effective interval basis crosses
@@ -70,17 +84,6 @@ SequencerChordContextProjectionStats projectPatternChordContext(
     oc::note::sequencer::StepSequencerScaleSettings targetScale,
     SequencerPitchEditMode sourceMode,
     SequencerPitchEditMode targetMode
-);
-
-/**
- * Applies a Project-scale transition to the active editor and every inactive
- * bank Track that inherits Project scale. Pattern overrides are untouched.
- */
-SequencerChordContextProjectionStats projectInheritedChordContexts(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    oc::note::sequencer::StepSequencerScaleSettings sourceScale,
-    oc::note::sequencer::StepSequencerScaleSettings targetScale
 );
 
 }  // namespace core::state::sequencer

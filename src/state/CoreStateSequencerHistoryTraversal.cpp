@@ -54,7 +54,6 @@ FLASHMEM const char* historyActionLabel(sequencer::SequencerHistoryActionKind ki
         case sequencer::SequencerHistoryActionKind::ProjectScaleSettings: return "Project Scale";
         case sequencer::SequencerHistoryActionKind::PageStructure: return "Page Structure";
         case sequencer::SequencerHistoryActionKind::TrackStructure: return "Track Structure";
-        case sequencer::SequencerHistoryActionKind::FullBank: return "Sequencer Set";
         case sequencer::SequencerHistoryActionKind::PatternRandomize: return "Pattern Randomize";
         case sequencer::SequencerHistoryActionKind::DrumStepToggle: return "Drum Step State";
         case sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit:

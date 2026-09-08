@@ -126,7 +126,27 @@
       "recordFullBankFromCoreState",
       "canRecordFullBankFromCoreState",
       "recordPreparedFullBankFromCoreState",
-      "recordStructureFromCoreState"
+      "recordStructureFromCoreState",
+      "SequencerHistoryFullBankChange",
+      "SequencerHistoryFullBankChangePtr",
+      "SequencerPreparedFullBankEditOwner",
+      "SequencerPreparedFullBankEditOutcome",
+      "SequencerPreparedFullBankEditResult",
+      "prepareHistoryFullBankChangeBefore",
+      "reservePreparedHistoryFullBankAfter",
+      "capturePreparedHistoryFullBankAfterUsingReservedStorage",
+      "populatePreparedHistoryFullBankStaging",
+      "canRecordFullBank",
+      "commitAdmittedFullBank",
+      "projectInheritedChordContexts",
+      "applyProjectScaleTransition",
+      "validateSetPayload",
+      "fillSetPayload",
+      "applySetPayload",
+      "fillSetEnvelope",
+      "applySetEnvelope",
+      "applyProjectSequencerPayload",
+      "applyProjectSequencerEnvelope"
     ],
     "targetedIdentifiers": [
       {
@@ -370,10 +390,10 @@
       }
     ]
   },
-  "preparedFullBankLifecycle": {
+  "preparedProjectScaleLifecycle": {
     "ownerDeclaration": {
       "path": "src/state/sequencer/SequencerHistory.hpp",
-      "enum": "SequencerPreparedFullBankEditOwner",
+      "enum": "SequencerProjectScaleEditOwner",
       "expectedCount": 1,
       "owners": [
         "ProjectScale"
@@ -391,7 +411,7 @@
       "expectedDefinitionCount": 1
     },
     "trustedCommit": {
-      "method": "commitAdmittedFullBank",
+      "method": "commitAdmittedProjectScale",
       "declaration": {
         "path": "src/state/sequencer/SequencerHistory.hpp",
         "expectedCount": 1
@@ -745,7 +765,7 @@
     "forbiddenIdentifiers": [
       "SequencerHistoryOpenOutcome::Failed",
       "SequencerPreparedPatternEditBeginOutcome::Failed",
-      "SequencerPreparedFullBankEditOutcome::Failed"
+      "SequencerProjectScaleEditOutcome::Failed"
     ],
     "typedBeginMethods": [
       "beginOrContinueSequencerPatternHistoryCoalescing",

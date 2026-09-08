@@ -80,9 +80,9 @@ public:
             void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner,
             uint8_t key);
     using ApplyPreparedProjectScaleChoiceFn =
-        core::state::sequencer::SequencerPreparedFullBankEditResult (*)(
+        core::state::sequencer::SequencerProjectScaleEditResult (*)(
             void* context,
-            core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+            core::state::sequencer::SequencerProjectScaleEditOwner owner,
             uint8_t row,
             int choiceIndex);
     using ApplyPreparedQuickControlsEditFn =
@@ -188,9 +188,9 @@ public:
     [[nodiscard]] core::state::sequencer::SequencerPreparedPatternEditAbortOutcome
     abortPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key) const;
-    core::state::sequencer::SequencerPreparedFullBankEditResult
+    core::state::sequencer::SequencerProjectScaleEditResult
     applyPreparedProjectScaleChoice(
-        core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+        core::state::sequencer::SequencerProjectScaleEditOwner owner,
         uint8_t row,
         int choiceIndex
     ) const;

@@ -122,7 +122,7 @@ static_assert(
     ARM_FULL_BANK_CHANGE_BYTES + 32U * (ARM_GRAPH_BYTES + ARM_CC_BYTES) +
             ARM_FULL_BANK_SPANS * ARM_ALLOCATION_HEADER_BYTES ==
         528224U,
-    "LOCK-P: FullBank provider peak changed"
+    "LOCK-P: BankSnapshot provider peak changed"
 );
 static_assert(
     ARM_STRUCTURE_CHANGE_BYTES + 32U * (ARM_GRAPH_BYTES + ARM_CC_BYTES) +
@@ -410,7 +410,7 @@ void assertBankOwners(
     assert(actual.ccRevisions == expected.ccRevisions);
 }
 
-struct FullBankMusicalProof {
+struct BankSnapshotMusicalProof {
     seq::SequencerHistoryTrackBankSnapshot snapshot;
 };
 
@@ -484,8 +484,8 @@ void assertDraftInvariant(const Harness& h, const DraftInvariant& expected) {
     assert(actual.blockedTransition == expected.blockedTransition);
 }
 
-FullBankMusicalProof captureFullBankMusicalProof(const Harness& h) {
-    FullBankMusicalProof proof;
+BankSnapshotMusicalProof captureBankSnapshotMusicalProof(const Harness& h) {
+    BankSnapshotMusicalProof proof;
     assert(seq::captureHistorySnapshot(
         h.state.sequencerTracks,
         h.state.sequencer,
@@ -494,9 +494,9 @@ FullBankMusicalProof captureFullBankMusicalProof(const Harness& h) {
     return proof;
 }
 
-void assertFullBankMusicalProof(
+void assertBankSnapshotMusicalProof(
     const Harness& h,
-    const FullBankMusicalProof& expected
+    const BankSnapshotMusicalProof& expected
 ) {
     seq::SequencerHistoryTrackBankSnapshot actual;
     assert(seq::captureHistorySnapshot(
@@ -629,7 +629,7 @@ void verifyPatternPreparationFailure(
 ) {
     Harness h;
     initializeActivePayload(h, kind);
-    auto musicalBaseline = captureFullBankMusicalProof(h);
+    auto musicalBaseline = captureBankSnapshotMusicalProof(h);
     const auto invariant = tx::captureStateInvariant(h.state);
     const auto bankOwners = captureBankOwners(h);
 
@@ -642,7 +642,7 @@ void verifyPatternPreparationFailure(
         assertBankOwners(h, bankOwners);
     }
 
-    assertFullBankMusicalProof(h, musicalBaseline);
+    assertBankSnapshotMusicalProof(h, musicalBaseline);
 }
 
 void verifyPatternPreparationRatchet(
@@ -652,7 +652,7 @@ void verifyPatternPreparationRatchet(
 ) {
     Harness h;
     initializeActivePayload(h, kind);
-    auto musicalBaseline = captureFullBankMusicalProof(h);
+    auto musicalBaseline = captureBankSnapshotMusicalProof(h);
     const auto invariant = tx::captureStateInvariant(h.state);
     const auto bankOwners = captureBankOwners(h);
     const auto expectedRequests = expectedPatternAllocationRequests(kind, storage);
@@ -671,7 +671,7 @@ void verifyPatternPreparationRatchet(
         assertBankOwners(h, bankOwners);
     }
 
-    assertFullBankMusicalProof(h, musicalBaseline);
+    assertBankSnapshotMusicalProof(h, musicalBaseline);
 }
 
 void test_pattern_preparation_allocation_matrix() {
@@ -1137,7 +1137,7 @@ void verifyPatternTraversalAllocationFailure(
 
     const auto before = tx::captureStateInvariant(h.state);
     const auto owners = captureBankOwners(h);
-    const auto musical = captureFullBankMusicalProof(h);
+    const auto musical = captureBankSnapshotMusicalProof(h);
     const auto interaction = capturePatternTraversalInteractionInvariant(h);
     assert(
         direction == PatternTraversalDirection::Undo
@@ -1154,7 +1154,7 @@ void verifyPatternTraversalAllocationFailure(
         assertPatternTraversalInteractionInvariant(h, interaction);
     }
 
-    assertFullBankMusicalProof(h, musical);
+    assertBankSnapshotMusicalProof(h, musical);
     assertSharedTrackProjection(h, targetActive ? 0x0001U : 0x0003U, targetActive ? 0U : 1U);
     assertNoDeferredPublication(h);
     tx::assertStateInvariant(h.state, before);
@@ -1170,15 +1170,15 @@ void verifyPatternTraversalAllocationRatchet(
     Harness h;
     prepareGraphCcPatternTraversalEntry(h, targetActive);
 
-    FullBankMusicalProof expected;
+    BankSnapshotMusicalProof expected;
     if (direction == PatternTraversalDirection::Undo) {
         assert(h.state.undoSequencerHistory());
         settleSetup(h);
-        expected = captureFullBankMusicalProof(h);
+        expected = captureBankSnapshotMusicalProof(h);
         assert(h.state.redoSequencerHistory());
         settleSetup(h);
     } else {
-        expected = captureFullBankMusicalProof(h);
+        expected = captureBankSnapshotMusicalProof(h);
         positionPatternTraversalEntry(h, direction);
     }
 
@@ -1196,7 +1196,7 @@ void verifyPatternTraversalAllocationRatchet(
         tx::assertMaxPlusOneStillArmed(expectedAttempts);
     }
 
-    assertFullBankMusicalProof(h, expected);
+    assertBankSnapshotMusicalProof(h, expected);
     assertSharedTrackProjection(h, targetActive ? 0x0001U : 0x0003U, targetActive ? 0U : 1U);
 }
 
@@ -1251,7 +1251,7 @@ void test_pattern_noop_admission_preserves_live_state() {
         *noOp.change
     ));
 
-    auto musical = captureFullBankMusicalProof(h);
+    auto musical = captureBankSnapshotMusicalProof(h);
     const auto before = tx::captureStateInvariant(h.state);
     const auto owners = captureBankOwners(h);
     assert(!h.state.sequencerHistory.canRecordPattern(*noOp.change));
@@ -1260,7 +1260,7 @@ void test_pattern_noop_admission_preserves_live_state() {
     h.state.flushProjectMutationCoalescing();
     tx::assertStateInvariant(h.state, before);
     assertBankOwners(h, owners);
-    assertFullBankMusicalProof(h, musical);
+    assertBankSnapshotMusicalProof(h, musical);
     std::cout << "[PASS] Pattern no-op admission preserves the complete live bank\n";
 }
 
@@ -1375,7 +1375,7 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
     assert(staleFlat.change != nullptr);
 
     h.state.sequencer.pattern.setEnabled(2U, true);
-    auto expected = captureFullBankMusicalProof(h);
+    auto expected = captureBankSnapshotMusicalProof(h);
     const auto owners = captureBankOwners(h);
     const auto before = tx::captureStateInvariant(h.state);
     test_support::drainNotifications();
@@ -1387,7 +1387,7 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
     }
     assert(!h.state.hasPendingProjectMutationCoalescing());
     assertBankOwners(h, owners);
-    assertFullBankMusicalProof(h, expected);
+    assertBankSnapshotMusicalProof(h, expected);
     assert(h.state.project.metadata.modifiedCounter == before.modifiedCounter + 1U);
     assert(h.state.hasPendingProjectSessionSave());
     assert(h.state.sequencerHistory.undoCount() == before.sequencerUndoCount);
@@ -1418,7 +1418,7 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
         assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 1U));
         tx::assertMaxPlusOneStillArmed(0U);
     }
-    assertFullBankMusicalProof(h, expected);
+    assertBankSnapshotMusicalProof(h, expected);
     std::cout << "[PASS] generic publication allocates zero; canonical capture/runtime/navigation stay exact\n";
 }
 
@@ -1560,100 +1560,6 @@ void test_domain_prepared_pattern_publishes_once_without_bank_synchronization() 
     std::cout << "[PASS] Domain prepared Pattern publishes once without bank synchronization\n";
 }
 
-struct PreparedFullBank {
-    seq::SequencerHistoryFullBankChangePtr change;
-};
-
-bool prepareFullBank(Harness& h, PreparedFullBank& out) {
-    seq::SequencerHistoryDescriptor descriptor{};
-    descriptor.kind = seq::SequencerHistoryActionKind::FullBank;
-    out.change = seq::prepareHistoryFullBankChangeBefore(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        descriptor
-    );
-    return out.change && seq::reservePreparedHistoryFullBankAfter(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        *out.change
-    );
-}
-
-ExpectedAllocationRequests expectedFullBankAllocationRequests(
-    PayloadKind kind,
-    uint16_t authoredBankMask
-) {
-    ExpectedAllocationRequests expected;
-    expected.push(sizeof(seq::SequencerHistoryFullBankChange));
-    for (uint8_t snapshot = 0U; snapshot < 2U; ++snapshot) {
-        appendPayloadRequests(expected, kind);  // editor
-        for (uint8_t track = 0U;
-             track < seq::SequencerTrackBankState::TRACK_COUNT;
-             ++track) {
-            if (track == 0U) continue;  // active bank slot is noncanonical scratch
-            const bool populated =
-                (authoredBankMask & seq::sequencerHistoryTrackBit(track)) != 0U;
-            if (populated) appendPayloadRequests(expected, kind);
-        }
-    }
-    return expected;
-}
-
-std::size_t fullBankGraphOwnerCount(
-    const seq::SequencerHistoryTrackBankSnapshot& snapshot
-) {
-    std::size_t count = snapshot.editorGraph ? 1U : 0U;
-    for (const auto& owner : snapshot.bankGraphs) {
-        if (owner) ++count;
-    }
-    return count;
-}
-
-std::size_t fullBankCcOwnerCount(
-    const seq::SequencerHistoryTrackBankSnapshot& snapshot
-) {
-    std::size_t count = snapshot.editorCcLanes ? 1U : 0U;
-    for (const auto& owner : snapshot.bankCcLanes) {
-        if (owner) ++count;
-    }
-    return count;
-}
-
-std::size_t expectedFullBankRetainedBytes(
-    const seq::SequencerHistoryFullBankChange& change
-) {
-    constexpr std::size_t allocationHeaderBytes = 16U;
-    const std::size_t graphOwners =
-        fullBankGraphOwnerCount(change.before) +
-        fullBankGraphOwnerCount(change.after);
-    const std::size_t ccOwners =
-        fullBankCcOwnerCount(change.before) +
-        fullBankCcOwnerCount(change.after);
-    return sizeof(seq::SequencerHistoryFullBankChange) + allocationHeaderBytes +
-        graphOwners * (
-            sizeof(oc::note::sequencer::StepSequencerGraph) +
-            allocationHeaderBytes
-        ) +
-        ccOwners * (sizeof(seq::SequencerCcLaneBank) + allocationHeaderBytes);
-}
-
-void assertFullBankOwners(
-    const PreparedFullBank& prepared,
-    std::size_t ownersPerPayload
-) {
-    assert(prepared.change != nullptr);
-    const uint8_t beforeActive = prepared.change->before.flat.activeTrack;
-    const uint8_t afterActive = prepared.change->after.flat.activeTrack;
-    assert(!prepared.change->before.bankGraphs[beforeActive]);
-    assert(!prepared.change->before.bankCcLanes[beforeActive]);
-    assert(!prepared.change->after.bankGraphs[afterActive]);
-    assert(!prepared.change->after.bankCcLanes[afterActive]);
-    assert(fullBankGraphOwnerCount(prepared.change->before) == ownersPerPayload);
-    assert(fullBankGraphOwnerCount(prepared.change->after) == ownersPerPayload);
-    assert(fullBankCcOwnerCount(prepared.change->before) == ownersPerPayload);
-    assert(fullBankCcOwnerCount(prepared.change->after) == ownersPerPayload);
-}
-
 seq::SequencerPatternState& canonicalTrackPattern(Harness& h, uint8_t track) {
     const uint8_t target =
         seq::SequencerTrackBankState::clampTrackIndex(track);
@@ -1699,29 +1605,6 @@ void assertCapturedPatternRevisionVector(
     assert(pattern.graphRevision.get() == expected.graphRevision);
 }
 
-void commitFullBankEnabledMaskChange(Harness& h, uint16_t enabledMask) {
-    PreparedFullBank prepared;
-    assert(prepareFullBank(h, prepared));
-    h.state.sequencerTracks.syncSharedTrackState(
-        enabledMask,
-        h.state.sequencerTracks.activeTrackIndex()
-    );
-    assert(seq::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        *prepared.change
-    ));
-    assert(tx::canPublishAdmittedFullBank(h.state, *prepared.change));
-    assert(tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
-    assert(
-        h.state.sequencerHistory.undoCount(
-            seq::SequencerHistoryScope::FullBank
-        ) == 1U
-    );
-    assert(h.state.sequencerHistory.redoCount() == 0U);
-    assert(h.state.projectHistory.undoCount() == 1U);
-}
-
 void beginModifiedChordDraft(Harness& h) {
     const auto nodeId = seq::rootStepNodeId(0U);
     assert(seq::beginStepContentDraft(
@@ -1750,223 +1633,7 @@ void assertHistoryBlockedDraft(
     assertDraftInvariant(h, before);
 }
 
-void verifyFullBankPreparationFailure(
-    PayloadKind kind,
-    uint16_t authoredBankMask,
-    std::size_t ordinal
-) {
-    Harness h;
-    initializeCapturedTracks(h, kind, authoredBankMask);
-    auto musical = captureFullBankMusicalProof(h);
-    const auto invariant = tx::captureStateInvariant(h.state);
-    const auto owners = captureBankOwners(h);
-
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
-        PreparedFullBank rejected;
-        assert(!prepareFullBank(h, rejected));
-        tx::assertFailureConsumed(ordinal);
-        tx::assertStateInvariant(h.state, invariant);
-        assertBankOwners(h, owners);
-    }
-
-    assertFullBankMusicalProof(h, musical);
-}
-
-void verifyFullBankPreparationRatchet(
-    PayloadKind kind,
-    uint16_t authoredBankMask,
-    std::size_t expectedAttempts,
-    std::size_t ownersPerPayload
-) {
-    Harness h;
-    initializeCapturedTracks(h, kind, authoredBankMask);
-    auto musical = captureFullBankMusicalProof(h);
-    const auto invariant = tx::captureStateInvariant(h.state);
-    const auto owners = captureBankOwners(h);
-    const auto expectedRequests = expectedFullBankAllocationRequests(
-        kind,
-        authoredBankMask
-    );
-
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(
-            expectedAttempts + 1U
-        );
-        allocation_trace::Scope allocationTrace;
-        PreparedFullBank prepared;
-        assert(prepareFullBank(h, prepared));
-        if (kind == PayloadKind::GraphAndCc) {
-            assertFullBankOwners(prepared, ownersPerPayload);
-        }
-        assertAllocationRequests(expectedRequests);
-        tx::assertMaxPlusOneStillArmed(expectedAttempts);
-        tx::assertStateInvariant(h.state, invariant);
-        assertBankOwners(h, owners);
-    }
-
-    assertFullBankMusicalProof(h, musical);
-}
-
-void test_full_bank_preparation_allocation_matrix() {
-    struct Case {
-        PayloadKind kind;
-        std::size_t expectedAttempts;
-    };
-    constexpr std::array<Case, 4> activeCases{{
-        {PayloadKind::None, 1U},
-        {PayloadKind::Graph, 3U},
-        {PayloadKind::Cc, 3U},
-        {PayloadKind::GraphAndCc, 5U},
-    }};
-
-    for (const auto& item : activeCases) {
-        for (std::size_t ordinal = 1U;
-             ordinal <= item.expectedAttempts;
-             ++ordinal) {
-            verifyFullBankPreparationFailure(item.kind, 0x0001U, ordinal);
-        }
-        verifyFullBankPreparationRatchet(
-            item.kind,
-            0x0001U,
-            item.expectedAttempts,
-            1U
-        );
-    }
-
-    constexpr std::size_t maximumAttempts = 65U;
-    for (std::size_t ordinal = 1U; ordinal <= maximumAttempts; ++ordinal) {
-        verifyFullBankPreparationFailure(
-            PayloadKind::GraphAndCc,
-            0xFFFFU,
-            ordinal
-        );
-    }
-    verifyFullBankPreparationRatchet(
-        PayloadKind::GraphAndCc,
-        0xFFFFU,
-        maximumAttempts,
-        16U
-    );
-
-    std::cout << "[PASS] FullBank preparation allocation matrix\n";
-}
-
-void test_full_bank_capture_rejects_active_track_drift() {
-    Harness h;
-    initializeCapturedTracks(h, PayloadKind::GraphAndCc, 0x0003U);
-    h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
-    settleSetup(h);
-
-    PreparedFullBank prepared;
-    assert(prepareFullBank(h, prepared));
-    assert(prepared.change->before.flat.activeTrack == 0U);
-    assert(prepared.change->after.flat.activeTrack == 0U);
-    auto* const reservedEditorGraph = prepared.change->after.editorGraph.get();
-    auto* const reservedEditorCc = prepared.change->after.editorCcLanes.get();
-    assert(reservedEditorGraph != nullptr);
-    assert(reservedEditorCc != nullptr);
-    const bool reservedGraphEnabled = reservedEditorGraph->enabled;
-    const uint8_t reservedCcCount = seq::sequencerCcLaneCount(
-        *reservedEditorCc
-    );
-
-    assert(seq::switchActiveTrack(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        1U
-    ));
-    const auto liveAfterSwitch = tx::captureStateInvariant(h.state);
-    const auto ownersAfterSwitch = captureBankOwners(h);
-    const auto musicalAfterSwitch = captureFullBankMusicalProof(h);
-
-    assert(!seq::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        *prepared.change
-    ));
-    assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
-    assert(prepared.change->after.flat.activeTrack == 0U);
-    assert(prepared.change->after.editorGraph.get() == reservedEditorGraph);
-    assert(prepared.change->after.editorCcLanes.get() == reservedEditorCc);
-    assert(reservedEditorGraph->enabled == reservedGraphEnabled);
-    assert(seq::sequencerCcLaneCount(*reservedEditorCc) == reservedCcCount);
-    assert(h.state.sequencerHistory.undoCount() == 0U);
-    assert(h.state.sequencerHistory.redoCount() == 0U);
-    assert(h.state.projectHistory.undoCount() == 0U);
-    tx::assertStateInvariant(h.state, liveAfterSwitch);
-    assertBankOwners(h, ownersAfterSwitch);
-    assertFullBankMusicalProof(h, musicalAfterSwitch);
-
-    std::cout << "[PASS] FullBank capture rejects active Track drift before copy\n";
-}
-
-void test_full_bank_traversal_rejects_active_step_draft_before_allocation() {
-    {
-        Harness h;
-        initializeActivePayload(h, PayloadKind::GraphAndCc);
-        commitFullBankEnabledMaskChange(h, 0x0003U);
-        beginModifiedChordDraft(h);
-
-        const auto before = tx::captureStateInvariant(h.state);
-        const auto owners = captureBankOwners(h);
-        const auto musical = captureFullBankMusicalProof(h);
-        const auto draft = captureDraftInvariant(h);
-        {
-            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            allocation_trace::Scope allocationTrace;
-            assert(!h.state.undoSequencerHistory());
-            assert(!allocation_trace::overflow);
-            assert(allocation_trace::count == 0U);
-            tx::assertMaxPlusOneStillArmed(0U);
-        }
-        tx::assertStateInvariant(h.state, before);
-        assertBankOwners(h, owners);
-        assertFullBankMusicalProof(h, musical);
-        assertHistoryBlockedDraft(h, draft);
-    }
-
-    {
-        Harness h;
-        initializeActivePayload(h, PayloadKind::GraphAndCc);
-        commitFullBankEnabledMaskChange(h, 0x0003U);
-        assert(h.state.undoSequencerHistory());
-        assert(
-            h.state.sequencerHistory.undoCount(
-                seq::SequencerHistoryScope::FullBank
-            ) == 0U
-        );
-        assert(
-            h.state.sequencerHistory.redoCount(
-                seq::SequencerHistoryScope::FullBank
-            ) == 1U
-        );
-        assertNoDeferredPublication(h);
-        beginModifiedChordDraft(h);
-
-        const auto before = tx::captureStateInvariant(h.state);
-        const auto owners = captureBankOwners(h);
-        const auto musical = captureFullBankMusicalProof(h);
-        const auto draft = captureDraftInvariant(h);
-        {
-            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            allocation_trace::Scope allocationTrace;
-            assert(!h.state.redoSequencerHistory());
-            assert(!allocation_trace::overflow);
-            assert(allocation_trace::count == 0U);
-            tx::assertMaxPlusOneStillArmed(0U);
-        }
-        tx::assertStateInvariant(h.state, before);
-        assertBankOwners(h, owners);
-        assertFullBankMusicalProof(h, musical);
-        assertHistoryBlockedDraft(h, draft);
-    }
-
-    std::cout
-        << "[PASS] FullBank Undo/Redo reject an active Step Draft before allocation\n";
-}
-
-void test_full_bank_active_scratch_is_excluded_and_cleared_on_apply() {
+void test_bank_snapshot_active_scratch_is_excluded_and_cleared_on_apply() {
     Harness h;
     initializeActivePayload(h, PayloadKind::GraphAndCc);
     const uint8_t activeTrack = h.state.sequencerTracks.activeTrackIndex();
@@ -2051,10 +1718,10 @@ void test_full_bank_active_scratch_is_excluded_and_cleared_on_apply() {
     assert(seq::sameMusicalHistorySnapshot(restored, captured));
 
     std::cout
-        << "[PASS] FullBank capture excludes active scratch and apply clears it\n";
+        << "[PASS] BankSnapshot capture excludes active scratch and apply clears it\n";
 }
 
-void test_full_bank_apply_restores_revision_contract() {
+void test_bank_snapshot_apply_restores_revision_contract() {
     Harness h;
     initializeCapturedTracks(h, PayloadKind::GraphAndCc, 0xFFFFU);
     const uint8_t activeTrack = h.state.sequencerTracks.activeTrackIndex();
@@ -2149,150 +1816,7 @@ void test_full_bank_apply_restores_revision_contract() {
     assert(seq::sameMusicalHistorySnapshot(restored, captured));
 
     std::cout
-        << "[PASS] FullBank apply restores exact represented revisions and monotone CC\n";
-}
-
-void test_full_bank_noop_budget_and_pruning() {
-    {
-        Harness h;
-        initializeActivePayload(h, PayloadKind::None);
-        auto musical = captureFullBankMusicalProof(h);
-        const auto before = tx::captureStateInvariant(h.state);
-        const auto owners = captureBankOwners(h);
-        PreparedFullBank noOp;
-        assert(prepareFullBank(h, noOp));
-        assert(seq::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-            h.state.sequencerTracks,
-            h.state.sequencer,
-            *noOp.change
-        ));
-        assert(!tx::canPublishAdmittedFullBank(h.state, *noOp.change));
-        assert(!tx::publishAdmittedFullBank(h.state, std::move(noOp.change)));
-        test_support::drainNotifications();
-        h.state.flushProjectMutationCoalescing();
-        tx::assertStateInvariant(h.state, before);
-        assertBankOwners(h, owners);
-        assertFullBankMusicalProof(h, musical);
-    }
-
-    {
-        Harness h;
-        initializeCapturedTracks(h, PayloadKind::GraphAndCc, 0xFFFFU);
-        PreparedFullBank maximum;
-        assert(prepareFullBank(h, maximum));
-        h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
-        assert(seq::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-            h.state.sequencerTracks,
-            h.state.sequencer,
-            *maximum.change
-        ));
-        assert(tx::canPublishAdmittedFullBank(h.state, *maximum.change));
-        assert(tx::publishAdmittedFullBank(h.state, std::move(maximum.change)));
-        assert(
-            h.state.sequencerHistory.retainedBytes() <=
-            seq::SequencerHistoryService::RETAINED_BYTE_BUDGET
-        );
-    }
-
-    {
-        Harness h;
-        initializeActivePayload(h, PayloadKind::None);
-        const auto modifiedBefore = h.state.project.metadata.modifiedCounter;
-        for (uint8_t index = 0U; index < 5U; ++index) {
-            PreparedFullBank prepared;
-            assert(prepareFullBank(h, prepared));
-            const uint16_t nextMask =
-                h.state.sequencerTracks.currentEnabledMask() == 0x0001U
-                    ? 0x0003U
-                    : 0x0001U;
-            h.state.sequencerTracks.syncSharedTrackState(nextMask, 0U);
-            assert(seq::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-                h.state.sequencerTracks,
-                h.state.sequencer,
-                *prepared.change
-            ));
-            assert(tx::canPublishAdmittedFullBank(h.state, *prepared.change));
-            assert(tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
-        }
-        assert(
-            h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::FullBank) ==
-            seq::SequencerHistoryService::FULL_BANK_ENTRY_LIMIT
-        );
-        assert(
-            h.state.projectHistory.undoCount() ==
-            seq::SequencerHistoryService::FULL_BANK_ENTRY_LIMIT
-        );
-        assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 5U);
-    }
-
-    std::cout << "[PASS] FullBank no-op, budget, and pruning\n";
-}
-
-void test_full_bank_commit_is_nofail_and_exactly_once() {
-    Harness h;
-    initializeActivePayload(h, PayloadKind::GraphAndCc);
-    PreparedFullBank prepared;
-    assert(prepareFullBank(h, prepared));
-    seq::SequencerTrackBankState stagedBank;
-    seq::SequencerState stagedActive;
-    stageTrackBank(h, stagedBank, stagedActive);
-    stagedBank.syncSharedTrackState(0x0003U, 0U);
-    assert(seq::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-        stagedBank,
-        stagedActive,
-        *prepared.change
-    ));
-    assert(tx::canPublishAdmittedFullBank(h.state, *prepared.change));
-    const auto before = tx::captureStateInvariant(h.state);
-    const std::size_t expectedRetained = expectedFullBankRetainedBytes(
-        *prepared.change
-    );
-
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        installTrackBankStateForTest(
-            h.state.sequencerTracks,
-            h.state.sequencer,
-            stagedBank,
-            stagedActive
-        );
-        assert(tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
-        tx::assertMaxPlusOneStillArmed(0U);
-        assertExactlyOnePublication(h.state, before);
-        assert(
-            h.state.sequencerHistory.retainedBytes() ==
-            before.retainedBytes + expectedRetained
-        );
-
-        const auto committed = tx::captureStateInvariant(h.state);
-        h.state.flushProjectMutationCoalescing();
-        tx::assertMaxPlusOneStillArmed(0U);
-        tx::assertStateInvariant(h.state, committed);
-    }
-
-    assertSharedTrackProjection(h, 0x0003U, 0U);
-    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
-    const auto beforeUndo = tx::captureStateInvariant(h.state);
-    assert(h.state.undoSequencerHistory());
-    assertSharedTrackProjection(h, 0x0001U, 0U);
-    assert(
-        h.state.project.metadata.modifiedCounter ==
-        beforeUndo.modifiedCounter + 1U
-    );
-    assert(h.state.hasPendingProjectSessionSave());
-    assertNoDeferredPublication(h);
-    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
-    const auto beforeRedo = tx::captureStateInvariant(h.state);
-    assert(h.state.redoSequencerHistory());
-    assertSharedTrackProjection(h, 0x0003U, 0U);
-    assert(
-        h.state.project.metadata.modifiedCounter ==
-        beforeRedo.modifiedCounter + 1U
-    );
-    assert(h.state.hasPendingProjectSessionSave());
-    assertNoDeferredPublication(h);
-
-    std::cout << "[PASS] FullBank prepared commit is no-fail and exactly once\n";
+        << "[PASS] BankSnapshot apply restores exact represented revisions and monotone CC\n";
 }
 
 struct PreparedStructure {
@@ -2341,59 +1865,6 @@ void test_prepared_bank_admission_rejects_active_step_draft() {
     {
         Harness h;
         initializeActivePayload(h, PayloadKind::Graph);
-        PreparedFullBank prepared;
-        assert(prepareFullBank(h, prepared));
-        seq::SequencerTrackBankState stagedBank;
-        seq::SequencerState stagedActive;
-        stageTrackBank(h, stagedBank, stagedActive);
-        assert(stagedActive.pattern.setStepDataAt(
-            0U,
-            61U,
-            91U,
-            seq::SequencerPatternState::DEFAULT_GATE_PERCENT
-        ));
-        assert(seq::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-            stagedBank,
-            stagedActive,
-            *prepared.change
-        ));
-        assert(h.state.sequencerHistory.canRecordFullBank(*prepared.change));
-        const auto nodeId = seq::rootStepNodeId(0U);
-        assert(seq::beginStepContentDraft(
-            h.state.sequencer,
-            seq::SequencerStepContentDraftKind::CHORD,
-            0U,
-            nodeId
-        ));
-        assert(seq::setAuthoringNodeChordMode(
-            h.state.sequencer,
-            nodeId,
-            oc::note::sequencer::StepSequencerChordMode::Local
-        ));
-        assert(h.state.sequencer.stepContentDraft.modified());
-        test_support::drainNotifications();
-        const auto before = tx::captureStateInvariant(h.state);
-        const auto owners = captureBankOwners(h);
-        const auto draft = captureDraftInvariant(h);
-        auto musical = captureFullBankMusicalProof(h);
-        {
-            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            assert(!tx::canPublishAdmittedFullBank(h.state, *prepared.change));
-            assert(!tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
-            tx::assertMaxPlusOneStillArmed(0U);
-            tx::assertStateInvariant(h.state, before);
-            assertBankOwners(h, owners);
-            assertDraftInvariant(h, draft);
-        }
-        assertFullBankMusicalProof(h, musical);
-        assertNoDeferredPublication(h);
-        assertDraftInvariant(h, draft);
-        assertSharedTrackProjection(h, 0x0001U, 0U);
-    }
-
-    {
-        Harness h;
-        initializeActivePayload(h, PayloadKind::Graph);
         PreparedStructure prepared;
         assert(prepareStructure(h, 0x0001U, prepared));
         seq::SequencerTrackBankState stagedBank;
@@ -2428,7 +1899,7 @@ void test_prepared_bank_admission_rejects_active_step_draft() {
         const auto before = tx::captureStateInvariant(h.state);
         const auto owners = captureBankOwners(h);
         const auto draft = captureDraftInvariant(h);
-        auto musical = captureFullBankMusicalProof(h);
+        auto musical = captureBankSnapshotMusicalProof(h);
         auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
             h.state
         );
@@ -2441,7 +1912,7 @@ void test_prepared_bank_admission_rejects_active_step_draft() {
             assertBankOwners(h, owners);
             assertDraftInvariant(h, draft);
         }
-        assertFullBankMusicalProof(h, musical);
+        assertBankSnapshotMusicalProof(h, musical);
         assertNoDeferredPublication(h);
         assertDraftInvariant(h, draft);
         assertSharedTrackProjection(h, 0x0001U, 0U);
@@ -2510,7 +1981,7 @@ void verifyStructurePreparationFailure(
 ) {
     Harness h;
     initializeCapturedTracks(h, kind, trackMask);
-    auto musical = captureFullBankMusicalProof(h);
+    auto musical = captureBankSnapshotMusicalProof(h);
     const auto invariant = tx::captureStateInvariant(h.state);
     const auto owners = captureBankOwners(h);
 
@@ -2523,7 +1994,7 @@ void verifyStructurePreparationFailure(
         assertBankOwners(h, owners);
     }
 
-    assertFullBankMusicalProof(h, musical);
+    assertBankSnapshotMusicalProof(h, musical);
 }
 
 void verifyStructurePreparationRatchet(
@@ -2534,7 +2005,7 @@ void verifyStructurePreparationRatchet(
 ) {
     Harness h;
     initializeCapturedTracks(h, kind, trackMask);
-    auto musical = captureFullBankMusicalProof(h);
+    auto musical = captureBankSnapshotMusicalProof(h);
     const auto invariant = tx::captureStateInvariant(h.state);
     const auto owners = captureBankOwners(h);
     const auto expectedRequests = expectedStructureAllocationRequests(
@@ -2556,7 +2027,7 @@ void verifyStructurePreparationRatchet(
         assertBankOwners(h, owners);
     }
 
-    assertFullBankMusicalProof(h, musical);
+    assertBankSnapshotMusicalProof(h, musical);
 }
 
 void test_structure_preparation_allocation_matrix() {
@@ -2620,7 +2091,7 @@ void test_structure_noop_and_commit_are_exact() {
     {
         Harness h;
         initializeActivePayload(h, PayloadKind::None);
-        auto musical = captureFullBankMusicalProof(h);
+        auto musical = captureBankSnapshotMusicalProof(h);
         const auto before = tx::captureStateInvariant(h.state);
         const auto owners = captureBankOwners(h);
         PreparedStructure noOp;
@@ -2639,7 +2110,7 @@ void test_structure_noop_and_commit_are_exact() {
         h.state.flushProjectMutationCoalescing();
         tx::assertStateInvariant(h.state, before);
         assertBankOwners(h, owners);
-        assertFullBankMusicalProof(h, musical);
+        assertBankSnapshotMusicalProof(h, musical);
     }
 
     Harness h;
@@ -2810,8 +2281,8 @@ void assertActivationExpected(
 }
 
 struct CoupledReplayExpectations {
-    FullBankMusicalProof before;
-    FullBankMusicalProof after;
+    BankSnapshotMusicalProof before;
+    BankSnapshotMusicalProof after;
     uint64_t macroTracksBefore = 0U;
     uint64_t macroTracksAfter = 0U;
     uint64_t macroControlBefore = 0U;
@@ -2828,7 +2299,7 @@ void prepareMaximumCoupledStructureReplay(
     (void)h.state.refreshSharedTrackStateFromSequencer();
     settleSetup(h);
 
-    expected.before = captureFullBankMusicalProof(h);
+    expected.before = captureBankSnapshotMusicalProof(h);
     expected.macroTracksBefore = macroTrackFingerprint(h);
     expected.macroControlBefore = macroControlFingerprint(h);
 
@@ -2868,7 +2339,7 @@ void prepareMaximumCoupledStructureReplay(
     assert(seq::captureMacroTrackStructureHistoryAfter(
         h.state.pages, *prepared.change));
 
-    expected.after = captureFullBankMusicalProof(h);
+    expected.after = captureBankSnapshotMusicalProof(h);
     expected.macroTracksAfter = macroTrackFingerprint(h);
     expected.macroControlAfter = macroControlFingerprint(h);
 
@@ -3006,7 +2477,7 @@ void verifyCoupledReplaySuccess(
         assert(after.sequencerRedoCount == 1U);
         assert(after.projectUndoCount == 0U);
         assert(after.projectRedoCount == 1U);
-        assertFullBankMusicalProof(h, expected.before);
+        assertBankSnapshotMusicalProof(h, expected.before);
         assert(macroTrackFingerprint(h) == expected.macroTracksBefore);
         assert(macroControlFingerprint(h) == expected.macroControlBefore);
         assertSharedTrackProjection(h, 0x0001U, 0U);
@@ -3015,7 +2486,7 @@ void verifyCoupledReplaySuccess(
         assert(after.sequencerRedoCount == 0U);
         assert(after.projectUndoCount == 1U);
         assert(after.projectRedoCount == 0U);
-        assertFullBankMusicalProof(h, expected.after);
+        assertBankSnapshotMusicalProof(h, expected.after);
         assert(macroTrackFingerprint(h) == expected.macroTracksAfter);
         assert(macroControlFingerprint(h) == expected.macroControlAfter);
         assertSharedTrackProjection(h, 0x0003U, 0U);
@@ -3626,13 +3097,8 @@ int main() {
     test_flat_publication_ignores_spare_payload_revision_drift();
     test_prepared_publication_is_exact_during_notification_drain();
     test_domain_prepared_pattern_publishes_once_without_bank_synchronization();
-    test_full_bank_preparation_allocation_matrix();
-    test_full_bank_capture_rejects_active_track_drift();
-    test_full_bank_traversal_rejects_active_step_draft_before_allocation();
-    test_full_bank_active_scratch_is_excluded_and_cleared_on_apply();
-    test_full_bank_apply_restores_revision_contract();
-    test_full_bank_noop_budget_and_pruning();
-    test_full_bank_commit_is_nofail_and_exactly_once();
+    test_bank_snapshot_active_scratch_is_excluded_and_cleared_on_apply();
+    test_bank_snapshot_apply_restores_revision_contract();
     test_structure_preparation_allocation_matrix();
     test_structure_noop_and_commit_are_exact();
     test_structure_frozen_mask_requires_active_track_union();

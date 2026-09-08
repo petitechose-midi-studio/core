@@ -79,35 +79,6 @@ FLASHMEM bool hasCanonicalCcPayload(
     return lanes != nullptr && sequencer::sequencerCcLaneCount(*lanes) != 0U;
 }
 
-FLASHMEM bool preparedFullBankSourceTopologyMatches(
-    const sequencer::SequencerTrackBankState& bank,
-    const sequencer::SequencerState& active,
-    const sequencer::SequencerHistoryTrackBankSnapshot& before
-) {
-    const uint8_t activeTrack = before.flat.activeTrack;
-    if (activeTrack >= sequencer::SequencerTrackBankState::TRACK_COUNT ||
-        bank.activeTrackIndex() != activeTrack ||
-        bank.currentEnabledMask() != before.flat.enabledMask ||
-        (sequencer::graphView(active.pattern) != nullptr) !=
-            static_cast<bool>(before.editorGraph) ||
-        hasCanonicalCcPayload(active.pattern) !=
-            static_cast<bool>(before.editorCcLanes)) {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if (i == activeTrack) continue;
-        const auto& pattern = bank.track(i);
-        if ((sequencer::graphView(pattern) != nullptr) !=
-                static_cast<bool>(before.bankGraphs[i]) ||
-            hasCanonicalCcPayload(pattern) !=
-                static_cast<bool>(before.bankCcLanes[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 FLASHMEM int32_t
 sequencerHistoryValueForProperty(const sequencer::SequencerHistoryPatternSnapshot& snapshot,
                                  uint8_t step, sequencer::StepProperty property) {
@@ -251,16 +222,16 @@ CoreState::abandonUnsafeSequencerPatternHistory_(const char* reason) {
     return SequencerPatternHistoryCommitOutcome::Failed;
 }
 
-FLASHMEM sequencer::SequencerPreparedFullBankEditResult
+FLASHMEM sequencer::SequencerProjectScaleEditResult
 CoreState::applyPreparedProjectScaleChoice(
-    sequencer::SequencerPreparedFullBankEditOwner owner,
+    sequencer::SequencerProjectScaleEditOwner owner,
     uint8_t row,
     int choiceIndex
 ) {
-    using Owner = sequencer::SequencerPreparedFullBankEditOwner;
-    using Outcome = sequencer::SequencerPreparedFullBankEditOutcome;
+    using Owner = sequencer::SequencerProjectScaleEditOwner;
+    using Outcome = sequencer::SequencerProjectScaleEditOutcome;
 
-    sequencer::SequencerPreparedFullBankEditResult result{};
+    sequencer::SequencerProjectScaleEditResult result{};
     if (owner != Owner::ProjectScale) {
         return result;
     }
@@ -287,59 +258,24 @@ CoreState::applyPreparedProjectScaleChoice(
         return result;
     }
 
-    auto change = sequencer::prepareHistoryFullBankChangeBefore(
-        sequencerTracks,
-        sequencer,
-        sequencer::SequencerHistoryDescriptor{
-            .kind = sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
-        }
-    );
-    if (!change ||
-        !sequencer::reservePreparedHistoryFullBankAfter(
-            sequencerTracks, sequencer, *change)) {
+    sequencer::SequencerChordContextProjectionStats projection;
+    auto change = sequencer::prepareHistoryProjectScaleChange(
+        sequencerTracks, sequencer, sequencerClips, choice.target, projection);
+    if (!change) {
         result.outcome = Outcome::ResourceUnavailable;
         return result;
     }
-
-    auto stagedBank = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
-    if (!stagedBank) {
-        result.outcome = Outcome::ResourceUnavailable;
+    if (!sequencerHistory.canRecordProjectScale(*change)) {
+        result.outcome = Outcome::HistoryUnavailable;
         return result;
     }
-    auto stagedActive = core::app::makeExtmemUnique<sequencer::SequencerState>();
-    if (!stagedActive) {
-        result.outcome = Outcome::ResourceUnavailable;
+    if (!sequencer::applyHistoryProjectScaleChange(
+            *change, sequencerTracks, sequencer, &sequencerClips, true)) {
+        result.outcome = Outcome::Blocked;
         return result;
     }
-
-    if (!sequencer::populatePreparedHistoryFullBankStaging(
-            sequencerTracks, sequencer, change->before, *stagedBank, *stagedActive)) {
-        // Source topology was validated above and the staging roots already
-        // exist. The remaining fallible work is payload cloning into PSRAM.
-        result.outcome = Outcome::ResourceUnavailable;
-        return result;
-    }
-
-    const auto stagedMutation = sequencer::applyProjectScaleTransition(
-        *stagedBank, *stagedActive, choice.target);
-    if (!stagedMutation.changed ||
-        !sequencer::capturePreparedHistoryFullBankAfterUsingReservedStorage(
-            *stagedBank, *stagedActive, *change) ||
-        !sequencerHistory.canRecordFullBank(*change) ||
-        !preparedFullBankSourceTopologyMatches(
-            sequencerTracks, sequencer, change->before)) {
-        result.outcome = stagedMutation.changed ? Outcome::HistoryUnavailable : Outcome::Blocked;
-        return result;
-    }
-
-    result.projection = stagedMutation.projection;
-
-    // No fallible operation is permitted beyond this boundary. The same
-    // presence-preserving state operation runs on the still-unchanged live
-    // owners, followed immediately by the already-admitted ownership transfer.
-    (void)sequencer::applyProjectScaleTransition(
-        sequencerTracks, sequencer, choice.target);
-    sequencerHistory.commitAdmittedFullBank(std::move(change));
+    result.projection = projection;
+    sequencerHistory.commitAdmittedProjectScale(std::move(change));
     publishPreparedSequencerMutation();
 
     result.outcome = Outcome::Committed;

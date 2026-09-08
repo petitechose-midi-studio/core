@@ -76,7 +76,7 @@ enum class SequencerStructureHistoryReplayPrepareOutcome : uint8_t;
 enum class SequencerHistoryScope : uint8_t {
     PatternOnly = 0,
     Structure,
-    FullBank,
+    ProjectScale,
     Drum,
     ClipStructure,
 };
@@ -112,17 +112,16 @@ enum class SequencerPreparedPatternEditOwner : uint8_t {
     QuickControls,
 };
 
-// FullBank edit ownership remains typed across the handler facade. Project is
-// now the sole authority for Project-scale mutation.
-enum class SequencerPreparedFullBankEditOwner : uint8_t {
+// Project is the sole authority for Project-scale mutation.
+enum class SequencerProjectScaleEditOwner : uint8_t {
     ProjectScale = 0,
 };
 
-using SequencerPreparedFullBankEditOutcome = SequencerHistoryGestureOutcome;
+using SequencerProjectScaleEditOutcome = SequencerHistoryGestureOutcome;
 
-struct SequencerPreparedFullBankEditResult {
-    SequencerPreparedFullBankEditOutcome outcome =
-        SequencerPreparedFullBankEditOutcome::Blocked;
+struct SequencerProjectScaleEditResult {
+    SequencerProjectScaleEditOutcome outcome =
+        SequencerProjectScaleEditOutcome::Blocked;
     SequencerChordContextProjectionStats projection{};
 };
 
@@ -216,9 +215,8 @@ enum class SequencerHistoryActionKind : uint8_t {
     CcLaneSettings,
     CcLaneDelete,
     CcLaneTransitionEdit,
-    FullBank,
-    // Appended so persisted/diagnostic identities of existing actions remain stable.
-    PatternRandomize,
+    // Retired action 16 stays reserved; diagnostic identities remain stable.
+    PatternRandomize = 17,
     DrumStepToggle,
     DrumStepPropertyEdit,
     DrumLaneEdit,
@@ -308,32 +306,46 @@ struct SequencerHistoryPatternChange {
 
 using SequencerHistoryPatternChangePtr = core::app::ExtmemUniquePtr<SequencerHistoryPatternChange>;
 
-struct SequencerHistoryFullBankChange {
-    SequencerHistoryDescriptor descriptor{};
-    SequencerHistoryTrackBankSnapshot before;
-    SequencerHistoryTrackBankSnapshot after;
-
-    SequencerHistoryFullBankChange();
-    ~SequencerHistoryFullBankChange();
-    SequencerHistoryFullBankChange(const SequencerHistoryFullBankChange&) = delete;
-    SequencerHistoryFullBankChange& operator=(const SequencerHistoryFullBankChange&) = delete;
-    SequencerHistoryFullBankChange(SequencerHistoryFullBankChange&&) noexcept;
-    SequencerHistoryFullBankChange& operator=(SequencerHistoryFullBankChange&&) noexcept;
+// Only the scale context and changed formulas belong to this transaction.
+// Logical clip addresses survive editor/launcher navigation; no Graph/CC owner
+// or complete Pattern is retained. Undo restores exact values, never an inverse projection.
+struct SequencerProjectScaleChordChange {
+    uint16_t node;
+    oc::note::sequencer::StepSequencerChordSpec before;
+    oc::note::sequencer::StepSequencerChordSpec after;
+};
+struct SequencerProjectScalePatternChange {
+    SequencerClipAddress address{};
+    uint16_t chordCount = 0U;
+    uint32_t firstChord = 0U;
+    uint32_t graphRevision = 0U;
+    uint32_t scaleRevision = 0U;
+};
+struct SequencerHistoryProjectScaleChange {
+    SequencerHistoryDescriptor descriptor{
+        .kind = SequencerHistoryActionKind::ProjectScaleSettings};
+    oc::note::sequencer::StepSequencerScaleSettings before{};
+    oc::note::sequencer::StepSequencerScaleSettings after{};
+    uint32_t projectScaleRevision = 0U;
+    uint32_t chordCount = 0U;
+    uint16_t patternCount = 0U;
+    // Canonical empty Tracks plus all non-resident Clips are bounded too.
+    std::array<SequencerProjectScalePatternChange,
+        SequencerClipGridState::MAX_INACTIVE_DOCUMENTS + SequencerTrackBankState::TRACK_COUNT> patterns{};
+    core::app::ExtmemUniqueArray<SequencerProjectScaleChordChange> chords;
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 static_assert(sizeof(SequencerHistoryPatternChange) == 1752U,
               "LOCK-P: ARM Pattern History transaction ABI changed");
-static_assert(sizeof(SequencerHistoryFullBankChange) == 27152U,
-              "LOCK-P: ARM FullBank History transaction ABI changed");
 static_assert(sizeof(oc::note::sequencer::StepSequencerGraph) == 14792U,
               "LOCK-P: ARM Sequencer Graph allocation span changed");
 static_assert(sizeof(SequencerCcLaneBank) == 840U,
               "LOCK-P: ARM Sequencer CC allocation span changed");
 #endif
 
-using SequencerHistoryFullBankChangePtr =
-    core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange>;
+using SequencerHistoryProjectScaleChangePtr =
+    core::app::ExtmemUniquePtr<SequencerHistoryProjectScaleChange>;
 using SequencerHistoryTrackStructureChangePtr =
     core::app::ExtmemUniquePtr<SequencerHistoryTrackStructureChange>;
 
@@ -428,32 +440,23 @@ bool restorePreparedHistoryPatternBefore(SequencerTrackBankState& bank,
                                          SequencerHistoryPatternChange& change,
                                          bool prospectiveGraphInstalled);
 
-SequencerHistoryFullBankChangePtr prepareHistoryFullBankChangeBefore(
+SequencerHistoryProjectScaleChangePtr prepareHistoryProjectScaleChange(
     const SequencerTrackBankState& bank, const SequencerState& active,
-    SequencerHistoryDescriptor descriptor = {});
-bool reservePreparedHistoryFullBankAfter(const SequencerTrackBankState& bank,
-                                         const SequencerState& active,
-                                         SequencerHistoryFullBankChange& change);
-bool capturePreparedHistoryFullBankAfterUsingReservedStorage(
-    const SequencerTrackBankState& bank, const SequencerState& active,
-    SequencerHistoryFullBankChange& change);
-
-// Populates two already allocated PSRAM roots from a captured FullBank Before.
-// Payload allocation order is editor Graph/CC followed by inactive Tracks in
-// ascending order. The active bank slot remains noncanonical scratch.
-bool populatePreparedHistoryFullBankStaging(
-    const SequencerTrackBankState& liveBank,
-    const SequencerState& liveActive,
-    const SequencerHistoryTrackBankSnapshot& before,
-    SequencerTrackBankState& stagedBank,
-    SequencerState& stagedActive
-);
+    const SequencerClipGridState& clips,
+    oc::note::sequencer::StepSequencerScaleSettings target,
+    SequencerChordContextProjectionStats& projection);
+// Prevalidates every target before writing. No allocations, owner replacement,
+// navigation restoration or unrelated Pattern fields in either direction.
+bool applyHistoryProjectScaleChange(
+    const SequencerHistoryProjectScaleChange& change,
+    SequencerTrackBankState& bank, SequencerState& active,
+    SequencerClipGridState* clips, bool after);
 
 struct SequencerHistoryEntry {
     SequencerHistoryScope scope = SequencerHistoryScope::PatternOnly;
     core::app::ExtmemUniquePtr<SequencerHistoryPatternChange> pattern;
     SequencerHistoryTrackStructureChangePtr structure;
-    core::app::ExtmemUniquePtr<SequencerHistoryFullBankChange> fullBank;
+    core::app::ExtmemUniquePtr<SequencerHistoryProjectScaleChange> projectScale;
     SequencerHistoryDrumChangePtr drum;
     SequencerClipStructureChangePtr clipStructure;
 
@@ -467,7 +470,7 @@ struct SequencerHistoryEntry {
     bool valid() const {
         return (scope == SequencerHistoryScope::PatternOnly && pattern.get() != nullptr) ||
                (scope == SequencerHistoryScope::Structure && structure.get() != nullptr) ||
-               (scope == SequencerHistoryScope::FullBank && fullBank.get() != nullptr) ||
+               (scope == SequencerHistoryScope::ProjectScale && projectScale.get() != nullptr) ||
                (scope == SequencerHistoryScope::Drum && drum.get() != nullptr) ||
                (scope == SequencerHistoryScope::ClipStructure &&
                 clipStructure.get() != nullptr);
@@ -546,7 +549,7 @@ bool finalizeHistoryTrackBankSnapshotUsingReservedStorage(
     StepProperty frozenActiveStepProperty,
     SequencerHistoryTrackBankSnapshot& out
 );
-// The active editor is canonical. These FullBank helpers freeze its Track
+// The active editor is canonical. These snapshot helpers freeze its Track
 // identity and deliberately keep the corresponding bank Graph/CC slots empty;
 // that slot is noncanonical scratch even when legacy synchronization has
 // temporarily populated it.
@@ -596,13 +599,13 @@ class SequencerHistoryService {
 public:
     static constexpr uint8_t PATTERN_ENTRY_LIMIT = 32;
     static constexpr uint8_t STRUCTURE_ENTRY_LIMIT = 8;
-    static constexpr uint8_t FULL_BANK_ENTRY_LIMIT = 4;
+    static constexpr uint8_t PROJECT_SCALE_ENTRY_LIMIT = 4;
     static constexpr uint8_t DRUM_ENTRY_LIMIT = 24;
     static constexpr uint8_t CLIP_STRUCTURE_ENTRY_LIMIT = 16;
     // Clip Structure shares the existing global Sequencer chronology budget;
     // it does not reserve another dense block of empty entry slots.
     static constexpr uint8_t ENTRY_LIMIT =
-        PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT +
+        PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + PROJECT_SCALE_ENTRY_LIMIT +
         DRUM_ENTRY_LIMIT;
     static constexpr size_t RETAINED_BYTE_BUDGET = 1024U * 1024U;
     static constexpr uint16_t RETAINED_SPAN_BUDGET = 511U;
@@ -627,11 +630,11 @@ public:
     bool canRecordClipStructure(const SequencerClipStructureChange& change) const;
     void commitAdmittedClipStructure(SequencerClipStructureChangePtr change) noexcept;
 
-    bool canRecordFullBank(const SequencerHistoryFullBankChange& change) const;
-    // Internal no-fail tail for a FullBank change whose immutable payload and
+    bool canRecordProjectScale(const SequencerHistoryProjectScaleChange& change) const;
+    // Internal no-fail tail for a Project-scale change whose immutable payload and
     // retained-byte admission were proven before the first live write. This
     // performs no allocation and no policy recheck.
-    void commitAdmittedFullBank(SequencerHistoryFullBankChangePtr change);
+    void commitAdmittedProjectScale(SequencerHistoryProjectScaleChangePtr change);
     // Side-effect-free admission check for a fully prepared change. Callers
     // must repeat it if snapshot graph ownership changes before recording.
     bool canRecordStructure(const SequencerHistoryTrackStructureChange& change) const;
