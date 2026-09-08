@@ -705,6 +705,13 @@ void test_semantic_gesture_classifier_never_claims_early_hold_mutation() {
     assert(std::strcmp(semantic.effect, "press_remove_cc_lane") == 0);
     assert(std::strcmp(semantic.outcome, "pressed") == 0);
 
+    guard.phase = contextual::GuardedActionPhase::CANCELLED;
+    semantic = core::validation::ux::classifySequencerCcLaneGesture(
+        remove, guard, feedback,
+        core::validation::ux::SequencerCcLaneGesturePhase::PRESS);
+    assert(std::strcmp(semantic.effect, "press_remove_cc_lane") == 0);
+    assert(std::strcmp(semantic.outcome, "pressed") == 0);
+
     guard.phase = contextual::GuardedActionPhase::PRESSED;
     semantic = core::validation::ux::classifySequencerCcLaneGesture(
         remove,

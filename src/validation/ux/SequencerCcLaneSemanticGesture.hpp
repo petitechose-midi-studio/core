@@ -118,9 +118,8 @@ constexpr SequencerCcLaneSemanticGesture classifySequencerCcLaneGesture(
             if (guard.phase == contextual::GuardedActionPhase::COMMITTED) {
                 return {appliedEffect(action), "applied", variant.reason};
             }
-            if (guard.phase == contextual::GuardedActionPhase::CANCELLED) {
-                return {cancelledEffect(action), "cancelled", variant.reason};
-            }
+            // CANCELLED can belong to the previous hold at pre-dispatch.
+            // A new physical press starts a new gesture; release owns Cancel.
         }
         if (!isCcLaneAction(action)) {
             return {"press_cc_lane_action", "noop",
