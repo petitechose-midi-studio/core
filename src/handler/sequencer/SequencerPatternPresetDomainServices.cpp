@@ -735,7 +735,6 @@ FLASHMEM void SequencerPatternPresetPreviewSession::reset() {
     target = {};
     pattern.reset();
     drum.reset();
-    rollbackDrumBankGraph.reset();
     activation = {};
     presentationActivation = SequencerPatternPresetActivation::NONE;
     activationGeneration = 0U;
@@ -1577,23 +1576,6 @@ SequencerPatternPresetDomainServices::previewPreset(
             return result;
         }
 
-        core::app::ExtmemUniquePtr<
-            oc::note::sequencer::StepSequencerGraph
-        > bankGraph;
-        core::app::ExtmemUniquePtr<
-            oc::note::sequencer::StepSequencerGraph
-        > rollbackBankGraph;
-        if (!core::state::cloneSequencerGraph(bankGraph, sourceGraph) ||
-            !core::state::cloneSequencerGraph(
-                rollbackBankGraph,
-                change->beforeGraph.get()
-            )) {
-            result.status =
-                SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
-            result.codecStatus =
-                seq::SequencerPatternPresetStatus::RESOURCE_EXHAUSTED;
-            return result;
-        }
         if (!prepareActivation(
                 *state_,
                 target.trackIndex,
@@ -1632,16 +1614,10 @@ SequencerPatternPresetDomainServices::previewPreset(
         state_->sequencer.pattern.graphRevision.set(
             loaded.staged->graphRevision.get()
         );
-        state_->sequencerTracks.track(target.trackIndex).graph =
-            std::move(bankGraph);
-        state_->sequencerTracks.track(target.trackIndex).graphRevision.set(
-            loaded.staged->graphRevision.get()
-        );
         seq::refreshContentView(state_->sequencer);
         state_->sequencer.drumSequencer.bump();
         state_->sequencer.invalidateVariationTelemetry();
         session.drum = std::move(change);
-        session.rollbackDrumBankGraph = std::move(rollbackBankGraph);
     } else {
         auto change = core::app::makeExtmemUnique<
             seq::SequencerHistoryPatternChange
@@ -1830,13 +1806,6 @@ SequencerPatternPresetDomainServices::cancelPresetPreview(
             *session.drum
         );
         if (restored) {
-            auto& bankPattern = state_->sequencerTracks.track(
-                session.target.trackIndex
-            );
-            bankPattern.graph = std::move(session.rollbackDrumBankGraph);
-            bankPattern.graphRevision.set(
-                session.drum->beforeGraphRevision
-            );
             state_->sequencer.drumSequencer.bump();
         }
     }

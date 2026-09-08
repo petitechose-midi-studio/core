@@ -159,16 +159,6 @@ FLASHMEM void copyFlatPatternToEditor(
     target.bumpClipRevision();
 }
 
-FLASHMEM bool copyEditorToPattern(
-    SequencerPatternState& target,
-    SequencerClipState& targetClip,
-    const SequencerState& source
-) {
-    if (!copyPatternState(target, source.pattern)) return false;
-    targetClip = source.clip;
-    return true;
-}
-
 FLASHMEM void copyFlatEditorToPattern(
     SequencerPatternState& target,
     SequencerClipState& targetClip,
@@ -421,16 +411,6 @@ FLASHMEM void resetTransientTrackState(SequencerState& state) {
     state.stepContentDraft.resetSession();
 }
 
-FLASHMEM bool initializeTrackBankFromActive(
-    SequencerTrackBankState& bank,
-    const SequencerState& active
-) {
-    bank.reset();
-    if (!copyEditorToPattern(bank.track(0), bank.clip(0), active)) return false;
-    bank.syncSharedTrackState(0x0001, 0);
-    return true;
-}
-
 FLASHMEM bool switchActiveTrack(
     SequencerTrackBankState& bank,
     SequencerState& active,
@@ -502,6 +482,7 @@ FLASHMEM void applyTrackBankSnapshot(
     bank.projectScaleRevisionSignal().set(snapshot.projectScaleRevision);
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if (i == bank.activeTrackIndex()) continue;
         applySnapshot(bank.track(i), snapshot.tracks[i]);
         applySnapshot(bank.clip(i), snapshot.clips[i]);
     }

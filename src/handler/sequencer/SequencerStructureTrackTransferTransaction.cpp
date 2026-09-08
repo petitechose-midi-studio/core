@@ -517,16 +517,8 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         afterActive.focusedStep = after.focusedStep;
         afterActive.ccLanesCaptured = true;
         if (!copyGraphIntoReservedStorage(afterActive.graph, beforeActive.graph.get()) ||
-            !core::state::cloneSequencerGraph(
-                prepared.outgoingActiveGraph,
-                beforeActive.graph.get()
-            ) ||
             !core::state::sequencer::cloneSequencerCcLaneBank(
                 afterActive.ccLanes,
-                beforeActive.ccLanes.get()
-            ) ||
-            !core::state::sequencer::cloneSequencerCcLaneBank(
-                prepared.outgoingActiveCcLanes,
                 beforeActive.ccLanes.get()
             )) {
             prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
@@ -604,7 +596,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
                 source.graph
             ) ||
             !core::state::cloneSequencerGraph(
-                prepared.bankGraphAt(index),
+                prepared.destinationGraphs[index],
                 source.graph
             ) ||
             !core::state::sequencer::cloneSequencerCcLaneBank(
@@ -629,7 +621,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         // History.after and the live destination must own identical rebased
         // lane generations so an inherited hold cannot leak across Paste.
         if (!core::state::sequencer::cloneSequencerCcLaneBank(
-                prepared.bankCcLanesAt(index),
+                prepared.destinationCcLanes[index],
                 afterTrack.ccLanes.get()
             )) {
             prepared.status =
@@ -641,19 +633,6 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
                     ALLOCATION_UNAVAILABLE;
             return prepared;
         }
-    }
-
-    const auto& firstAfter =
-        after.tracks[prepared.plan.firstTarget];
-    if (!core::state::cloneSequencerGraph(prepared.editorGraph, firstSource.graph) ||
-        !core::state::sequencer::cloneSequencerCcLaneBank(
-            prepared.editorCcLanes,
-            firstAfter.ccLanes.get()
-        )) {
-        prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
-        prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
-        prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
-        return prepared;
     }
 
     prepared.history->descriptor = makeSequencerTrackStructureHistoryDescriptor(
@@ -824,12 +803,12 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             tracks.clip(prepared.previousActiveTrack),
             prepared.history->before.tracks[prepared.previousActiveTrack].flat,
             prepared.history->before.tracks[prepared.previousActiveTrack].clip,
-            std::move(prepared.outgoingActiveGraph),
-            std::move(prepared.outgoingActiveCcLanes)
+            std::move(sequencer.pattern.graph),
+            std::move(sequencer.pattern.ccLanes)
         );
     }
 
-    for (uint8_t index = 0; index < prepared.plan.count; ++index) {
+    for (uint8_t index = 1; index < prepared.plan.count; ++index) {
         const auto& destination = prepared.plan.entries[index];
         auto& target = tracks.track(destination.targetTrack);
         const auto& afterTrack =
@@ -839,20 +818,22 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             tracks.clip(destination.targetTrack),
             afterTrack.flat,
             afterTrack.clip,
-            std::move(prepared.bankGraphAt(index)),
-            std::move(prepared.bankCcLanesAt(index))
+            std::move(prepared.destinationGraphs[index]),
+            std::move(prepared.destinationCcLanes[index])
         );
     }
 
     const auto& firstDestination = prepared.plan.entries[0];
+    tracks.track(firstDestination.targetTrack).graph.reset();
+    tracks.track(firstDestination.targetTrack).ccLanes.reset();
     const auto& firstAfter =
         prepared.history->after.tracks[firstDestination.targetTrack];
     core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedPayload(
         sequencer,
         firstAfter.flat,
         firstAfter.clip,
-        std::move(prepared.editorGraph),
-        std::move(prepared.editorCcLanes)
+        std::move(prepared.destinationGraphs[0U]),
+        std::move(prepared.destinationCcLanes[0U])
     );
     core::state::sequencer::resetTransientTrackState(sequencer);
     sequencer.focusedStep.set(prepared.history->after.focusedStep);

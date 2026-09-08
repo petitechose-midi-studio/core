@@ -391,8 +391,8 @@ void assertHistoryRejection(
 void test_direct_failure_is_atomic() {
     Harness h;
     preparePayload(h, PayloadKind::FlatOnly);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     h.state.sequencer.patternQuickControls.focusedItem.set(
         seq::PatternQuickControlItem::SWING);
 
@@ -418,8 +418,8 @@ void test_direct_failure_is_atomic() {
 void test_direct_graph_cc_offset_is_undoable() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     h.state.sequencer.patternQuickControls.focusedItem.set(
         seq::PatternQuickControlItem::OFFSET);
 
@@ -503,8 +503,8 @@ void test_open_allocation_contract_and_failure_matrix() {
 void test_restored_project_opens_quick_controls_with_active_scratch_empty() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     settlePreparedFixture(h);
 
     auto snapshot = core::state::project::captureProjectSnapshotOwned(h.state);
@@ -544,8 +544,8 @@ void test_open_then_release_without_edit_is_a_clean_no_change() {
     for (const auto kind : {PayloadKind::FlatOnly, PayloadKind::GraphAndCc}) {
         Harness h;
         preparePayload(h, kind);
-        assert(seq::initializeTrackBankFromActive(
-            h.state.sequencerTracks, h.state.sequencer));
+        h.state.sequencerTracks.reset();
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
         settlePreparedFixture(h);
         const uint32_t feedbackRevision =
             h.state.sequencer.historyFeedback.revision.get();
@@ -627,8 +627,8 @@ void test_preview_offset_keeps_live_immutable_then_cancel_is_no_write() {
 void test_graph_cc_apply_is_allocation_free_and_undoable() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     settlePreparedFixture(h);
 
     seq::SequencerHistoryPatternSnapshot before;
@@ -695,8 +695,8 @@ void test_flat_dimensions_preview_and_apply_once() {
     for (const auto& testCase : cases) {
         Harness h;
         preparePayload(h, PayloadKind::GraphAndCc);
-        assert(seq::initializeTrackBankFromActive(
-            h.state.sequencerTracks, h.state.sequencer));
+        h.state.sequencerTracks.reset();
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
         settlePreparedFixture(h);
         seq::SequencerHistoryPatternSnapshot before;
         captureMusical(h, before);
@@ -735,8 +735,8 @@ void test_flat_dimensions_preview_and_apply_once() {
 void test_no_change_apply_restores_opening_view_and_publishes_nothing() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     settlePreparedFixture(h);
     h.state.sequencer.page.set(3U);
     h.state.sequencer.focusedStep.set(7U);

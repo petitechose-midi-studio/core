@@ -137,12 +137,6 @@ void rotateActiveTrackOwnersNoPublish(
     const SequencerPreparedActiveTrackRotation& prepared
 ) noexcept;
 
-/** Resets the bank and seeds track zero from the initial editor content. */
-[[nodiscard]] bool initializeTrackBankFromActive(
-    SequencerTrackBankState& bank,
-    const SequencerState& active
-);
-
 // Clears editor-only state when a prepared transaction changes the active
 // Track without going through switchActiveTrack().
 void resetTransientTrackState(SequencerState& state);

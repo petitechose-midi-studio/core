@@ -225,10 +225,8 @@ FLASHMEM void SequencerPreparedStructureHistoryReplay::reset() {
     capturedTrackMask = 0U;
     targetActiveTrack = SequencerTrackBankState::TRACK_COUNT;
     ready = false;
-    for (auto& graph : bankGraphs) graph.reset();
-    for (auto& ccLanes : bankCcLanes) ccLanes.reset();
-    editorGraph.reset();
-    editorCcLanes.reset();
+    for (auto& graph : trackGraphs) graph.reset();
+    for (auto& ccLanes : trackCcLanes) ccLanes.reset();
 }
 
 FLASHMEM uint16_t sequencerHistoryTrackBit(uint8_t trackIndex) {
@@ -543,18 +541,12 @@ FLASHMEM bool prepareHistoryStructureReplayOwners(
     out.targetActiveTrack = targetActive;
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         if ((capturedMask & sequencerHistoryTrackBit(i)) == 0U) continue;
-        if (!cloneSnapshotGraph(snapshot.tracks[i], out.bankGraphs[i]) ||
+        if (!cloneSnapshotGraph(snapshot.tracks[i], out.trackGraphs[i]) ||
             !cloneSequencerCcLaneBank(
-                out.bankCcLanes[i], snapshot.tracks[i].ccLanes.get())) {
+                out.trackCcLanes[i], snapshot.tracks[i].ccLanes.get())) {
             out.reset();
             return false;
         }
-    }
-    if (!cloneSnapshotGraph(snapshot.tracks[targetActive], out.editorGraph) ||
-        !cloneSequencerCcLaneBank(
-            out.editorCcLanes, snapshot.tracks[targetActive].ccLanes.get())) {
-        out.reset();
-        return false;
     }
     out.ready = true;
     return true;
@@ -576,24 +568,27 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
     }
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((replay.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0U) continue;
+        if ((replay.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0U ||
+            i == replay.targetActiveTrack) continue;
         installTrackContentSnapshotWithOwnedPayload(
             bank.track(i),
             bank.clip(i),
             snapshot->tracks[i].flat,
             snapshot->tracks[i].clip,
-            std::move(replay.bankGraphs[i]),
-            std::move(replay.bankCcLanes[i])
+            std::move(replay.trackGraphs[i]),
+            std::move(replay.trackCcLanes[i])
         );
     }
 
     const uint8_t targetActive = replay.targetActiveTrack;
+    bank.track(targetActive).graph.reset();
+    bank.track(targetActive).ccLanes.reset();
     installTrackContentSnapshotToEditorWithOwnedPayload(
         active,
         snapshot->tracks[targetActive].flat,
         snapshot->tracks[targetActive].clip,
-        std::move(replay.editorGraph),
-        std::move(replay.editorCcLanes)
+        std::move(replay.trackGraphs[targetActive]),
+        std::move(replay.trackCcLanes[targetActive])
     );
     commitHistoryStructureDrumSnapshot(bank, *snapshot);
     bank.syncSharedTrackState(snapshot->enabledMask, targetActive);

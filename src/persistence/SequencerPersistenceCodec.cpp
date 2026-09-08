@@ -433,16 +433,6 @@ FLASHMEM bool readPattern(binary::Reader& reader,
     return true;
 }
 
-FLASHMEM bool readPatternAt(const uint8_t* data,
-                            uint16_t size,
-                            uint16_t offset,
-                            sequencer::SequencerPatternState& target) {
-    if (data == nullptr || offset > size || PATTERN_PAYLOAD_SIZE > size - offset) {
-        return false;
-    }
-    return applyPatternPayload(data + offset, PATTERN_PAYLOAD_SIZE, target);
-}
-
 FLASHMEM bool readScaleSettings(
     binary::Reader& reader,
     oc::note::sequencer::StepSequencerScaleSettings& settings
@@ -650,14 +640,13 @@ FLASHMEM bool applyProjectSequencerPayload(const uint8_t* data,
     ));
 
     const uint8_t activeTrack = trackBank.activeTrackIndex();
-    uint16_t activePatternOffset = 0;
     uint8_t activePage = 0;
     uint8_t activeFocusedStep = 0;
     uint8_t activeStepProperty = static_cast<uint8_t>(sequencer::StepProperty::NOTE);
 
     for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const uint16_t patternOffset = static_cast<uint16_t>(reader.offset());
-        if (!readPattern(reader, trackBank.track(i))) return false;
+        if (!readPattern(reader, sequencer::mutableCanonicalTrackPattern(
+                trackBank, active, i))) return false;
 
         uint8_t page = 0;
         uint8_t focused = 0;
@@ -671,14 +660,12 @@ FLASHMEM bool applyProjectSequencerPayload(const uint8_t* data,
         }
 
         if (i == activeTrack) {
-            activePatternOffset = patternOffset;
             activePage = page;
             activeFocusedStep = focused;
             activeStepProperty = stepProperty;
         }
     }
     if (!reader.ok() || reader.offset() != PROJECT_SEQUENCER_PAYLOAD_SIZE) return false;
-    if (!readPatternAt(data, size, activePatternOffset, active.pattern)) return false;
 
     active.focusedStep.set(activeFocusedStep);
     active.page.set(activePage);
@@ -763,14 +750,11 @@ FLASHMEM bool applySetPayload(const uint8_t* data,
         projectScaleConstraintMode
     ));
 
-    uint16_t activePatternOffset = 0;
     for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const uint16_t patternOffset = static_cast<uint16_t>(reader.offset());
-        if (!readPattern(reader, trackBank.track(i))) return false;
-        if (i == activeTrackRaw) activePatternOffset = patternOffset;
+        if (!readPattern(reader, sequencer::mutableCanonicalTrackPattern(
+                trackBank, active, i))) return false;
     }
     if (!reader.ok() || reader.offset() != SET_PAYLOAD_SIZE) return false;
-    if (!readPatternAt(data, size, activePatternOffset, active.pattern)) return false;
 
     active.focusedStep.set(0);
     active.page.set(0);

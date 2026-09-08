@@ -254,7 +254,6 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     seq::SequencerTrackBankState bank{};
     source.reset();
     bank.reset();
-    assert(seq::initializeTrackBankFromActive(bank, source));
     bank.syncSharedTrackState(0x0007U, 0U);
     authorTwoLanes(source.pattern);
     authorTrackRegions(bank, source);
@@ -330,6 +329,8 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
         projectGrid
     ));
     assertTwoLanes(projectLoaded.pattern);
+    assert(!projectBank.track(projectBank.activeTrackIndex()).ccLanes);
+    assert(!projectBank.track(projectBank.activeTrackIndex()).graph);
     assert(seq::sequencerCcLaneView(projectBank.track(1U))->lanes[3].values[64] == 42U);
     assert(projectBank.isDrumTrack(2U));
     assert(projectBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
@@ -371,6 +372,8 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
         setLoaded
     ));
     assertTwoLanes(setLoaded.pattern);
+    assert(!setBank.track(setBank.activeTrackIndex()).ccLanes);
+    assert(!setBank.track(setBank.activeTrackIndex()).graph);
     assert(seq::sequencerCcLaneView(setBank.track(1U))->lanes[3].values[64] == 42U);
     assert(setBank.isDrumTrack(2U));
     assert(setBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
@@ -385,7 +388,6 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
     seq::SequencerTrackBankState bank{};
     source.reset();
     bank.reset();
-    assert(seq::initializeTrackBankFromActive(bank, source));
 
     seq::SequencerTrackBankSnapshot flat{};
     seq::captureTrackBankSnapshot(bank, source, flat);

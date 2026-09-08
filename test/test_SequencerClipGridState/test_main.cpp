@@ -267,7 +267,7 @@ void test_resident_switch_preserves_both_clip_documents() {
     seq::SequencerTrackBankState bank;
     seq::SequencerState active;
     seq::SequencerClipGridState grid;
-    assert(seq::initializeTrackBankFromActive(bank, active));
+    bank.reset();
 
     seed(active.pattern, active.clip, 64U);
     assert(seq::ensureGraphRoot(active.pattern));
@@ -307,7 +307,7 @@ void test_history_targets_the_authored_clip_after_resident_switch() {
     seq::SequencerState active;
     seq::SequencerClipGridState grid;
     seq::SequencerHistoryService history;
-    assert(seq::initializeTrackBankFromActive(bank, active));
+    bank.reset();
 
     seed(active.pattern, active.clip, 64U);
     auto secondPattern = core::app::makeExtmemUnique<seq::SequencerPatternState>();
@@ -356,7 +356,7 @@ void test_clip_structure_history_transfers_ownership_without_project_copies() {
     seq::SequencerTrackBankState bank;
     seq::SequencerState active;
     seq::SequencerHistoryService history;
-    assert(seq::initializeTrackBankFromActive(bank, active));
+    bank.reset();
 
     seq::SequencerPatternState pattern;
     seq::SequencerClipState clip;
@@ -414,7 +414,7 @@ void test_cross_track_transfer_is_kind_safe_and_preserves_residency() {
     seq::SequencerClipGridState grid;
     seq::SequencerTrackBankState bank;
     seq::SequencerState active;
-    assert(seq::initializeTrackBankFromActive(bank, active));
+    bank.reset();
     bank.syncSharedTrackState(0x0007U, 0U);
     grid.synchronizeEnabledTracks(0x0007U);
 

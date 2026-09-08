@@ -358,6 +358,65 @@ void prepareDrumSource(Harness& h) {
     h.state.markSequencerProjectMutated();
 }
 
+void testDrumPreviewAllocationFailuresAndNoFailCancel() {
+    namespace tx = test_support::sequencer_transaction;
+    bool reachedSuccess = false;
+    for (std::size_t ordinal = 1U; ordinal <= 64U; ++ordinal) {
+        Harness h;
+        prepareDrumSource(h);
+        assert(h.presets.savePreset(
+            "pattern-preset-0002", h.presets.captureTarget(), false).ok());
+        auto& drum = h.state.sequencerTracks.drumTrack(0U);
+        assert(drum.pattern.setStepVelocity(1U, 2U, 48U));
+        h.state.sequencerTracks.publishDrumMutation(0U);
+        h.state.markSequencerProjectMutated();
+        test_support::drainNotifications();
+        h.state.flushProjectMutationCoalescing();
+        test_support::drainNotifications();
+        h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
+        const auto target = h.presets.captureTarget();
+        const auto inspected = h.presets.inspectPreset("pattern-preset-0002", target);
+        assert(inspected.status == SequencerPatternPresetDomainStatus::OK);
+        seq::SequencerHistoryPatternSnapshot before;
+        tx::captureMusicalSnapshot(h.state, before);
+        const auto invariant = tx::captureStateInvariant(h.state);
+        SequencerPatternPresetPreviewSession preview;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result = h.presets.previewPreset(
+                "pattern-preset-0002", target, inspected.descriptor.previewKey, preview);
+            if (!result.ok()) {
+                assert(!preview.active());
+                tx::assertFailureConsumed(ordinal);
+                tx::assertStateInvariant(h.state, invariant);
+            } else {
+                reachedSuccess = true;
+                assert(preview.active());
+                tx::assertMaxPlusOneStillArmed(ordinal - 1U);
+                assert(drum.pattern.lanes[1U].velocity[2U] == 111U);
+                assert(h.state.sequencer.pattern.graph);
+                std::cout << "[MEASURE] Drum Graph preview allocations=" << ordinal - 1U << '\n';
+            }
+        }
+        if (reachedSuccess) {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            assert(h.presets.cancelPresetPreview(preview).ok());
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        assert(drum.pattern.lanes[1U].velocity[2U] == 48U);
+        assert(drum.advancedRootSlot(1U, 2U) >= 0);
+        tx::assertMusicalSnapshot(h.state, before);
+        assert(!h.state.sequencerTracks.track(0U).graph);
+        const auto after = tx::captureStateInvariant(h.state);
+        assert(after.modifiedCounter == invariant.modifiedCounter);
+        assert(after.sequencerUndoCount == invariant.sequencerUndoCount);
+        assert(after.projectUndoCount == invariant.projectUndoCount);
+        if (reachedSuccess) break;
+    }
+    assert(reachedSuccess);
+    std::cout << "[PASS] every Drum preview allocation fails atomically; Cancel allocates zero\n";
+}
+
 void testDrumApplyPreservesKitAndQueuesAtLoop() {
     Harness h;
     prepareDrumSource(h);
@@ -432,6 +491,25 @@ void testDrumApplyPreservesKitAndQueuesAtLoop() {
     assert(h.state.sequencerTrackActivations.pendingTrackMask() == 0U);
     assert(h.state.sequencerTrackActivations.telemetry(0U).status ==
            seq::SequencerTrackActivationStatus::CANCELLED);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(!h.state.redoSequencerHistory());
+        test_support::sequencer_transaction::assertFailureConsumed(1U);
+        assert(!drum.pattern.stepEnabled(1U, 2U));
+        assert(!h.state.sequencer.pattern.graph);
+        assert(h.state.sequencerHistory.redoCount() == 1U);
+    }
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        assert(h.state.redoSequencerHistory());
+        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(1U);
+    }
+    assert(drum.pattern.stepEnabled(1U, 2U));
+    assert(drum.advancedRootSlot(1U, 2U) >= 0);
+    assert(h.state.sequencer.pattern.graph);
+    assert(!h.state.sequencerTracks.track(0U).graph);
+    std::cout << "[MEASURE] Drum Graph Redo allocations=1\n";
 
     std::cout << "[PASS] Drum Pattern preset preserves kit and queues at loop\n";
 }
@@ -659,6 +737,7 @@ void testDrumPatternLibraryEntryBelongsToPatternNotLane() {
 int main() {
     testInstrumentPreviewAllocationFailuresAndNoFailCancel();
     testInstrumentLifecycleAndSingleUndo();
+    testDrumPreviewAllocationFailuresAndNoFailCancel();
     testDrumApplyPreservesKitAndQueuesAtLoop();
     testDrumCompatibilityRejectsDifferentRoles();
     testFactoryAndUserLibrarySources();

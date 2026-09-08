@@ -65,20 +65,8 @@ struct PreparedSequencerTrackTransfer {
     core::state::sequencer::SequencerTrackActivationQueue* activationQueue = nullptr;
     core::state::sequencer::SequencerTrackActivationBatch activationBatch{};
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr history;
-    GraphPtr bankGraph;
-    CcLanePtr bankCcLanes;
-    std::array<
-        GraphPtr,
-        core::state::ClipboardTransferPlan::MAX_ENTRIES - 1U
-    > additionalBankGraphs{};
-    std::array<
-        CcLanePtr,
-        core::state::ClipboardTransferPlan::MAX_ENTRIES - 1U
-    > additionalBankCcLanes{};
-    GraphPtr editorGraph;
-    CcLanePtr editorCcLanes;
-    GraphPtr outgoingActiveGraph;
-    CcLanePtr outgoingActiveCcLanes;
+    std::array<GraphPtr, core::state::ClipboardTransferPlan::MAX_ENTRIES> destinationGraphs{};
+    std::array<CcLanePtr, core::state::ClipboardTransferPlan::MAX_ENTRIES> destinationCcLanes{};
 
     PreparedSequencerTrackTransfer() = default;
     ~PreparedSequencerTrackTransfer();
@@ -89,18 +77,6 @@ struct PreparedSequencerTrackTransfer {
 
     bool ready() const {
         return status == SequencerTrackTransferStatus::READY && history != nullptr;
-    }
-
-    GraphPtr& bankGraphAt(uint8_t index) {
-        return index == 0U
-            ? bankGraph
-            : additionalBankGraphs[index - 1U];
-    }
-
-    CcLanePtr& bankCcLanesAt(uint8_t index) {
-        return index == 0U
-            ? bankCcLanes
-            : additionalBankCcLanes[index - 1U];
     }
 };
 

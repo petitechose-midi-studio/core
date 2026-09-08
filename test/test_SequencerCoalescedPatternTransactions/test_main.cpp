@@ -105,7 +105,8 @@ struct Harness {
     Harness() : state(storages.settings) {
         state.sequencer.pattern.setContentLength(8U);
         state.sequencer.pattern.note[kStep] = kInitialNote;
-        assert(seq::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer));
+        state.sequencerTracks.reset();
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(state.sequencerTracks, state.sequencer));
         settle();
     }
 
@@ -262,7 +263,9 @@ void initializePayload(Harness& h, InitialPayload payload) {
         pattern.bumpCcLaneRevision();
     }
 
-    assert(seq::initializeTrackBankFromActive(h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencerTracks.reset();
+
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     h.settle();
 
     assert((pattern.graph != nullptr) == ownsInitialGraph(payload));

@@ -406,10 +406,7 @@ void prepareTarget(Harness& h, uint8_t step = 5) {
     h.state.sequencer.stepEdit.stepIndex.set(step);
     h.state.sequencer.focusedStep.set(step);
     h.state.sequencer.page.set(0);
-    assert(core::state::sequencer::initializeTrackBankFromActive(
-        h.state.sequencerTracks,
-        h.state.sequencer
-    ));
+    h.state.sequencerTracks.reset();
     h.state.project.metadata.modifiedCounter = 42;
     h.state.project.metadata.dirty = false;
 }
@@ -808,7 +805,7 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
 }
 
 void test_apply_allocation_failure_matrix_is_atomic_and_bounded() {
-    constexpr std::size_t APPLY_ALLOCATION_ATTEMPTS = 8U;
+    constexpr std::size_t APPLY_ALLOCATION_ATTEMPTS = 7U;
     static_assert(APPLY_ALLOCATION_ATTEMPTS <= 12U,
                   "Step preset apply exceeded its frozen allocation-attempt budget");
 
@@ -1069,6 +1066,9 @@ void test_apply_stopped_preserves_destination_route_and_undoes_exactly() {
     assert(inspected.inspected());
     const auto before = captureInvariant(h.state);
 
+    const auto& bankTrack = h.state.sequencerTracks.track(target.trackIndex);
+    const auto spareNote = bankTrack.note[target.stepIndex];
+    const auto spareVelocity = bankTrack.velocity[target.stepIndex];
     const auto result = h.presets.applyPreset(
         "apply-valid",
         target,
@@ -1082,9 +1082,8 @@ void test_apply_stopped_preserves_destination_route_and_undoes_exactly() {
     assert(h.state.projectTracks.authored.midiChannels[
         h.state.currentSharedActiveTrack()
     ] == 9);
-    const auto& bankTrack = h.state.sequencerTracks.track(target.trackIndex);
-    assert(bankTrack.note[target.stepIndex] == 67);
-    assert(bankTrack.velocity[target.stepIndex] == 96);
+    assert(bankTrack.note[target.stepIndex] == spareNote);
+    assert(bankTrack.velocity[target.stepIndex] == spareVelocity);
     assert(h.state.projectTracks.authored.midiChannels[target.trackIndex] == 9);
     assert(h.state.project.metadata.modifiedCounter == 43);
     assert(h.state.project.metadata.dirty);

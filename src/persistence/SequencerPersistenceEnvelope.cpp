@@ -768,6 +768,7 @@ FLASHMEM void installTrackClipRegions(
     state::sequencer::SequencerState& active
 ) {
     for (uint8_t track = 0; track < PERSISTED_TRACK_COUNT; ++track) {
+        if (track == activeTrack) continue;
         installClipRegion(
             trackBank.track(track),
             trackBank.clip(track),
@@ -1078,34 +1079,12 @@ FLASHMEM bool decodeTrackCcLanes(
     return true;
 }
 
-FLASHMEM bool cloneActiveGraph(const std::array<GraphPtr, PERSISTED_TRACK_COUNT>& graphs,
-                               uint8_t activeTrack,
-                               GraphPtr& out) {
-    out.reset();
-    if (activeTrack >= graphs.size() || !graphs[activeTrack]) return true;
-    out = core::app::makeExtmemUnique<StepSequencerGraph>(*graphs[activeTrack]);
-    return static_cast<bool>(out);
-}
-
-FLASHMEM bool cloneActiveCcLanes(
-    const std::array<CcLanePtr, PERSISTED_TRACK_COUNT>& lanes,
-    uint8_t activeTrack,
-    CcLanePtr& out
-) {
-    out.reset();
-    if (activeTrack >= lanes.size() || !lanes[activeTrack]) return true;
-    return state::sequencer::cloneSequencerCcLaneBank(
-        out,
-        lanes[activeTrack].get()
-    );
-}
-
 FLASHMEM void installTrackGraphs(
     std::array<GraphPtr, PERSISTED_TRACK_COUNT>& graphs,
-    GraphPtr activeGraph,
     state::sequencer::SequencerTrackBankState& trackBank,
     state::sequencer::SequencerState& active
 ) {
+    auto activeGraph = std::move(graphs[trackBank.activeTrackIndex()]);
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
         installDecodedGraph(trackBank.track(i), std::move(graphs[i]));
     }
@@ -1114,10 +1093,10 @@ FLASHMEM void installTrackGraphs(
 
 FLASHMEM void installTrackCcLanes(
     std::array<CcLanePtr, PERSISTED_TRACK_COUNT>& lanes,
-    CcLanePtr activeLanes,
     state::sequencer::SequencerTrackBankState& trackBank,
     state::sequencer::SequencerState& active
 ) {
+    auto activeLanes = std::move(lanes[trackBank.activeTrackIndex()]);
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
         state::sequencer::installSequencerCcLaneBank(
             trackBank.track(i),
@@ -1472,8 +1451,6 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
     ClipRegionArray regions{};
     DrumBankPtr decodedDrums;
     state::sequencer::SequencerClipGridSnapshot decodedClips;
-    GraphPtr activeGraph;
-    CcLanePtr activeLanes;
     uint8_t activeTrack = 0U;
     if (!projectActiveTrack(flat, activeTrack) ||
         !decodeClipRegions(
@@ -1495,16 +1472,14 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
             flatEnabledMask(flat, EnvelopeKind::ProjectSequencer),
             decodedDrums != nullptr ? decodedDrums->drumTrackMask : 0U,
             decodedClips
-        ) ||
-        !cloneActiveGraph(decodedGraphs, activeTrack, activeGraph) ||
-        !cloneActiveCcLanes(decodedLanes, activeTrack, activeLanes)) {
+        )) {
         return false;
     }
     if (!applyProjectSequencerPayload(flat.data, flat.byteSize, trackBank, active)) {
         return false;
     }
-    installTrackGraphs(decodedGraphs, std::move(activeGraph), trackBank, active);
-    installTrackCcLanes(decodedLanes, std::move(activeLanes), trackBank, active);
+    installTrackGraphs(decodedGraphs, trackBank, active);
+    installTrackCcLanes(decodedLanes, trackBank, active);
     installTrackClipRegions(regions, activeTrack, trackBank, active);
     if (decodedDrums) {
         if (!trackBank.applyDrumTrackBank(*decodedDrums)) return false;
@@ -1607,8 +1582,6 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
     std::array<CcLanePtr, PERSISTED_TRACK_COUNT> decodedLanes{};
     ClipRegionArray regions{};
     DrumBankPtr decodedDrums;
-    GraphPtr activeGraph;
-    CcLanePtr activeLanes;
     uint8_t activeTrack = 0U;
     if (!setActiveTrack(flat, activeTrack) ||
         !decodeClipRegions(
@@ -1624,16 +1597,14 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
             flat,
             EnvelopeKind::Set,
             decodedDrums
-        ) ||
-        !cloneActiveGraph(decodedGraphs, activeTrack, activeGraph) ||
-        !cloneActiveCcLanes(decodedLanes, activeTrack, activeLanes)) {
+        )) {
         return false;
     }
     if (!applySetPayload(flat.data, flat.byteSize, trackBank, active)) {
         return false;
     }
-    installTrackGraphs(decodedGraphs, std::move(activeGraph), trackBank, active);
-    installTrackCcLanes(decodedLanes, std::move(activeLanes), trackBank, active);
+    installTrackGraphs(decodedGraphs, trackBank, active);
+    installTrackCcLanes(decodedLanes, trackBank, active);
     installTrackClipRegions(regions, activeTrack, trackBank, active);
     if (decodedDrums) {
         if (!trackBank.applyDrumTrackBank(*decodedDrums)) return false;

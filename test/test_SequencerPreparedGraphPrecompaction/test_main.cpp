@@ -63,8 +63,7 @@ struct Harness {
         assert(sequence != nullptr);
         originalFirstNode = sequence->firstStepNode;
 
-        assert(seq::initializeTrackBankFromActive(
-            state.sequencerTracks, state.sequencer));
+        state.sequencerTracks.reset();
         assert(seq::enterMicroSequenceContentView(
             state.sequencer,
             seq::rootStepNodeId(1U),

@@ -45,7 +45,8 @@ struct Harness {
     Harness() : state(storages.settings) {
         state.sequencer.pattern.setContentLength(8U);
         state.sequencer.pattern.note[kStep] = kInitialNote;
-        assert(seq::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer));
+        state.sequencerTracks.reset();
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(state.sequencerTracks, state.sequencer));
         settle();
     }
 

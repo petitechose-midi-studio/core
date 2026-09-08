@@ -283,10 +283,8 @@ void initializeTopology(
     bool populateEveryCanonicalTrack
 ) {
     authorPayload(h.state.sequencer.pattern, kind, 0U);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks,
-        h.state.sequencer
-    ));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     if (populateEveryCanonicalTrack) {
         h.state.sequencerTracks.syncSharedTrackState(0xFFFFU, kActiveTrack);
         for (uint8_t track = 1U;
@@ -544,7 +542,7 @@ void test_state_operation_rows_revisions_overrides_and_scratch() {
     seq::SequencerTrackBankState bank;
     seq::SequencerState active;
     authorPayload(active.pattern, PayloadKind::GraphAndCc, 0U);
-    assert(seq::initializeTrackBankFromActive(bank, active));
+    bank.reset();
     bank.syncSharedTrackState(0xFFFFU, kActiveTrack);
     for (uint8_t track = 1U; track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {

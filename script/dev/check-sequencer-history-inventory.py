@@ -144,7 +144,7 @@ D_OOM_SURFACE_IDENTIFIER_COUNTS = {
     ("src/handler/sequencer/SequencerStepEditHandler.cpp", "showRejection"): 6,
     ("src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "showRejection"): 2,
     ("src/handler/sequencer/SequencerStepHandler.cpp", "showRejection"): 10,
-    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "ALLOCATION_UNAVAILABLE"): 8,
+    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "ALLOCATION_UNAVAILABLE"): 7,
     ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "HISTORY_UNAVAILABLE"): 4,
     ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "ALLOCATION_UNAVAILABLE"): 2,
     ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "HISTORY_UNAVAILABLE"): 2,

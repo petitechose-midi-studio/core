@@ -224,7 +224,7 @@ void test_allocation_failure_keeps_draft_and_save_prompt_retryable() {
 void test_track_switch_is_blocked_without_losing_the_active_draft() {
     seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
-    assert(seq::initializeTrackBankFromActive(tracks, sequencer));
+    tracks.reset();
 
     const auto result =
         seq::openOrCreateActiveContentChild(sequencer, 1, seq::StepContentChildKind::MICRO_SEQUENCE,

@@ -1197,15 +1197,8 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
             ? change.afterGraphRevision
             : change.beforeGraphRevision;
 
-        GraphPtr editorGraph;
-        GraphPtr bankGraph;
-        if (change.capturesGraph) {
-            if (!cloneGraph(graph, bankGraph)) return false;
-            if (change.trackIndex == bank.activeTrackIndex() &&
-                !cloneGraph(graph, editorGraph)) {
-                return false;
-            }
-        }
+        GraphPtr restoredGraph;
+        if (change.capturesGraph && !cloneGraph(graph, restoredGraph)) return false;
         bank.restoreDrumTrack(
             change.trackIndex,
             after ? change.afterKind : change.beforeKind,
@@ -1213,17 +1206,10 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
         );
         if (change.capturesGraph) {
             installGraph(
-                bank.track(change.trackIndex),
-                std::move(bankGraph),
+                mutableCanonicalTrackPattern(bank, active, change.trackIndex),
+                std::move(restoredGraph),
                 graphRevision
             );
-            if (change.trackIndex == bank.activeTrackIndex()) {
-                installGraph(
-                    active.pattern,
-                    std::move(editorGraph),
-                    graphRevision
-                );
-            }
         }
         return true;
     }

@@ -850,8 +850,7 @@ struct CoreHarness {
         : state(storages.settings),
           history(Services::fromCoreState(state)) {
         state.sequencer.pattern.setContentLength(8U);
-        assert(seq::initializeTrackBankFromActive(
-            state.sequencerTracks, state.sequencer));
+        state.sequencerTracks.reset();
         settle();
     }
 

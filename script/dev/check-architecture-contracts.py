@@ -3446,12 +3446,9 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\bprepareHistoryStructureReplayOwners\s*\([^)]*\)\s*\{.*?"
         r"for\s*\([^)]*\)\s*\{.*?"
         r"cloneSnapshotGraph\s*\(\s*snapshot\.tracks\[i\]\s*,\s*"
-        r"out\.bankGraphs\[i\]\s*\).*?"
-        r"cloneSequencerCcLaneBank\s*\(\s*out\.bankCcLanes\[i\].*?"
-        r"cloneSnapshotGraph\s*\(\s*snapshot\.tracks\[targetActive\]\s*,\s*"
-        r"out\.editorGraph\s*\).*?"
-        r"cloneSequencerCcLaneBank\s*\(\s*out\.editorCcLanes",
-        "Structure replay allocation order must remain bank G,C ascending then editor G,C",
+        r"out\.trackGraphs\[i\]\s*\).*?"
+        r"cloneSequencerCcLaneBank\s*\(\s*out\.trackCcLanes\[i\].*?",
+        "Structure replay reserves one Graph/CC pair per captured Track in ascending order",
     )
     require_in_function(
         "src/state/sequencer/SequencerHistory.cpp",

@@ -112,11 +112,9 @@ struct SequencerPreparedStructureHistoryReplay {
     uint8_t targetActiveTrack = SequencerTrackBankState::TRACK_COUNT;
     bool ready = false;
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT>
-        bankGraphs{};
+        trackGraphs{};
     std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT>
-        bankCcLanes{};
-    SequencerHistoryGraphPtr editorGraph{};
-    SequencerHistoryCcLanePtr editorCcLanes{};
+        trackCcLanes{};
 
     SequencerPreparedStructureHistoryReplay();
     ~SequencerPreparedStructureHistoryReplay();

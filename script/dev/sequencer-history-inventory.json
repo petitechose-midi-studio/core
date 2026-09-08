@@ -729,7 +729,7 @@
       {"path": "src/handler/sequencer/SequencerStepEditHandler.cpp", "identifier": "showRejection", "expectedCount": 6},
       {"path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "identifier": "showRejection", "expectedCount": 2},
       {"path": "src/handler/sequencer/SequencerStepHandler.cpp", "identifier": "showRejection", "expectedCount": 10},
-      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 8},
+      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 7},
       {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 4},
       {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 2},
       {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 2},

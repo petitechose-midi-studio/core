@@ -257,10 +257,8 @@ void settleSetup(Harness& h) {
 
 void initializeActivePayload(Harness& h, PayloadKind kind) {
     authorPayload(h.state.sequencer.pattern, kind);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks,
-        h.state.sequencer
-    ));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     settleSetup(h);
 }
 
@@ -270,10 +268,8 @@ void initializeCapturedTracks(
     uint16_t capturedMask
 ) {
     authorPayload(h.state.sequencer.pattern, kind);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks,
-        h.state.sequencer
-    ));
+    h.state.sequencerTracks.reset();
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     for (uint8_t track = 1U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -2895,7 +2891,7 @@ void prepareMaximumCoupledStructureReplay(
 ExpectedAllocationRequests expectedMaximumCoupledReplayRequests() {
     ExpectedAllocationRequests expected;
     for (uint8_t owner = 0U;
-         owner <= seq::SequencerTrackBankState::TRACK_COUNT;
+         owner < seq::SequencerTrackBankState::TRACK_COUNT;
          ++owner) {
         appendPayloadRequests(expected, PayloadKind::GraphAndCc);
     }
@@ -3032,7 +3028,7 @@ void test_coupled_structure_replay_allocation_matrix() {
     CoupledReplayExpectations expected;
     prepareMaximumCoupledStructureReplay(h, expected);
     const auto expectedRequests = expectedMaximumCoupledReplayRequests();
-    assert(expectedRequests.count == 34U);
+    assert(expectedRequests.count == 32U);
 
     verifyCoupledReplayAllocationFailures(
         h, seq::SequencerHistoryDirection::Undo, expectedRequests);

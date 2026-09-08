@@ -1233,14 +1233,6 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     };
     core::state::sequencer::SequencerPatternSnapshot stagedFlat{};
     core::state::sequencer::captureSnapshot(staged->pattern, stagedFlat);
-    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> bankGraph;
-    if (!core::state::cloneSequencerGraph(bankGraph,
-                                          core::state::sequencer::graphView(staged->pattern))) {
-        result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
-        result.assetStatus = SequencerGraphAssetStatus::RESOURCE_EXHAUSTED;
-        return result;
-    }
-
     const uint16_t targetTrackBit = static_cast<uint16_t>(1U << target.trackIndex);
     const uint16_t enabledMask = state_->sequencerTracks.currentEnabledMask();
     const uint16_t targetAudibleMask =
@@ -1261,7 +1253,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     }
 
     // Last fallible gate: the project/selection identity is checked directly
-    // before arming runtime and before the first live editor/bank write.
+    // before arming runtime and before the first live editor write.
     if (!targetMatches(target) || projectRevision() != target.projectRevision ||
         state_->sequencerTracks.currentEnabledMask() != enabledMask ||
         core::state::project::audibleMask(state_->projectTracks, enabledMask) !=
@@ -1276,8 +1268,8 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
 
     // From here to publication every operation is an ownership transfer,
     // fixed-capacity history commit, or Signal write and therefore cannot
-    // fail. Runtime sees the target Track frozen while both editor and bank
-    // receive the same prepared generation.
+    // fail. Runtime sees the target Track frozen while the canonical editor
+    // receives the prepared generation.
     auto editorGraph = std::move(staged->pattern.graph);
     core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedGraph(
         state_->sequencer,
@@ -1290,13 +1282,6 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     copyContentViewState(state_->sequencer.contentView, staged->contentView);
     state_->sequencer.invalidateVariationTelemetry();
 
-    core::state::sequencer::installTrackContentSnapshotWithOwnedGraph(
-        state_->sequencerTracks.track(target.trackIndex),
-        state_->sequencerTracks.clip(target.trackIndex),
-        stagedFlat,
-        change->after.clip,
-        std::move(bankGraph)
-    );
     state_->sequencerHistory.recordPreparedPattern(std::move(change));
     state_->publishPreparedSequencerMutation();
     state_->sequencerTrackActivations.publishPrepared(activationBatch);

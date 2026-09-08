@@ -357,10 +357,7 @@ void prepareChildGraphAndCc(
         caller == ChildMacroCaller::OptOrdinary) {
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     }
-    assert(core::state::sequencer::initializeTrackBankFromActive(
-        h.state.sequencerTracks,
-        sequencer
-    ));
+    h.state.sequencerTracks.reset();
 }
 
 void invokeChildMacroCaller(
@@ -851,8 +848,7 @@ void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
     assert(core::state::sequencer::setSequencerCcLaneEvent(
         *cc, 0U, 0U, 91U).changed());
     pattern.bumpCcLaneRevision();
-    assert(core::state::sequencer::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencerTracks.reset();
 
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();

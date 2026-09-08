@@ -871,10 +871,8 @@ struct CoreHarness {
           history(Services::fromCoreState(state)) {
         state.sequencer.pattern.setContentLength(8U);
         state.sequencer.pattern.note[0] = 60U;
-        assert(seq::initializeTrackBankFromActive(
-            state.sequencerTracks,
-            state.sequencer
-        ));
+        state.sequencerTracks.reset();
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(state.sequencerTracks, state.sequencer));
         test_support::drainNotifications();
         state.flushProjectMutationCoalescing();
         test_support::drainNotifications();
