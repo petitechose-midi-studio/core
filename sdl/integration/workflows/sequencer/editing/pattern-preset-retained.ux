@@ -1,4 +1,5 @@
 # Inspect immutable Factory content during playback, return and reopen.
+# Purpose: inspect immutable Factory content during playback, return and reopen.
 # Never load, audition, modify or save a preset.
 # Expect: semantic:detail:mode=sequencer.pattern_preset.load.detail, semantic:reopened:mode=sequencer.pattern_preset.load.detail
 0 scenario macro-performance-rail

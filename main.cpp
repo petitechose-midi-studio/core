@@ -10,8 +10,14 @@
 
 #include <imxrt.h>
 
+#if defined(MS_HARDWARE_BENCHMARK)
+#include "validation/benchmark/BenchStorage.hpp"
+#include "validation/benchmark/BenchInput.hpp"
+#include "validation/benchmark/HardwareBenchmarkFixture.hpp"
+#else
 #include <oc/hal/teensy/SDCardBackend.hpp>
 #include <oc/hal/teensy/SDFileSystemBackend.hpp>
+#endif
 #include <oc/hal/teensy/Teensy.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
@@ -42,7 +48,9 @@
 #include "validation/project/ProjectStoreSmoke.hpp"
 #if OC_ENABLE_STATS
 #include "diagnostics/MemoryFootprintReporter.hpp"
+#if !defined(MS_HARDWARE_BENCHMARK)
 #include "diagnostics/PerformanceReporter.hpp"
+#endif
 #endif
 #if defined(MS_UX_RECORDER)
 #include "validation/ux/SemanticUxRecorder.hpp"
@@ -59,14 +67,21 @@ static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
 #endif
+#if defined(MS_HARDWARE_BENCHMARK)
+static core::validation::benchmark::BenchSettingsStorage deviceSettingsStorage;
+static core::validation::benchmark::UnavailableFileSystem productFileSystemBackend;
+#else
 static oc::hal::teensy::SDCardBackend deviceSettingsStorage("/core-settings.bin");
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
+#endif
 static std::optional<core::persistence::ProductFileService> productFileService;
 static core::app::ExtmemUniquePtr<core::persistence::ProductDirectoryCatalog>
     productDirectoryCatalog;
+#if !defined(MS_HARDWARE_BENCHMARK)
 static std::optional<core::persistence::ProjectSessionStore> projectSessionStore;
 static std::optional<core::persistence::ProjectSessionAutosaveService> projectSessionAutosaveService;
 static std::optional<core::persistence::ProjectSessionRestoreService> projectSessionRestoreService;
+#endif
 static std::optional<core::state::CoreState> coreState;
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static std::optional<oc::app::OpenControlApp> app;
@@ -85,6 +100,7 @@ const char kDisplayInitRetryLog[] PROGMEM =
 const char kDisplayInitRecoveredLog[] PROGMEM =
     "Display init recovered on attempt {}";
 #endif
+#if !defined(MS_HARDWARE_BENCHMARK)
 const char kPersistenceTurnRejected[] PROGMEM =
     "[Persistence] Foreground turn rejected: {}";
 const char kNoRecoveryErrorContext[] PROGMEM = "none";
@@ -486,6 +502,7 @@ private:
 };
 
 StorageRecoveryRuntimeManager storageRecovery;
+#endif
 
 }  // namespace
 
@@ -524,19 +541,65 @@ constexpr bool kEmitSemanticEncoderDispatch = true;
 // Initialization Helpers
 // =============================================================================
 
+#if defined(MS_HARDWARE_BENCHMARK)
+template<size_t N>
+static FLASHMEM void benchmarkBootLine(const char (&line)[N]) {
+    // Boot only: no formatting, allocation, wait, DTR query or measured-run
+    // output. A leading COBS delimiter resynchronizes the bridge after reset.
+    (void)oc::hal::teensy::detail::tryWriteSerialLog(
+        Serial, usb_configuration != 0,
+        reinterpret_cast<const uint8_t*>(line), N - 1U);
+}
+
+class BenchmarkFaultPrint final : public Print {
+public:
+    size_t write(uint8_t byte) override;
+private:
+    bool lineStart_ = true;
+};
+
+FLASHMEM size_t BenchmarkFaultPrint::write(uint8_t byte) {
+    if (lineStart_) {
+        static constexpr char prefix[] = "\0[bench-fault] ";
+        Serial.write(reinterpret_cast<const uint8_t*>(prefix), sizeof(prefix) - 1U);
+        lineStart_ = false;
+    }
+    const size_t written = Serial.write(byte);
+    if (byte == '\n') lineStart_ = true;
+    return written;
+}
+
+static FLASHMEM void benchmarkBootFaultReport() {
+    // The public SDK printer decodes and clears retained fault data. Keep it
+    // for a later boot if USB is unavailable; never call this during a run.
+    if (usb_configuration == 0 || !CrashReport) return;
+    BenchmarkFaultPrint output;
+    CrashReport.printTo(output);
+}
+#define BENCH_BOOT(stage) benchmarkBootLine("\0[bench-boot] stage=" stage "\n")
+#else
+#define BENCH_BOOT(stage) ((void)0)
+#endif
+
 /// Halt only for non-storage peripherals which cannot run in a degraded mode.
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void checkOrHalt(const oc::type::Result<void>& result, const char* component) {
     if (!result) {
+        BENCH_BOOT("peripheral-failed");
+#if defined(OC_LOG)
         const auto error = result.error();
         OC_LOG_ERROR("{} init failed: {} context={}", component,
                      oc::type::errorCodeToString(error.code),
                      error.context ? error.context : "none");
+#else
+        (void)component;
+#endif
         while (true) {}
     }
 }
 
 static FLASHMEM void initDisplay() {
+    BENCH_BOOT("display-begin");
     uint32_t attempt = 0;
     while (true) {
         ++attempt;
@@ -553,6 +616,7 @@ static FLASHMEM void initDisplay() {
 
         const auto initialized = display->init();
         if (initialized) {
+            BENCH_BOOT("display-ready");
             OC_LOG_INFO(
                 "Display panel={}Hz, UI frames<={}Hz, SPI={}MHz",
                 display->panelRefreshRateHz(),
@@ -565,33 +629,53 @@ static FLASHMEM void initDisplay() {
             return;
         }
 
+#if defined(OC_LOG)
         const auto error = initialized.error();
         OC_LOG_WARN(kDisplayInitRetryLog,
                     attempt,
                     oc::type::errorCodeToString(error.code),
                     error.context ? error.context : "none");
+#endif
+        BENCH_BOOT("display-retry");
         delay(DISPLAY_INIT_RETRY_BACKOFF_MS);
     }
 }
 
 static FLASHMEM void initLVGL() {
+    BENCH_BOOT("lvgl-begin");
     lvgl = oc::ui::lvgl::Bridge(
         *display,
         device::buffers::lvgl,
         oc::hal::teensy::defaultTimeProvider,
         device::display::LVGL_CONFIG);
     checkOrHalt(lvgl->init(), "LVGL");
+    BENCH_BOOT("lvgl-ready");
 }
 
 static FLASHMEM void initMux() {
+    BENCH_BOOT("mux-begin");
     mux = oc::hal::teensy::CD74HC4067(
         device::mux::CONFIG,
         oc::hal::teensy::gpio());
     checkOrHalt(mux->init(), "MUX");
+    BENCH_BOOT("mux-ready");
 }
 #endif
 
 static FLASHMEM bool initStorage() {
+#if defined(MS_HARDWARE_BENCHMARK)
+    BENCH_BOOT("ram-storage-begin");
+    // No filesystem initialization or recovery in this image, including when
+    // a card is present. Keep unavailable services only for UI dependencies.
+    checkOrHalt(deviceSettingsStorage.init(), "Benchmark RAM settings");
+    productFileService.emplace(productFileSystemBackend);
+    productDirectoryCatalog =
+        core::app::makeExtmemUniqueCold<core::persistence::ProductDirectoryCatalog>(
+            *productFileService, &millis, &micros);
+    if (productDirectoryCatalog) BENCH_BOOT("ram-storage-ready");
+    else BENCH_BOOT("catalog-failed");
+    return static_cast<bool>(productDirectoryCatalog);
+#else
     bool storageBackendsReady = true;
     for (const auto& item : storageBackends) {
         if (!initializeStorageBackend(item)) {
@@ -630,15 +714,28 @@ static FLASHMEM bool initStorage() {
         OC_LOG_WARN(kStorageInitializationDeferredLog);
     }
     return initialized;
+#endif
 }
 
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void initApp() {
     if (!productDirectoryCatalog) {
+        BENCH_BOOT("catalog-failed");
         OC_LOG_ERROR("Product directory catalog unavailable");
         while (true) {}
     }
+    BENCH_BOOT("core-state-begin");
     coreState.emplace(deviceSettingsStorage);
+    BENCH_BOOT("core-state-ready");
+#if defined(MS_HARDWARE_BENCHMARK)
+    BENCH_BOOT("fixture-begin");
+    if (!core::validation::benchmark::prepareHardwareBenchmarkFixture(*coreState)) {
+        BENCH_BOOT("fixture-failed");
+        OC_LOG_ERROR("Benchmark fixture preparation failed; refusing to run");
+        while (true) {}
+    }
+    BENCH_BOOT("fixture-ready");
+#else
     projectSessionStore.emplace(*productFileService);
     projectSessionRestoreService.emplace(*projectSessionStore);
     projectSessionAutosaveService.emplace(*projectSessionStore);
@@ -682,38 +779,56 @@ static FLASHMEM void initApp() {
             bootRecovery.sessionSaveBytes
         );
     }
+#endif
 
 #if defined(MS_UX_RECORDER)
+    BENCH_BOOT("recorder-begin");
     semanticUxRecorder =
         core::app::makeExtmemUnique<core::validation::ux::SemanticUxRecorder>(
             core::validation::ux::SemanticUxRecorderOptions{
                 .sink = &semanticUxSink,
+#if defined(MS_HARDWARE_BENCHMARK)
+                .enabled = false,
+#else
                 .enabled = true,
+#endif
                 .emitSemanticEncoderDispatch = kEmitSemanticEncoderDispatch,
             }
         );
     if (!semanticUxRecorder) {
+        BENCH_BOOT("recorder-failed");
         OC_LOG_ERROR("Semantic UX recorder init failed: EXTMEM allocation failed");
         while (true) {}
     }
     core::validation::ux::setCurrentEncoderContractTraceRecorder(
         semanticUxRecorder.get()
     );
+    BENCH_BOOT("recorder-ready");
 #endif
 
+    BENCH_BOOT("builder-begin");
     oc::hal::teensy::AppBuilder appBuilder;
     appBuilder.midi()
         .frames()
         .encoders(device::encoder::ENCODERS)
+#if defined(MS_HARDWARE_BENCHMARK)
+        // Preserve normal in-place app construction. Moving a built app would
+        // invalidate its internal bus references; only decorate button state.
+        .buttons(std::make_unique<core::validation::benchmark::BenchButtons>(
+            oc::hal::teensy::makeButtonController(
+                device::button::BUTTONS, &*mux, Config::Timing::DEBOUNCE_MS,
+                device::mux::BUTTON_READS_PER_APP_TICK)))
+#else
         .buttons(
             device::button::BUTTONS,
             *mux,
             Config::Timing::DEBOUNCE_MS,
             device::mux::BUTTON_READS_PER_APP_TICK
         )
+#endif
         .inputConfig(Config::Input::CONFIG);
 
-#if defined(MS_UX_RECORDER)
+#if defined(MS_UX_RECORDER) && !defined(MS_HARDWARE_BENCHMARK)
     appBuilder.inputTrace([](const oc::core::input::InputBindingTraceEvent& event) {
         if (!semanticUxRecorder) return;
         if (!coreState) {
@@ -728,12 +843,15 @@ static FLASHMEM void initApp() {
 #endif
 
     app = appBuilder;
+    BENCH_BOOT("builder-ready");
 
     if (!app->midiAPI()) {
+        BENCH_BOOT("midi-api-failed");
         OC_LOG_ERROR("Sequencer runtime init failed: MIDI API unavailable");
         while (true) {}
     }
 
+    BENCH_BOOT("runtime-begin");
     standaloneSequencerRuntime =
         core::app::makeExtmemUnique<core::sequencer::SequencerRuntimeService>(
             core::sequencer::SequencerRuntimeService::StateRefs{
@@ -753,6 +871,7 @@ static FLASHMEM void initApp() {
             app->eventBus()
         );
     if (!standaloneSequencerRuntime) {
+        BENCH_BOOT("runtime-failed");
         OC_LOG_ERROR("Sequencer runtime init failed: EXTMEM allocation failed");
         while (true) {}
     }
@@ -764,9 +883,11 @@ static FLASHMEM void initApp() {
         );
 
     if (!runtimeHookRegistered) {
+        BENCH_BOOT("runtime-hook-failed");
         OC_LOG_ERROR("Sequencer runtime init failed: app pre-context hook registry full");
         while (true) {}
     }
+    BENCH_BOOT("runtime-ready");
 
     // Register context with factory that captures CoreState reference
     app->registerContextWithFactory(
@@ -779,7 +900,9 @@ static FLASHMEM void initApp() {
                 *productDirectoryCatalog
             );
         });
+    BENCH_BOOT("app-begin");
     app->begin();
+    BENCH_BOOT("app-ready");
     // LVGL emits this in the foreground after each region callback, not in
     // the display DMA ISR. Drain only output: polling input here could reenter
     // UI handlers while LVGL is rendering. The API outlives the display hook.
@@ -803,7 +926,12 @@ static FLASHMEM void initApp() {
 // =============================================================================
 
 FLASHMEM void setup() {
+    BENCH_BOOT("setup-begin");
     oc::hal::teensy::initLogging();
+    BENCH_BOOT("serial-ready");
+#if defined(MS_HARDWARE_BENCHMARK)
+    benchmarkBootFaultReport();
+#endif
     core::diagnostics::storage_qualification::begin();
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");
@@ -835,8 +963,12 @@ FLASHMEM void setup() {
     return;
 #else
 #if OC_ENABLE_STATS
+    BENCH_BOOT("memory-tracking-begin");
     core::diagnostics::beginMemoryFootprintTracking();
+    BENCH_BOOT("memory-tracking-ready");
+#if !defined(MS_HARDWARE_BENCHMARK)
     core::diagnostics::performanceReporter().begin();
+#endif
 #endif
     initDisplay();
     initLVGL();
@@ -844,13 +976,16 @@ FLASHMEM void setup() {
     (void)initStorage();
     initApp();
 
-#if defined(MS_UX_RECORDER)
+#if defined(MS_UX_RECORDER) && !defined(MS_HARDWARE_BENCHMARK)
     semanticUxSink.writeLine("UXR {\"kind\":\"session\",\"event\":\"boot\",\"enabled\":1}");
 #endif
 
     OC_LOG_INFO("Ready");
+    BENCH_BOOT("ready");
 #endif
 }
+
+#undef BENCH_BOOT
 
 // Timing constants for main loop
 constexpr uint32_t APP_PERIOD_US =
@@ -896,6 +1031,7 @@ void loop() {
             coreState->update();
         }
 
+#if !defined(MS_HARDWARE_BENCHMARK)
         const uint32_t persistenceNowMs = millis();
         bool persistenceTurnReady = false;
         if (productFileService) {
@@ -944,8 +1080,9 @@ void loop() {
                 playbackActive
             );
         }
+#endif
 
-#if defined(MS_UX_RECORDER)
+#if defined(MS_UX_RECORDER) && !defined(MS_HARDWARE_BENCHMARK)
         if (semanticUxRecorder) {
             semanticUxRecorder->flush(millis(), *coreState);
         }
@@ -960,7 +1097,7 @@ void loop() {
     }
     core::diagnostics::storage_qualification::foregroundEnd();
 
-#if OC_ENABLE_STATS
+#if OC_ENABLE_STATS && !defined(MS_HARDWARE_BENCHMARK)
     core::diagnostics::performanceReporter().update(
         millis(), coreState->statusBar.playing.get());
 #endif

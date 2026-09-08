@@ -110,6 +110,10 @@ static_assert(device::encoder::ENCODERS[8].ticksPerEvent == 4);
 static_assert(!device::encoder::ENCODERS[8].invertDirection);
 static_assert(device::encoder::ENCODERS[9].id == 410);
 static_assert(device::encoder::ENCODERS[9].ppr == 600);
+static_assert(
+    device::encoder::ENCODERS[9].ticksPerEvent ==
+    device::encoder::OPT_TICKS_PER_EVENT);
+static_assert(device::encoder::OPT_TICKS_PER_EVENT == 100);
 
 static_assert(device::button::BUTTONS.size() == 15);
 static_assert(device::button::MUX_BUTTON_COUNT == 14);

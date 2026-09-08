@@ -250,6 +250,7 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         test_ModulatorEnvelopeTiming
         test_ModulatorLfoParameterMapping
         test_PerformanceReporter
+        test_HardwareBenchmarkMetrics
         test_PsramSpanTracker
         test_StandaloneSequencerRuntimeGate
         test_StorageQualificationProbe
@@ -258,6 +259,7 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
 
     # Each listed contract needs only the same-named implementation below.
     set(MS_CORE_ISOLATED_TEST_SOURCES
+        src/validation/benchmark/HardwareBenchmarkRun.cpp
         src/persistence/StorageRecoveryMachine.cpp
         src/sequencer/ClockSourceSelector.cpp
         src/sequencer/ExternalClockEstimator.cpp
@@ -372,6 +374,10 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        if(test_name STREQUAL test_HardwareBenchmarkFixture)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/validation/benchmark/HardwareBenchmarkFixture.cpp")
+        endif()
         if(test_name STREQUAL test_StorageQualificationProbe)
             target_sources("${test_name}" PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/StorageQualificationProbe.cpp")
@@ -389,6 +395,13 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
                 OC_ENABLE_STATS=1
                 "$<TARGET_PROPERTY:midi_studio_core_native,INTERFACE_COMPILE_DEFINITIONS>")
             target_link_libraries("${test_name}" PRIVATE ms_core_compile_warnings)
+        endif()
+        if(test_name STREQUAL test_HardwareBenchmarkMetrics)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/validation/benchmark/HardwareBenchmarkMetrics.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/diagnostics/Performance.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/time/Time.cpp")
+            target_compile_definitions("${test_name}" PRIVATE MS_HARDWARE_BENCHMARK=1 OC_ENABLE_STATS=1)
         endif()
         if(test_name STREQUAL test_ModulatorSparklineModel)
             target_include_directories("${test_name}"

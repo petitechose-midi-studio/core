@@ -1,4 +1,5 @@
 # UX workflow: page selection identity and grouped step detents.
+# Purpose: preserve page selection identity and apply grouped step detents.
 # A grouped turn must move all detents without publishing intermediate focuses.
 # Expect: semantic:page_selected:mode=sequencer.pattern_selection, semantic:page_selected:target=pattern, semantic:page_selected:target_index=1, semantic:page_selected:target_mask=2
 # Expect: semantic:wrapped_back:target_step=14, semantic:wrapped_back:target_page=1

@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>

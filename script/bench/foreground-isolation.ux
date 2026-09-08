@@ -1,0 +1,18 @@
+# Hardware-only: same musical fixture, forced foreground stalls, IRQs enabled.
+# No host interaction during playback; every stall has room to finish before
+# the next scheduled action. Compare MIDI queue age, wake age and timer gaps.
+0 scenario bench-macro-v1
+0 marker isolation_root
+20 assert_view MACRO
+40 assert_mode macro.performance
+100 transport start
+2000 marker block_100ms
+2030 block_foreground 100
+2500 assert_mode macro.performance
+4000 marker block_250ms
+4030 block_foreground 250
+4500 assert_mode macro.performance
+6000 marker block_1000ms
+6030 block_foreground 1000
+7500 assert_mode macro.performance
+9000 transport stop

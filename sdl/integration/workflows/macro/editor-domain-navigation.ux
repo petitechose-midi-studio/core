@@ -1,4 +1,5 @@
 # Edit an existing Macro: inspect all three domains and return without edits.
+# Purpose: inspect an existing Macro's three domains and return without edits.
 # Static fixture keeps the pixels comparable across retained tab transitions.
 # Expect: capture_changed:destination=automation, capture_changed:automation=modulation
 # Expect: capture_equal:automation=automation_return, capture_equal:destination=destination_return

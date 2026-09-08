@@ -176,12 +176,14 @@ def _exact_code_addresses(
     )
 
 
-def product_placement_violations(nm_output: str) -> tuple[str, ...]:
+def product_placement_violations(
+    nm_output: str, *, ram_only_benchmark: bool = False
+) -> tuple[str, ...]:
     symbols = _symbols(nm_output)
     violations: list[str] = []
 
     flash_markers = (
-        "FatFormatter::makeFat32(",
+        *(("FatFormatter::makeFat32(",) if not ram_only_benchmark else ()),
         *PAGE_STRUCTURE_FLASH_MARKERS,
         *TRACK_STRUCTURE_FLASH_MARKERS,
         *MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS,

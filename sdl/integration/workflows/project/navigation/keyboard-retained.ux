@@ -1,4 +1,5 @@
 # Shared keyboard: move, shift, type, cancel, reopen; no save/SD operation.
+# Purpose: move, shift, type, cancel and reopen the shared keyboard without saving.
 # Expect: capture_changed:initial=selected_w, capture_changed:selected_w=shifted
 # Expect: semantic:initial:value_label=save_as_name
 # Equality after reopening is checked by script/ux_assert_capture_equal.py.

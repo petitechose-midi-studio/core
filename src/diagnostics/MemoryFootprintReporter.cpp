@@ -198,6 +198,7 @@ uintptr_t currentStackPointer() {
     return stackPointer;
 }
 
+#if defined(OC_LOG)
 uintptr_t stackHighWaterBoundary(const MemoryHighWater& state) {
     if (state.stackWatermarkLow == 0U ||
         state.stackWatermarkHigh <= state.stackWatermarkLow) {
@@ -214,6 +215,7 @@ uintptr_t stackHighWaterBoundary(const MemoryHighWater& state) {
     }
     return reinterpret_cast<uintptr_t>(cursor);
 }
+#endif
 
 #endif
 
@@ -357,12 +359,17 @@ FLASHMEM void recordDynamicMemorySample(const char* label) {
 }
 
 FLASHMEM void logMemoryFootprint(const char* phase) {
+#if defined(OC_LOG)
     for (uint8_t index = 0; index < static_cast<uint8_t>(MemoryReportSection::COUNT); ++index) {
         logMemoryFootprintSection(phase, static_cast<MemoryReportSection>(index));
     }
+#else
+    (void)phase;
+#endif
 }
 
 FLASHMEM void logMemoryFootprintSection(const char* phase, MemoryReportSection section) {
+#if defined(OC_LOG)
     if (section == MemoryReportSection::LVGL) {
         lv_mem_monitor_t lvgl{};
         lv_mem_monitor(&lvgl);
@@ -497,6 +504,10 @@ FLASHMEM void logMemoryFootprintSection(const char* phase, MemoryReportSection s
             highWaterBoundary > 0U ? 1U : 0U
         );
     }
+#endif
+#else
+    (void)phase;
+    (void)section;
 #endif
 }
 #endif

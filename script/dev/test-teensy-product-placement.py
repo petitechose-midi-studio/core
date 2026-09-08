@@ -133,6 +133,9 @@ def main() -> int:
     assert len(COUPLED_HISTORY_REPLAY_FLASH_MARKERS) == 10
     assert len(set(COUPLED_HISTORY_REPLAY_FLASH_MARKERS)) == 10
     assert product_placement_violations(valid) == ()
+    ram_only = "\n".join(line for line in valid.splitlines() if "FatFormatter" not in line)
+    assert product_placement_violations(ram_only, ram_only_benchmark=True) == ()
+    assert any("FatFormatter" in item for item in product_placement_violations(ram_only))
 
     invalid = valid.replace(
         "1610613000 220 W oc::state::Signal<bool, 4u>::subscribe",
@@ -152,6 +155,10 @@ def main() -> int:
     assert "strict PSRAM allocation/lifecycle must execute from Flash" in violations
     assert any("MacroValueHandler" in item for item in violations)
     assert "LVGL draw buffer must be one 320x240 RGB565 frame in RAM2" in violations
+    # RAM-only changes only the unavailable SD formatter requirement, never
+    # the product's Flash/ITCM/RAM2 safety assertions.
+    assert "LVGL draw buffer must be one 320x240 RGB565 frame in RAM2" in product_placement_violations(
+        invalid, ram_only_benchmark=True)
 
     valid_lines = valid.splitlines()
     for marker in DISPLAY_DIFF_ITCM_MARKERS:
