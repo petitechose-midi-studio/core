@@ -18,7 +18,6 @@ namespace sequencer = core::state::sequencer;
 using PatternBytes = std::array<uint8_t, codec::PATTERN_PAYLOAD_SIZE>;
 using ProjectBytes =
     std::array<uint8_t, codec::PROJECT_SEQUENCER_PAYLOAD_SIZE>;
-using SetBytes = std::array<uint8_t, codec::SET_PAYLOAD_SIZE>;
 
 std::unique_ptr<PatternBytes> encodePattern(
     const sequencer::SequencerPatternState& source
@@ -164,7 +163,7 @@ void testPatternDecoderRejectsAtomically() {
     std::cout << "[PASS] malformed Pattern payload is rejected atomically\n";
 }
 
-void testProjectAndSetHeadersAreStrict() {
+void testProjectHeaderIsStrict() {
     sequencer::SequencerTrackBankSnapshot snapshot{};
     auto projectBytes = std::make_unique<ProjectBytes>();
     assert(projectBytes);
@@ -191,29 +190,7 @@ void testProjectAndSetHeadersAreStrict() {
     assert(projectBank.currentEnabledMask() == 0x0004U);
     assert(projectBank.activeTrackIndex() == 2U);
 
-    sequencer::SequencerTrackBankState setBank{};
-    sequencer::SequencerState setActive{};
-    auto setBytes = std::make_unique<SetBytes>();
-    assert(setBytes);
-    assert(codec::fillSetPayload(
-        setBank,
-        setActive,
-        setBytes->data(),
-        static_cast<uint16_t>(setBytes->size())
-    ));
-    (*setBytes)[0] =
-        static_cast<uint8_t>(sequencer::SequencerTrackBankState::TRACK_COUNT - 1U);
-    setBank.syncSharedTrackState(0x0008U, 3U);
-    assert(!codec::applySetPayload(
-        setBytes->data(),
-        static_cast<uint16_t>(setBytes->size()),
-        setBank,
-        setActive
-    ));
-    assert(setBank.currentEnabledMask() == 0x0008U);
-    assert(setBank.activeTrackIndex() == 3U);
-
-    std::cout << "[PASS] Project/Set headers accept only the current shape\n";
+    std::cout << "[PASS] Project header accept only the current shape\n";
 }
 
 }  // namespace
@@ -222,7 +199,7 @@ int main() {
     testPatternRoundTripIsExact();
     testPatternEncoderRejectsInsteadOfRepairing();
     testPatternDecoderRejectsAtomically();
-    testProjectAndSetHeadersAreStrict();
+    testProjectHeaderIsStrict();
     std::cout << "All SequencerPersistenceCodec tests passed\n";
     return 0;
 }

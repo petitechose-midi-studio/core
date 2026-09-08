@@ -23,14 +23,11 @@ inline constexpr uint16_t PROJECT_SEQUENCER_TRACK_PAYLOAD_SIZE =
     PATTERN_PAYLOAD_SIZE + 4U;
 inline constexpr uint16_t PROJECT_SEQUENCER_PAYLOAD_SIZE =
     9U + static_cast<uint16_t>(PERSISTED_TRACK_COUNT * PROJECT_SEQUENCER_TRACK_PAYLOAD_SIZE);
-inline constexpr uint16_t SET_PAYLOAD_SIZE =
-    10U + static_cast<uint16_t>(PERSISTED_TRACK_COUNT * PATTERN_PAYLOAD_SIZE);
 
 static_assert(PATTERN_PAYLOAD_SIZE == 797, "Unexpected pattern payload size");
 static_assert(PROJECT_SEQUENCER_TRACK_PAYLOAD_SIZE == 801,
               "Unexpected project sequencer track payload size");
 static_assert(PROJECT_SEQUENCER_PAYLOAD_SIZE == 12825,
               "Unexpected project sequencer payload size");
-static_assert(SET_PAYLOAD_SIZE == 12762, "Unexpected set payload size");
 
 }  // namespace core::persistence::sequencer_codec

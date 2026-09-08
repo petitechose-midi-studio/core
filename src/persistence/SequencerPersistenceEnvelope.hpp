@@ -63,16 +63,11 @@ inline constexpr uint32_t MAX_RESIDENT_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE =
 // scratch allocation or a second serialization format.
 inline constexpr uint32_t MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE =
     core::persistence::PROJECT_FILE_MAX_SIZE;
-inline constexpr uint32_t MAX_SET_ENVELOPE_PAYLOAD_SIZE =
-    ENVELOPE_HEADER_SIZE + ENVELOPE_SECTION_HEADER_SIZE + SET_PAYLOAD_SIZE +
-    PERSISTED_TRACK_COUNT *
-        (MAX_TRACK_CONTENT_ENVELOPE_SIZE + MAX_CLIP_REGION_ENVELOPE_SIZE);
 inline constexpr uint32_t MAX_ENVELOPE_PAYLOAD_SIZE =
     MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE;
 
 static_assert(MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE == 16432U);
 static_assert(MAX_CLIP_DOCUMENT_RECORD_SIZE <= UINT16_MAX);
-static_assert(MAX_SET_ENVELOPE_PAYLOAD_SIZE == 426240U);
 static_assert(MAX_RESIDENT_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 426303U);
 static_assert(MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 524288U);
 
@@ -133,17 +128,5 @@ bool applyProjectSequencerEnvelope(const uint8_t* data,
                                    state::sequencer::SequencerTrackBankState& trackBank,
                                    state::sequencer::SequencerState& active,
                                    state::sequencer::SequencerClipGridState& clips);
-
-EnvelopeEncodeResult fillSetEnvelope(
-    const state::sequencer::SequencerTrackBankState& trackBank,
-    const state::sequencer::SequencerState& active,
-    uint8_t* out,
-    uint32_t capacity
-);
-
-bool applySetEnvelope(const uint8_t* data,
-                      uint32_t size,
-                      state::sequencer::SequencerTrackBankState& trackBank,
-                      state::sequencer::SequencerState& active);
 
 }  // namespace core::persistence::sequencer_codec

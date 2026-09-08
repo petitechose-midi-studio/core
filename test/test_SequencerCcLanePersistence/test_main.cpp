@@ -249,7 +249,7 @@ void assertTrackRegions(
     }
 }
 
-void testProjectAndSetRoundTripEveryTrackOwner() {
+void testProjectRoundTripEveryTrackOwner() {
     seq::SequencerState source{};
     seq::SequencerTrackBankState bank{};
     source.reset();
@@ -353,34 +353,7 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
         projectGrid
     ));
 
-    codec::EnvelopeBuffer setBytes{};
-    const auto setEncoded = codec::fillSetEnvelope(
-        bank,
-        source,
-        setBytes.bytes.data(),
-        static_cast<uint32_t>(setBytes.bytes.size())
-    );
-    assert(setEncoded.ok);
-    seq::SequencerState setLoaded{};
-    seq::SequencerTrackBankState setBank{};
-    setLoaded.reset();
-    setBank.reset();
-    assert(codec::applySetEnvelope(
-        setBytes.bytes.data(),
-        setEncoded.size,
-        setBank,
-        setLoaded
-    ));
-    assertTwoLanes(setLoaded.pattern);
-    assert(!setBank.track(setBank.activeTrackIndex()).ccLanes);
-    assert(!setBank.track(setBank.activeTrackIndex()).graph);
-    assert(seq::sequencerCcLaneView(setBank.track(1U))->lanes[3].values[64] == 42U);
-    assert(setBank.isDrumTrack(2U));
-    assert(setBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
-    assert(setBank.drumTrack(2U).pattern.lanes[1U].velocity[3U] == 109U);
-    assertTrackRegions(setBank, setLoaded);
-
-    std::cout << "[PASS] Project and Set retain every Track-local lane owner\n";
+    std::cout << "[PASS] Project retains every Track-local lane owner\n";
 }
 
 void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
@@ -421,23 +394,6 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
     ));
     assert(loadedBank.drumTrackMask() == 0U);
 
-    codec::EnvelopeBuffer setBytes{};
-    const auto setEncoded = codec::fillSetEnvelope(
-        bank,
-        source,
-        setBytes.bytes.data(),
-        static_cast<uint32_t>(setBytes.bytes.size())
-    );
-    assert(setEncoded.ok);
-    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
-    assert(codec::applySetEnvelope(
-        setBytes.bytes.data(),
-        setEncoded.size,
-        loadedBank,
-        loaded
-    ));
-    assert(loadedBank.drumTrackMask() == 0U);
-
     std::cout << "[PASS] Drum state is replaced by a Drum-free envelope\n";
 }
 
@@ -446,7 +402,7 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
 int main() {
     testCurrentRecordRoundTripAndStrictVersioning();
     testPatternEnvelopeRoundTripAndStrictVersioning();
-    testProjectAndSetRoundTripEveryTrackOwner();
+    testProjectRoundTripEveryTrackOwner();
     testEnvelopeWithoutDrumsClearsExistingDrumBank();
     std::cout << "All SequencerCcLanePersistence tests passed\n";
     return 0;

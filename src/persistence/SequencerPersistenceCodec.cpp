@@ -516,39 +516,6 @@ FLASHMEM bool validateProjectSequencerPayload(
            reader.offset() == PROJECT_SEQUENCER_PAYLOAD_SIZE;
 }
 
-FLASHMEM bool validateSetPayload(
-    const uint8_t* data,
-    uint16_t size
-) {
-    if (data == nullptr || size != SET_PAYLOAD_SIZE) return false;
-
-    binary::Reader reader(data, size);
-    uint8_t trackCount = 0U;
-    uint8_t activeTrack = 0U;
-    uint16_t enabledMask = 0U;
-    uint16_t reservedProjectTrackState = 0U;
-    oc::note::sequencer::StepSequencerScaleSettings projectScale{};
-    uint8_t reserved = 0U;
-    if (!reader.readU8(trackCount) ||
-        !reader.readU8(activeTrack) ||
-        !reader.readU16(enabledMask) ||
-        !reader.readU16(reservedProjectTrackState) ||
-        !readScaleSettings(reader, projectScale) ||
-        !reader.readU8(reserved) ||
-        trackCount != sequencer::SequencerTrackBankState::TRACK_COUNT ||
-        reservedProjectTrackState != 0U ||
-        reserved != 0U ||
-        !trackSelectionCanonical(enabledMask, activeTrack)) {
-        return false;
-    }
-    for (uint8_t track = 0U;
-         track < sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        if (!validatePattern(reader)) return false;
-    }
-    return reader.ok() && reader.offset() == SET_PAYLOAD_SIZE;
-}
-
 }  // namespace
 
 FLASHMEM bool fillPatternPayload(const sequencer::SequencerPatternState& source,
@@ -672,93 +639,6 @@ FLASHMEM bool applyProjectSequencerPayload(const uint8_t* data,
     active.activeStepProperty.set(
         static_cast<sequencer::StepProperty>(activeStepProperty)
     );
-    return true;
-}
-
-FLASHMEM bool fillSetPayload(const sequencer::SequencerTrackBankState& trackBank,
-                             const sequencer::SequencerState& active,
-                             uint8_t* out,
-                             uint16_t capacity) {
-    if (capacity != SET_PAYLOAD_SIZE) return false;
-
-    const uint8_t activeTrack = trackBank.activeTrackIndex();
-    const uint16_t enabledMask = trackBank.currentEnabledMask();
-    const auto projectScale = trackBank.projectScaleSettings();
-    if (!trackSelectionCanonical(enabledMask, activeTrack) ||
-        !scaleSettingsCanonical(projectScale)) {
-        return false;
-    }
-    for (uint8_t track = 0U;
-         track < sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        const auto& source = sequencer::canonicalTrackPattern(trackBank, active, track);
-        if (!patternCanonical(patternEncodeView(source))) return false;
-    }
-
-    binary::Writer writer(out, capacity);
-    if (!writer.writeU8(sequencer::SequencerTrackBankState::TRACK_COUNT) ||
-        !writer.writeU8(activeTrack) ||
-        !writer.writeU16(enabledMask) ||
-        // Set assets carry Sequencer topology/content, never Project Track mix.
-        !writer.writeU16(0U) ||
-        !writer.writeU8(projectScale.root) ||
-        !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
-        !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
-        !writer.writeU8(0)) {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = sequencer::canonicalTrackPattern(trackBank, active, i);
-        if (!writePattern(writer, patternEncodeView(source))) return false;
-    }
-
-    return writer.ok() && writer.offset() == SET_PAYLOAD_SIZE;
-}
-
-FLASHMEM bool applySetPayload(const uint8_t* data,
-                              uint16_t size,
-                              sequencer::SequencerTrackBankState& trackBank,
-                              sequencer::SequencerState& active) {
-    if (!validateSetPayload(data, size)) return false;
-
-    binary::Reader reader(data, size);
-    uint8_t trackCountRaw = 0;
-    uint8_t activeTrackRaw = 0;
-    uint16_t enabledMask = 0;
-    uint16_t reservedProjectTrackState = 0;
-    uint8_t projectScaleRoot = 0;
-    uint8_t projectScaleType = 0;
-    uint8_t projectScaleConstraintMode = 0;
-    uint8_t reserved = 0;
-    if (!reader.readU8(trackCountRaw) ||
-        !reader.readU8(activeTrackRaw) ||
-        !reader.readU16(enabledMask) ||
-        !reader.readU16(reservedProjectTrackState) ||
-        !reader.readU8(projectScaleRoot) ||
-        !reader.readU8(projectScaleType) ||
-        !reader.readU8(projectScaleConstraintMode) ||
-        !reader.readU8(reserved)) {
-        return false;
-    }
-
-    trackBank.reset();
-    trackBank.syncSharedTrackState(enabledMask, activeTrackRaw);
-    trackBank.setProjectScaleSettings(payloadScaleSettings(
-        projectScaleRoot,
-        projectScaleType,
-        projectScaleConstraintMode
-    ));
-
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if (!readPattern(reader, sequencer::mutableCanonicalTrackPattern(
-                trackBank, active, i))) return false;
-    }
-    if (!reader.ok() || reader.offset() != SET_PAYLOAD_SIZE) return false;
-
-    active.focusedStep.set(0);
-    active.page.set(0);
-    active.activeStepProperty.set(sequencer::StepProperty::NOTE);
     return true;
 }
 

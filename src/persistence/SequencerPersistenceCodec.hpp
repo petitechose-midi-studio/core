@@ -35,13 +35,4 @@ bool applyProjectSequencerPayload(const uint8_t* data,
                                   state::sequencer::SequencerTrackBankState& trackBank,
                                   state::sequencer::SequencerState& active);
 
-bool fillSetPayload(const state::sequencer::SequencerTrackBankState& trackBank,
-                    const state::sequencer::SequencerState& active,
-                    uint8_t* out,
-                    uint16_t capacity);
-bool applySetPayload(const uint8_t* data,
-                     uint16_t size,
-                     state::sequencer::SequencerTrackBankState& trackBank,
-                     state::sequencer::SequencerState& active);
-
 }  // namespace core::persistence::sequencer_codec
