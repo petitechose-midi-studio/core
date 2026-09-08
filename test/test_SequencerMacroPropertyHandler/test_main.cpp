@@ -443,10 +443,8 @@ void test_child_macro_and_opt_callers_use_full_payload() {
         assert(!core::state::sequencer::sameMusicalHistorySnapshot(before, after));
         assert(h.state.undoSequencerHistory());
         tx::assertMusicalSnapshot(h.state, before);
-        assertChildEditorAndBankPayloadMatch(h);
         assert(h.state.redoSequencerHistory());
         tx::assertMusicalSnapshot(h.state, after);
-        assertChildEditorAndBankPayloadMatch(h);
     }
 
     std::cout

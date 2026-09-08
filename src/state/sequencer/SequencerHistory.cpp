@@ -1132,11 +1132,6 @@ FLASHMEM bool applyFlatHistorySnapshotToTrack(SequencerTrackBankState& bank, Seq
     active.bumpClipRevision();
     synchronizeHistoryPatternRevisionSignals(
         active.pattern, snapshot.flat, snapshot.ccLaneRevision);
-    auto& bankTarget = bank.track(activeTrack);
-    applySnapshot(bank.clip(activeTrack), snapshot.clip);
-    applyFlatSnapshotPreservingColdPayload(bankTarget, snapshot.flat);
-    synchronizeHistoryPatternRevisionSignals(
-        bankTarget, snapshot.flat, snapshot.ccLaneRevision);
     restoreFocus(active, snapshot.focusedStep);
     return true;
 }
@@ -1907,53 +1902,26 @@ FLASHMEM bool applyHistorySnapshotToTrack(SequencerTrackBankState& bank, Sequenc
                                           uint8_t trackIndex,
                                           const SequencerHistoryPatternSnapshot& snapshot) {
     const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    const uint8_t activeTrack = bank.activeTrackIndex();
-
-    if (targetTrack != activeTrack) {
-        GraphPtr bankGraph;
-        SequencerHistoryCcLanePtr bankCcLanes;
-        if (!cloneGraph(snapshot.graph, bankGraph)) { return false; }
-        if (snapshot.ccLanesCaptured &&
-            !cloneSequencerCcLaneBank(bankCcLanes, snapshot.ccLanes.get())) {
-            return false;
-        }
-
-        applySnapshot(bank.clip(targetTrack), snapshot.clip);
-        applySnapshot(bank.track(targetTrack), snapshot.flat);
-        installGraph(bank.track(targetTrack), std::move(bankGraph), snapshot.flat.graphRevision);
-        if (snapshot.ccLanesCaptured) {
-            installSequencerCcLaneBank(bank.track(targetTrack), std::move(bankCcLanes));
-        }
-        return true;
+    // The active bank slot is scratch storage, not a second musical owner.
+    // Reuse the editor restore so admission allocates each cold payload once.
+    if (targetTrack == bank.activeTrackIndex()) {
+        return applyHistorySnapshotToEditor(active, snapshot);
     }
 
-    GraphPtr editorGraph;
     GraphPtr bankGraph;
-    SequencerHistoryCcLanePtr editorCcLanes;
     SequencerHistoryCcLanePtr bankCcLanes;
-    if (!cloneGraph(snapshot.graph, editorGraph) || !cloneGraph(snapshot.graph, bankGraph)) {
-        return false;
-    }
+    if (!cloneGraph(snapshot.graph, bankGraph)) { return false; }
     if (snapshot.ccLanesCaptured &&
-        (!cloneSequencerCcLaneBank(editorCcLanes, snapshot.ccLanes.get()) ||
-         !cloneSequencerCcLaneBank(bankCcLanes, snapshot.ccLanes.get()))) {
+        !cloneSequencerCcLaneBank(bankCcLanes, snapshot.ccLanes.get())) {
         return false;
     }
 
-    applySnapshot(active.clip, snapshot.clip);
-    applySnapshotToEditor(active, snapshot.flat);
-    active.bumpClipRevision();
-    installGraph(active.pattern, std::move(editorGraph), snapshot.flat.graphRevision);
+    applySnapshot(bank.clip(targetTrack), snapshot.clip);
+    applySnapshot(bank.track(targetTrack), snapshot.flat);
+    installGraph(bank.track(targetTrack), std::move(bankGraph), snapshot.flat.graphRevision);
     if (snapshot.ccLanesCaptured) {
-        installSequencerCcLaneBank(active.pattern, std::move(editorCcLanes));
+        installSequencerCcLaneBank(bank.track(targetTrack), std::move(bankCcLanes));
     }
-    applySnapshot(bank.clip(activeTrack), snapshot.clip);
-    applySnapshot(bank.track(activeTrack), snapshot.flat);
-    installGraph(bank.track(activeTrack), std::move(bankGraph), snapshot.flat.graphRevision);
-    if (snapshot.ccLanesCaptured) {
-        installSequencerCcLaneBank(bank.track(activeTrack), std::move(bankCcLanes));
-    }
-    restoreFocus(active, snapshot.focusedStep);
     return true;
 }
 

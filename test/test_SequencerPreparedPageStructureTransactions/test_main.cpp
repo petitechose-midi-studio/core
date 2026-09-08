@@ -1610,7 +1610,7 @@ void test_core_near_budget_page_reservation_is_pre_live_and_prunes_exactly() {
     }
     assert(!h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.note[0U] == firstCommittedNote);
-    assert(h.state.sequencerTracks.track(0U).note[0U] == firstCommittedNote);
+    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[0U] == firstCommittedNote);
 
     std::cout <<
         "[PASS] near-budget Page reservation is pre-live and byte pruning is exact\n";

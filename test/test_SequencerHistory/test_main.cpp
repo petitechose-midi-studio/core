@@ -345,14 +345,14 @@ void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
     assert(history.undo(bank, state));
     assert(state.pattern.note[0] == 60);
     assert(state.focusedStep.get() == 0);
-    assert(bank.track(bank.activeTrackIndex()).note[0] == 60);
+    assert(core::state::sequencer::canonicalTrackPattern(bank, state, bank.activeTrackIndex()).note[0] == 60);
 
     assertActiveDraftBlocksDirectHistory(history, bank, state, true);
     assert(history.redo(bank, state));
     assert(state.pattern.note[0] == 72);
     assert(state.focusedStep.get() == 9);
     assert(state.page.get() == 1);
-    assert(bank.track(bank.activeTrackIndex()).note[0] == 72);
+    assert(core::state::sequencer::canonicalTrackPattern(bank, state, bank.activeTrackIndex()).note[0] == 72);
 
     std::cout << "[PASS] test_pattern_history_undo_redo_restores_flat_data_and_focus\n";
 }
@@ -445,7 +445,7 @@ void test_pattern_history_restores_graph_payload() {
 
     assert(history.undo(bank, state));
     assert(core::state::sequencer::graphView(state.pattern) == nullptr);
-    assert(!hasMicroSequence(bank.track(bank.activeTrackIndex()), 0));
+    assert(!hasMicroSequence(core::state::sequencer::canonicalTrackPattern(bank, state, bank.activeTrackIndex()), 0));
 
     assert(history.redo(bank, state));
     const auto* graph = core::state::sequencer::graphView(state.pattern);
@@ -459,7 +459,7 @@ void test_pattern_history_restores_graph_payload() {
         graph->stepNodes[rootNode].chordSpec,
         chord
     ));
-    assert(hasMicroSequence(bank.track(bank.activeTrackIndex()), 0));
+    assert(hasMicroSequence(core::state::sequencer::canonicalTrackPattern(bank, state, bank.activeTrackIndex()), 0));
 
     std::cout << "[PASS] test_pattern_history_restores_graph_payload\n";
 }
@@ -821,7 +821,7 @@ void test_pattern_history_undoes_previous_track_without_switching_active_track()
     assert(history.undo(bank, active));
     assert(bank.activeTrackIndex() == 1);
     assert(active.pattern.note[0] == 72);
-    assert(bank.track(1).note[0] == 72);
+    assert(core::state::sequencer::canonicalTrackPattern(bank, active, 1U).note[0] == 72);
     assert(bank.track(0).note[0] == 61);
 
     const auto result = history.undoWithResult(bank, active);
@@ -833,7 +833,7 @@ void test_pattern_history_undoes_previous_track_without_switching_active_track()
     assert(result.descriptor.afterValue == 61);
     assert(bank.activeTrackIndex() == 1);
     assert(active.pattern.note[0] == 72);
-    assert(bank.track(1).note[0] == 72);
+    assert(core::state::sequencer::canonicalTrackPattern(bank, active, 1U).note[0] == 72);
     assert(bank.track(0).note[0] == 60);
 
     std::cout << "[PASS] test_pattern_history_undoes_previous_track_without_switching_active_track\n";

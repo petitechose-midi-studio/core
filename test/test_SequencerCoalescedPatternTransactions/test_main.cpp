@@ -347,7 +347,7 @@ void test_flat_begin_seal_commit_is_exact_and_undoable() {
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
-    assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
+    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == kInitialNote);
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencer.pattern.note[kStep] == 72U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 72U);
@@ -454,7 +454,7 @@ void test_core_state_flush_commits_pending_step_without_allocation_and_global_re
 
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
-    assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
+    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == kInitialNote);
     assert(h.state.redoProjectHistory());
     assert(h.state.sequencer.pattern.note[kStep] == 71U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 71U);
@@ -1022,7 +1022,7 @@ void test_prospective_graph_commits_without_post_begin_allocation() {
 
     assert(h.state.undoSequencerHistory());
     assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
-    assert(seq::graphView(h.state.sequencerTracks.track(0U)) == nullptr);
+    assert(seq::graphView(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U)) == nullptr);
     assert(h.state.redoSequencerHistory());
     assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
     assert(seq::graphView(h.state.sequencerTracks.track(0U)) != nullptr);

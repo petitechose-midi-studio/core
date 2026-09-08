@@ -421,7 +421,7 @@ FLASHMEM void CoreState::publishSequencerHistoryTraversal_(
     bool hasActivation,
     uint8_t activeTrackBefore
 ) {
-    // History application has already restored editor and bank atomically.
+    // History application has already restored the canonical owner atomically.
     // Consume its deferred watched-signal notifications at the same prepared
     // boundary so traversal publishes dirty/save exactly once without recloning.
     publishPreparedSequencerMutation();

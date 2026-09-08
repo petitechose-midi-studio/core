@@ -1913,7 +1913,7 @@ void test_prospective_graph_commit_undo_and_redo_are_exact() {
 
     assert(harness.state.undoSequencerHistory());
     assert(harness.state.sequencer.pattern.graph == nullptr);
-    assert(harness.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(seq::canonicalTrackPattern(harness.state.sequencerTracks, harness.state.sequencer, 0U).graph == nullptr);
     assert(harness.state.sequencer.focusedStep.get() == 3U);
     assert(harness.state.redoSequencerHistory());
     graph = seq::graphView(harness.state.sequencer.pattern);

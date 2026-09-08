@@ -882,9 +882,9 @@ void runPatternCommit(
     h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeUndo = tx::captureStateInvariant(h.state);
     assert(h.state.undoSequencerHistory());
-    assertEditorAndActiveBankMusicalSnapshot(h, expectedBefore);
+    tx::assertMusicalSnapshot(h.state, expectedBefore);
     assert(!h.state.sequencer.pattern.isEnabled(1U));
-    assert(!h.state.sequencerTracks.track(0U).isEnabled(1U));
+    assert(!seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).isEnabled(1U));
     assert(
         h.state.project.metadata.modifiedCounter ==
         beforeUndo.modifiedCounter + 1U
@@ -895,7 +895,7 @@ void runPatternCommit(
     h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeRedo = tx::captureStateInvariant(h.state);
     assert(h.state.redoSequencerHistory());
-    assertEditorAndActiveBankMusicalSnapshot(h, expectedAfter);
+    tx::assertMusicalSnapshot(h.state, expectedAfter);
     assert(h.state.sequencer.pattern.isEnabled(1U));
     assert(h.state.sequencerTracks.track(0U).isEnabled(1U));
     assert(
@@ -935,7 +935,7 @@ enum class PatternTraversalDirection : uint8_t {
     Redo,
 };
 
-constexpr std::size_t ACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS = 4U;
+constexpr std::size_t ACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS = 2U;
 constexpr std::size_t INACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS = 2U;
 
 struct PatternTraversalInteractionInvariant {
@@ -1168,8 +1168,10 @@ void assertSuccessfulPatternTraversalOwners(
     if (targetActive) {
         assert(after.editorGraph != before.editorGraph);
         assert(after.editorCc != before.editorCc);
-        assert(after.graphs[0U] != before.graphs[0U]);
-        assert(after.cc[0U] != before.cc[0U]);
+        assert(after.graphs[0U] == before.graphs[0U]);
+        assert(after.cc[0U] == before.cc[0U]);
+        assert(after.graphRevisions[0U] == before.graphRevisions[0U]);
+        assert(after.ccRevisions[0U] == before.ccRevisions[0U]);
         assert(after.editorGraph != after.graphs[0U]);
         assert(after.editorCc != after.cc[0U]);
     } else {
