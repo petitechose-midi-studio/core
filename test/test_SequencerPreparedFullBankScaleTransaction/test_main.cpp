@@ -84,9 +84,9 @@ constexpr uint8_t kActiveTrack = 0U;
 constexpr uint8_t kStep = 0U;
 constexpr std::size_t kMaximumAllocationAttempts = 99U;
 constexpr std::size_t kArmAllocationHeaderBytes = 16U;
-constexpr std::size_t kArmFullBankChangeBytes = 26960U;
-constexpr std::size_t kArmTrackBankRootBytes = 31632U;
-constexpr std::size_t kArmSequencerRootBytes = 15672U;
+constexpr std::size_t kArmFullBankChangeBytes = 27152U;
+constexpr std::size_t kArmTrackBankRootBytes = 209976U;
+constexpr std::size_t kArmSequencerRootBytes = 17632U;
 constexpr std::size_t kArmGraphBytes = 14792U;
 constexpr std::size_t kArmCcBytes = 840U;
 
@@ -94,7 +94,7 @@ static_assert(
     kArmFullBankChangeBytes + kArmTrackBankRootBytes + kArmSequencerRootBytes +
             3U * 16U * (kArmGraphBytes + kArmCcBytes) +
             kMaximumAllocationAttempts * kArmAllocationHeaderBytes ==
-        826184U,
+        1006680U,
     "LOCK-P: prepared FullBank scale caller peak changed"
 );
 
