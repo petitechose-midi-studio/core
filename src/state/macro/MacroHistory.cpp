@@ -404,14 +404,10 @@ FLASHMEM bool MacroHistoryService::compactPages(
     if (!change) return false;
     auto& payload = *change->pageStructure;
     if (!core::state::modulation::compactProjectControlPagesInDomain(
-            pages.control.authored, track, retainedPageMask
-        ) || !pages.tracks[track].compactPages(retainedPageMask)) {
-        pages.control.authored = *payload.control.candidate();
-        pages.tracks[track] = payload.beforeTrack;
+            *payload.control.candidate(), track, retainedPageMask
+        ) || !payload.afterTrack.compactPages(retainedPageMask)) {
         return false;
     }
-    pages.control.markAuthoredMutation();
-    syncPageStructureTrack(pages, track);
     return commitPreparedPageStructure(pages, std::move(change));
 }
 
@@ -442,6 +438,7 @@ MacroHistoryService::preparePageStructure(
             core::state::project::ProjectHistoryDomain::Macro,
             macroChangeRetainedUsage(*change))) return {};
     payload.beforeTrack = pages.tracks[track];
+    payload.afterTrack = payload.beforeTrack;
     return change;
 }
 
@@ -455,12 +452,21 @@ FLASHMEM bool MacroHistoryService::commitPreparedPageStructure(
         return false;
     }
     auto& payload = *change->pageStructure;
-    if (payload.track >= TRACK_COUNT) return false;
-    payload.afterTrack = pages.tracks[payload.track];
-    if (!payload.control.captureAfter(pages.control.authored)) return false;
+    if (payload.track >= TRACK_COUNT ||
+        !sameMacroTrackData(pages.tracks[payload.track], payload.beforeTrack)) return false;
+    const auto& candidate = *payload.control.candidate();
+    if (!core::state::modulation::validProjectModulationDomain(
+            candidate.modulation, candidate.curves, &candidate.automation) ||
+        !payload.control.sealCandidate(pages.control.authored)) return false;
     if (sameMacroTrackData(payload.beforeTrack, payload.afterTrack) &&
         !payload.control.changed()) return false;
     change->address.page = payload.afterTrack.activePage;
+    if (payload.control.changed()) {
+        payload.control.apply(pages.control.authored);
+        pages.control.markAuthoredMutation();
+    }
+    pages.tracks[payload.track] = payload.afterTrack;
+    syncPageStructureTrack(pages, payload.track);
     endCoalescing();
     recordNewEntry_(std::move(change));
     return true;

@@ -114,7 +114,7 @@ void test_track_clear_removes_note_route_without_deleting_root_source() {
         trigger
     ).changed());
 
-    assert(ops::clearTracks(control, static_cast<uint16_t>(1U << 2U)));
+    assert(ops::clearTracksInDomain(control.authored, static_cast<uint16_t>(1U << 2U)));
     assert(control.authored.modulation.sourceCount == 1U);
     assert(control.authored.modulation.sources[0].id == created.sourceId);
     assert(control.authored.modulation.triggerBindingCount == 0U);
@@ -237,8 +237,8 @@ void test_empty_page_clipboard_replaces_existing_control_with_empty_scope() {
 
     core::state::MacroAutomationClipboard clipboard;
     clipboard.trackScope = false;
-    assert(ops::replacePageFromClipboard(
-        control,
+    assert(ops::replacePageFromClipboardInDomain(
+        control.authored,
         destAddress.track,
         destAddress.page,
         &clipboard
@@ -270,8 +270,8 @@ void test_empty_structure_copy_does_not_allocate_control_clipboard() {
         .macro = 4,
     };
     assignLane(destControl, destAddress, 2);
-    assert(ops::replacePageFromClipboard(
-        destControl,
+    assert(ops::replacePageFromClipboardInDomain(
+        destControl.authored,
         destAddress.track,
         destAddress.page,
         clipboard.macroAutomationSet.get()
@@ -301,8 +301,8 @@ void test_track_structure_copy_captures_all_page_automation() {
            16384U);
 
     modulation::ProjectControlState destinationControl;
-    assert(ops::replaceTrackFromClipboard(
-        destinationControl,
+    assert(ops::replaceTrackFromClipboardInDomain(
+        destinationControl.authored,
         5U,
         clipboard.macroAutomationSet.get()
     ));
@@ -390,8 +390,8 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
     entry.control.automation.pointCount = 1U;
     entry.control.automation.enabled = true;
 
-    assert(!ops::replacePageFromClipboard(
-        control,
+    assert(!ops::replacePageFromClipboardInDomain(
+        control.authored,
         destAddress.track,
         destAddress.page,
         &clipboard
@@ -399,8 +399,8 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
     assert(std::memcmp(&control, &before, sizeof(control)) == 0);
 
     clipboard.count = static_cast<uint8_t>(clipboard.entries.size() + 1U);
-    assert(!ops::replacePageFromClipboard(
-        control,
+    assert(!ops::replacePageFromClipboardInDomain(
+        control.authored,
         destAddress.track,
         destAddress.page,
         &clipboard
@@ -411,8 +411,8 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
     clipboard.pointPool.used = static_cast<uint16_t>(
         clipboard.pointPool.points.size() + 1U
     );
-    assert(!ops::replacePageFromClipboard(
-        control,
+    assert(!ops::replacePageFromClipboardInDomain(
+        control.authored,
         destAddress.track,
         destAddress.page,
         &clipboard

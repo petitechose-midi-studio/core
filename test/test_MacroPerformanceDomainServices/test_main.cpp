@@ -12,6 +12,7 @@
 #include "../../src/handler/macro/MacroStructureDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "state/macro/MacroSlotClipboardPlan.hpp"
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
@@ -1927,7 +1928,82 @@ void test_manual_takeover_is_one_global_value_and_authority_transaction() {
 
 }  // namespace
 
+// Three history allocations; Page selections additionally reserve their source remap table.
+void test_detached_page_operations_allocation_failures_and_replay() {
+    for (unsigned operation = 0U; operation < 6U; ++operation) {
+        const size_t allocations = operation == 3U ? 4U : 3U;
+        for (size_t ordinal = 1U; ordinal <= allocations + 1U; ++ordinal) {
+            CoreStorages storage;
+            core::state::CoreState state(storage.settings);
+            const auto structure = core::handler::MacroStructureDomainServices::fromCoreState(state);
+            auto& pages = state.pages;
+            pages.tracks[0].enabledPageMask = 3U;
+            pages.tracks[0].pages[0].values[0] = 0.37f;
+            pages.tracks[0].pages[0].setMacroActive(0U, true);
+            pages.syncActiveTrackCache();
+            configureAutomation(pages.control, {.track = 0, .page = 0, .macro = 0});
+            configureModulation(pages.control, {.track = 0, .page = 0, .macro = 0}, 0.43f);
+            configureAutomation(pages.control, {.track = 0, .page = 1, .macro = 0});
+            core::state::StructureClipboardState clipboard;
+            if (operation == 3U) assert(clipboard.storeMacroPageSelection(pages, 0U, 1U));
+            else if (operation == 4U) {
+                oc::note::sequencer::StepBitMask128 selected{};
+                selected.setBit(0U, true);
+                assert(clipboard.storeMacroSlotSelection(pages, 0U, selected));
+            } else assert(clipboard.storeMacroPage(pages.pageData(0U, 0U), pages.control, 0U, 0U));
+            (void)state.macroUi.manualOverrides.activate({.track = 0, .page = 0, .macro = 0}, 0.81f);
+            const auto before = pages.control.authored;
+            const auto beforeTrack = pages.tracks[0];
+            const auto beforeManual = state.macroUi.manualOverrides;
+            const auto revision = pages.control.authoredRevision;
+            const auto configRevision = state.configRevision.get();
+            const auto run = [&]() {
+                switch (operation) {
+                case 0U: return structure.resetPageContent(0U);
+                case 1U: return structure.createNextPage();
+                case 2U: return structure.pastePage(1U, clipboard.macroPage, clipboard.macroAutomationSet.get());
+                case 3U: return structure.pasteMacroPageSelection(clipboard,
+                    core::state::buildMacroPageSelectionPastePlan(*clipboard.macroPageSelection, 2U, 2U));
+                case 4U: return structure.pasteMacroSlotSelection(clipboard,
+                    core::state::macro::buildMacroSlotClipboardPlan(clipboard, pages, 0U, 16U));
+                default: return structure.deletePage(0U);
+                }
+            };
+            bool applied = false;
+            {
+                core::app::testing::ScopedExtmemAllocationFailure fail(ordinal);
+                applied = run();
+                assert(core::app::testing::extmemAllocationAttempt == std::min(ordinal, allocations));
+            }
+            assert(applied == (ordinal == allocations + 1U));
+            if (!applied) {
+                assert(std::memcmp(&pages.control.authored, &before, sizeof(before)) == 0);
+                assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
+                assert(std::memcmp(&state.macroUi.manualOverrides, &beforeManual, sizeof(beforeManual)) == 0);
+                assert(pages.control.authoredRevision == revision);
+                assert(state.configRevision.get() == configRevision);
+                assert(state.macroHistory.undoCount() == 0U);
+            } else {
+                const auto after = pages.control.authored;
+                const auto afterTrack = pages.tracks[0];
+                core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+                assert(state.macroHistory.undoCount() == 1U);
+                assert(state.macroHistory.undo(pages));
+                assert(std::memcmp(&pages.control.authored, &before, sizeof(before)) == 0);
+                assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
+                assert(state.macroHistory.redo(pages));
+                assert(std::memcmp(&pages.control.authored, &after, sizeof(after)) == 0);
+                assert(std::memcmp(&pages.tracks[0], &afterTrack, sizeof(afterTrack)) == 0);
+                assert(core::app::testing::extmemAllocationAttempt == 0U);
+            }
+            drainNotifications();
+        }
+    }
+    std::cout << "[PASS] Six detached Page paths: every OOM, final success, exact allocation-free replay\n";
+}
+
 int main() {
+    test_detached_page_operations_allocation_failures_and_replay();
     oc::time::setProvider(mockTimeMs);
     test_runtime_values_are_forwarded_and_clamped();
     test_manual_value_updates_base_and_stages_project_mutation();

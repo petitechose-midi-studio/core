@@ -88,6 +88,13 @@ RETIRED_RAW_API_IDENTIFIERS = (
     "normalizeEqualMacroAfterControl",
     "pageStructureControlHash",
     "xorPageStructureControl",
+    "clearAutomationForPage",
+    "replacePageFromClipboard",
+    "replaceTrackFromClipboard",
+    "mutateProjectControl",
+    "clearMacroSlot",
+    "clearTracks",
+    "clearPages",
 )
 RETIRED_RAW_API_ROOTS = ("src", "test")
 RETIRED_RAW_API_TARGETED_IDENTIFIERS = (

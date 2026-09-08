@@ -125,7 +125,7 @@ public:
         uint16_t retainedPageMask
     );
 
-    /** Reserves one reversible domain buffer before any Page edit. */
+    /** Edit pageStructure.afterTrack and control.candidate() off-line; commit publishes both. */
     [[nodiscard]] MacroHistoryChangePtr preparePageStructure(
         const MacroPagesState& pages,
         uint8_t track

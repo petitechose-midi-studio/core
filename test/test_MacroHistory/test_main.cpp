@@ -3565,7 +3565,7 @@ void test_page_history_preparation_and_compaction_fail_atomically() {
     assert(history.undoCount() == 0U);
     auto prepared = history.preparePageStructure(pages, 0U);
     assert(prepared);
-    pages.tracks[0].pages[0].values[0] = 0.7f;
+    prepared->pageStructure->afterTrack.pages[0].values[0] = 0.7f;
     {
         core::app::testing::ScopedExtmemAllocationFailure fail(1U);
         assert(history.commitPreparedPageStructure(pages, std::move(prepared)));
@@ -3587,6 +3587,30 @@ void test_page_history_preparation_and_compaction_fail_atomically() {
     assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
     history.setProjectHistoryEventSink(nullptr);
     std::cout << "[PASS] Page history rejects OOM, invalid input and denied admission atomically\n";
+}
+
+void test_detached_page_commit_rejects_stale_and_invalid_candidates() {
+    for (unsigned fault = 0U; fault < 3U; ++fault) {
+        macro::MacroPagesState pages;
+        macro::MacroHistoryService history;
+        auto prepared = history.preparePageStructure(pages, 0U);
+        assert(prepared);
+        prepared->pageStructure->afterTrack.pages[0].values[0] = 0.23f;
+        if (fault == 0U) pages.tracks[0].pages[0].values[1] = 0.71f;
+        else if (fault == 1U) ++pages.control.authored.modulation.nextSourceId;
+        else prepared->pageStructure->control.candidate()->automation.entryCount = 129U;
+        const auto live = pages.control.authored;
+        const auto track = pages.tracks[0];
+        const auto revision = pages.control.authoredRevision;
+        core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+        assert(!history.commitPreparedPageStructure(pages, std::move(prepared)));
+        assert(std::memcmp(&pages.control.authored, &live, sizeof(live)) == 0);
+        assert(std::memcmp(&pages.tracks[0], &track, sizeof(track)) == 0);
+        assert(pages.control.authoredRevision == revision);
+        assert(history.undoCount() == 0U);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    std::cout << "[PASS] Detached Page commit rejects stale live state and malformed candidates\n";
 }
 
 void test_retained_budget_preserves_automation_and_bounds_page_structure() {
@@ -3612,8 +3636,8 @@ void test_retained_budget_preserves_automation_and_bounds_page_structure() {
 
     auto page = history.preparePageStructure(pages, 0U);
     assert(page);
-    pages.tracks[0].pages[0].values[0] = 0.25f;
-    ++pages.control.authored.modulation.nextSourceId;
+    page->pageStructure->afterTrack.pages[0].values[0] = 0.25f;
+    ++page->pageStructure->control.candidate()->modulation.nextSourceId;
     assert(history.commitPreparedPageStructure(
         pages,
         std::move(page)
@@ -3629,8 +3653,8 @@ void test_retained_budget_preserves_automation_and_bounds_page_structure() {
     for (uint8_t entry = 0U; entry < 7U; ++entry) {
         auto full = history.preparePageStructure(pages, 0U);
         assert(full);
-        pages.tracks[0].pages[0].values[0] += 0.01f;
-        ++pages.control.authored.modulation.nextSourceId;
+        full->pageStructure->afterTrack.pages[0].values[0] += 0.01f;
+        ++full->pageStructure->control.candidate()->modulation.nextSourceId;
         assert(history.commitPreparedPageStructure(
             pages,
             std::move(full)
@@ -3644,7 +3668,7 @@ void test_retained_budget_preserves_automation_and_bounds_page_structure() {
     for (uint8_t entry = 0U; entry < 7U; ++entry) {
         auto compact = history.preparePageStructure(pages, 0U);
         assert(compact);
-        pages.tracks[0].pages[0].values[0] += 0.01f;
+        compact->pageStructure->afterTrack.pages[0].values[0] += 0.01f;
         assert(history.commitPreparedPageStructure(
             pages,
             std::move(compact)
@@ -3701,6 +3725,7 @@ void test_track_config_history_is_atomic_and_scoped() {
 }
 
 int main() {
+    test_detached_page_commit_rejects_stale_and_invalid_candidates();
     test_track_config_history_is_atomic_and_scoped();
     test_snapshot_roundtrip_restores_exact_slot();
     test_clear_is_one_undo_redo_action();

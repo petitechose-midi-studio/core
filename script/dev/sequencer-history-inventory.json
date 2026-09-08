@@ -155,7 +155,14 @@
       "compactProjectControlPages",
       "normalizeEqualMacroAfterControl",
       "pageStructureControlHash",
-      "xorPageStructureControl"
+      "xorPageStructureControl",
+      "clearAutomationForPage",
+      "replacePageFromClipboard",
+      "replaceTrackFromClipboard",
+      "mutateProjectControl",
+      "clearMacroSlot",
+      "clearTracks",
+      "clearPages"
     ],
     "targetedIdentifiers": [
       {"path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "beforeControl"},
