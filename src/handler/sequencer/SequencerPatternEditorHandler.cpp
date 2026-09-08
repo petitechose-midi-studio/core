@@ -432,7 +432,6 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
     }
 
     core::state::sequencer::applySnapshotToEditorPreservingGraph(sequencer_, randomize_.preview);
-    core::state::sequencer::applySnapshotPreservingGraph(tracks_.track(owner), randomize_.preview);
     sequencer_.invalidateVariationTelemetry();
     history_.recordPreparedPattern(std::move(change));
 

@@ -180,7 +180,6 @@ struct SequencerDomainState {
         // Fits existing pointer-alignment padding on both supported ABIs.
         GraphCompactionState graphCompaction = GraphCompactionState::Disabled;
         sequencer::SequencerHistoryPatternChangePtr preparedPatternChange;
-        sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
         sequencer::SequencerHistoryPatternChangePtr preparedCcLaneChange;
 
         bool joinsStepProperty(uint8_t nextActiveTrack, uint8_t nextStep,

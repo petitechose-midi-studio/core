@@ -107,8 +107,6 @@ struct SequencerPatternPresetPreviewSession {
     core::state::sequencer::SequencerPatternPresetTarget target{};
     core::state::sequencer::SequencerHistoryPatternChangePtr pattern{};
     core::state::sequencer::SequencerHistoryDrumChangePtr drum{};
-    core::state::sequencer::SequencerPreparedActiveTrackSynchronization
-        rollbackPatternBank{};
     core::state::sequencer::SequencerHistoryGraphPtr rollbackDrumBankGraph{};
     core::state::sequencer::SequencerTrackActivationHistoryPlan activation{};
     SequencerPatternPresetActivation presentationActivation =

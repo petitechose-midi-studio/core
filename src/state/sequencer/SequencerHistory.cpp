@@ -20,36 +20,6 @@
 
 namespace core::state::sequencer {
 
-FLASHMEM SequencerHistoryPatternPayloadStorage::SequencerHistoryPatternPayloadStorage() = default;
-FLASHMEM SequencerHistoryPatternPayloadStorage::~SequencerHistoryPatternPayloadStorage() = default;
-FLASHMEM SequencerHistoryPatternPayloadStorage::SequencerHistoryPatternPayloadStorage(
-    SequencerHistoryPatternPayloadStorage&&) noexcept = default;
-FLASHMEM SequencerHistoryPatternPayloadStorage& SequencerHistoryPatternPayloadStorage::operator=(
-    SequencerHistoryPatternPayloadStorage&&) noexcept = default;
-FLASHMEM void SequencerHistoryPatternPayloadStorage::reset() {
-    graph.reset();
-    ccLanes.reset();
-}
-
-FLASHMEM
-SequencerPreparedActiveTrackSynchronization::SequencerPreparedActiveTrackSynchronization() =
-    default;
-FLASHMEM
-    SequencerPreparedActiveTrackSynchronization::~SequencerPreparedActiveTrackSynchronization() =
-        default;
-FLASHMEM SequencerPreparedActiveTrackSynchronization::SequencerPreparedActiveTrackSynchronization(
-    SequencerPreparedActiveTrackSynchronization&&) noexcept = default;
-FLASHMEM SequencerPreparedActiveTrackSynchronization&
-SequencerPreparedActiveTrackSynchronization::operator=(
-    SequencerPreparedActiveTrackSynchronization&&) noexcept = default;
-FLASHMEM void SequencerPreparedActiveTrackSynchronization::reset() {
-    trackIndex = SequencerTrackBankState::TRACK_COUNT;
-    storage = SequencerHistoryPatternStorage::FullGraph;
-    reserved = false;
-    captured = false;
-    payload.reset();
-}
-
 FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot() = default;
 FLASHMEM SequencerHistoryPatternSnapshot::~SequencerHistoryPatternSnapshot() = default;
 FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot(
@@ -614,23 +584,6 @@ FLASHMEM bool captureCoalescedPatternBefore(const SequencerTrackBankState& bank,
     out.focusedStep = active.focusedStep.get();
     out.ccLanesCaptured = true;
     return true;
-}
-
-FLASHMEM bool capturePreparedSynchronizationPayloadUsingReservedStorage(
-    const SequencerTrackBankState& bank, const SequencerState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization) {
-    if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
-        // The active editor is the canonical cold-payload owner. A restored
-        // FullBank snapshot deliberately leaves the corresponding bank slot
-        // as noncanonical scratch with no Graph/CC owners, so a flat mirror
-        // synchronization must neither compare nor copy those owners. Core's
-        // prepared owner proof protects the canonical editor payload.
-        (void)bank;
-        (void)after;
-        synchronization.payload.reset();
-        return true;
-    }
-    return captureHistoryPatternPayloadUsingReservedStorage(after.pattern, synchronization.payload);
 }
 
 FLASHMEM void installGraph(SequencerPatternState& target, GraphPtr graph, uint32_t revision) {
@@ -1414,16 +1367,6 @@ FLASHMEM void synchronizeHistoryPatternRevisionSignals(SequencerPatternState& ta
     target.ccLaneRevision.set(ccLaneRevision);
 }
 
-FLASHMEM bool reserveHistoryPatternPayloadStorage(const SequencerPatternState& source,
-                                                  SequencerHistoryPatternPayloadStorage& storage) {
-    return reservePatternPayloadStorage(source, storage.graph, storage.ccLanes);
-}
-
-FLASHMEM bool captureHistoryPatternPayloadUsingReservedStorage(
-    const SequencerPatternState& source, SequencerHistoryPatternPayloadStorage& storage) {
-    return capturePatternPayloadUsingReservedStorage(source, storage.graph, storage.ccLanes);
-}
-
 FLASHMEM bool reserveHistorySnapshotStorage(const SequencerState& source,
                                             SequencerHistoryPatternSnapshot& snapshot) {
     return reservePatternPayloadStorage(source.pattern, snapshot.graph, snapshot.ccLanes);
@@ -1681,195 +1624,6 @@ FLASHMEM bool captureHistoryTrackBankSnapshotUsingReservedStorage(
         active.activeStepProperty.get(),
         out
     );
-}
-
-FLASHMEM bool reservePreparedActiveTrackSynchronization(
-    const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
-    SequencerHistoryPatternStorage storage,
-    SequencerPreparedActiveTrackSynchronization& synchronization) {
-    synchronization.reset();
-    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    synchronization.trackIndex = targetTrack;
-    synchronization.storage = storage;
-    if (targetTrack != bank.activeTrackIndex()) return false;
-    if (storage == SequencerHistoryPatternStorage::FlatOnly) {
-        // No detached cold-payload owner is needed for a flat-only mirror.
-        // The active bank slot may legitimately be empty after restoration.
-        synchronization.reserved = true;
-        return true;
-    }
-    synchronization.reserved =
-        reserveHistoryPatternPayloadStorage(after.pattern, synchronization.payload);
-    return synchronization.reserved;
-}
-
-FLASHMEM bool reservePreparedActiveTrackSynchronization(
-    const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
-    SequencerCoalescedPatternPayloadPlan plan,
-    SequencerPreparedActiveTrackSynchronization& synchronization) {
-    SequencerHistoryPatternStorage storage{};
-    if (!patternStorageForCoalescedPlan(plan, storage)) {
-        synchronization.reset();
-        return false;
-    }
-    if (!planRequiresPresentGraph(plan)) {
-        return reservePreparedActiveTrackSynchronization(bank, after, trackIndex, storage,
-                                                         synchronization);
-    }
-
-    synchronization.reset();
-    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    synchronization.trackIndex = targetTrack;
-    synchronization.storage = storage;
-    if (targetTrack != bank.activeTrackIndex()) return false;
-    synchronization.reserved = reservePatternPayloadStorageForExpectedGraph(
-        after.pattern, true, synchronization.payload.graph, synchronization.payload.ccLanes);
-    return synchronization.reserved;
-}
-
-FLASHMEM bool prepareActiveTrackSynchronizationFromSnapshot(
-    const SequencerTrackBankState& bank, uint8_t trackIndex,
-    const SequencerHistoryPatternSnapshot& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization) {
-    synchronization.reset();
-    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    synchronization.trackIndex = targetTrack;
-    synchronization.storage = SequencerHistoryPatternStorage::FullGraph;
-    if (targetTrack != bank.activeTrackIndex() || !after.ccLanesCaptured) return false;
-    if (!cloneGraph(after.graph, synchronization.payload.graph) ||
-        !cloneSequencerCcLaneBank(synchronization.payload.ccLanes, after.ccLanes.get())) {
-        return false;
-    }
-    synchronization.reserved = true;
-    synchronization.captured = true;
-    return true;
-}
-
-FLASHMEM bool preparedActiveTrackSynchronizationMatches(
-    const SequencerTrackBankState& bank,
-    const SequencerPreparedActiveTrackSynchronization& synchronization) {
-    return synchronization.reserved &&
-           synchronization.trackIndex < SequencerTrackBankState::TRACK_COUNT &&
-           synchronization.trackIndex == bank.activeTrackIndex();
-}
-
-FLASHMEM bool capturePreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank, const SequencerState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization) {
-    if (!preparedActiveTrackSynchronizationMatches(bank, synchronization)) { return false; }
-    if (synchronization.captured) return false;
-    synchronization.captured =
-        capturePreparedSynchronizationPayloadUsingReservedStorage(bank, after, synchronization);
-    return synchronization.captured;
-}
-
-FLASHMEM bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank, const SequencerState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization) {
-    if (!preparedActiveTrackSynchronizationMatches(bank, synchronization)) {
-        // A stale previously-captured payload must never remain publishable
-        // after a failed continuation refresh.
-        synchronization.captured = false;
-        return false;
-    }
-    synchronization.captured = false;
-    synchronization.captured =
-        capturePreparedSynchronizationPayloadUsingReservedStorage(bank, after, synchronization);
-    return synchronization.captured;
-}
-
-FLASHMEM bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerPatternState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization
-) {
-    if (!preparedActiveTrackSynchronizationMatches(bank, synchronization)) {
-        synchronization.captured = false;
-        return false;
-    }
-    synchronization.captured = false;
-    if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
-        // Detached flat candidates never own or publish Graph/CC payload.
-        // Their canonical payload identity is validated by the enclosing
-        // prepared Pattern transaction before this synchronization is used.
-        (void)after;
-        synchronization.payload.reset();
-        synchronization.captured = true;
-        return true;
-    }
-    synchronization.captured = captureHistoryPatternPayloadUsingReservedStorage(
-        after,
-        synchronization.payload
-    );
-    return synchronization.captured;
-}
-
-namespace {
-
-FLASHMEM void publishPreparedActiveTrackSynchronizationUsingFlat(
-    SequencerTrackBankState& bank,
-    const SequencerPatternSnapshot& flat,
-    const SequencerClipSnapshot& clip,
-    uint32_t ccLaneRevision, bool ccLanesCaptured,
-    SequencerPreparedActiveTrackSynchronization synchronization) {
-    if (!synchronization.captured ||
-        !preparedActiveTrackSynchronizationMatches(bank, synchronization)) {
-        return;
-    }
-    auto& target = bank.track(synchronization.trackIndex);
-    auto& targetClip = bank.clip(synchronization.trackIndex);
-    if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
-        // Preserve the active slot's noncanonical cold-payload topology. In
-        // particular, restoration intentionally leaves Graph/CC null here.
-        applyFlatSnapshotPreservingColdPayload(target, flat);
-        applySnapshot(targetClip, clip);
-        synchronizeHistoryPatternRevisionSignals(target, flat, ccLaneRevision);
-        return;
-    }
-
-    installTrackContentSnapshotWithOwnedGraph(
-        target,
-        targetClip,
-        flat,
-        clip,
-        std::move(synchronization.payload.graph)
-    );
-    if (ccLanesCaptured) {
-        installSequencerCcLaneBank(
-            target, std::move(synchronization.payload.ccLanes));
-    }
-    synchronizeHistoryPatternRevisionSignals(target, flat, ccLaneRevision);
-}
-
-}  // namespace
-
-FLASHMEM void publishPreparedActiveTrackSynchronization(
-    SequencerTrackBankState& bank, const SequencerState& active,
-    SequencerPreparedActiveTrackSynchronization synchronization) {
-    SequencerPatternSnapshot flat{};
-    SequencerClipSnapshot clip{};
-    captureSnapshot(active.pattern, flat);
-    captureSnapshot(active.clip, clip);
-    publishPreparedActiveTrackSynchronizationUsingFlat(
-        bank,
-        flat,
-        clip,
-        active.pattern.ccLaneRevision.get(),
-        true,
-        std::move(synchronization));
-}
-
-FLASHMEM void publishPreparedActiveTrackSynchronization(
-    SequencerTrackBankState& bank, const SequencerState&,
-    const SequencerHistoryPatternSnapshot& sealedAfter,
-    SequencerPreparedActiveTrackSynchronization synchronization) {
-    publishPreparedActiveTrackSynchronizationUsingFlat(
-        bank,
-        sealedAfter.flat,
-        sealedAfter.clip,
-        sealedAfter.ccLaneRevision,
-        sealedAfter.ccLanesCaptured,
-        std::move(synchronization));
 }
 
 FLASHMEM bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState& active,

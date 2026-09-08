@@ -115,7 +115,7 @@ constexpr bool hasCc(PayloadKind kind) {
 }
 
 constexpr std::size_t expectedOpenAllocationCount(PayloadKind kind) {
-    return 2U + (hasGraph(kind) ? 4U : 0U) + (hasCc(kind) ? 4U : 0U);
+    return 2U + (hasGraph(kind) ? 3U : 0U) + (hasCc(kind) ? 3U : 0U);
 }
 
 struct ExpectedAllocationRequests {
@@ -136,7 +136,7 @@ ExpectedAllocationRequests expectedOpenAllocationRequests(PayloadKind kind) {
     }
     if (hasCc(kind)) expected.push(sizeof(seq::SequencerCcLaneBank));
     expected.push(sizeof(seq::SequencerHistoryPatternChange));
-    for (uint8_t copy = 0U; copy < 3U; ++copy) {
+    for (uint8_t copy = 0U; copy < 2U; ++copy) {
         if (hasGraph(kind)) {
             expected.push(sizeof(oc::note::sequencer::StepSequencerGraph));
         }
@@ -424,11 +424,11 @@ void test_direct_graph_cc_offset_is_undoable() {
         seq::PatternQuickControlItem::OFFSET);
 
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(8U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(6U);
         h.turn(Config::EncoderID::OPT, normalizedOffset(1));
-        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(7U);
+        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(5U);
         assert(h.state.commitSequencerPatternHistoryCoalescing());
-        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(7U);
+        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(5U);
     }
 
     assert(h.state.sequencerHistory.undoCount() == 1U);
@@ -497,7 +497,7 @@ void test_open_allocation_contract_and_failure_matrix() {
         assert(h.state.sequencerHistory.undoCount() == 0U);
     }
     std::cout
-        << "[PASS] Open allocation sequence is D/raw owners/Change/Before/After/sync\n";
+        << "[PASS] Open allocation sequence is D/raw owners/Change/Before/After\n";
 }
 
 void test_restored_project_opens_quick_controls_with_active_scratch_empty() {
@@ -666,7 +666,7 @@ void test_graph_cc_apply_is_allocation_free_and_undoable() {
     assertPatternPayloadAtOffset(
         h.state.sequencer.pattern, PayloadKind::GraphAndCc, 2U);
     assertPatternPayloadAtOffset(
-        h.state.sequencerTracks.track(0U), PayloadKind::GraphAndCc, 2U);
+        h.state.sequencerTracks.track(0U), PayloadKind::GraphAndCc, 0U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.projectHistory.undoCount() == projectUndoBefore + 1U);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);

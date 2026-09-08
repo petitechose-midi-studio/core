@@ -28,24 +28,6 @@ using SequencerHistoryGraphPtr =
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>;
 using SequencerHistoryCcLanePtr = SequencerCcLaneBankPtr;
 
-// Detached Graph/CC ownership reserved before a prepared transaction crosses
-// its live publication barrier. A successful strict capture into this storage
-// never allocates; a newly-required owner instead rejects the stale plan.
-struct SequencerHistoryPatternPayloadStorage {
-    SequencerHistoryGraphPtr graph;
-    SequencerHistoryCcLanePtr ccLanes;
-
-    SequencerHistoryPatternPayloadStorage();
-    ~SequencerHistoryPatternPayloadStorage();
-    SequencerHistoryPatternPayloadStorage(const SequencerHistoryPatternPayloadStorage&) = delete;
-    SequencerHistoryPatternPayloadStorage& operator=(const SequencerHistoryPatternPayloadStorage&) =
-        delete;
-    SequencerHistoryPatternPayloadStorage(SequencerHistoryPatternPayloadStorage&&) noexcept;
-    SequencerHistoryPatternPayloadStorage& operator=(
-        SequencerHistoryPatternPayloadStorage&&) noexcept;
-    void reset();
-};
-
 struct SequencerHistoryPatternSnapshot {
     SequencerPatternSnapshot flat{};
     SequencerClipSnapshot clip{};
@@ -211,29 +193,6 @@ struct SequencerTrackStructureChronologyResult {
 };
 
 using SequencerPreparedPatternEditCommitOutcome = SequencerPatternHistoryCommitOutcome;
-
-// Active editor-to-bank ownership prepared for one frozen Track identity.
-// Callers must revalidate matchesActiveTrack() immediately before their first
-// live write and abandon the entire object after any failed reservation.
-struct SequencerPreparedActiveTrackSynchronization {
-    uint8_t trackIndex = SequencerTrackBankState::TRACK_COUNT;
-    SequencerHistoryPatternStorage storage = SequencerHistoryPatternStorage::FullGraph;
-    bool reserved = false;
-    bool captured = false;
-    SequencerHistoryPatternPayloadStorage payload;
-
-    SequencerPreparedActiveTrackSynchronization();
-    ~SequencerPreparedActiveTrackSynchronization();
-    SequencerPreparedActiveTrackSynchronization(
-        const SequencerPreparedActiveTrackSynchronization&) = delete;
-    SequencerPreparedActiveTrackSynchronization& operator=(
-        const SequencerPreparedActiveTrackSynchronization&) = delete;
-    SequencerPreparedActiveTrackSynchronization(
-        SequencerPreparedActiveTrackSynchronization&&) noexcept;
-    SequencerPreparedActiveTrackSynchronization& operator=(
-        SequencerPreparedActiveTrackSynchronization&&) noexcept;
-    void reset();
-};
 
 enum class SequencerHistoryDirection : uint8_t {
     Undo = 0,
@@ -525,10 +484,6 @@ bool captureHistorySnapshot(const SequencerPatternState& source, const Sequencer
 void synchronizeHistoryPatternRevisionSignals(SequencerPatternState& target,
                                               const SequencerPatternSnapshot& snapshot,
                                               uint32_t ccLaneRevision);
-bool reserveHistoryPatternPayloadStorage(const SequencerPatternState& source,
-                                         SequencerHistoryPatternPayloadStorage& storage);
-bool captureHistoryPatternPayloadUsingReservedStorage(
-    const SequencerPatternState& source, SequencerHistoryPatternPayloadStorage& storage);
 bool reserveHistorySnapshotStorage(const SequencerState& source,
                                    SequencerHistoryPatternSnapshot& snapshot);
 bool captureHistorySnapshotUsingReservedStorage(const SequencerState& source,
@@ -598,55 +553,6 @@ bool finalizeHistoryTrackBankSnapshotUsingReservedStorage(
 bool captureHistoryTrackBankSnapshotUsingReservedStorage(const SequencerTrackBankState& bank,
                                                          const SequencerState& active,
                                                          SequencerHistoryTrackBankSnapshot& out);
-
-// Reserves ownership for one frozen active Track before the live write. A
-// failed reservation leaves a discardable, possibly partial object and must
-// never be retried. Revalidate matches immediately before the first live write,
-// capture afterwards, then transfer the captured payload exactly once. A
-// reserved-but-not-captured synchronization is never publishable. FlatOnly
-// synchronization mirrors flat bytes while preserving the active bank slot's
-// noncanonical cold-payload topology; the enclosing Pattern change proves the
-// canonical editor Graph/CC owners independently.
-bool reservePreparedActiveTrackSynchronization(
-    const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
-    SequencerHistoryPatternStorage storage,
-    SequencerPreparedActiveTrackSynchronization& synchronization);
-bool reservePreparedActiveTrackSynchronization(
-    const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
-    SequencerCoalescedPatternPayloadPlan plan,
-    SequencerPreparedActiveTrackSynchronization& synchronization);
-// Prepares an exact detached After snapshot for allocation-free publication to
-// the active Track mirror. All allocation happens before the live editor write.
-bool prepareActiveTrackSynchronizationFromSnapshot(
-    const SequencerTrackBankState& bank, uint8_t trackIndex,
-    const SequencerHistoryPatternSnapshot& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization);
-bool preparedActiveTrackSynchronizationMatches(
-    const SequencerTrackBankState& bank,
-    const SequencerPreparedActiveTrackSynchronization& synchronization);
-bool capturePreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank, const SequencerState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization);
-// Re-seals a continuation into the same reserved synchronization owners.
-// Unlike the one-shot capture above, this operation deliberately accepts an
-// already-captured bundle and never allocates missing storage.
-bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank, const SequencerState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization);
-// Detached-candidate overload used before the first Quick Controls live write.
-bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerPatternState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization);
-void publishPreparedActiveTrackSynchronization(
-    SequencerTrackBankState& bank, const SequencerState& active,
-    SequencerPreparedActiveTrackSynchronization synchronization);
-// Coalesced publication consumes the exact flat After captured at seal time;
-// the delayed boundary performs no live snapshot capture or allocation.
-void publishPreparedActiveTrackSynchronization(
-    SequencerTrackBankState& bank, const SequencerState& active,
-    const SequencerHistoryPatternSnapshot& sealedAfter,
-    SequencerPreparedActiveTrackSynchronization synchronization);
 
 bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState& active,
                           const SequencerHistoryPatternSnapshot& snapshot);

@@ -1498,12 +1498,12 @@ void test_step_edit_context_rows_clear_selected_child_context() {
     assert(h.state.sequencerHistory.undoCount() == 0);
 
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         h.press(Config::ButtonID::BOTTOM_LEFT);
         h.advance(0);
         h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
         h.release(Config::ButtonID::BOTTOM_LEFT);
-        tx::assertMaxPlusOneStillArmed(4U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     assert(!stepHasMicroSequence(h.state.sequencer.pattern, 0));
     assert(stepHasCycleStates(h.state.sequencer.pattern, 0));
@@ -1528,12 +1528,12 @@ void test_step_edit_context_rows_clear_selected_child_context() {
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         h.press(Config::ButtonID::BOTTOM_LEFT);
         h.advance(0);
         h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
         h.release(Config::ButtonID::BOTTOM_LEFT);
-        tx::assertMaxPlusOneStillArmed(4U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     assert(!stepHasMicroSequence(h.state.sequencer.pattern, 0));
     assert(!stepHasCycleStates(h.state.sequencer.pattern, 0));
@@ -1632,11 +1632,11 @@ void test_step_edit_context_rows_copy_and_paste_step_content() {
     h.release(Config::MACRO_BUTTONS[1]);
     focusStepEditRow(h, MICRO_SEQUENCE_ROW);
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         h.press(Config::ButtonID::BOTTOM_RIGHT);
         h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
         h.release(Config::ButtonID::BOTTOM_RIGHT);
-        tx::assertMaxPlusOneStillArmed(4U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
 
     assert(stepHasMicroSequence(h.state.sequencer.pattern, 1));
@@ -1669,7 +1669,7 @@ void test_step_edit_context_rows_copy_and_paste_step_content() {
 }
 
 void test_step_edit_context_preflight_failures_are_atomic() {
-    for (std::size_t ordinal = 1U; ordinal <= 4U; ++ordinal) {
+    for (std::size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
         SequencerStepEditHarness h;
         h.state.sequencer.pattern.setContentLength(8);
         const auto rootNode = core::state::sequencer::rootStepNodeId(0);
@@ -1710,7 +1710,7 @@ void test_step_edit_context_preflight_failures_are_atomic() {
         assertMemoryRejection(h.state, feedbackRevisionBefore + 1U);
     }
 
-    for (std::size_t ordinal = 1U; ordinal <= 4U; ++ordinal) {
+    for (std::size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
         SequencerStepEditHarness h;
         h.state.sequencer.pattern.setContentLength(8);
         const auto sourceNode = core::state::sequencer::rootStepNodeId(0);

@@ -18,6 +18,9 @@
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/NotificationTestUtils.hpp"
+#include "../support/SequencerHistoryTransactionAssertions.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 
 namespace {
 
@@ -130,6 +133,76 @@ void setInstrumentPattern(
     state.markSequencerProjectMutated();
 }
 
+void testInstrumentPreviewAllocationFailuresAndNoFailCancel() {
+    namespace tx = test_support::sequencer_transaction;
+    bool reachedSuccess = false;
+    for (std::size_t ordinal = 1U; ordinal <= 64U; ++ordinal) {
+        Harness h;
+        auto author = [&](uint8_t note) {
+            setInstrumentPattern(h.state, note, true);
+            auto* lanes = seq::ensureSequencerCcLaneBank(h.state.sequencer.pattern);
+            assert(lanes != nullptr);
+            seq::SequencerCcLaneDraft lane{};
+            lane.destination.controller = 21U;
+            assert(seq::createSequencerCcLane(*lanes, 0U, lane).changed());
+            assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 2U, note).changed());
+            h.state.sequencer.pattern.bumpCcLaneRevision();
+        };
+        author(67U);
+        assert(h.presets.savePreset(
+            "pattern-preset-0001", h.presets.captureTarget(), false).ok());
+        author(48U);
+        test_support::drainNotifications();
+        h.state.flushProjectMutationCoalescing();
+        test_support::drainNotifications();
+        h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
+        // Preview must tolerate an unrelated noncanonical bank slot.
+        h.state.sequencerTracks.track(0U).note[2U] = 99U;
+        const auto target = h.presets.captureTarget();
+        const auto inspected = h.presets.inspectPreset("pattern-preset-0001", target);
+        assert(inspected.status == SequencerPatternPresetDomainStatus::OK);
+        seq::SequencerHistoryPatternSnapshot before;
+        tx::captureMusicalSnapshot(h.state, before);
+        const auto invariant = tx::captureStateInvariant(h.state);
+        SequencerPatternPresetPreviewSession preview;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result = h.presets.previewPreset(
+                "pattern-preset-0001", target,
+                inspected.descriptor.previewKey, preview);
+            if (!result.ok()) {
+                assert(!preview.active());
+                tx::assertFailureConsumed(ordinal);
+                tx::assertStateInvariant(h.state, invariant);
+            } else {
+                reachedSuccess = true;
+                assert(preview.active());
+                tx::assertMaxPlusOneStillArmed(ordinal - 1U);
+                assert(h.state.sequencer.pattern.note[2U] == 67U);
+                assert(h.state.sequencer.pattern.ccLanes->lanes[0U].values[2U] == 67U);
+                std::cout << "[MEASURE] melodic Graph+CC preview allocations="
+                          << ordinal - 1U << '\n';
+            }
+        }
+        if (reachedSuccess) {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            assert(h.presets.cancelPresetPreview(preview).ok());
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        tx::assertMusicalSnapshot(h.state, before);
+        assert(h.state.sequencerTracks.track(0U).note[2U] == 99U);
+        const auto after = tx::captureStateInvariant(h.state);
+        assert(after.bankGraphOwner == invariant.bankGraphOwner);
+        assert(after.bankCcOwner == invariant.bankCcOwner);
+        assert(after.modifiedCounter == invariant.modifiedCounter);
+        assert(after.sequencerUndoCount == invariant.sequencerUndoCount);
+        assert(after.projectUndoCount == invariant.projectUndoCount);
+        if (reachedSuccess) break;
+    }
+    assert(reachedSuccess);
+    std::cout << "[PASS] every melodic preview allocation fails atomically; Cancel allocates zero\n";
+}
+
 void testInstrumentLifecycleAndSingleUndo() {
     Harness h;
     setInstrumentPattern(h.state, 67U, true);
@@ -173,7 +246,7 @@ void testInstrumentLifecycleAndSingleUndo() {
         &destinationClip,
         sizeof(destinationClip)
     ) == 0);
-    assert(h.state.sequencerTracks.track(0U).note[2U] == 67U);
+    assert(h.state.sequencerTracks.track(0U).note[2U] == 48U);
     assert(h.state.sequencerHistory.undoCount() == undoBefore);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
 
@@ -584,6 +657,7 @@ void testDrumPatternLibraryEntryBelongsToPatternNotLane() {
 }  // namespace
 
 int main() {
+    testInstrumentPreviewAllocationFailuresAndNoFailCancel();
     testInstrumentLifecycleAndSingleUndo();
     testDrumApplyPreservesKitAndQueuesAtLoop();
     testDrumCompatibilityRejectsDifferentRoles();

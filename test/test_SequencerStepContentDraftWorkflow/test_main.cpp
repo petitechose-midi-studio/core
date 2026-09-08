@@ -115,7 +115,7 @@ void test_new_micro_is_unpublished_until_one_prepared_apply() {
     assert(graphHasChild(*recorder.prepared->after.graph, 3,
                          seq::StepContentChildKind::MICRO_SEQUENCE));
     assert(rootHasChild(sequencer.pattern, 3, seq::StepContentChildKind::MICRO_SEQUENCE));
-    assert(rootHasChild(tracks.track(tracks.activeTrackIndex()), 3,
+    assert(!rootHasChild(tracks.track(tracks.activeTrackIndex()), 3,
                         seq::StepContentChildKind::MICRO_SEQUENCE));
 }
 

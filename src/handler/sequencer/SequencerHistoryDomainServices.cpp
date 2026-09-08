@@ -38,8 +38,13 @@ FLASHMEM void recordPreparedPatternFromCoreState(
         change->descriptor.clipIndex = state->sequencerClips.residentSlot(
             change->trackIndex);
     }
+    const bool activeTarget = change->trackIndex == state->sequencerTracks.activeTrackIndex();
     state->sequencerHistory.recordPreparedPattern(std::move(change));
-    state->markProjectMutated();
+    if (activeTarget) {
+        state->publishPreparedSequencerMutation();
+    } else {
+        state->markProjectMutated();
+    }
 }
 
 FLASHMEM bool canRecordStructureFromCoreState(

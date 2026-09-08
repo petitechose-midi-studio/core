@@ -112,22 +112,11 @@ FLASHMEM bool apply(
         return false;
     }
 
-    // The active editor and its Track-bank mirror must cross the publication
-    // barrier together. Prepare the exact post-draft cold payload first so a
-    // later FlatOnly edit cannot observe a stale Graph/CC mirror.
-    seq::SequencerPreparedActiveTrackSynchronization trackSynchronization;
-    if (!seq::prepareActiveTrackSynchronizationFromSnapshot(
-            tracks, change->trackIndex, change->after, trackSynchronization)) {
-        noteFailure(sequencer, seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY);
-        return false;
-    }
-
-    if (!seq::publishStepContentDraft(sequencer)) {
+    if (change->trackIndex != tracks.activeTrackIndex() ||
+        !seq::publishStepContentDraft(sequencer)) {
         noteFailure(sequencer, seq::SequencerStepContentDraftFailure::UNPUBLISHABLE_MUTATION);
         return false;
     }
-    seq::publishPreparedActiveTrackSynchronization(
-        tracks, sequencer, change->after, std::move(trackSynchronization));
     history.recordPreparedPattern(std::move(change));
     return true;
 }

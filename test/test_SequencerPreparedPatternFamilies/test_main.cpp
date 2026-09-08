@@ -32,7 +32,7 @@ using Owner = seq::SequencerPreparedPatternEditOwner;
 using Plan = seq::SequencerCoalescedPatternPayloadPlan;
 
 static_assert(sizeof(core::state::SequencerDomainState::CoalescedPatternHistory) ==
-                  (sizeof(void*) == 8U ? 64U : 40U),
+                  (sizeof(void*) == 8U ? 40U : 28U),
               "Prepared-family scalar identity must not increase the existing RAM1 bundle");
 
 constexpr uint8_t kStep = 0U;
@@ -118,7 +118,7 @@ void test_all_eight_owners_publish_one_exact_undo() {
         assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
         assert(h.state.sequencerHistory.undoCount() == 1U);
         assert(h.state.sequencer.pattern.note[kStep] == note);
-        assert(h.state.sequencerTracks.track(0U).note[kStep] == note);
+        assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
         assert(h.state.undoSequencerHistory());
         assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
         assert(h.state.redoSequencerHistory());
@@ -531,7 +531,7 @@ void test_failed_transition_keeps_exact_prior_entry_only() {
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencer.pattern.note[kStep] == 72U);
-    assert(h.state.sequencerTracks.track(0U).note[kStep] == 72U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
 

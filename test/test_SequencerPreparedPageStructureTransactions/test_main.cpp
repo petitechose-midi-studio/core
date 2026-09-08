@@ -135,15 +135,15 @@ constexpr std::size_t kArmCcBankBytes = 840U;
 
 static_assert(
     kArmPatternChangeBytes +
-            3U * (kArmGraphBytes + kArmCcBankBytes) +
-            7U * kArmAllocationHeaderBytes ==
-        48744U,
+            2U * (kArmGraphBytes + kArmCcBankBytes) +
+            5U * kArmAllocationHeaderBytes ==
+        33080U,
     "LOCK-P maximum Page transaction peak changed"
 );
 static_assert(
-    kArmPatternChangeBytes + 2U * kArmGraphBytes +
-            3U * kArmCcBankBytes + 6U * kArmAllocationHeaderBytes ==
-        33936U,
+    kArmPatternChangeBytes + kArmGraphBytes +
+            2U * kArmCcBankBytes + 4U * kArmAllocationHeaderBytes ==
+        18272U,
     "LOCK-P disabled-to-enabled Graph plus CC peak changed"
 );
 static_assert(
@@ -164,22 +164,18 @@ static_assert(
 static_assert(sizeof(seq::SequencerCcLaneBank) == kArmCcBankBytes);
 #endif
 
-// Native request-size oracles for the frozen H,C,G,C,G,C disabled-Graph
-// variant and the H,G,C,G,C,G,C maximal enabled-Graph variant.
-constexpr std::array<std::size_t, 6U>
+// Native request-size oracles for the frozen H,C,G,C disabled-Graph
+// variant and the H,G,C,G,C maximal enabled-Graph variant.
+constexpr std::array<std::size_t, 4U>
     kDisabledGraphToEnabledWithCcRequests{
         sizeof(seq::SequencerHistoryPatternChange),
         sizeof(seq::SequencerCcLaneBank),
         sizeof(oc::note::sequencer::StepSequencerGraph),
         sizeof(seq::SequencerCcLaneBank),
-        sizeof(oc::note::sequencer::StepSequencerGraph),
-        sizeof(seq::SequencerCcLaneBank),
     };
 
-constexpr std::array<std::size_t, 7U> kEnabledGraphWithCcRequests{
+constexpr std::array<std::size_t, 5U> kEnabledGraphWithCcRequests{
     sizeof(seq::SequencerHistoryPatternChange),
-    sizeof(oc::note::sequencer::StepSequencerGraph),
-    sizeof(seq::SequencerCcLaneBank),
     sizeof(oc::note::sequencer::StepSequencerGraph),
     sizeof(seq::SequencerCcLaneBank),
     sizeof(oc::note::sequencer::StepSequencerGraph),
@@ -1160,7 +1156,7 @@ void test_core_boundary_and_page_commit_are_two_exact_transactions() {
     assert(h.state.sequencerHistory.undoCount() == 2U);
     assert(h.state.projectHistory.undoCount() == 2U);
     assert(h.state.sequencer.pattern.note[0] == 62U);
-    assert(h.state.sequencerTracks.track(0U).note[0] == 62U);
+    assert(h.state.sequencerTracks.track(0U).note[0] == 60U);
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.note[0] == 61U);
     assert(h.state.undoSequencerHistory());
@@ -1427,14 +1423,13 @@ void test_core_disabled_graph_to_enabled_with_cc_lock_p_is_exact() {
     assert(mutation.callCount == 1U);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
-    assert(seq::graphView(h.state.sequencerTracks.track(0U)) != nullptr);
+    assert(seq::graphView(h.state.sequencerTracks.track(0U)) == nullptr);
     assert(after.editorGraphOwner == before.editorGraphOwner);
     assert(after.editorCcOwner == before.editorCcOwner);
-    assert(after.bankGraphOwner != nullptr);
-    assert(after.bankGraphOwner != before.bankGraphOwner);
+    assert(after.bankGraphOwner == before.bankGraphOwner);
     assert(after.bankGraphOwner != after.editorGraphOwner);
     assert(after.bankCcOwner != nullptr);
-    assert(after.bankCcOwner != before.bankCcOwner);
+    assert(after.bankCcOwner == before.bankCcOwner);
     assert(after.bankCcOwner != after.editorCcOwner);
     assert(after.sequencerUndoCount == before.sequencerUndoCount + 1U);
     assert(after.projectUndoCount == before.projectUndoCount + 1U);
@@ -1443,21 +1438,8 @@ void test_core_disabled_graph_to_enabled_with_cc_lock_p_is_exact() {
     assert(after.modifiedCounter == before.modifiedCounter + 1U);
     assert(after.dirty);
     assert(after.sessionSavePending);
-    assert(byteHash(
-               h.state.sequencer.pattern.graph.get(),
-               sizeof(*h.state.sequencer.pattern.graph)) ==
-           byteHash(
-               h.state.sequencerTracks.track(0U).graph.get(),
-               sizeof(*h.state.sequencerTracks.track(0U).graph)));
-    assert(byteHash(
-               h.state.sequencer.pattern.ccLanes.get(),
-               sizeof(*h.state.sequencer.pattern.ccLanes)) ==
-           byteHash(
-               h.state.sequencerTracks.track(0U).ccLanes.get(),
-               sizeof(*h.state.sequencerTracks.track(0U).ccLanes)));
-
     std::cout <<
-        "[PASS] disabled Graph to enabled plus CC LOCK-P is exact at 1..6 and max+1\n";
+        "[PASS] disabled Graph to enabled plus CC LOCK-P is exact at 1..4 and max+1\n";
 }
 
 void commitMaximalPageHistoryEntry(CoreHarness& h, uint8_t note) {
@@ -1478,7 +1460,7 @@ void commitMaximalPageHistoryEntry(CoreHarness& h, uint8_t note) {
                Action::PageClear)) == Result::Committed);
     assert(mutation.callCount == 1U);
     assert(h.state.sequencer.pattern.note[0U] == note);
-    assert(h.state.sequencerTracks.track(0U).note[0U] == note);
+    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[0U] == note);
     test_support::drainNotifications();
 }
 
@@ -1543,7 +1525,7 @@ void test_core_near_budget_page_reservation_is_pre_live_and_prunes_exactly() {
                    1,
                    1,
                    Action::PageClear)) == Result::Failed);
-        // The seventh attempt is intercepted before operator new.
+        // The fifth attempt is intercepted before operator new.
         assertAllocationRequestPrefix(
             kEnabledGraphWithCcRequests,
             kEnabledGraphWithCcRequests.size() - 1U
@@ -1696,7 +1678,7 @@ void test_core_track_drift_preserves_full_payload_owner_identity() {
     Transaction transaction(h.state.sequencer, history, Action::PageDelete);
     assert(transaction.openBoundary());
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         allocation_trace::Scope allocationTrace;
         assert(transaction.execute(coreExecution(
                    mutation,
@@ -1706,8 +1688,8 @@ void test_core_track_drift_preserves_full_payload_owner_identity() {
                    1,
                    1,
                    Action::PageDelete)) == Result::Failed);
-        assertAllocationCount(4U);
-        tx::assertMaxPlusOneStillArmed(4U);
+        assertAllocationCount(3U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     tx::assertFailureInjectionReset();
 
@@ -1747,7 +1729,7 @@ void test_core_track_drift_removes_prospective_graph_exactly() {
     );
     assert(transaction.openBoundary());
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         allocation_trace::Scope allocationTrace;
         assert(transaction.execute(coreExecution(
                    mutation,
@@ -1757,8 +1739,8 @@ void test_core_track_drift_removes_prospective_graph_exactly() {
                    1,
                    1,
                    Action::PageSelectionPaste)) == Result::Failed);
-        assertAllocationCount(4U);
-        tx::assertMaxPlusOneStillArmed(4U);
+        assertAllocationCount(3U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     tx::assertFailureInjectionReset();
 
@@ -1793,7 +1775,7 @@ void test_core_released_prospective_graph_can_fail_closed() {
     );
     assert(transaction.openBoundary());
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         allocation_trace::Scope allocationTrace;
         assert(transaction.execute(coreExecution(
                    mutation,
@@ -1803,8 +1785,8 @@ void test_core_released_prospective_graph_can_fail_closed() {
                    1,
                    1,
                    Action::PageSelectionDeleteOrDeepReset)) == Result::Failed);
-        assertAllocationCount(4U);
-        tx::assertMaxPlusOneStillArmed(4U);
+        assertAllocationCount(3U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     tx::assertFailureInjectionReset();
 

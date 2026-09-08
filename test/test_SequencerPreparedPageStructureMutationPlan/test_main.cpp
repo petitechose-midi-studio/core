@@ -1909,7 +1909,7 @@ void test_prospective_graph_commit_undo_and_redo_are_exact() {
         oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
     assert(graph->stepNodes[0U].noteOffset == 5);
     assert(harness.state.sequencer.focusedStep.get() == 0U);
-    assert(harness.state.sequencerTracks.track(0U).graph != nullptr);
+    assert(harness.state.sequencerTracks.track(0U).graph == nullptr);
 
     assert(harness.state.undoSequencerHistory());
     assert(harness.state.sequencer.pattern.graph == nullptr);

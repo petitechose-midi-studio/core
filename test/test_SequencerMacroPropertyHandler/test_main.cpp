@@ -372,35 +372,6 @@ void invokeChildMacroCaller(
     h.turn(opt ? Config::EncoderID::OPT : Config::EncoderID::MACRO_1, 1.0F);
 }
 
-void assertChildEditorAndBankPayloadMatch(
-    const SequencerMacroPropertyHarness& h
-) {
-    const auto& editor = h.state.sequencer.pattern;
-    const auto& bank = h.state.sequencerTracks.track(0U);
-    const auto* editorGraph = core::state::sequencer::graphView(editor);
-    const auto* bankGraph = core::state::sequencer::graphView(bank);
-    const auto* editorCc = core::state::sequencer::sequencerCcLaneView(editor);
-    const auto* bankCc = core::state::sequencer::sequencerCcLaneView(bank);
-    assert(editorGraph != nullptr && bankGraph != nullptr);
-    assert(editorCc != nullptr && bankCc != nullptr);
-    assert(editorGraph != bankGraph);
-    assert(editorCc != bankCc);
-    assert(std::memcmp(editorGraph, bankGraph, sizeof(*editorGraph)) == 0);
-    assert(std::memcmp(editorCc, bankCc, sizeof(*editorCc)) == 0);
-    assert(editor.stepDataRevision.get() == bank.stepDataRevision.get());
-    assert(
-        editor.patternVariationRevision.get() ==
-        bank.patternVariationRevision.get()
-    );
-    assert(editor.patternScaleRevision.get() == bank.patternScaleRevision.get());
-    assert(
-        editor.patternTimingRevision.get() ==
-        bank.patternTimingRevision.get()
-    );
-    assert(editor.graphRevision.get() == bank.graphRevision.get());
-    assert(editor.ccLaneRevision.get() == bank.ccLaneRevision.get());
-}
-
 void test_child_macro_and_opt_callers_use_full_payload() {
     constexpr std::array callers{
         ChildMacroCaller::MacroState,
@@ -418,25 +389,24 @@ void test_child_macro_and_opt_callers_use_full_payload() {
         tx::captureMusicalSnapshot(h.state, before);
 
         {
-            // Full Graph+CC owns exactly seven allocations. Seal and commit
+            // Full Graph+CC owns exactly five allocations. Seal and commit
             // must leave the max+1 failure armed.
-            core::app::testing::ScopedExtmemAllocationFailure failure(8U);
+            core::app::testing::ScopedExtmemAllocationFailure failure(6U);
             invokeChildMacroCaller(h, caller);
-            tx::assertMaxPlusOneStillArmed(7U);
+            tx::assertMaxPlusOneStillArmed(5U);
             assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
             assert(h.state.commitSequencerPatternHistoryCoalescing());
-            tx::assertMaxPlusOneStillArmed(7U);
+            tx::assertMaxPlusOneStillArmed(5U);
         }
 
         assert(h.state.sequencerHistory.undoCount() == 1U);
         const auto ownersAfter = tx::captureStateInvariant(h.state);
         assert(ownersAfter.editorGraphOwner == ownersBefore.editorGraphOwner);
         assert(ownersAfter.editorCcOwner == ownersBefore.editorCcOwner);
-        assert(ownersAfter.bankGraphOwner != ownersBefore.bankGraphOwner);
-        assert(ownersAfter.bankCcOwner != ownersBefore.bankCcOwner);
+        assert(ownersAfter.bankGraphOwner == ownersBefore.bankGraphOwner);
+        assert(ownersAfter.bankCcOwner == ownersBefore.bankCcOwner);
         assert(ownersAfter.bankGraphOwner != ownersAfter.editorGraphOwner);
         assert(ownersAfter.bankCcOwner != ownersAfter.editorCcOwner);
-        assertChildEditorAndBankPayloadMatch(h);
 
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
         tx::captureMusicalSnapshot(h.state, after);

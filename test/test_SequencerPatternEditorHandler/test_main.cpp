@@ -283,12 +283,13 @@ void test_randomize_apply_is_one_exact_flat_history_entry() {
     const auto expected = h.randomize.preview.note;
     assert(expected != before);
 
+    const auto bankBefore = h.state.sequencerTracks.track(0).note;
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(!h.randomize.active);
     assert(h.state.sequencer.patternEditor.active.get());
     assert(h.state.sequencer.pattern.note == expected);
-    assert(h.state.sequencerTracks.track(0).note == expected);
+    assert(h.state.sequencerTracks.track(0).note == bankBefore);
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     assert(h.state.undoSequencerHistory());

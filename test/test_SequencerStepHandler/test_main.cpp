@@ -3996,9 +3996,9 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
 
     const uint8_t undoBeforeClear = h.state.sequencerHistory.undoCount();
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         h.tap(Config::ButtonID::BOTTOM_LEFT);
-        tx::assertMaxPlusOneStillArmed(4U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     const auto* graphAfterClear = core::state::sequencer::graphView(h.state.sequencer.pattern);
     assert(graphAfterClear != nullptr);
@@ -4021,12 +4021,12 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
     h.release(Config::MACRO_BUTTONS[1]);
     assert(h.state.sequencer.focusedStep.get() == 1);
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         h.press(Config::ButtonID::BOTTOM_RIGHT);
         h.tick(0);
         h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
         h.release(Config::ButtonID::BOTTOM_RIGHT);
-        tx::assertMaxPlusOneStillArmed(4U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
 
     const auto* graphAfterPaste = core::state::sequencer::graphView(h.state.sequencer.pattern);
@@ -4058,7 +4058,7 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
 }
 
 void test_child_content_clear_and_paste_preflight_failures_are_atomic() {
-    for (std::size_t ordinal = 1U; ordinal <= 4U; ++ordinal) {
+    for (std::size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
         SequencerStepHarness h;
         const auto rootNode = core::state::sequencer::rootStepNodeId(0);
         const auto micro =
@@ -4094,7 +4094,7 @@ void test_child_content_clear_and_paste_preflight_failures_are_atomic() {
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     }
 
-    for (std::size_t ordinal = 1U; ordinal <= 4U; ++ordinal) {
+    for (std::size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
         SequencerStepHarness h;
         const auto rootNode = core::state::sequencer::rootStepNodeId(0);
         const auto micro =
@@ -4176,7 +4176,7 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
         };
     };
 
-    for (std::size_t ordinal = 1U; ordinal <= 4U; ++ordinal) {
+    for (std::size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
         SequencerStepHarness h;
         h.state.sequencer.pattern.setContentLength(8);
         h.state.sequencer.focusedStep.set(targetStep);
@@ -4211,7 +4211,7 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
     assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
     const oc::note::sequencer::StepSequencerGraph* prospectiveOwner = nullptr;
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         assert(h.state.beginOrContinueSequencerPreparedPatternEdit(
                    owner, transactionKey,
                    core::state::sequencer::SequencerCoalescedPatternPayloadPlan::
@@ -4232,11 +4232,11 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
         assert(h.state.sequencer.pattern.graph.get() == prospectiveOwner);
         assert(h.state.commitSequencerPreparedPatternEdit(owner) ==
                core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Committed);
-        // Every allocation ordinal below five failed before any write above.
-        // The still-armed fifth ordinal therefore proves that the live owner
+        // Every allocation ordinal below four failed before any write above.
+        // The still-armed fourth ordinal therefore proves that the live owner
         // was installed prospectively and neither allocated nor replaced by
         // compaction after the first mutation.
-        tx::assertMaxPlusOneStillArmed(4U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
 
     const auto* graphOwner = core::state::sequencer::graphView(h.state.sequencer.pattern);

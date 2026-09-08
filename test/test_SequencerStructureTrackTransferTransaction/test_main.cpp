@@ -107,6 +107,70 @@ void storeSourceClipboard(core::state::StructureClipboardState& clipboard,
     ));
 }
 
+void test_selection_capture_reads_canonical_sources_without_mutating_them() {
+    namespace seq = core::state::sequencer;
+    namespace tx = test_support::sequencer_transaction;
+    // Clipboard, project controls and two detached Graph/CC pairs: six owners.
+    for (std::size_t ordinal = 1U; ordinal <= 7U; ++ordinal) {
+        test_support::CoreStorages storages;
+        core::state::CoreState state(storages.settings);
+        state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
+        auto author = [](seq::SequencerPatternState& pattern, uint8_t note) {
+            pattern.note[0U] = note;
+            assert(seq::ensureGraphRoot(pattern));
+            assert(seq::setNodeNoteOffset(pattern, seq::rootStepNodeId(0U), 5));
+            auto* cc = seq::ensureSequencerCcLaneBank(pattern);
+            assert(cc != nullptr);
+            seq::SequencerCcLaneDraft lane{};
+            lane.destination.controller = 21U;
+            assert(seq::createSequencerCcLane(*cc, 0U, lane).changed());
+            assert(seq::setSequencerCcLaneEvent(*cc, 0U, 0U, note).changed());
+            pattern.bumpCcLaneRevision();
+        };
+        author(state.sequencer.pattern, 61U);
+        author(state.sequencerTracks.track(1U), 73U);
+        // A deliberately unrelated active-bank spare must never become a source
+        // or be overwritten by a read, even when a later clipboard clone fails.
+        author(state.sequencerTracks.track(0U), 99U);
+        const auto invariant = tx::captureStateInvariant(state);
+        const auto* inactiveGraph = state.sequencerTracks.track(1U).graph.get();
+        const auto* inactiveCc = state.sequencerTracks.track(1U).ccLanes.get();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto& constState = state;
+            auto selection = core::handler::captureTrackSelectionClipboard(
+                constState.sequencerTracks, constState.sequencer,
+                constState.pages, 0x0003U);
+            if (ordinal <= 6U) {
+                assert(!selection);
+                tx::assertFailureConsumed(ordinal);
+            } else {
+                assert(selection && selection->count == 2U);
+                tx::assertMaxPlusOneStillArmed(6U);
+                for (uint8_t track = 0U; track < 2U; ++track) {
+                    const auto& source = seq::canonicalTrackPattern(
+                        state.sequencerTracks, state.sequencer, track);
+                    const auto& entry = selection->tracks[track];
+                    assert(entry.sourceTrack == track);
+                    assert(entry.snapshot.note == source.note);
+                    assert(entry.graph && entry.graph.get() != source.graph.get());
+                    assert(entry.ccLanes && entry.ccLanes.get() != source.ccLanes.get());
+                    assert(std::memcmp(entry.graph.get(), source.graph.get(),
+                                       sizeof(*entry.graph)) == 0);
+                    assert(std::memcmp(entry.ccLanes.get(), source.ccLanes.get(),
+                                       sizeof(*entry.ccLanes)) == 0);
+                }
+            }
+            tx::assertStateInvariant(state, invariant);
+            assert(state.sequencerTracks.track(0U).note[0U] == 99U);
+            assert(state.sequencerTracks.track(0U).ccLanes->lanes[0U].values[0U] == 99U);
+            assert(state.sequencerTracks.track(1U).graph.get() == inactiveGraph);
+            assert(state.sequencerTracks.track(1U).ccLanes.get() == inactiveCc);
+        }
+    }
+    std::cout << "[PASS] selection capture is detached and source-preserving at 1..6/max+1\n";
+}
+
 void seedMaximumSelectionTransfer(core::state::CoreState& state) {
     namespace seq = core::state::sequencer;
     assert(state.publishPreparedSequencerTrackState(0xFFFFU, 0U));
@@ -1426,6 +1490,7 @@ void test_maximum_selection_transfer_fails_atomically_at_every_ordinal() {
 }  // namespace
 
 int main() {
+    test_selection_capture_reads_canonical_sources_without_mutating_them();
     test_missing_prepared_publication_blocks_before_mutation();
     test_missing_prepared_history_blocks_before_mutation();
     test_outgoing_live_route_change_does_not_block_content_transfer();
