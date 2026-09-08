@@ -21,14 +21,12 @@
 100 capture screen launcher_ready
 
 # Scene is the default performance focus; one turn selects Scene 2.
-220 encoder NAV 0.01
+220 encoder OPT 0.01
 620 capture screen scene_ready
 
-# Long NAV exposes the authored two-bar Follow to Scene 3.
-700 button NAV down
-1760 tick
+# LEFT_CENTER opens the authored two-bar Scene behavior.
+700 tap LEFT_CENTER 60
 1840 capture screen scene_behavior
-1920 button NAV up
 2080 tap LEFT_TOP 60
 2260 capture screen scene_returned
 
@@ -40,7 +38,7 @@
 2780 tap NAV 60
 2960 capture screen scene_queue_cancelled
 3040 tap NAV 60
-3200 encoder NAV 0.01
+3200 encoder OPT 0.01
 3280 tap NAV 60
 3460 capture screen scene_replaced
 

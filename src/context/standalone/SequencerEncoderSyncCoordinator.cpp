@@ -26,6 +26,10 @@ namespace interaction_policy = core::handler::sequencer::interaction_policy;
 
 namespace {
 
+// Device support groups the high-resolution OPT ticks into relative events;
+// each event owns exactly one matrix row.
+constexpr float CLIP_MATRIX_ROWS_PER_RELATIVE_EVENT = 1.0f;
+
 constexpr float ENCODER_POSITION_EPSILON = 0.0005f;
 constexpr uint8_t MICRO_LENGTH_MIN = 2;
 constexpr uint8_t MICRO_LENGTH_MAX =
@@ -329,6 +333,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::reset() {
     opt_ticks_per_step_configured_ = 0;
     opt_turns_configured_ = 0.0f;
     opt_position_valid_ = false;
+    opt_relative_configured_ = false;
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncNow() {
@@ -356,7 +361,8 @@ FLASHMEM void SequencerEncoderSyncCoordinator::ensureMacroEncoderConfig(
 FLASHMEM void SequencerEncoderSyncCoordinator::ensureOptEncoderConfig(
     const input_utils::StepPropertyEncoderConfig& config
 ) {
-    if (opt_steps_configured_ == config.discreteSteps &&
+    if (!opt_relative_configured_ &&
+        opt_steps_configured_ == config.discreteSteps &&
         opt_ticks_per_step_configured_ == config.discreteTicksPerStep &&
         !hasMeaningfulEncoderDelta(opt_turns_configured_, config.normalizedTurns)) {
         return;
@@ -368,6 +374,21 @@ FLASHMEM void SequencerEncoderSyncCoordinator::ensureOptEncoderConfig(
     opt_ticks_per_step_configured_ = config.discreteTicksPerStep;
     opt_turns_configured_ = config.normalizedTurns;
     opt_position_valid_ = false;
+    opt_relative_configured_ = false;
+}
+
+FLASHMEM void SequencerEncoderSyncCoordinator::ensureOptRelativeMode() {
+    if (opt_relative_configured_) return;
+    encoders_.setMode(
+        Config::EncoderID::OPT,
+        oc::interface::EncoderMode::RELATIVE
+    );
+    encoders_.setDelta(
+        Config::EncoderID::OPT,
+        CLIP_MATRIX_ROWS_PER_RELATIVE_EVENT
+    );
+    invalidateOptEncoderCache();
+    opt_relative_configured_ = true;
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
@@ -556,10 +577,32 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncClipWorkspaceOptValue() {
     const auto& workspace = sequencer_.clipWorkspace;
+    if (workspace.editorActive()) {
+        if (workspace.editor ==
+            core::state::sequencer::ClipWorkspaceEditor::SLOT_ACTION) {
+            invalidateOptEncoderCache();
+            return;
+        }
+        const auto action = core::state::sequencer::clipWorkspaceQuickActionFor(
+            workspace.editorField
+        );
+        const LauncherBehavior behavior{
+            .length = workspace.editorLength,
+            .follow = static_cast<
+                core::state::sequencer::SequencerLauncherFollowChoice>(
+                    workspace.editorFollowChoice),
+            .quantization = static_cast<
+                core::state::sequencer::SequencerLauncherFollowQuantization>(
+                    workspace.editorQuantization),
+        };
+        ensureOptEncoderConfig(clipQuickEncoderConfig(action));
+        syncOptPosition(clipQuickValueToNormalized(behavior, action));
+        return;
+    }
     if (!workspace.quickPropertyArmed ||
         workspace.quickAction == ClipQuickAction::EDIT ||
         workspace.quickAction == ClipQuickAction::COUNT) {
-        invalidateOptEncoderCache();
+        ensureOptRelativeMode();
         return;
     }
     const core::state::sequencer::SequencerClipAddress address{
@@ -570,7 +613,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncClipWorkspaceOptValue() {
         core::state::sequencer::ClipWorkspaceFocus::SCENE;
     if ((!sceneTarget && !clips_.isOccupied(address)) ||
         (sceneTarget && !clips_.sceneUsed(workspace.quickTargetSlot))) {
-        invalidateOptEncoderCache();
+        ensureOptRelativeMode();
         return;
     }
     ensureOptEncoderConfig(clipQuickEncoderConfig(workspace.quickAction));
@@ -644,7 +687,10 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumSequencerValues() {
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
-    if (active_view_.get() != core::ui::ViewType::CLIPS) return;
+    if (active_view_.get() != core::ui::ViewType::CLIPS) {
+        opt_relative_configured_ = false;
+        return;
+    }
 
     // Visible overlays own OPT. Check that authority before specialized root
     // surfaces: Drum remains a visible GRID while its Lane Editor is open, so
@@ -653,6 +699,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     // (128 steps).
     if (overlays_.hasVisible()) {
         invalidateOptEncoderCache();
+        opt_relative_configured_ = false;
         return;
     }
 

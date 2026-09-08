@@ -118,13 +118,14 @@ FLASHMEM void drawPropertyCard(
     const char* value,
     uint32_t color,
     bool selected,
-    bool enabled
+    bool enabled,
+    bool activate = false
 ) {
-    const auto card = translated(origin, 0, y, SURFACE_WIDTH, 54);
+    const auto card = translated(origin, 0, y, SURFACE_WIDTH, 36);
     const uint32_t effectiveColor = enabled ? color : theme::color::INACTIVE;
     drawInteractiveSurface(layer, card, selected, enabled);
 
-    const auto iconArea = translated(origin, 12, y + 18, 18, 18);
+    const auto iconArea = translated(origin, 12, y + 9, 18, 18);
     drawLabel(
         layer,
         iconArea,
@@ -136,7 +137,7 @@ FLASHMEM void drawPropertyCard(
     );
     drawLabel(
         layer,
-        translated(origin, 40, y + 7, 170, 15),
+        translated(origin, 40, y + 5, 78, 24),
         key,
         fonts.meta_label(),
         theme::color::TEXT_SECONDARY,
@@ -144,18 +145,19 @@ FLASHMEM void drawPropertyCard(
     );
     drawLabel(
         layer,
-        translated(origin, 40, y + 23, 228, 22),
+        translated(origin, 122, y + 5, 126, 24),
         value,
-        fonts.primary_value(),
+        fonts.compact_selected(),
         enabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,
-        enabled ? LV_OPA_COVER : OPACITY_55
+        enabled ? LV_OPA_COVER : OPACITY_55,
+        LV_TEXT_ALIGN_RIGHT
     );
     if (selected) {
         drawLabel(
             layer,
-            translated(origin, 252, y + 7, 38, 15),
-            "OPT",
-            fonts.meta_label(),
+            translated(origin, 258, y + 5, 32, 24),
+            activate ? ">" : "OPT",
+            activate ? fonts.primary_value() : fonts.meta_label(),
             theme::color::FOCUS_EDIT,
             enabled ? LV_OPA_80 : OPACITY_55,
             LV_TEXT_ALIGN_RIGHT
@@ -237,6 +239,16 @@ FLASHMEM void ProjectTrackEditorOverlay::render(
     }
 }
 
+FLASHMEM void ProjectTrackEditorOverlay::setContentVisible(bool visible) {
+    if (!surface_ || content_visible_ == visible) return;
+    content_visible_ = visible;
+    if (visible) {
+        lv_obj_clear_flag(surface_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(surface_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
     if (!layer || !surface_) return;
 
@@ -274,7 +286,20 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
     drawPropertyCard(
         layer,
         origin,
-        38,
+        34,
+        icons::ACTION_RENAME,
+        "Name",
+        cache_.title.data(),
+        theme::color::TEXT_PRIMARY,
+        cache_.selectedProperty ==
+            core::state::project::ProjectTrackEditorProperty::NAME,
+        cache_.trackEnabled,
+        true
+    );
+    drawPropertyCard(
+        layer,
+        origin,
+        74,
         icons::MIDI_CHANNEL,
         "MIDI output",
         cache_.route.data(),
@@ -286,7 +311,7 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
     drawPropertyCard(
         layer,
         origin,
-        100,
+        114,
         icons::OFFSET,
         "Delay",
         cache_.delay.data(),
@@ -296,59 +321,17 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
         cache_.trackEnabled
     );
 
-    const auto structure = translated(origin, 0, 165, SURFACE_WIDTH, 31);
-    drawInteractiveSurface(
+    drawPropertyCard(
         layer,
-        structure,
+        origin,
+        154,
+        cache_.drum ? icons::DRUM_GENERIC : icons::NOTE,
+        "Type",
+        cache_.structureHint.data(),
+        theme::color::ROUTING,
         cache_.selectedProperty ==
             core::state::project::ProjectTrackEditorProperty::TYPE,
         cache_.trackEnabled
-    );
-    drawLabel(
-        layer,
-        translated(origin, 12, 172, 18, 18),
-        cache_.drum ? icons::DRUM_GENERIC : icons::NOTE,
-        standalone_fonts.icons_16,
-        cache_.trackEnabled ? theme::color::ROUTING : theme::color::INACTIVE,
-        cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55,
-        LV_TEXT_ALIGN_CENTER
-    );
-    drawLabel(
-        layer,
-        translated(origin, 40, 173, 114, 16),
-        "Type",
-        fonts.meta_label(),
-        cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,
-        cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55
-    );
-    drawLabel(
-        layer,
-        translated(origin, 156, 173, 88, 16),
-        cache_.structureHint.data(),
-        fonts.meta_label(),
-        theme::color::TEXT_SECONDARY,
-        cache_.trackEnabled ? LV_OPA_80 : OPACITY_55,
-        LV_TEXT_ALIGN_RIGHT
-    );
-    drawLabel(
-        layer,
-        translated(origin, 254, 171, 40, 19),
-        cache_.selectedProperty ==
-                core::state::project::ProjectTrackEditorProperty::TYPE
-            ? "OPT"
-            : ">",
-        cache_.selectedProperty ==
-                core::state::project::ProjectTrackEditorProperty::TYPE
-            ? fonts.meta_label()
-            : fonts.primary_value(),
-        cache_.selectedProperty ==
-                core::state::project::ProjectTrackEditorProperty::TYPE
-            ? theme::color::FOCUS_EDIT
-            : (cache_.trackEnabled
-                   ? theme::color::TEXT_SECONDARY
-                   : theme::color::INACTIVE),
-        cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55,
-        LV_TEXT_ALIGN_RIGHT
     );
 }
 

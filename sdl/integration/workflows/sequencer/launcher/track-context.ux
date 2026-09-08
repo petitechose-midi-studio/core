@@ -1,35 +1,31 @@
 # UX workflow: sequential Track creation and Track-context actions.
 # Purpose: validates the sole +Track column, inherited track-type picker,
-# default MIDI routing, LEFT_CENTER Track settings and short-NAV immediate Stop.
+# default MIDI routing, LEFT_CENTER Track settings and short-NAV Mute.
 # Expect: capture_changed:track_4_add=launcher_ready
 # Expect: capture_changed:track_type_picker=track_4_add
 # Expect: capture_changed:track_4_pattern=track_type_picker
 # Expect: capture_changed:track_4_created=track_4_pattern
 # Expect: capture_changed:track_4_settings=track_4_header
 # Expect: capture_changed:track_4_header_restored=track_4_settings
-# Expect: capture_changed:track_4_stopped=track_4_header_restored
-# Expect: capture_changed:track_5_add=track_4_stopped
+# Expect: capture_changed:track_4_muted=track_4_header_restored
+# Expect: capture_changed:track_5_add=track_4_muted
 # Expect: semantic:track_4_add:target=track, semantic:track_4_add:target_track=3, semantic:track_4_add:property=empty
 # Expect: semantic:track_type_picker:effect=open_track_type_picker, semantic:track_type_picker:target_track=3
 # Expect: semantic:track_4_pattern:mode=sequencer.pattern, semantic:track_4_pattern:effect=create_track_and_open_pattern
 # Expect: semantic:track_4_created:effect=return_to_clip_launcher, semantic:track_4_created:target_track=3, semantic:track_4_created:target_index=0
 # Expect: semantic:track_4_settings:effect=open_track_settings, semantic:track_4_settings:target_track=3
-# Expect: semantic:track_4_stopped:effect=stop_track, semantic:track_4_stopped:operation_origin=direct_stop, semantic:track_4_stopped:operation_status=applied, semantic:track_4_stopped:stopped=1
+# Expect: semantic:track_4_muted:effect=toggle_track_mute, semantic:track_4_muted:property=mute, semantic:track_4_muted:target_track=3
 # Expect: semantic:track_5_add:target=track, semantic:track_5_add:target_track=4, semantic:track_5_add:property=empty
 
 0 scenario clip-launcher-v3
 100 capture screen launcher_ready
 
 # Move to Track context, then horizontally to the only sequential Add Track.
-220 button NAV down
 300 encoder NAV 0.01
-380 button NAV up
-460 encoder NAV -0.01
-540 button NAV down
+460 encoder OPT -0.01
 620 encoder NAV 0.01
 700 encoder NAV 0.01
 780 encoder NAV 0.01
-860 button NAV up
 1020 capture screen track_4_add
 
 # Instrument is the default type. Applying it creates T4 and its resident Clip.
@@ -42,19 +38,17 @@
 
 # LEFT_CENTER on the T4 header opens routing settings. The default route follows
 # Track identity, so the new T4 starts on MIDI Channel 4.
-2000 encoder NAV -0.01
+2000 encoder OPT -0.01
 2160 capture screen track_4_header
 2240 tap LEFT_CENTER 60
 2600 capture screen track_4_settings
 2680 tap LEFT_TOP 60
 2860 capture screen track_4_header_restored
 
-# Short NAV in Track context is the explicit immediate Stop action.
+# Short NAV in Track context toggles the Track Mute state.
 2940 tap NAV 60
-3120 capture screen track_4_stopped
+3120 capture screen track_4_muted
 
 # The next horizontal position is now +T5, proving sequential growth.
-3200 button NAV down
 3280 encoder NAV 0.01
-3360 button NAV up
 3520 capture screen track_5_add

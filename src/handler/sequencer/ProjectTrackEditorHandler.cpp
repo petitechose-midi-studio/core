@@ -71,30 +71,64 @@ FLASHMEM void ProjectTrackEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() { return editor_.active; })
         .then([this](float delta) {
-            if (buttons_.isPressed(Config::ButtonID::LEFT_CENTER)) {
+            nav_turned_ = nav_turned_ || delta != 0.0f;
+            if (editor_.textEditing) {
+                moveNameKey(delta);
+            } else if (buttons_.isPressed(Config::ButtonID::LEFT_CENTER)) {
                 moveTrack(delta);
             } else {
                 moveProperty(delta);
             }
         });
 
+    buttons_.button(Config::ButtonID::NAV)
+        .press()
+        .scope(overlay_scope_)
+        .when([this]() { return editor_.active; })
+        .then([this]() { nav_turned_ = false; });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .release()
+        .scope(overlay_scope_)
+        .when([this]() { return editor_.active; })
+        .then([this]() {
+            if (!nav_turned_) activateFocusedProperty();
+            nav_turned_ = false;
+        });
+
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(overlay_scope_)
         .when([this]() { return editor_.active && ownsActiveTrack(); })
-        .then([this](float normalized) { setFocusedValue(normalized); });
+        .then([this](float value) {
+            if (editor_.textEditing) {
+                moveNameRow(value);
+            } else {
+                setFocusedValue(value);
+            }
+        });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(overlay_scope_)
         .when([this]() { return editor_.active; })
-        .then([this]() { close(); });
+        .then([this]() {
+            if (editor_.textEditing) {
+                cancelNameEditing();
+            } else {
+                close();
+            }
+        });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(overlay_scope_)
         .when([this]() { return editor_.active && ownsActiveTrack(); })
         .then([this]() {
+            if (editor_.textEditing) {
+                (void)core::state::project::backspaceProjectTrackName(editor_);
+                return;
+            }
             if (core::state::project::projectTrackEditorKindDraftDirty(editor_)) {
                 cancelTrackKindDraft();
             } else {
@@ -107,6 +141,10 @@ FLASHMEM void ProjectTrackEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() { return editor_.active && ownsActiveTrack(); })
         .then([this]() {
+            if (editor_.textEditing) {
+                applyNameEditing();
+                return;
+            }
             if (editor_.selectedProperty == EditorProperty::TYPE &&
                 editor_.draftKind != editor_.currentKind) {
                 applyTrackKind();
@@ -131,6 +169,7 @@ FLASHMEM bool ProjectTrackEditorHandler::openActiveTrack() {
         return false;
     }
     syncKindDraft();
+    nav_turned_ = false;
     overlays_.show(core::ui::OverlayType::SEQ_TRACK_EDIT);
     configureOpt();
     return true;
@@ -138,6 +177,10 @@ FLASHMEM bool ProjectTrackEditorHandler::openActiveTrack() {
 
 FLASHMEM void ProjectTrackEditorHandler::close() {
     commitPendingGesture();
+    if (editor_.textEditing) {
+        (void)core::state::project::endProjectTrackNameEditing(editor_);
+    }
+    nav_turned_ = false;
     cancelTrackKindDraft();
     if (overlays_.isCurrent(core::ui::OverlayType::SEQ_TRACK_EDIT)) {
         overlays_.hide();
@@ -151,6 +194,12 @@ void ProjectTrackEditorHandler::update(uint32_t nowMs) {
         commitPendingGesture();
     }
     if (!editor_.active) return;
+    if (editor_.textEditing) {
+        (void)core::state::project::setProjectTrackNameShift(
+            editor_,
+            buttons_.isPressed(Config::ButtonID::LEFT_CENTER)
+        );
+    }
     if (clip_grid_revision_ != sequencer_clips_.revisionSignal().get()) {
         syncTrackKindGuard();
     }
@@ -166,10 +215,11 @@ void ProjectTrackEditorHandler::update(uint32_t nowMs) {
     }
     if (editor_.trackIndex != active) {
         commitPendingGesture();
-        if (core::state::project::projectTrackEditorKindDraftDirty(editor_)) {
+        if (editor_.textEditing ||
+            core::state::project::projectTrackEditorKindDraftDirty(editor_)) {
             // The retained editor owns its opening target while its destructive
-            // type draft is dirty. Restore any non-authoritative cursor drift
-            // instead of silently moving or discarding the draft.
+            // type or text draft is open. Restore non-authoritative cursor
+            // drift instead of silently retargeting an unfinished edit.
             (void)shared_tracks_.setState(enabled, editor_.trackIndex);
             return;
         }
@@ -197,6 +247,7 @@ void ProjectTrackEditorHandler::update(uint32_t nowMs) {
 }
 
 FLASHMEM void ProjectTrackEditorHandler::moveTrack(float delta) {
+    if (editor_.textEditing) return;
     const int move = direction(delta);
     if (move == 0) return;
     commitPendingGesture();
@@ -220,6 +271,7 @@ FLASHMEM void ProjectTrackEditorHandler::moveTrack(float delta) {
 }
 
 FLASHMEM void ProjectTrackEditorHandler::moveProperty(float delta) {
+    if (editor_.textEditing) return;
     commitPendingGesture();
     if (core::state::project::moveProjectTrackEditorProperty(
             editor_,
@@ -229,8 +281,53 @@ FLASHMEM void ProjectTrackEditorHandler::moveProperty(float delta) {
     }
 }
 
+FLASHMEM void ProjectTrackEditorHandler::moveNameKey(float delta) {
+    (void)core::state::project::moveProjectTrackNameKey(
+        editor_,
+        direction(delta)
+    );
+}
+
+FLASHMEM void ProjectTrackEditorHandler::moveNameRow(float rawPosition) {
+    (void)core::state::project::moveProjectTrackNameRow(editor_, rawPosition);
+}
+
+FLASHMEM void ProjectTrackEditorHandler::activateFocusedProperty() {
+    if (editor_.textEditing) {
+        (void)core::state::project::insertProjectTrackNameKey(editor_);
+        return;
+    }
+    if (editor_.selectedProperty != EditorProperty::NAME) return;
+    std::array<char, core::state::project::PROJECT_TRACK_NAME_MAX_LENGTH + 1U>
+        displayName{};
+    core::state::project::formatProjectTrackName(
+        tracks_,
+        editor_.trackIndex,
+        displayName.data(),
+        displayName.size()
+    );
+    if (core::state::project::beginProjectTrackNameEditing(
+            editor_, displayName.data()).changed()) {
+        configureOpt();
+    }
+}
+
+FLASHMEM void ProjectTrackEditorHandler::cancelNameEditing() {
+    if (!editor_.textEditing) return;
+    (void)core::state::project::endProjectTrackNameEditing(editor_);
+    configureOpt();
+}
+
+FLASHMEM void ProjectTrackEditorHandler::applyNameEditing() {
+    if (!editor_.textEditing) return;
+    (void)track_domain_.setName(editor_.trackIndex, editor_.nameDraft.data());
+    (void)core::state::project::endProjectTrackNameEditing(editor_);
+    configureOpt();
+}
+
 FLASHMEM void ProjectTrackEditorHandler::setFocusedValue(float normalized) {
     const auto property = editor_.selectedProperty;
+    if (property == EditorProperty::NAME) return;
     if (property == EditorProperty::TYPE) {
         (void)core::state::project::selectProjectTrackEditorDraftKind(
             editor_,
@@ -371,6 +468,19 @@ FLASHMEM void ProjectTrackEditorHandler::syncTrackKindGuard() {
 }
 
 FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
+    if (editor_.textEditing) {
+        encoders_.setMode(
+            Config::EncoderID::OPT,
+            oc::interface::EncoderMode::RAW
+        );
+        encoders_.setPosition(Config::EncoderID::OPT, 0.0f);
+        return;
+    }
+    encoders_.setMode(
+        Config::EncoderID::OPT,
+        oc::interface::EncoderMode::NORMALIZED
+    );
+    encoders_.setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
     encoders_.setDiscreteTicksPerStep(
         Config::EncoderID::OPT,
         input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
@@ -379,6 +489,12 @@ FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
         Config::EncoderID::OPT,
         input_utils::DEFAULT_NORMALIZED_TURNS
     );
+
+    if (editor_.selectedProperty == EditorProperty::NAME) {
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 1U);
+        encoders_.setPosition(Config::EncoderID::OPT, 0.0f);
+        return;
+    }
 
     if (editor_.selectedProperty == EditorProperty::CHANNEL) {
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, 16U);

@@ -7,19 +7,25 @@
 namespace core::persistence::project_track_codec {
 
 inline constexpr uint8_t PROJECT_TRACK_CHUNK_VERSION_MAJOR = 1U;
-inline constexpr uint8_t PROJECT_TRACK_CHUNK_VERSION_MINOR = 0U;
+inline constexpr uint8_t PROJECT_TRACK_CHUNK_VERSION_MINOR = 1U;
 
 inline constexpr uint32_t PROJECT_TRACK_CHANNELS_PAYLOAD_SIZE =
     core::state::project::PROJECT_TRACK_COUNT;
 inline constexpr uint32_t PROJECT_TRACK_DELAYS_PAYLOAD_SIZE =
     core::state::project::PROJECT_TRACK_COUNT * sizeof(int16_t);
 inline constexpr uint32_t PROJECT_TRACK_MASKS_PAYLOAD_SIZE = 2U * sizeof(uint16_t);
-inline constexpr uint32_t PROJECT_TRACK_STATE_PAYLOAD_SIZE =
+inline constexpr uint32_t PROJECT_TRACK_NAMES_PAYLOAD_SIZE =
+    core::state::project::PROJECT_TRACK_COUNT *
+    (core::state::project::PROJECT_TRACK_NAME_MAX_LENGTH + 1U);
+inline constexpr uint32_t PROJECT_TRACK_LEGACY_PAYLOAD_SIZE =
     PROJECT_TRACK_CHANNELS_PAYLOAD_SIZE +
     PROJECT_TRACK_DELAYS_PAYLOAD_SIZE +
     PROJECT_TRACK_MASKS_PAYLOAD_SIZE;
+inline constexpr uint32_t PROJECT_TRACK_STATE_PAYLOAD_SIZE =
+    PROJECT_TRACK_LEGACY_PAYLOAD_SIZE + PROJECT_TRACK_NAMES_PAYLOAD_SIZE;
 
-static_assert(PROJECT_TRACK_STATE_PAYLOAD_SIZE == 52U);
+static_assert(PROJECT_TRACK_LEGACY_PAYLOAD_SIZE == 52U);
+static_assert(PROJECT_TRACK_STATE_PAYLOAD_SIZE == 196U);
 
 enum class Status : uint8_t {
     OK = 0,
@@ -45,10 +51,10 @@ struct DecodeResult {
 };
 
 /**
- * Encodes the canonical TRKS 1.0 payload.
+ * Encodes the canonical TRKS 1.1 payload.
  *
  * The output is not modified unless the snapshot is valid and the complete
- * 52-byte payload fits in the caller-provided buffer.
+ * payload fits in the caller-provided buffer.
  */
 [[nodiscard]] EncodeResult encodeProjectTrackStatePayload(
     const core::state::project::ProjectTrackSnapshot& source,
@@ -57,7 +63,7 @@ struct DecodeResult {
 );
 
 /**
- * Decodes an exact TRKS 1.0 payload transactionally.
+ * Decodes an exact TRKS 1.0 or 1.1 payload transactionally.
  *
  * Version, size and every bounded value are validated before publishing the
  * result. `out` therefore remains byte-for-byte unchanged on every failure.

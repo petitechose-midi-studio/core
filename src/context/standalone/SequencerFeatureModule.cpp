@@ -224,6 +224,11 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     track_editor_overlay_ = core::app::makeExtmemUnique<
         core::ui::project::ProjectTrackEditorOverlay>(overlayRoot);
     if (!track_editor_overlay_ || !track_editor_overlay_->getElement()) return;
+    track_name_keyboard_ = core::app::makeExtmemUnique<
+        core::ui::interaction::TextKeyboardView>(
+            track_editor_overlay_->getElement()
+        );
+    if (!track_name_keyboard_ || !track_name_keyboard_->valid()) return;
     track_editor_action_strip_ =
         core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
             track_editor_overlay_->getElement(),
@@ -434,6 +439,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.sharedTrackActive,
             },
             *track_editor_overlay_,
+            *track_name_keyboard_,
             *track_editor_action_strip_
         );
     if (!track_editor_presenter_ || !track_editor_presenter_->bind()) return;

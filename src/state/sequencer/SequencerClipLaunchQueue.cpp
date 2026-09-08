@@ -407,12 +407,18 @@ void SequencerClipLaunchQueue::updateTransportPosition(
     uint32_t tick,
     bool playing
 ) {
+    const bool progressChanged = playing && tick != transport_tick_;
     const uint32_t beat = tick / kTicksPerBeat;
     const bool changed = playing != transport_playing_ ||
         (playing && beat != published_beat_);
     transport_tick_ = tick;
     transport_playing_ = playing;
     published_beat_ = beat;
+    if (progressChanged) {
+        playback_progress_revision_.set(static_cast<uint8_t>(
+            playback_progress_revision_.get() + 1U
+        ));
+    }
     if (changed) bumpTelemetryRevision_();
 }
 

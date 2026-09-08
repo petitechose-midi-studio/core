@@ -1,4 +1,3 @@
-# Native pixel counterpart: author a CC curve, inspect playback, then stop.
 # Purpose: author a CC curve, inspect playback, then stop in the native pixel counterpart.
 # Expect: semantic:cc_static:mode=sequencer.cc_lane.grid, semantic:cc_final:mode=sequencer.cc_lane.grid
 0 scenario sequencer

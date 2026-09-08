@@ -11,7 +11,7 @@
 # Expect: semantic:clip_selected:effect=enter_clip_selection, semantic:clip_selected:projection=selected
 # Expect: semantic:duplicate_target:effect=begin_duplicate_clip, semantic:duplicate_target:projection=duplicate_destination
 # Expect: semantic:clip_duplicated:effect=duplicate_clip, semantic:clip_duplicated:outcome=applied
-# Expect: semantic:move_target:effect=focus_clip, semantic:move_target:projection=move_destination
+# Expect: semantic:move_target:effect=focus_launcher_column, semantic:move_target:projection=move_destination
 # Expect: semantic:clip_moved:effect=move_clip, semantic:clip_moved:outcome=applied
 # Expect: semantic:clip_removed:effect=remove_clip, semantic:clip_removed:outcome=applied
 

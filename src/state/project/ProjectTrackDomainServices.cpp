@@ -161,6 +161,30 @@ FLASHMEM bool ProjectTrackDomainServices::setSoloed(
     );
 }
 
+FLASHMEM bool ProjectTrackDomainServices::setName(
+    uint8_t track,
+    const char* name
+) {
+    if (tracks_ == nullptr || history_ == nullptr || name == nullptr ||
+        !validProjectTrackIndex(track)) {
+        return false;
+    }
+    const bool ownsGesture = !history_->hasPendingGesture();
+    if (ownsGesture &&
+        !beginGesture(ProjectTrackHistoryActionKind::Name, track)) {
+        return false;
+    }
+    if (!history_->gestureMatches(ProjectTrackHistoryActionKind::Name, track)) {
+        return false;
+    }
+    const auto result = setProjectTrackName(*tracks_, track, name);
+    if (!result.changed()) {
+        if (ownsGesture) (void)history_->cancelGesture(*tracks_);
+        return false;
+    }
+    return ownsGesture ? endGesture() : true;
+}
+
 FLASHMEM bool ProjectTrackDomainServices::beginGesture(
     ProjectTrackHistoryActionKind kind,
     uint8_t track

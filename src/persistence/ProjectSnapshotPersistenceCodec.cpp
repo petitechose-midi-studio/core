@@ -37,7 +37,7 @@ ProjectSnapshotCodecWorkspace& ProjectSnapshotCodecWorkspace::operator=(
 ) noexcept = default;
 
 FLASHMEM bool ProjectSnapshotCodecWorkspace::prepare() {
-    static_assert(sizeof(Storage) == 173992U, "project encode scratch ABI drift");
+    static_assert(sizeof(Storage) == 174136U, "project encode scratch ABI drift");
     if (!storage_) {
         storage_ = core::app::makeExtmemUniqueForOverwrite<Storage>();
     }

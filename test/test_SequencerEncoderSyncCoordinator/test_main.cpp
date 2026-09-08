@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include <config/InputIDs.hpp>
+#include <config/Timing.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/input/InputBinding.hpp>
@@ -295,6 +296,88 @@ void expects_clip_quick_property_to_publish_its_exact_opt_contract() {
         "[PASS] expects_clip_quick_property_to_publish_its_exact_opt_contract\n";
 }
 
+void expects_clip_matrix_to_borrow_opt_only_for_quick_editing() {
+    SequencerEncoderSyncHarness h;
+    auto& workspace = h.state.sequencer.clipWorkspace;
+    workspace.reset(0U);
+    workspace.focus(0U, 0U);
+
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getMode(OPT_ENCODER_ID) ==
+           oc::interface::EncoderMode::RELATIVE);
+    assert(almostEqual(h.encoderHw.getDelta(OPT_ENCODER_ID), 1.0f));
+
+    workspace.showQuickSelector();
+    workspace.moveQuickAction(1);
+    workspace.armQuickProperty(0U);
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getMode(OPT_ENCODER_ID) ==
+           oc::interface::EncoderMode::NORMALIZED);
+
+    workspace.updateQuickFeedback(
+        Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+    );
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getMode(OPT_ENCODER_ID) ==
+           oc::interface::EncoderMode::RELATIVE);
+    assert(almostEqual(h.encoderHw.getDelta(OPT_ENCODER_ID), 1.0f));
+
+    std::cout <<
+        "[PASS] expects_clip_matrix_to_borrow_opt_only_for_quick_editing\n";
+}
+
+void expects_clip_behavior_editor_to_follow_the_focused_field() {
+    SequencerEncoderSyncHarness h;
+    auto& workspace = h.state.sequencer.clipWorkspace;
+    workspace.reset(0U);
+    workspace.focus(0U, 0U);
+    workspace.openEditor(
+        core::state::sequencer::ClipWorkspaceEditor::CLIP_BEHAVIOR,
+        8U,
+        static_cast<uint8_t>(
+            core::state::sequencer::SequencerLauncherFollowChoice::NEXT),
+        static_cast<uint8_t>(
+            core::state::sequencer::SequencerLauncherFollowQuantization::BAR)
+    );
+
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) == 17U);
+    assert(almostEqual(
+        h.encoderHw.getPosition(OPT_ENCODER_ID),
+        input_utils::indexToNormalized(8, 17)
+    ));
+
+    workspace.moveEditorField(1);
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) ==
+           core::state::sequencer::sequencerLauncherFollowChoiceCount());
+    assert(almostEqual(
+        h.encoderHw.getPosition(OPT_ENCODER_ID),
+        input_utils::indexToNormalized(
+            core::state::sequencer::sequencerLauncherFollowChoiceIndex(
+                core::state::sequencer::SequencerLauncherFollowChoice::NEXT),
+            core::state::sequencer::sequencerLauncherFollowChoiceCount()
+        )
+    ));
+
+    workspace.moveEditorField(1);
+    test_support::drainNotifications();
+    h.sync.syncNow();
+    assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) == 3U);
+    assert(almostEqual(
+        h.encoderHw.getPosition(OPT_ENCODER_ID),
+        input_utils::indexToNormalized(2, 3)
+    ));
+
+    std::cout <<
+        "[PASS] expects_clip_behavior_editor_to_follow_the_focused_field\n";
+}
+
 }  // namespace
 
 int main() {
@@ -305,6 +388,8 @@ int main() {
     expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid();
     expects_drum_pattern_defaults_to_own_opt_only_while_open();
     expects_clip_quick_property_to_publish_its_exact_opt_contract();
+    expects_clip_matrix_to_borrow_opt_only_for_quick_editing();
+    expects_clip_behavior_editor_to_follow_the_focused_field();
 
     std::cout << "SequencerEncoderSyncCoordinator tests passed\n";
     return 0;

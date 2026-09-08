@@ -585,7 +585,7 @@ void test_clip_launcher_gestures_separate_selection_properties_and_pattern() {
         << "[PASS] Clip Launcher separates selection, properties and Pattern\n";
 }
 
-void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
+void test_clip_launcher_encoders_navigate_cartesian_axes() {
     SequencerStepHarness h(true);
     assert(h.state.setSharedTrackState(0x0007U, 0U));
     auto& launcher = h.state.sequencer.clipWorkspace;
@@ -595,11 +595,9 @@ void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
     const uint16_t stagedBefore = launches.stagedTrackMask();
 
     assert(launcher.sceneFocused());
-    h.press(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(launcher.clipFocused());
     assert(launcher.focusedTrack == 0U);
-    h.release(Config::ButtonID::NAV);
     assert(launcher.clipFocused());
     assert(launches.pendingTrackMask() == pendingBefore);
     assert(launches.stagedTrackMask() == stagedBefore);
@@ -620,16 +618,16 @@ void test_clip_launcher_nav_turn_moves_horizontally_without_launching() {
     assert(launches.pendingTrackMask() == pendingBefore);
     assert(launches.stagedTrackMask() == stagedBefore);
 
-    // Coalesced vertical detents must cross the semantic Track header -> Clip
+    // Coalesced OPT detents must cross the semantic Track header -> Clip
     // boundary one step at a time instead of dropping the second detent.
     launcher.focusTrackHeader(0U);
-    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.turn(Config::EncoderID::OPT, 2.0f);
     assert(launcher.clipFocused());
     assert(launcher.focusedTrack == 0U);
     assert(launcher.focusedSlot == 1U);
 
     std::cout
-        << "[PASS] Clip Launcher held NAV moves horizontally without launch\n";
+        << "[PASS] Clip Launcher NAV/OPT navigate X/Y without launch\n";
 }
 
 void test_clip_launcher_left_center_arms_quick_property_for_opt() {
@@ -678,8 +676,56 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
     h.turn(Config::EncoderID::OPT, 0.5f);
     assert(h.state.sequencerClips.sceneBehavior(0U).length == 8U);
 
+    h.tick(g_now_ms + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS);
+    assert(!launcher.quickPropertyArmed);
+    assert(!launcher.quickFeedbackVisible);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(launcher.sceneFocused());
+    assert(launcher.focusedSlot == 1U);
+
     std::cout
         << "[PASS] Clip and Scene LEFT_CENTER arm quick OPT editing\n";
+}
+
+void test_clip_launcher_behavior_editor_applies_opt_edits_live() {
+    SequencerStepHarness h(true);
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    const seq::SequencerClipAddress address{0U, 0U};
+    launcher.focus(address.track, address.slot);
+
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(launcher.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR);
+    assert(launcher.editorField ==
+           seq::ClipWorkspaceBehaviorField::LENGTH);
+
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.sequencerClips.clipBehavior(address).length == 8U);
+    assert(launcher.editorLength == 8U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(launcher.editorField ==
+           seq::ClipWorkspaceBehaviorField::FOLLOW);
+    const float nextChoice = static_cast<float>(
+        seq::sequencerLauncherFollowChoiceIndex(
+            seq::SequencerLauncherFollowChoice::NEXT
+        )
+    ) / static_cast<float>(seq::sequencerLauncherFollowChoiceCount() - 1U);
+    h.turn(Config::EncoderID::OPT, nextChoice);
+    assert(h.state.sequencerClips.clipBehavior(address).follow ==
+           seq::SequencerLauncherFollowChoice::NEXT);
+
+    // Behavior edits are live: NAV is no longer a hidden commit gesture and
+    // leaving through the canonical Back action keeps the authored values.
+    h.tap(Config::ButtonID::NAV);
+    assert(launcher.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!launcher.editorActive());
+    assert(h.state.sequencerClips.clipBehavior(address).length == 8U);
+    assert(h.state.sequencerClips.clipBehavior(address).follow ==
+           seq::SequencerLauncherFollowChoice::NEXT);
+
+    std::cout
+        << "[PASS] Clip behavior editor applies focused OPT edits live\n";
 }
 
 void test_clip_launcher_direct_pattern_and_short_create_actions() {
@@ -729,12 +775,18 @@ void test_clip_launcher_performance_actions_fire_on_press() {
     launcher.focus(0U, 0U);
     h.state.statusBar.playing.set(true);
 
-    h.press(Config::MACRO_BUTTONS[4]);
+    h.press(Config::MACRO_BUTTONS[5]);
     assert(h.state.sequencerClipLaunches.telemetry(0U).queuedSlot == 1U);
+    h.release(Config::MACRO_BUTTONS[5]);
+
+    h.press(Config::MACRO_BUTTONS[4]);
+    assert(h.state.sequencerClipLaunches.sceneTelemetry().queuedScene == 1U);
+    assert(launcher.sceneFocused());
+    assert(launcher.focusedSlot == 1U);
     h.release(Config::MACRO_BUTTONS[4]);
 
     launcher.focusTrackHeader(0U);
-    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    h.tap(Config::ButtonID::NAV);
     assert(core::state::project::projectTrackMuted(
         h.state.projectTracks,
         0U
@@ -883,7 +935,7 @@ void test_clip_launcher_moves_a_multi_selection_with_one_undo() {
     h.release(Config::ButtonID::NAV);
     assert(launcher.selectedCount() == 1U);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
     assert(launcher.focusedSlot == 1U);
     h.tap(Config::ButtonID::NAV);
     assert(launcher.selectedCount() == 2U);
@@ -891,7 +943,7 @@ void test_clip_launcher_moves_a_multi_selection_with_one_undo() {
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(launcher.operation == seq::ClipWorkspaceOperation::MOVE_DESTINATION);
     assert(launcher.focusedSlot == 0U);
-    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
     assert(launcher.focusedSlot == 1U);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
@@ -3503,7 +3555,7 @@ void test_pattern_editor_adds_only_the_next_page() {
     std::cout << "[PASS] test_pattern_editor_adds_only_the_next_page\n";
 }
 
-void test_track_focus_bottom_left_mutes_without_clearing_payload() {
+void test_track_header_nav_mutes_without_clearing_payload() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 1);
@@ -3514,8 +3566,7 @@ void test_track_focus_bottom_left_mutes_without_clearing_payload() {
 
     const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
     const uint8_t trackUndoBefore = h.state.projectTrackHistory.undoCount();
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
+    h.tap(Config::ButtonID::NAV);
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.projectTracks.authored.mutedMask == 0x0002);
@@ -3533,15 +3584,13 @@ void test_track_focus_bottom_left_mutes_without_clearing_payload() {
     assert(h.state.redoProjectHistory());
     assert(h.state.projectTracks.authored.mutedMask == 0x0002);
 
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
+    h.tap(Config::ButtonID::NAV);
     assert(h.state.projectTracks.authored.mutedMask == 0);
 
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
+    h.tap(Config::ButtonID::NAV);
     assert(h.state.projectTracks.authored.mutedMask == 0x0002);
 
-    std::cout << "[PASS] test_track_focus_bottom_left_mutes_without_clearing_payload\n";
+    std::cout << "[PASS] test_track_header_nav_mutes_without_clearing_payload\n";
 }
 
 void test_sequencer_page_copy_and_long_press_paste() {
@@ -6610,55 +6659,6 @@ void test_direct_track_missing_presentation_capability_is_preflight_atomic() {
 void test_track_remove_hold_latches_target_and_rejects_external_drift() {
     {
         SequencerStepHarness h;
-        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
-        seq::resetTransientTrackState(h.state.sequencer);
-        test_support::drainNotifications();
-
-        h.press(Config::ButtonID::BOTTOM_LEFT);
-        assert(h.state.trackNavigation.hold.action.get() ==
-               core::state::StructureHoldAction::REMOVE);
-        assert(h.state.trackNavigation.previewTrackIndex.get() ==
-               kDirectTrackOldActive);
-
-        h.turn(Config::EncoderID::NAV, 1.0f);
-        assert(h.state.sequencerTracks.activeTrackIndex() ==
-               kDirectTrackOldActive);
-        assert(h.state.trackNavigation.previewTrackIndex.get() ==
-               kDirectTrackOldActive);
-
-        assert(h.state.setSharedTrackState(
-            kDirectTrackSparseMask,
-            kDirectTrackIncoming
-        ));
-        test_support::drainNotifications();
-        assert(h.state.sequencerTracks.activeTrackIndex() ==
-               kDirectTrackIncoming);
-        assert(h.state.trackNavigation.previewTrackIndex.get() ==
-               kDirectTrackOldActive);
-        const uint8_t sequencerUndoBefore =
-            h.state.sequencerHistory.undoCount();
-        const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
-        const uint16_t maskBefore =
-            h.state.sequencerTracks.currentEnabledMask();
-
-        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-        assert(h.state.trackNavigation.hold.action.get() ==
-               core::state::StructureHoldAction::NONE);
-        assert(h.state.sequencerTracks.currentEnabledMask() == maskBefore);
-        assert(h.state.sequencerTracks.activeTrackIndex() ==
-               kDirectTrackIncoming);
-        assert(h.state.trackNavigation.previewTrackIndex.get() ==
-               kDirectTrackOldActive);
-        assert(h.state.sequencerHistory.undoCount() == sequencerUndoBefore);
-        assert(h.state.projectHistory.undoCount() == projectUndoBefore);
-
-        const uint16_t mutedBefore = h.state.projectTracks.authored.mutedMask;
-        h.release(Config::ButtonID::BOTTOM_LEFT);
-        assert(h.state.projectTracks.authored.mutedMask == mutedBefore);
-    }
-
-    {
-        SequencerStepHarness h;
         configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
         const auto create =
             core::handler::executeSequencerCreateTrackStructure(
@@ -6722,50 +6722,42 @@ void test_track_header_nav_never_opens_pattern_context_selector() {
         << "[PASS] Track header NAV never opens Pattern context selector\n";
 }
 
-void test_track_remove_hold_rejects_new_nav_press_without_hiding_action() {
-    {
-        SequencerStepHarness h;
-        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
-        seq::resetTransientTrackState(h.state.sequencer);
-        test_support::drainNotifications();
+void test_clip_stop_layer_owns_bottom_left_and_nav() {
+    SequencerStepHarness h(true);
+    auto& workspace = h.state.sequencer.clipWorkspace;
+    auto& launches = h.state.sequencerClipLaunches;
+    workspace.reset(0U);
+    workspace.focus(0U, 0U);
+    h.state.statusBar.playing.set(true);
 
-        const uint16_t maskBefore =
-            h.state.sequencerTracks.currentEnabledMask();
-        const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
-        h.press(Config::ButtonID::BOTTOM_LEFT);
-        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
-        h.press(Config::ButtonID::NAV);
-        assert(!h.state.sequencer.contextSelector.visible);
-        h.advance(1U);
-        test_support::drainNotifications();
+    assert(h.state.requestSequencerClipLaunch(
+        {0U, 0U},
+        seq::SequencerClipLaunchQuantization::IMMEDIATE
+    ));
+    const auto start = launches.captureRuntimePublication(
+        h.state.sequencerClips,
+        true
+    );
+    launches.applyRuntimePublication(start, 0U, 1U);
+    assert(launches.markAppliedFromRealtime(0U, start.generations[0U]));
+    (void)launches.publishRealtimeTelemetry();
+    assert(!launches.stopped(0U));
 
-        assert(!h.state.sequencer.contextSelector.visible);
-        assert(h.state.sequencerTracks.currentEnabledMask() != maskBefore);
-        assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
-        h.release(Config::ButtonID::NAV);
-        h.release(Config::ButtonID::BOTTOM_LEFT);
-        assert(!h.state.sequencer.contextSelector.visible);
-    }
-
-    {
-        SequencerStepHarness h;
-        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
-        seq::resetTransientTrackState(h.state.sequencer);
-        test_support::drainNotifications();
-
-        const uint16_t mutedBefore =
-            h.state.projectTracks.authored.mutedMask;
-        h.press(Config::ButtonID::BOTTOM_LEFT);
-        h.press(Config::ButtonID::NAV);
-        assert(!h.state.sequencer.contextSelector.visible);
-        h.release(Config::ButtonID::BOTTOM_LEFT);
-        h.release(Config::ButtonID::NAV);
-        assert(!h.state.sequencer.contextSelector.visible);
-        assert(h.state.projectTracks.authored.mutedMask != mutedBefore);
-    }
+    const uint16_t enabledBefore =
+        h.state.sequencerTracks.currentEnabledMask();
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(workspace.stopLayerActive);
+    assert(h.state.trackNavigation.hold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+    h.press(Config::ButtonID::NAV);
+    assert((launches.pendingTrackMask() & 0x0001U) != 0U);
+    assert(h.state.sequencerTracks.currentEnabledMask() == enabledBefore);
+    h.release(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(!workspace.stopLayerActive);
 
     std::cout
-        << "[PASS] acquired Track Remove rejects a new NAV selector press\n";
+        << "[PASS] Clip Stop layer owns BOTTOM_LEFT and focused NAV Stop\n";
 }
 
 void test_track_hold_boundary_drift_cannot_retarget_mutation() {
@@ -6855,497 +6847,6 @@ void test_track_hold_boundary_drift_cannot_retarget_mutation() {
 
     std::cout
         << "[PASS] Track hold boundary drift cannot retarget mute or delete\n";
-}
-
-void test_track_remove_hold_provenance_cannot_cross_context_or_selection() {
-    using Focus = core::state::StructureNavigationFocus;
-    const auto assertNextTrackTapWorks = [](SequencerStepHarness& h) {
-        h.navigationFocus.set(Focus::TRACK);
-        h.state.trackNavigation.selection.active.set(false);
-        h.state.trackNavigation.selection.placing.set(false);
-        h.state.trackNavigation.selection.scope.set(
-            core::state::StructureSelectionScope::TRACK
-        );
-        h.state.trackNavigation.previewAddSlot.set(false);
-        h.state.trackNavigation.syncPreviewTrack(
-            h.state.sharedTrackActive.get()
-        );
-        h.advance(0U);
-        test_support::drainNotifications();
-        const uint16_t mutedBefore =
-            h.state.projectTracks.authored.mutedMask;
-        h.press(Config::ButtonID::BOTTOM_LEFT);
-        h.release(Config::ButtonID::BOTTOM_LEFT);
-        assert(h.state.projectTracks.authored.mutedMask != mutedBefore);
-    };
-
-    for (const auto focus : std::array<Focus, 2U>{Focus::PAGE, Focus::STEP}) {
-        for (const bool longPress : std::array<bool, 2U>{false, true}) {
-            SequencerStepHarness h;
-            configureDirectTrackFixture(
-                h,
-                DirectTrackFixtureKind::RemoveCurrent
-            );
-            seq::resetTransientTrackState(h.state.sequencer);
-            test_support::drainNotifications();
-
-            h.press(Config::ButtonID::BOTTOM_LEFT);
-            assert(h.state.trackNavigation.hold.action.get() ==
-                   core::state::StructureHoldAction::REMOVE);
-            h.navigationFocus.set(focus);
-            if (focus == Focus::PAGE) {
-                h.state.sequencer.pattern.setContentLength(8U);
-                h.state.sequencer.page.set(0U);
-                h.state.sequencer.structureUi.syncPreviewPage(0U);
-            } else {
-                h.state.sequencer.focusedStep.set(
-                    seq::SequencerState::MAX_STEPS
-                );
-            }
-            h.advance(0U);
-            test_support::drainNotifications();
-
-            auto expected = captureTrackTransactionInvariant(h);
-            expected.trackUi.holdAction = static_cast<uint8_t>(
-                core::state::StructureHoldAction::NONE
-            );
-            expected.trackUi.holdStartedAtMs = 0U;
-            {
-                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-                if (longPress) {
-                    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-                } else {
-                    h.release(Config::ButtonID::BOTTOM_LEFT);
-                }
-                tx::assertMaxPlusOneStillArmed(0U);
-            }
-            test_support::drainNotifications();
-            assertTrackTransactionInvariant(h, expected);
-            if (longPress) {
-                h.release(Config::ButtonID::BOTTOM_LEFT);
-                test_support::drainNotifications();
-                assertTrackTransactionInvariant(h, expected);
-            }
-            tx::assertFailureInjectionReset();
-            assertNextTrackTapWorks(h);
-        }
-    }
-
-    for (const bool longPress : std::array<bool, 2U>{false, true}) {
-        SequencerStepHarness h;
-        configureDirectTrackFixture(
-            h,
-            DirectTrackFixtureKind::RemoveCurrent
-        );
-        seq::resetTransientTrackState(h.state.sequencer);
-        auto& selection = h.state.trackNavigation.selection;
-        selection.active.set(true);
-        selection.placing.set(false);
-        selection.selectedMask.set(0x0001U);
-        test_support::drainNotifications();
-
-        h.press(Config::ButtonID::BOTTOM_LEFT);
-        assert(h.state.trackNavigation.hold.action.get() ==
-               core::state::StructureHoldAction::REMOVE);
-        selection.active.set(false);
-        h.advance(0U);
-        test_support::drainNotifications();
-
-        auto expected = captureTrackTransactionInvariant(h);
-        expected.trackUi.holdAction = static_cast<uint8_t>(
-            core::state::StructureHoldAction::NONE
-        );
-        expected.trackUi.holdStartedAtMs = 0U;
-        {
-            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            if (longPress) {
-                h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-            } else {
-                h.release(Config::ButtonID::BOTTOM_LEFT);
-            }
-            tx::assertMaxPlusOneStillArmed(0U);
-        }
-        test_support::drainNotifications();
-        assertTrackTransactionInvariant(h, expected);
-        if (longPress) {
-            h.release(Config::ButtonID::BOTTOM_LEFT);
-            test_support::drainNotifications();
-            assertTrackTransactionInvariant(h, expected);
-        }
-        tx::assertFailureInjectionReset();
-        assertNextTrackTapWorks(h);
-    }
-
-    enum class InvalidInitialSelection : uint8_t {
-        Scope = 0U,
-        AddPreview,
-    };
-    for (const auto invalid :
-         std::array<InvalidInitialSelection, 2U>{
-             InvalidInitialSelection::Scope,
-             InvalidInitialSelection::AddPreview,
-         }) {
-        for (const bool longPress : std::array<bool, 2U>{false, true}) {
-            SequencerStepHarness h;
-            configureDirectTrackFixture(
-                h,
-                DirectTrackFixtureKind::RemoveCurrent
-            );
-            seq::resetTransientTrackState(h.state.sequencer);
-            auto& selection = h.state.trackNavigation.selection;
-            selection.active.set(true);
-            selection.scope.set(core::state::StructureSelectionScope::TRACK);
-            selection.placing.set(false);
-            selection.selectedMask.set(0x0001U);
-            if (invalid == InvalidInitialSelection::Scope) {
-                selection.scope.set(
-                    core::state::StructureSelectionScope::PAGE
-                );
-            } else {
-                h.state.trackNavigation.previewAddSlot.set(true);
-            }
-            h.advance(0U);
-            test_support::drainNotifications();
-            const auto expected = captureTrackTransactionInvariant(h);
-
-            h.press(Config::ButtonID::BOTTOM_LEFT);
-            assert(h.state.trackNavigation.hold.action.get() ==
-                   core::state::StructureHoldAction::NONE);
-            {
-                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-                if (longPress) {
-                    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-                    h.release(Config::ButtonID::BOTTOM_LEFT);
-                } else {
-                    h.release(Config::ButtonID::BOTTOM_LEFT);
-                }
-                tx::assertMaxPlusOneStillArmed(0U);
-            }
-            test_support::drainNotifications();
-            assertTrackTransactionInvariant(h, expected);
-            tx::assertFailureInjectionReset();
-
-            selection.scope.set(core::state::StructureSelectionScope::TRACK);
-            h.state.trackNavigation.previewAddSlot.set(false);
-            assertNextTrackTapWorks(h);
-        }
-    }
-
-    enum class SelectionDrift : uint8_t {
-        FocusPage = 0U,
-        FocusStep,
-        ClipboardRevision,
-        SelectedMask,
-        DestinationMask,
-        OverwriteMask,
-        Cursor,
-        Scope,
-        Placing,
-        PasteBlocked,
-        PreviewTrack,
-        PreviewAddTrack,
-        EnabledMask,
-        ActiveTrack,
-    };
-    for (const auto drift : std::array<SelectionDrift, 14U>{
-             SelectionDrift::FocusPage,
-             SelectionDrift::FocusStep,
-             SelectionDrift::ClipboardRevision,
-             SelectionDrift::SelectedMask,
-             SelectionDrift::DestinationMask,
-             SelectionDrift::OverwriteMask,
-             SelectionDrift::Cursor,
-             SelectionDrift::Scope,
-             SelectionDrift::Placing,
-             SelectionDrift::PasteBlocked,
-             SelectionDrift::PreviewTrack,
-             SelectionDrift::PreviewAddTrack,
-             SelectionDrift::EnabledMask,
-             SelectionDrift::ActiveTrack,
-         }) {
-        for (const bool longPress : std::array<bool, 2U>{false, true}) {
-            SequencerStepHarness h;
-            configureDirectTrackFixture(
-                h,
-                DirectTrackFixtureKind::RemoveCurrent
-            );
-            seq::resetTransientTrackState(h.state.sequencer);
-            auto& selection = h.state.trackNavigation.selection;
-            selection.active.set(true);
-            selection.placing.set(false);
-            selection.selectedMask.set(0x0001U);
-            selection.cursorIndex.set(0U);
-            test_support::drainNotifications();
-
-            h.press(Config::ButtonID::BOTTOM_LEFT);
-            assert(h.state.trackNavigation.hold.action.get() ==
-                   core::state::StructureHoldAction::REMOVE);
-            switch (drift) {
-                case SelectionDrift::FocusPage:
-                    h.navigationFocus.set(Focus::PAGE);
-                    break;
-                case SelectionDrift::FocusStep:
-                    h.navigationFocus.set(Focus::STEP);
-                    break;
-                case SelectionDrift::ClipboardRevision:
-                    selection.clipboardRevision.set(
-                        selection.clipboardRevision.get() + 1U
-                    );
-                    break;
-                case SelectionDrift::SelectedMask:
-                    selection.selectedMask.set(0x0020U);
-                    break;
-                case SelectionDrift::DestinationMask:
-                    selection.destinationMask.set(0x0004U);
-                    break;
-                case SelectionDrift::OverwriteMask:
-                    selection.overwriteMask.set(0x0020U);
-                    break;
-                case SelectionDrift::Cursor:
-                    selection.cursorIndex.set(5U);
-                    break;
-                case SelectionDrift::Scope:
-                    selection.scope.set(
-                        core::state::StructureSelectionScope::PAGE
-                    );
-                    break;
-                case SelectionDrift::Placing:
-                    selection.placing.set(true);
-                    break;
-                case SelectionDrift::PasteBlocked:
-                    selection.pasteBlocked.set(!selection.pasteBlocked.get());
-                    break;
-                case SelectionDrift::PreviewTrack:
-                    h.state.trackNavigation.previewTrackIndex.set(
-                        kDirectTrackIncoming
-                    );
-                    break;
-                case SelectionDrift::PreviewAddTrack:
-                    h.state.trackNavigation.previewAddSlot.set(true);
-                    break;
-                case SelectionDrift::EnabledMask:
-                    h.state.sharedTrackEnabledMask.set(
-                        static_cast<uint16_t>(kDirectTrackSparseMask | 0x0002U)
-                    );
-                    break;
-                case SelectionDrift::ActiveTrack:
-                    h.state.sharedTrackActive.set(kDirectTrackIncoming);
-                    break;
-            }
-            h.advance(0U);
-            test_support::drainNotifications();
-
-            auto expected = captureTrackTransactionInvariant(h);
-            expected.trackUi.holdAction = static_cast<uint8_t>(
-                core::state::StructureHoldAction::NONE
-            );
-            expected.trackUi.holdStartedAtMs = 0U;
-            {
-                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-                if (longPress) {
-                    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-                } else {
-                    h.release(Config::ButtonID::BOTTOM_LEFT);
-                }
-                tx::assertMaxPlusOneStillArmed(0U);
-            }
-            test_support::drainNotifications();
-            assertTrackTransactionInvariant(h, expected);
-            if (longPress) {
-                h.release(Config::ButtonID::BOTTOM_LEFT);
-                test_support::drainNotifications();
-                assertTrackTransactionInvariant(h, expected);
-            }
-            tx::assertFailureInjectionReset();
-            assertNextTrackTapWorks(h);
-        }
-    }
-
-    for (const bool longPress : std::array<bool, 2U>{false, true}) {
-        SequencerStepHarness h;
-        configureDirectTrackFixture(
-            h,
-            DirectTrackFixtureKind::RemoveCurrent
-        );
-        seq::resetTransientTrackState(h.state.sequencer);
-        test_support::drainNotifications();
-
-        h.press(Config::ButtonID::BOTTOM_LEFT);
-        assert(h.state.trackNavigation.hold.action.get() ==
-               core::state::StructureHoldAction::REMOVE);
-        auto& selection = h.state.trackNavigation.selection;
-        selection.active.set(true);
-        selection.placing.set(false);
-        selection.selectedMask.set(0x0001U);
-        h.advance(0U);
-        test_support::drainNotifications();
-
-        auto expected = captureTrackTransactionInvariant(h);
-        expected.trackUi.holdAction = static_cast<uint8_t>(
-            core::state::StructureHoldAction::NONE
-        );
-        expected.trackUi.holdStartedAtMs = 0U;
-        {
-            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            if (longPress) {
-                h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-            } else {
-                h.release(Config::ButtonID::BOTTOM_LEFT);
-            }
-            tx::assertMaxPlusOneStillArmed(0U);
-        }
-        test_support::drainNotifications();
-        assertTrackTransactionInvariant(h, expected);
-        if (longPress) {
-            h.release(Config::ButtonID::BOTTOM_LEFT);
-            test_support::drainNotifications();
-            assertTrackTransactionInvariant(h, expected);
-        }
-        tx::assertFailureInjectionReset();
-        assertNextTrackTapWorks(h);
-    }
-
-    {
-        SequencerStepHarness h;
-        configureDirectTrackFixture(
-            h,
-            DirectTrackFixtureKind::RemoveCurrent
-        );
-        seq::resetTransientTrackState(h.state.sequencer);
-        test_support::drainNotifications();
-        h.press(Config::ButtonID::BOTTOM_LEFT);
-        assert(h.state.setSharedTrackState(
-            kDirectTrackSparseMask,
-            kDirectTrackIncoming
-        ));
-        h.advance(0U);
-        test_support::drainNotifications();
-
-        auto expected = captureTrackTransactionInvariant(h);
-        expected.trackUi.holdAction = static_cast<uint8_t>(
-            core::state::StructureHoldAction::NONE
-        );
-        expected.trackUi.holdStartedAtMs = 0U;
-        {
-            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            h.release(Config::ButtonID::BOTTOM_LEFT);
-            tx::assertMaxPlusOneStillArmed(0U);
-        }
-        test_support::drainNotifications();
-        assertTrackTransactionInvariant(h, expected);
-        tx::assertFailureInjectionReset();
-        assertNextTrackTapWorks(h);
-    }
-
-    std::cout
-        << "[PASS] Track Remove hold provenance cannot cross context or selection\n";
-}
-
-void test_track_remove_hold_rejects_shared_hold_replacement() {
-    enum class Replacement : uint8_t {
-        Clear = 0U,
-        Paste,
-        NewRemove,
-    };
-
-    for (const bool selectionGesture : std::array<bool, 2U>{false, true}) {
-        for (const bool longPress : std::array<bool, 2U>{false, true}) {
-            for (const auto replacement : std::array<Replacement, 3U>{
-                     Replacement::Clear,
-                     Replacement::Paste,
-                     Replacement::NewRemove,
-                 }) {
-                SequencerStepHarness h;
-                configureDirectTrackFixture(
-                    h,
-                    DirectTrackFixtureKind::RemoveCurrent
-                );
-                seq::resetTransientTrackState(h.state.sequencer);
-                auto& selection = h.state.trackNavigation.selection;
-                if (selectionGesture) {
-                    selection.active.set(true);
-                    selection.scope.set(
-                        core::state::StructureSelectionScope::TRACK
-                    );
-                    selection.placing.set(false);
-                    selection.cursorIndex.set(kDirectTrackOldActive);
-                    selection.selectedMask.set(static_cast<uint16_t>(
-                        1U << kDirectTrackOldActive
-                    ));
-                }
-                h.state.trackNavigation.syncPreviewTrack(
-                    kDirectTrackOldActive
-                );
-                test_support::drainNotifications();
-
-                h.press(Config::ButtonID::BOTTOM_LEFT);
-                auto& hold = h.state.trackNavigation.hold;
-                assert(hold.action.get() ==
-                       core::state::StructureHoldAction::REMOVE);
-                const uint32_t acquiredAt = hold.startedAtMs.get();
-                auto expectedHoldAction =
-                    core::state::StructureHoldAction::NONE;
-                uint32_t expectedHoldStartedAt = 0U;
-                switch (replacement) {
-                    case Replacement::Clear:
-                        hold.clear();
-                        break;
-                    case Replacement::Paste:
-                        expectedHoldAction =
-                            core::state::StructureHoldAction::PASTE;
-                        expectedHoldStartedAt = acquiredAt + 1U;
-                        hold.begin(
-                            expectedHoldAction,
-                            expectedHoldStartedAt
-                        );
-                        break;
-                    case Replacement::NewRemove:
-                        expectedHoldAction =
-                            core::state::StructureHoldAction::REMOVE;
-                        expectedHoldStartedAt = acquiredAt + 1U;
-                        hold.begin(
-                            expectedHoldAction,
-                            expectedHoldStartedAt
-                        );
-                        break;
-                }
-                test_support::drainNotifications();
-
-                const uint16_t mutedBefore =
-                    h.state.projectTracks.authored.mutedMask;
-                const uint16_t enabledBefore =
-                    h.state.sequencerTracks.currentEnabledMask();
-                const uint8_t sequencerUndoBefore =
-                    h.state.sequencerHistory.undoCount();
-                const uint8_t projectUndoBefore =
-                    h.state.projectHistory.undoCount();
-                {
-                    core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-                    if (longPress) {
-                        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-                        h.release(Config::ButtonID::BOTTOM_LEFT);
-                    } else {
-                        h.release(Config::ButtonID::BOTTOM_LEFT);
-                    }
-                    tx::assertMaxPlusOneStillArmed(0U);
-                }
-                test_support::drainNotifications();
-
-                assert(h.state.projectTracks.authored.mutedMask == mutedBefore);
-                assert(h.state.sequencerTracks.currentEnabledMask() ==
-                       enabledBefore);
-                assert(h.state.sequencerHistory.undoCount() ==
-                       sequencerUndoBefore);
-                assert(h.state.projectHistory.undoCount() == projectUndoBefore);
-                assert(hold.action.get() == expectedHoldAction);
-                assert(hold.startedAtMs.get() == expectedHoldStartedAt);
-                tx::assertFailureInjectionReset();
-            }
-        }
-    }
-
-    std::cout
-        << "[PASS] Track Remove rejects cleared, replaced and re-armed shared holds\n";
 }
 
 void test_track_structure_replay_preserves_runtime_when_active_is_unchanged() {
@@ -9697,9 +9198,9 @@ void test_drum_track_pattern_step_bottom_actions_share_one_contract() {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(sequencer.clipWorkspace.matrixVisible());
     sequencer.clipWorkspace.focusTrackHeader(1U);
-    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    h.tap(Config::ButtonID::NAV);
     assert((h.state.projectTracks.authored.mutedMask & 0x0002U) != 0U);
-    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    h.tap(Config::ButtonID::NAV);
     assert((h.state.projectTracks.authored.mutedMask & 0x0002U) == 0U);
     sequencer.clipWorkspace.focus(1U, 0U);
     h.tap(Config::ButtonID::LEFT_BOTTOM);
@@ -10063,8 +9564,9 @@ void test_drum_advanced_creation_oom_restores_mapping_and_graph() {
 
 int main() {
     test_clip_launcher_gestures_separate_selection_properties_and_pattern();
-    test_clip_launcher_nav_turn_moves_horizontally_without_launching();
+    test_clip_launcher_encoders_navigate_cartesian_axes();
     test_clip_launcher_left_center_arms_quick_property_for_opt();
+    test_clip_launcher_behavior_editor_applies_opt_edits_live();
     test_clip_launcher_direct_pattern_and_short_create_actions();
     test_clip_launcher_performance_actions_fire_on_press();
     test_clip_launcher_long_nav_only_selects_existing_structures();
@@ -10094,7 +9596,7 @@ int main() {
     test_step_toggle_preflight_failure_is_atomic();
     test_child_draft_toggle_stays_out_of_published_history();
     test_pattern_editor_adds_only_the_next_page();
-    test_track_focus_bottom_left_mutes_without_clearing_payload();
+    test_track_header_nav_mutes_without_clearing_payload();
     test_sequencer_page_copy_and_long_press_paste();
     test_page_paste_existing_target_graph_oom_and_replay();
     test_page_paste_failures_restore_current_and_selection_ui();
@@ -10134,10 +9636,8 @@ int main() {
     test_direct_track_missing_presentation_capability_is_preflight_atomic();
     test_track_remove_hold_latches_target_and_rejects_external_drift();
     test_track_header_nav_never_opens_pattern_context_selector();
-    test_track_remove_hold_rejects_new_nav_press_without_hiding_action();
+    test_clip_stop_layer_owns_bottom_left_and_nav();
     test_track_hold_boundary_drift_cannot_retarget_mutation();
-    test_track_remove_hold_provenance_cannot_cross_context_or_selection();
-    test_track_remove_hold_rejects_shared_hold_replacement();
     test_track_structure_replay_preserves_runtime_when_active_is_unchanged();
     test_created_track_is_undoable_and_redoable();
     test_track_creation_history_unavailable_is_atomic_and_keeps_add_slot_open();

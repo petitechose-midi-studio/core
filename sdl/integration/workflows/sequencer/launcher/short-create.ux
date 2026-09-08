@@ -9,22 +9,20 @@
 # Expect: capture_changed:create_scene_clip=add_scene
 # Expect: capture_changed:scene_created=create_scene_clip
 # Expect: semantic:create_clip:effect=open_slot_actions, semantic:create_clip:target_track=2, semantic:create_clip:target_index=3
-# Expect: semantic:clip_created:effect=apply_launcher_editor, semantic:clip_created:outcome=applied
+# Expect: semantic:clip_created:effect=apply_slot_action, semantic:clip_created:outcome=applied
 # Expect: semantic:create_scene_clip:effect=open_slot_actions, semantic:create_scene_clip:target_track=0, semantic:create_scene_clip:target_index=4
-# Expect: semantic:scene_created:effect=apply_launcher_editor, semantic:scene_created:outcome=applied
+# Expect: semantic:scene_created:effect=apply_slot_action, semantic:scene_created:outcome=applied
 
 0 scenario clip-launcher-v3
 100 capture screen launcher_ready
 
 # Scene rail -> S4, then horizontal browsing -> Empty T3/S4.
-220 encoder NAV 0.01
-300 encoder NAV 0.01
-380 encoder NAV 0.01
-460 button NAV down
+220 encoder OPT 0.01
+300 encoder OPT 0.01
+380 encoder OPT 0.01
 540 encoder NAV 0.01
 620 encoder NAV 0.01
 700 encoder NAV 0.01
-780 button NAV up
 940 capture screen empty_clip
 
 # Short NAV opens Create; a second press applies it.
@@ -34,12 +32,10 @@
 1660 capture screen clip_created
 
 # Move back to the Scene rail, then down into the trailing +Scene row.
-1740 button NAV down
 1820 encoder NAV -0.01
 1900 encoder NAV -0.01
 1980 encoder NAV -0.01
-2060 button NAV up
-2140 encoder NAV 0.01
+2140 encoder OPT 0.01
 2300 capture screen add_scene
 
 # The row becomes a Scene when its first Clip is created.

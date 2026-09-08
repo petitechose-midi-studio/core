@@ -10,6 +10,7 @@
 
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "ui/sequencer/SequencerQuickControlVisuals.hpp"
@@ -43,7 +44,8 @@ FLASHMEM LauncherLayout launcherLayout(const lv_area_t& surface) {
             LauncherLayout::GAP
         ),
         .columnWidth = static_cast<lv_coord_t>((
-            gridWidth - LauncherLayout::GAP * 3
+            gridWidth - LauncherLayout::GAP *
+                (seq::ClipWorkspaceUiState::VISIBLE_TRACKS - 1U)
         ) / seq::ClipWorkspaceUiState::VISIBLE_TRACKS),
         .rowHeight = std::max<lv_coord_t>(
             1,
@@ -962,6 +964,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         props_.enabledTrackMask);
     const uint8_t lastScene = props_.clips->lastNavigableScene();
     const auto sceneTelemetry = props_.launches->sceneTelemetry();
+    const bool stopLayer = ui.stopLayerActive;
     const bool selectingTracks = props_.trackNavigation != nullptr &&
         props_.trackNavigation->selection.active.get() &&
         props_.trackNavigation->selection.scope.get() ==
@@ -1018,13 +1021,15 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         drawRect(
             layer,
             rail,
-            theme::color::SURFACE_IDLE,
-            visibleScene ? LV_OPA_COVER : LV_OPA_20,
-            focused ? theme::color::TEXT_PRIMARY
+            focused && !stopLayer
+                ? theme::color::SURFACE_RAISED
+                : theme::color::SURFACE_IDLE,
+            visibleScene && !stopLayer ? LV_OPA_COVER : LV_OPA_20,
+            focused && !stopLayer ? theme::color::FOCUS_EDIT
                     : playing ? theme::color::LIVE_TIME
                     : theme::color::BORDER_SUBTLE,
-            focused || playing ? 2 : 1,
-            visibleScene ? LV_OPA_COVER : LV_OPA_20
+            (focused && !stopLayer) || playing ? 2 : 1,
+            visibleScene && !stopLayer ? LV_OPA_COVER : LV_OPA_20
         );
         if (queued) {
             drawQueuedCorners(layer, rail, theme::color::ROUTING);
@@ -1048,7 +1053,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
         }
         const bool countdown = queued ||
             (playing && sceneTelemetry.activeRemainingQ8 != 0U);
-        if (visibleScene && (addScene || !countdown)) {
+        if (visibleScene && !stopLayer && (addScene || !countdown)) {
             drawText(
                 layer,
                 rail,
@@ -1132,12 +1137,12 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             drawRect(
                 layer,
                 header,
-                headerSelected
+                headerSelected || headerFocused
                     ? theme::color::SURFACE_RAISED
                     : theme::color::SURFACE_IDLE,
                 navigable ? LV_OPA_COVER : LV_OPA_20,
                 headerFocused
-                    ? theme::color::TEXT_PRIMARY
+                    ? theme::color::FOCUS_EDIT
                     : theme::color::BORDER_SUBTLE,
                 headerFocused ? 2 : 1,
                 navigable ? LV_OPA_COVER : LV_OPA_20
@@ -1169,6 +1174,13 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     seq::SequencerClipLaunchAction::STOP &&
                 telemetry.queuedSlot ==
                     seq::SequencerClipGridState::INVALID_SLOT;
+            const bool stopLayerTarget = stopLayer && enabled &&
+                !telemetry.stopped;
+            const bool muted = props_.projectTracks != nullptr && enabled &&
+                core::state::project::projectTrackMuted(
+                    *props_.projectTracks,
+                    track
+                );
             drawRect(
                 layer,
                 lv_area_t{
@@ -1190,7 +1202,15 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             const lv_coord_t headerCenterY = static_cast<lv_coord_t>(
                 (header.y1 + header.y2) / 2
             );
-            if (addSlot) {
+            if (stopLayerTarget) {
+                drawSquare(
+                    layer,
+                    headerCenterX,
+                    headerCenterY,
+                    8,
+                    theme::color::DESTRUCTIVE
+                );
+            } else if (addSlot) {
                 drawText(
                     layer,
                     header,
@@ -1199,41 +1219,56 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     LV_OPA_60,
                     standalone_fonts.icons_16
                 );
-            } else if (enabled && telemetry.stopped) {
-                drawSquare(
-                    layer,
-                    headerCenterX,
-                    headerCenterY,
-                    7,
-                    theme::color::DESTRUCTIVE
-                );
-            } else if (queuedStop) {
-                drawSquare(
-                    layer,
-                    headerCenterX,
-                    headerCenterY,
-                    6,
-                    theme::color::ROUTING
-                );
-                drawCountdownRing(
-                    layer,
-                    headerCenterX,
-                    headerCenterY,
-                    8,
-                    telemetry.queuedRemainingQ8,
-                    theme::color::ROUTING
-                );
             } else if (enabled) {
+                std::array<
+                    char,
+                    core::state::project::PROJECT_TRACK_NAME_MAX_LENGTH + 1U
+                > trackName{};
+                if (props_.projectTracks != nullptr) {
+                    core::state::project::formatProjectTrackName(
+                        *props_.projectTracks,
+                        track,
+                        trackName.data(),
+                        trackName.size()
+                    );
+                } else {
+                    std::snprintf(
+                        trackName.data(),
+                        trackName.size(),
+                        "Track %u",
+                        static_cast<unsigned>(track + 1U)
+                    );
+                }
                 drawText(
                     layer,
-                    header,
-                    props_.tracks->isDrumTrack(track)
-                        ? standalone::icons::DRUM_GENERIC
-                        : standalone::icons::NOTE,
+                    {static_cast<lv_coord_t>(header.x1 + 5), header.y1,
+                     static_cast<lv_coord_t>(header.x2 -
+                         (queuedStop ? 20 : 5)), header.y2},
+                    trackName.data(),
                     activity != 0U ? theme::color::TEXT_PRIMARY : trackColor,
-                    LV_OPA_COVER,
-                    standalone_fonts.icons_16
+                    muted ? LV_OPA_40 : LV_OPA_COVER,
+                    fonts.compact_selected()
                 );
+                if (queuedStop) {
+                    const lv_coord_t stopX = static_cast<lv_coord_t>(
+                        header.x2 - 10
+                    );
+                    drawSquare(
+                        layer,
+                        stopX,
+                        headerCenterY,
+                        6,
+                        theme::color::ROUTING
+                    );
+                    drawCountdownRing(
+                        layer,
+                        stopX,
+                        headerCenterY,
+                        8,
+                        telemetry.queuedRemainingQ8,
+                        theme::color::ROUTING
+                    );
+                }
             }
         }
         for (uint8_t row = 0U;
@@ -1261,6 +1296,8 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             const bool focused = ui.clipFocused() &&
                 ui.focusedTrack == track &&
                 ui.focusedSlot == slot;
+            const bool sceneRowFocused = ui.sceneFocused() &&
+                ui.focusedSlot == slot;
             const bool sourceSelected = ui.selectionActive() &&
                 ui.selected(track, slot);
             const bool sourceAnchor = sourceSelected &&
@@ -1277,15 +1314,23 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
             const bool outgoing = active && trackQueued &&
                 telemetry.queuedSlot != slot;
             const bool rowAvailable = slot <= lastScene;
-            const bool disabledSecondary = !enabled || !rowAvailable;
+            const bool inMacroBank = slot >= ui.macroBankFirstSlot() &&
+                slot < static_cast<uint8_t>(
+                    ui.macroBankFirstSlot() +
+                    seq::ClipWorkspaceUiState::MACRO_ROWS
+                );
+            const bool stopLayerTarget = stopLayer && inMacroBank && active;
+            const bool disabledSecondary = !enabled || !rowAvailable ||
+                (stopLayer && !stopLayerTarget);
             drawRect(
                 layer,
                 cell,
-                destinationFocused || destinationSelected
+                focused || sceneRowFocused || destinationFocused ||
+                        destinationSelected
                     ? theme::color::SURFACE_RAISED
                     : theme::color::SURFACE_IDLE,
                 disabledSecondary ? LV_OPA_20 : LV_OPA_COVER,
-                focused ? theme::color::TEXT_PRIMARY
+                focused ? theme::color::FOCUS_EDIT
                         : outgoing ? theme::color::WARNING
                         : active ? theme::color::LIVE_TIME
                         : stop ? theme::color::DESTRUCTIVE
@@ -1305,14 +1350,15 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     layer,
                     cell,
                     trackColor,
-                    active ? LV_OPA_30 : LV_OPA_20,
+                    focused ? LV_OPA_40
+                            : active ? LV_OPA_30 : LV_OPA_20,
                     trackColor,
                     0,
                     LV_OPA_TRANSP
                 );
             }
             if (occupied || stop) {
-                if (stop) {
+                if (stop || stopLayerTarget) {
                     drawSquare(
                         layer,
                         static_cast<lv_coord_t>((cell.x1 + cell.x2) / 2),
@@ -1449,7 +1495,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     standalone_fonts.icons_16
                 );
             }
-            if (active) {
+            if (active && !stopLayerTarget) {
                 const auto& preview = previews_[
                     column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
                 ];
@@ -1481,7 +1527,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     0
                 );
             }
-            if (queued) {
+            if (queued && !stopLayerTarget) {
                 drawQueuedCorners(layer, cell, theme::color::ROUTING);
                 const lv_area_t countArea{
                     .x1 = static_cast<lv_coord_t>(cell.x2 - 16),
@@ -1514,7 +1560,8 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     2,
                     theme::color::ROUTING
                 );
-            } else if (active && telemetry.activeRemainingQ8 != 0U) {
+            } else if (active && !stopLayerTarget &&
+                       telemetry.activeRemainingQ8 != 0U) {
                 const lv_area_t ringArea{
                     .x1 = static_cast<lv_coord_t>(cell.x2 - 16),
                     .y1 = static_cast<lv_coord_t>(cell.y1 + 2),
@@ -1601,7 +1648,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                 {header.x1, header.y1, header.x2, surface.y2},
                 theme::color::BACKGROUND,
                 LV_OPA_TRANSP,
-                theme::color::TEXT_PRIMARY,
+                theme::color::FOCUS_EDIT,
                 2,
                 LV_OPA_COVER
             );
@@ -1626,7 +1673,7 @@ FLASHMEM void SequencerClipLauncherSurface::draw(lv_layer_t* layer) const {
                     rowArea,
                     theme::color::BACKGROUND,
                     LV_OPA_TRANSP,
-                    theme::color::TEXT_PRIMARY,
+                    theme::color::FOCUS_EDIT,
                     2,
                     LV_OPA_COVER
                 );

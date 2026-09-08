@@ -230,6 +230,7 @@ FLASHMEM bool SequencerView::bindToState() {
     bindHistoryFeedbackState();
     bindTrackSwitchReadyState();
     bindTrackPastePreflightState();
+    bindProjectTrackState();
     bindClipboardState();
 
     const bool bound =
@@ -250,6 +251,8 @@ FLASHMEM bool SequencerView::bindToState() {
         track_switch_ready_watcher_.subscriptionCount() == track_switch_ready_watcher_.capacity() &&
         track_paste_preflight_watcher_.subscriptionCount() ==
             track_paste_preflight_watcher_.capacity() &&
+        project_track_watcher_.subscriptionCount() ==
+            project_track_watcher_.capacity() &&
         clipboard_watcher_.subscriptionCount() == clipboard_watcher_.capacity();
     if (!bound) return false;
 
@@ -381,7 +384,8 @@ FLASHMEM void SequencerView::bindGridState() {
     grid_tick_watcher_.watchAll(
         state_refs_.sequencer.playheadStep,
         state_refs_.sequencer.playheadStepPhaseQ8,
-        state_refs_.sequencer.drumSequencer.playbackRevision
+        state_refs_.sequencer.drumSequencer.playbackRevision,
+        state_refs_.clipLaunches.playbackProgressRevision()
     );
 }
 
@@ -555,9 +559,18 @@ FLASHMEM void SequencerView::bindTrackPastePreflightState() {
         state_refs_.sharedTrackActive,
         state_refs_.tracks.activeTrackSignal(),
         state_refs_.tracks.enabledMaskSignal(),
-        state_refs_.projectTracks.revision,
         state_refs_.trackActivations.telemetryRevision()
     );
+}
+
+FLASHMEM void SequencerView::bindProjectTrackState() {
+    project_track_watcher_.bind<
+        &SequencerView::requestStructureDependentRenders>(
+        *this,
+        14,
+        "SequencerView.projectTracks"
+    );
+    project_track_watcher_.watch(state_refs_.projectTracks.revision);
 }
 
 FLASHMEM void SequencerView::bindClipboardState() {
@@ -801,6 +814,7 @@ void SequencerView::render(uint32_t flags) {
                 .clips = &state_refs_.clips,
                 .launches = &state_refs_.clipLaunches,
                 .tracks = &state_refs_.tracks,
+                .projectTracks = &state_refs_.projectTracks,
                 .sequencer = &state_refs_.sequencer,
                 .trackNavigation = &state_refs_.trackNavigation,
                 .statusBar = &state_refs_.statusBar,

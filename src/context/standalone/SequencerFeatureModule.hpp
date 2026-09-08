@@ -202,6 +202,8 @@ private:
         pattern_editor_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::project::ProjectTrackEditorOverlay>
         track_editor_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::interaction::TextKeyboardView>
+        track_name_keyboard_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
         track_editor_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::SequencerStepEditOverlay> step_edit_overlay_;

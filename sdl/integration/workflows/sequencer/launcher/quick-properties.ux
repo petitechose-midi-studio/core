@@ -3,8 +3,9 @@
 # Loops, release arms it, and OPT edits it without leaving performance view.
 # Expect: capture_changed:quick_edit=clip_focused
 # Expect: capture_changed:quick_length=quick_edit
-# Releasing the chord closes the selector; the selected property remains armed
-# as a compact header icon while the matrix stays unobstructed.
+# Releasing the chord closes the selector; the selected property stays armed
+# as a compact header icon until the shared feedback timeout returns OPT to
+# vertical matrix navigation.
 # Expect: capture_changed:length_armed=quick_length
 # Expect: capture_changed:length_changed=length_armed
 # Expect: semantic:quick_length:effect=select_clip_quick_action, semantic:quick_length:property=length
@@ -25,9 +26,7 @@
 0 scenario clip-launcher-v3
 
 # Scene -> first Clip.
-100 button NAV down
 180 encoder NAV 0.01
-260 button NAV up
 420 capture screen clip_focused
 
 # LEFT_CENTER opens on Edit; held NAV moves to Loops.

@@ -54,7 +54,6 @@ public:
     void selectFocused();
     void openFocused();
     void openFocusedEditor();
-    void applyEditor();
     void launchVisible(uint8_t macroIndex);
     void beginMove();
     void applyOrBeginDuplicate();
@@ -73,13 +72,17 @@ private:
     void releaseQuickSelector();
     void openFocusedPattern();
     void editQuickProperty(float delta);
-    [[nodiscard]] core::state::sequencer::SequencerClipAddress
-    visibleAddress(uint8_t macroIndex) const;
+    void editEditorValue(float normalized);
+    void confirmSlotAction();
     [[nodiscard]] core::state::sequencer::SequencerClipAddress
     sourceAddress() const;
     [[nodiscard]] uint8_t lastNavigableScene() const;
     void launchScene(uint8_t slot);
     void stopTrack(uint8_t track, bool immediate);
+    void stopFocusedTrack();
+    void beginStopLayer();
+    void endStopLayer();
+    void toggleTrackMute();
     void toggleTrackSolo();
     void showFeedback(
         core::state::sequencer::ClipWorkspaceFeedback feedback

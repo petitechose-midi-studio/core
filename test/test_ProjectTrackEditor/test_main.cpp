@@ -21,8 +21,9 @@ void testStateOpenCloseBoundsAndNoOps() {
     project::ProjectTrackEditorState editor{};
     constexpr uint16_t enabled = 0x8009U;
 
-    assert(sizeof(editor) == 12U);
+    assert(sizeof(editor) <= 40U);
     assert(!editor.active);
+    assert(!editor.textEditing);
     assert(editor.trackIndex == 0U);
     assert(editor.selectedProperty ==
            project::ProjectTrackEditorProperty::CHANNEL);
@@ -54,6 +55,34 @@ void testStateOpenCloseBoundsAndNoOps() {
     assert(editor.revision == 0U);
     assert(editor.trackIndex == 0U);
     assert(!editor.active);
+}
+
+void testNameEditingUsesTheSharedBoundedKeyboardContract() {
+    project::ProjectTrackEditorState editor{};
+    constexpr uint16_t enabled = 0x0001U;
+
+    assert(project::openProjectTrackEditor(editor, 0U, enabled).changed());
+    assert(project::selectProjectTrackEditorProperty(
+        editor,
+        project::ProjectTrackEditorProperty::NAME
+    ).changed());
+    assert(project::beginProjectTrackNameEditing(editor, "Track 1").changed());
+    assert(editor.textEditing);
+    assert(std::strcmp(editor.nameDraft.data(), "Track 1") == 0);
+
+    const uint8_t initialKey = editor.textKeyIndex;
+    assert(project::moveProjectTrackNameKey(editor, 1).changed());
+    assert(editor.textKeyIndex != initialKey);
+    assert(project::setProjectTrackNameShift(editor, true).changed());
+    assert(project::insertProjectTrackNameKey(editor).changed());
+    assert(std::strlen(editor.nameDraft.data()) ==
+           project::PROJECT_TRACK_NAME_MAX_LENGTH);
+    assert(project::backspaceProjectTrackName(editor).changed());
+    assert(std::strlen(editor.nameDraft.data()) ==
+           project::PROJECT_TRACK_NAME_MAX_LENGTH - 1U);
+    assert(project::endProjectTrackNameEditing(editor).changed());
+    assert(!editor.textEditing);
+    assert(!editor.textShiftActive);
 }
 
 void testSparseEnabledTrackWrapAndEmptyMask() {
@@ -292,6 +321,7 @@ void testRetargetProjectsOneCoherentDestination() {
 
 int main() {
     testStateOpenCloseBoundsAndNoOps();
+    testNameEditingUsesTheSharedBoundedKeyboardContract();
     testSparseEnabledTrackWrapAndEmptyMask();
     testRetargetAndPropertySelectionAreAtomic();
     testDirtyKindDraftKeepsItsOpeningTrack();

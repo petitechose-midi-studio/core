@@ -777,6 +777,22 @@ enum class ClipWorkspaceQuickAction : uint8_t {
     COUNT,
 };
 
+constexpr ClipWorkspaceQuickAction clipWorkspaceQuickActionFor(
+    ClipWorkspaceBehaviorField field
+) noexcept {
+    switch (field) {
+        case ClipWorkspaceBehaviorField::LENGTH:
+            return ClipWorkspaceQuickAction::LENGTH;
+        case ClipWorkspaceBehaviorField::FOLLOW:
+            return ClipWorkspaceQuickAction::FOLLOW;
+        case ClipWorkspaceBehaviorField::QUANTIZE:
+            return ClipWorkspaceQuickAction::QUANTIZE;
+        case ClipWorkspaceBehaviorField::COUNT:
+            return ClipWorkspaceQuickAction::COUNT;
+    }
+    return ClipWorkspaceQuickAction::COUNT;
+}
+
 enum class ClipWorkspaceSlotAction : uint8_t {
     CREATE_CLIP = 0,
     SET_STOP,
@@ -784,16 +800,24 @@ enum class ClipWorkspaceSlotAction : uint8_t {
     COUNT,
 };
 
+struct ClipWorkspaceMacroTarget {
+    ClipWorkspaceFocus focus = ClipWorkspaceFocus::SCENE;
+    uint8_t track = 0U;
+    uint8_t slot = 0U;
+};
+
 /** Session-only focus and return path for the sparse Clip launcher. */
 struct ClipWorkspaceUiState {
-    static constexpr uint8_t VISIBLE_TRACKS = 4U;
+    static constexpr uint8_t VISIBLE_TRACKS = 3U;
     static constexpr uint8_t VISIBLE_ROWS = 4U;
     static constexpr uint8_t MACRO_ROWS = 2U;
+    static constexpr uint8_t MACRO_COLUMNS = VISIBLE_TRACKS + 1U;
+    static constexpr uint8_t MACRO_TARGET_COUNT = MACRO_COLUMNS * MACRO_ROWS;
     static constexpr uint8_t TRACK_COUNT = 16U;
     static constexpr uint8_t SLOT_COUNT = 8U;
     static constexpr uint8_t INVALID_TRACK = 0xFFU;
     static constexpr uint8_t TRACK_VIEWPORT_COUNT =
-        TRACK_COUNT / VISIBLE_TRACKS;
+        (TRACK_COUNT + VISIBLE_TRACKS - 1U) / VISIBLE_TRACKS;
     static constexpr uint8_t SLOT_VIEWPORT_COUNT =
         SLOT_COUNT / VISIBLE_ROWS;
     static constexpr uint8_t VIEWPORT_COUNT =
@@ -834,6 +858,7 @@ struct ClipWorkspaceUiState {
     std::array<uint8_t, TRACK_COUNT> selectedClipMasks{};
     uint32_t removeHoldStartedAtMs = 0U;
     bool removeHoldActive = false;
+    bool stopLayerActive = false;
 
     [[nodiscard]] bool matrixVisible() const {
         return route == ClipWorkspaceRoute::MATRIX;
@@ -870,6 +895,7 @@ struct ClipWorkspaceUiState {
         uint16_t enabledTrackMask
     );
     [[nodiscard]] uint8_t macroBankFirstSlot() const;
+    [[nodiscard]] ClipWorkspaceMacroTarget macroTarget(uint8_t macroIndex) const;
     void reset(uint8_t activeTrack = 0U);
     void focus(uint8_t track, uint8_t slot);
     void focusScene(uint8_t slot);
@@ -921,6 +947,7 @@ struct ClipWorkspaceUiState {
     void beginRemoveHold(uint32_t nowMs);
     void beginPendingRemoval();
     void clearRemoveHold();
+    void setStopLayer(bool active);
     void enterPattern(uint8_t track, uint8_t slot);
     bool returnToMatrix();
     void setFeedback(ClipWorkspaceFeedback next, uint32_t nowMs);

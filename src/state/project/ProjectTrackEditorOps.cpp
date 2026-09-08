@@ -1,6 +1,11 @@
 #include "state/project/ProjectTrackEditorOps.hpp"
 
+#include <cmath>
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
+
+#include "state/interaction/TextKeyboardLayout.hpp"
 
 namespace core::state::project {
 namespace {
@@ -78,6 +83,8 @@ FLASHMEM ProjectTrackEditorMutationResult closeProjectTrackEditor(
             editor.trackIndex
         );
     }
+    editor.textEditing = false;
+    editor.textShiftActive = false;
     editor.active = false;
     bumpRevision(editor);
     return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
@@ -227,6 +234,157 @@ FLASHMEM ProjectTrackEditorMutationResult selectProjectTrackEditorDraftKind(
         return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
     }
     editor.draftKind = kind;
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult beginProjectTrackNameEditing(
+    ProjectTrackEditorState& editor,
+    const char* displayName
+) {
+    if (!editor.active) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    if (editor.selectedProperty != ProjectTrackEditorProperty::NAME ||
+        displayName == nullptr) {
+        return result(
+            ProjectTrackEditorMutationStatus::INVALID_PROPERTY,
+            editor.trackIndex
+        );
+    }
+    if (editor.textEditing) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    editor.nameDraft.fill('\0');
+    std::strncpy(
+        editor.nameDraft.data(),
+        displayName,
+        PROJECT_TRACK_NAME_MAX_LENGTH
+    );
+    editor.nameDraft[PROJECT_TRACK_NAME_MAX_LENGTH] = '\0';
+    editor.textKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
+    editor.textOptRawPosition = 0.0f;
+    editor.textOptRowAccumulator = 0.0f;
+    editor.textEditing = true;
+    editor.textShiftActive = false;
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult moveProjectTrackNameKey(
+    ProjectTrackEditorState& editor,
+    int move
+) {
+    if (!editor.active || !editor.textEditing) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    if (move == 0) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    const uint8_t next = core::state::interaction::textKeyboardMoveColumn(
+        editor.textKeyIndex,
+        move
+    );
+    if (next == editor.textKeyIndex) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    editor.textKeyIndex = next;
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult moveProjectTrackNameRow(
+    ProjectTrackEditorState& editor,
+    float rawPosition
+) {
+    if (!editor.active || !editor.textEditing) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    const float delta = rawPosition - editor.textOptRawPosition;
+    editor.textOptRawPosition = rawPosition;
+    if (delta == 0.0f) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    constexpr float ticksPerRow = (600.0f * 4.0f) /
+        static_cast<float>(core::state::interaction::TEXT_KEYBOARD_ROW_COUNT);
+    editor.textOptRowAccumulator += delta / ticksPerRow;
+    const float absolute = std::fabs(editor.textOptRowAccumulator);
+    if (absolute < 1.0f) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    const int steps = static_cast<int>(absolute);
+    const bool increasing = editor.textOptRowAccumulator > 0.0f;
+    editor.textOptRowAccumulator += increasing
+        ? -static_cast<float>(steps)
+        : static_cast<float>(steps);
+    const uint8_t next = core::state::interaction::textKeyboardMoveRow(
+        editor.textKeyIndex,
+        increasing ? -steps : steps
+    );
+    if (next == editor.textKeyIndex) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    editor.textKeyIndex = next;
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult insertProjectTrackNameKey(
+    ProjectTrackEditorState& editor
+) {
+    if (!editor.active || !editor.textEditing) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    const char character = core::state::interaction::textKeyboardCharacterAt(
+        editor.textKeyIndex,
+        editor.textShiftActive
+    );
+    if (!core::state::interaction::textKeyboardAppend(
+            editor.nameDraft.data(), editor.nameDraft.size(), character)) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult backspaceProjectTrackName(
+    ProjectTrackEditorState& editor
+) {
+    if (!editor.active || !editor.textEditing) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    if (!core::state::interaction::textKeyboardBackspace(
+            editor.nameDraft.data())) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult setProjectTrackNameShift(
+    ProjectTrackEditorState& editor,
+    bool active
+) {
+    if (!editor.active || !editor.textEditing) {
+        return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
+    }
+    if (editor.textShiftActive == active) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    editor.textShiftActive = active;
+    bumpRevision(editor);
+    return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
+}
+
+FLASHMEM ProjectTrackEditorMutationResult endProjectTrackNameEditing(
+    ProjectTrackEditorState& editor
+) {
+    if (!editor.active || !editor.textEditing) {
+        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
+    }
+    editor.textEditing = false;
+    editor.textShiftActive = false;
     bumpRevision(editor);
     return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
 }

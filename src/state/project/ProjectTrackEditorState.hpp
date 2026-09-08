@@ -3,11 +3,15 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "state/interaction/TextKeyboardLayout.hpp"
+#include "state/project/ProjectTrackState.hpp"
+
 namespace core::state::project {
 
 /** Scalar properties exposed through the Track Editor contextual selector. */
 enum class ProjectTrackEditorProperty : uint8_t {
-    CHANNEL = 0,
+    NAME = 0,
+    CHANNEL,
     DELAY,
     TYPE,
     COUNT,
@@ -33,6 +37,13 @@ struct ProjectTrackEditorState {
         ProjectTrackEditorProperty::CHANNEL;
     ProjectTrackEditorKind currentKind = ProjectTrackEditorKind::INSTRUMENT;
     ProjectTrackEditorKind draftKind = ProjectTrackEditorKind::INSTRUMENT;
+    ProjectTrackName nameDraft{};
+    uint8_t textKeyIndex =
+        core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
+    float textOptRawPosition = 0.0f;
+    float textOptRowAccumulator = 0.0f;
+    bool textEditing = false;
+    bool textShiftActive = false;
     bool typeChangeBlocked = false;
     bool active = false;
 
@@ -63,12 +74,18 @@ struct ProjectTrackEditorState {
                lhs.selectedProperty == rhs.selectedProperty &&
                lhs.currentKind == rhs.currentKind &&
                lhs.draftKind == rhs.draftKind &&
+               lhs.nameDraft == rhs.nameDraft &&
+               lhs.textKeyIndex == rhs.textKeyIndex &&
+               lhs.textOptRawPosition == rhs.textOptRawPosition &&
+               lhs.textOptRowAccumulator == rhs.textOptRowAccumulator &&
+               lhs.textEditing == rhs.textEditing &&
+               lhs.textShiftActive == rhs.textShiftActive &&
                lhs.typeChangeBlocked == rhs.typeChangeBlocked &&
                lhs.active == rhs.active;
     }
 };
 
-static_assert(sizeof(ProjectTrackEditorState) <= 12U);
+static_assert(sizeof(ProjectTrackEditorState) <= 40U);
 static_assert(std::is_trivially_copyable_v<ProjectTrackEditorState>);
 
 }  // namespace core::state::project

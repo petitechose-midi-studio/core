@@ -1,4 +1,3 @@
-# UX: a quick-property overlay must not clear a retained curve's clamp warning.
 # Purpose: a quick-property overlay must not clear a retained curve's clamp warning.
 # The source remains unchanged; opening/closing Left Center only changes chrome.
 # Expect: capture_changed:clipping_before=quick_property

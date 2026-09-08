@@ -295,9 +295,22 @@ void test_clip_launcher_navigation_is_spatial_and_scrolls_one_item() {
     assert(state.focusedSlot == 1U);
     assert(state.viewportIndex() == 0U);
 
-    // The eight hardware pads always address one visible 4 x 2 half. With a
-    // sliding viewport starting on Scene 2, the first bank is Scenes 2-3.
+    // The eight hardware pads mirror two rows of one fixed Scene column plus
+    // three visible Clip columns.
     assert(state.macroBankFirstSlot() == 1U);
+    auto target = state.macroTarget(0U);
+    assert(target.focus == seq::ClipWorkspaceFocus::SCENE);
+    assert(target.slot == 1U);
+    target = state.macroTarget(1U);
+    assert(target.focus == seq::ClipWorkspaceFocus::CLIP);
+    assert(target.track == 0U && target.slot == 1U);
+    target = state.macroTarget(3U);
+    assert(target.track == 2U && target.slot == 1U);
+    target = state.macroTarget(4U);
+    assert(target.focus == seq::ClipWorkspaceFocus::SCENE);
+    assert(target.slot == 2U);
+    target = state.macroTarget(7U);
+    assert(target.track == 2U && target.slot == 2U);
     state.focus(2U, 3U);
     assert(state.macroBankFirstSlot() == 3U);
 
@@ -333,13 +346,12 @@ void test_clip_launcher_quick_control_is_bounded_and_expires() {
     assert(state.quickPropertyArmed);
     assert(state.quickFeedbackVisible);
 
-    state.updateQuickFeedback(799U);
+    const uint32_t deadline =
+        100U + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS;
+    state.updateQuickFeedback(deadline - 1U);
     assert(state.quickFeedbackVisible);
-    state.updateQuickFeedback(800U);
+    state.updateQuickFeedback(deadline);
     assert(!state.quickFeedbackVisible);
-    assert(state.quickPropertyArmed);
-
-    state.clearQuickControl();
     assert(!state.quickPropertyArmed);
     assert(state.quickAction == seq::ClipWorkspaceQuickAction::EDIT);
 }
@@ -387,7 +399,7 @@ void test_clip_launcher_returns_to_the_exact_clip_address() {
     assert(state.matrixVisible());
     assert(state.focusedTrack == 6U);
     assert(state.focusedSlot == 5U);
-    assert(state.firstVisibleTrack == 3U);
+    assert(state.firstVisibleTrack == 4U);
     assert(state.firstVisibleSlot == 2U);
     assert(!state.returnToMatrix());
 }

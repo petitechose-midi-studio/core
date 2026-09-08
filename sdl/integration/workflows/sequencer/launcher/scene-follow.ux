@@ -13,7 +13,7 @@
 
 0 scenario clip-launcher-v3
 # Scene is the default performance focus.
-180 encoder NAV 0.01
+180 encoder OPT 0.01
 500 capture screen scene_2_ready
 
 580 tap BOTTOM_CENTER 60

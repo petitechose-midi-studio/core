@@ -2,6 +2,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "config/Timing.hpp"
 #include "state/CoreState.hpp"
 #include "ui/sequencer/SequencerHeaderViewModelBuilder.hpp"
 #include "ui/sequencer/SequencerStepGridViewModelBuilder.hpp"
@@ -56,7 +57,7 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
     };
 }
 
-void testClipQuickPropertyRemainsVisibleAfterFeedbackExpires() {
+void testClipQuickPropertySessionEndsAfterFeedbackExpires() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings);
     auto& launcher = state.sequencer.clipWorkspace;
@@ -65,16 +66,17 @@ void testClipQuickPropertyRemainsVisibleAfterFeedbackExpires() {
     launcher.showQuickSelector();
     launcher.moveQuickAction(1);
     launcher.armQuickProperty(100U);
-    launcher.updateQuickFeedback(800U);
+    launcher.updateQuickFeedback(
+        100U + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+    );
 
-    assert(launcher.quickPropertyArmed);
+    assert(!launcher.quickPropertyArmed);
     assert(!launcher.quickFeedbackVisible);
     const auto header = core::ui::sequencer::buildSequencerHeaderBarProps(
         sourceFor(state, false)
     );
-    assert(std::strcmp(header.contextIcon, ::standalone::icons::LENGTH) == 0);
-    assert(header.contextIconColor ==
-           ::standalone::theme::color::STEP_STATE);
+    assert(header.contextIcon[0] == '\0');
+    assert(header.contextIconColor == 0U);
 }
 
 void testEmptyTrackPreviewProjectsNoMusicalState() {
@@ -206,7 +208,7 @@ int main() {
     testDrumTrackAndPatternProjectTheSameMusicalHeader();
     testPitchFeedbackProjectsTonalValueWithoutChangingContext();
     testPatternPlayheadBelongsOnlyToItsActiveParentClip();
-    testClipQuickPropertyRemainsVisibleAfterFeedbackExpires();
+    testClipQuickPropertySessionEndsAfterFeedbackExpires();
     std::cout << "Sequencer Track projection tests passed\n";
     return 0;
 }

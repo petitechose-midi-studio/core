@@ -1,6 +1,7 @@
 #include "handler/sequencer/ClipWorkspaceHandler.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include <config/App.hpp>
 #include <config/InputIDs.hpp>
@@ -18,6 +19,43 @@
 namespace core::handler {
 
 namespace seq = core::state::sequencer;
+
+namespace {
+
+FLASHMEM bool setNormalizedBehaviorValue(
+    seq::SequencerLauncherBehavior& behavior,
+    seq::ClipWorkspaceQuickAction action,
+    float normalized
+) {
+    namespace input = core::handler::sequencer::input_utils;
+    switch (action) {
+        case seq::ClipWorkspaceQuickAction::LENGTH:
+            behavior.length = static_cast<uint8_t>(input::normalizedToIndex(
+                normalized,
+                static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH) + 1
+            ));
+            return true;
+        case seq::ClipWorkspaceQuickAction::FOLLOW:
+            behavior.follow = seq::sequencerLauncherFollowChoiceAt(
+                static_cast<uint8_t>(input::normalizedToIndex(
+                    normalized,
+                    seq::sequencerLauncherFollowChoiceCount()
+                ))
+            );
+            return true;
+        case seq::ClipWorkspaceQuickAction::QUANTIZE:
+            behavior.quantization = static_cast<
+                seq::SequencerLauncherFollowQuantization>(
+                    input::normalizedToIndex(normalized, 3));
+            return true;
+        case seq::ClipWorkspaceQuickAction::EDIT:
+        case seq::ClipWorkspaceQuickAction::COUNT:
+            return false;
+    }
+    return false;
+}
+
+}  // namespace
 
 FLASHMEM ClipWorkspaceHandler::ClipWorkspaceHandler(
     StateRefs state,
@@ -52,6 +90,11 @@ FLASHMEM void ClipWorkspaceHandler::update() {
         (void)release_latch_.consume(Config::ButtonID::LEFT_CENTER);
     }
 
+    if (!buttons_.isPressed(Config::ButtonID::BOTTOM_LEFT) &&
+        core_.sequencer.clipWorkspace.stopLayerActive) {
+        endStopLayer();
+    }
+
     // The focus signal is shared with Macro and Project. An inactive Clips
     // matrix must never overwrite the context owned by the visible view.
     auto& workspace = core_.sequencer.clipWorkspace;
@@ -65,6 +108,7 @@ FLASHMEM void ClipWorkspaceHandler::update() {
         }
         if (quick_selector_gesture_.active()) quick_selector_gesture_.cancel();
         workspace.clearQuickControl();
+        workspace.setStopLayer(false);
         return;
     }
     if (workspace.quickPropertyArmed &&
@@ -105,6 +149,7 @@ FLASHMEM bool ClipWorkspaceHandler::trackHeaderAvailable() const {
 
 FLASHMEM bool ClipWorkspaceHandler::matrixAvailable() const {
     return core_.sequencer.clipWorkspace.matrixVisible() &&
+        !core_.trackNavigation.hold.active() &&
         !core_.sequencer.clipWorkspace.editorActive() &&
         !overlays_.hasVisible() &&
         !core_.sequencer.drumSequencer.pickerVisible() &&
@@ -121,6 +166,7 @@ FLASHMEM bool ClipWorkspaceHandler::editorAvailable() const {
 
 FLASHMEM bool ClipWorkspaceHandler::horizontalNavigationAvailable() const {
     return matrixAvailable() &&
+        !core_.sequencer.clipWorkspace.stopLayerActive &&
         !core_.sequencer.clipWorkspace.removePending();
 }
 
@@ -153,6 +199,9 @@ FLASHMEM bool ClipWorkspaceHandler::focusedClipAvailable() const {
 }
 
 FLASHMEM void ClipWorkspaceHandler::setupBindings() {
+    static_assert(
+        Config::MACRO_COUNT == seq::ClipWorkspaceUiState::MACRO_TARGET_COUNT
+    );
     for (uint8_t index = 0U; index < Config::MACRO_COUNT; ++index) {
         buttons_.button(Config::MACRO_BUTTONS[index])
             .press()
@@ -166,10 +215,19 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
         .scope(scope_id_)
         .priority(127)
         .when([this]() {
-            return horizontalNavigationAvailable() &&
-                !quick_selector_gesture_.active();
+            return (horizontalNavigationAvailable() &&
+                    !quick_selector_gesture_.active()) ||
+                (matrixAvailable() &&
+                 core_.sequencer.clipWorkspace.stopLayerActive);
         })
-        .then([this]() { beginHorizontalNavigation(); });
+        .then([this]() {
+            if (core_.sequencer.clipWorkspace.stopLayerActive) {
+                stopFocusedTrack();
+                release_latch_.arm(Config::ButtonID::NAV);
+                return;
+            }
+            beginHorizontalNavigation();
+        });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
@@ -181,20 +239,27 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
         })
         .then([this](float delta) {
             if (quick_selector_gesture_.active()) moveQuickSelector(delta);
-            else if (horizontal_navigation_gesture_.active()) {
-                moveHorizontal(delta);
-            } else if (editorAvailable()) edit(delta);
-            else move(delta);
+            else if (editorAvailable()) edit(delta);
+            else moveHorizontal(delta);
         });
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return matrixAvailable() &&
-                core_.sequencer.clipWorkspace.quickPropertyArmed;
+            const auto& ui = core_.sequencer.clipWorkspace;
+            return (editorAvailable() &&
+                    ui.editor != seq::ClipWorkspaceEditor::SLOT_ACTION) ||
+                matrixAvailable();
         })
-        .then([this](float delta) { editQuickProperty(delta); });
+        .then([this](float value) {
+            if (editorAvailable()) editEditorValue(value);
+            else if (core_.sequencer.clipWorkspace.quickPropertyArmed) {
+                editQuickProperty(value);
+            } else {
+                move(value);
+            }
+        });
 
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
@@ -235,8 +300,14 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
                 return;
             }
             if (release_latch_.consume(Config::ButtonID::NAV)) return;
-            if (editorAvailable()) applyEditor();
-            else openFocused();
+            if (editorAvailable()) {
+                if (core_.sequencer.clipWorkspace.editor ==
+                    seq::ClipWorkspaceEditor::SLOT_ACTION) {
+                    confirmSlotAction();
+                }
+                return;
+            }
+            openFocused();
         });
 
     buttons_.button(Config::ButtonID::LEFT_CENTER)
@@ -342,24 +413,21 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
         .then([this]() { applyOrBeginDuplicate(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
+        .press()
         .scope(scope_id_)
         .when([this]() {
             return matrixAvailable() &&
-                core_.sequencer.clipWorkspace.clipFocused() &&
                 !core_.sequencer.clipWorkspace.selectionActive();
         })
-        .then([this]() { moveViewport(-1); });
+        .then([this]() { beginStopLayer(); });
 
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return matrixAvailable() &&
-                core_.sequencer.clipWorkspace.clipFocused() &&
-                !core_.sequencer.clipWorkspace.selectionActive();
+            return core_.sequencer.clipWorkspace.stopLayerActive;
         })
-        .then([this]() { moveViewport(1); });
+        .then([this]() { endStopLayer(); });
 }
 
 FLASHMEM void ClipWorkspaceHandler::beginHorizontalNavigation() {
@@ -367,7 +435,12 @@ FLASHMEM void ClipWorkspaceHandler::beginHorizontalNavigation() {
 }
 
 FLASHMEM void ClipWorkspaceHandler::moveHorizontal(float delta) {
-    if (!horizontal_navigation_gesture_.turn(nav::hasTurnDelta(delta))) return;
+    const bool hasTurn = nav::hasTurnDelta(delta);
+    if (!hasTurn ||
+        (horizontal_navigation_gesture_.active() &&
+         !horizontal_navigation_gesture_.turn(true))) {
+        return;
+    }
     auto& ui = core_.sequencer.clipWorkspace;
     ui.clearQuickControl();
     const uint16_t navigableTracks = ui.placementActive()
@@ -438,6 +511,7 @@ FLASHMEM void ClipWorkspaceHandler::move(float delta) {
         return;
     }
     auto& ui = core_.sequencer.clipWorkspace;
+    if (ui.stopLayerActive) return;
     ui.clearQuickControl();
     const int steps = nav::turnSteps(delta);
     const int direction = steps < 0 ? -1 : 1;
@@ -466,34 +540,11 @@ FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float normalized) {
     auto behavior = sceneTarget
         ? core_.sequencerClips.sceneBehavior(ui.quickTargetSlot)
         : core_.sequencerClips.clipBehavior(address);
-    namespace input = core::handler::sequencer::input_utils;
-    switch (ui.quickAction) {
-        case seq::ClipWorkspaceQuickAction::LENGTH:
-            behavior.length = static_cast<uint8_t>(input::normalizedToIndex(
-                normalized,
-                static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH) + 1
-            ));
-            break;
-        case seq::ClipWorkspaceQuickAction::FOLLOW:
-            behavior.follow = seq::sequencerLauncherFollowChoiceAt(
-                static_cast<uint8_t>(input::normalizedToIndex(
-                    normalized,
-                    seq::sequencerLauncherFollowChoiceCount()
-                ))
-            );
-            break;
-        case seq::ClipWorkspaceQuickAction::QUANTIZE: {
-            const int value = input::normalizedToIndex(
-                normalized,
-                3
-            );
-            behavior.quantization = static_cast<
-                seq::SequencerLauncherFollowQuantization>(value);
-            break;
-        }
-        case seq::ClipWorkspaceQuickAction::EDIT:
-        case seq::ClipWorkspaceQuickAction::COUNT:
-            return;
+    if (!setNormalizedBehaviorValue(
+            behavior,
+            ui.quickAction,
+            normalized)) {
+        return;
     }
 
     const bool accepted = sceneTarget
@@ -515,53 +566,47 @@ FLASHMEM void ClipWorkspaceHandler::edit(float delta) {
     if (!editorAvailable() || !nav::hasTurnDelta(delta)) return;
     const int direction = nav::turnSteps(delta);
     auto& ui = core_.sequencer.clipWorkspace;
-    if (!buttons_.isPressed(Config::ButtonID::LEFT_CENTER)) {
-        if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
-            ui.moveSlotAction(direction);
-        } else {
-            ui.moveEditorField(direction);
-        }
+    if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
+        ui.moveSlotAction(direction);
+    } else {
+        ui.moveEditorField(direction);
+    }
+}
+
+FLASHMEM void ClipWorkspaceHandler::editEditorValue(float normalized) {
+    if (!editorAvailable()) return;
+    auto& ui = core_.sequencer.clipWorkspace;
+    if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) return;
+
+    const seq::SequencerClipAddress address{ui.focusedTrack, ui.focusedSlot};
+    const bool sceneTarget =
+        ui.editor == seq::ClipWorkspaceEditor::SCENE_BEHAVIOR;
+    auto behavior = sceneTarget
+        ? core_.sequencerClips.sceneBehavior(ui.focusedSlot)
+        : core_.sequencerClips.clipBehavior(address);
+    if (!setNormalizedBehaviorValue(
+            behavior,
+            seq::clipWorkspaceQuickActionFor(ui.editorField),
+            normalized)) {
         return;
     }
 
-    release_latch_.arm(Config::ButtonID::LEFT_CENTER);
-
-    uint8_t length = ui.editorLength;
-    uint8_t followChoice = ui.editorFollowChoice;
-    uint8_t quantization = ui.editorQuantization;
-    switch (ui.editorField) {
-        case seq::ClipWorkspaceBehaviorField::LENGTH:
-            length = static_cast<uint8_t>(std::clamp(
-                static_cast<int>(length) + direction,
-                0,
-                static_cast<int>(seq::SequencerLauncherBehavior::MAX_LENGTH)
-            ));
-            break;
-        case seq::ClipWorkspaceBehaviorField::FOLLOW: {
-            auto follow = static_cast<seq::SequencerLauncherFollowChoice>(
-                followChoice
-            );
-            const int step = direction < 0 ? -1 : 1;
-            for (int index = 0; index < std::abs(direction); ++index) {
-                follow = seq::stepSequencerLauncherFollowChoice(
-                    follow,
-                    step
-                );
-            }
-            followChoice = static_cast<uint8_t>(follow);
-            break;
-        }
-        case seq::ClipWorkspaceBehaviorField::QUANTIZE:
-            quantization = static_cast<uint8_t>(std::clamp(
-                static_cast<int>(quantization) + direction,
-                0,
-                2
-            ));
-            break;
-        case seq::ClipWorkspaceBehaviorField::COUNT:
-            break;
+    const bool accepted = sceneTarget
+        ? behavior == core_.sequencerClips.sceneBehavior(ui.focusedSlot) ||
+            core_.setSequencerSceneBehavior(ui.focusedSlot, behavior)
+        : behavior == core_.sequencerClips.clipBehavior(address) ||
+            core_.setSequencerClipBehavior(address, behavior);
+    if (!accepted) {
+        showFeedback(seq::ClipWorkspaceFeedback::FAILED);
+        return;
     }
-    ui.setEditorValues(length, followChoice, quantization);
+
+    ui.setEditorValues(
+        behavior.length,
+        static_cast<uint8_t>(behavior.follow),
+        static_cast<uint8_t>(behavior.quantization)
+    );
+    showFeedback(seq::ClipWorkspaceFeedback::NONE);
 }
 
 FLASHMEM void ClipWorkspaceHandler::moveViewport(int direction) {
@@ -591,22 +636,33 @@ FLASHMEM void ClipWorkspaceHandler::beginTrackSelection() {
     navigation_workflow_->enterSelectionModeForCurrentFocus();
 }
 
-FLASHMEM seq::SequencerClipAddress
-ClipWorkspaceHandler::visibleAddress(uint8_t macroIndex) const {
-    const auto& ui = core_.sequencer.clipWorkspace;
-    return {
-        static_cast<uint8_t>(ui.firstVisibleTrack +
-            (macroIndex % seq::ClipWorkspaceUiState::VISIBLE_TRACKS)),
-        static_cast<uint8_t>(ui.macroBankFirstSlot() +
-            (macroIndex / seq::ClipWorkspaceUiState::VISIBLE_TRACKS)),
-    };
-}
-
 FLASHMEM void ClipWorkspaceHandler::launchVisible(uint8_t macroIndex) {
-    if (!matrixAvailable() || macroIndex >= Config::MACRO_COUNT) return;
+    if (!matrixAvailable() ||
+        macroIndex >= seq::ClipWorkspaceUiState::MACRO_TARGET_COUNT) {
+        return;
+    }
     auto& ui = core_.sequencer.clipWorkspace;
     if (ui.placementActive()) return;
-    const auto address = visibleAddress(macroIndex);
+    const auto target = ui.macroTarget(macroIndex);
+    if (ui.stopLayerActive) {
+        if (target.focus == seq::ClipWorkspaceFocus::CLIP) {
+            const auto telemetry = core_.sequencerClipLaunches.telemetry(
+                target.track
+            );
+            if (!telemetry.stopped && telemetry.activeSlot == target.slot) {
+                stopTrack(target.track, false);
+            }
+        }
+        return;
+    }
+    if (target.focus == seq::ClipWorkspaceFocus::SCENE) {
+        if (ui.selectionActive()) return;
+        ui.focusScene(target.slot);
+        syncNavigationFocus();
+        launchScene(target.slot);
+        return;
+    }
+    const seq::SequencerClipAddress address{target.track, target.slot};
     ui.focus(address.track, address.slot);
     syncNavigationFocus();
     if (ui.operation == seq::ClipWorkspaceOperation::SELECT) {
@@ -659,7 +715,7 @@ FLASHMEM void ClipWorkspaceHandler::openFocused() {
             core_.sequencer.drumSequencer.openTypePicker(ui.focusedTrack);
             return;
         }
-        stopTrack(ui.focusedTrack, true);
+        toggleTrackMute();
         return;
     }
     if (ui.sceneFocused()) {
@@ -751,45 +807,28 @@ FLASHMEM void ClipWorkspaceHandler::openFocusedEditor() {
     }
 }
 
-FLASHMEM void ClipWorkspaceHandler::applyEditor() {
-    if (!editorAvailable()) return;
+FLASHMEM void ClipWorkspaceHandler::confirmSlotAction() {
+    if (!editorAvailable() || core_.sequencer.clipWorkspace.editor !=
+        seq::ClipWorkspaceEditor::SLOT_ACTION) {
+        return;
+    }
     auto& ui = core_.sequencer.clipWorkspace;
     const seq::SequencerClipAddress address{ui.focusedTrack, ui.focusedSlot};
     bool accepted = false;
-    if (ui.editor == seq::ClipWorkspaceEditor::SLOT_ACTION) {
-        switch (ui.slotAction) {
-            case seq::ClipWorkspaceSlotAction::CREATE_CLIP:
-                accepted = core_.sequencerClips.isStop(address)
-                    ? false
-                    : core_.createSequencerClip(address);
-                break;
-            case seq::ClipWorkspaceSlotAction::SET_STOP:
-                accepted = core_.setSequencerStopSlot(address, true);
-                break;
-            case seq::ClipWorkspaceSlotAction::CLEAR:
-                accepted = core_.setSequencerStopSlot(address, false);
-                break;
-            case seq::ClipWorkspaceSlotAction::COUNT:
-                break;
-        }
-    } else {
-        const seq::SequencerLauncherBehavior behavior{
-            .length = ui.editorLength,
-            .follow = static_cast<seq::SequencerLauncherFollowChoice>(
-                ui.editorFollowChoice
-            ),
-            .quantization = static_cast<
-                seq::SequencerLauncherFollowQuantization>(
-                    std::min<uint8_t>(ui.editorQuantization, 2U))
-        };
-        if (ui.editor == seq::ClipWorkspaceEditor::CLIP_BEHAVIOR) {
-            accepted = core_.sequencerClips.clipBehavior(address) == behavior ||
-                core_.setSequencerClipBehavior(address, behavior);
-        } else if (ui.editor == seq::ClipWorkspaceEditor::SCENE_BEHAVIOR) {
-            accepted = core_.sequencerClips.sceneBehavior(ui.focusedSlot) ==
-                    behavior ||
-                core_.setSequencerSceneBehavior(ui.focusedSlot, behavior);
-        }
+    switch (ui.slotAction) {
+        case seq::ClipWorkspaceSlotAction::CREATE_CLIP:
+            accepted = core_.sequencerClips.isStop(address)
+                ? false
+                : core_.createSequencerClip(address);
+            break;
+        case seq::ClipWorkspaceSlotAction::SET_STOP:
+            accepted = core_.setSequencerStopSlot(address, true);
+            break;
+        case seq::ClipWorkspaceSlotAction::CLEAR:
+            accepted = core_.setSequencerStopSlot(address, false);
+            break;
+        case seq::ClipWorkspaceSlotAction::COUNT:
+            break;
     }
     if (accepted) {
         (void)ui.closeEditor();
@@ -821,6 +860,49 @@ FLASHMEM void ClipWorkspaceHandler::stopTrack(
             immediate
                 ? seq::SequencerClipLaunchQuantization::IMMEDIATE
                 : seq::SequencerClipLaunchQuantization::BAR
+        ) ? seq::ClipWorkspaceFeedback::NONE
+          : seq::ClipWorkspaceFeedback::FAILED
+    );
+}
+
+FLASHMEM void ClipWorkspaceHandler::stopFocusedTrack() {
+    const auto& ui = core_.sequencer.clipWorkspace;
+    if (!ui.stopLayerActive || ui.sceneFocused() ||
+        !core_.sequencerTracks.isTrackEnabled(ui.focusedTrack)) {
+        return;
+    }
+    const auto telemetry = core_.sequencerClipLaunches.telemetry(
+        ui.focusedTrack
+    );
+    if (!telemetry.stopped) stopTrack(ui.focusedTrack, false);
+}
+
+FLASHMEM void ClipWorkspaceHandler::beginStopLayer() {
+    auto& ui = core_.sequencer.clipWorkspace;
+    if (!matrixAvailable() || ui.selectionActive()) return;
+    if (horizontal_navigation_gesture_.active()) {
+        horizontal_navigation_gesture_.cancel();
+    }
+    ui.setStopLayer(true);
+}
+
+FLASHMEM void ClipWorkspaceHandler::endStopLayer() {
+    core_.sequencer.clipWorkspace.setStopLayer(false);
+}
+
+FLASHMEM void ClipWorkspaceHandler::toggleTrackMute() {
+    if (!trackHeaderAvailable()) return;
+    const uint8_t track = core_.sequencer.clipWorkspace.focusedTrack;
+    if (!core_.sequencerTracks.isTrackEnabled(track)) return;
+    auto domain = core::state::project::
+        ProjectTrackDomainServices::fromCoreState(core_);
+    showFeedback(
+        domain.setMuted(
+            track,
+            !core::state::project::projectTrackMuted(
+                core_.projectTracks,
+                track
+            )
         ) ? seq::ClipWorkspaceFeedback::NONE
           : seq::ClipWorkspaceFeedback::FAILED
     );

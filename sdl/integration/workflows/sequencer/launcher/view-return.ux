@@ -1,4 +1,3 @@
-# Clips keep playing while Macros owns the screen. Stop while away, then
 # Purpose: keep Clips playing while Macros owns the screen. Stop while away, then
 # return: the retained matrix must show current transport state, not a stale head.
 # Expect: capture_match:stopped_return=stopped_later

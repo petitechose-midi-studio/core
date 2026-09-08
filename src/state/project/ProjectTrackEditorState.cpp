@@ -10,6 +10,12 @@ FLASHMEM void ProjectTrackEditorState::reset() {
     selectedProperty = ProjectTrackEditorProperty::CHANNEL;
     currentKind = ProjectTrackEditorKind::INSTRUMENT;
     draftKind = ProjectTrackEditorKind::INSTRUMENT;
+    nameDraft = {};
+    textKeyIndex = core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
+    textOptRawPosition = 0.0f;
+    textOptRowAccumulator = 0.0f;
+    textEditing = false;
+    textShiftActive = false;
     typeChangeBlocked = false;
     active = false;
 }

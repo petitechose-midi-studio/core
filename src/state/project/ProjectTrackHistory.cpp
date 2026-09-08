@@ -8,7 +8,7 @@ namespace core::state::project {
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 static_assert(
-    sizeof(ProjectTrackHistoryService) <= 1024U,
+    sizeof(ProjectTrackHistoryService) <= 4096U,
     "Track history must remain a compact PSRAM allocation"
 );
 #endif

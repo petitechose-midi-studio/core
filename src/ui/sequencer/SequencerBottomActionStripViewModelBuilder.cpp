@@ -738,33 +738,6 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             if (launcher.editorActive()) {
                 return props;
             }
-            if (launcher.trackHeaderFocused()) {
-                if (!source.tracks.isTrackEnabled(launcher.focusedTrack)) {
-                    return props;
-                }
-                const bool muted = core::state::project::projectTrackMuted(
-                    source.projectTracks,
-                    launcher.focusedTrack
-                );
-                props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                    standalone::icons::TRACK_MUTE,
-                    muted ? Visual::ARMED : Visual::ACTIVE,
-                    muted ? Tone::WARNING : Tone::NEUTRAL
-                );
-                return props;
-            }
-            if (!launcher.clipFocused()) return props;
-            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                standalone::icons::ACTION_BACKWARD,
-                Visual::ACTIVE,
-                Tone::NEUTRAL
-            );
-            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-                standalone::icons::ACTION_BACKWARD,
-                Visual::ACTIVE,
-                Tone::NEUTRAL
-            );
-            props.slots[2].iconRotated180 = true;
             return props;
         }
 

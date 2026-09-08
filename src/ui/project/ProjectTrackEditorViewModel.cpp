@@ -1,7 +1,6 @@
 #include "ui/project/ProjectTrackEditorViewModel.hpp"
 
 #include <algorithm>
-#include <cstdio>
 
 #include <config/PlatformCompat.hpp>
 
@@ -52,11 +51,11 @@ FLASHMEM ProjectTrackEditorViewModel buildProjectTrackEditorViewModel(
         track::ProjectTrackEditorKind::DRUM;
     out.typeChangePending = editor.currentKind != editor.draftKind;
     out.typeChangeBlocked = editor.typeChangeBlocked;
-    std::snprintf(
+    track::formatProjectTrackName(
+        tracks,
+        index,
         out.title.data(),
-        out.title.size(),
-        "Track %u",
-        static_cast<unsigned>(out.trackNumber)
+        out.title.size()
     );
     return out;
 }

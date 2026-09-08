@@ -10,15 +10,13 @@
 0 scenario clip-launcher-v3
 
 # Scene rail -> T1/C1, then start transport and launch it.
-100 button NAV down
 180 encoder NAV 0.01
-260 button NAV up
 340 tap BOTTOM_CENTER 60
 500 tap NAV 60
 2500 capture screen clip_1_active
 
 # Browse to T1/C2 without launching it and open its Pattern content directly.
-2580 encoder NAV 0.01
+2580 encoder OPT 0.01
 2740 capture screen clip_2_focused
 2820 tap LEFT_BOTTOM 60
 3180 capture screen inactive_pattern

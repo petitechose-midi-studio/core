@@ -77,8 +77,7 @@
 6650 tap LEFT_CENTER 60
 8150 capture screen selector_after_undo_step1_edit
 8250 tap LEFT_TOP 60
-8320 tap LEFT_CENTER 60
-8390 tap LEFT_TOP 60
+8320 tap LEFT_BOTTOM 60
 8490 capture screen after_undo_step1_edit_closed
 
 # Undo C2: step 8 note edit should disappear, step 8 toggle should remain.
@@ -89,8 +88,7 @@
 9650 tap LEFT_CENTER 60
 11150 capture screen selector_after_undo_step8_note
 11250 tap LEFT_TOP 60
-11320 tap LEFT_CENTER 60
-11390 tap LEFT_TOP 60
+11320 tap LEFT_BOTTOM 60
 11500 capture screen after_undo_step8_note_closed
 
 # Undo C1: step 8 toggle should disappear.
@@ -101,8 +99,7 @@
 12650 tap LEFT_CENTER 60
 14150 capture screen selector_after_undo_step8_toggle
 14250 tap LEFT_TOP 60
-14320 tap LEFT_CENTER 60
-14390 tap LEFT_TOP 60
+14320 tap LEFT_BOTTOM 60
 14500 capture screen after_undo_step8_toggle_closed
 
 # Redo C1: step 8 comes back as C3.
@@ -113,8 +110,7 @@
 15650 tap LEFT_BOTTOM 60
 17150 capture screen selector_after_redo_step8_toggle
 17250 tap LEFT_TOP 60
-17320 tap LEFT_CENTER 60
-17390 tap LEFT_TOP 60
+17320 tap LEFT_BOTTOM 60
 17500 capture screen after_redo_step8_toggle_closed
 
 # Branch: a new musical action after partial redo should clear remaining redo.
@@ -129,8 +125,7 @@
 18950 tap LEFT_BOTTOM 60
 20450 capture screen selector_after_redo_attempt_cleared
 20550 tap LEFT_TOP 60
-20620 tap LEFT_CENTER 60
-20690 tap LEFT_TOP 60
+20620 tap LEFT_BOTTOM 60
 20800 capture screen after_redo_attempt_cleared_closed
 
 # Undo the new branch action, then undo the redone step 8 toggle.
@@ -141,8 +136,7 @@
 21950 tap LEFT_CENTER 60
 23450 capture screen selector_after_undo_branch_step2
 23550 tap LEFT_TOP 60
-23620 tap LEFT_CENTER 60
-23690 tap LEFT_TOP 60
+23620 tap LEFT_BOTTOM 60
 23800 capture screen after_undo_branch_step2_closed
 
 23850 tap LEFT_TOP 60
@@ -152,8 +146,7 @@
 24950 tap LEFT_CENTER 60
 26450 capture screen selector_after_undo_redone_step8
 26550 tap LEFT_TOP 60
-26620 tap LEFT_CENTER 60
-26690 tap LEFT_TOP 60
+26620 tap LEFT_BOTTOM 60
 26800 capture screen after_undo_redone_step8_closed
 
 # Redo on the new branch: step 8 returns, then step 2 returns.
@@ -164,8 +157,7 @@
 27950 tap LEFT_BOTTOM 60
 29450 capture screen selector_after_redo_step8_again
 29550 tap LEFT_TOP 60
-29620 tap LEFT_CENTER 60
-29690 tap LEFT_TOP 60
+29620 tap LEFT_BOTTOM 60
 29800 capture screen after_redo_step8_again_closed
 
 29850 tap LEFT_TOP 60
@@ -175,6 +167,5 @@
 30950 tap LEFT_BOTTOM 60
 32450 capture screen selector_after_redo_step2_again
 32550 tap LEFT_TOP 60
-32620 tap LEFT_CENTER 60
-32690 tap LEFT_TOP 60
+32620 tap LEFT_BOTTOM 60
 32800 capture screen after_redo_step2_again_closed

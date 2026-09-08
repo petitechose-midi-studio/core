@@ -11,8 +11,7 @@ namespace core::ui::project {
 
 /** Allocation-free semantic projection consumed by the retained Track view. */
 struct ProjectTrackEditorViewModel {
-    // Enough for the full uint8_t diagnostic range ("TRACK 255\0"), even
-    // though the canonical product domain is currently limited to 16 Tracks.
+    // Track names are bounded to eight visible characters plus terminator.
     static constexpr uint8_t TITLE_CAPACITY = 10U;
     static constexpr uint8_t PORT_CAPACITY = 4U;
 

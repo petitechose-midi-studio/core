@@ -223,6 +223,13 @@ public:
     const oc::state::Signal<uint32_t, 4>& telemetryRevision() const noexcept {
         return telemetry_revision_;
     }
+    oc::state::Signal<uint8_t, 1>& playbackProgressRevision() noexcept {
+        return playback_progress_revision_;
+    }
+    const oc::state::Signal<uint8_t, 1>& playbackProgressRevision()
+        const noexcept {
+        return playback_progress_revision_;
+    }
 
 private:
     enum class Phase : uint8_t {
@@ -371,6 +378,7 @@ private:
     SequencerLauncherBehavior active_scene_behavior_{};
     SequencerLauncherBehavior queued_scene_behavior_{};
     oc::state::Signal<uint32_t, 4> telemetry_revision_{0U};
+    oc::state::Signal<uint8_t, 1> playback_progress_revision_{0U};
 };
 
 /** Shared capability contract used by mutation and UI affordances. */

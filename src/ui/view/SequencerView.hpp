@@ -109,6 +109,7 @@ private:
     void bindHistoryFeedbackState();
     void bindTrackSwitchReadyState();
     void bindTrackPastePreflightState();
+    void bindProjectTrackState();
     void bindClipboardState();
     bool hasBlockingOverlay() const;
     void handleOverlayVisibilityChanged();
@@ -143,7 +144,7 @@ private:
         2U * core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
         structure_selection_watcher_;
     oc::state::StaticWatchGroup<46> grid_watcher_;
-    oc::state::StaticWatchGroup<3> grid_tick_watcher_;
+    oc::state::StaticWatchGroup<4> grid_tick_watcher_;
     oc::state::StaticWatchGroup<core::state::StatusBarState::TRACK_COUNT>
         clip_activity_watcher_;
     oc::state::StaticWatchGroup<28> selector_overlay_watcher_;
@@ -152,7 +153,8 @@ private:
     oc::state::StaticWatchGroup<27> bottom_action_strip_watcher_;
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
-    oc::state::StaticWatchGroup<9> track_paste_preflight_watcher_;
+    oc::state::StaticWatchGroup<8> track_paste_preflight_watcher_;
+    oc::state::StaticWatchGroup<1> project_track_watcher_;
     oc::state::StaticWatchGroup<1> clipboard_watcher_;
 
     core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>

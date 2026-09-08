@@ -1688,7 +1688,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (project_transactions, r"files\.projectReadWorkspace\s*\(\s*lease\s*\)", "Project load must borrow only read capability under its lease"),
         (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project save/cancel must revalidate write capability", 2),
         (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*8U", "Project file store must remain two references on ARM"),
-        (project_codec_source, r"sizeof\(Storage\)\s*==\s*173992U", "Project encode scratch must remain exactly 173,992 B in cold PSRAM"),
+        (project_codec_source, r"sizeof\(Storage\)\s*==\s*174136U", "Project encode scratch must remain exactly 174,136 B in cold PSRAM"),
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*52U", "session store must remain 52 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*280U", "RPC write session must remain 280 B on ARM"),
@@ -4544,8 +4544,20 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"ui\.focusedTrack\s*\).*?"
         r"core_\.sequencer\.drumSequencer\.openTypePicker\s*\(\s*"
         r"ui\.focusedTrack\s*\).*?return\s*;.*?"
-        r"stopTrack\s*\(\s*ui\.focusedTrack\s*,\s*true\s*\)",
-        "Clip Track header short action must own typed creation and direct Stop",
+        r"toggleTrackMute\s*\(\s*\)",
+        "Clip Track header short action must own typed creation and Mute",
+    )
+    require_in_function(
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::setupBindings",
+        r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
+        r"\.press\s*\(\s*\).*?"
+        r"!\s*core_\.sequencer\.clipWorkspace\.selectionActive\s*\(\s*\).*?"
+        r"beginStopLayer\s*\(\s*\).*?"
+        r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
+        r"\.release\s*\(\s*\).*?"
+        r"stopLayerActive.*?endStopLayer\s*\(\s*\)",
+        "Clip matrix Bottom Left must own one momentary Stop layer",
     )
     require_in_function(
         CLIP_WORKSPACE_HANDLER,
@@ -4884,7 +4896,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT\s*>\s*"
         r"structure_selection_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*46\s*>\s+grid_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*3\s*>\s+grid_tick_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*4\s*>\s+grid_tick_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*28\s*>\s+selector_overlay_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*5\s*>\s+overlay_visibility_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+left_action_strip_watcher_\s*;.*?"
@@ -5257,26 +5269,12 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"applySelectionBottomLeftTap\s*\(\s*\)",
         "selection BottomLeft tap must route tokenized Track provenance before Pattern/Step",
     )
-    require(
+    require_in_function(
         SEQUENCER_STEP_HANDLER,
-        r"if\s*\(\s*edit_workflow_\.currentTrackRemoveHoldPending\s*"
-        r"\(\s*\)\s*\)\s*return\s+true\s*;.*?"
-        r"bottom_action_release_latch_\.consume\s*\(\s*"
-        r"Config::ButtonID::BOTTOM_LEFT\s*\).*?"
-        r"if\s*\(\s*edit_workflow_\.currentTrackRemoveHoldPending\s*"
-        r"\(\s*\)\s*\)\s*\{\s*"
-        r"edit_workflow_\.applyLatchedCurrentTrackShortPress\s*\(\s*\)\s*;\s*"
-        r"return\s*;\s*\}.*?"
-        r"if\s*\(\s*edit_workflow_\.trackRemoveHoldPending\s*\(\s*\)\s*\)"
-        r"\s*\{\s*edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*"
-        r"return\s*;\s*\}.*?"
-        r"if\s*\(\s*enabledClipTrackHeaderAvailable\s*\(\s*\)\s*\)\s*\{.*?"
-        r"prepareClipTrackHeaderAction\s*\(\s*false\s*\).*?"
-        r"edit_workflow_\.applyCurrentStructureShortPress\s*\(\s*\).*?"
-        r"return\s*;\s*\}.*?"
-        r"edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;.*?"
-        r"applyCurrentStructureShortPress\s*\(\s*\)",
-        "current BottomLeft tap must route Clip Track provenance before Pattern/Step",
+        "SequencerStepHandler::currentStructureBottomActionsAvailable",
+        r"sequencer_\.clipWorkspace\.matrixVisible\s*\(\s*\)\s*\)\s*"
+        r"return\s+false",
+        "Pattern/Step bottom actions must never compete with the Clip matrix",
     )
     require(
         SEQUENCER_STEP_HANDLER,

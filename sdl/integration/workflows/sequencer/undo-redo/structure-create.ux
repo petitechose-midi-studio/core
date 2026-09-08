@@ -2,6 +2,9 @@
 # Purpose: validates frictionless Track creation, contiguous Pages, and that
 # Undo/Redo restores both domain state and the visible active Track/Page.
 # This subsumes the former isolated structure-track-redo-ui workflow.
+# Expect: semantic:track_2_add_preview:target=track, semantic:track_2_add_preview:target_track=1
+# Expect: semantic:track_2_pattern_1:mode=sequencer.pattern, semantic:track_2_pattern_1:effect=create_track_and_open_pattern, semantic:track_2_pattern_1:shared_mask=3
+# Expect: semantic:track_2_creation_undone:shared_mask=1, semantic:track_2_creation_redone:shared_mask=3
 # Expect: capture_match:page_2_creation_undone=track_2_creation_redone, capture_changed:page_2_creation_undone=track_2_creation_undone, capture_match:page_2_created=page_2_creation_redone
 
 0 scenario sequencer
@@ -10,10 +13,8 @@
 # Track creation is owned by the Clip Launcher. Return to the matrix, move up
 # to the Track row, then horizontally to the sole T2 add header.
 150 tap LEFT_TOP 60
-500 encoder NAV -0.01
-600 button LEFT_CENTER down
+500 encoder OPT -0.01
 680 encoder NAV 0.01
-760 button LEFT_CENTER up
 1000 capture screen track_2_add_preview
 1200 tap NAV 60
 1500 capture screen track_2_type_instrument
@@ -63,6 +64,5 @@
 15780 tap LEFT_BOTTOM 60
 17280 capture screen selector_undo_pattern_ready_restored
 17380 tap LEFT_TOP 60
-17580 tap LEFT_CENTER 60
-17920 tap LEFT_TOP 60
+17580 tap LEFT_BOTTOM 60
 18300 capture screen page_2_creation_redone

@@ -57,8 +57,7 @@
 6780 tap LEFT_CENTER 60
 6910 capture screen selector_redo_ready
 7010 tap LEFT_TOP 60
-7210 tap LEFT_CENTER 60
-7280 tap LEFT_TOP 60
+7210 tap LEFT_BOTTOM 60
 8440 capture screen micro_note_offset_undone_ui
 
 # Redo restores the exact published root surface.
@@ -69,6 +68,5 @@
 9640 tap LEFT_BOTTOM 60
 9770 capture screen selector_undo_restored
 9870 tap LEFT_TOP 60
-10070 tap LEFT_CENTER 60
-10140 tap LEFT_TOP 60
+10070 tap LEFT_BOTTOM 60
 11300 capture screen micro_note_offset_redone_ui

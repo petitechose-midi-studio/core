@@ -14,9 +14,7 @@
 100 capture screen launcher_ready
 
 # Scene rail -> first occupied Clip.
-220 button NAV down
 300 encoder NAV 0.01
-380 button NAV up
 540 capture screen clip_focused
 
 # LEFT_CENTER defaults to the Clip-properties editor.

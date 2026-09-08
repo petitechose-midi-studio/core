@@ -628,6 +628,22 @@ FLASHMEM uint8_t ClipWorkspaceUiState::macroBankFirstSlot() const {
     return static_cast<uint8_t>(firstVisibleSlot + bankOffset);
 }
 
+FLASHMEM ClipWorkspaceMacroTarget ClipWorkspaceUiState::macroTarget(
+    uint8_t macroIndex
+) const {
+    const uint8_t column = static_cast<uint8_t>(macroIndex % MACRO_COLUMNS);
+    const uint8_t row = static_cast<uint8_t>(macroIndex / MACRO_COLUMNS);
+    const uint8_t slot = static_cast<uint8_t>(macroBankFirstSlot() + row);
+    if (column == 0U) {
+        return {ClipWorkspaceFocus::SCENE, focusedTrack, slot};
+    }
+    return {
+        ClipWorkspaceFocus::CLIP,
+        static_cast<uint8_t>(firstVisibleTrack + column - 1U),
+        slot,
+    };
+}
+
 FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     route = ClipWorkspaceRoute::MATRIX;
     feedback = ClipWorkspaceFeedback::NONE;
@@ -661,6 +677,7 @@ FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     selectedClipMasks.fill(0U);
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
+    stopLayerActive = false;
     bump();
 }
 
@@ -730,14 +747,17 @@ FLASHMEM void ClipWorkspaceUiState::armQuickProperty(uint32_t nowMs) {
     quickSelectorVisible = false;
     quickPropertyArmed = quickAction != ClipWorkspaceQuickAction::EDIT;
     quickFeedbackVisible = quickPropertyArmed;
-    quickFeedbackHideAtMs = quickPropertyArmed ? nowMs + 700U : 0U;
+    quickFeedbackHideAtMs = quickPropertyArmed
+        ? nowMs + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+        : 0U;
     bump();
 }
 
 FLASHMEM void ClipWorkspaceUiState::showQuickFeedback(uint32_t nowMs) {
     if (!quickPropertyArmed) return;
     quickFeedbackVisible = true;
-    quickFeedbackHideAtMs = nowMs + 700U;
+    quickFeedbackHideAtMs =
+        nowMs + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS;
     bump();
 }
 
@@ -755,8 +775,7 @@ FLASHMEM void ClipWorkspaceUiState::updateQuickFeedback(uint32_t nowMs) {
         static_cast<int32_t>(nowMs - quickFeedbackHideAtMs) < 0) {
         return;
     }
-    quickFeedbackVisible = false;
-    quickFeedbackHideAtMs = 0U;
+    clearQuickControlWithoutPublishing(*this);
     bump();
 }
 
@@ -1078,6 +1097,13 @@ FLASHMEM void ClipWorkspaceUiState::clearRemoveHold() {
     bump();
 }
 
+FLASHMEM void ClipWorkspaceUiState::setStopLayer(bool active) {
+    if (stopLayerActive == active) return;
+    stopLayerActive = active;
+    if (active) clearQuickControlWithoutPublishing(*this);
+    bump();
+}
+
 FLASHMEM void ClipWorkspaceUiState::enterPattern(
     uint8_t track,
     uint8_t slot
@@ -1090,6 +1116,7 @@ FLASHMEM void ClipWorkspaceUiState::enterPattern(
     operation = ClipWorkspaceOperation::BROWSE;
     removeHoldStartedAtMs = 0U;
     removeHoldActive = false;
+    stopLayerActive = false;
     feedback = ClipWorkspaceFeedback::NONE;
     feedbackHideAtMs = 0U;
     bump();
@@ -1099,6 +1126,7 @@ FLASHMEM bool ClipWorkspaceUiState::returnToMatrix() {
     if (matrixVisible()) return false;
     route = ClipWorkspaceRoute::MATRIX;
     operation = ClipWorkspaceOperation::BROWSE;
+    stopLayerActive = false;
     focusClipWithoutPublishing(*this, returnTrack, returnSlot);
     clearQuickControlWithoutPublishing(*this);
     feedback = ClipWorkspaceFeedback::NONE;

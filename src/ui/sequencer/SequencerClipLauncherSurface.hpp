@@ -7,6 +7,7 @@
 #include <oc/ui/lvgl/IWidget.hpp>
 
 #include "state/StatusBarState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerClipGridState.hpp"
 #include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -22,6 +23,7 @@ struct SequencerClipLauncherSurfaceProps {
     const core::state::sequencer::SequencerClipGridState* clips = nullptr;
     const core::state::sequencer::SequencerClipLaunchQueue* launches = nullptr;
     const core::state::sequencer::SequencerTrackBankState* tracks = nullptr;
+    const core::state::project::ProjectTrackState* projectTracks = nullptr;
     const core::state::sequencer::SequencerState* sequencer = nullptr;
     const core::state::TrackNavigationState* trackNavigation = nullptr;
     const core::state::StatusBarState* statusBar = nullptr;
@@ -29,7 +31,7 @@ struct SequencerClipLauncherSurfaceProps {
     uint8_t contentRevision = 0U;
 };
 
-/** One retained draw surface for the spatial 4-Track x 4-Scene launcher. */
+/** One retained surface for the Scene rail plus 3-Track x 4-Scene launcher. */
 class SequencerClipLauncherSurface : public oc::ui::lvgl::IWidget {
 public:
     explicit SequencerClipLauncherSurface(lv_obj_t* parent);

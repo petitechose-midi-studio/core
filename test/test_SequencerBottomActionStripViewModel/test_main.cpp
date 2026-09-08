@@ -83,7 +83,7 @@ void test_clip_launcher_selection_strip_reuses_structure_grammar() {
     std::cout << "[PASS] Clip Launcher strip reuses selection grammar\n";
 }
 
-void test_clip_workspace_browse_strip_exposes_viewport_navigation() {
+void test_clip_workspace_browse_strip_stays_clear_for_spatial_navigation() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
     state.sequencer.clipWorkspace.reset(0U);
@@ -92,12 +92,9 @@ void test_clip_workspace_browse_strip_exposes_viewport_navigation() {
     const auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].icon == standalone::icons::ACTION_BACKWARD);
-    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(!props.slots[0].iconRotated180);
-    assert(props.slots[2].icon == standalone::icons::ACTION_BACKWARD);
-    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(props.slots[2].iconRotated180);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 }
 
 void test_clip_launcher_multi_selection_exposes_one_group_move() {
@@ -260,8 +257,7 @@ void test_selection_strip_projection_contract() {
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].icon == standalone::icons::TRACK_MUTE);
-    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
     assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
     assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 
@@ -272,7 +268,7 @@ void test_selection_strip_projection_contract() {
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(
         sourceFor(state, false)
     );
-    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
     assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
     assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 
@@ -283,7 +279,7 @@ void test_selection_strip_projection_contract() {
 
 int main() {
     test_selection_strip_projection_contract();
-    test_clip_workspace_browse_strip_exposes_viewport_navigation();
+    test_clip_workspace_browse_strip_stays_clear_for_spatial_navigation();
     test_clip_launcher_selection_strip_reuses_structure_grammar();
     test_clip_launcher_multi_selection_exposes_one_group_move();
     test_clip_launcher_copy_uses_a_compatible_track_when_source_is_full();

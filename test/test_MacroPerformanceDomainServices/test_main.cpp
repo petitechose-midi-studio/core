@@ -364,15 +364,36 @@ void test_config_changes_mark_project_dirty_and_bump_revision() {
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
 
+    constexpr uint8_t unrelatedTrack = 1U;
+    assert(core::state::project::setProjectTrackName(
+        state.projectTracks,
+        unrelatedTrack,
+        "Bass"
+    ).changed());
+
     // One API gesture changing Channel + CC is one cross-domain command.
     assert(state.undoProjectHistory());
     assert(state.projectTracks.authored.midiChannels[track] ==
            initialChannel);
     assert(services.activeTrackChannel() == initialChannel);
     assert(services.activeConfig(0).cc == initialConfig.cc);
+    assert(std::strcmp(
+        core::state::project::projectTrackCustomName(
+            state.projectTracks,
+            unrelatedTrack
+        ),
+        "Bass"
+    ) == 0);
     assert(state.redoProjectHistory());
     assert(state.projectTracks.authored.midiChannels[track] == updatedChannel);
     assert(services.activeConfig(0).cc == updatedCc);
+    assert(std::strcmp(
+        core::state::project::projectTrackCustomName(
+            state.projectTracks,
+            unrelatedTrack
+        ),
+        "Bass"
+    ) == 0);
 
     core::state::CoreState restored(storage.settings);
     const auto restoredServices = core::handler::MacroPerformanceDomainServices::fromCoreState(

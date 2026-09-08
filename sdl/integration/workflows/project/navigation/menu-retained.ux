@@ -1,4 +1,3 @@
-# Explicit RAM fixture: inspect Scale, return, then edit and restore Tempo.
 # Purpose: inspect Scale, return, then edit and restore Tempo in an explicit RAM fixture.
 # Expect: capture_changed:overview=music, capture_changed:tempo=tempo_changed
 # Expect: semantic:music:property=music, semantic:scale:value_label=music_scale

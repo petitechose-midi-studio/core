@@ -27,6 +27,12 @@
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
+#if defined(MS_HARDWARE_BENCHMARK)
+#include "validation/benchmark/HardwareBenchmarkEndpoint.hpp"
+#if defined(ARDUINO_TEENSY41)
+#include <oc/hal/teensy/UsbMidi.hpp>
+#endif
+#endif
 
 namespace core::context {
 
@@ -113,6 +119,9 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
+#if defined(MS_HARDWARE_BENCHMARK)
+    if (benchmark_) benchmark_->advance(core::time_compat::micros());
+#endif
     if (feature_assembly_) {
         feature_assembly_->update(core::time_compat::millis());
     }
@@ -278,6 +287,17 @@ FLASHMEM bool StandaloneContext::createGlobalHandlerAssembly() {
 }
 
 FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
+#if defined(MS_HARDWARE_BENCHMARK)
+    benchmark_ = core::app::makeExtmemUniqueCold<core::validation::benchmark::HardwareBenchmarkEndpoint>(
+        frames(), rawEvents(), core_state_
+#if defined(ARDUINO_TEENSY41)
+        , &oc::hal::teensy::UsbMidi::receivedMessageCount
+#endif
+    );
+    if (!benchmark_) return false;
+    benchmark_->begin();
+    return true;
+#else
     filesystem_rpc_endpoint_ =
         core::app::makeExtmemUnique<core::protocol::filesystem::FileSystemRpcEndpoint>(
             frames(),
@@ -293,6 +313,7 @@ FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
     }
     filesystem_rpc_endpoint_->begin();
     return true;
+#endif
 }
 
 FLASHMEM void StandaloneContext::registerMidiRouting() {
@@ -313,6 +334,9 @@ FLASHMEM void StandaloneContext::cleanupGlobalHandlerAssembly() {
 }
 
 FLASHMEM void StandaloneContext::cleanupFileSystemRpcEndpoint() {
+#if defined(MS_HARDWARE_BENCHMARK)
+    benchmark_.reset();
+#endif
     filesystem_rpc_endpoint_.reset();
 }
 

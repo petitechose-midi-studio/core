@@ -15,10 +15,12 @@ namespace theme = ::standalone::theme;
 FLASHMEM ProjectTrackEditorPresenter::ProjectTrackEditorPresenter(
     StateRefs state,
     core::ui::project::ProjectTrackEditorOverlay& overlay,
+    core::ui::interaction::TextKeyboardView& keyboard,
     core::ui::ContextActionStrip& actionStrip
 )
     : state_(state)
     , overlay_(overlay)
+    , keyboard_(keyboard)
     , action_strip_(actionStrip)
     , render_scheduler_(
           core::ui::renderSchedulerDebugLabel("TrackEditor"),
@@ -72,6 +74,8 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         state_.enabledMask.get()
     );
     if (!viewModel.visible) {
+        keyboard_.setVisible(false);
+        overlay_.setContentVisible(true);
         overlay_.render({.visible = false});
         action_strip_.render({.visible = false});
         return;
@@ -119,6 +123,25 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         .trackEnabled = viewModel.trackEnabled,
         .drum = viewModel.draftDrum,
     });
+
+    if (state_.editor.textEditing) {
+        overlay_.setContentVisible(false);
+        keyboard_.render({
+            .visible = true,
+            .title = "Track name",
+            .meta = "",
+            .name = state_.editor.nameDraft.data(),
+            .selectedKey = state_.editor.textKeyIndex,
+            .shiftActive = state_.editor.textShiftActive,
+        });
+        action_strip_.render(
+            core::ui::interaction::TextKeyboardView::
+                bottomActionStripProps(true, false)
+        );
+        return;
+    }
+    keyboard_.setVisible(false);
+    overlay_.setContentVisible(true);
 
     core::ui::ContextActionStripProps actions{.visible = true};
     if (viewModel.typeChangePending) {

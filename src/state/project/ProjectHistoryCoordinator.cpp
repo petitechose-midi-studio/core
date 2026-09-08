@@ -185,6 +185,8 @@ FLASHMEM const char* trackActionLabel(uint8_t rawKind) {
             return "Track Mute";
         case Kind::Solo:
             return "Track Solo";
+        case Kind::Name:
+            return "Track Name";
         default:
             return "Track Edit";
     }

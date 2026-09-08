@@ -1,5 +1,8 @@
 #include "state/project/ProjectTrackDomainOps.hpp"
 
+#include <cstdio>
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::state::project {
@@ -39,19 +42,19 @@ FLASHMEM ProjectTrackMutationResult assignMask(
     return result(ProjectTrackMutationStatus::OK);
 }
 
-}  // namespace
-
-FLASHMEM bool validProjectTrackSnapshot(
-    const ProjectTrackSnapshot& snapshot
-) {
-    for (uint8_t track = 0U; track < PROJECT_TRACK_COUNT; ++track) {
-        if (!validProjectTrackMidiChannel(snapshot.midiChannels[track]) ||
-            !validProjectTrackDelayMs(snapshot.delayMs[track])) {
-            return false;
-        }
-    }
-    return true;
+FLASHMEM bool canonicalDefaultName(const char* name, uint8_t track) {
+    if (name == nullptr || !validProjectTrackIndex(track)) return false;
+    char expected[PROJECT_TRACK_NAME_MAX_LENGTH + 1U]{};
+    std::snprintf(
+        expected,
+        sizeof(expected),
+        "Track %u",
+        static_cast<unsigned>(track + 1U)
+    );
+    return std::strcmp(name, expected) == 0;
 }
+
+}  // namespace
 
 FLASHMEM bool sameProjectTrackSnapshot(
     const ProjectTrackSnapshot& lhs,
@@ -59,6 +62,7 @@ FLASHMEM bool sameProjectTrackSnapshot(
 ) {
     return lhs.delayMs == rhs.delayMs &&
            lhs.midiChannels == rhs.midiChannels &&
+           lhs.names == rhs.names &&
            lhs.mutedMask == rhs.mutedMask &&
            lhs.soloMask == rhs.soloMask;
 }
@@ -95,6 +99,37 @@ FLASHMEM bool projectTrackSoloed(
 ) {
     return validProjectTrackIndex(track) &&
            (state.authored.soloMask & trackBit(track)) != 0U;
+}
+
+FLASHMEM const char* projectTrackCustomName(
+    const ProjectTrackState& state,
+    uint8_t track
+) {
+    return validProjectTrackIndex(track)
+        ? state.authored.names[track].data()
+        : "";
+}
+
+FLASHMEM void formatProjectTrackName(
+    const ProjectTrackState& state,
+    uint8_t track,
+    char* out,
+    size_t capacity
+) {
+    if (out == nullptr || capacity == 0U) return;
+    out[0] = '\0';
+    if (!validProjectTrackIndex(track)) return;
+    const char* custom = projectTrackCustomName(state, track);
+    if (custom[0] != '\0') {
+        std::snprintf(out, capacity, "%s", custom);
+        return;
+    }
+    std::snprintf(
+        out,
+        capacity,
+        "Track %u",
+        static_cast<unsigned>(track + 1U)
+    );
 }
 
 FLASHMEM ProjectTrackMutationResult setProjectTrackMidiChannel(
@@ -181,6 +216,31 @@ FLASHMEM ProjectTrackMutationResult setProjectTrackSoloed(
     }
 
     state.authored.soloMask = next;
+    bumpRevision(state);
+    return result(ProjectTrackMutationStatus::OK, track);
+}
+
+FLASHMEM ProjectTrackMutationResult setProjectTrackName(
+    ProjectTrackState& state,
+    uint8_t track,
+    const char* name
+) {
+    if (!validProjectTrackIndex(track)) {
+        return result(ProjectTrackMutationStatus::INVALID_TRACK, track);
+    }
+    if (!validProjectTrackName(name)) {
+        return result(ProjectTrackMutationStatus::INVALID_NAME, track);
+    }
+
+    ProjectTrackName canonical{};
+    if (!canonicalDefaultName(name, track)) {
+        std::strncpy(canonical.data(), name, PROJECT_TRACK_NAME_MAX_LENGTH);
+        canonical[PROJECT_TRACK_NAME_MAX_LENGTH] = '\0';
+    }
+    if (state.authored.names[track] == canonical) {
+        return result(ProjectTrackMutationStatus::NO_CHANGE, track);
+    }
+    state.authored.names[track] = canonical;
     bumpRevision(state);
     return result(ProjectTrackMutationStatus::OK, track);
 }

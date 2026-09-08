@@ -1,5 +1,5 @@
 # UX workflow: Clip Launcher spatial performance navigation.
-# Purpose: proves Scene-first vertical browsing, held-NAV horizontal browsing,
+# Purpose: proves Scene-first OPT vertical browsing, NAV horizontal browsing,
 # and spatial transitions between Scene, Clip and Track without a mode cycle.
 # Expect: capture_changed:scene_vertical=launcher_ready
 # Expect: capture_changed:clip_from_scene=scene_vertical
@@ -9,9 +9,9 @@
 # Expect: capture_changed:scene_next=scene_context
 # Expect: capture_changed:clip_return=scene_next
 # Expect: semantic:launcher_ready:mode=sequencer.clip_launcher, semantic:launcher_ready:target=scene, semantic:launcher_ready:target_index=0
-# Expect: semantic:scene_vertical:effect=focus_scene, semantic:scene_vertical:target_index=1
-# Expect: semantic:clip_from_scene:effect=finish_horizontal_navigation, semantic:clip_from_scene:target=clip, semantic:clip_from_scene:target_track=0, semantic:clip_from_scene:target_index=1
-# Expect: semantic:clip_horizontal:effect=finish_horizontal_navigation, semantic:clip_horizontal:target_track=1, semantic:clip_horizontal:target_index=1
+# Expect: semantic:scene_vertical:effect=focus_launcher_row, semantic:scene_vertical:target_index=1
+# Expect: semantic:clip_from_scene:effect=focus_launcher_column, semantic:clip_from_scene:target=clip, semantic:clip_from_scene:target_track=0, semantic:clip_from_scene:target_index=1
+# Expect: semantic:clip_horizontal:effect=focus_launcher_column, semantic:clip_horizontal:target_track=1, semantic:clip_horizontal:target_index=1
 # Expect: semantic:track_context:target=track, semantic:track_context:target_track=1, semantic:track_context:projection=track_header
 # Expect: semantic:scene_context:target=scene, semantic:scene_context:target_index=0, semantic:scene_context:projection=scene_rail
 # Expect: semantic:scene_next:target=scene, semantic:scene_next:target_index=1
@@ -20,40 +20,32 @@
 0 scenario clip-launcher-v3
 100 capture screen launcher_ready
 
-# Bare NAV moves vertically through Scenes by default.
-220 encoder NAV 0.01
+# OPT owns the vertical axis.
+220 encoder OPT 0.01
 380 capture screen scene_vertical
 
-# Held NAV exposes the horizontal axis and enters the first Track.
-460 button NAV down
+# NAV owns the horizontal axis and enters the first Track.
 540 encoder NAV 0.01
-620 button NAV up
 780 capture screen clip_from_scene
 
-860 button NAV down
 940 encoder NAV 0.01
-1020 button NAV up
 1180 capture screen clip_horizontal
 
 # From the first row, one upward turn reaches the Track header.
-1260 encoder NAV -0.01
-1340 encoder NAV -0.01
+1260 encoder OPT -0.01
+1340 encoder OPT -0.01
 1500 capture screen track_context
 
 # Return to the matrix, move left to T1, then left once more into the fixed
 # Scene rail. The rail is a spatial neighbour, not a mode selected elsewhere.
-1580 encoder NAV 0.01
-1660 button NAV down
+1580 encoder OPT 0.01
 1740 encoder NAV -0.01
 1820 encoder NAV -0.01
-1900 button NAV up
 2060 capture screen scene_context
 
-2140 encoder NAV 0.01
+2140 encoder OPT 0.01
 2300 capture screen scene_next
 
 # Moving right from the Scene rail returns to the first navigable Track.
-2380 button NAV down
 2460 encoder NAV 0.01
-2540 button NAV up
 2700 capture screen clip_return

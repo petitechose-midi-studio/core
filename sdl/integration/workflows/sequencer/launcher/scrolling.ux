@@ -1,4 +1,4 @@
-# UX workflow: sliding 4 x 4 Launcher window and 4 x 2 macro bank.
+# UX workflow: sliding 3 x 4 Launcher window and Scene + 3 x 2 macro bank.
 # Purpose: validates non-wrapping row/column scrolling across eight Scenes and
 # eight Tracks, then proves macro addressing follows the focused visible pair.
 # Expect: capture_changed:vertical_slide=top_window
@@ -14,35 +14,29 @@
 
 0 scenario clip-launcher-v3-scroll
 # Enter Track 1 from the default Scene rail.
-100 button NAV down
 180 encoder NAV 0.01
-260 button NAV up
 420 capture screen top_window
 
 # Four rows remain visible; crossing S4 slides by one instead of paging.
-540 encoder NAV 0.01
-620 encoder NAV 0.01
-700 encoder NAV 0.01
-780 encoder NAV 0.01
+540 encoder OPT 0.01
+620 encoder OPT 0.01
+700 encoder OPT 0.01
+780 encoder OPT 0.01
 940 capture screen vertical_slide
-1020 encoder NAV 0.01
-1100 encoder NAV 0.01
-1180 encoder NAV 0.01
+1020 encoder OPT 0.01
+1100 encoder OPT 0.01
+1180 encoder OPT 0.01
 1340 capture screen bottom_window
 
-# The same sliding rule applies horizontally while NAV is held.
-1420 button NAV down
+# The same sliding rule applies horizontally with NAV.
 1500 encoder NAV 0.01
 1580 encoder NAV 0.01
 1660 encoder NAV 0.01
 1740 encoder NAV 0.01
-1820 button NAV up
 1980 capture screen horizontal_slide
-2060 button NAV down
 2140 encoder NAV 0.01
 2220 encoder NAV 0.01
 2300 encoder NAV 0.01
-2380 button NAV up
 2540 capture screen right_window
 
 # Focus is on S8, so the physical macros address S7/S8. MACRO_3 therefore

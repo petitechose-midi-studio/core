@@ -35,8 +35,7 @@
 2950 tap LEFT_CENTER 60
 4450 capture screen selector_redo_ready
 4550 tap LEFT_TOP 60
-4750 tap LEFT_CENTER 60
-4820 tap LEFT_TOP 60
+4750 tap LEFT_BOTTOM 60
 5850 capture screen pattern_settings_undone_closed
 
 # Reopen the pitch settings to verify that undo restored Inherit explicitly.
@@ -54,8 +53,7 @@
 7950 tap LEFT_BOTTOM 60
 9450 capture screen selector_undo_restored
 9550 tap LEFT_TOP 60
-9750 tap LEFT_CENTER 60
-9820 tap LEFT_TOP 60
+9750 tap LEFT_BOTTOM 60
 10850 capture screen pattern_settings_redone_closed
 
 # Reopen once more: redo must restore the exact Override state.

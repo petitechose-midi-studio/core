@@ -57,6 +57,7 @@ private:
     void ensureOptEncoderConfig(
         const core::handler::sequencer::input_utils::StepPropertyEncoderConfig& config
     );
+    void ensureOptRelativeMode();
     void syncMacroEncoderValues(
         uint8_t page,
         core::state::sequencer::StepProperty property
@@ -97,6 +98,7 @@ private:
     float opt_turns_configured_ = 0.0f;
     float opt_position_cache_ = 0.0f;
     bool opt_position_valid_ = false;
+    bool opt_relative_configured_ = false;
 };
 
 }  // namespace core::context::standalone

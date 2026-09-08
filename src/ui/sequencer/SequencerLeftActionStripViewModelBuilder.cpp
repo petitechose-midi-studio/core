@@ -133,6 +133,10 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                     source.projectTracks,
                     launcher.focusedTrack
                 );
+                props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::SETTINGS_GEAR,
+                    Visual::ACTIVE
+                );
                 props.slots[2] = core::ui::makeStandaloneIconStripSlot(
                     standalone::icons::TRACK_SOLO,
                     soloed ? Visual::ARMED : Visual::ACTIVE,

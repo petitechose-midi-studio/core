@@ -15,15 +15,7 @@ namespace binary = core::persistence::binary_codec;
 namespace project = core::state::project;
 
 FLASHMEM bool validSnapshot(const project::ProjectTrackSnapshot& snapshot) {
-    for (uint8_t track = 0U; track < project::PROJECT_TRACK_COUNT; ++track) {
-        if (!project::validProjectTrackMidiChannel(
-                snapshot.midiChannels[track]
-            ) ||
-            !project::validProjectTrackDelayMs(snapshot.delayMs[track])) {
-            return false;
-        }
-    }
-    return true;
+    return project::validProjectTrackSnapshot(snapshot);
 }
 
 FLASHMEM bool writePayload(
@@ -37,27 +29,44 @@ FLASHMEM bool writePayload(
     for (const int16_t delayMs : source.delayMs) {
         if (!writer.writeI16(delayMs)) return false;
     }
-    return writer.writeU16(source.mutedMask) &&
-           writer.writeU16(source.soloMask) &&
-           writer.ok() &&
-           writer.offset() == PROJECT_TRACK_STATE_PAYLOAD_SIZE;
+    if (!writer.writeU16(source.mutedMask) ||
+        !writer.writeU16(source.soloMask)) {
+        return false;
+    }
+    for (const auto& name : source.names) {
+        for (const char character : name) {
+            if (!writer.writeU8(static_cast<uint8_t>(character))) return false;
+        }
+    }
+    return writer.ok() && writer.offset() == PROJECT_TRACK_STATE_PAYLOAD_SIZE;
 }
 
 FLASHMEM bool readPayload(
     const uint8_t* data,
+    uint32_t size,
     project::ProjectTrackSnapshot& pending
 ) {
-    binary::Reader reader(data, PROJECT_TRACK_STATE_PAYLOAD_SIZE);
+    binary::Reader reader(data, size);
     for (uint8_t& channel : pending.midiChannels) {
         if (!reader.readU8(channel)) return false;
     }
     for (int16_t& delayMs : pending.delayMs) {
         if (!reader.readI16(delayMs)) return false;
     }
-    return reader.readU16(pending.mutedMask) &&
-           reader.readU16(pending.soloMask) &&
-           reader.ok() &&
-           reader.offset() == PROJECT_TRACK_STATE_PAYLOAD_SIZE;
+    if (!reader.readU16(pending.mutedMask) ||
+        !reader.readU16(pending.soloMask)) {
+        return false;
+    }
+    if (size == PROJECT_TRACK_STATE_PAYLOAD_SIZE) {
+        for (auto& name : pending.names) {
+            for (char& character : name) {
+                uint8_t value = 0U;
+                if (!reader.readU8(value)) return false;
+                character = static_cast<char>(value);
+            }
+        }
+    }
+    return reader.ok() && reader.offset() == size;
 }
 
 }  // namespace
@@ -102,15 +111,20 @@ FLASHMEM DecodeResult decodeProjectTrackStatePayload(
         return {.status = Status::INVALID_ARGUMENT};
     }
     if (versionMajor != PROJECT_TRACK_CHUNK_VERSION_MAJOR ||
-        versionMinor != PROJECT_TRACK_CHUNK_VERSION_MINOR) {
+        (versionMinor != 0U &&
+         versionMinor != PROJECT_TRACK_CHUNK_VERSION_MINOR)) {
         return {.status = Status::UNSUPPORTED_VERSION};
     }
-    if (size != PROJECT_TRACK_STATE_PAYLOAD_SIZE) {
+    const uint32_t expectedSize = versionMinor == 0U
+        ? PROJECT_TRACK_LEGACY_PAYLOAD_SIZE
+        : PROJECT_TRACK_STATE_PAYLOAD_SIZE;
+    if (size != expectedSize) {
         return {.status = Status::INVALID_PAYLOAD_SIZE};
     }
 
-    project::ProjectTrackSnapshot pending{};
-    if (!readPayload(data, pending) || !validSnapshot(pending)) {
+    project::ProjectTrackSnapshot pending =
+        project::defaultProjectTrackSnapshot();
+    if (!readPayload(data, size, pending) || !validSnapshot(pending)) {
         return {.status = Status::INVALID_DOMAIN};
     }
 

@@ -112,4 +112,30 @@ ProjectTrackEditorMutationResult selectProjectTrackEditorDraftKind(
     ProjectTrackEditorKind kind
 );
 
+ProjectTrackEditorMutationResult beginProjectTrackNameEditing(
+    ProjectTrackEditorState& editor,
+    const char* displayName
+);
+ProjectTrackEditorMutationResult moveProjectTrackNameKey(
+    ProjectTrackEditorState& editor,
+    int direction
+);
+ProjectTrackEditorMutationResult moveProjectTrackNameRow(
+    ProjectTrackEditorState& editor,
+    float rawPosition
+);
+ProjectTrackEditorMutationResult insertProjectTrackNameKey(
+    ProjectTrackEditorState& editor
+);
+ProjectTrackEditorMutationResult backspaceProjectTrackName(
+    ProjectTrackEditorState& editor
+);
+ProjectTrackEditorMutationResult setProjectTrackNameShift(
+    ProjectTrackEditorState& editor,
+    bool active
+);
+ProjectTrackEditorMutationResult endProjectTrackNameEditing(
+    ProjectTrackEditorState& editor
+);
+
 }  // namespace core::state::project

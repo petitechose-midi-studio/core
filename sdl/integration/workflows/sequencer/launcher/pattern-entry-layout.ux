@@ -1,5 +1,5 @@
-# Expect: semantic:pattern_first:mode=sequencer.pattern, semantic:pattern_second:mode=sequencer.pattern
 # Purpose: keep the Pattern layout identical across two entries from the Clip launcher.
+# Expect: semantic:pattern_first:mode=sequencer.pattern, semantic:pattern_second:mode=sequencer.pattern
 # Expect: capture_same:pattern_first=pattern_second
 0 scenario clip-launcher-v3
 200 encoder NAV 0.01

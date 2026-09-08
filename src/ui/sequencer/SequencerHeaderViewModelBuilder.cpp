@@ -8,6 +8,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
@@ -143,9 +144,11 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                     "%u selected", static_cast<unsigned>(selected)
                 );
             } else {
-                std::snprintf(
-                    props.badgeText.data(), props.badgeText.size(),
-                    "T%u", static_cast<unsigned>(focusedTrack + 1U)
+                core::state::project::formatProjectTrackName(
+                    source.projectTracks,
+                    focusedTrack,
+                    props.badgeText.data(),
+                    props.badgeText.size()
                 );
             }
         } else if (launcher.editorActive()) {
@@ -157,11 +160,11 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                     static_cast<unsigned>(launcher.focusedSlot + 1U)
                 );
             } else {
-                std::snprintf(
-                    props.badgeText.data(), props.badgeText.size(),
-                    "T%u / C%u",
-                    static_cast<unsigned>(launcher.focusedTrack + 1U),
-                    static_cast<unsigned>(launcher.focusedSlot + 1U)
+                core::state::project::formatProjectTrackName(
+                    source.projectTracks,
+                    launcher.focusedTrack,
+                    props.badgeText.data(),
+                    props.badgeText.size()
                 );
             }
         } else if (launcher.feedback == core::state::sequencer::
@@ -197,10 +200,11 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 (source.sharedTrackEnabledMask.get() &
                  static_cast<uint16_t>(1U << launcher.focusedTrack)) != 0U;
             if (enabled) {
-                std::snprintf(
-                    props.badgeText.data(), props.badgeText.size(),
-                    "Track %u",
-                    static_cast<unsigned>(launcher.focusedTrack + 1U)
+                core::state::project::formatProjectTrackName(
+                    source.projectTracks,
+                    launcher.focusedTrack,
+                    props.badgeText.data(),
+                    props.badgeText.size()
                 );
             } else {
                 copyText(props.badgeText, "Add track");
@@ -217,30 +221,12 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 copyText(props.badgeText, "Add scene");
             }
         } else {
-            const core::state::sequencer::SequencerClipAddress address{
+            core::state::project::formatProjectTrackName(
+                source.projectTracks,
                 launcher.focusedTrack,
-                launcher.focusedSlot,
-            };
-            const auto kind = source.clips.slotKind(address);
-            if (kind == core::state::sequencer::
-                    SequencerLauncherSlotKind::STOP) {
-                std::snprintf(
-                    props.badgeText.data(), props.badgeText.size(),
-                    "Stop T%u/C%u",
-                    static_cast<unsigned>(launcher.focusedTrack + 1U),
-                    static_cast<unsigned>(launcher.focusedSlot + 1U)
-                );
-            } else {
-                std::snprintf(
-                    props.badgeText.data(), props.badgeText.size(),
-                    kind == core::state::sequencer::
-                            SequencerLauncherSlotKind::EMPTY
-                        ? "Empty T%u/C%u"
-                        : "T%u / C%u",
-                    static_cast<unsigned>(launcher.focusedTrack + 1U),
-                    static_cast<unsigned>(launcher.focusedSlot + 1U)
-                );
-            }
+                props.badgeText.data(),
+                props.badgeText.size()
+            );
         }
         const bool trackContext =
             selectingTrack || launcher.trackHeaderFocused();

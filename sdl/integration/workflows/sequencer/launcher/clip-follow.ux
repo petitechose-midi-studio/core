@@ -13,10 +13,8 @@
 
 0 scenario clip-launcher-v3
 # Scene 1 -> Scene 2 -> Track 1 Clip 2.
-100 encoder NAV 0.01
-180 button NAV down
+100 encoder OPT 0.01
 260 encoder NAV 0.01
-340 button NAV up
 420 capture screen clip_2_ready
 
 500 tap BOTTOM_CENTER 60

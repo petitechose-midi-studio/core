@@ -1447,17 +1447,12 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
         .scope(scope_id_)
         .when([this]() {
             return !navigation_workflow_.selectionActive() &&
-                (currentStructureBottomActionsAvailable() ||
-                 enabledClipTrackHeaderAvailable());
+                currentStructureBottomActionsAvailable();
         })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
-            if (enabledClipTrackHeaderAvailable() &&
-                !prepareClipTrackHeaderAction(false)) {
-                return;
-            }
             if (edit_workflow_.canRemoveCurrentStructure()) {
                 edit_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
             }
@@ -1512,8 +1507,7 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
                 return !selectionActive;
             }
             return !selectionActive &&
-                (currentStructureBottomActionsAvailable() ||
-                 enabledClipTrackHeaderAvailable());
+                currentStructureBottomActionsAvailable();
         })
         .then([this]() {
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
@@ -1529,13 +1523,6 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
             }
             if (edit_workflow_.trackRemoveHoldPending()) {
                 edit_workflow_.clearHoldAction();
-                return;
-            }
-            if (enabledClipTrackHeaderAvailable()) {
-                edit_workflow_.clearHoldAction();
-                if (prepareClipTrackHeaderAction(false)) {
-                    edit_workflow_.applyCurrentStructureShortPress();
-                }
                 return;
             }
             // A physical release always terminates the STEP/PAGE hold, even
@@ -1555,8 +1542,7 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
                 return !selectionActive;
             }
             return !selectionActive &&
-                   (currentStructureBottomActionsAvailable() ||
-                    enabledClipTrackHeaderAvailable()) &&
+                   currentStructureBottomActionsAvailable() &&
                    edit_workflow_.canRemoveCurrentStructure();
         })
         .then([this]() {
@@ -1837,8 +1823,7 @@ FLASHMEM bool SequencerStepHandler::currentStructureBottomActionsAvailable() con
     // let hidden structure bindings mutate, copy, or paste behind it.
     if (sequencer_.stepContentDraft.active.get() ||
         sequencer_.patternPresetPreview.active()) return false;
-    // The first-rank matrix owns Clip paging and Clip operations. Track
-    // headers are routed explicitly through clipTrackHeaderAvailable() below.
+    // The first-rank matrix owns Clip performance and Clip operations.
     if (sequencer_.clipWorkspace.matrixVisible()) return false;
     if (navigation_focus_.get() ==
         core::state::StructureNavigationFocus::TRACK) {
@@ -1864,12 +1849,6 @@ FLASHMEM bool SequencerStepHandler::clipTrackHeaderAvailable() const {
             core::state::sequencer::ClipWorkspaceOperation::BROWSE &&
         !track_ui_.selection.active.get() &&
         !sequencer_.drumSequencer.pickerVisible();
-}
-
-FLASHMEM bool SequencerStepHandler::enabledClipTrackHeaderAvailable() const {
-    return clipTrackHeaderAvailable() && tracks_.isTrackEnabled(
-        sequencer_.clipWorkspace.focusedTrack
-    );
 }
 
 FLASHMEM bool SequencerStepHandler::prepareClipTrackHeaderAction(

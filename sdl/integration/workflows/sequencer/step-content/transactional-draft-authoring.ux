@@ -78,8 +78,7 @@
 
 # Re-enter the Pattern, restore the Step context explicitly, and inspect the
 # same Micro row: one Undo removed the whole published child.
-8280 tap LEFT_CENTER 60
-8350 tap LEFT_TOP 60
+8280 tap LEFT_BOTTOM 60
 8420 button NAV down
 8500 encoder NAV 0.01
 8560 button NAV up
@@ -108,8 +107,7 @@
 
 # Redo restores that same published child; rebuild the Step context and inspect
 # the ordinary published Edit row again.
-12600 tap LEFT_CENTER 60
-12670 tap LEFT_TOP 60
+12600 tap LEFT_BOTTOM 60
 12750 button NAV down
 12830 encoder NAV 0.01
 12890 button NAV up

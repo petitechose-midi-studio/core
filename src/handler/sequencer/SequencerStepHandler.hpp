@@ -98,7 +98,6 @@ private:
     bool childPatternContentActionsAvailable() const;
     bool currentStructureBottomActionsAvailable() const;
     bool clipTrackHeaderAvailable() const;
-    bool enabledClipTrackHeaderAvailable() const;
     bool prepareClipTrackHeaderAction(bool allowEmptyTrack);
     bool focusedStepHasChildContent() const;
     bool canPasteFocusedStepContent() const;

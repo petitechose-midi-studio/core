@@ -58,6 +58,11 @@ private:
     void setupBindings();
     void moveTrack(float delta);
     void moveProperty(float delta);
+    void moveNameKey(float delta);
+    void moveNameRow(float rawPosition);
+    void activateFocusedProperty();
+    void cancelNameEditing();
+    void applyNameEditing();
     void setFocusedValue(float normalized);
     void toggleMute();
     void toggleSolo();
@@ -83,6 +88,7 @@ private:
     oc::type::ScopeID overlay_scope_ = 0;
     uint32_t gesture_commit_deadline_ms_ = 0U;
     uint32_t clip_grid_revision_ = 0U;
+    bool nav_turned_ = false;
 };
 
 }  // namespace core::handler
