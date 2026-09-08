@@ -172,95 +172,6 @@ void assertBatchRevisions(
     assert(sequencer.pattern().ccLanes->revision == bank);
 }
 
-void test_clear_step_range_resets_payload_and_mask() {
-    core::state::sequencer::SequencerDetachedEditor sequencer;
-    assert(seq::resizeClipPatternContent(sequencer, 16));
-    setStep(sequencer, 2, 62, 90, 70, -3, 55, true);
-    setStep(sequencer, 3, 63, 91, 71, 4, 56, true);
-
-    const uint32_t revisionBefore = sequencer.pattern().stepDataRevision.get();
-    assert(core::state::sequencer::clearStepRange(sequencer, 2, 3));
-
-    assertDefaultStep(sequencer, 2);
-    assertDefaultStep(sequencer, 3);
-    assert(sequencer.focusedStep.get() == 2);
-    assert(sequencer.page.get() == 0);
-    assert(sequencer.pattern().stepDataRevision.get() == revisionBefore + 1);
-
-    std::cout << "[PASS] test_clear_step_range_resets_payload_and_mask\n";
-}
-
-void test_clear_step_range_clears_child_content() {
-    core::state::sequencer::SequencerDetachedEditor sequencer;
-    assert(seq::resizeClipPatternContent(sequencer, 16));
-    createRootMicroSequence(sequencer, 2, 2);
-    assert(rootStepHasMicroSequence(sequencer, 2));
-
-    assert(core::state::sequencer::clearStepRange(sequencer, 2, 2));
-
-    assert(!rootStepHasMicroSequence(sequencer, 2));
-
-    std::cout << "[PASS] test_clear_step_range_clears_child_content\n";
-}
-
-void test_insert_page_shifts_payloads_and_clears_inserted_page() {
-    core::state::sequencer::SequencerDetachedEditor sequencer;
-    assert(seq::resizeClipPatternContent(sequencer, 16));
-    setStep(sequencer, 8, 70, 110, 90, 5, 60, true);
-
-    assert(core::state::sequencer::insertPage(sequencer, 1));
-
-    assert(sequencer.pattern().length.get() == 24);
-    assertDefaultStep(sequencer, 8);
-    assertStep(sequencer, 16, 70, 110, 90, 5, 60, true);
-    assert(sequencer.focusedStep.get() == 8);
-    assert(sequencer.page.get() == 1);
-
-    std::cout << "[PASS] test_insert_page_shifts_payloads_and_clears_inserted_page\n";
-}
-
-void test_insert_page_shifts_child_content() {
-    core::state::sequencer::SequencerDetachedEditor sequencer;
-    assert(seq::resizeClipPatternContent(sequencer, 16));
-    createRootMicroSequence(sequencer, 8, 2);
-
-    assert(core::state::sequencer::insertPage(sequencer, 1));
-
-    assert(!rootStepHasMicroSequence(sequencer, 8));
-    assert(rootStepHasMicroSequence(sequencer, 16));
-
-    std::cout << "[PASS] test_insert_page_shifts_child_content\n";
-}
-
-void test_remove_page_shifts_following_payloads() {
-    core::state::sequencer::SequencerDetachedEditor sequencer;
-    assert(seq::resizeClipPatternContent(sequencer, 24));
-    setStep(sequencer, 16, 72, 111, 91, -4, 61, true);
-
-    assert(core::state::sequencer::deletePage(sequencer, 1));
-
-    assert(sequencer.pattern().length.get() == 16);
-    assertStep(sequencer, 8, 72, 111, 91, -4, 61, true);
-    assertDefaultStep(sequencer, 16);
-    assert(sequencer.focusedStep.get() == 8);
-    assert(sequencer.page.get() == 1);
-
-    std::cout << "[PASS] test_remove_page_shifts_following_payloads\n";
-}
-
-void test_remove_page_shifts_child_content() {
-    core::state::sequencer::SequencerDetachedEditor sequencer;
-    assert(seq::resizeClipPatternContent(sequencer, 24));
-    createRootMicroSequence(sequencer, 16, 2);
-
-    assert(core::state::sequencer::deletePage(sequencer, 1));
-
-    assert(rootStepHasMicroSequence(sequencer, 8));
-    assert(!rootStepHasMicroSequence(sequencer, 16));
-
-    std::cout << "[PASS] test_remove_page_shifts_child_content\n";
-}
-
 void test_rotate_pattern_moves_payload_and_mask() {
     core::state::sequencer::SequencerDetachedEditor sequencer;
     assert(seq::resizeClipPatternContent(sequencer, 4));
@@ -268,7 +179,7 @@ void test_rotate_pattern_moves_payload_and_mask() {
     setStep(sequencer, 0, 60, 90, 50, 0, 100, true);
     setStep(sequencer, 1, 61, 91, 51, 1, 80, false);
 
-    assert(core::state::sequencer::rotatePattern(sequencer, 1));
+    assert(core::state::sequencer::rotatePatternState(sequencer.pattern(), 1));
 
     assertStep(sequencer, 1, 60, 90, 50, 0, 100, true);
     assertStep(sequencer, 2, 61, 91, 51, 1, 80, false);
@@ -278,15 +189,13 @@ void test_rotate_pattern_moves_payload_and_mask() {
     std::cout << "[PASS] test_rotate_pattern_moves_payload_and_mask\n";
 }
 
-void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
+void test_snapshot_apply_clears_graph_payload_but_keeps_revision() {
     core::state::sequencer::SequencerDetachedEditor source;
     const auto sourceNode = core::state::sequencer::rootStepNodeId(0);
     assert(core::state::sequencer::createMicroSequence(source.pattern(), sourceNode, 2).ok);
 
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::SequencerClipSnapshot clipSnapshot;
     core::state::sequencer::captureSnapshot(source.pattern(), snapshot);
-    core::state::sequencer::captureSnapshot(source.clip(), clipSnapshot);
     assert(snapshot.graphRevision == source.pattern().graphRevision.get());
 
     core::state::sequencer::SequencerDetachedEditor applied;
@@ -295,20 +204,10 @@ void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
     assert(applied.pattern().graph.get() == nullptr);
     assert(applied.pattern().graphRevision.get() == snapshot.graphRevision);
 
-    core::state::sequencer::SequencerDetachedEditor merged;
-    assert(core::state::sequencer::createCycleStateSet(merged.pattern(), sourceNode, 2).ok);
-    core::state::sequencer::mergeSnapshotIntoCurrent(
-        merged,
-        snapshot,
-        clipSnapshot
-    );
-    assert(merged.pattern().graph.get() == nullptr);
-    assert(merged.pattern().graphRevision.get() == snapshot.graphRevision);
-
-    std::cout << "[PASS] test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision\n";
+    std::cout << "[PASS] test_snapshot_apply_clears_graph_payload_but_keeps_revision\n";
 }
 
-void test_track_content_snapshot_preserves_destination_midi_channel() {
+void test_track_content_installation_consumes_prepared_graphs() {
     core::state::sequencer::SequencerDetachedEditor source;
     setStep(source, 0, 74, 103, 88, -2, 79, true);
     createRootMicroSequence(source, 0, 2);
@@ -321,35 +220,36 @@ void test_track_content_snapshot_preserves_destination_midi_channel() {
     assert(sourceGraph != nullptr);
 
     core::state::sequencer::SequencerDetachedEditor bankTarget;
-    assert(core::state::sequencer::applyTrackContentSnapshotWithGraph(
+    auto bankGraph = core::app::makeExtmemUniqueCopy(*sourceGraph);
+    assert(bankGraph);
+    const auto* bankOwner = bankGraph.get();
+    core::state::sequencer::installTrackContentSnapshotWithOwnedGraph(
         bankTarget.pattern(),
         bankTarget.clip(),
         snapshot,
         clipSnapshot,
-        sourceGraph
-    ));
+        std::move(bankGraph)
+    );
+    assert(bankTarget.pattern().graph.get() == bankOwner);
     assertStep(bankTarget, 0, 74, 103, 88, -2, 79, true);
     assert(rootStepHasMicroSequence(bankTarget, 0));
 
     core::state::sequencer::SequencerDetachedEditor editorTarget;
-    assert(core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
+    auto editorGraph = core::app::makeExtmemUniqueCopy(*sourceGraph);
+    assert(editorGraph);
+    const auto* editorOwner = editorGraph.get();
+    core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedGraph(
         editorTarget,
         snapshot,
         clipSnapshot,
-        sourceGraph
-    ));
+        std::move(editorGraph)
+    );
+    assert(editorTarget.pattern().graph.get() == editorOwner);
     assertStep(editorTarget, 0, 74, 103, 88, -2, 79, true);
     assert(rootStepHasMicroSequence(editorTarget, 0));
 
-    core::state::sequencer::SequencerDetachedEditor genericTarget;
-    assert(core::state::sequencer::applySnapshotToEditorWithGraph(
-        genericTarget,
-        snapshot,
-        sourceGraph
-    ));
-
     std::cout
-        << "[PASS] test_track_content_snapshot_preserves_destination_midi_channel\n";
+        << "[PASS] test_track_content_installation_consumes_prepared_graphs\n";
 }
 
 void test_full_128_step_snapshot_and_rotation_contract() {
@@ -372,7 +272,7 @@ void test_full_128_step_snapshot_and_rotation_contract() {
     assert(restored.pattern().length.get() == SequencerState::MAX_STEPS);
     assertStep(restored, 127U, 96U, 123U, 175U, 11, 42U, true);
 
-    const bool rotated = core::state::sequencer::rotatePattern(restored, 1);
+    const bool rotated = core::state::sequencer::rotatePatternState(restored.pattern(), 1);
     assert(rotated);
     assertStep(restored, 0U, 96U, 123U, 175U, 11, 42U, true);
 }
@@ -811,15 +711,9 @@ void test_batch_sparse_page_delete_shifts_all_domains_without_compaction() {
 }  // namespace
 
 int main() {
-    test_clear_step_range_resets_payload_and_mask();
-    test_clear_step_range_clears_child_content();
-    test_insert_page_shifts_payloads_and_clears_inserted_page();
-    test_insert_page_shifts_child_content();
-    test_remove_page_shifts_following_payloads();
-    test_remove_page_shifts_child_content();
     test_rotate_pattern_moves_payload_and_mask();
-    test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision();
-    test_track_content_snapshot_preserves_destination_midi_channel();
+    test_snapshot_apply_clears_graph_payload_but_keeps_revision();
+    test_track_content_installation_consumes_prepared_graphs();
     test_full_128_step_snapshot_and_rotation_contract();
     test_batch_invalid_and_no_change_are_failure_atomic();
     test_batch_exact_length_extension_contract();

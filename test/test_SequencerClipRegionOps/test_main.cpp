@@ -150,9 +150,9 @@ void test_snapshot_round_trip_preserves_region_exactly() {
     expectRegion(clipPlaybackRegion(restored, restoredClip), 24, 3, 7, 19);
 }
 
-void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
+void test_batch_delete_and_rotation_keep_region_and_cc_lane_in_lockstep() {
     core::state::sequencer::SequencerDetachedEditor state;
-    assert(setClipPlaybackRegion(state, {16, 0, 8, 16}));
+    assert(setClipPlaybackRegion(state, {24, 0, 16, 24}));
     auto* bank = core::state::sequencer::ensureSequencerCcLaneBank(state.pattern());
     assert(bank != nullptr);
     core::state::sequencer::SequencerCcLaneDraft draft{};
@@ -161,17 +161,16 @@ void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
     assert(core::state::sequencer::setSequencerCcLaneEvent(
         *bank,
         0,
-        10,
+        18,
         91
     ).changed());
     assert(core::state::sequencer::setSequencerCcLaneTransition(
         *bank,
         0,
-        10,
+        18,
         core::state::sequencer::SequencerCcLaneTransition::EASE_OUT
     ).changed());
 
-    assert(core::state::sequencer::insertPage(state, 1));
     expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 24, 0, 16, 24);
     bank = state.pattern().ccLanes.get();
     assert(bank != nullptr);
@@ -183,12 +182,14 @@ void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
         18
     ) == core::state::sequencer::SequencerCcLaneTransition::EASE_OUT);
 
-    assert(core::state::sequencer::deletePage(state, 0));
+    const auto removed = core::state::sequencer::deleteSequencerRootPagesUnversioned(state, 1U);
+    assert(removed.changed());
+    core::state::sequencer::publishSequencerSnapshotBatchRevisions(state, removed.domains);
     expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 16, 0, 8, 16);
     assert(bank->lanes[0].activeMask.test(10));
     assert(bank->lanes[0].values[10] == 91);
 
-    assert(core::state::sequencer::rotatePattern(state, 1));
+    assert(core::state::sequencer::rotatePatternState(state.pattern(), 1));
     expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 16, 0, 8, 16);
     assert(!bank->lanes[0].activeMask.test(10));
     assert(bank->lanes[0].activeMask.test(11));
@@ -204,7 +205,7 @@ int main() {
     test_pure_resize_preserves_partial_loop_and_extends_full_loop();
     test_insert_and_remove_shift_or_collapse_each_boundary();
     test_snapshot_round_trip_preserves_region_exactly();
-    test_page_transforms_keep_region_and_cc_lane_in_lockstep();
+    test_batch_delete_and_rotation_keep_region_and_cc_lane_in_lockstep();
     std::cout << "SequencerClipRegionOps tests passed\n";
     return 0;
 }

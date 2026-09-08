@@ -795,11 +795,15 @@ void runPatternCommit(
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        seq::installPatternStateToEditor(
+        seq::installTrackContentSnapshotToEditorWithOwnedPayload(
             h.state.sequencer,
-            staged.pattern(),
-            staged.clip()
+            prepared.change->after.flat,
+            prepared.change->after.clip,
+            std::move(staged.pattern().graph),
+            std::move(staged.pattern().ccLanes)
         );
+        h.state.sequencer.pattern().ccLaneRevision.set(
+            staged.pattern().ccLaneRevision.get());
         assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
         tx::assertMaxPlusOneStillArmed(0U);
         assertExactlyOnePublication(h.state, before);
@@ -1017,11 +1021,15 @@ void prepareGraphCcPatternTraversalEntry(Harness& h, bool targetActive) {
     ));
 
     assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
-    seq::installPatternStateToEditor(
+    seq::installTrackContentSnapshotToEditorWithOwnedPayload(
         h.state.sequencer,
-        staged.pattern(),
-        staged.clip()
+        prepared.change->after.flat,
+        prepared.change->after.clip,
+        std::move(staged.pattern().graph),
+        std::move(staged.pattern().ccLanes)
     );
+    h.state.sequencer.pattern().ccLaneRevision.set(
+        staged.pattern().ccLaneRevision.get());
     assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
     settleSetup(h);
 

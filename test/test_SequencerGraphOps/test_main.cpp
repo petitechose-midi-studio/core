@@ -401,7 +401,7 @@ void test_root_pattern_rotation_wraps_graph_step_nodes() {
         state.pattern(), core::state::sequencer::rootStepNodeId(0), 2);
     assert(sequence.ok);
 
-    assert(core::state::sequencer::rotatePattern(state, 1));
+    assert(core::state::sequencer::rotatePatternState(state.pattern(), 1));
 
     const auto* graph = core::state::sequencer::graphView(state.pattern());
     assert(graph != nullptr);

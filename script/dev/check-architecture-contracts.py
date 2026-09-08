@@ -392,18 +392,21 @@ PAGE_STRUCTURE_ACTIONS = (
     "PageSelectionReset",
     "PageSelectionDeleteOrDeepReset",
 )
-LEASED_TEST_VERSIONED_PAGE_WRITERS = (
+RETIRED_SNAPSHOT_WRITERS = (
+    "applyTrackContentSnapshotWithGraph",
+    "copyPatternStatePreservingGraph",
+    "applySnapshotToEditorWithGraph",
+    "applyTrackContentSnapshotToEditorWithGraph",
+    "installPatternStateToEditor",
+    "mergePatternStateIntoCurrent",
+    "mergeSnapshotIntoCurrent",
+    "rotatePattern",
     "clearStepRange",
     "appendPage",
     "insertPage",
     "deletePage",
 )
-LEASED_TEST_VERSIONED_PAGE_WRITER_OWNER_FILES = frozenset(
-    (
-        "src/state/sequencer/SequencerSnapshotOps.cpp",
-        "src/state/sequencer/SequencerSnapshotOps.hpp",
-    )
-)
+
 PAGE_STRUCTURE_GRAPH_RESULT_FUNCTIONS = (
     "initializeSequencerGraphRootUnversioned",
     "extendMicroSequencePreservingLogicalContentUnversioned",
@@ -2915,12 +2918,11 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
                 f"must remain absent (found {observed})"
             )
 
-    for symbol in LEASED_TEST_VERSIONED_PAGE_WRITERS:
+    for symbol in RETIRED_SNAPSHOT_WRITERS:
         callers = [
             rel
             for rel, content in files.items()
             if rel.startswith("src/")
-            and rel not in LEASED_TEST_VERSIONED_PAGE_WRITER_OWNER_FILES
             and (
                 symbol != "deletePage"
                 or rel.startswith("src/state/sequencer/")
@@ -2935,8 +2937,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         ]
         if callers:
             errors.append(
-                f"src: test-leased versioned Page writer {symbol} escaped SnapshotOps "
-                f"into {', '.join(sorted(callers))}"
+                f"src: retired Snapshot writer {symbol} must remain absent; found "
+                f"in {', '.join(sorted(callers))}"
             )
 
     require(

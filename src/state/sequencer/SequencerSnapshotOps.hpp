@@ -87,15 +87,6 @@ void copySequencerCcLaneRevision(
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
-/** Applies copied Track musical content and graph. Routing is Project-owned. */
-[[nodiscard]] bool applyTrackContentSnapshotWithGraph(
-    SequencerPatternState& target,
-    SequencerClipState& targetClip,
-    const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
-    const oc::note::sequencer::StepSequencerGraph* graph
-);
-
 /** Installs already-cloned Track content without allocating. */
 void installTrackContentSnapshotWithOwnedGraph(
     SequencerPatternState& target,
@@ -103,12 +94,6 @@ void installTrackContentSnapshotWithOwnedGraph(
     const SequencerPatternSnapshot& snapshot,
     const SequencerClipSnapshot& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
-);
-
-// Copies scalar pattern state when graph revisions are already synchronized.
-[[nodiscard]] bool copyPatternStatePreservingGraph(
-    SequencerPatternState& target,
-    const SequencerPatternState& source
 );
 
 /** Installs a complete copied Track payload, including Pattern-owned CC lanes. */
@@ -128,20 +113,6 @@ void applySnapshotToEditorPreservingGraph(
     const SequencerPatternSnapshot& snapshot
 );
 
-[[nodiscard]] bool applySnapshotToEditorWithGraph(
-    SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
-    const oc::note::sequencer::StepSequencerGraph* graph
-);
-
-/** Applies copied Track musical content and graph to the active editor. */
-[[nodiscard]] bool applyTrackContentSnapshotToEditorWithGraph(
-    SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
-    const oc::note::sequencer::StepSequencerGraph* graph
-);
-
 void installTrackContentSnapshotToEditorWithOwnedGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
@@ -157,32 +128,8 @@ void installTrackContentSnapshotToEditorWithOwnedPayload(
     SequencerCcLaneBankPtr ccLanes
 );
 
-// Installs a decoded/staged pattern without allocating another graph copy.
-void installPatternStateToEditor(
-    SequencerState& target,
-    SequencerPatternState& staged,
-    const SequencerClipState& stagedClip
-);
-
-// Merges staged flat data and transfers its graph ownership into the editor.
-void mergePatternStateIntoCurrent(
-    SequencerState& target,
-    SequencerPatternState& staged,
-    const SequencerClipState& stagedClip
-);
-
-void mergeSnapshotIntoCurrent(
-    SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot
-);
-
-bool rotatePattern(SequencerState& target, int offsetSteps);
-
 /** Rotates one explicit Pattern owner without touching editor UI state. */
 bool rotatePatternState(SequencerPatternState& target, int offsetSteps);
-
-bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t endStep);
 
 /**
  * Extends Content Length to the exact requested length and canonicalizes the
@@ -233,12 +180,5 @@ void publishSequencerSnapshotBatchRevisions(
     SequencerState& sequencer,
     const SequencerSnapshotBatchDomains& domains
 ) noexcept;
-
-// Native-regression lease only: these versioned insertion wrappers exercise
-// region/Graph shifting in SnapshotOps tests. Product handlers must use the
-// prepared Page transaction surface; the architecture gate enforces that.
-bool appendPage(SequencerState& target);
-bool insertPage(SequencerState& target, uint8_t pageIndex);
-bool deletePage(SequencerState& target, uint8_t pageIndex);
 
 }  // namespace core::state::sequencer
