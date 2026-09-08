@@ -79,6 +79,12 @@ RETIRED_RAW_API_IDENTIFIERS = (
     "applySetEnvelope",
     "applyProjectSequencerPayload",
     "applyProjectSequencerEnvelope",
+    "preparePageStructureSnapshot",
+    "commitPreparedPageStructureSnapshot",
+    "MacroPageStructureHistoryOperation",
+    "pageStructureBeforeMatches",
+    "pageStructureAfterMatches",
+    "compactProjectControlPages",
 )
 RETIRED_RAW_API_ROOTS = ("src", "test")
 RETIRED_RAW_API_TARGETED_IDENTIFIERS = (
@@ -113,6 +119,8 @@ RETIRED_RAW_API_MUTATION_LAYERS = (
         "recordSequencerTrackStructureHistoryChange",
     ),
     ("test-clients", "test/Regression.cpp", "recordPattern"),
+    ("macro-page-history", "src/state/macro/MacroHistory.cpp", "preparePageStructureSnapshot"),
+    ("macro-page-tests", "test/Regression.cpp", "compactProjectControlPages"),
 )
 ENTRY_RECORDING_CALL_TOTAL = 45
 EXPECTED_MIGRATED_REMOVAL_TOTAL = 38

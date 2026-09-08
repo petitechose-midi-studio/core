@@ -18,15 +18,6 @@ bool clearPagesInDomain(
     uint8_t track,
     uint16_t pageMask
 );
-/**
- * Clears every Page outside retainedPageMask and compacts retained Project
- * destinations to the zero-based rank of their previous Page address.
- */
-bool compactPages(
-    core::state::modulation::ProjectControlState& control,
-    uint8_t track,
-    uint16_t retainedPageMask
-);
 bool clearTracks(
     core::state::modulation::ProjectControlState& control,
     uint16_t trackMask

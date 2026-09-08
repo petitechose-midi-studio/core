@@ -275,7 +275,7 @@ FLASHMEM bool MacroStructureDomainServices::resetPageContent(uint8_t pageIndex) 
     }
     if (!pages_->activeTrackData().isPageEnabled(pageIndex)) return false;
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         pages_->currentActiveTrack()
     );
@@ -296,7 +296,7 @@ FLASHMEM bool MacroStructureDomainServices::resetPageContent(uint8_t pageIndex) 
         syncActivePagePresentation(stateRefs_());
     }
     persistConfigChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
+    return history_->commitPreparedPageStructure(
         *pages_,
         std::move(historyChange)
     );
@@ -320,7 +320,7 @@ FLASHMEM bool MacroStructureDomainServices::pastePage(
         return false;
     }
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         pages_->currentActiveTrack()
     );
@@ -341,7 +341,7 @@ FLASHMEM bool MacroStructureDomainServices::pastePage(
     pages_->syncActiveTrackCache();
     pages_->setActivePage(pageIndex);
     finalizeStructureChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
+    return history_->commitPreparedPageStructure(
         *pages_,
         std::move(historyChange)
     );
@@ -364,7 +364,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
         return false;
     }
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         track
     );
@@ -460,7 +460,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
         );
     }
     finalizeStructureChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
+    return history_->commitPreparedPageStructure(
         *pages_,
         std::move(historyChange)
     );
@@ -548,7 +548,7 @@ FLASHMEM bool MacroStructureDomainServices::createNextPage() const {
     if (nextPage < 0) return false;
 
     const uint8_t index = static_cast<uint8_t>(nextPage);
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         pages_->currentActiveTrack()
     );
@@ -569,7 +569,7 @@ FLASHMEM bool MacroStructureDomainServices::createNextPage() const {
         static_cast<uint16_t>(enabledMask | structure_slots::slotBit(index)),
         index
     );
-    return history_->commitPreparedPageStructureSnapshot(
+    return history_->commitPreparedPageStructure(
         *pages_,
         std::move(historyChange)
     );
@@ -791,19 +791,15 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
         return false;
     }
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         plan.targetTrack
     );
-    if (!historyChange || !historyChange->pageStructure ||
-        !historyChange->pageStructure->beforeControl ||
-        !historyChange->pageStructure->afterControl) {
-        return false;
-    }
-    auto& historyPayload = *historyChange->pageStructure;
+    if (!historyChange) return false;
+    auto pendingControl = core::app::makeExtmemUniqueCopy(pages_->control.authored);
+    if (!pendingControl) return false;
     auto pendingTrack = pages_->tracks[plan.targetTrack];
-    auto& pendingDomain = *historyPayload.afterControl;
-    pendingDomain = pages_->control.authored;
+    auto& pendingDomain = *pendingControl;
 
     flushMutationCoalescing(operations_);
     if (plan.createPageMask != 0U) {
@@ -854,13 +850,13 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
     );
     const bool trackChanged =
         std::memcmp(
-            &historyPayload.beforeTrack,
+            &pages_->tracks[plan.targetTrack],
             &pendingTrack,
             sizeof(pendingTrack)
         ) != 0;
     const bool controlChanged =
         std::memcmp(
-            historyPayload.beforeControl.get(),
+            &pages_->control.authored,
             &pendingDomain,
             sizeof(pendingDomain)
         ) != 0;
@@ -889,7 +885,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
         );
     }
     finalizeStructureChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
+    return history_->commitPreparedPageStructure(
         *pages_,
         std::move(historyChange)
     );

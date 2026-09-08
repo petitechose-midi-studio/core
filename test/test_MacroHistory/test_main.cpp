@@ -3450,10 +3450,149 @@ void commitMaximumAutomationTake(
     assert(history.commitPreparedAutomationTake(pages, change));
 }
 
+void test_page_history_replays_dense_shared_arena_exactly_without_allocating() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    auto& domain = pages.control.authored;
+    pages.tracks[0].enabledPageMask = 0xFFFFU;
+    pages.tracks[0].activePage = 15U;
+    pages.syncActiveTrackCache();
+    ProjectPackedCurvePoint points[256];
+    ProjectCurveSpec spec{};
+    spec.durationTicks = spec.sourceDurationTicks = 256U;
+    spec.valueDomain = ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR;
+    for (uint16_t lane = 0U; lane < 128U; ++lane) {
+        for (uint16_t point = 0U; point < 256U; ++point) {
+            points[point] = {point, static_cast<int16_t>((point * 97U + lane) % 32768U)};
+        }
+        assert(setProjectAutomationCurve(domain.automation, domain.curves,
+            projectControlDestination({0U, static_cast<uint8_t>(lane / 8U),
+                                      static_cast<uint8_t>(lane % 8U)}),
+            spec, points, 256U, (lane & 1U) == 0U).changed());
+    }
+    assert(domain.curves.pointCount == PROJECT_CURVE_POINT_CAPACITY);
+    // A survivor shares the curve of a removed Page, while another Track keeps
+    // an unrelated owner. Curve references and packed tail bytes must round-trip.
+    assert(deleteProjectAutomationCurve(domain.automation, domain.curves,
+        projectControlDestination({0U, 2U, 0U})).changed());
+    assert(duplicateProjectAutomationCurve(domain.automation, domain.curves,
+        projectControlDestination({0U, 1U, 0U}),
+        projectControlDestination({0U, 2U, 0U})).changed());
+    domain.automation.entries[126].destination.track = 5U;
+    const auto source = createLfoModulator(domain.modulation, {});
+    assert(source.changed());
+    for (const macro::MacroAutomationSlotAddress address :
+         {macro::MacroAutomationSlotAddress{0U, 1U, 0U}, {0U, 2U, 0U}, {5U, 2U, 0U}}) {
+        ModulationBindingDraft binding{};
+        binding.sourceId = source.sourceId;
+        binding.destination = projectControlDestination(address);
+        assert(addProjectModulationBinding(domain.modulation, binding).changed());
+        assert(setProjectModulationDestinationScale(
+            domain.modulation, binding.destination, 49152U).changed());
+    }
+    assert(validProjectModulationDomain(domain.modulation, domain.curves,
+                                        &domain.automation));
+    auto before = std::make_unique<ProjectControlDomainState>(domain);
+    const auto beforeTrack = pages.tracks[0];
+    macro::MacroHistoryService history;
+    assert(history.compactPages(pages, 0U, 0x8005U));
+    auto after = std::make_unique<ProjectControlDomainState>(domain);
+    const auto afterTrack = pages.tracks[0];
+    assert(validProjectModulationDomain(domain.modulation, domain.curves,
+                                        &domain.automation));
+    for (uint8_t iteration = 0U; iteration < 4U; ++iteration) {
+        core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+        assert(history.undo(pages));
+        assert(std::memcmp(&domain, before.get(), sizeof(domain)) == 0);
+        assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
+        assert(history.redo(pages));
+        assert(std::memcmp(&domain, after.get(), sizeof(domain)) == 0);
+        assert(std::memcmp(&pages.tracks[0], &afterTrack, sizeof(afterTrack)) == 0);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    // Drift in an unused arena tail is guarded just like a live value, in both
+    // replay directions. Rejection changes neither history nor the live domain.
+    for (bool undo : {true, false}) {
+        domain.curves.points.back().value ^= 1;
+        auto drifted = std::make_unique<ProjectControlDomainState>(domain);
+        const auto revision = pages.control.authoredRevision;
+        assert(!(undo ? history.undo(pages) : history.redo(pages)));
+        assert(std::memcmp(&domain, drifted.get(), sizeof(domain)) == 0);
+        assert(pages.control.authoredRevision == revision);
+        assert(history.undoCount() == (undo ? 1U : 0U));
+        domain.curves.points.back().value ^= 1;
+        assert(undo ? history.undo(pages) : history.redo(pages));
+    }
+    std::cout << "[PASS] Page history replays shared dense arena and tails exactly without allocations\n";
+}
+
+void test_page_history_preparation_and_compaction_fail_atomically() {
+    macro::MacroPagesState pages;
+    seedCurves(pages);
+    pages.tracks[0].enabledPageMask = 7U;
+    macro::MacroHistoryService history;
+    auto before = std::make_unique<core::state::modulation::ProjectControlDomainState>(
+        pages.control.authored);
+    const auto beforeTrack = pages.tracks[0];
+    const auto revision = pages.control.authoredRevision;
+    for (size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
+        core::app::testing::ScopedExtmemAllocationFailure fail(ordinal);
+        assert(!history.compactPages(pages, 0U, 5U));
+        assert(core::app::testing::extmemAllocationAttempt == ordinal);
+        assert(std::memcmp(&pages.control.authored, before.get(), sizeof(*before)) == 0);
+        assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
+        assert(pages.control.authoredRevision == revision);
+        assert(history.undoCount() == 0U);
+    }
+    {
+        core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+        assert(!history.compactPages(pages, 0U, 0U));
+        assert(!history.compactPages(pages, 0U, 7U));
+        assert(!history.compactPages(pages, macro::TRACK_COUNT, 5U));
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    // Reject malformed counts before the compactor can index any array.
+    pages.control.authored.automation.entryCount = 129U;
+    before->automation.entryCount = 129U;
+    assert(!history.compactPages(pages, 0U, 5U));
+    assert(std::memcmp(&pages.control.authored, before.get(), sizeof(*before)) == 0);
+    assert(pages.control.authoredRevision == revision);
+    pages.control.authored.automation.entryCount = 1U;
+    before->automation.entryCount = 1U;
+    auto noChange = history.preparePageStructure(pages, 0U);
+    assert(noChange);
+    assert(!history.commitPreparedPageStructure(pages, std::move(noChange)));
+    assert(history.undoCount() == 0U);
+    auto prepared = history.preparePageStructure(pages, 0U);
+    assert(prepared);
+    pages.tracks[0].pages[0].values[0] = 0.7f;
+    {
+        core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+        assert(history.commitPreparedPageStructure(pages, std::move(prepared)));
+        assert(history.undo(pages));
+        assert(history.redo(pages));
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    assert(history.retainedSpans() == 2U); // No domain retained for metadata alone.
+    assert(history.undo(pages));
+    const auto retained = history.retainedBytes();
+    core::state::project::ProjectHistoryEventSink sink{};
+    sink.canRetain = [](void*, core::state::project::ProjectHistoryDomain,
+                        core::state::project::ProjectHistoryRetainedUsage) { return false; };
+    history.setProjectHistoryEventSink(&sink);
+    assert(!history.compactPages(pages, 0U, 5U));
+    assert(history.undoCount() == 0U && history.redoCount() == 1U);
+    assert(history.retainedBytes() == retained);
+    assert(std::memcmp(&pages.control.authored, before.get(), sizeof(*before)) == 0);
+    assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
+    history.setProjectHistoryEventSink(nullptr);
+    std::cout << "[PASS] Page history rejects OOM, invalid input and denied admission atomically\n";
+}
+
 void test_retained_budget_preserves_automation_and_bounds_page_structure() {
     constexpr size_t kMaximumAutomationTakeBytes = 132'260U;
-    constexpr size_t kFullPageStructureBytes = 321'492U;
-    constexpr size_t kCompactPageStructureBytes = 161'960U;
+    constexpr size_t kFullPageStructureBytes = 161'968U;
+    constexpr size_t kCompactPageStructureBytes = 2'436U;
 
     macro::MacroPagesState pages;
     seedMaximumAutomationPage(pages);
@@ -3471,49 +3610,49 @@ void test_retained_budget_preserves_automation_and_bounds_page_structure() {
     );
     assert(history.retainedSpans() == 144U);
 
-    auto page = history.preparePageStructureSnapshot(pages, 0U);
+    auto page = history.preparePageStructure(pages, 0U);
     assert(page);
     pages.tracks[0].pages[0].values[0] = 0.25f;
     ++pages.control.authored.modulation.nextSourceId;
-    assert(history.commitPreparedPageStructureSnapshot(
+    assert(history.commitPreparedPageStructure(
         pages,
         std::move(page)
     ));
-    assert(history.undoCount() == 6U);
+    assert(history.undoCount() == 7U);
     assert(
         history.retainedBytes() ==
-        5U * kMaximumAutomationTakeBytes + kFullPageStructureBytes
+        6U * kMaximumAutomationTakeBytes + kFullPageStructureBytes
     );
-    assert(history.retainedSpans() == 94U);
+    assert(history.retainedSpans() == 111U);
 
     history.clear();
-    for (uint8_t entry = 0U; entry < 4U; ++entry) {
-        auto full = history.preparePageStructureSnapshot(pages, 0U);
+    for (uint8_t entry = 0U; entry < 7U; ++entry) {
+        auto full = history.preparePageStructure(pages, 0U);
         assert(full);
         pages.tracks[0].pages[0].values[0] += 0.01f;
         ++pages.control.authored.modulation.nextSourceId;
-        assert(history.commitPreparedPageStructureSnapshot(
+        assert(history.commitPreparedPageStructure(
             pages,
             std::move(full)
         ));
     }
-    assert(history.undoCount() == 3U);
-    assert(history.retainedBytes() == 3U * kFullPageStructureBytes);
-    assert(history.retainedSpans() == 12U);
+    assert(history.undoCount() == 6U);
+    assert(history.retainedBytes() == 6U * kFullPageStructureBytes);
+    assert(history.retainedSpans() == 18U);
 
     history.clear();
     for (uint8_t entry = 0U; entry < 7U; ++entry) {
-        auto compact = history.preparePageStructureSnapshot(pages, 0U);
+        auto compact = history.preparePageStructure(pages, 0U);
         assert(compact);
         pages.tracks[0].pages[0].values[0] += 0.01f;
-        assert(history.commitPreparedPageStructureSnapshot(
+        assert(history.commitPreparedPageStructure(
             pages,
             std::move(compact)
         ));
     }
-    assert(history.undoCount() == 6U);
-    assert(history.retainedBytes() == 6U * kCompactPageStructureBytes);
-    assert(history.retainedSpans() == 18U);
+    assert(history.undoCount() == 7U);
+    assert(history.retainedBytes() == 7U * kCompactPageStructureBytes);
+    assert(history.retainedSpans() == 14U);
     std::cout
         << "[PASS] retained budget preserves Automation depth and bounds Page structure\n";
 }
@@ -3612,6 +3751,8 @@ int main() {
     test_recorded_shape_id_and_no_change_failures_are_atomic();
     test_recorded_shape_point_capacity_failures_are_atomic();
     test_multi_macro_take_is_one_atomic_undo_redo_action();
+    test_page_history_replays_dense_shared_arena_exactly_without_allocating();
+    test_page_history_preparation_and_compaction_fail_atomically();
     test_retained_budget_preserves_automation_and_bounds_page_structure();
     test_assignment_history_is_destination_scoped_and_order_stable();
     test_assignment_remove_and_clear_keep_roots_and_unrelated_edges();

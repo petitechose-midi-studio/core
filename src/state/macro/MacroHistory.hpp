@@ -125,12 +125,12 @@ public:
         uint16_t retainedPageMask
     );
 
-    /** Reserves exact before/after storage for any non-compacting Page edit. */
-    [[nodiscard]] MacroHistoryChangePtr preparePageStructureSnapshot(
+    /** Reserves one reversible domain buffer before any Page edit. */
+    [[nodiscard]] MacroHistoryChangePtr preparePageStructure(
         const MacroPagesState& pages,
         uint8_t track
     ) const;
-    [[nodiscard]] bool commitPreparedPageStructureSnapshot(
+    [[nodiscard]] bool commitPreparedPageStructure(
         MacroPagesState& pages,
         MacroHistoryChangePtr change
     );

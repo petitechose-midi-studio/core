@@ -207,7 +207,9 @@ FLASHMEM bool compactProjectControlPagesInDomain(
     uint8_t track,
     uint16_t retainedPageMask
 ) {
-    if (track >= macro::TRACK_COUNT || retainedPageMask == 0U) return false;
+    if (track >= macro::TRACK_COUNT || retainedPageMask == 0U ||
+        !validProjectModulationDomain(domain.modulation, domain.curves,
+                                      &domain.automation)) return false;
 
     const auto removed = [track, retainedPageMask](
         const ModulationDestination& destination
@@ -281,29 +283,6 @@ FLASHMEM bool compactProjectControlPagesInDomain(
         domain.curves,
         &domain.automation
     );
-}
-
-FLASHMEM bool compactProjectControlPages(
-    ProjectControlState& control,
-    uint8_t track,
-    uint16_t retainedPageMask
-) {
-    auto pending = core::app::makeExtmemUnique<ProjectControlDomainState>();
-    if (!pending) return false;
-    *pending = control.authored;
-    if (!compactProjectControlPagesInDomain(
-            *pending,
-            track,
-            retainedPageMask
-        )) {
-        return false;
-    }
-    if (std::memcmp(pending.get(), &control.authored, sizeof(*pending)) == 0) {
-        return true;
-    }
-    control.authored = *pending;
-    control.markAuthoredMutation();
-    return true;
 }
 
 FLASHMEM bool assignProjectControlAutomation(

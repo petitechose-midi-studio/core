@@ -192,7 +192,7 @@ void test_page_compaction_remaps_complete_project_destinations() {
     const auto sourceId = control.authored.modulation.outputBindings[0].sourceId;
 
     // Old Pages 0 and 2 survive. Page 2 becomes Page 1.
-    assert(ops::compactPages(control, 0U, 0x0005U));
+    assert(modulation::compactProjectControlPagesInDomain(control.authored, 0U, 0x0005U));
 
     const macro::MacroAutomationSlotAddress compacted{
         .track = 0,

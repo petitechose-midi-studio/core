@@ -146,7 +146,13 @@
       "fillSetEnvelope",
       "applySetEnvelope",
       "applyProjectSequencerPayload",
-      "applyProjectSequencerEnvelope"
+      "applyProjectSequencerEnvelope",
+      "preparePageStructureSnapshot",
+      "commitPreparedPageStructureSnapshot",
+      "MacroPageStructureHistoryOperation",
+      "pageStructureBeforeMatches",
+      "pageStructureAfterMatches",
+      "compactProjectControlPages"
     ],
     "targetedIdentifiers": [
       {
@@ -183,6 +189,16 @@
         "name": "test-clients",
         "path": "test/Regression.cpp",
         "identifier": "recordPattern"
+      },
+      {
+        "name": "macro-page-history",
+        "path": "src/state/macro/MacroHistory.cpp",
+        "identifier": "preparePageStructureSnapshot"
+      },
+      {
+        "name": "macro-page-tests",
+        "path": "test/Regression.cpp",
+        "identifier": "compactProjectControlPages"
       }
     ],
     "expectedTotal": 0

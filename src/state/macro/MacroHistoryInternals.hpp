@@ -427,14 +427,9 @@ void syncPageStructureTrack(
     uint8_t track
 );
 
-bool pageStructureBeforeMatches(
-    const MacroPagesState& pages,
-    const MacroPageStructureHistoryPayload& payload
-);
-
-bool pageStructureAfterMatches(
-    const MacroPagesState& pages,
-    const MacroPageStructureHistoryPayload& payload
+void xorPageStructureControl(
+    uint8_t* target,
+    const uint8_t* source
 );
 
 bool applyPageStructureHistory(

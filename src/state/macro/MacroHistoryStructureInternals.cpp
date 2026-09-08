@@ -129,34 +129,23 @@ FLASHMEM void syncPageStructureTrack(
     pages.updateActiveConfigs();
 }
 
-FLASHMEM bool pageStructureBeforeMatches(
-    const MacroPagesState& pages,
-    const MacroPageStructureHistoryPayload& payload
+FLASHMEM void xorPageStructureControl(
+    uint8_t* target,
+    const uint8_t* source
 ) {
-    return payload.beforeControl != nullptr &&
-        payload.track < TRACK_COUNT &&
-        sameMacroTrackData(
-            pages.tracks[payload.track],
-            payload.beforeTrack
-        ) &&
-        std::memcmp(
-            &pages.control.authored,
-            payload.beforeControl.get(),
-            sizeof(core::state::modulation::ProjectControlDomainState)
-        ) == 0;
-}
-
-FLASHMEM bool pageStructureAfterMatches(
-    const MacroPagesState& pages,
-    const MacroPageStructureHistoryPayload& payload
-) {
-    return payload.track < TRACK_COUNT &&
-        sameMacroTrackData(
-            pages.tracks[payload.track],
-            payload.afterTrack
-        ) &&
-        pageStructureControlHash(pages.control.authored) ==
-            payload.afterControlHash;
+    constexpr size_t bytes =
+        sizeof(core::state::modulation::ProjectControlDomainState);
+    static_assert(bytes % sizeof(uint32_t) == 0U);
+    for (size_t index = 0U;
+         index < bytes;
+         index += sizeof(uint32_t)) {
+        // memcpy keeps word-sized access valid without alignment/aliasing casts.
+        uint32_t left, right;
+        std::memcpy(&left, target + index, sizeof(left));
+        std::memcpy(&right, source + index, sizeof(right));
+        left ^= right;
+        std::memcpy(target + index, &left, sizeof(left));
+    }
 }
 
 FLASHMEM bool applyPageStructureHistory(
@@ -164,54 +153,25 @@ FLASHMEM bool applyPageStructureHistory(
     const MacroPageStructureHistoryPayload& payload,
     bool after
 ) {
-    if (payload.beforeControl == nullptr || payload.track >= TRACK_COUNT ||
-        (payload.operation == MacroPageStructureHistoryOperation::COMPACT &&
-         payload.retainedPageMask == 0U)) {
+    if (payload.track >= TRACK_COUNT ||
+        !sameMacroTrackData(pages.tracks[payload.track],
+                           after ? payload.beforeTrack : payload.afterTrack) ||
+        pageStructureControlHash(pages.control.authored) !=
+            (after ? payload.beforeControlHash : payload.afterControlHash)) {
         return false;
     }
-    if (!after) {
-        if (!pageStructureAfterMatches(pages, payload)) return false;
-        pages.control.authored = *payload.beforeControl;
+    if (payload.controlDelta) {
+        // Unsigned-byte access is defined for this trivially copyable domain,
+        // including arena tails. No allocation or structural reconstruction.
+        xorPageStructureControl(
+            reinterpret_cast<uint8_t*>(&pages.control.authored),
+            payload.controlDelta.get()
+        );
         pages.control.markAuthoredMutation();
-        pages.tracks[payload.track] = payload.beforeTrack;
-        syncPageStructureTrack(pages, payload.track);
-        return pageStructureBeforeMatches(pages, payload);
     }
-
-    if (!pageStructureBeforeMatches(pages, payload)) return false;
-    if (payload.operation == MacroPageStructureHistoryOperation::SNAPSHOT) {
-        if (payload.afterControl != nullptr) {
-            pages.control.authored = *payload.afterControl;
-            pages.control.markAuthoredMutation();
-        } else if (pageStructureControlHash(pages.control.authored) !=
-                   payload.afterControlHash) {
-            return false;
-        }
-        pages.tracks[payload.track] = payload.afterTrack;
-    } else {
-        if (!core::state::modulation::compactProjectControlPages(
-                pages.control,
-                payload.track,
-                payload.retainedPageMask
-            )) {
-            return false;
-        }
-        if (!pages.tracks[payload.track].compactPages(
-                payload.retainedPageMask
-            )) {
-            pages.control.authored = *payload.beforeControl;
-            pages.control.markAuthoredMutation();
-            return false;
-        }
-    }
+    pages.tracks[payload.track] = after ? payload.afterTrack : payload.beforeTrack;
     syncPageStructureTrack(pages, payload.track);
-    if (pageStructureAfterMatches(pages, payload)) return true;
-
-    pages.control.authored = *payload.beforeControl;
-    pages.control.markAuthoredMutation();
-    pages.tracks[payload.track] = payload.beforeTrack;
-    syncPageStructureTrack(pages, payload.track);
-    return false;
+    return true;
 }
 
 }  // namespace history_detail

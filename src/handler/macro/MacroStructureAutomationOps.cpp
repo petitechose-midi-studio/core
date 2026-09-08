@@ -365,18 +365,6 @@ FLASHMEM bool clearPages(
     );
 }
 
-FLASHMEM bool compactPages(
-    modulation::ProjectControlState& control,
-    uint8_t track,
-    uint16_t retainedPageMask
-) {
-    return modulation::compactProjectControlPages(
-        control,
-        track,
-        retainedPageMask
-    );
-}
-
 FLASHMEM bool clearTracks(
     modulation::ProjectControlState& control,
     uint16_t trackMask

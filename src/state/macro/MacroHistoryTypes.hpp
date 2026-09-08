@@ -349,31 +349,18 @@ struct MacroSlotDeletionHistoryPayload {
 };
 
 /**
- * One compacted Macro Page transaction.
- *
- * Redo deterministically reapplies retainedPageMask, so only the exact before
- * Project domain is retained. Eight worst-case entries consume about 1.22 MiB
- * of PSRAM instead of retaining before/after copies of the 156 KiB domain.
+ * One reversible Page edit. Preparation reserves the complete before-domain;
+ * commit turns it into a bytewise XOR with the after-domain, or releases it
+ * when only Track metadata changed. The same delta replays both directions.
+ * This in-memory representation never crosses a persistence/firmware boundary.
  */
-enum class MacroPageStructureHistoryOperation : uint8_t {
-    COMPACT = 0,
-    SNAPSHOT,
-};
-
 struct MacroPageStructureHistoryPayload {
-    uint16_t retainedPageMask = 0U;
     uint8_t track = 0U;
-    MacroPageStructureHistoryOperation operation =
-        MacroPageStructureHistoryOperation::COMPACT;
+    uint64_t beforeControlHash = 0U;
     uint64_t afterControlHash = 0U;
     MacroTrackData beforeTrack{};
     MacroTrackData afterTrack{};
-    core::app::ExtmemUniquePtr<
-        core::state::modulation::ProjectControlDomainState
-    > beforeControl{};
-    core::app::ExtmemUniquePtr<
-        core::state::modulation::ProjectControlDomainState
-    > afterControl{};
+    core::app::ExtmemUniqueArray<uint8_t> controlDelta{};
 };
 
 /** Compact destination-wide Depth delta; no binding array is retained. */
