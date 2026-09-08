@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -564,7 +565,7 @@ void test_preset_library_keeps_only_the_active_domain_payload() {
 void test_preset_library_entry_policy_matches_the_visible_editor_surface() {
     namespace policy =
         core::state::sequencer::preset_library_entry_policy;
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
 
     assert(policy::entryKind(sequencer) == policy::EntryKind::NONE);
     sequencer.stepEdit.visible.set(true);

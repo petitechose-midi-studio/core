@@ -39,7 +39,7 @@ FLASHMEM void showHistoryUnavailable(seq::SequencerState& sequencer) {
 
 FLASHMEM seq::SequencerCoalescedPatternPayloadPlan pastePayloadPlan(
     const seq::SequencerState& sequencer) {
-    return seq::graphView(sequencer.pattern) != nullptr
+    return seq::graphView(sequencer.pattern()) != nullptr
                ? seq::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload
                : seq::SequencerCoalescedPatternPayloadPlan::FullWithProspectiveGraph;
 }
@@ -49,7 +49,7 @@ FLASHMEM seq::SequencerCoalescedPatternPayloadPlan pastePayloadPlan(
 FLASHMEM bool SequencerStepHandler::focusedStepHasChildContent() const {
     const auto nodeId =
         core::state::sequencer::activeContentStepNodeId(sequencer_, sequencer_.focusedStep.get());
-    return core::state::sequencer::stepNodeHasAnyChildContent(sequencer_.pattern, nodeId);
+    return core::state::sequencer::stepNodeHasAnyChildContent(sequencer_.pattern(), nodeId);
 }
 
 FLASHMEM bool SequencerStepHandler::canPasteFocusedStepContent() const {

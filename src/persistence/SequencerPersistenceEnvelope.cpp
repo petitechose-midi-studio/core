@@ -1262,9 +1262,8 @@ FLASHMEM bool decodeProjectSequencerEnvelope(
             static_cast<uint16_t>(region.loopStart * ticks),
             static_cast<uint16_t>(region.loopEnd * ticks),
         };
-        const bool editor = track == target.flat.activeTrack;
-        auto& graph = editor ? target.editorGraph : target.bankGraphs[track];
-        auto& lanes = editor ? target.editorCcLanes : target.bankCcLanes[track];
+        auto& graph = target.bankGraphs[track];
+        auto& lanes = target.bankCcLanes[track];
         if (!decodeGraphSections(section, graph) || !decodeCcLaneSection(section, lanes)) {
             return false;
         }

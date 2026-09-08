@@ -4114,9 +4114,9 @@ void test_aged_autosave_aborts_upload_before_promotion() {
         "rpc-autosave",
         state.project.metadata.id.size() - 1U
     );
-    state.sequencer.pattern.setContentLength(8U);
+    state.sequencer.pattern().setContentLength(8U);
     state.sequencer.setStepDataAt(0U, 85U, 100U, 75U);
-    state.sequencer.pattern.toggle(0U);
+    state.sequencer.pattern().toggle(0U);
     state.markProjectMutated();
 
     core::persistence::ProjectSessionStore sessionStore(service);

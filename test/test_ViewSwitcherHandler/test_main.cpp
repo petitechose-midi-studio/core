@@ -168,12 +168,12 @@ void authorPendingCcLaneEvent(ViewSwitcherHarness& h) {
     draft.destination.routePolicy = seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK;
     draft.initialValue = 64U;
     assert(seq::createSequencerCcLane(*bank, 0U, draft).changed());
-    seq::installSequencerCcLaneBank(h.state.sequencer.pattern, std::move(bank));
+    seq::installSequencerCcLaneBank(h.state.sequencer.pattern(), std::move(bank));
     assert(h.state.clearProjectHistory());
 
     assert(seq::cloneSequencerCcLaneBank(
         bank,
-        seq::sequencerCcLaneView(h.state.sequencer.pattern)
+        seq::sequencerCcLaneView(h.state.sequencer.pattern())
     ));
     assert(seq::setSequencerCcLaneEvent(*bank, 0U, 0U, 64U).changed());
     assert(seq::sequencerHistoryOpenAccepted(
@@ -184,7 +184,7 @@ void authorPendingCcLaneEvent(ViewSwitcherHarness& h) {
         64,
         bank.get(),
         100U)));
-    seq::installSequencerCcLaneBank(h.state.sequencer.pattern, std::move(bank));
+    seq::installSequencerCcLaneBank(h.state.sequencer.pattern(), std::move(bank));
 }
 
 void test_view_selector_opens_navigates_and_confirms_on_close() {
@@ -495,7 +495,7 @@ void test_selector_physically_restores_project_settings_history() {
 void test_selector_commits_pending_step_edit_before_global_undo() {
     ViewSwitcherHarness h;
     h.state.activeView.set(core::ui::ViewType::CLIPS);
-    const uint8_t initial = h.state.sequencer.pattern.note[0];
+    const uint8_t initial = h.state.sequencer.pattern().note[0];
     assert(core::state::sequencer::sequencerHistoryOpenAccepted(
         h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         0,
@@ -512,7 +512,7 @@ void test_selector_commits_pending_step_edit_before_global_undo() {
     assert(h.state.projectHistory.canUndo());
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.viewSelector.visible.get());
-    assert(h.state.sequencer.pattern.note[0] == initial);
+    assert(h.state.sequencer.pattern().note[0] == initial);
 
     std::cout << "[PASS] selector commits a pending Step edit before global Undo\n";
 }
@@ -530,12 +530,12 @@ void test_selector_commits_pending_cc_edit_before_global_undo() {
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.viewSelector.visible.get());
     const auto* bank = core::state::sequencer::sequencerCcLaneView(
-        h.state.sequencer.pattern
+        h.state.sequencer.pattern()
     );
     assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
 
     h.tap(Config::ButtonID::LEFT_BOTTOM);
-    bank = core::state::sequencer::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = core::state::sequencer::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
     assert(bank->lanes[0].values[0] == 64U);
 

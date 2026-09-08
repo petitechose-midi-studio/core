@@ -54,10 +54,10 @@ FLASHMEM bool SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepEdit.chordEditor.focusedField,
         state_refs_.sequencer.stepEdit.chordEditor.subEditor,
         state_refs_.sequencer.presetLibrary.visible,
-        state_refs_.sequencer.pattern.enabledMask,
-        state_refs_.sequencer.pattern.stepDataRevision,
-        state_refs_.sequencer.pattern.patternScaleRevision,
-        state_refs_.sequencer.pattern.graphRevision,
+        state_refs_.sequencer.patternChanges.enabledMask,
+        state_refs_.sequencer.patternChanges.stepDataRevision,
+        state_refs_.sequencer.patternChanges.patternScaleRevision,
+        state_refs_.sequencer.patternChanges.graphRevision,
         state_refs_.sequencer.contentView.revision,
         state_refs_.tracks.projectScaleRevisionSignal()
     ) && bound;

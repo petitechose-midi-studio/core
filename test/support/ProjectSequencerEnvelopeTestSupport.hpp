@@ -30,12 +30,8 @@ encodeProjectSequencerSnapshot(
         snapshot.flat.activeTrack
     );
     for (uint8_t i = 0; i < codec::PERSISTED_TRACK_COUNT; ++i) {
-        source.graphs[i] = (i == activeTrack)
-            ? snapshot.editorGraph.get()
-            : snapshot.bankGraphs[i].get();
-        source.ccLanes[i] = (i == activeTrack)
-            ? snapshot.editorCcLanes.get()
-            : snapshot.bankCcLanes[i].get();
+        source.graphs[i] = snapshot.bankGraphs[i].get();
+        source.ccLanes[i] = snapshot.bankCcLanes[i].get();
     }
     return codec::fillProjectSequencerEnvelope(source, out, capacity);
 }

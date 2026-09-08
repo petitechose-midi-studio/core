@@ -323,7 +323,7 @@ PREPARED_PROJECT_SCALE_PROVIDERS = (
 )
 PREPARED_PROJECT_SCALE_PROVIDER_SIGNATURE_TOKENS = {
     # applyHistorySnapshot is overloaded for Pattern and bank snapshots;
-    # only the bank-snapshot body carries the active-spare contract.
+    # only the bank-snapshot body carries the canonical-bank contract.
     "applyHistorySnapshot": "SequencerHistoryTrackBankSnapshot",
 }
 PREPARED_PROJECT_SCALE_PROVIDER_ANCHORS = {
@@ -332,7 +332,7 @@ PREPARED_PROJECT_SCALE_PROVIDER_ANCHORS = {
         re.compile(r"\b(?:const\s+)?(?:std\s*::\s*)?uint8_t\s+activeTrack\s*="),
     ),
     "expectedSkipGuardCount": (
-        "active-spare-skip-guard",
+        "canonical-bank-skip-guard",
         re.compile(r"\bif\s*\(\s*i\s*==\s*activeTrack\s*\)"),
     ),
     "expectedGraphResetCount": (
@@ -368,21 +368,13 @@ PREPARED_PROJECT_SCALE_PROVIDER_ANCHORS = {
             r"\bout\s*\.\s*flat\s*\.\s*activeTrack\s*!=\s*activeTrack"
         ),
     ),
-    "expectedEditorGraphRouteCount": (
-        "active-editor-graph-route",
-        re.compile(
-            r"\bauto\s*&\s*targetGraph\s*=\s*trackIndex\s*==\s*activeTrack"
-            r"\s*\?\s*out\s*\.\s*editorGraph\s*:\s*out\s*\.\s*bankGraphs"
-            r"\s*\[\s*trackIndex\s*\]"
-        ),
+    "expectedIndexedGraphRouteCount": (
+        "indexed-graph-route",
+        re.compile(r"\bauto\s*&\s*targetGraph\s*=\s*out\s*\.\s*bankGraphs\s*\[\s*trackIndex\s*\]"),
     ),
-    "expectedEditorCcRouteCount": (
-        "active-editor-cc-route",
-        re.compile(
-            r"\bauto\s*&\s*targetCcLanes\s*=\s*trackIndex\s*==\s*activeTrack"
-            r"\s*\?\s*out\s*\.\s*editorCcLanes\s*:\s*out\s*\.\s*bankCcLanes"
-            r"\s*\[\s*trackIndex\s*\]"
-        ),
+    "expectedIndexedCcRouteCount": (
+        "indexed-cc-route",
+        re.compile(r"\bauto\s*&\s*targetCcLanes\s*=\s*out\s*\.\s*bankCcLanes\s*\[\s*trackIndex\s*\]"),
     ),
     "expectedGraphCaptureCallCount": (
         "graph-slice-call",
@@ -687,7 +679,7 @@ def expected_prepared_project_scale_owner_reference_counter(manifest) -> Counter
 
 def expected_prepared_project_scale_provider_anchor_counter(manifest) -> Counter:
     expected = Counter()
-    providers = manifest["preparedProjectScaleLifecycle"]["activeSpareProviders"]
+    providers = manifest["preparedProjectScaleLifecycle"]["canonicalBankProviders"]
     for provider in providers["providers"]:
         function = provider["function"]
         expected[(function, "definition")] = 1
@@ -1460,15 +1452,15 @@ def manifest_errors(manifest) -> list[str]:
         if project_scale.get("expectedForbiddenRawCallTotal") != 0:
             errors.append("prepared Project Scale surfaces must retain zero raw helper calls")
 
-        provider_section = project_scale.get("activeSpareProviders", {})
+        provider_section = project_scale.get("canonicalBankProviders", {})
         if provider_section.get("path") != PREPARED_PROJECT_SCALE_PROVIDER_PATH:
-            errors.append("prepared Project Scale active-spare provider path must remain canonical")
+            errors.append("prepared Project Scale canonical-bank provider path must remain canonical")
         providers = provider_section.get("providers", [])
         provider_names = tuple(
             provider.get("function") for provider in providers if isinstance(provider, dict)
         )
         if provider_names != PREPARED_PROJECT_SCALE_PROVIDERS:
-            errors.append("prepared Project Scale active-spare providers must remain exact")
+            errors.append("prepared Project Scale canonical-bank providers must remain exact")
         for provider in providers:
             if not isinstance(provider, dict):
                 errors.append("prepared Project Scale provider entries must be objects")
@@ -1969,7 +1961,7 @@ def collect_observation(root: Path, manifest):
         for method, count in forbidden_counts.items():
             project_scale_forbidden_raw_calls[(surface["path"], method)] = count
 
-    provider_section = project_scale["activeSpareProviders"]
+    provider_section = project_scale["canonicalBankProviders"]
     trusted = project_scale["trustedCommit"]
     trusted_method = trusted["method"]
     trusted_declaration = trusted["declaration"]
@@ -2240,7 +2232,7 @@ def observation_errors(manifest, observed) -> list[str]:
         observed["preparedProjectScaleForbiddenRawCalls"],
     )
     errors += counter_errors(
-        "prepared Project Scale active-spare provider anchor",
+        "prepared Project Scale canonical-bank provider anchor",
         expected_prepared_project_scale_provider_anchor_counter(manifest),
         observed["preparedProjectScaleProviderAnchors"],
     )
@@ -3159,28 +3151,22 @@ def prepared_project_scale_lifecycle_self_test(manifest) -> bool:
 
 def prepared_project_scale_provider_self_test(manifest) -> bool:
     lifecycle = manifest["preparedProjectScaleLifecycle"]
-    provider_section = lifecycle["activeSpareProviders"]
+    provider_section = lifecycle["canonicalBankProviders"]
     fixture = (
         "bool reserveHistoryTrackBankSnapshotStorage() {\n"
         "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
-        "  if (i == activeTrack) {\n"
-        "    snapshot.bankGraphs[i].reset();\n"
-        "    snapshot.bankCcLanes[i].reset();\n"
-        "  }\n"
         "  return true;\n"
         "}\n"
         "bool captureHistoryTrackBankGraphUsingReservedStorage() {\n"
         "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
         "  if (out.flat.activeTrack != activeTrack) return false;\n"
-        "  auto& targetGraph = trackIndex == activeTrack\n"
-        "    ? out.editorGraph : out.bankGraphs[trackIndex];\n"
+        "  auto& targetGraph = out.bankGraphs[trackIndex];\n"
         "  return true;\n"
         "}\n"
         "bool captureHistoryTrackBankDataUsingReservedStorage() {\n"
         "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
         "  if (out.flat.activeTrack != activeTrack) return false;\n"
-        "  auto& targetCcLanes = trackIndex == activeTrack\n"
-        "    ? out.editorCcLanes : out.bankCcLanes[trackIndex];\n"
+        "  auto& targetCcLanes = out.bankCcLanes[trackIndex];\n"
         "  return true;\n"
         "}\n"
         "bool captureHistoryTrackBankSnapshotUsingReservedStorage() {\n"
@@ -3191,11 +3177,7 @@ def prepared_project_scale_provider_self_test(manifest) -> bool:
         "  return true;\n"
         "}\n"
         "bool applyHistorySnapshot(const SequencerHistoryTrackBankSnapshot& snapshot) {\n"
-        "  const uint8_t activeTrack = snapshot.flat.activeTrack;\n"
-        "  if (i == activeTrack) continue;\n"
-        "  if (i == activeTrack) continue;\n"
-        "  bank.track(activeTrack).graph.reset();\n"
-        "  bank.track(activeTrack).ccLanes.reset();\n"
+        "  if (active.stepContentDraft.active.get()) return false;\n"
         "  return true;\n"
         "}\n"
     )
@@ -3208,7 +3190,7 @@ def prepared_project_scale_provider_self_test(manifest) -> bool:
         ) != expected_prepared_project_scale_provider_anchor_counter(manifest):
             return False
         path.write_text(
-            fixture.replace("if (i == activeTrack) {", "if (false) {", 1),
+            fixture.replace("return true;", "if (i == activeTrack) continue; return true;", 1),
             encoding="utf-8",
         )
         drifted = count_prepared_project_scale_provider_anchors(
@@ -3221,12 +3203,12 @@ def prepared_project_scale_provider_self_test(manifest) -> bool:
     drift = synthetic_observation(manifest)
     key = (
         PREPARED_PROJECT_SCALE_PROVIDERS[0],
-        "active-spare-skip-guard",
+        "canonical-bank-skip-guard",
     )
-    drift["preparedProjectScaleProviderAnchors"][key] -= 1
+    drift["preparedProjectScaleProviderAnchors"][key] += 1
     errors = observation_errors(manifest, drift)
     return any(
-        "prepared Project Scale active-spare provider anchor mismatch" in error
+        "prepared Project Scale canonical-bank provider anchor mismatch" in error
         for error in errors
     )
 
@@ -3521,7 +3503,7 @@ def run_self_tests(manifest) -> list[str]:
     if not prepared_project_scale_lifecycle_self_test(manifest):
         failures.append("prepared Project Scale lifecycle scanner or topology drift was not rejected")
     if not prepared_project_scale_provider_self_test(manifest):
-        failures.append("prepared Project Scale active-spare provider drift was not rejected")
+        failures.append("prepared Project Scale canonical-bank provider drift was not rejected")
     if not prepared_track_structure_lifecycle_self_test(manifest):
         failures.append("prepared Track Structure lifecycle drift was not rejected")
     if not seam_self_test(manifest):
@@ -3644,9 +3626,9 @@ def main() -> int:
         f"{track_trusted['memberDispatch']['expectedTotal']} trusted edges; "
         "zero raw recording calls"
     )
-    providers = project_scale["activeSpareProviders"]["providers"]
+    providers = project_scale["canonicalBankProviders"]["providers"]
     print(
-        "  Bank snapshot active spare: "
+        "  Bank snapshot canonical owners: "
         f"{len(providers)}/{len(PREPARED_PROJECT_SCALE_PROVIDERS)} "
         "reserve/capture/restore providers ratcheted"
     )

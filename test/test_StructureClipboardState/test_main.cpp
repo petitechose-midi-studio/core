@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -67,8 +68,8 @@ void assertAutomationClipboardUnchanged(
 
 void test_cross_domain_copy_releases_inactive_owned_payloads() {
     core::state::StructureClipboardState clipboard;
-    sequencer::SequencerState sequencerState;
-    assert(sequencer::ensureGraphRoot(sequencerState.pattern));
+    core::state::sequencer::SequencerDetachedEditor sequencerState;
+    assert(sequencer::ensureGraphRoot(sequencerState.pattern()));
 
     core::state::SequencerPageClipboard page;
     page.valid = true;
@@ -76,7 +77,7 @@ void test_cross_domain_copy_releases_inactive_owned_payloads() {
     page.sourcePage = 0;
     assert(clipboard.storeSequencerPage(
         page,
-        sequencer::graphView(sequencerState.pattern)
+        sequencer::graphView(sequencerState.pattern())
     ));
     assert(clipboard.sequencerGraph != nullptr);
 

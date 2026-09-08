@@ -54,9 +54,7 @@ struct SequencerHistoryTrackBankSnapshot {
     SequencerTrackBankSnapshot flat{};
     uint8_t focusedStep = 0;
     StepProperty activeStepProperty = StepProperty::NOTE;
-    SequencerHistoryGraphPtr editorGraph;
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
-    SequencerHistoryCcLanePtr editorCcLanes;
     std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT> bankCcLanes{};
 
     SequencerHistoryTrackBankSnapshot();

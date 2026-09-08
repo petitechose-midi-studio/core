@@ -81,7 +81,7 @@ FLASHMEM bool rotateActiveContentSteps(SequencerState& sequencer, int offsetStep
 
 FLASHMEM bool toggleActiveContentStep(SequencerState& sequencer, uint8_t step) {
     if (isRootContentView(sequencer)) {
-        sequencer.pattern.toggle(step);
+        sequencer.pattern().toggle(step);
         sequencer.invalidateStepVariationTelemetry(step);
         return true;
     }
@@ -102,7 +102,7 @@ FLASHMEM bool toggleActiveContentStep(SequencerState& sequencer, uint8_t step) {
 
 FLASHMEM bool activeContentStepEnabled(const SequencerState& sequencer, uint8_t step) {
     if (step >= activeContentLength(sequencer)) return false;
-    if (isRootContentView(sequencer)) return sequencer.pattern.isEnabled(step);
+    if (isRootContentView(sequencer)) return sequencer.pattern().isEnabled(step);
 
     const auto nodeId = activeContentStepNodeId(sequencer, step);
     const auto* node = graphNode(sequencer, nodeId);
@@ -113,9 +113,9 @@ FLASHMEM bool setActiveContentStepEnabled(SequencerState& sequencer, uint8_t ste
     if (step >= activeContentLength(sequencer)) return false;
 
     if (isRootContentView(sequencer)) {
-        const bool current = sequencer.pattern.isEnabled(step);
+        const bool current = sequencer.pattern().isEnabled(step);
         if (current == enabled) return false;
-        sequencer.pattern.setEnabled(step, enabled);
+        sequencer.pattern().setEnabled(step, enabled);
         sequencer.invalidateStepVariationTelemetry(step);
         return true;
     }

@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -20,10 +21,10 @@ using oc::note::sequencer::StepSequencerChordMode;
 using oc::note::sequencer::StepSequencerChordSpec;
 
 seq::SequencerExpansionBudgetProjection projectMicroSequence(uint8_t length) {
-    seq::SequencerState state;
-    assert(state.pattern.setContentLength(1));
+    core::state::sequencer::SequencerDetachedEditor state;
+    assert(state.pattern().setContentLength(1));
     const auto created = seq::createMicroSequence(
-        state.pattern,
+        state.pattern(),
         seq::rootStepNodeId(0),
         length
     );
@@ -44,17 +45,17 @@ StepSequencerChordSpec eightVoiceChord() {
 }
 
 seq::SequencerExpansionBudgetProjection projectPublishedChordMicroSequence() {
-    seq::SequencerState state;
-    assert(state.pattern.setContentLength(1));
+    core::state::sequencer::SequencerDetachedEditor state;
+    assert(state.pattern().setContentLength(1));
     const auto rootNode = seq::rootStepNodeId(0);
-    const auto created = seq::createMicroSequence(state.pattern, rootNode, 3);
+    const auto created = seq::createMicroSequence(state.pattern(), rootNode, 3);
     assert(created.ok);
     assert(seq::setNodeChordMode(
-        state.pattern,
+        state.pattern(),
         rootNode,
         StepSequencerChordMode::Local
     ));
-    assert(seq::setNodeChordSpec(state.pattern, rootNode, eightVoiceChord()));
+    assert(seq::setNodeChordSpec(state.pattern(), rootNode, eightVoiceChord()));
     return seq::projectSequencerExpansionBudget(state, {}, 0);
 }
 
@@ -79,10 +80,10 @@ void test_projection_saturates_at_17_without_retaining_more_notes() {
 }
 
 void test_projection_includes_unpublished_chord_draft() {
-    seq::SequencerState state;
-    assert(state.pattern.setContentLength(1));
+    core::state::sequencer::SequencerDetachedEditor state;
+    assert(state.pattern().setContentLength(1));
     const auto sequence = seq::createMicroSequence(
-        state.pattern,
+        state.pattern(),
         seq::rootStepNodeId(0),
         3
     );
@@ -108,7 +109,7 @@ void test_projection_includes_unpublished_chord_draft() {
     assert(projection.noteBudgetExceeded);
     assert(projection.emittedNoteCount == 16);
     assert(projection.requestedNoteCount == 17);
-    assert(seq::graphView(state.pattern)->stepNode(rootNode)->chordMode !=
+    assert(seq::graphView(state.pattern())->stepNode(rootNode)->chordMode !=
            StepSequencerChordMode::Local);
     std::cout << "[PASS] test_projection_includes_unpublished_chord_draft\n";
 }

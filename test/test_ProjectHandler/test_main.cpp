@@ -889,7 +889,7 @@ void test_storage_rename_name_editor_moves_project_file() {
 void test_new_project_resets_musical_project_state() {
     ProjectHandlerHarness h;
 
-    h.state.sequencer.pattern.setContentLength(16);
+    h.state.sequencer.pattern().setContentLength(16);
     h.state.sequencer.setStepNoteAt(0, 72);
     h.state.macros.slots[0].value.set(0.91f);
     h.state.pages.activePageData().cc[0] = 99;
@@ -918,8 +918,8 @@ void test_new_project_resets_musical_project_state() {
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 0U);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
-    assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
-    assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(h.state.sequencer.pattern().note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
     assert(h.state.pages.activePageData().cc[0] == 0);
     assert(near(h.state.pages.activePageData().values[0], 0.5f));
@@ -938,7 +938,7 @@ void test_new_project_resets_musical_project_state() {
 void test_new_project_confirmation_cancel_preserves_state() {
     ProjectHandlerHarness h;
 
-    h.state.sequencer.pattern.setContentLength(24);
+    h.state.sequencer.pattern().setContentLength(24);
     h.state.macros.slots[0].value.set(0.77f);
     h.state.statusBar.tempo.set(132.0f);
 
@@ -953,7 +953,7 @@ void test_new_project_confirmation_cancel_preserves_state() {
 
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 3U);
-    assert(h.state.sequencer.pattern.length.get() == 24);
+    assert(h.state.sequencer.pattern().length.get() == 24);
     assert(near(h.state.macros.slots[0].value.get(), 0.77f));
     assert(h.state.statusBar.tempo.get() == 132.0f);
 
@@ -993,7 +993,7 @@ void test_new_project_reset_failure_is_visible_and_keeps_confirmation() {
                "Reset failed"
            ) == 0);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[0] == 73U);
+    assert(h.state.sequencer.pattern().note[0] == 73U);
     assert(h.state.statusBar.tempo.get() == 149.0f);
     assert(h.state.projectSessionSaveToken() == beforeSaveToken);
     std::cout << "[PASS] failed Project reset remains visible and retryable\n";
@@ -1005,9 +1005,9 @@ void test_new_project_save_as_new_persists_then_resets() {
     h.state.statusBar.tempo.set(171.0f);
     h.state.statusBar.tempoDisplay.set(171.0f);
     h.state.projectNavigation.transportSwingPercent = 24;
-    h.state.sequencer.pattern.setContentLength(9);
+    h.state.sequencer.pattern().setContentLength(9);
     h.state.sequencer.setStepDataAt(2, 75, 99, 64);
-    h.state.sequencer.pattern.toggle(2);
+    h.state.sequencer.pattern().toggle(2);
     h.state.pages.activePageData().cc[0] = 88;
     h.state.pages.activePageData().values[0] = 0.66f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
@@ -1027,8 +1027,8 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(std::strcmp(h.state.project.metadata.name.data(), "untitled") == 0);
     assert(h.state.statusBar.tempo.get() == 120.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
-    assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
-    assert(!h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(!h.state.sequencer.pattern().isEnabled(2));
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
 
     core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
@@ -1042,11 +1042,11 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(!restored.state.project.metadata.dirty);
     assert(restored.state.statusBar.tempo.get() == 171.0f);
     assert(restored.state.projectNavigation.transportSwingPercent == 24);
-    assert(restored.state.sequencer.pattern.length.get() == 9);
-    assert(restored.state.sequencer.pattern.isEnabled(2));
-    assert(restored.state.sequencer.pattern.note[2] == 75);
-    assert(restored.state.sequencer.pattern.velocity[2] == 99);
-    assert(restored.state.sequencer.pattern.gate[2] == 64);
+    assert(restored.state.sequencer.pattern().length.get() == 9);
+    assert(restored.state.sequencer.pattern().isEnabled(2));
+    assert(restored.state.sequencer.pattern().note[2] == 75);
+    assert(restored.state.sequencer.pattern().velocity[2] == 99);
+    assert(restored.state.sequencer.pattern().gate[2] == 64);
     assert(restored.state.pages.activePageData().cc[0] == 88);
     assert(near(restored.state.macros.slots[0].value.get(), 0.66f));
 
@@ -1064,9 +1064,9 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
 
     h.state.statusBar.tempo.set(188.0f);
     h.state.statusBar.tempoDisplay.set(188.0f);
-    h.state.sequencer.pattern.setContentLength(13);
+    h.state.sequencer.pattern().setContentLength(13);
     h.state.sequencer.setStepDataAt(7, 82, 115, 71);
-    h.state.sequencer.pattern.toggle(7);
+    h.state.sequencer.pattern().toggle(7);
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
@@ -1081,8 +1081,8 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     assert(!h.state.project.metadata.hasSavedIdentity);
     assert(h.state.project.metadata.id[0] == '\0');
     assert(h.state.statusBar.tempo.get() == 120.0f);
-    assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
-    assert(!h.state.sequencer.pattern.isEnabled(7));
+    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(!h.state.sequencer.pattern().isEnabled(7));
 
     core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
@@ -1091,11 +1091,11 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     RestoredProjectHarness restored{saved};
     assert(std::strcmp(restored.state.project.metadata.id.data(), "p002") == 0);
     assert(restored.state.statusBar.tempo.get() == 188.0f);
-    assert(restored.state.sequencer.pattern.length.get() == 13);
-    assert(restored.state.sequencer.pattern.isEnabled(7));
-    assert(restored.state.sequencer.pattern.note[7] == 82);
-    assert(restored.state.sequencer.pattern.velocity[7] == 115);
-    assert(restored.state.sequencer.pattern.gate[7] == 71);
+    assert(restored.state.sequencer.pattern().length.get() == 13);
+    assert(restored.state.sequencer.pattern().isEnabled(7));
+    assert(restored.state.sequencer.pattern().note[7] == 82);
+    assert(restored.state.sequencer.pattern().velocity[7] == 115);
+    assert(restored.state.sequencer.pattern().gate[7] == 71);
 
     std::cout << "[PASS] test_new_project_save_current_persists_saved_identity_then_resets\n";
 }
@@ -1189,9 +1189,9 @@ void test_storage_save_and_load_roundtrip_project_file() {
     h.state.statusBar.tempo.set(149.0f);
     h.state.statusBar.tempoDisplay.set(149.0f);
     h.state.projectNavigation.transportSwingPercent = 19;
-    h.state.sequencer.pattern.setContentLength(11);
+    h.state.sequencer.pattern().setContentLength(11);
     h.state.sequencer.setStepDataAt(2, 67, 101, 75);
-    h.state.sequencer.pattern.toggle(2);
+    h.state.sequencer.pattern().toggle(2);
     h.state.pages.activePageData().cc[0] = 81;
     h.state.pages.activePageData().values[0] = 0.63f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
@@ -1205,10 +1205,10 @@ void test_storage_save_and_load_roundtrip_project_file() {
     h.state.statusBar.tempo.set(88.0f);
     h.state.statusBar.tempoDisplay.set(88.0f);
     h.state.projectNavigation.transportSwingPercent = 0;
-    h.state.sequencer.pattern.setContentLength(4);
+    h.state.sequencer.pattern().setContentLength(4);
     h.state.sequencer.setStepDataAt(2, 40, 1, 1);
-    if (h.state.sequencer.pattern.isEnabled(2)) {
-        h.state.sequencer.pattern.toggle(2);
+    if (h.state.sequencer.pattern().isEnabled(2)) {
+        h.state.sequencer.pattern().toggle(2);
     }
     h.state.pages.activePageData().cc[0] = 1;
     h.state.pages.activePageData().values[0] = 0.01f;
@@ -1228,11 +1228,11 @@ void test_storage_save_and_load_roundtrip_project_file() {
     assert(std::strcmp(h.state.project.metadata.name.data(), "p001") == 0);
     assert(h.state.statusBar.tempo.get() == 149.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 19);
-    assert(h.state.sequencer.pattern.length.get() == 11);
-    assert(h.state.sequencer.pattern.note[2] == 67);
-    assert(h.state.sequencer.pattern.velocity[2] == 101);
-    assert(h.state.sequencer.pattern.gate[2] == 75);
-    assert(h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern().length.get() == 11);
+    assert(h.state.sequencer.pattern().note[2] == 67);
+    assert(h.state.sequencer.pattern().velocity[2] == 101);
+    assert(h.state.sequencer.pattern().gate[2] == 75);
+    assert(h.state.sequencer.pattern().isEnabled(2));
     assert(h.state.pages.activePageData().cc[0] == 81);
     assert(near(h.state.macros.slots[0].value.get(), 0.63f));
     assert(h.state.projectSessionSaveToken().session != beforeLoadToken.session);
@@ -1441,9 +1441,9 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
 
     h.state.statusBar.tempo.set(121.0f);
     h.state.statusBar.tempoDisplay.set(121.0f);
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.setStepDataAt(4, 60, 90, 70);
-    h.state.sequencer.pattern.toggle(4);
+    h.state.sequencer.pattern().toggle(4);
 
     focusStorageAction(h, 0U);
     h.tap(Config::ButtonID::NAV);
@@ -1454,7 +1454,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     h.state.statusBar.tempo.set(166.0f);
     h.state.statusBar.tempoDisplay.set(166.0f);
     h.state.sequencer.setStepDataAt(5, 74, 111, 82);
-    h.state.sequencer.pattern.toggle(5);
+    h.state.sequencer.pattern().toggle(5);
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
@@ -1472,9 +1472,9 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p001") == 0);
     assert(!h.state.project.metadata.dirty);
     assert(h.state.statusBar.tempo.get() == 166.0f);
-    assert(h.state.sequencer.pattern.isEnabled(5));
-    assert(h.state.sequencer.pattern.note[5] == 74);
-    assert(h.state.sequencer.pattern.velocity[5] == 111);
+    assert(h.state.sequencer.pattern().isEnabled(5));
+    assert(h.state.sequencer.pattern().note[5] == 74);
+    assert(h.state.sequencer.pattern().velocity[5] == 111);
 
     core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot loaded;
@@ -1482,9 +1482,9 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
 
     RestoredProjectHarness restored{loaded};
     assert(restored.state.statusBar.tempo.get() == 166.0f);
-    assert(restored.state.sequencer.pattern.isEnabled(5));
-    assert(restored.state.sequencer.pattern.note[5] == 74);
-    assert(restored.state.sequencer.pattern.velocity[5] == 111);
+    assert(restored.state.sequencer.pattern().isEnabled(5));
+    assert(restored.state.sequencer.pattern().note[5] == 74);
+    assert(restored.state.sequencer.pattern().velocity[5] == 111);
 
     std::cout << "[PASS] test_dirty_project_load_prompts_save_and_preserves_latest_edits\n";
 }
@@ -1505,7 +1505,7 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     h.state.statusBar.tempo.set(177.0f);
     h.state.statusBar.tempoDisplay.set(177.0f);
     h.state.sequencer.setStepDataAt(3, 71, 100, 76);
-    h.state.sequencer.pattern.toggle(3);
+    h.state.sequencer.pattern().toggle(3);
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
@@ -1535,8 +1535,8 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     assert(!restored.state.project.metadata.dirty);
     assert(restored.state.project.metadata.hasSavedIdentity);
     assert(restored.state.statusBar.tempo.get() == 177.0f);
-    assert(restored.state.sequencer.pattern.isEnabled(3));
-    assert(restored.state.sequencer.pattern.note[3] == 71);
+    assert(restored.state.sequencer.pattern().isEnabled(3));
+    assert(restored.state.sequencer.pattern().note[3] == 71);
 
     std::cout << "[PASS] test_untitled_dirty_load_prompts_save_as_and_then_loads_target\n";
 }

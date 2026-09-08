@@ -533,7 +533,7 @@ FLASHMEM uint8_t preparedSequencerContentLength(
     const SequencerPreparedGraphContentPath& path
 ) {
     if (!path.valid || path.stackDepth > path.frames.size()) return 0U;
-    if (path.stackDepth == 0U) return sequencer.pattern.length.get();
+    if (path.stackDepth == 0U) return sequencer.pattern().length.get();
     return path.frames[path.stackDepth - 1U].length;
 }
 

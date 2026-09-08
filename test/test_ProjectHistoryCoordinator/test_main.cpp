@@ -57,7 +57,7 @@ void recordStepPitch(core::state::CoreState& state, uint8_t pitch) {
     seq::SequencerHistoryPatternSnapshot before;
     seq::SequencerHistoryPatternSnapshot after;
     assert(seq::captureHistorySnapshot(state.sequencer, before));
-    const uint8_t previous = state.sequencer.pattern.note[0];
+    const uint8_t previous = state.sequencer.pattern().note[0];
     assert(state.sequencer.setStepNoteAt(0, pitch));
     assert(seq::captureHistorySnapshot(state.sequencer, after));
     assert(tx::commitAdmittedPattern(
@@ -88,7 +88,7 @@ void preparePendingPatternEdit(core::state::CoreState& state) {
                key,
                seq::SequencerCoalescedPatternPayloadPlan::FlatOnly,
                descriptor) == seq::SequencerPreparedPatternEditBeginOutcome::Started);
-    const uint8_t nextNote = state.sequencer.pattern.note[0] == 73U ? 74U : 73U;
+    const uint8_t nextNote = state.sequencer.pattern().note[0] == 73U ? 74U : 73U;
     assert(state.sequencer.setStepNoteAt(0U, nextNote));
     assert(state.sealSequencerPreparedPatternEdit(owner, key, true, descriptor) ==
            seq::SequencerPreparedPatternEditSealOutcome::Sealed);
@@ -113,7 +113,7 @@ void assertCoreHistoryBlockedBeforeBoundary(
     assert(h.state.sequencer.stepContentDraft.active.get());
     const auto before = tx::captureStateInvariant(h.state);
     const bool pendingBefore = h.state.hasPendingSequencerPatternHistoryCoalescing();
-    const uint8_t noteBefore = h.state.sequencer.pattern.note[0];
+    const uint8_t noteBefore = h.state.sequencer.pattern().note[0];
     const uint32_t draftRevision = h.state.sequencer.stepContentDraft.revision.get();
     const uint32_t contentRevision = h.state.sequencer.contentView.revision.get();
     const uint8_t focusedStep = h.state.sequencer.focusedStep.get();
@@ -137,7 +137,7 @@ void assertCoreHistoryBlockedBeforeBoundary(
 
     tx::assertStateInvariant(h.state, before);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing() == pendingBefore);
-    assert(h.state.sequencer.pattern.note[0] == noteBefore);
+    assert(h.state.sequencer.pattern().note[0] == noteBefore);
     assert(h.state.sequencer.focusedStep.get() == focusedStep);
     assert(h.state.sequencer.page.get() == page);
     assert(h.state.sequencer.activeStepProperty.get() == activeStepProperty);
@@ -168,7 +168,7 @@ void recordCcLane(core::state::CoreState& state) {
     seq::SequencerHistoryPatternSnapshot after;
     assert(seq::captureHistorySnapshot(state.sequencer, before));
 
-    auto* bank = seq::ensureSequencerCcLaneBank(state.sequencer.pattern);
+    auto* bank = seq::ensureSequencerCcLaneBank(state.sequencer.pattern());
     assert(bank != nullptr);
     seq::SequencerCcLaneDraft draft{};
     draft.destination.controller = 74;
@@ -178,7 +178,7 @@ void recordCcLane(core::state::CoreState& state) {
     draft.initialValue = 64;
     assert(seq::createSequencerCcLane(*bank, 0, draft).changed());
     assert(seq::setSequencerCcLaneEvent(*bank, 0, 2, 91).changed());
-    state.sequencer.pattern.ccLaneRevision.set(bank->revision);
+    state.sequencer.pattern().ccLaneRevision.set(bank->revision);
 
     assert(seq::captureHistorySnapshot(state.sequencer, after));
     assert(tx::commitAdmittedPattern(
@@ -211,7 +211,7 @@ void recordTrackDelay(
 }
 
 bool hasCcLane(const core::state::CoreState& state) {
-    const auto* bank = seq::sequencerCcLaneView(state.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(state.sequencer.pattern());
     return bank != nullptr && bank->lanes[0].occupied &&
            bank->lanes[0].activeMask.test(2) && bank->lanes[0].values[2] == 91;
 }
@@ -257,7 +257,7 @@ void assertDynamicRetainedUsagePublished(const Harness& h) {
 
 void test_cross_domain_timeline_is_exact_and_semantic() {
     Harness h;
-    const uint8_t initialPitch = h.state.sequencer.pattern.note[0];
+    const uint8_t initialPitch = h.state.sequencer.pattern().note[0];
 
     recordMacroDestination(h.state, 74);
     recordStepPitch(h.state, 72);
@@ -274,7 +274,7 @@ void test_cross_domain_timeline_is_exact_and_semantic() {
     assert(!hasCcLane(h.state));
     assertUndoLabel(h.state, "Step Property");
     assert(h.state.undoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == initialPitch);
+    assert(h.state.sequencer.pattern().note[0] == initialPitch);
     assertUndoLabel(h.state, "Paste Destination");
     assert(h.state.undoProjectHistory());
     assert(!h.state.pages.pageData(0, 0).isMacroActive(kMacro.macro));
@@ -287,7 +287,7 @@ void test_cross_domain_timeline_is_exact_and_semantic() {
     assert(h.state.pages.pageData(0, 0).cc[kMacro.macro] == 74U);
     assertRedoLabel(h.state, "Step Property");
     assert(h.state.redoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == 72U);
+    assert(h.state.sequencer.pattern().note[0] == 72U);
     assertRedoLabel(h.state, "Create CC Lane");
     assert(h.state.redoProjectHistory());
     assert(hasCcLane(h.state));
@@ -301,7 +301,7 @@ void test_cross_domain_timeline_is_exact_and_semantic() {
 
 void test_track_is_a_third_exact_global_history_domain() {
     Harness h;
-    const uint8_t initialPitch = h.state.sequencer.pattern.note[0];
+    const uint8_t initialPitch = h.state.sequencer.pattern().note[0];
 
     recordMacroDestination(h.state, 81U);
     recordTrackDelay(h.state, 3U, -24);
@@ -310,7 +310,7 @@ void test_track_is_a_third_exact_global_history_domain() {
     assertUndoLabel(h.state, "Step Property");
 
     assert(h.state.undoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == initialPitch);
+    assert(h.state.sequencer.pattern().note[0] == initialPitch);
     assertUndoLabel(h.state, "Track Delay");
     assert(h.state.undoProjectHistory());
     assert(h.state.projectTracks.authored.delayMs[3] == 0);
@@ -324,7 +324,7 @@ void test_track_is_a_third_exact_global_history_domain() {
     assert(h.state.projectTracks.authored.delayMs[3] == -24);
     assertRedoLabel(h.state, "Step Property");
     assert(h.state.redoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == 73U);
+    assert(h.state.sequencer.pattern().note[0] == 73U);
 
     std::cout << "[PASS] Track participates in the exact global chronology\n";
 }
@@ -708,7 +708,7 @@ void test_sequencer_scope_eviction_prunes_a_cross_domain_middle_entry() {
     }
     // The two oldest Step payloads were evicted together with their global
     // references. Their barrier also makes the older Macro action unreachable.
-    assert(h.state.sequencer.pattern.note[0] == 41U);
+    assert(h.state.sequencer.pattern().note[0] == 41U);
     assert(!h.state.undoProjectHistory());
     assert(h.state.pages.pageData(0, 0).isMacroActive(kMacro.macro));
 

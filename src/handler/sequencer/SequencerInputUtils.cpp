@@ -224,7 +224,7 @@ FLASHMEM void applyNormalizedToQuickControl(
 ) {
     const float value = clampNormalized(normalized);
     auto& pattern = core::state::sequencer::authoringPattern(state);
-    const bool detached = &pattern != &state.pattern;
+    const bool detached = &pattern != &state.pattern();
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::DIVISION: {
             const int idx = normalizedToIndex(

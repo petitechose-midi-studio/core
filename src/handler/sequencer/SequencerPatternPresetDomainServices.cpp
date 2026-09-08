@@ -1343,11 +1343,7 @@ SequencerPatternPresetDomainServices::savePreset(
         result.codecStatus = seq::SequencerPatternPresetStatus::INVALID_ARGUMENT;
         return result;
     }
-    const auto& pattern = seq::canonicalTrackPattern(
-        state_->sequencerTracks,
-        state_->sequencer,
-        target.trackIndex
-    );
+    const auto& pattern = (state_->sequencerTracks).track(target.trackIndex);
     const auto* drum = target.trackKind == seq::SequencerTrackKind::DRUM
         ? &state_->sequencerTracks.drumTrack(target.trackIndex)
         : nullptr;
@@ -1609,9 +1605,9 @@ SequencerPatternPresetDomainServices::previewPreset(
             seq::SequencerTrackKind::DRUM,
             candidate
         );
-        state_->sequencer.pattern.graph =
+        state_->sequencer.pattern().graph =
             std::move(loaded.staged->graph);
-        state_->sequencer.pattern.graphRevision.set(
+        state_->sequencer.pattern().graphRevision.set(
             loaded.staged->graphRevision.get()
         );
         seq::refreshContentView(state_->sequencer);
@@ -1625,7 +1621,7 @@ SequencerPatternPresetDomainServices::previewPreset(
         if (!change ||
             !seq::captureHistorySnapshot(state_->sequencer, change->before) ||
             !seq::captureHistorySnapshot(
-                *loaded.staged, state_->sequencer.clip, 0U, change->after)) {
+                *loaded.staged, state_->sequencer.clip(), 0U, change->after)) {
             result.status =
                 SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
             result.codecStatus =
@@ -1681,13 +1677,13 @@ SequencerPatternPresetDomainServices::previewPreset(
             std::move(editorCcLanes)
         );
         seq::synchronizeHistoryPatternRevisionSignals(
-            state_->sequencer.pattern,
+            state_->sequencer.pattern(),
             change->after.flat,
             change->after.ccLaneRevision
         );
         seq::refreshContentView(state_->sequencer);
         state_->sequencer.invalidateVariationTelemetry();
-        change->setPreparedPayloadOwnerProof(state_->sequencer.pattern);
+        change->setPreparedPayloadOwnerProof(state_->sequencer.pattern());
         session.pattern = std::move(change);
     }
 

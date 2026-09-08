@@ -102,8 +102,9 @@ applyProjectScaleChoice(
 }
 
 void test_project_scale_choices_update_track_bank() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::handler::ProjectScaleSettingsDomainServices services{
         core::handler::ProjectScaleSettingsDomainServices::StateRefs{
             trackBank,
@@ -120,7 +121,7 @@ void test_project_scale_choices_update_track_bank() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern.patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision.get();
     assert(applyProjectScaleChoice(trackBank, sequencer, 0, 9).changed);
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 2).changed);
     assert(!applyProjectScaleChoice(trackBank, sequencer, 2, 1).changed);
@@ -134,20 +135,21 @@ void test_project_scale_choices_update_track_bank() {
     assert(services.currentChoiceIndex(2) == 1);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 2U);
-    assert(sequencer.pattern.patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision.get() ==
            activeScaleRevisionBefore + 2U);
 
     std::cout << "[PASS] test_project_scale_choices_update_track_bank\n";
 }
 
 void test_project_scale_choices_are_clamped() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
 
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern.patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision.get();
     assert(applyProjectScaleChoice(trackBank, sequencer, 0, 99).changed);
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 99).changed);
     assert(applyProjectScaleChoice(trackBank, sequencer, 2, 99).changed);
@@ -158,7 +160,7 @@ void test_project_scale_choices_are_clamped() {
     assert(settings.mode == StepSequencerScaleConstraintMode::ConstrainDown);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 3U);
-    assert(sequencer.pattern.patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision.get() ==
            activeScaleRevisionBefore + 3U);
 
     std::cout << "[PASS] test_project_scale_choices_are_clamped\n";
@@ -205,8 +207,9 @@ void test_project_scale_resolver_invalid_noop_and_clamp_contract() {
 }
 
 void test_project_scale_invalidates_inherited_active_telemetry() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
 
     sequencer.cycleVariationTelemetry.validMask.setBit(0, true);
     const uint32_t before = sequencer.variationTelemetryRevision.get();
@@ -214,22 +217,23 @@ void test_project_scale_invalidates_inherited_active_telemetry() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern.patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision.get();
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 1).changed);
 
     assert(!sequencer.cycleVariationTelemetry.validMask.test(0));
     assert(sequencer.variationTelemetryRevision.get() == before + 1U);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 1U);
-    assert(sequencer.pattern.patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision.get() ==
            activeScaleRevisionBefore + 1U);
 
     std::cout << "[PASS] test_project_scale_invalidates_inherited_active_telemetry\n";
 }
 
 void test_project_scale_keeps_override_active_telemetry() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
 
     sequencer.setPatternScalePolicy(core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
     sequencer.cycleVariationTelemetry.validMask.setBit(0, true);
@@ -238,38 +242,39 @@ void test_project_scale_keeps_override_active_telemetry() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern.patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision.get();
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 1).changed);
 
     assert(sequencer.cycleVariationTelemetry.validMask.test(0));
     assert(sequencer.variationTelemetryRevision.get() == before);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 1U);
-    assert(sequencer.pattern.patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision.get() ==
            activeScaleRevisionBefore);
 
     std::cout << "[PASS] test_project_scale_keeps_override_active_telemetry\n";
 }
 
 void test_project_scale_boundary_projects_inherited_chords() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
 
     assert(applyProjectScaleChoice(trackBank, sequencer, 2, 0).changed);
     authorScalePolicyChord(
-        sequencer.pattern,
+        sequencer.pattern(),
         customChord(3, 5)
     );
 
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern.patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision.get();
     const auto mutation = applyProjectScaleChoice(trackBank, sequencer, 2, 1);
     const auto projection = mutation.projection;
 
     assert(mutation.changed);
-    const auto& spec = rootChord(sequencer.pattern);
+    const auto& spec = rootChord(sequencer.pattern());
     assert(spec.intervalBasis() == ChordBasis::ScaleDegrees);
     assert(spec.customInterval(1) == 2);
     assert(spec.customInterval(2) == 3);
@@ -278,7 +283,7 @@ void test_project_scale_boundary_projects_inherited_chords() {
     assert(!projection.hasAdaptations());
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 1U);
-    assert(sequencer.pattern.patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision.get() ==
            activeScaleRevisionBefore + 1U);
 
     std::cout
@@ -286,8 +291,9 @@ void test_project_scale_boundary_projects_inherited_chords() {
 }
 
 void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::handler::PatternPitchSettingsDomainServices patternServices{
         core::handler::PatternPitchSettingsDomainServices::StateRefs{
             sequencer,
@@ -301,7 +307,7 @@ void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
     assert(patternServices.choiceCount(1) == 0);
 
     patternServices.applyChoice(0, 1);
-    assert(sequencer.pattern.scalePolicy ==
+    assert(sequencer.pattern().scalePolicy ==
            core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
     assert(patternServices.choiceCount(1) == 12);
     assert(patternServices.currentChoiceIndex(1) == 2);
@@ -309,15 +315,15 @@ void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
 
     patternServices.applyChoice(1, 9);
     patternServices.applyChoice(2, 13);
-    assert(sequencer.pattern.scaleOverride.root == 9);
-    assert(sequencer.pattern.scaleOverride.type == StepSequencerScaleType::WholeTone);
+    assert(sequencer.pattern().scaleOverride.root == 9);
+    assert(sequencer.pattern().scaleOverride.type == StepSequencerScaleType::WholeTone);
 
     patternServices.applyChoice(3, 0);
-    assert(sequencer.pattern.pitchEditMode ==
+    assert(sequencer.pattern().pitchEditMode ==
            core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE);
 
     patternServices.applyChoice(0, 0);
-    assert(sequencer.pattern.scalePolicy ==
+    assert(sequencer.pattern().scalePolicy ==
            core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT);
     assert(patternServices.choiceCount(1) == 0);
 
@@ -325,8 +331,9 @@ void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
 }
 
 void test_pattern_return_to_project_projects_local_chords() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::handler::PatternPitchSettingsDomainServices services{
         core::handler::PatternPitchSettingsDomainServices::StateRefs{
             sequencer,
@@ -343,18 +350,18 @@ void test_pattern_return_to_project_projects_local_chords() {
             SequencerPatternScalePolicy::OVERRIDE
     );
     authorScalePolicyChord(
-        sequencer.pattern,
+        sequencer.pattern(),
         customChord(3, 5)
     );
 
     const auto projection = services.applyChoice(0, 0);
 
     assert(
-        sequencer.pattern.scalePolicy ==
+        sequencer.pattern().scalePolicy ==
         core::state::sequencer::
             SequencerPatternScalePolicy::INHERIT_PROJECT
     );
-    const auto& spec = rootChord(sequencer.pattern);
+    const auto& spec = rootChord(sequencer.pattern());
     assert(spec.intervalBasis() == ChordBasis::ScaleDegrees);
     assert(spec.customInterval(1) == 2);
     assert(spec.customInterval(2) == 3);
@@ -366,8 +373,9 @@ void test_pattern_return_to_project_projects_local_chords() {
 }
 
 void test_pattern_pitch_context_projects_formula_at_the_mode_boundary() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::handler::PatternPitchSettingsDomainServices services{
         core::handler::PatternPitchSettingsDomainServices::StateRefs{
             sequencer,
@@ -377,18 +385,18 @@ void test_pattern_pitch_context_projects_formula_at_the_mode_boundary() {
 
     auto relativeSource = customChord(2, 3);
     relativeSource.setIntervalBasis(ChordBasis::ScaleDegrees);
-    authorScalePolicyChord(sequencer.pattern, relativeSource);
+    authorScalePolicyChord(sequencer.pattern(), relativeSource);
     assert(
-        rootChord(sequencer.pattern).intervalBasis() ==
+        rootChord(sequencer.pattern()).intervalBasis() ==
         ChordBasis::ScaleDegrees
     );
 
     const auto toChromatic = services.applyChoice(3, 1);
     assert(
-        sequencer.pattern.pitchEditMode ==
+        sequencer.pattern().pitchEditMode ==
         core::state::sequencer::SequencerPitchEditMode::CHROMATIC
     );
-    const auto& chromatic = rootChord(sequencer.pattern);
+    const auto& chromatic = rootChord(sequencer.pattern());
     assert(chromatic.intervalBasis() == ChordBasis::ChromaticSemitones);
     assert(chromatic.customInterval(1) == 3U);
     assert(chromatic.customInterval(2) == 5U);
@@ -397,10 +405,10 @@ void test_pattern_pitch_context_projects_formula_at_the_mode_boundary() {
 
     const auto toFollow = services.applyChoice(3, 0);
     assert(
-        sequencer.pattern.pitchEditMode ==
+        sequencer.pattern().pitchEditMode ==
         core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
     );
-    const auto& relative = rootChord(sequencer.pattern);
+    const auto& relative = rootChord(sequencer.pattern());
     assert(relative.intervalBasis() == ChordBasis::ScaleDegrees);
     assert(relative.customInterval(1) == 2U);
     assert(relative.customInterval(2) == 3U);

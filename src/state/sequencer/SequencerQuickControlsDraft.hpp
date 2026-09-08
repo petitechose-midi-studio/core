@@ -47,12 +47,12 @@ struct SequencerQuickControlsDraft {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 #if OC_ENABLE_STATS
 static_assert(
-    sizeof(SequencerQuickControlsDraft) == 2056U,
+    sizeof(SequencerQuickControlsDraft) == 1832U,
     "diagnostic ARM detached Quick Controls root changed"
 );
 #else
 static_assert(
-    sizeof(SequencerQuickControlsDraft) == 2008U,
+    sizeof(SequencerQuickControlsDraft) == 1784U,
     "LOCK-P: ARM detached Quick Controls root changed"
 );
 #endif

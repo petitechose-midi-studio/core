@@ -25,6 +25,7 @@
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 
 namespace core::handler {
 
@@ -61,8 +62,8 @@ FLASHMEM uint32_t hashPresetPayload(const char* presetId, const uint8_t* bytes, 
 FLASHMEM oc::note::sequencer::StepSequencerScaleSettings effectiveScale(
     const core::state::CoreState& state) {
     return core::state::sequencer::resolveEffectiveScaleSettings(
-        state.sequencerTracks.projectScaleSettings(), state.sequencer.pattern.scalePolicy,
-        state.sequencer.pattern.scaleOverride);
+        state.sequencerTracks.projectScaleSettings(), state.sequencer.pattern().scalePolicy,
+        state.sequencer.pattern().scaleOverride);
 }
 
 FLASHMEM bool sameScale(oc::note::sequencer::StepSequencerScaleSettings lhs,
@@ -75,7 +76,7 @@ FLASHMEM bool sameScale(oc::note::sequencer::StepSequencerScaleSettings lhs,
 FLASHMEM bool destinationUsesScaleRelativePitch(
     const core::state::CoreState& state, oc::note::sequencer::StepSequencerScaleSettings scale) {
     return core::state::sequencer::pitchContextUsesScaleDegrees(
-        state.sequencer.pattern.pitchEditMode, scale);
+        state.sequencer.pattern().pitchEditMode, scale);
 }
 
 FLASHMEM bool presetPitchContextMatchesDestination(
@@ -219,7 +220,7 @@ FLASHMEM void appendSummary(char* target, size_t targetSize, const char* token) 
     if (target == nullptr || targetSize == 0 || token == nullptr || token[0] == '\0') { return; }
     const size_t current = std::strlen(target);
     if (current >= targetSize - 1U) return;
-    std::snprintf(target + current, targetSize - current, "%s%s", current > 0 ? " · " : "", token);
+    std::snprintf(target + current, targetSize - current, "%s%s", current > 0 ? " Â· " : "", token);
 }
 
 FLASHMEM bool variationPresent(const oc::note::sequencer::StepSequencerStepNode& node) {
@@ -269,18 +270,18 @@ FLASHMEM bool targetPopulated(const core::state::CoreState& state,
                core::state::sequencer::SequencerStepPresetTargetContext::ROOT) {
         const uint8_t step = target.stepIndex;
         populated =
-            sequencer.pattern.isEnabled(step) ||
-            sequencer.pattern.note[step] != core::state::sequencer::SequencerState::DEFAULT_NOTE ||
-            sequencer.pattern.velocity[step] !=
+            sequencer.pattern().isEnabled(step) ||
+            sequencer.pattern().note[step] != core::state::sequencer::SequencerState::DEFAULT_NOTE ||
+            sequencer.pattern().velocity[step] !=
                 core::state::sequencer::SequencerState::DEFAULT_VELOCITY ||
-            sequencer.pattern.gate[step] !=
+            sequencer.pattern().gate[step] !=
                 core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT ||
-            sequencer.pattern.nudge[step] != 0 ||
-            sequencer.pattern.probability[step] !=
+            sequencer.pattern().nudge[step] != 0 ||
+            sequencer.pattern().probability[step] !=
                 core::state::sequencer::SequencerState::DEFAULT_PROBABILITY;
     }
 
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     const auto* node = graph ? graph->stepNode(target.targetNodeId) : nullptr;
     return populated || (node != nullptr && nodePopulated(*node));
 }
@@ -298,7 +299,7 @@ FLASHMEM bool presetHasAdvancedGraphPayload(
 FLASHMEM bool graphCapacityAvailable(const core::state::sequencer::SequencerState& sequencer,
                                      const SequencerStepGraphPreset& preset) {
     using Limits = oc::note::sequencer::StepSequencerGraphLimits;
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     const uint32_t existingNodes =
         graph ? graph->stepNodeCount : core::state::sequencer::SequencerPatternState::MAX_STEPS;
     const uint32_t existingSequences = graph ? graph->sequenceCount : 1U;
@@ -400,12 +401,12 @@ FLASHMEM void fillPreviewExample(const SequencerStepGraphPreset& preset,
         char noteName[8]{};
         formatNoteName(descriptor.previewNote, noteName, sizeof(noteName));
         std::snprintf(descriptor.previewSummary, sizeof(descriptor.previewSummary),
-                      "Preview %u/%u · %s",
+                      "Preview %u/%u Â· %s",
                       static_cast<unsigned>(descriptor.previewStateIndex + 1U),
                       static_cast<unsigned>(descriptor.previewStateCount), noteName);
     } else {
         std::snprintf(descriptor.previewSummary, sizeof(descriptor.previewSummary),
-                      "Preview %u/%u · Child example",
+                      "Preview %u/%u Â· Child example",
                       static_cast<unsigned>(descriptor.previewStateIndex + 1U),
                       static_cast<unsigned>(descriptor.previewStateCount));
     }
@@ -464,7 +465,7 @@ FLASHMEM bool capturePresetForTarget(
             ? oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID
             : core::state::sequencer::rootStepNodeId(target.drumRootSlot);
         captured = core::state::sequencer::captureRootStepGraphPreset(
-            state.sequencer.pattern,
+            state.sequencer.pattern(),
             sourceNodeId,
             values,
             sourceScale,
@@ -539,7 +540,7 @@ FLASHMEM bool applyPreparedDrumPreset(
         if (target.drumLaneIndex < drum.kit.laneCount &&
             target.drumRootStepIndex <
                 drum.pattern.effectiveLength(target.drumLaneIndex)) {
-            auto& pattern = state.sequencer.pattern;
+            auto& pattern = state.sequencer.pattern();
             const bool hasAdvancedPayload = presetHasAdvancedGraphPayload(preset);
             int16_t rootSlot = drum.advancedRootSlot(
                 target.drumLaneIndex,
@@ -943,7 +944,7 @@ FLASHMEM SequencerStepPresetInspectResult SequencerStepPresetDomainServices::ins
         std::snprintf(
             descriptor.adaptationSummary,
             sizeof(descriptor.adaptationSummary),
-            "Pitch from lane · %s",
+            "Pitch from lane Â· %s",
             noteName
         );
     } else if (!pitchContextMatches) {
@@ -1180,11 +1181,11 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
 
     auto change =
         core::app::makeExtmemUnique<core::state::sequencer::SequencerHistoryPatternChange>();
-    auto staged = core::app::makeExtmemUnique<core::state::sequencer::SequencerState>();
+    auto staged = core::app::makeExtmemUnique<core::state::sequencer::SequencerDetachedEditor>();
     if (!change || !staged ||
         !core::state::sequencer::captureHistorySnapshot(state_->sequencer, change->before) ||
         !core::state::sequencer::reserveHistorySnapshotGraphStorage(change->after) ||
-        !core::state::sequencer::copyPatternState(staged->pattern, state_->sequencer.pattern)) {
+        !core::state::sequencer::copyPatternState(staged->pattern(), state_->sequencer.pattern())) {
         result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
         result.assetStatus = SequencerGraphAssetStatus::RESOURCE_EXHAUSTED;
         return result;
@@ -1195,8 +1196,8 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     // The generic graph-copy primitive reports a false return for both graph
     // capacity and first-owner allocation failures. Reserve that owner here so
     // this publication boundary can preserve the actionable D-OOM reason.
-    if (core::state::sequencer::graphView(staged->pattern) == nullptr &&
-        !core::state::sequencer::ensureGraphRoot(staged->pattern)) {
+    if (core::state::sequencer::graphView(staged->pattern()) == nullptr &&
+        !core::state::sequencer::ensureGraphRoot(staged->pattern())) {
         result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
         result.assetStatus = SequencerGraphAssetStatus::RESOURCE_EXHAUSTED;
         return result;
@@ -1232,7 +1233,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
         .hasValue = false,
     };
     core::state::sequencer::SequencerPatternSnapshot stagedFlat{};
-    core::state::sequencer::captureSnapshot(staged->pattern, stagedFlat);
+    core::state::sequencer::captureSnapshot(staged->pattern(), stagedFlat);
     const uint16_t targetTrackBit = static_cast<uint16_t>(1U << target.trackIndex);
     const uint16_t enabledMask = state_->sequencerTracks.currentEnabledMask();
     const uint16_t targetAudibleMask =
@@ -1270,7 +1271,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     // fixed-capacity history commit, or Signal write and therefore cannot
     // fail. Runtime sees the target Track frozen while the canonical editor
     // receives the prepared generation.
-    auto editorGraph = std::move(staged->pattern.graph);
+    auto editorGraph = std::move(staged->pattern().graph);
     core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedGraph(
         state_->sequencer,
         stagedFlat,

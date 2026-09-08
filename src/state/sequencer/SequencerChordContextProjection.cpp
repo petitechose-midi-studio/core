@@ -170,7 +170,7 @@ FLASHMEM SequencerChordContextProjectionStats projectDetachedChordDraft(
 
     stats.patternsVisited = 1U;
     const uint8_t rootNote =
-        sequencer.pattern.note[session.ownerStep];
+        sequencer.pattern().note[session.ownerStep];
     const bool changed = projectFormula(
         draft.spec,
         sourceScale,
@@ -438,7 +438,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
     // independently; only the authored stats are user-facing.
     if (auto* authored = sequencer.stepContentDraft.pattern()) {
         const auto published = projectPatternChordContext(
-            sequencer.pattern,
+            sequencer.pattern(),
             sourceScale,
             targetScale,
             sourceMode,
@@ -459,7 +459,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
         sequencer.stepContentDraft.kind.get() !=
             SequencerStepContentDraftKind::CHORD) {
         return projectPatternChordContext(
-            sequencer.pattern,
+            sequencer.pattern(),
             sourceScale,
             targetScale,
             sourceMode,
@@ -467,7 +467,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
         );
     }
 
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     if (graph == nullptr || !graph->enabled) {
         return projectDetachedChordDraft(
             sequencer,
@@ -479,8 +479,8 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
     }
 
     ProjectionTraversal traversal{
-        .notes = sequencer.pattern.note,
-        .length = sequencer.pattern.length.get(),
+        .notes = sequencer.pattern().note,
+        .length = sequencer.pattern().length.get(),
         .graph = *graph,
         .destination = graph,
         .sourceScale = sourceScale,
@@ -506,7 +506,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
         detached.patternsVisited = 0U;
         traversal.stats.merge(detached);
     }
-    if (traversal.graphChanged) sequencer.pattern.bumpGraphRevision();
+    if (traversal.graphChanged) sequencer.pattern().bumpGraphRevision();
     if (traversal.draftChanged) sequencer.stepContentDraft.touch();
     return traversal.stats;
 }

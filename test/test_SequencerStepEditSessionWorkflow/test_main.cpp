@@ -66,7 +66,7 @@ void applyRootStepEdit(SessionHarness& h, uint8_t step, Mutation mutation) {
 
 void test_open_session_resolves_page_step() {
     SessionHarness h;
-    h.state.sequencer.pattern.setContentLength(16);
+    h.state.sequencer.pattern().setContentLength(16);
     h.state.sequencer.page.set(1);
 
     assert(session_workflow::openForMacroInPage(h.state.sequencer, h.history, h.overlays, 2));
@@ -83,8 +83,8 @@ void test_open_session_resolves_page_step() {
 
 void test_close_commits_live_step_edit_history() {
     SessionHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
-    h.state.sequencer.pattern.note[3] = 60;
+    h.state.sequencer.pattern().setContentLength(8);
+    h.state.sequencer.pattern().note[3] = 60;
 
     assert(session_workflow::openForMacroInPage(h.state.sequencer, h.history, h.overlays, 3));
     applyRootStepEdit(h, 3, [&]() { return h.state.sequencer.setStepNoteAt(3, 72); });
@@ -101,11 +101,11 @@ void test_close_commits_live_step_edit_history() {
 
 void test_back_to_parent_content_restores_parent_context_row() {
     SessionHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(2);
     const auto micro =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
     assert(micro.ok);
     assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, rootNode,
                                                                  micro.id));
@@ -124,11 +124,11 @@ void test_back_to_parent_content_restores_parent_context_row() {
 
 void test_root_retarget_wraps_pages_and_separates_step_history() {
     SessionHarness h;
-    h.state.sequencer.pattern.setContentLength(12);
+    h.state.sequencer.pattern().setContentLength(12);
     h.state.sequencer.page.set(0);
     oc::note::sequencer::StepBitMask128 enabled{};
     enabled.setBit(7, true);
-    h.state.sequencer.pattern.enabledMask.set(enabled);
+    h.state.sequencer.pattern().enabledMask.set(enabled);
 
     assert(session_workflow::openForMacroInPage(h.state.sequencer, h.history, h.overlays, 7));
     applyRootStepEdit(h, 7, [&]() { return h.state.sequencer.setStepNoteAt(7, 72); });
@@ -137,7 +137,7 @@ void test_root_retarget_wraps_pages_and_separates_step_history() {
     assert(h.state.sequencer.stepEdit.stepIndex.get() == 8);
     assert(h.state.sequencer.focusedStep.get() == 8);
     assert(h.state.sequencer.page.get() == 1);
-    assert(!h.state.sequencer.pattern.enabledMask.get().test(8));
+    assert(!h.state.sequencer.pattern().enabledMask.get().test(8));
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     applyRootStepEdit(h, 8, [&]() { return h.state.sequencer.setStepVelocityAt(8, 31); });
@@ -163,11 +163,11 @@ void test_root_retarget_wraps_pages_and_separates_step_history() {
 
 void test_failed_generic_commit_keeps_retarget_ui_exact_and_retryable() {
     SessionHarness h;
-    h.state.sequencer.pattern.setContentLength(12);
+    h.state.sequencer.pattern().setContentLength(12);
     h.state.sequencer.page.set(0);
     oc::note::sequencer::StepBitMask128 enabled{};
     enabled.setBit(7, true);
-    h.state.sequencer.pattern.enabledMask.set(enabled);
+    h.state.sequencer.pattern().enabledMask.set(enabled);
 
     assert(session_workflow::openForMacroInPage(h.state.sequencer, h.history, h.overlays, 7));
 

@@ -1035,7 +1035,7 @@ core::handler::SequencerStructureEditWorkflow makeStructureEditWorkflow(
 }
 
 bool rootStepHasMicroSequence(const SequencerStepHarness& h, uint8_t step) {
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     if (graph == nullptr) return false;
     const auto nodeId = core::state::sequencer::rootStepNodeId(step);
     if (nodeId >= graph->stepNodeCount) return false;
@@ -1044,7 +1044,7 @@ bool rootStepHasMicroSequence(const SequencerStepHarness& h, uint8_t step) {
 
 const oc::note::sequencer::StepSequencerStepNode* rootStepNode(const SequencerStepHarness& h,
                                                                uint8_t step) {
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     if (graph == nullptr) return nullptr;
     return graph->stepNode(core::state::sequencer::rootStepNodeId(step));
 }
@@ -1052,7 +1052,7 @@ const oc::note::sequencer::StepSequencerStepNode* rootStepNode(const SequencerSt
 void createRootMicroSequence(SequencerStepHarness& h, uint8_t step) {
     const auto nodeId = core::state::sequencer::rootStepNodeId(step);
     const auto result =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, nodeId, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), nodeId, 2);
     assert(result.ok);
 }
 
@@ -1505,7 +1505,7 @@ void assertPreparedActionRejectionInvariant(const SequencerStepHarness& h,
 }
 
 bool nodeHasCycleStates(const SequencerStepHarness& h, uint16_t nodeId) {
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     if (graph == nullptr || nodeId >= graph->stepNodeCount) return false;
     return graph->stepNodes[nodeId].has(oc::note::sequencer::STEP_NODE_CYCLE_SET);
 }
@@ -1517,7 +1517,7 @@ void configureActiveContentCycleDescendants(
     int8_t firstStateOffset,
     int8_t secondStateOffset
 ) {
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     const auto parentNode = seq::activeContentStepNodeId(h.state.sequencer, step);
     assert(parentNode != oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID);
     assert(seq::setNodeNoteOffset(pattern, parentNode, parentOffset));
@@ -1541,7 +1541,7 @@ void assertActiveContentCycleDescendants(
     int8_t firstStateOffset,
     int8_t secondStateOffset
 ) {
-    const auto* graph = seq::graphView(h.state.sequencer.pattern);
+    const auto* graph = seq::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     const auto parentNode = seq::activeContentStepNodeId(h.state.sequencer, step);
     assert(parentNode != oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID);
@@ -1679,7 +1679,7 @@ void assertGraphHasNoOrphans(const oc::note::sequencer::StepSequencerGraph& grap
 
 void test_child_creation_draft_apply_and_back_decisions() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
 
     auto opened = core::state::sequencer::openOrCreateActiveContentChild(
         h.state.sequencer, 2, core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
@@ -1688,7 +1688,7 @@ void test_child_creation_draft_apply_and_back_decisions() {
     assert(!rootStepHasMicroSequence(h, 2));
     assert(core::state::sequencer::setActiveContentStepFromNormalized(
         h.state.sequencer, 0, core::state::sequencer::StepProperty::NOTE, 1.0f,
-        h.state.sequencer.pattern.pitchEditMode, {}));
+        h.state.sequencer.pattern().pitchEditMode, {}));
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(!h.state.sequencer.stepContentDraft.active.get());
     assert(rootStepHasMicroSequence(h, 2));
@@ -1714,7 +1714,7 @@ void test_child_creation_draft_apply_and_back_decisions() {
     assert(opened.opened && opened.draft);
     assert(core::state::sequencer::setActiveContentStepFromNormalized(
         h.state.sequencer, 0, core::state::sequencer::StepProperty::VELOCITY, 1.0f,
-        h.state.sequencer.pattern.pitchEditMode, {}));
+        h.state.sequencer.pattern().pitchEditMode, {}));
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.stepContentDraft.exitPromptVisible.get());
     assert(h.state.sequencer.stepContentDraft.exitChoice.get() ==
@@ -1867,7 +1867,7 @@ TrackPatternPhysicalInvariant captureTrackPatternPhysicalInvariant(
     const SequencerStepHarness& h
 ) {
     TrackPatternPhysicalInvariant out{};
-    captureTrackPatternPhysical(h.state.sequencer.pattern, 0U, out);
+    captureTrackPatternPhysical(h.state.sequencer.pattern(), 0U, out);
     for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
         captureTrackPatternPhysical(
             h.state.sequencerTracks.track(track),
@@ -2232,7 +2232,7 @@ CanonicalTrackLogicalProof captureCanonicalTrackLogicalProof(
     const uint8_t active = h.state.sequencerTracks.activeTrackIndex();
     for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
         const auto& pattern = track == active
-            ? h.state.sequencer.pattern
+            ? h.state.sequencer.pattern()
             : h.state.sequencerTracks.track(track);
         out.flatHashes[track] = trackMusicalHash(pattern);
         out.graphHashes[track] = objectHash(pattern.graph.get());
@@ -2355,18 +2355,11 @@ DirectTrackFixture configureDirectTrackFixture(
         : kDirectTrackIncoming;
     assert(seq::resizeClipPatternContent(state.sequencer, 40U));
     assert(seq::resizeClipPatternContent(
-        state.sequencerTracks.track(kDirectTrackOldActive),
-        state.sequencerTracks.clip(kDirectTrackOldActive),
-        11U
-    ));
-    assert(seq::resizeClipPatternContent(
         state.sequencerTracks.track(target),
         state.sequencerTracks.clip(target),
         kind == DirectTrackFixtureKind::Create ? 24U : 5U
     ));
-    installTrackColdOwners(state.sequencer.pattern, 1U);
-    installTrackColdOwners(
-        state.sequencerTracks.track(kDirectTrackOldActive), 2U);
+    installTrackColdOwners(state.sequencer.pattern(), 1U);
     installTrackColdOwners(state.sequencerTracks.track(target), 3U);
 
     configureMacroTrackFixture(
@@ -2427,7 +2420,7 @@ DirectTrackFixture configureDirectTrackFixture(
     test_support::drainNotifications();
 
     return {
-        .editor = trackColdOwners(state.sequencer.pattern),
+        .editor = trackColdOwners(state.sequencer.pattern()),
         .scratch = trackColdOwners(
             state.sequencerTracks.track(kDirectTrackOldActive)),
         .incoming = trackColdOwners(state.sequencerTracks.track(target)),
@@ -2561,7 +2554,7 @@ void preparePendingTrackPatternEdit(core::state::CoreState& state) {
                seq::SequencerCoalescedPatternPayloadPlan::FlatOnly,
                descriptor) ==
            seq::SequencerPreparedPatternEditBeginOutcome::Started);
-    const uint8_t nextNote = state.sequencer.pattern.note[0U] == 73U
+    const uint8_t nextNote = state.sequencer.pattern().note[0U] == 73U
         ? 74U
         : 73U;
     assert(state.sequencer.setStepNoteAt(0U, nextNote));
@@ -2645,7 +2638,7 @@ void test_nav_context_selector_previews_pattern_and_step() {
 void test_page_navigation_is_cyclic_and_tap_opens_pattern_editor() {
     {
         SequencerStepHarness h;
-        h.state.sequencer.pattern.setContentLength(24U);
+        h.state.sequencer.pattern().setContentLength(24U);
         h.state.sequencer.page.set(0U);
         h.state.sequencer.focusedStep.set(0U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
@@ -2668,7 +2661,7 @@ void test_page_navigation_is_cyclic_and_tap_opens_pattern_editor() {
         h.tap(Config::ButtonID::NAV);
         test_support::drainNotifications();
 
-        assert(h.state.sequencer.pattern.length.get() == 24U);
+        assert(h.state.sequencer.pattern().length.get() == 24U);
         assert(h.state.sequencer.patternEditor.active.get());
         assert(h.overlays.current() == core::ui::OverlayType::SEQ_PATTERN_EDIT);
         assert(h.state.sequencerHistory.undoCount() == 0U);
@@ -2676,7 +2669,7 @@ void test_page_navigation_is_cyclic_and_tap_opens_pattern_editor() {
 
     {
         SequencerStepHarness h;
-        h.state.sequencer.pattern.setContentLength(8U);
+        h.state.sequencer.pattern().setContentLength(8U);
         h.state.sequencerTracks.reset();
         (void)h.state.setSharedTrackState(0x0001U, 0U);
         assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
@@ -2700,7 +2693,7 @@ void test_page_navigation_is_cyclic_and_tap_opens_pattern_editor() {
         test_support::drainNotifications();
 
         assert(!h.state.sequencer.contextSelector.visible);
-        assert(h.state.sequencer.pattern.length.get() == 8U);
+        assert(h.state.sequencer.pattern().length.get() == 8U);
         assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
         assert(h.state.sharedTrackActive.get() == 0U);
         assert(h.state.sequencerHistory.undoCount() == 0U);
@@ -2718,7 +2711,7 @@ void test_page_navigation_is_cyclic_and_tap_opens_pattern_editor() {
 void test_latched_editor_target_drift_fails_closed() {
     {
         SequencerStepHarness h;
-        h.state.sequencer.pattern.setContentLength(16U);
+        h.state.sequencer.pattern().setContentLength(16U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
         h.state.sequencer.structureUi.syncPreviewPage(0U);
         test_support::drainNotifications();
@@ -2732,7 +2725,7 @@ void test_latched_editor_target_drift_fails_closed() {
         }
         test_support::drainNotifications();
 
-        assert(h.state.sequencer.pattern.length.get() == 16U);
+        assert(h.state.sequencer.pattern().length.get() == 16U);
         assert(h.state.sequencerHistory.undoCount() == 0U);
         assert(h.state.projectHistory.undoCount() == 0U);
         assert(!h.state.sequencer.patternEditor.active.get());
@@ -2774,7 +2767,7 @@ void test_latched_editor_target_drift_fails_closed() {
 void test_step_editor_uses_the_exact_latched_target() {
     {
         SequencerStepHarness h;
-        h.state.sequencer.pattern.setContentLength(128U);
+        h.state.sequencer.pattern().setContentLength(128U);
         h.state.sequencer.focusedStep.set(97U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
         test_support::drainNotifications();
@@ -2791,7 +2784,7 @@ void test_step_editor_uses_the_exact_latched_target() {
 
     {
         SequencerStepHarness h;
-        h.state.sequencer.pattern.setContentLength(128U);
+        h.state.sequencer.pattern().setContentLength(128U);
         h.state.sequencer.focusedStep.set(97U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
         test_support::drainNotifications();
@@ -2854,7 +2847,7 @@ void test_hidden_context_selector_cannot_complete_an_old_gesture() {
 
     {
         SequencerStepHarness h;
-        h.state.sequencer.pattern.setContentLength(16U);
+        h.state.sequencer.pattern().setContentLength(16U);
         h.state.sequencer.page.set(0U);
         h.state.sequencer.focusedStep.set(0U);
         h.state.sequencer.structureUi.syncPreviewPage(0U);
@@ -2925,7 +2918,7 @@ void test_child_context_selector_cycles_pattern_and_step_only() {
     SequencerStepHarness h;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto micro =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
     assert(micro.ok);
     assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, rootNode,
                                                                  micro.id));
@@ -3027,10 +3020,10 @@ void test_track_selection_copy_is_global_from_sequencer_view() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0005U, 0U);
-    h.state.sequencer.pattern.setContentLength(8U);
-    h.state.sequencer.pattern.note[0] = 79U;
-    h.state.sequencer.pattern.velocity[0] = 103U;
-    h.state.sequencer.pattern.setEnabled(0U, true);
+    h.state.sequencer.pattern().setContentLength(8U);
+    h.state.sequencer.pattern().note[0] = 79U;
+    h.state.sequencer.pattern().velocity[0] = 103U;
+    h.state.sequencer.pattern().setEnabled(0U, true);
     auto& sourcePatternTwo = h.state.sequencerTracks.track(2U);
     sourcePatternTwo.setContentLength(8U);
     sourcePatternTwo.note[0] = 67U;
@@ -3084,8 +3077,8 @@ void test_track_selection_copy_is_global_from_sequencer_view() {
 
     assert(h.state.currentSharedTrackEnabledMask() == 0x0055U);
     assert(h.state.currentSharedActiveTrack() == 4U);
-    assert(h.state.sequencer.pattern.note[0] == 79U);
-    assert(h.state.sequencer.pattern.velocity[0] == 103U);
+    assert(h.state.sequencer.pattern().note[0] == 79U);
+    assert(h.state.sequencer.pattern().velocity[0] == 103U);
     assert(h.state.sequencerTracks.track(6U).note[0] == 67U);
     assert(h.state.sequencerTracks.track(6U).velocity[0] == 97U);
     assert(h.state.sequencerTracks.track(5U).note[0] == 55U);
@@ -3131,15 +3124,14 @@ void test_track_selection_copy_is_global_from_sequencer_view() {
 
 void test_page_selection_clear_and_delete_are_undoable() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(24U);
-    h.state.sequencer.pattern.note[0] = 72U;
-    h.state.sequencer.pattern.note[8] = 84U;
-    h.state.sequencer.pattern.setEnabled(0U, true);
-    h.state.sequencer.pattern.setEnabled(8U, true);
+    h.state.sequencer.pattern().setContentLength(24U);
+    h.state.sequencer.pattern().note[0] = 72U;
+    h.state.sequencer.pattern().note[8] = 84U;
+    h.state.sequencer.pattern().setEnabled(0U, true);
+    h.state.sequencer.pattern().setEnabled(8U, true);
     h.state.sequencer.page.set(0U);
     h.state.sequencer.focusedStep.set(0U);
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -3153,9 +3145,9 @@ void test_page_selection_clear_and_delete_are_undoable() {
     const uint8_t resetFocus = h.state.sequencer.focusedStep.get();
 
     h.tap(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.sequencer.pattern.note[0] ==
+    assert(h.state.sequencer.pattern().note[0] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    assert(h.state.sequencer.pattern.note[8] ==
+    assert(h.state.sequencer.pattern().note[8] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(h.state.sequencer.structureUi.pageSelection.active.get());
     assert(h.state.sequencer.page.get() == resetPage);
@@ -3163,33 +3155,33 @@ void test_page_selection_clear_and_delete_are_undoable() {
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
     assert(h.state.undoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == 72U);
-    assert(h.state.sequencer.pattern.note[8] == 84U);
+    assert(h.state.sequencer.pattern().note[0] == 72U);
+    assert(h.state.sequencer.pattern().note[8] == 84U);
     assert(h.state.sequencer.page.get() == resetPage);
     assert(h.state.sequencer.focusedStep.get() == resetFocus);
     assert(h.state.redoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == seq::SequencerState::DEFAULT_NOTE);
-    assert(h.state.sequencer.pattern.note[8] == seq::SequencerState::DEFAULT_NOTE);
+    assert(h.state.sequencer.pattern().note[0] == seq::SequencerState::DEFAULT_NOTE);
+    assert(h.state.sequencer.pattern().note[8] == seq::SequencerState::DEFAULT_NOTE);
     assert(h.state.sequencer.page.get() == resetPage);
     assert(h.state.sequencer.focusedStep.get() == resetFocus);
     assert(h.state.undoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == 72U);
-    assert(h.state.sequencer.pattern.note[8] == 84U);
+    assert(h.state.sequencer.pattern().note[0] == 72U);
+    assert(h.state.sequencer.pattern().note[8] == 84U);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.sequencer.pattern.length.get() == 8U);
+    assert(h.state.sequencer.pattern().length.get() == 8U);
     assert(!h.state.sequencer.structureUi.pageSelection.active.get());
     assert(h.state.sequencer.page.get() == 0U);
     assert(h.state.sequencer.focusedStep.get() == 0U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.undoProjectHistory());
-    assert(h.state.sequencer.pattern.length.get() == 24U);
+    assert(h.state.sequencer.pattern().length.get() == 24U);
     assert(h.state.sequencer.page.get() == resetPage);
     assert(h.state.sequencer.focusedStep.get() == resetFocus);
     assert(h.state.redoProjectHistory());
-    assert(h.state.sequencer.pattern.length.get() == 8U);
+    assert(h.state.sequencer.pattern().length.get() == 8U);
     assert(h.state.sequencer.page.get() == 0U);
     assert(h.state.sequencer.focusedStep.get() == 0U);
 
@@ -3198,29 +3190,29 @@ void test_page_selection_clear_and_delete_are_undoable() {
 
 void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_pages() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(24U);
-    h.state.sequencer.pattern.note[0] = 72U;
-    h.state.sequencer.pattern.velocity[0] = 91U;
-    h.state.sequencer.pattern.setEnabled(0U, true);
-    h.state.sequencer.pattern.note[16] = 84U;
-    h.state.sequencer.pattern.velocity[16] = 111U;
-    h.state.sequencer.pattern.setEnabled(16U, true);
+    h.state.sequencer.pattern().setContentLength(24U);
+    h.state.sequencer.pattern().note[0] = 72U;
+    h.state.sequencer.pattern().velocity[0] = 91U;
+    h.state.sequencer.pattern().setEnabled(0U, true);
+    h.state.sequencer.pattern().note[16] = 84U;
+    h.state.sequencer.pattern().velocity[16] = 111U;
+    h.state.sequencer.pattern().setEnabled(16U, true);
     createRootMicroSequence(h, 0U);
     createRootMicroSequence(h, 16U);
-    auto* cc = seq::ensureSequencerCcLaneBank(h.state.sequencer.pattern);
+    auto* cc = seq::ensureSequencerCcLaneBank(h.state.sequencer.pattern());
     assert(cc != nullptr);
     seq::SequencerCcLaneDraft ccDraft{};
     ccDraft.destination.controller = 74U;
     assert(seq::createSequencerCcLane(*cc, 0U, ccDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 2U, 45U).changed());
-    h.state.sequencer.pattern.bumpCcLaneRevision();
+    h.state.sequencer.pattern().bumpCcLaneRevision();
     assert(seq::setClipPlaybackRegion(
         h.state.sequencer, {24U, 1U, 4U, 20U}));
-    const void* const ccOwner = h.state.sequencer.pattern.ccLanes.get();
+    const void* const ccOwner = h.state.sequencer.pattern().ccLanes.get();
     const uint64_t ccHash = byteHash(
-        ccOwner, sizeof(*h.state.sequencer.pattern.ccLanes));
+        ccOwner, sizeof(*h.state.sequencer.pattern().ccLanes));
     const uint32_t ccRevision =
-        h.state.sequencer.pattern.ccLaneRevision.get();
+        h.state.sequencer.pattern().ccLaneRevision.get();
     h.state.sequencer.page.set(0U);
     h.state.sequencer.focusedStep.set(0U);
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
@@ -3246,12 +3238,10 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     assert(selection.overwriteMask.get() == 0x0004U);
 
     {
-        auto discardedGraph = std::move(h.state.sequencer.pattern.graph);
+        auto discardedGraph = std::move(h.state.sequencer.pattern().graph);
     }
-    h.state.sequencer.pattern.bumpGraphRevision();
-    assert(h.state.sequencer.pattern.graph == nullptr);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(
-        h.state.sequencerTracks, h.state.sequencer));
+    h.state.sequencer.pattern().bumpGraphRevision();
+    assert(h.state.sequencer.pattern().graph == nullptr);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
@@ -3265,30 +3255,30 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
     assert(h.state.sequencer.activePageCount() == 7U);
-    assert(h.state.sequencer.pattern.note[32] == 72U);
-    assert(h.state.sequencer.pattern.velocity[32] == 91U);
-    assert(h.state.sequencer.pattern.isEnabled(32U));
-    assert(h.state.sequencer.pattern.note[48] == 84U);
-    assert(h.state.sequencer.pattern.velocity[48] == 111U);
-    assert(h.state.sequencer.pattern.isEnabled(48U));
-    assert(h.state.sequencer.pattern.note[24] ==
+    assert(h.state.sequencer.pattern().note[32] == 72U);
+    assert(h.state.sequencer.pattern().velocity[32] == 91U);
+    assert(h.state.sequencer.pattern().isEnabled(32U));
+    assert(h.state.sequencer.pattern().note[48] == 84U);
+    assert(h.state.sequencer.pattern().velocity[48] == 111U);
+    assert(h.state.sequencer.pattern().isEnabled(48U));
+    assert(h.state.sequencer.pattern().note[24] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    assert(!h.state.sequencer.pattern.isEnabled(24U));
-    assert(h.state.sequencer.pattern.note[40] ==
+    assert(!h.state.sequencer.pattern().isEnabled(24U));
+    assert(h.state.sequencer.pattern().note[40] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    assert(!h.state.sequencer.pattern.isEnabled(40U));
+    assert(!h.state.sequencer.pattern().isEnabled(40U));
     assert(rootStepHasMicroSequence(h, 32U));
     assert(rootStepHasMicroSequence(h, 48U));
-    assert(h.state.sequencer.pattern.ccLanes != nullptr);
-    assert(h.state.sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(h.state.sequencer.pattern().ccLanes != nullptr);
+    assert(h.state.sequencer.pattern().ccLanes.get() == ccOwner);
     assert(byteHash(
-               h.state.sequencer.pattern.ccLanes.get(),
-               sizeof(*h.state.sequencer.pattern.ccLanes)) == ccHash);
-    assert(h.state.sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-    assert(h.state.sequencer.pattern.ccLanes->lanes[0U].values[2U] == 45U);
+               h.state.sequencer.pattern().ccLanes.get(),
+               sizeof(*h.state.sequencer.pattern().ccLanes)) == ccHash);
+    assert(h.state.sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
+    assert(h.state.sequencer.pattern().ccLanes->lanes[0U].values[2U] == 45U);
     const auto committedRegion = seq::clipPlaybackRegion(
-        h.state.sequencer.pattern,
-        h.state.sequencer.clip
+        h.state.sequencer.pattern(),
+        h.state.sequencer.clip()
     );
     assert(committedRegion.contentLength == 56U);
     assert(committedRegion.playStart == 1U);
@@ -3325,11 +3315,11 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     assert(h.state.sequencer.focusedStep.get() == 32U);
     assert(selection.destinationMask.get() == 0x0050U);
     assert(selection.overwriteMask.get() == 0x0050U);
-    assert(h.state.sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == ccOwner);
     assert(byteHash(
-               h.state.sequencer.pattern.ccLanes.get(),
-               sizeof(*h.state.sequencer.pattern.ccLanes)) == ccHash);
-    assert(h.state.sequencer.pattern.ccLaneRevision.get() == ccRevision);
+               h.state.sequencer.pattern().ccLanes.get(),
+               sizeof(*h.state.sequencer.pattern().ccLanes)) == ccHash);
+    assert(h.state.sequencer.pattern().ccLaneRevision.get() == ccRevision);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(selection.active.get());
@@ -3342,15 +3332,15 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     assert(h.state.sequencer.activePageCount() == 3U);
     assert(h.state.sequencer.page.get() == 2U);
     assert(h.state.sequencer.focusedStep.get() == 16U);
-    assert(h.state.sequencer.pattern.graph == nullptr);
-    assert(h.state.sequencer.pattern.ccLanes != nullptr);
+    assert(h.state.sequencer.pattern().graph == nullptr);
+    assert(h.state.sequencer.pattern().ccLanes != nullptr);
     assert(byteHash(
-               h.state.sequencer.pattern.ccLanes.get(),
-               sizeof(*h.state.sequencer.pattern.ccLanes)) == ccHash);
-    assert(h.state.sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
+               h.state.sequencer.pattern().ccLanes.get(),
+               sizeof(*h.state.sequencer.pattern().ccLanes)) == ccHash);
+    assert(h.state.sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
     const auto undoRegion = seq::clipPlaybackRegion(
-        h.state.sequencer.pattern,
-        h.state.sequencer.clip
+        h.state.sequencer.pattern(),
+        h.state.sequencer.clip()
     );
     assert(undoRegion.contentLength == 24U);
     assert(undoRegion.playStart == 1U);
@@ -3360,15 +3350,15 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     assert(h.state.sequencer.activePageCount() == 7U);
     assert(h.state.sequencer.page.get() == 4U);
     assert(h.state.sequencer.focusedStep.get() == 32U);
-    assert(h.state.sequencer.pattern.note[32] == 72U);
-    assert(h.state.sequencer.pattern.note[48] == 84U);
+    assert(h.state.sequencer.pattern().note[32] == 72U);
+    assert(h.state.sequencer.pattern().note[48] == 84U);
     assert(rootStepHasMicroSequence(h, 32U));
     assert(rootStepHasMicroSequence(h, 48U));
-    assert(h.state.sequencer.pattern.ccLanes != nullptr);
+    assert(h.state.sequencer.pattern().ccLanes != nullptr);
     assert(byteHash(
-               h.state.sequencer.pattern.ccLanes.get(),
-               sizeof(*h.state.sequencer.pattern.ccLanes)) == ccHash);
-    assert(h.state.sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
+               h.state.sequencer.pattern().ccLanes.get(),
+               sizeof(*h.state.sequencer.pattern().ccLanes)) == ccHash);
+    assert(h.state.sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
 
     std::cout << "[PASS] sparse Pattern selection previews collisions and fills page gaps\n";
 }
@@ -3408,22 +3398,21 @@ void test_matrix_nav_reaches_sequential_add_and_creates_instrument_from_track_he
 
 void test_step_toggle_undo_redo_workflow() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.focusedStep.set(3);
     createRootMicroSequence(h, 0);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
-    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(!h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencerHistory.undoCount() == 0);
 
     h.tap(Config::MACRO_BUTTONS[0]);
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.state.sequencerHistory.undoCount() == 1);
     assert(rootStepHasMicroSequence(h, 0));
 
     assert(h.state.undoProjectHistory());
-    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(!h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 3);
     assert(rootStepHasMicroSequence(h, 0));
 
@@ -3431,7 +3420,7 @@ void test_step_toggle_undo_redo_workflow() {
     assert(h.state.sequencerHistory.redoCount() == 1);
 
     assert(h.state.redoProjectHistory());
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(rootStepHasMicroSequence(h, 0));
 
@@ -3443,7 +3432,7 @@ void test_step_toggle_undo_redo_workflow() {
 
 void test_child_step_toggle_undo_redo_workflow() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     createRootMicroSequence(h, 0);
     const auto* root = rootStepNode(h, 0);
     assert(root != nullptr);
@@ -3474,9 +3463,9 @@ void test_child_step_toggle_undo_redo_workflow() {
 
 void test_step_toggle_preflight_failure_is_atomic() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.focusedStep.set(3);
-    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(!h.state.sequencer.pattern().isEnabled(0));
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -3485,7 +3474,7 @@ void test_step_toggle_preflight_failure_is_atomic() {
         assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
     }
 
-    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(!h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 3);
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -3495,7 +3484,7 @@ void test_step_toggle_preflight_failure_is_atomic() {
 
 void test_child_draft_toggle_stays_out_of_published_history() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
 
     const auto opened = core::state::sequencer::openOrCreateActiveContentChild(
         h.state.sequencer, 3, core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE,
@@ -3504,7 +3493,7 @@ void test_child_draft_toggle_stays_out_of_published_history() {
     assert(h.state.sequencer.stepContentDraft.active.get());
     assert(!h.state.sequencer.stepContentDraft.modified());
     assert(!rootStepHasMicroSequence(h, 3));
-    assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(core::state::sequencer::graphView(h.state.sequencer.pattern()) == nullptr);
     assert(core::state::sequencer::activeContentStepEnabled(h.state.sequencer, 0));
 
     {
@@ -3518,7 +3507,7 @@ void test_child_draft_toggle_stays_out_of_published_history() {
     assert(!core::state::sequencer::activeContentStepEnabled(h.state.sequencer, 0));
     assert(h.state.sequencer.stepContentDraft.modified());
     assert(!rootStepHasMicroSequence(h, 3));
-    assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(core::state::sequencer::graphView(h.state.sequencer.pattern()) == nullptr);
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
@@ -3527,7 +3516,7 @@ void test_child_draft_toggle_stays_out_of_published_history() {
 
 void test_pattern_editor_adds_only_the_next_page() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(24);
+    h.state.sequencer.pattern().setContentLength(24);
     h.state.sequencer.page.set(2);
     h.state.sequencer.focusedStep.set(16);
 
@@ -3535,21 +3524,21 @@ void test_pattern_editor_adds_only_the_next_page() {
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
     assert(h.state.sequencer.patternEditor.active.get());
-    assert(h.state.sequencer.pattern.length.get() == 32);
+    assert(h.state.sequencer.pattern().length.get() == 32);
     assert(h.state.sequencer.page.get() == 3);
     assert(h.state.sequencer.focusedStep.get() == 24);
 
     for (uint8_t step = 24; step < 32; ++step) {
-        assert(h.state.sequencer.pattern.note[step] ==
+        assert(h.state.sequencer.pattern().note[step] ==
                core::state::sequencer::SequencerState::DEFAULT_NOTE);
-        assert(h.state.sequencer.pattern.velocity[step] ==
+        assert(h.state.sequencer.pattern().velocity[step] ==
                core::state::sequencer::SequencerState::DEFAULT_VELOCITY);
-        assert(h.state.sequencer.pattern.gate[step] ==
+        assert(h.state.sequencer.pattern().gate[step] ==
                core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
-        assert(h.state.sequencer.pattern.nudge[step] == 0);
-        assert(h.state.sequencer.pattern.probability[step] ==
+        assert(h.state.sequencer.pattern().nudge[step] == 0);
+        assert(h.state.sequencer.pattern().probability[step] ==
                core::state::sequencer::SequencerState::DEFAULT_PROBABILITY);
-        assert(!h.state.sequencer.pattern.isEnabled(step));
+        assert(!h.state.sequencer.pattern().isEnabled(step));
     }
 
     std::cout << "[PASS] test_pattern_editor_adds_only_the_next_page\n";
@@ -3559,9 +3548,9 @@ void test_track_header_nav_mutes_without_clearing_payload() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 1);
-    h.state.sequencer.pattern.note[0] = 82;
-    h.state.sequencer.pattern.velocity[0] = 108;
-    h.state.sequencer.pattern.setEnabled(0, true);
+    h.state.sequencer.pattern().note[0] = 82;
+    h.state.sequencer.pattern().velocity[0] = 108;
+    h.state.sequencer.pattern().setEnabled(0, true);
     focusTrackNavigation(h);
 
     const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
@@ -3570,16 +3559,16 @@ void test_track_header_nav_mutes_without_clearing_payload() {
 
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.projectTracks.authored.mutedMask == 0x0002);
-    assert(h.state.sequencer.pattern.note[0] == 82);
-    assert(h.state.sequencer.pattern.velocity[0] == 108);
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().note[0] == 82);
+    assert(h.state.sequencer.pattern().velocity[0] == 108);
+    assert(h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencerHistory.undoCount() == sequencerUndoBefore);
     assert(h.state.projectTrackHistory.undoCount() == trackUndoBefore + 1U);
 
     assert(h.state.undoProjectHistory());
     assert(h.state.projectTracks.authored.mutedMask == 0);
-    assert(h.state.sequencer.pattern.note[0] == 82);
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().note[0] == 82);
+    assert(h.state.sequencer.pattern().isEnabled(0));
 
     assert(h.state.redoProjectHistory());
     assert(h.state.projectTracks.authored.mutedMask == 0x0002);
@@ -3595,15 +3584,15 @@ void test_track_header_nav_mutes_without_clearing_payload() {
 
 void test_sequencer_page_copy_and_long_press_paste() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(16);
+    h.state.sequencer.pattern().setContentLength(16);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(0);
-    h.state.sequencer.pattern.note[0] = 72;
-    h.state.sequencer.pattern.velocity[0] = 99;
-    h.state.sequencer.pattern.gate[0] = 80;
-    h.state.sequencer.pattern.nudge[0] = 3;
-    h.state.sequencer.pattern.probability[0] = 87;
-    h.state.sequencer.pattern.setEnabled(0, true);
+    h.state.sequencer.pattern().note[0] = 72;
+    h.state.sequencer.pattern().velocity[0] = 99;
+    h.state.sequencer.pattern().gate[0] = 80;
+    h.state.sequencer.pattern().nudge[0] = 3;
+    h.state.sequencer.pattern().probability[0] = 87;
+    h.state.sequencer.pattern().setEnabled(0, true);
     createRootMicroSequence(h, 0);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -3622,15 +3611,15 @@ void test_sequencer_page_copy_and_long_press_paste() {
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS / 2U + 1U);
     assert(h.state.sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
-    assert(h.state.sequencer.pattern.note[8] == 72);
+    assert(h.state.sequencer.pattern().note[8] == 72);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.pattern.note[8] == 72);
-    assert(h.state.sequencer.pattern.velocity[8] == 99);
-    assert(h.state.sequencer.pattern.gate[8] == 80);
-    assert(h.state.sequencer.pattern.nudge[8] == 3);
-    assert(h.state.sequencer.pattern.probability[8] == 87);
-    assert(h.state.sequencer.pattern.isEnabled(8));
+    assert(h.state.sequencer.pattern().note[8] == 72);
+    assert(h.state.sequencer.pattern().velocity[8] == 99);
+    assert(h.state.sequencer.pattern().gate[8] == 80);
+    assert(h.state.sequencer.pattern().nudge[8] == 3);
+    assert(h.state.sequencer.pattern().probability[8] == 87);
+    assert(h.state.sequencer.pattern().isEnabled(8));
     assert(rootStepHasMicroSequence(h, 8));
 
     std::cout << "[PASS] test_sequencer_page_copy_and_long_press_paste\n";
@@ -3640,25 +3629,25 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-    sequencer.pattern.setContentLength(16U);
-    sequencer.pattern.note[0U] = 72U;
-    sequencer.pattern.velocity[0U] = 101U;
-    sequencer.pattern.setEnabled(0U, true);
+    sequencer.pattern().setContentLength(16U);
+    sequencer.pattern().note[0U] = 72U;
+    sequencer.pattern().velocity[0U] = 101U;
+    sequencer.pattern().setEnabled(0U, true);
     createRootMicroSequence(h, 0U);
-    auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(cc != nullptr);
     seq::SequencerCcLaneDraft draft{};
     draft.destination.controller = 74U;
     assert(seq::createSequencerCcLane(*cc, 0U, draft).changed());
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 2U, 55U).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
     assert(seq::setClipPlaybackRegion(
         sequencer,
         {16U, 1U, 2U, 6U}
     ));
-    const void* const ccOwner = sequencer.pattern.ccLanes.get();
+    const void* const ccOwner = sequencer.pattern().ccLanes.get();
     const uint64_t ccHash = byteHash(
-        ccOwner, sizeof(*sequencer.pattern.ccLanes));
+        ccOwner, sizeof(*sequencer.pattern().ccLanes));
     sequencer.page.set(0U);
     sequencer.focusedStep.set(0U);
     sequencer.structureUi.syncPreviewPage(0U);
@@ -3672,18 +3661,17 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
     const auto clipboardRevision = h.state.structureClipboard.revision.get();
 
     {
-        auto discardedGraph = std::move(sequencer.pattern.graph);
+        auto discardedGraph = std::move(sequencer.pattern().graph);
     }
-    sequencer.pattern.bumpGraphRevision();
-    assert(sequencer.pattern.graph == nullptr);
+    sequencer.pattern().bumpGraphRevision();
+    assert(sequencer.pattern().graph == nullptr);
     sequencer.page.set(1U);
     sequencer.focusedStep.set(8U);
     sequencer.structureUi.syncPreviewPage(1U);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
     workflow.beginHoldAction(core::state::StructureHoldAction::PASTE);
-    const auto graphRevision = sequencer.pattern.graphRevision.get();
-    const auto ccRevision = sequencer.pattern.ccLaneRevision.get();
-    const auto timingRevision = sequencer.pattern.patternTimingRevision.get();
+    const auto graphRevision = sequencer.pattern().graphRevision.get();
+    const auto ccRevision = sequencer.pattern().ccLaneRevision.get();
+    const auto timingRevision = sequencer.pattern().patternTimingRevision.get();
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -3692,20 +3680,20 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
         assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
     }
     test_support::drainNotifications();
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.note[0U] == 72U);
-    assert(sequencer.pattern.note[8U] == seq::SequencerState::DEFAULT_NOTE);
-    assert(sequencer.pattern.graph == nullptr);
-    assert(sequencer.pattern.graphRevision.get() == graphRevision);
-    assert(sequencer.pattern.ccLanes != nullptr);
-    assert(sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().note[0U] == 72U);
+    assert(sequencer.pattern().note[8U] == seq::SequencerState::DEFAULT_NOTE);
+    assert(sequencer.pattern().graph == nullptr);
+    assert(sequencer.pattern().graphRevision.get() == graphRevision);
+    assert(sequencer.pattern().ccLanes != nullptr);
+    assert(sequencer.pattern().ccLanes.get() == ccOwner);
     assert(byteHash(
-               sequencer.pattern.ccLanes.get(),
-               sizeof(*sequencer.pattern.ccLanes)) == ccHash);
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].values[2U] == 55U);
-    assert(sequencer.pattern.ccLaneRevision.get() == ccRevision);
-    assert(sequencer.pattern.patternTimingRevision.get() == timingRevision);
+               sequencer.pattern().ccLanes.get(),
+               sizeof(*sequencer.pattern().ccLanes)) == ccHash);
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].values[2U] == 55U);
+    assert(sequencer.pattern().ccLaneRevision.get() == ccRevision);
+    assert(sequencer.pattern().patternTimingRevision.get() == timingRevision);
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
     assert(sequencer.structureUi.previewPageIndex.get() == 1U);
@@ -3718,21 +3706,21 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
 
     workflow.pasteCurrentStructure();
 
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.note[8U] == 72U);
-    assert(sequencer.pattern.velocity[8U] == 101U);
-    assert(sequencer.pattern.isEnabled(8U));
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().note[8U] == 72U);
+    assert(sequencer.pattern().velocity[8U] == 101U);
+    assert(sequencer.pattern().isEnabled(8U));
     assert(rootStepHasMicroSequence(h, 8U));
-    assert(sequencer.pattern.ccLanes != nullptr);
-    assert(sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(sequencer.pattern().ccLanes != nullptr);
+    assert(sequencer.pattern().ccLanes.get() == ccOwner);
     assert(byteHash(
-               sequencer.pattern.ccLanes.get(),
-               sizeof(*sequencer.pattern.ccLanes)) == ccHash);
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].values[2U] == 55U);
+               sequencer.pattern().ccLanes.get(),
+               sizeof(*sequencer.pattern().ccLanes)) == ccHash);
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].values[2U] == 55U);
     const auto committedRegion = seq::clipPlaybackRegion(
-        sequencer.pattern,
-        sequencer.clip
+        sequencer.pattern(),
+        sequencer.clip()
     );
     assert(committedRegion.contentLength == 16U);
     assert(committedRegion.playStart == 1U);
@@ -3748,18 +3736,18 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
                seq::SequencerHistoryScope::PatternOnly) == 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.graph == nullptr);
-    assert(sequencer.pattern.ccLanes != nullptr);
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().graph == nullptr);
+    assert(sequencer.pattern().ccLanes != nullptr);
     assert(byteHash(
-               sequencer.pattern.ccLanes.get(),
-               sizeof(*sequencer.pattern.ccLanes)) == ccHash);
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
+               sequencer.pattern().ccLanes.get(),
+               sizeof(*sequencer.pattern().ccLanes)) == ccHash);
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
     const auto undoRegion = seq::clipPlaybackRegion(
-        sequencer.pattern,
-        sequencer.clip
+        sequencer.pattern(),
+        sequencer.clip()
     );
     assert(undoRegion.contentLength == 16U);
     assert(undoRegion.playStart == 1U);
@@ -3767,18 +3755,18 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
     assert(undoRegion.loopEnd == 6U);
 
     assert(h.state.redoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.note[8U] == 72U);
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().note[8U] == 72U);
     assert(rootStepHasMicroSequence(h, 8U));
     assert(byteHash(
-               sequencer.pattern.ccLanes.get(),
-               sizeof(*sequencer.pattern.ccLanes)) == ccHash);
+               sequencer.pattern().ccLanes.get(),
+               sizeof(*sequencer.pattern().ccLanes)) == ccHash);
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
 
     const auto undoCount = h.state.sequencerHistory.undoCount();
-    const void* const replayCcOwner = sequencer.pattern.ccLanes.get();
-    const auto replayCcRevision = sequencer.pattern.ccLaneRevision.get();
+    const void* const replayCcOwner = sequencer.pattern().ccLanes.get();
+    const auto replayCcRevision = sequencer.pattern().ccLaneRevision.get();
     sequencer.focusedStep.set(13U);
     workflow.beginHoldAction(core::state::StructureHoldAction::PASTE);
     {
@@ -3792,11 +3780,11 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
     assert(sequencer.structureUi.previewPageIndex.get() == 1U);
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
-    assert(sequencer.pattern.ccLanes.get() == replayCcOwner);
+    assert(sequencer.pattern().ccLanes.get() == replayCcOwner);
     assert(byteHash(
-               sequencer.pattern.ccLanes.get(),
-               sizeof(*sequencer.pattern.ccLanes)) == ccHash);
-    assert(sequencer.pattern.ccLaneRevision.get() == replayCcRevision);
+               sequencer.pattern().ccLanes.get(),
+               sizeof(*sequencer.pattern().ccLanes)) == ccHash);
+    assert(sequencer.pattern().ccLaneRevision.get() == replayCcRevision);
     assert(h.state.sequencerHistory.undoCount() == undoCount);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
@@ -3808,9 +3796,9 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-        sequencer.pattern.setContentLength(16U);
-        sequencer.pattern.note[0U] = 76U;
-        sequencer.pattern.setEnabled(0U, true);
+        sequencer.pattern().setContentLength(16U);
+        sequencer.pattern().note[0U] = 76U;
+        sequencer.pattern().setEnabled(0U, true);
         sequencer.page.set(0U);
         sequencer.focusedStep.set(0U);
         sequencer.structureUi.syncPreviewPage(0U);
@@ -3823,7 +3811,6 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(8U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto failingWorkflow = makeStructureEditWorkflow(
@@ -3838,10 +3825,10 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
 
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assert(sequencer.pattern.length.get() == 16U);
-        assert(sequencer.pattern.note[0U] == 76U);
-        assert(sequencer.pattern.isEnabled(0U));
-        assert(sequencer.pattern.note[8U] == seq::SequencerState::DEFAULT_NOTE);
+        assert(sequencer.pattern().length.get() == 16U);
+        assert(sequencer.pattern().note[0U] == 76U);
+        assert(sequencer.pattern().isEnabled(0U));
+        assert(sequencer.pattern().note[8U] == seq::SequencerState::DEFAULT_NOTE);
         assert(h.state.sequencerTracks.track(0U).length.get() == 16U);
         assert(h.state.sequencerTracks.track(0U).note[0U] == 76U);
         assert(sequencer.page.get() == 1U);
@@ -3860,15 +3847,14 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-        sequencer.pattern.setContentLength(16U);
-        sequencer.pattern.note[0U] = 68U;
-        sequencer.pattern.note[8U] = 80U;
-        sequencer.pattern.setEnabled(0U, true);
-        sequencer.pattern.setEnabled(8U, true);
+        sequencer.pattern().setContentLength(16U);
+        sequencer.pattern().note[0U] = 68U;
+        sequencer.pattern().note[8U] = 80U;
+        sequencer.pattern().setEnabled(0U, true);
+        sequencer.pattern().setEnabled(8U, true);
         sequencer.page.set(0U);
         sequencer.focusedStep.set(0U);
         sequencer.structureUi.syncPreviewPage(0U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         auto workflow = makeStructureEditWorkflow(
             h, HistoryServices::fromCoreState(h.state));
@@ -3900,9 +3886,9 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
         test_support::drainNotifications();
-        assert(sequencer.pattern.length.get() == 16U);
-        assert(sequencer.pattern.note[0U] == 68U);
-        assert(sequencer.pattern.note[8U] == 80U);
+        assert(sequencer.pattern().length.get() == 16U);
+        assert(sequencer.pattern().note[0U] == 68U);
+        assert(sequencer.pattern().note[8U] == 80U);
         assert(sequencer.page.get() == 0U);
         assert(sequencer.focusedStep.get() == 0U);
         assert(sequencer.structureUi.previewPageIndex.get() == 2U);
@@ -3929,9 +3915,9 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
 
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assert(sequencer.pattern.length.get() == 16U);
-        assert(sequencer.pattern.note[0U] == 68U);
-        assert(sequencer.pattern.note[8U] == 80U);
+        assert(sequencer.pattern().length.get() == 16U);
+        assert(sequencer.pattern().note[0U] == 68U);
+        assert(sequencer.pattern().note[8U] == 80U);
         assert(h.state.sequencerTracks.track(0U).length.get() == 16U);
         assert(sequencer.page.get() == 0U);
         assert(sequencer.focusedStep.get() == 0U);
@@ -3959,7 +3945,7 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
     SequencerStepHarness h;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto micro =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
     assert(micro.ok);
     assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, rootNode,
                                                                  micro.id));
@@ -3967,22 +3953,22 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
 
     const auto childNode0 = core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 0);
     const auto cycle =
-        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern, childNode0, 2);
+        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern(), childNode0, 2);
     assert(cycle.ok);
     assert(core::state::sequencer::setNodeNoteOffset(
-        h.state.sequencer.pattern,
-        h.state.sequencer.pattern.graph->cycleSets[cycle.id].firstStateNode, 5));
+        h.state.sequencer.pattern(),
+        h.state.sequencer.pattern().graph->cycleSets[cycle.id].firstStateNode, 5));
 
     const auto childNode1 = core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 1);
     const auto replacedCycle =
-        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern, childNode1, 4);
+        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern(), childNode1, 4);
     assert(replacedCycle.ok);
     assert(core::state::sequencer::setNodeNoteOffset(
-        h.state.sequencer.pattern,
-        h.state.sequencer.pattern.graph->cycleSets[replacedCycle.id].firstStateNode, 9));
+        h.state.sequencer.pattern(),
+        h.state.sequencer.pattern().graph->cycleSets[replacedCycle.id].firstStateNode, 9));
     h.state.sequencer.contentView.bump();
 
-    const auto* graphBeforeClear = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graphBeforeClear = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graphBeforeClear != nullptr);
     assertGraphHasNoOrphans(*graphBeforeClear);
     const auto* graphOwner = graphBeforeClear;
@@ -4000,7 +3986,7 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
         h.tap(Config::ButtonID::BOTTOM_LEFT);
         tx::assertMaxPlusOneStillArmed(3U);
     }
-    const auto* graphAfterClear = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graphAfterClear = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graphAfterClear != nullptr);
     assert(graphAfterClear == graphOwner);
     assert(!graphAfterClear->stepNodes[childNode0].has(oc::note::sequencer::STEP_NODE_CYCLE_SET));
@@ -4029,7 +4015,7 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
         tx::assertMaxPlusOneStillArmed(3U);
     }
 
-    const auto* graphAfterPaste = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graphAfterPaste = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graphAfterPaste != nullptr);
     assert(graphAfterPaste == graphOwner);
     assert(graphAfterPaste->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_CYCLE_SET));
@@ -4044,7 +4030,7 @@ void test_child_content_clear_copy_and_paste_are_undoable() {
     assertGraphHasNoOrphans(*graphAfterPaste);
 
     assert(h.state.undoProjectHistory());
-    const auto* graphAfterUndo = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graphAfterUndo = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graphAfterUndo != nullptr);
     assert(graphAfterUndo->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_CYCLE_SET));
     const auto* restoredCycle =
@@ -4062,18 +4048,18 @@ void test_child_content_clear_and_paste_preflight_failures_are_atomic() {
         SequencerStepHarness h;
         const auto rootNode = core::state::sequencer::rootStepNodeId(0);
         const auto micro =
-            core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+            core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
         assert(micro.ok);
         assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, rootNode,
                                                                      micro.id));
         h.state.sequencer.focusedStep.set(0);
         const auto childNode =
             core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 0);
-        assert(core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern, childNode, 2)
+        assert(core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern(), childNode, 2)
                    .ok);
         h.state.sequencer.contentView.bump();
 
-        const auto* graphOwner = core::state::sequencer::graphView(h.state.sequencer.pattern);
+        const auto* graphOwner = core::state::sequencer::graphView(h.state.sequencer.pattern());
         assert(graphOwner != nullptr);
         assertGraphHasNoOrphans(*graphOwner);
         core::state::sequencer::SequencerHistoryPatternSnapshot musicalBefore;
@@ -4086,7 +4072,7 @@ void test_child_content_clear_and_paste_preflight_failures_are_atomic() {
             tx::assertFailureConsumed(ordinal);
         }
 
-        const auto* graphAfter = core::state::sequencer::graphView(h.state.sequencer.pattern);
+        const auto* graphAfter = core::state::sequencer::graphView(h.state.sequencer.pattern());
         assert(graphAfter == graphOwner);
         assertGraphHasNoOrphans(*graphAfter);
         tx::assertMusicalSnapshot(h.state, musicalBefore);
@@ -4098,17 +4084,17 @@ void test_child_content_clear_and_paste_preflight_failures_are_atomic() {
         SequencerStepHarness h;
         const auto rootNode = core::state::sequencer::rootStepNodeId(0);
         const auto micro =
-            core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+            core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
         assert(micro.ok);
         assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, rootNode,
                                                                      micro.id));
         const auto sourceNode =
             core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 0);
-        assert(core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern, sourceNode, 2)
+        assert(core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern(), sourceNode, 2)
                    .ok);
         const auto destinationNode =
             core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 1);
-        assert(core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern,
+        assert(core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern(),
                                                            destinationNode, 4)
                    .ok);
         h.state.sequencer.contentView.bump();
@@ -4117,7 +4103,7 @@ void test_child_content_clear_and_paste_preflight_failures_are_atomic() {
         assert(h.state.structureClipboard.hasSequencerStepContent());
         h.state.sequencer.focusedStep.set(1);
 
-        const auto* graphOwner = core::state::sequencer::graphView(h.state.sequencer.pattern);
+        const auto* graphOwner = core::state::sequencer::graphView(h.state.sequencer.pattern());
         assert(graphOwner != nullptr);
         assertGraphHasNoOrphans(*graphOwner);
         core::state::sequencer::SequencerHistoryPatternSnapshot musicalBefore;
@@ -4133,7 +4119,7 @@ void test_child_content_clear_and_paste_preflight_failures_are_atomic() {
             tx::assertFailureConsumed(ordinal);
         }
 
-        const auto* graphAfter = core::state::sequencer::graphView(h.state.sequencer.pattern);
+        const auto* graphAfter = core::state::sequencer::graphView(h.state.sequencer.pattern());
         assert(graphAfter == graphOwner);
         assertGraphHasNoOrphans(*graphAfter);
         tx::assertMusicalSnapshot(h.state, musicalBefore);
@@ -4178,10 +4164,10 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
 
     for (std::size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
         SequencerStepHarness h;
-        h.state.sequencer.pattern.setContentLength(8);
+        h.state.sequencer.pattern().setContentLength(8);
         h.state.sequencer.focusedStep.set(targetStep);
         storeClipboard(h.state.structureClipboard);
-        assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(core::state::sequencer::graphView(h.state.sequencer.pattern()) == nullptr);
         core::state::sequencer::SequencerHistoryPatternSnapshot musicalBefore;
         tx::captureMusicalSnapshot(h.state, musicalBefore);
         const auto invariantBefore = tx::captureStateInvariant(h.state);
@@ -4198,17 +4184,17 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
             tx::assertFailureConsumed(ordinal);
         }
 
-        assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(core::state::sequencer::graphView(h.state.sequencer.pattern()) == nullptr);
         tx::assertMusicalSnapshot(h.state, musicalBefore);
         tx::assertStateInvariant(h.state, invariantBefore);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     }
 
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.focusedStep.set(targetStep);
     storeClipboard(h.state.structureClipboard);
-    assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(core::state::sequencer::graphView(h.state.sequencer.pattern()) == nullptr);
     const oc::note::sequencer::StepSequencerGraph* prospectiveOwner = nullptr;
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(4U);
@@ -4218,18 +4204,18 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
                        FullWithProspectiveGraph,
                    descriptor(), true) ==
                core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::Started);
-        prospectiveOwner = h.state.sequencer.pattern.graph.get();
+        prospectiveOwner = h.state.sequencer.pattern().graph.get();
         assert(prospectiveOwner != nullptr);
-        assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(core::state::sequencer::graphView(h.state.sequencer.pattern()) == nullptr);
         const bool changed =
             core::state::sequencer::pasteActiveContentChildrenFromClipboardPreservingGraphOwner(
                 h.state.sequencer, targetStep, h.state.structureClipboard);
         assert(changed);
-        assert(h.state.sequencer.pattern.graph.get() == prospectiveOwner);
+        assert(h.state.sequencer.pattern().graph.get() == prospectiveOwner);
         assert(h.state.sealSequencerPreparedPatternEdit(owner, transactionKey, changed,
                                                         descriptor()) ==
                core::state::sequencer::SequencerPreparedPatternEditSealOutcome::Sealed);
-        assert(h.state.sequencer.pattern.graph.get() == prospectiveOwner);
+        assert(h.state.sequencer.pattern().graph.get() == prospectiveOwner);
         assert(h.state.commitSequencerPreparedPatternEdit(owner) ==
                core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Committed);
         // Every allocation ordinal below four failed before any write above.
@@ -4239,9 +4225,9 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
         tx::assertMaxPlusOneStillArmed(3U);
     }
 
-    const auto* graphOwner = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graphOwner = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graphOwner == prospectiveOwner);
-    assert(h.state.sequencer.pattern.graph.get() == graphOwner);
+    assert(h.state.sequencer.pattern().graph.get() == graphOwner);
     assertGraphHasNoOrphans(*graphOwner);
     assert(graphOwner->stepNodeCount ==
            core::state::sequencer::SequencerPatternState::MAX_STEPS +
@@ -4266,9 +4252,9 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
     core::state::sequencer::SequencerHistoryPatternSnapshot pastedSnapshot;
     tx::captureMusicalSnapshot(h.state, pastedSnapshot);
     assert(h.state.undoProjectHistory());
-    assert(core::state::sequencer::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(core::state::sequencer::graphView(h.state.sequencer.pattern()) == nullptr);
     assert(h.state.redoProjectHistory());
-    const auto* graphAfterRedo = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graphAfterRedo = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graphAfterRedo != nullptr);
     assertGraphHasNoOrphans(*graphAfterRedo);
     tx::assertMusicalSnapshot(h.state, pastedSnapshot);
@@ -4278,7 +4264,7 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
 
 void test_undo_removed_active_child_context_returns_to_root() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.focusedStep.set(0);
 
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
@@ -4286,7 +4272,7 @@ void test_undo_removed_active_child_context_returns_to_root() {
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto micro =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
     assert(micro.ok);
 
     core::state::sequencer::SequencerHistoryPatternSnapshot after;
@@ -4317,11 +4303,11 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0001, 0);
     configureProjectTrackFixture(h.state, 1, 8);
-    h.state.sequencer.pattern.setContentLength(8);
-    h.state.sequencer.pattern.note[0] = 79;
-    h.state.sequencer.pattern.velocity[0] = 96;
-    h.state.sequencer.pattern.gate[0] = 72;
-    h.state.sequencer.pattern.setEnabled(0, true);
+    h.state.sequencer.pattern().setContentLength(8);
+    h.state.sequencer.pattern().note[0] = 79;
+    h.state.sequencer.pattern().velocity[0] = 96;
+    h.state.sequencer.pattern().gate[0] = 72;
+    h.state.sequencer.pattern().setEnabled(0, true);
     createRootMicroSequence(h, 0);
     focusTrackNavigation(h);
 
@@ -4344,10 +4330,10 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.projectTracks.authored.midiChannels[1] == 8);
-    assert(h.state.sequencer.pattern.note[0] == 79);
-    assert(h.state.sequencer.pattern.velocity[0] == 96);
-    assert(h.state.sequencer.pattern.gate[0] == 72);
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().note[0] == 79);
+    assert(h.state.sequencer.pattern().velocity[0] == 96);
+    assert(h.state.sequencer.pattern().gate[0] == 72);
+    assert(h.state.sequencer.pattern().isEnabled(0));
     assert(rootStepHasMicroSequence(h, 0));
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 1);
@@ -4372,9 +4358,9 @@ void test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute(
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
     configureProjectTrackFixture(h.state, 1, 11, true);
-    h.state.sequencer.pattern.note[0] = 76;
-    h.state.sequencer.pattern.velocity[0] = 104;
-    h.state.sequencer.pattern.setEnabled(0, true);
+    h.state.sequencer.pattern().note[0] = 76;
+    h.state.sequencer.pattern().velocity[0] = 104;
+    h.state.sequencer.pattern().setEnabled(0, true);
     focusTrackNavigation(h);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -4398,9 +4384,9 @@ void test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute(
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.projectTracks.authored.midiChannels[1] == 13);
     assert(core::state::project::projectTrackMuted(h.state.projectTracks, 1));
-    assert(h.state.sequencer.pattern.note[0] == 76);
-    assert(h.state.sequencer.pattern.velocity[0] == 104);
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().note[0] == 76);
+    assert(h.state.sequencer.pattern().velocity[0] == 104);
+    assert(h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 1);
     assert(h.state.structureClipboard.hasSequencerTrack());
@@ -4413,7 +4399,7 @@ void test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute(
     assert(h.state.redoSequencerHistory());
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 13);
     assert(core::state::project::projectTrackMuted(h.state.projectTracks, 1));
-    assert(h.state.sequencer.pattern.note[0] == 76);
+    assert(h.state.sequencer.pattern().note[0] == 76);
     assert(h.state.structureClipboard.hasSequencerTrack());
 
     std::cout
@@ -4427,9 +4413,9 @@ void test_track_paste_global_undo_redo_restores_content_and_reports_outcome() {
     focusTrackNavigation(h);
 
     configureProjectTrackFixture(h.state, 0, 2);
-    h.state.sequencer.pattern.note[0] = 76;
-    h.state.sequencer.pattern.velocity[0] = 104;
-    h.state.sequencer.pattern.setEnabled(0, true);
+    h.state.sequencer.pattern().note[0] = 76;
+    h.state.sequencer.pattern().velocity[0] = 104;
+    h.state.sequencer.pattern().setEnabled(0, true);
     auto& destination = h.state.sequencerTracks.track(1);
     configureProjectTrackFixture(h.state, 1, 11, true);
     destination.note[0] = 42;
@@ -4442,23 +4428,23 @@ void test_track_paste_global_undo_redo_restores_content_and_reports_outcome() {
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
-    assert(h.state.sequencer.pattern.note[0] == 42);
+    assert(h.state.sequencer.pattern().note[0] == 42);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
-    assert(h.state.sequencer.pattern.note[0] == 76);
+    assert(h.state.sequencer.pattern().note[0] == 76);
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 11);
     assert(core::state::project::projectTrackMuted(h.state.projectTracks, 1));
 
     assert(h.state.undoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == 42);
-    assert(h.state.sequencer.pattern.velocity[0] == 73);
+    assert(h.state.sequencer.pattern().note[0] == 42);
+    assert(h.state.sequencer.pattern().velocity[0] == 73);
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 11);
     assert(core::state::project::projectTrackMuted(h.state.projectTracks, 1));
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Track Paste") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "Pending cancelled") == 0);
 
     assert(h.state.redoProjectHistory());
-    assert(h.state.sequencer.pattern.note[0] == 76);
+    assert(h.state.sequencer.pattern().note[0] == 76);
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 11);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Track Paste") == 0);
 
@@ -4470,8 +4456,8 @@ void test_track_paste_clamps_focus_to_short_source_before_history_commit() {
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
     focusTrackNavigation(h);
-    h.state.sequencer.pattern.setContentLength(8);
-    h.state.sequencer.pattern.note[0] = 68;
+    h.state.sequencer.pattern().setContentLength(8);
+    h.state.sequencer.pattern().note[0] = 68;
     h.state.sequencerTracks.track(1).setContentLength(128);
     configureProjectTrackFixture(h.state, 1, 7);
 
@@ -4487,20 +4473,20 @@ void test_track_paste_clamps_focus_to_short_source_before_history_commit() {
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
     assert(h.state.sequencer.focusedStep.get() == 7);
     assert(h.state.sequencer.page.get() == 0);
-    assert(h.state.sequencer.pattern.note[0] == 68);
+    assert(h.state.sequencer.pattern().note[0] == 68);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 1);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 128);
+    assert(h.state.sequencer.pattern().length.get() == 128);
     assert(h.state.sequencer.focusedStep.get() == 100);
     assert(h.state.sequencer.page.get() == 12);
 
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
     assert(h.state.sequencer.focusedStep.get() == 7);
     assert(h.state.sequencer.page.get() == 0);
 
@@ -4511,25 +4497,25 @@ void test_track_paste_mid_hold_release_cancels_without_mutation_or_history() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
-    h.state.sequencer.pattern.note[0] = 81;
+    h.state.sequencer.pattern().note[0] = 81;
     h.state.sequencerTracks.track(1).note[0] = 44;
     configureProjectTrackFixture(h.state, 1, 6);
     focusTrackNavigation(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     moveToAdjacentTrackHeader(h, 1);
-    assert(h.state.sequencer.pattern.note[0] == 81);
+    assert(h.state.sequencer.pattern().note[0] == 81);
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount(
         core::state::sequencer::SequencerHistoryScope::Structure);
     h.press(Config::ButtonID::BOTTOM_RIGHT);
-    assert(h.state.sequencer.pattern.note[0] == 44);
+    assert(h.state.sequencer.pattern().note[0] == 44);
     h.advance(Config::Timing::LATCH_THRESHOLD_MS);
     assert(h.state.sequencer.structureUi.trackPaste.guard.phase ==
            core::state::contextual::GuardedActionPhase::ARMED);
     h.advance(250);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.pattern.note[0] == 44);
+    assert(h.state.sequencer.pattern().note[0] == 44);
     assert(h.state.sequencerTracks.track(1).note[0] == 44);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == undoBefore);
@@ -4544,7 +4530,7 @@ void test_track_paste_commits_once_at_absolute_long_threshold() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
-    h.state.sequencer.pattern.note[0] = 83;
+    h.state.sequencer.pattern().note[0] = 83;
     h.state.sequencerTracks.track(1).note[0] = 45;
     configureProjectTrackFixture(h.state, 1, 7);
     focusTrackNavigation(h);
@@ -4553,11 +4539,11 @@ void test_track_paste_commits_once_at_absolute_long_threshold() {
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
-    assert(h.state.sequencer.pattern.note[0] == 45);
+    assert(h.state.sequencer.pattern().note[0] == 45);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 0);
     h.advance(1);
-    assert(h.state.sequencer.pattern.note[0] == 83);
+    assert(h.state.sequencer.pattern().note[0] == 83);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 1);
     assert(h.state.sequencer.structureUi.trackPaste.guard.phase ==
@@ -4572,7 +4558,7 @@ void test_track_paste_left_top_cancels_and_consumes_later_release() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
-    h.state.sequencer.pattern.note[0] = 84;
+    h.state.sequencer.pattern().note[0] = 84;
     h.state.sequencerTracks.track(1).note[0] = 46;
     focusTrackNavigation(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
@@ -4583,7 +4569,7 @@ void test_track_paste_left_top_cancels_and_consumes_later_release() {
     h.tap(Config::ButtonID::LEFT_TOP);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.pattern.note[0] == 46);
+    assert(h.state.sequencer.pattern().note[0] == 46);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::Structure) == 0);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
@@ -4593,7 +4579,7 @@ void test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
-    h.state.sequencer.pattern.note[0] = 85;
+    h.state.sequencer.pattern().note[0] = 85;
     h.state.sequencerTracks.track(1).note[0] = 47;
     configureProjectTrackFixture(h.state, 1, 3);
     focusTrackNavigation(h);
@@ -4607,7 +4593,7 @@ void test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan() {
     h.advance(1);
     assert(h.state.sequencer.structureUi.trackPaste.plan.entries[0].targetMidiChannel == 8);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - Config::Timing::LATCH_THRESHOLD_MS - 1U);
-    assert(h.state.sequencer.pattern.note[0] == 85);
+    assert(h.state.sequencer.pattern().note[0] == 85);
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 8);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
@@ -4658,9 +4644,9 @@ void test_next_sequential_track_slot_can_be_created() {
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 2);
     assert(h.state.projectTracks.authored.midiChannels[2] == 2);
-    assert(h.state.sequencer.pattern.note[0] ==
+    assert(h.state.sequencer.pattern().note[0] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(!h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencerTracks.track(1).note[0] == 83);
     assert(h.state.sequencerTracks.track(1).isEnabled(0));
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
@@ -4669,21 +4655,21 @@ void test_next_sequential_track_slot_can_be_created() {
     assert(h.state.sequencer.clipWorkspace.returnSlot == 0U);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
 
     std::cout << "[PASS] test_next_sequential_track_slot_can_be_created\n";
 }
 
 void test_created_page_is_undoable_and_redoable() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(0);
 
     openPatternEditor(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.pattern().length.get() == 16);
     assert(h.state.sequencer.page.get() == 1);
     assert(h.state.sequencerHistory.undoCount() == 1);
     assert(h.state.sequencerHistory.undoCount(
@@ -4692,7 +4678,7 @@ void test_created_page_is_undoable_and_redoable() {
                core::state::sequencer::SequencerHistoryScope::ProjectScale) == 0);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
@@ -4701,7 +4687,7 @@ void test_created_page_is_undoable_and_redoable() {
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "2 pages -> 1 page") == 0);
 
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.pattern().length.get() == 16);
     assert(h.state.sequencer.page.get() == 1);
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 1);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "Redo T01") == 0);
@@ -4714,20 +4700,19 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(16U);
-        sequencer.pattern.note[8U] = 79U;
-        sequencer.pattern.velocity[8U] = 111U;
-        sequencer.pattern.setEnabled(8U, true);
+        sequencer.pattern().setContentLength(16U);
+        sequencer.pattern().note[8U] = 79U;
+        sequencer.pattern().velocity[8U] = 111U;
+        sequencer.pattern().setEnabled(8U, true);
         sequencer.page.set(1U);
         sequencer.focusedStep.set(13U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         h.tap(Config::ButtonID::BOTTOM_LEFT);
 
-        assert(sequencer.pattern.note[8U] == seq::SequencerState::DEFAULT_NOTE);
-        assert(sequencer.pattern.velocity[8U] == seq::SequencerState::DEFAULT_VELOCITY);
-        assert(!sequencer.pattern.isEnabled(8U));
+        assert(sequencer.pattern().note[8U] == seq::SequencerState::DEFAULT_NOTE);
+        assert(sequencer.pattern().velocity[8U] == seq::SequencerState::DEFAULT_VELOCITY);
+        assert(!sequencer.pattern().isEnabled(8U));
         assert(sequencer.page.get() == 1U);
         assert(sequencer.focusedStep.get() == 8U);
         assert(sequencer.structureUi.pageHold.action.get() ==
@@ -4736,14 +4721,14 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
         assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
 
         assert(h.state.undoSequencerHistory());
-        assert(sequencer.pattern.note[8U] == 79U);
-        assert(sequencer.pattern.velocity[8U] == 111U);
-        assert(sequencer.pattern.isEnabled(8U));
+        assert(sequencer.pattern().note[8U] == 79U);
+        assert(sequencer.pattern().velocity[8U] == 111U);
+        assert(sequencer.pattern().isEnabled(8U));
         assert(sequencer.page.get() == 1U);
         assert(sequencer.focusedStep.get() == 13U);
         assert(h.state.redoSequencerHistory());
-        assert(sequencer.pattern.note[8U] == seq::SequencerState::DEFAULT_NOTE);
-        assert(!sequencer.pattern.isEnabled(8U));
+        assert(sequencer.pattern().note[8U] == seq::SequencerState::DEFAULT_NOTE);
+        assert(!sequencer.pattern().isEnabled(8U));
         assert(sequencer.page.get() == 1U);
         assert(sequencer.focusedStep.get() == 8U);
     }
@@ -4751,11 +4736,10 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(16U);
+        sequencer.pattern().setContentLength(16U);
         sequencer.page.set(1U);
         sequencer.focusedStep.set(13U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         h.tap(Config::ButtonID::BOTTOM_LEFT);
 
@@ -4770,13 +4754,12 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(16U);
-        sequencer.pattern.note[8U] = 76U;
-        sequencer.pattern.setEnabled(8U, true);
+        sequencer.pattern().setContentLength(16U);
+        sequencer.pattern().note[8U] = 76U;
+        sequencer.pattern().setEnabled(8U, true);
         sequencer.page.set(1U);
         sequencer.focusedStep.set(12U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         h.press(Config::ButtonID::BOTTOM_LEFT);
         assert(sequencer.structureUi.pageHold.action.get() ==
@@ -4788,9 +4771,9 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
 
-        assert(sequencer.pattern.length.get() == 16U);
-        assert(sequencer.pattern.note[8U] == 76U);
-        assert(sequencer.pattern.isEnabled(8U));
+        assert(sequencer.pattern().length.get() == 16U);
+        assert(sequencer.pattern().note[8U] == 76U);
+        assert(sequencer.pattern().isEnabled(8U));
         assert(sequencer.page.get() == 1U);
         assert(sequencer.focusedStep.get() == 12U);
         assert(sequencer.structureUi.previewPageIndex.get() == 1U);
@@ -4807,15 +4790,15 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
 void test_page_delete_prepared_workflow_shifts_cc_and_replays() {
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
-    sequencer.pattern.setContentLength(24U);
-    sequencer.pattern.note[0U] = 60U;
-    sequencer.pattern.note[8U] = 70U;
-    sequencer.pattern.note[16U] = 80U;
-    sequencer.pattern.setEnabled(0U, true);
-    sequencer.pattern.setEnabled(8U, true);
-    sequencer.pattern.setEnabled(16U, true);
+    sequencer.pattern().setContentLength(24U);
+    sequencer.pattern().note[0U] = 60U;
+    sequencer.pattern().note[8U] = 70U;
+    sequencer.pattern().note[16U] = 80U;
+    sequencer.pattern().setEnabled(0U, true);
+    sequencer.pattern().setEnabled(8U, true);
+    sequencer.pattern().setEnabled(16U, true);
 
-    auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(cc != nullptr);
     seq::SequencerCcLaneDraft draft{};
     draft.destination.controller = 74U;
@@ -4823,55 +4806,54 @@ void test_page_delete_prepared_workflow_shifts_cc_and_replays() {
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 2U, 11U).changed());
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 9U, 22U).changed());
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 18U, 33U).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
     sequencer.page.set(1U);
     sequencer.focusedStep.set(10U);
     sequencer.structureUi.syncPreviewPage(1U);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::REMOVE);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
 
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.note[0U] == 60U);
-    assert(sequencer.pattern.note[8U] == 80U);
-    assert(sequencer.pattern.isEnabled(0U));
-    assert(sequencer.pattern.isEnabled(8U));
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().note[0U] == 60U);
+    assert(sequencer.pattern().note[8U] == 80U);
+    assert(sequencer.pattern().isEnabled(0U));
+    assert(sequencer.pattern().isEnabled(8U));
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
     assert(sequencer.structureUi.previewPageIndex.get() == 1U);
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
-    assert(sequencer.pattern.ccLanes != nullptr);
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].values[2U] == 11U);
-    assert(!sequencer.pattern.ccLanes->lanes[0U].activeMask.test(9U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(10U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].values[10U] == 33U);
+    assert(sequencer.pattern().ccLanes != nullptr);
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].values[2U] == 11U);
+    assert(!sequencer.pattern().ccLanes->lanes[0U].activeMask.test(9U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(10U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].values[10U] == 33U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
     assert(h.state.undoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 24U);
-    assert(sequencer.pattern.note[8U] == 70U);
-    assert(sequencer.pattern.note[16U] == 80U);
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(9U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].values[9U] == 22U);
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(18U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].values[18U] == 33U);
+    assert(sequencer.pattern().length.get() == 24U);
+    assert(sequencer.pattern().note[8U] == 70U);
+    assert(sequencer.pattern().note[16U] == 80U);
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(9U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].values[9U] == 22U);
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(18U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].values[18U] == 33U);
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 10U);
 
     assert(h.state.redoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.note[8U] == 80U);
-    assert(!sequencer.pattern.ccLanes->lanes[0U].activeMask.test(9U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(10U));
-    assert(sequencer.pattern.ccLanes->lanes[0U].values[10U] == 33U);
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().note[8U] == 80U);
+    assert(!sequencer.pattern().ccLanes->lanes[0U].activeMask.test(9U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(10U));
+    assert(sequencer.pattern().ccLanes->lanes[0U].values[10U] == 33U);
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
 
@@ -4881,15 +4863,14 @@ void test_page_delete_prepared_workflow_shifts_cc_and_replays() {
 void test_page_delete_oom_keeps_hold_until_latched_release() {
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
-    sequencer.pattern.setContentLength(16U);
-    sequencer.pattern.note[0U] = 70U;
-    sequencer.pattern.note[8U] = 80U;
-    sequencer.pattern.setEnabled(0U, true);
-    sequencer.pattern.setEnabled(8U, true);
+    sequencer.pattern().setContentLength(16U);
+    sequencer.pattern().note[0U] = 70U;
+    sequencer.pattern().note[8U] = 80U;
+    sequencer.pattern().setEnabled(0U, true);
+    sequencer.pattern().setEnabled(8U, true);
     sequencer.page.set(0U);
     sequencer.focusedStep.set(3U);
     sequencer.structureUi.syncPreviewPage(0U);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     assert(sequencer.structureUi.pageHold.action.get() ==
@@ -4901,9 +4882,9 @@ void test_page_delete_oom_keeps_hold_until_latched_release() {
         assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
     }
 
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.note[0U] == 70U);
-    assert(sequencer.pattern.note[8U] == 80U);
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().note[0U] == 70U);
+    assert(sequencer.pattern().note[8U] == 80U);
     assert(sequencer.page.get() == 0U);
     assert(sequencer.focusedStep.get() == 3U);
     assert(sequencer.structureUi.pageHold.action.get() ==
@@ -4914,9 +4895,9 @@ void test_page_delete_oom_keeps_hold_until_latched_release() {
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(sequencer.pattern.note[0U] == 70U);
-    assert(sequencer.pattern.note[8U] == 80U);
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().note[0U] == 70U);
+    assert(sequencer.pattern().note[8U] == 80U);
     assert(h.state.sequencerHistory.undoCount() == 0U);
 
     std::cout << "[PASS] PageDelete OOM hold clears only on latched release\n";
@@ -4925,13 +4906,12 @@ void test_page_delete_oom_keeps_hold_until_latched_release() {
 void test_page_delete_single_page_nochange_preserves_ui_until_release() {
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
-    sequencer.pattern.setContentLength(8U);
-    sequencer.pattern.note[0U] = 69U;
-    sequencer.pattern.setEnabled(0U, true);
+    sequencer.pattern().setContentLength(8U);
+    sequencer.pattern().note[0U] = 69U;
+    sequencer.pattern().setEnabled(0U, true);
     sequencer.page.set(0U);
     sequencer.focusedStep.set(3U);
     sequencer.structureUi.syncPreviewPage(0U);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     core::handler::SequencerStructureEditWorkflow workflow({
         sequencer,
@@ -4953,9 +4933,9 @@ void test_page_delete_single_page_nochange_preserves_ui_until_release() {
            core::state::StructureHoldAction::REMOVE);
     workflow.applyCurrentStructureLongPress();
 
-    assert(sequencer.pattern.length.get() == 8U);
-    assert(sequencer.pattern.note[0U] == 69U);
-    assert(sequencer.pattern.isEnabled(0U));
+    assert(sequencer.pattern().length.get() == 8U);
+    assert(sequencer.pattern().note[0U] == 69U);
+    assert(sequencer.pattern().isEnabled(0U));
     assert(sequencer.page.get() == 0U);
     assert(sequencer.focusedStep.get() == 3U);
     assert(sequencer.structureUi.previewPageIndex.get() == 0U);
@@ -4967,7 +4947,7 @@ void test_page_delete_single_page_nochange_preserves_ui_until_release() {
     workflow.clearHoldAction();
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
-    assert(sequencer.pattern.length.get() == 8U);
+    assert(sequencer.pattern().length.get() == 8U);
     assert(h.state.sequencerHistory.undoCount() == 0U);
 
     std::cout << "[PASS] single-Page delete NoChange settles only on release\n";
@@ -4977,21 +4957,20 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(16U);
-        sequencer.pattern.note[8U] = 77U;
-        sequencer.pattern.velocity[8U] = 109U;
-        sequencer.pattern.setEnabled(8U, true);
-        auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+        sequencer.pattern().setContentLength(16U);
+        sequencer.pattern().note[8U] = 77U;
+        sequencer.pattern().velocity[8U] = 109U;
+        sequencer.pattern().setEnabled(8U, true);
+        auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern());
         assert(cc != nullptr);
         seq::SequencerCcLaneDraft draft{};
         draft.destination.controller = 74U;
         assert(seq::createSequencerCcLane(*cc, 0U, draft).changed());
         assert(seq::setSequencerCcLaneEvent(*cc, 0U, 9U, 64U).changed());
-        sequencer.pattern.bumpCcLaneRevision();
+        sequencer.pattern().bumpCcLaneRevision();
         sequencer.page.set(1U);
         sequencer.focusedStep.set(12U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         const auto history = HistoryServices::fromStaticOperations<
@@ -5013,8 +4992,8 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         });
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
         const auto holdStartedAt = sequencer.structureUi.pageHold.startedAtMs.get();
-        const auto graphRevision = sequencer.pattern.graphRevision.get();
-        const auto ccRevision = sequencer.pattern.ccLaneRevision.get();
+        const auto graphRevision = sequencer.pattern().graphRevision.get();
+        const auto ccRevision = sequencer.pattern().ccLaneRevision.get();
         const auto contentViewRevision = sequencer.contentView.revision.get();
 
         workflow.applyCurrentStructureShortPress();
@@ -5022,16 +5001,16 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
 
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assert(sequencer.pattern.length.get() == 16U);
-        assert(sequencer.pattern.note[8U] == 77U);
-        assert(sequencer.pattern.velocity[8U] == 109U);
-        assert(sequencer.pattern.isEnabled(8U));
-        assert(sequencer.pattern.graph == nullptr);
-        assert(sequencer.pattern.graphRevision.get() == graphRevision);
-        assert(sequencer.pattern.ccLanes != nullptr);
-        assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(9U));
-        assert(sequencer.pattern.ccLanes->lanes[0U].values[9U] == 64U);
-        assert(sequencer.pattern.ccLaneRevision.get() == ccRevision);
+        assert(sequencer.pattern().length.get() == 16U);
+        assert(sequencer.pattern().note[8U] == 77U);
+        assert(sequencer.pattern().velocity[8U] == 109U);
+        assert(sequencer.pattern().isEnabled(8U));
+        assert(sequencer.pattern().graph == nullptr);
+        assert(sequencer.pattern().graphRevision.get() == graphRevision);
+        assert(sequencer.pattern().ccLanes != nullptr);
+        assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(9U));
+        assert(sequencer.pattern().ccLanes->lanes[0U].values[9U] == 64U);
+        assert(sequencer.pattern().ccLaneRevision.get() == ccRevision);
         assert(h.state.sequencerTracks.track(0U).note[8U] == 77U);
         assert(sequencer.page.get() == 1U);
         assert(sequencer.focusedStep.get() == 12U);
@@ -5052,14 +5031,14 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(24U);
-        sequencer.pattern.note[0U] = 61U;
-        sequencer.pattern.note[8U] = 73U;
-        sequencer.pattern.note[16U] = 85U;
-        sequencer.pattern.setEnabled(0U, true);
-        sequencer.pattern.setEnabled(8U, true);
-        sequencer.pattern.setEnabled(16U, true);
-        auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+        sequencer.pattern().setContentLength(24U);
+        sequencer.pattern().note[0U] = 61U;
+        sequencer.pattern().note[8U] = 73U;
+        sequencer.pattern().note[16U] = 85U;
+        sequencer.pattern().setEnabled(0U, true);
+        sequencer.pattern().setEnabled(8U, true);
+        sequencer.pattern().setEnabled(16U, true);
+        auto* cc = seq::ensureSequencerCcLaneBank(sequencer.pattern());
         assert(cc != nullptr);
         seq::SequencerCcLaneDraft draft{};
         draft.destination.controller = 71U;
@@ -5067,11 +5046,10 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         assert(seq::setSequencerCcLaneEvent(*cc, 0U, 2U, 11U).changed());
         assert(seq::setSequencerCcLaneEvent(*cc, 0U, 9U, 22U).changed());
         assert(seq::setSequencerCcLaneEvent(*cc, 0U, 18U, 33U).changed());
-        sequencer.pattern.bumpCcLaneRevision();
+        sequencer.pattern().bumpCcLaneRevision();
         sequencer.page.set(1U);
         sequencer.focusedStep.set(10U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         const auto history = HistoryServices::fromStaticOperations<
@@ -5093,8 +5071,8 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         });
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
         const auto holdStartedAt = sequencer.structureUi.pageHold.startedAtMs.get();
-        const auto graphRevision = sequencer.pattern.graphRevision.get();
-        const auto ccRevision = sequencer.pattern.ccLaneRevision.get();
+        const auto graphRevision = sequencer.pattern().graphRevision.get();
+        const auto ccRevision = sequencer.pattern().ccLaneRevision.get();
         const auto contentViewRevision = sequencer.contentView.revision.get();
 
         workflow.applyCurrentStructureLongPress();
@@ -5102,21 +5080,21 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
 
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assert(sequencer.pattern.length.get() == 24U);
-        assert(sequencer.pattern.note[0U] == 61U);
-        assert(sequencer.pattern.note[8U] == 73U);
-        assert(sequencer.pattern.note[16U] == 85U);
-        assert(sequencer.pattern.isEnabled(0U));
-        assert(sequencer.pattern.isEnabled(8U));
-        assert(sequencer.pattern.isEnabled(16U));
-        assert(sequencer.pattern.graph == nullptr);
-        assert(sequencer.pattern.graphRevision.get() == graphRevision);
-        assert(sequencer.pattern.ccLanes != nullptr);
-        assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-        assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(9U));
-        assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(18U));
-        assert(sequencer.pattern.ccLanes->lanes[0U].values[9U] == 22U);
-        assert(sequencer.pattern.ccLaneRevision.get() == ccRevision);
+        assert(sequencer.pattern().length.get() == 24U);
+        assert(sequencer.pattern().note[0U] == 61U);
+        assert(sequencer.pattern().note[8U] == 73U);
+        assert(sequencer.pattern().note[16U] == 85U);
+        assert(sequencer.pattern().isEnabled(0U));
+        assert(sequencer.pattern().isEnabled(8U));
+        assert(sequencer.pattern().isEnabled(16U));
+        assert(sequencer.pattern().graph == nullptr);
+        assert(sequencer.pattern().graphRevision.get() == graphRevision);
+        assert(sequencer.pattern().ccLanes != nullptr);
+        assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(2U));
+        assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(9U));
+        assert(sequencer.pattern().ccLanes->lanes[0U].activeMask.test(18U));
+        assert(sequencer.pattern().ccLanes->lanes[0U].values[9U] == 22U);
+        assert(sequencer.pattern().ccLaneRevision.get() == ccRevision);
         assert(h.state.sequencerTracks.track(0U).length.get() == 24U);
         assert(h.state.sequencerTracks.track(0U).note[8U] == 73U);
         assert(sequencer.page.get() == 1U);
@@ -5216,11 +5194,11 @@ void test_direct_track_selection_remove_sparse_and_max_masks_replay_exactly() {
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackOldActive)).graph ==
                fixture.editor.graph);
-        assert(trackColdOwners(h.state.sequencer.pattern).graph ==
+        assert(trackColdOwners(h.state.sequencer.pattern()).graph ==
                fixture.incoming.graph);
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackIncoming)).graph ==
-               fixture.scratch.graph);
+               fixture.incoming.graph);
         assert(byteHash(
                    &h.state.projectTracks.authored,
                    sizeof(h.state.projectTracks.authored)
@@ -5262,10 +5240,7 @@ void test_direct_track_selection_remove_sparse_and_max_masks_replay_exactly() {
             kDirectTrackSparseMask,
             0x0001U
         );
-        h.state.sequencer.pattern.setContentLength(40U);
-        h.state.sequencerTracks.track(
-            kDirectTrackOldActive
-        ).setContentLength(11U);
+        h.state.sequencer.pattern().setContentLength(40U);
         h.state.sequencer.focusedStep.set(31U);
         h.state.sequencer.page.set(3U);
         h.state.sequencer.structureUi.previewPageIndex.set(3U);
@@ -5382,7 +5357,7 @@ void test_direct_track_selection_remove_preserves_optional_owner_pairs() {
             kDirectTrackSparseMask,
             selectedMask
         );
-        retainTrackColdOwnerKinds(h.state.sequencer.pattern, mode.graph, mode.cc);
+        retainTrackColdOwnerKinds(h.state.sequencer.pattern(), mode.graph, mode.cc);
         retainTrackColdOwnerKinds(
             h.state.sequencerTracks.track(kDirectTrackOldActive),
             mode.graph,
@@ -5393,7 +5368,7 @@ void test_direct_track_selection_remove_preserves_optional_owner_pairs() {
             mode.graph,
             mode.cc
         );
-        const auto editor = trackColdOwners(h.state.sequencer.pattern);
+        const auto editor = trackColdOwners(h.state.sequencer.pattern());
         const auto scratch = trackColdOwners(
             h.state.sequencerTracks.track(kDirectTrackOldActive)
         );
@@ -5432,14 +5407,14 @@ void test_direct_track_selection_remove_preserves_optional_owner_pairs() {
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackOldActive)).cc ==
                editor.cc);
-        assert(trackColdOwners(h.state.sequencer.pattern).graph == incoming.graph);
-        assert(trackColdOwners(h.state.sequencer.pattern).cc == incoming.cc);
+        assert(trackColdOwners(h.state.sequencer.pattern()).graph == incoming.graph);
+        assert(trackColdOwners(h.state.sequencer.pattern()).cc == incoming.cc);
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackIncoming)).graph ==
-               scratch.graph);
+               incoming.graph);
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackIncoming)).cc ==
-               scratch.cc);
+               incoming.cc);
         assertSelectedNonActiveExact();
         const auto afterLogical = captureCanonicalTrackLogicalProof(h);
 
@@ -5648,10 +5623,10 @@ void test_direct_track_create_remove_are_atomic_and_replay_exactly() {
         const auto beforePublication = tx::captureStateInvariant(h.state);
         const auto beforeMacros = captureTrackMacroInvariant(h);
 
-        assert(fixture.editor.graph != fixture.scratch.graph);
+        assert(fixture.editor.graph == fixture.scratch.graph);
         assert(fixture.editor.graph != fixture.incoming.graph);
         assert(fixture.scratch.graph != fixture.incoming.graph);
-        assert(fixture.editor.cc != fixture.scratch.cc);
+        assert(fixture.editor.cc == fixture.scratch.cc);
         assert(fixture.editor.cc != fixture.incoming.cc);
         assert(fixture.scratch.cc != fixture.incoming.cc);
 
@@ -5681,14 +5656,12 @@ void test_direct_track_create_remove_are_atomic_and_replay_exactly() {
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackOldActive)).cc ==
                fixture.editor.cc);
-        assert(h.state.sequencer.pattern.graph == nullptr);
-        assert(h.state.sequencer.pattern.ccLanes == nullptr);
+        assert(h.state.sequencer.pattern().graph == nullptr);
+        assert(h.state.sequencer.pattern().ccLanes == nullptr);
         assert(trackColdOwners(
-                   h.state.sequencerTracks.track(kDirectTrackCreateTarget)).graph ==
-               fixture.scratch.graph);
+                   h.state.sequencerTracks.track(kDirectTrackCreateTarget)).graph == nullptr);
         assert(trackColdOwners(
-                   h.state.sequencerTracks.track(kDirectTrackCreateTarget)).cc ==
-               fixture.scratch.cc);
+                   h.state.sequencerTracks.track(kDirectTrackCreateTarget)).cc == nullptr);
 
         assert(!h.state.sequencer.contextSelector.visible);
         assert(h.state.sequencer.contextSelector.previewFocus ==
@@ -5766,16 +5739,16 @@ void test_direct_track_create_remove_are_atomic_and_replay_exactly() {
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackOldActive)).cc ==
                fixture.editor.cc);
-        assert(trackColdOwners(h.state.sequencer.pattern).graph ==
+        assert(trackColdOwners(h.state.sequencer.pattern()).graph ==
                fixture.incoming.graph);
-        assert(trackColdOwners(h.state.sequencer.pattern).cc ==
+        assert(trackColdOwners(h.state.sequencer.pattern()).cc ==
                fixture.incoming.cc);
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackIncoming)).graph ==
-               fixture.scratch.graph);
+               fixture.incoming.graph);
         assert(trackColdOwners(
                    h.state.sequencerTracks.track(kDirectTrackIncoming)).cc ==
-               fixture.scratch.cc);
+               fixture.incoming.cc);
 
         assert(!h.state.sequencer.contextSelector.visible);
         assert(h.state.sequencer.contextSelector.revision.get() ==
@@ -6176,9 +6149,9 @@ void test_direct_track_pattern_chronology_is_single_and_ordered() {
     {
         SequencerStepHarness h;
         configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
-        const uint8_t noteBefore = h.state.sequencer.pattern.note[0U];
+        const uint8_t noteBefore = h.state.sequencer.pattern().note[0U];
         preparePendingTrackPatternEdit(h.state);
-        const uint8_t editedNote = h.state.sequencer.pattern.note[0U];
+        const uint8_t editedNote = h.state.sequencer.pattern().note[0U];
         const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
         const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
         const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
@@ -6202,11 +6175,11 @@ void test_direct_track_pattern_chronology_is_single_and_ordered() {
         assert(h.state.undoSequencerHistory());
         assert(h.state.sequencerTracks.activeTrackIndex() ==
                kDirectTrackOldActive);
-        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.sequencer.pattern().note[0U] == editedNote);
         assert(h.state.undoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[0U] == noteBefore);
+        assert(h.state.sequencer.pattern().note[0U] == noteBefore);
         assert(h.state.redoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.sequencer.pattern().note[0U] == editedNote);
         assert(h.state.redoSequencerHistory());
         assert(h.state.sequencerTracks.activeTrackIndex() ==
                kDirectTrackCreateTarget);
@@ -6217,9 +6190,9 @@ void test_direct_track_pattern_chronology_is_single_and_ordered() {
         SequencerStepHarness h;
         configureDirectTrackFixture(
             h, DirectTrackFixtureKind::RemoveCurrent);
-        const uint8_t noteBefore = h.state.sequencer.pattern.note[0U];
+        const uint8_t noteBefore = h.state.sequencer.pattern().note[0U];
         preparePendingTrackPatternEdit(h.state);
-        const uint8_t editedNote = h.state.sequencer.pattern.note[0U];
+        const uint8_t editedNote = h.state.sequencer.pattern().note[0U];
         const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
         const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
         const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
@@ -6243,11 +6216,11 @@ void test_direct_track_pattern_chronology_is_single_and_ordered() {
         assert(h.state.undoSequencerHistory());
         assert(h.state.sequencerTracks.activeTrackIndex() ==
                kDirectTrackOldActive);
-        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.sequencer.pattern().note[0U] == editedNote);
         assert(h.state.undoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[0U] == noteBefore);
+        assert(h.state.sequencer.pattern().note[0U] == noteBefore);
         assert(h.state.redoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.sequencer.pattern().note[0U] == editedNote);
         assert(h.state.redoSequencerHistory());
         assert(h.state.sequencerTracks.activeTrackIndex() ==
                kDirectTrackIncoming);
@@ -6264,9 +6237,9 @@ void test_direct_track_pattern_chronology_is_single_and_ordered() {
             kDirectTrackSparseMask,
             selectedMask
         );
-        const uint8_t noteBefore = h.state.sequencer.pattern.note[0U];
+        const uint8_t noteBefore = h.state.sequencer.pattern().note[0U];
         preparePendingTrackPatternEdit(h.state);
-        const uint8_t editedNote = h.state.sequencer.pattern.note[0U];
+        const uint8_t editedNote = h.state.sequencer.pattern().note[0U];
         const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
         const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
         const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
@@ -6292,11 +6265,11 @@ void test_direct_track_pattern_chronology_is_single_and_ordered() {
         assert(h.state.undoSequencerHistory());
         assert(h.state.sequencerTracks.activeTrackIndex() ==
                kDirectTrackOldActive);
-        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.sequencer.pattern().note[0U] == editedNote);
         assert(h.state.undoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[0U] == noteBefore);
+        assert(h.state.sequencer.pattern().note[0U] == noteBefore);
         assert(h.state.redoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.sequencer.pattern().note[0U] == editedNote);
         assert(h.state.redoSequencerHistory());
         assert(h.state.sequencerTracks.activeTrackIndex() ==
                kDirectTrackIncoming);
@@ -6388,8 +6361,8 @@ void test_direct_track_draft_priority_precedes_adapter_validation() {
     SequencerStepHarness h;
     configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
     assert(h.state.sequencer.stepContentDraft.begin(
-        h.state.sequencer.pattern,
-        h.state.sequencer.clip,
+        h.state.sequencer.pattern(),
+        h.state.sequencer.clip(),
         seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
         0U
     ));
@@ -6434,8 +6407,8 @@ void test_direct_track_draft_priority_precedes_adapter_validation() {
             )
         );
         assert(selectionHarness.state.sequencer.stepContentDraft.begin(
-            selectionHarness.state.sequencer.pattern,
-            selectionHarness.state.sequencer.clip,
+            selectionHarness.state.sequencer.pattern(),
+            selectionHarness.state.sequencer.clip(),
             seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
             0U
         ));
@@ -6933,7 +6906,7 @@ void test_created_track_is_undoable_and_redoable() {
     assert(h.state.sequencerTracks.currentEnabledMask() == 0x0003);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.projectTracks.authored.midiChannels[h.state.currentSharedActiveTrack()] == 1);
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
@@ -7029,24 +7002,24 @@ void test_track_creation_history_unavailable_is_atomic_and_keeps_add_slot_open()
 
 void test_step_selection_copy_paste_extends_sparse_root_steps() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(0);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
 
-    h.state.sequencer.pattern.note[1] = 65;
-    h.state.sequencer.pattern.velocity[1] = 91;
-    h.state.sequencer.pattern.gate[1] = 130;
-    h.state.sequencer.pattern.nudge[1] = -2;
-    h.state.sequencer.pattern.probability[1] = 76;
-    h.state.sequencer.pattern.setEnabled(1, true);
+    h.state.sequencer.pattern().note[1] = 65;
+    h.state.sequencer.pattern().velocity[1] = 91;
+    h.state.sequencer.pattern().gate[1] = 130;
+    h.state.sequencer.pattern().nudge[1] = -2;
+    h.state.sequencer.pattern().probability[1] = 76;
+    h.state.sequencer.pattern().setEnabled(1, true);
 
-    h.state.sequencer.pattern.note[3] = 70;
-    h.state.sequencer.pattern.velocity[3] = 112;
-    h.state.sequencer.pattern.gate[3] = 180;
-    h.state.sequencer.pattern.nudge[3] = 4;
-    h.state.sequencer.pattern.probability[3] = 64;
-    h.state.sequencer.pattern.setEnabled(3, true);
+    h.state.sequencer.pattern().note[3] = 70;
+    h.state.sequencer.pattern().velocity[3] = 112;
+    h.state.sequencer.pattern().gate[3] = 180;
+    h.state.sequencer.pattern().nudge[3] = 4;
+    h.state.sequencer.pattern().probability[3] = 64;
+    h.state.sequencer.pattern().setEnabled(3, true);
     createRootMicroSequence(h, 3);
     auto selectedChord = oc::note::sequencer::StepSequencerChordSpec::semantic(
         oc::note::sequencer::StepSequencerChordHarmony::Custom, 8U,
@@ -7059,8 +7032,7 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
         selectedChord.setCustomInterval(voice, intervals[voice]);
     }
     assert(core::state::sequencer::setNodeChordSpec(
-        h.state.sequencer.pattern, core::state::sequencer::rootStepNodeId(3), selectedChord));
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
+        h.state.sequencer.pattern(), core::state::sequencer::rootStepNodeId(3), selectedChord));
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -7104,20 +7076,20 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     assert(h.state.sequencer.structureUi.stepSelection.placementActive());
     assert(h.state.sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
-    assert(h.state.sequencer.pattern.length.get() == 9);
+    assert(h.state.sequencer.pattern().length.get() == 9);
     assert(h.state.sequencer.focusedStep.get() == 6);
-    assert(h.state.sequencer.pattern.note[6] == 65);
-    assert(h.state.sequencer.pattern.velocity[6] == 91);
-    assert(h.state.sequencer.pattern.gate[6] == 130);
-    assert(h.state.sequencer.pattern.nudge[6] == -2);
-    assert(h.state.sequencer.pattern.probability[6] == 76);
-    assert(h.state.sequencer.pattern.isEnabled(6));
-    assert(h.state.sequencer.pattern.note[8] == 70);
-    assert(h.state.sequencer.pattern.velocity[8] == 112);
-    assert(h.state.sequencer.pattern.gate[8] == 180);
-    assert(h.state.sequencer.pattern.nudge[8] == 4);
-    assert(h.state.sequencer.pattern.probability[8] == 64);
-    assert(h.state.sequencer.pattern.isEnabled(8));
+    assert(h.state.sequencer.pattern().note[6] == 65);
+    assert(h.state.sequencer.pattern().velocity[6] == 91);
+    assert(h.state.sequencer.pattern().gate[6] == 130);
+    assert(h.state.sequencer.pattern().nudge[6] == -2);
+    assert(h.state.sequencer.pattern().probability[6] == 76);
+    assert(h.state.sequencer.pattern().isEnabled(6));
+    assert(h.state.sequencer.pattern().note[8] == 70);
+    assert(h.state.sequencer.pattern().velocity[8] == 112);
+    assert(h.state.sequencer.pattern().gate[8] == 180);
+    assert(h.state.sequencer.pattern().nudge[8] == 4);
+    assert(h.state.sequencer.pattern().probability[8] == 64);
+    assert(h.state.sequencer.pattern().isEnabled(8));
     assert(rootStepHasMicroSequence(h, 8));
     const auto* pastedChordNode = rootStepNode(h, 8);
     assert(pastedChordNode != nullptr);
@@ -7128,19 +7100,19 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 8U);
+    assert(h.state.sequencer.pattern().length.get() == 8U);
     assert(h.state.sequencer.focusedStep.get() == prePasteFocus);
     assert(h.state.sequencer.page.get() == prePastePage);
-    assert(!h.state.sequencer.pattern.isEnabled(6U));
-    assert(h.state.sequencer.pattern.isEnabled(1U));
-    assert(h.state.sequencer.pattern.isEnabled(3U));
+    assert(!h.state.sequencer.pattern().isEnabled(6U));
+    assert(h.state.sequencer.pattern().isEnabled(1U));
+    assert(h.state.sequencer.pattern().isEnabled(3U));
     assert(rootStepHasMicroSequence(h, 3U));
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 9U);
+    assert(h.state.sequencer.pattern().length.get() == 9U);
     assert(h.state.sequencer.focusedStep.get() == 6U);
     assert(h.state.sequencer.page.get() == 0U);
-    assert(h.state.sequencer.pattern.note[6U] == 65U);
-    assert(h.state.sequencer.pattern.note[8U] == 70U);
+    assert(h.state.sequencer.pattern().note[6U] == 65U);
+    assert(h.state.sequencer.pattern().note[8U] == 70U);
     assert(rootStepHasMicroSequence(h, 8U));
 
     h.tap(Config::ButtonID::LEFT_TOP);
@@ -7155,7 +7127,7 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
 
 void test_step_selection_macro_long_press_consumes_release_without_toggling() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     h.state.sequencer.structureUi.stepSelection.active.set(true);
     h.state.sequencer.structureUi.stepSelection.cursorStep.set(2);
@@ -7180,14 +7152,14 @@ void test_step_selection_macro_long_press_consumes_release_without_toggling() {
 
 void test_macro_press_on_future_page_does_not_wrap_to_existing_step() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.page.set(1);
     h.state.sequencer.focusedStep.set(0);
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
 
     h.tap(Config::MACRO_BUTTONS[0]);
 
-    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(!h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(h.state.sequencerHistory.undoCount() == 0);
 
@@ -7196,44 +7168,43 @@ void test_macro_press_on_future_page_does_not_wrap_to_existing_step() {
 
 void test_step_focus_bottom_left_resets_focused_step_only() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(16);
+    h.state.sequencer.pattern().setContentLength(16);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(3);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
 
-    h.state.sequencer.pattern.note[3] = 74;
-    h.state.sequencer.pattern.velocity[3] = 105;
-    h.state.sequencer.pattern.setEnabled(3, true);
+    h.state.sequencer.pattern().note[3] = 74;
+    h.state.sequencer.pattern().velocity[3] = 105;
+    h.state.sequencer.pattern().setEnabled(3, true);
     createRootMicroSequence(h, 3);
     oc::note::sequencer::StepSequencerChordSpec chord{};
     chord.voiceCount = 6;
     assert(core::state::sequencer::setNodeChordSpec(
-        h.state.sequencer.pattern, core::state::sequencer::rootStepNodeId(3), chord));
-    h.state.sequencer.pattern.note[8] = 81;
-    h.state.sequencer.pattern.setEnabled(8, true);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
+        h.state.sequencer.pattern(), core::state::sequencer::rootStepNodeId(3), chord));
+    h.state.sequencer.pattern().note[8] = 81;
+    h.state.sequencer.pattern().setEnabled(8, true);
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
-    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.pattern().length.get() == 16);
     assert(h.state.sequencer.focusedStep.get() == 3);
     assert(h.state.sequencer.page.get() == 0);
-    assert(!h.state.sequencer.pattern.isEnabled(3));
-    assert(h.state.sequencer.pattern.note[3] ==
+    assert(!h.state.sequencer.pattern().isEnabled(3));
+    assert(h.state.sequencer.pattern().note[3] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(rootStepHasMicroSequence(h, 3));
     const auto* shallowResetNode = rootStepNode(h, 3);
     assert(shallowResetNode != nullptr);
     assert(!shallowResetNode->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
-    assert(h.state.sequencer.pattern.isEnabled(8));
-    assert(h.state.sequencer.pattern.note[8] == 81);
+    assert(h.state.sequencer.pattern().isEnabled(8));
+    assert(h.state.sequencer.pattern().note[8] == 81);
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(3U));
-    assert(h.state.sequencer.pattern.note[3U] == 74U);
+    assert(h.state.sequencer.pattern().isEnabled(3U));
+    assert(h.state.sequencer.pattern().note[3U] == 74U);
     assert(rootStepHasMicroSequence(h, 3U));
     const auto* restoredNode = rootStepNode(h, 3U);
     assert(restoredNode != nullptr);
@@ -7241,11 +7212,11 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
     assert(h.state.sequencer.focusedStep.get() == 3U);
     assert(h.state.sequencer.page.get() == 0U);
     assert(h.state.redoSequencerHistory());
-    assert(!h.state.sequencer.pattern.isEnabled(3U));
+    assert(!h.state.sequencer.pattern().isEnabled(3U));
     assert(rootStepHasMicroSequence(h, 3U));
     assert(!rootStepNode(h, 3U)->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(3U));
+    assert(h.state.sequencer.pattern().isEnabled(3U));
     assert(rootStepHasMicroSequence(h, 3U));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -7253,19 +7224,19 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
-    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.pattern().length.get() == 16);
     assert(h.state.sequencer.focusedStep.get() == 3);
     assert(h.state.sequencer.page.get() == 0);
     assert(!rootStepHasMicroSequence(h, 3));
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(3U));
-    assert(h.state.sequencer.pattern.note[3U] == 74U);
+    assert(h.state.sequencer.pattern().isEnabled(3U));
+    assert(h.state.sequencer.pattern().note[3U] == 74U);
     assert(rootStepHasMicroSequence(h, 3U));
     assert(h.state.sequencer.focusedStep.get() == 3U);
     assert(h.state.redoSequencerHistory());
-    assert(!h.state.sequencer.pattern.isEnabled(3U));
+    assert(!h.state.sequencer.pattern().isEnabled(3U));
     assert(!rootStepHasMicroSequence(h, 3U));
     assert(h.state.sequencer.focusedStep.get() == 3U);
 
@@ -7275,15 +7246,14 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
 void test_step_focus_empty_reset_release_clears_hold() {
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
-    sequencer.pattern.setContentLength(16U);
+    sequencer.pattern().setContentLength(16U);
     sequencer.focusedStep.set(3U);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-    sequencer.pattern.note[3U] = 74U;
-    sequencer.pattern.setEnabled(3U, true);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
+    sequencer.pattern().note[3U] = 74U;
+    sequencer.pattern().setEnabled(3U, true);
 
     h.tap(Config::ButtonID::BOTTOM_LEFT);
-    assert(!sequencer.pattern.isEnabled(3U));
+    assert(!sequencer.pattern().isEnabled(3U));
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
     const uint8_t undoAfterReset = h.state.sequencerHistory.undoCount();
@@ -7309,22 +7279,21 @@ void test_step_focus_empty_reset_release_clears_hold() {
 
 void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(1);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
 
-    h.state.sequencer.pattern.note[1] = 76;
-    h.state.sequencer.pattern.velocity[1] = 112;
-    h.state.sequencer.pattern.gate[1] = 180;
-    h.state.sequencer.pattern.nudge[1] = 3;
-    h.state.sequencer.pattern.setEnabled(1, true);
+    h.state.sequencer.pattern().note[1] = 76;
+    h.state.sequencer.pattern().velocity[1] = 112;
+    h.state.sequencer.pattern().gate[1] = 180;
+    h.state.sequencer.pattern().nudge[1] = 3;
+    h.state.sequencer.pattern().setEnabled(1, true);
     createRootMicroSequence(h, 1);
     oc::note::sequencer::StepSequencerChordSpec chord{};
     chord.voiceCount = 7;
     assert(core::state::sequencer::setNodeChordSpec(
-        h.state.sequencer.pattern, core::state::sequencer::rootStepNodeId(1), chord));
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
+        h.state.sequencer.pattern(), core::state::sequencer::rootStepNodeId(1), chord));
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -7343,11 +7312,11 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
 
     assert(!h.state.sequencer.structureUi.stepSelection.active.get());
     assert(h.state.sequencer.focusedStep.get() == 2);
-    assert(h.state.sequencer.pattern.isEnabled(2));
-    assert(h.state.sequencer.pattern.note[2] == 76);
-    assert(h.state.sequencer.pattern.velocity[2] == 112);
-    assert(h.state.sequencer.pattern.gate[2] == 180);
-    assert(h.state.sequencer.pattern.nudge[2] == 3);
+    assert(h.state.sequencer.pattern().isEnabled(2));
+    assert(h.state.sequencer.pattern().note[2] == 76);
+    assert(h.state.sequencer.pattern().velocity[2] == 112);
+    assert(h.state.sequencer.pattern().gate[2] == 180);
+    assert(h.state.sequencer.pattern().nudge[2] == 3);
     assert(rootStepHasMicroSequence(h, 2));
     const auto* pastedNode = rootStepNode(h, 2);
     assert(pastedNode != nullptr);
@@ -7360,11 +7329,11 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.focusedStep.get() == 2U);
     assert(h.state.sequencer.page.get() == 0U);
-    assert(!h.state.sequencer.pattern.isEnabled(2U));
+    assert(!h.state.sequencer.pattern().isEnabled(2U));
     assert(!rootStepHasMicroSequence(h, 2U));
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencer.focusedStep.get() == 2U);
-    assert(h.state.sequencer.pattern.note[2U] == 76U);
+    assert(h.state.sequencer.pattern().note[2U] == 76U);
     assert(rootStepHasMicroSequence(h, 2U));
 
     const auto historyAfterCommit = h.state.sequencerHistory.undoCount();
@@ -7380,7 +7349,7 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.sequencerHistory.undoCount() == historyAfterCommit);
     assert(h.state.structureClipboard.revision.get() == clipboardRevision);
-    assert(h.state.sequencer.pattern.note[2U] == 76U);
+    assert(h.state.sequencer.pattern().note[2U] == 76U);
     assert(rootStepHasMicroSequence(h, 2U));
 
     std::cout << "[PASS] test_step_focus_copy_paste_copies_complete_step_without_selection\n";
@@ -7388,14 +7357,12 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
 
 void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-    h.state.sequencer.pattern.note[2] = 74;
-    h.state.sequencer.pattern.velocity[2] = 105;
-    h.state.sequencer.pattern.setEnabled(2, true);
+    h.state.sequencer.pattern().note[2] = 74;
+    h.state.sequencer.pattern().velocity[2] = 105;
+    h.state.sequencer.pattern().setEnabled(2, true);
     createRootMicroSequence(h, 2);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(
-        h.state.sequencerTracks, h.state.sequencer));
 
     h.state.sequencer.structureUi.stepSelection.active.set(true);
     h.state.sequencer.structureUi.stepSelection.cursorStep.set(2);
@@ -7405,24 +7372,24 @@ void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.sequencer.structureUi.stepSelection.active.get());
-    assert(!h.state.sequencer.pattern.isEnabled(2));
-    assert(h.state.sequencer.pattern.note[2] ==
+    assert(!h.state.sequencer.pattern().isEnabled(2));
+    assert(h.state.sequencer.pattern().note[2] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(rootStepHasMicroSequence(h, 2));
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(2));
-    assert(h.state.sequencer.pattern.note[2] == 74);
-    assert(h.state.sequencer.pattern.velocity[2] == 105);
+    assert(h.state.sequencer.pattern().isEnabled(2));
+    assert(h.state.sequencer.pattern().note[2] == 74);
+    assert(h.state.sequencer.pattern().velocity[2] == 105);
     assert(rootStepHasMicroSequence(h, 2));
 
     assert(h.state.redoSequencerHistory());
-    assert(!h.state.sequencer.pattern.isEnabled(2U));
-    assert(h.state.sequencer.pattern.note[2U] == seq::SequencerState::DEFAULT_NOTE);
+    assert(!h.state.sequencer.pattern().isEnabled(2U));
+    assert(h.state.sequencer.pattern().note[2U] == seq::SequencerState::DEFAULT_NOTE);
     assert(rootStepHasMicroSequence(h, 2U));
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(2U));
+    assert(h.state.sequencer.pattern().isEnabled(2U));
     assert(rootStepHasMicroSequence(h, 2U));
 
     const uint8_t undoBeforeDeepReset = h.state.sequencerHistory.undoCount();
@@ -7433,20 +7400,20 @@ void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
     assert(h.state.sequencer.structureUi.stepSelection.active.get());
-    assert(!h.state.sequencer.pattern.isEnabled(2));
-    assert(h.state.sequencer.pattern.note[2] ==
+    assert(!h.state.sequencer.pattern().isEnabled(2));
+    assert(h.state.sequencer.pattern().note[2] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(!rootStepHasMicroSequence(h, 2));
     assert(h.state.sequencerHistory.undoCount() == undoBeforeDeepReset + 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(2));
-    assert(h.state.sequencer.pattern.note[2] == 74);
-    assert(h.state.sequencer.pattern.velocity[2] == 105);
+    assert(h.state.sequencer.pattern().isEnabled(2));
+    assert(h.state.sequencer.pattern().note[2] == 74);
+    assert(h.state.sequencer.pattern().velocity[2] == 105);
     assert(rootStepHasMicroSequence(h, 2));
 
     assert(h.state.redoSequencerHistory());
-    assert(!h.state.sequencer.pattern.isEnabled(2U));
+    assert(!h.state.sequencer.pattern().isEnabled(2U));
     assert(!rootStepHasMicroSequence(h, 2U));
 
     std::cout << "[PASS] test_step_selection_clear_is_undoable_and_keeps_selection_active\n";
@@ -7454,16 +7421,16 @@ void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
 
 void test_step_selection_wrap_paste_overwrites_inside_pattern() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     h.state.projectNavigation.stepPasteMode = core::state::project::ProjectStepPasteMode::WRAP;
 
-    h.state.sequencer.pattern.note[1] = 61;
-    h.state.sequencer.pattern.note[3] = 63;
-    h.state.sequencer.pattern.setEnabled(1, true);
-    h.state.sequencer.pattern.setEnabled(3, true);
-    h.state.sequencer.pattern.note[7] = 79;
-    h.state.sequencer.pattern.setEnabled(7, true);
+    h.state.sequencer.pattern().note[1] = 61;
+    h.state.sequencer.pattern().note[3] = 63;
+    h.state.sequencer.pattern().setEnabled(1, true);
+    h.state.sequencer.pattern().setEnabled(3, true);
+    h.state.sequencer.pattern().note[7] = 79;
+    h.state.sequencer.pattern().setEnabled(7, true);
 
     h.state.sequencer.structureUi.stepSelection.active.set(true);
     h.state.sequencer.structureUi.stepSelection.cursorStep.set(1);
@@ -7485,11 +7452,11 @@ void test_step_selection_wrap_paste_overwrites_inside_pattern() {
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(h.state.sequencer.pattern.length.get() == 8);
-    assert(h.state.sequencer.pattern.note[7] == 61);
-    assert(h.state.sequencer.pattern.isEnabled(7));
-    assert(h.state.sequencer.pattern.note[1] == 63);
-    assert(h.state.sequencer.pattern.isEnabled(1));
+    assert(h.state.sequencer.pattern().length.get() == 8);
+    assert(h.state.sequencer.pattern().note[7] == 61);
+    assert(h.state.sequencer.pattern().isEnabled(7));
+    assert(h.state.sequencer.pattern().note[1] == 63);
+    assert(h.state.sequencer.pattern().isEnabled(1));
     assert(h.state.sequencer.structureUi.stepSelection.placementActive());
 
     std::cout << "[PASS] test_step_selection_wrap_paste_overwrites_inside_pattern\n";
@@ -7499,7 +7466,7 @@ void test_child_content_nav_enters_step_selection_and_pastes_child_steps() {
     SequencerStepHarness h;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto micro =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
     assert(micro.ok);
     assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, rootNode,
                                                                  micro.id));
@@ -7507,9 +7474,9 @@ void test_child_content_nav_enters_step_selection_and_pastes_child_steps() {
     h.state.sequencer.focusedStep.set(0);
 
     const auto childNode0 = core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 0);
-    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern, childNode0, 4));
+    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern(), childNode0, 4));
     const auto cycle =
-        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern, childNode0, 2);
+        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern(), childNode0, 2);
     assert(cycle.ok);
 
     h.handler.enterSelectionModeForCurrentFocus();
@@ -7530,7 +7497,7 @@ void test_child_content_nav_enters_step_selection_and_pastes_child_steps() {
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
     const auto childNode1 = core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 1);
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     assert(graph->stepNodes[childNode1].noteOffset == 4);
     assert(graph->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_CYCLE_SET));
@@ -7540,17 +7507,17 @@ void test_child_content_nav_enters_step_selection_and_pastes_child_steps() {
 
 void test_child_draft_owns_main_bottom_actions_until_single_apply() {
     SequencerStepHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
 
     const auto sourceRoot = core::state::sequencer::rootStepNodeId(0);
     const auto source =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, sourceRoot, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), sourceRoot, 2);
     assert(source.ok);
     assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, sourceRoot,
                                                                  source.id));
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     const auto sourceNode = core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 0);
-    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern, sourceNode, 9));
+    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern(), sourceNode, 9));
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.structureClipboard.hasSequencerSteps());
     const uint32_t sourceClipboardRevision = h.state.structureClipboard.revision.get();
@@ -7598,7 +7565,7 @@ void test_child_draft_owns_main_bottom_actions_until_single_apply() {
     assert(h.state.sequencerHistory.undoCount() == 1);
     const auto publishedNode =
         core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 0);
-    const auto* publishedGraph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* publishedGraph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(publishedGraph != nullptr);
     assert(publishedGraph->stepNodes[publishedNode].noteOffset == 3);
     assert(h.state.structureClipboard.revision.get() == sourceClipboardRevision);
@@ -7615,7 +7582,7 @@ void test_child_step_focus_bottom_actions_use_local_step_payload() {
     SequencerStepHarness h;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto micro =
-        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern, rootNode, 2);
+        core::state::sequencer::createMicroSequence(h.state.sequencer.pattern(), rootNode, 2);
     assert(micro.ok);
     assert(core::state::sequencer::enterMicroSequenceContentView(h.state.sequencer, rootNode,
                                                                  micro.id));
@@ -7623,18 +7590,18 @@ void test_child_step_focus_bottom_actions_use_local_step_payload() {
     h.state.sequencer.focusedStep.set(0);
 
     auto childNode0 = core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 0);
-    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern, childNode0, 4));
+    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern(), childNode0, 4));
     assert(
-        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern, childNode0, 2).ok);
+        core::state::sequencer::createCycleStateSet(h.state.sequencer.pattern(), childNode0, 2).ok);
 
     h.tap(Config::ButtonID::BOTTOM_LEFT);
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     assert(graph->stepNodes[childNode0].noteOffset == 0);
     assert(!graph->stepNodes[childNode0].has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
     assert(nodeHasCycleStates(h, childNode0));
 
-    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern, childNode0, 5));
+    assert(core::state::sequencer::setNodeNoteOffset(h.state.sequencer.pattern(), childNode0, 5));
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(h.state.structureClipboard.hasSequencerSteps());
     assert(!h.state.structureClipboard.sequencerSteps.rootContext);
@@ -7647,7 +7614,7 @@ void test_child_step_focus_bottom_actions_use_local_step_payload() {
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
     const auto childNode1 = core::state::sequencer::activeContentStepNodeId(h.state.sequencer, 1);
-    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     assert(graph->stepNodes[childNode1].noteOffset == 5);
     assert(graph->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
@@ -7658,7 +7625,7 @@ void test_child_step_focus_bottom_actions_use_local_step_payload() {
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
 
-    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     assert(!graph->stepNodes[childNode1].has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
     assert(!nodeHasCycleStates(h, childNode1));
@@ -7670,7 +7637,7 @@ void test_child_page_selection_reset_shallow_commits_pattern_only_and_replays() 
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
     const auto rootNode = seq::rootStepNodeId(0U);
-    const auto micro = seq::createMicroSequence(sequencer.pattern, rootNode, 2U);
+    const auto micro = seq::createMicroSequence(sequencer.pattern(), rootNode, 2U);
     assert(micro.ok);
     assert(seq::enterMicroSequenceContentView(sequencer, rootNode, micro.id));
     configureActiveContentCycleDescendants(h, 0U, 7, 11, -4);
@@ -7683,7 +7650,6 @@ void test_child_page_selection_reset_shallow_commits_pattern_only_and_replays() 
     selection.scope.set(core::state::StructureSelectionScope::PAGE);
     selection.cursorIndex.set(0U);
     selection.selectedMask.set(0x0001U);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     auto workflow = makeStructureEditWorkflow(
         h, HistoryServices::fromCoreState(h.state));
@@ -7694,7 +7660,7 @@ void test_child_page_selection_reset_shallow_commits_pattern_only_and_replays() 
     test_support::drainNotifications();
 
     auto activeNode = seq::activeContentStepNodeId(sequencer, 0U);
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* resetNode = graph->stepNode(activeNode);
     assert(resetNode != nullptr);
@@ -7722,7 +7688,7 @@ void test_child_page_selection_reset_shallow_commits_pattern_only_and_replays() 
     assert(h.state.undoSequencerHistory());
     test_support::drainNotifications();
     activeNode = seq::activeContentStepNodeId(sequencer, 0U);
-    graph = seq::graphView(sequencer.pattern);
+    graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* restoredNode = graph->stepNode(activeNode);
     assert(restoredNode != nullptr);
@@ -7743,7 +7709,7 @@ void test_child_page_selection_reset_shallow_commits_pattern_only_and_replays() 
     assert(h.state.redoSequencerHistory());
     test_support::drainNotifications();
     activeNode = seq::activeContentStepNodeId(sequencer, 0U);
-    graph = seq::graphView(sequencer.pattern);
+    graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     resetNode = graph->stepNode(activeNode);
     assert(resetNode != nullptr);
@@ -7769,7 +7735,7 @@ void test_child_page_selection_deep_reset_removes_descendants_and_replays() {
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
     const auto rootNode = seq::rootStepNodeId(0U);
-    const auto micro = seq::createMicroSequence(sequencer.pattern, rootNode, 2U);
+    const auto micro = seq::createMicroSequence(sequencer.pattern(), rootNode, 2U);
     assert(micro.ok);
     assert(seq::enterMicroSequenceContentView(sequencer, rootNode, micro.id));
     configureActiveContentCycleDescendants(h, 0U, 9, 12, -5);
@@ -7782,7 +7748,6 @@ void test_child_page_selection_deep_reset_removes_descendants_and_replays() {
     selection.scope.set(core::state::StructureSelectionScope::PAGE);
     selection.cursorIndex.set(0U);
     selection.selectedMask.set(0x0001U);
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     auto workflow = makeStructureEditWorkflow(
         h, HistoryServices::fromCoreState(h.state));
@@ -7793,7 +7758,7 @@ void test_child_page_selection_deep_reset_removes_descendants_and_replays() {
     test_support::drainNotifications();
 
     auto activeNode = seq::activeContentStepNodeId(sequencer, 0U);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* resetNode = graph->stepNode(activeNode);
     assert(resetNode != nullptr);
@@ -7822,7 +7787,7 @@ void test_child_page_selection_deep_reset_removes_descendants_and_replays() {
     assert(h.state.undoSequencerHistory());
     test_support::drainNotifications();
     activeNode = seq::activeContentStepNodeId(sequencer, 0U);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* restoredNode = graph->stepNode(activeNode);
     assert(restoredNode != nullptr);
@@ -7844,7 +7809,7 @@ void test_child_page_selection_deep_reset_removes_descendants_and_replays() {
     assert(h.state.redoSequencerHistory());
     test_support::drainNotifications();
     activeNode = seq::activeContentStepNodeId(sequencer, 0U);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     resetNode = graph->stepNode(activeNode);
     assert(resetNode != nullptr);
@@ -7871,12 +7836,11 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
-        sequencer.pattern.note[1U] = 73U;
-        sequencer.pattern.setEnabled(1U, true);
+        sequencer.pattern().setContentLength(8U);
+        sequencer.pattern().note[1U] = 73U;
+        sequencer.pattern().setEnabled(1U, true);
         sequencer.focusedStep.set(1U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         workflow.copyCurrentStructure();
         assert(h.state.structureClipboard.hasSequencerSteps());
@@ -7900,11 +7864,10 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
+        sequencer.pattern().setContentLength(8U);
         sequencer.page.set(0U);
         sequencer.focusedStep.set(3U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(19U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -7923,14 +7886,13 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
+        sequencer.pattern().setContentLength(8U);
         sequencer.focusedStep.set(2U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
         auto& selection = sequencer.structureUi.stepSelection;
         selection.active.set(true);
         selection.cursorStep.set(2U);
         selection.setSelected(2U, true);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(23U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -7949,14 +7911,13 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
+        sequencer.pattern().setContentLength(8U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
         auto& selection = sequencer.structureUi.pageSelection;
         selection.active.set(true);
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(29U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -7975,14 +7936,13 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
+        sequencer.pattern().setContentLength(8U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
         auto& selection = sequencer.structureUi.pageSelection;
         selection.active.set(true);
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(31U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8005,14 +7965,13 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
-        sequencer.pattern.note[1U] = 75U;
-        sequencer.pattern.velocity[1U] = 106U;
-        sequencer.pattern.setEnabled(1U, true);
+        sequencer.pattern().setContentLength(8U);
+        sequencer.pattern().note[1U] = 75U;
+        sequencer.pattern().velocity[1U] = 106U;
+        sequencer.pattern().setEnabled(1U, true);
         createRootMicroSequence(h, 1U);
         sequencer.focusedStep.set(1U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         workflow.copyCurrentStructure();
         auto& selection = sequencer.structureUi.stepSelection;
@@ -8039,13 +7998,12 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
-        sequencer.pattern.note[3U] = 77U;
-        sequencer.pattern.setEnabled(3U, true);
+        sequencer.pattern().setContentLength(8U);
+        sequencer.pattern().note[3U] = 77U;
+        sequencer.pattern().setEnabled(3U, true);
         createRootMicroSequence(h, 3U);
         sequencer.focusedStep.set(3U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(43U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8064,9 +8022,9 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
-        sequencer.pattern.note[2U] = 79U;
-        sequencer.pattern.setEnabled(2U, true);
+        sequencer.pattern().setContentLength(8U);
+        sequencer.pattern().note[2U] = 79U;
+        sequencer.pattern().setEnabled(2U, true);
         createRootMicroSequence(h, 2U);
         sequencer.focusedStep.set(2U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -8074,7 +8032,6 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         selection.active.set(true);
         selection.cursorStep.set(2U);
         selection.setSelected(2U, true);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(47U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8094,11 +8051,11 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
         const auto rootNode = seq::rootStepNodeId(0U);
-        const auto micro = seq::createMicroSequence(sequencer.pattern, rootNode, 2U);
+        const auto micro = seq::createMicroSequence(sequencer.pattern(), rootNode, 2U);
         assert(micro.ok);
         assert(seq::enterMicroSequenceContentView(sequencer, rootNode, micro.id));
         const auto childNode = seq::activeContentStepNodeId(sequencer, 0U);
-        assert(seq::setNodeNoteOffset(sequencer.pattern, childNode, 7));
+        assert(seq::setNodeNoteOffset(sequencer.pattern(), childNode, 7));
         sequencer.page.set(0U);
         sequencer.focusedStep.set(1U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
@@ -8107,7 +8064,6 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(53U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8126,9 +8082,9 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(24U);
-        sequencer.pattern.note[8U] = 81U;
-        sequencer.pattern.setEnabled(8U, true);
+        sequencer.pattern().setContentLength(24U);
+        sequencer.pattern().note[8U] = 81U;
+        sequencer.pattern().setEnabled(8U, true);
         createRootMicroSequence(h, 8U);
         sequencer.page.set(1U);
         sequencer.focusedStep.set(10U);
@@ -8138,7 +8094,6 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(1U);
         selection.selectedMask.set(0x0002U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(59U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8161,13 +8116,12 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
-        sequencer.pattern.note[0U] = 74U;
-        sequencer.pattern.velocity[0U] = 101U;
-        sequencer.pattern.setEnabled(0U, true);
+        sequencer.pattern().setContentLength(8U);
+        sequencer.pattern().note[0U] = 74U;
+        sequencer.pattern().velocity[0U] = 101U;
+        sequencer.pattern().setEnabled(0U, true);
         sequencer.focusedStep.set(0U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8190,19 +8144,18 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
+        sequencer.pattern().setContentLength(8U);
         const auto rootNode = seq::rootStepNodeId(0U);
-        const auto micro = seq::createMicroSequence(sequencer.pattern, rootNode, 16U);
+        const auto micro = seq::createMicroSequence(sequencer.pattern(), rootNode, 16U);
         assert(micro.ok);
         assert(seq::enterMicroSequenceContentView(sequencer, rootNode, micro.id));
-        assert(sequencer.pattern.length.get() == 8U);
+        assert(sequencer.pattern().length.get() == 8U);
         assert(seq::activeContentLength(sequencer) == 16U);
         const auto childNode = seq::activeContentStepNodeId(sequencer, 12U);
-        assert(seq::setNodeNoteOffset(sequencer.pattern, childNode, 5));
+        assert(seq::setNodeNoteOffset(sequencer.pattern(), childNode, 5));
         sequencer.page.set(1U);
         sequencer.focusedStep.set(12U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8222,10 +8175,10 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(8U);
-        sequencer.pattern.note[2U] = 82U;
-        sequencer.pattern.velocity[2U] = 113U;
-        sequencer.pattern.setEnabled(2U, true);
+        sequencer.pattern().setContentLength(8U);
+        sequencer.pattern().note[2U] = 82U;
+        sequencer.pattern().velocity[2U] = 113U;
+        sequencer.pattern().setEnabled(2U, true);
         createRootMicroSequence(h, 2U);
         sequencer.focusedStep.set(4U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -8233,7 +8186,6 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         selection.active.set(true);
         selection.cursorStep.set(2U);
         selection.setSelected(2U, true);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8253,11 +8205,11 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
-        sequencer.pattern.setContentLength(16U);
-        sequencer.pattern.note[0U] = 64U;
-        sequencer.pattern.note[8U] = 84U;
-        sequencer.pattern.setEnabled(0U, true);
-        sequencer.pattern.setEnabled(8U, true);
+        sequencer.pattern().setContentLength(16U);
+        sequencer.pattern().note[0U] = 64U;
+        sequencer.pattern().note[8U] = 84U;
+        sequencer.pattern().setEnabled(0U, true);
+        sequencer.pattern().setEnabled(8U, true);
         sequencer.page.set(1U);
         sequencer.focusedStep.set(11U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
@@ -8266,7 +8218,6 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(1U);
         selection.selectedMask.set(0x0003U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8287,11 +8238,11 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
         const auto rootNode = seq::rootStepNodeId(0U);
-        const auto micro = seq::createMicroSequence(sequencer.pattern, rootNode, 2U);
+        const auto micro = seq::createMicroSequence(sequencer.pattern(), rootNode, 2U);
         assert(micro.ok);
         assert(seq::enterMicroSequenceContentView(sequencer, rootNode, micro.id));
         const auto childNode = seq::activeContentStepNodeId(sequencer, 0U);
-        assert(seq::setNodeNoteOffset(sequencer.pattern, childNode, 9));
+        assert(seq::setNodeNoteOffset(sequencer.pattern(), childNode, 9));
         sequencer.page.set(0U);
         sequencer.focusedStep.set(1U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
@@ -8300,7 +8251,6 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -9116,13 +9066,13 @@ void test_drum_step_editor_authors_advanced_rhythm_content_and_replays() {
     assert(h.state.undoSequencerHistory());
     assert(track.advancedRootSlot(0U, 0U) < 0);
     assert(!seq::stepNodeHasMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
     ));
     assert(h.state.redoSequencerHistory());
     assert(track.advancedRootSlot(0U, 0U) == rootSlot);
     assert(seq::stepNodeHasMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
     ));
 
@@ -9171,13 +9121,13 @@ void test_drum_step_editor_authors_cycle_states_and_replays() {
     assert(h.state.undoSequencerHistory());
     assert(track.advancedRootSlot(1U, 3U) < 0);
     assert(!seq::stepNodeHasCycleStateSet(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
     ));
     assert(h.state.redoSequencerHistory());
     assert(track.advancedRootSlot(1U, 3U) == rootSlot);
     assert(seq::stepNodeHasCycleStateSet(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(rootSlot))
     ));
 
@@ -9267,7 +9217,7 @@ void test_drum_track_pattern_step_bottom_actions_share_one_contract() {
     assert(track.pattern.lanes[0U].nudge[1U] == -7);
     assert(track.pattern.lanes[0U].probability[1U] == 63U);
     assert(seq::stepNodeHasMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(pastedSlot))
     ));
 
@@ -9290,7 +9240,7 @@ void test_drum_track_pattern_step_bottom_actions_share_one_contract() {
     assert(track.pattern.stepEnabled(0U, 1U));
     assert(track.advancedRootSlot(0U, 1U) == pastedSlot);
     assert(seq::stepNodeHasMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(pastedSlot))
     ));
 
@@ -9337,20 +9287,20 @@ void test_drum_pattern_lane_content_selection_preserves_lane_identity() {
 
     bool mappingChanged = false;
     const int16_t sourceSlot = seq::ensureDrumAdvancedRootSlot(
-        track, sequencer.pattern, 1U, 0U, mappingChanged);
+        track, sequencer.pattern(), 1U, 0U, mappingChanged);
     assert(sourceSlot >= 0 && mappingChanged);
     assert(seq::createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(sourceSlot)),
         3U
     ).ok);
 
     mappingChanged = false;
     const int16_t oldDestinationSlot = seq::ensureDrumAdvancedRootSlot(
-        track, sequencer.pattern, 4U, 1U, mappingChanged);
+        track, sequencer.pattern(), 4U, 1U, mappingChanged);
     assert(oldDestinationSlot >= 0 && mappingChanged);
     assert(seq::createCycleStateSet(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(oldDestinationSlot)),
         2U
     ).ok);
@@ -9401,7 +9351,7 @@ void test_drum_pattern_lane_content_selection_preserves_lane_identity() {
     const int16_t pastedSlot = track.advancedRootSlot(4U, 0U);
     assert(pastedSlot >= 0);
     assert(seq::stepNodeHasMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(pastedSlot))
     ));
 
@@ -9416,7 +9366,7 @@ void test_drum_pattern_lane_content_selection_preserves_lane_identity() {
     const int16_t restoredDestinationSlot = track.advancedRootSlot(4U, 1U);
     assert(restoredDestinationSlot >= 0);
     assert(seq::stepNodeHasCycleStateSet(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(restoredDestinationSlot))
     ));
 
@@ -9466,10 +9416,10 @@ void test_drum_pattern_lane_move_is_direct_cancelable_and_undoable() {
     assert(track.pattern.setStepVelocity(1U, 3U, 117U));
     bool mappingChanged = false;
     const int16_t sourceSlot = seq::ensureDrumAdvancedRootSlot(
-        track, sequencer.pattern, 1U, 3U, mappingChanged);
+        track, sequencer.pattern(), 1U, 3U, mappingChanged);
     assert(sourceSlot >= 0 && mappingChanged);
     assert(seq::createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(static_cast<uint8_t>(sourceSlot)),
         3U
     ).ok);
@@ -9551,7 +9501,7 @@ void test_drum_advanced_creation_oom_restores_mapping_and_graph() {
         h.tap(Config::ButtonID::NAV);
     }
     assert(track.advancedRootSlot(0U, 0U) < 0);
-    assert(seq::graphView(sequencer.pattern) == nullptr);
+    assert(seq::graphView(sequencer.pattern()) == nullptr);
     assert(seq::isRootContentView(sequencer));
     assert(sequencer.stepEdit.visible.get());
     assert(h.state.sequencerHistory.undoCount() == undoBefore);

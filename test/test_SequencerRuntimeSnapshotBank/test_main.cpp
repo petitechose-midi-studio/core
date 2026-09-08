@@ -25,14 +25,15 @@ bool sameScale(const StepSequencerScaleSettings& lhs, const StepSequencerScaleSe
 }
 
 void test_refresh_captures_active_editor_state() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     assert(core::state::sequencer::resizeClipPatternContent(sequencer, 12));
-    sequencer.pattern.note[0] = 67;
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().note[0] = 67;
+    sequencer.pattern().bumpStepDataRevision();
 
     const uint8_t index = bank.refresh();
     bank.commit(index);
@@ -46,12 +47,13 @@ void test_refresh_captures_active_editor_state() {
 }
 
 void test_refresh_preserves_active_snapshot_until_commit() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.setContentLength(8);
+    sequencer.pattern().setContentLength(8);
     uint8_t index = bank.refresh();
     bank.commit(index);
 
@@ -68,19 +70,20 @@ void test_refresh_preserves_active_snapshot_until_commit() {
 }
 
 void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().bumpStepDataRevision();
     uint8_t index = bank.refresh();
     bank.commit(index);
 
-    sequencer.pattern.note[0] = 72;
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().note[0] = 72;
+    sequencer.pattern().bumpStepDataRevision();
     index = bank.refresh();
     bank.commit(index);
     assert(bank.activeSnapshot().tracks[0].note[0] == 72);
@@ -93,12 +96,13 @@ void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
 }
 
 void test_invalidate_refreshes_both_buffers_after_project_replacement() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.note[0] = 60U;
+    sequencer.pattern().note[0] = 60U;
     uint8_t index = bank.refresh();
     bank.commit(index);
     index = bank.refresh();
@@ -106,7 +110,7 @@ void test_invalidate_refreshes_both_buffers_after_project_replacement() {
 
     // Project files restore authored revisions, so content may change while
     // presenting the same signature to both alternating runtime buffers.
-    sequencer.pattern.note[0] = 72U;
+    sequencer.pattern().note[0] = 72U;
     bank.invalidate();
     index = bank.refresh();
     bank.commit(index);
@@ -119,8 +123,9 @@ void test_invalidate_refreshes_both_buffers_after_project_replacement() {
 }
 
 void test_region_markers_invalidate_both_flat_runtime_buffers() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{
         sequencer,
@@ -134,30 +139,30 @@ void test_region_markers_invalidate_both_flat_runtime_buffers() {
     bank.commit(index);
 
     const auto before = core::sequencer::captureRuntimeStateSignature(
-        sequencer.pattern,
-        sequencer.clip,
+        sequencer.pattern(),
+        sequencer.clip(),
         {},
         {}
     );
-    const uint32_t unchangedRevision = sequencer.pattern.patternTimingRevision.get();
+    const uint32_t unchangedRevision = sequencer.pattern().patternTimingRevision.get();
     // Reproduce a snapshot restore where the historical revision can be equal
     // even though the persisted region changed.
     assert(core::state::sequencer::setClipPlaybackRegion(
-        sequencer.pattern,
-        sequencer.clip,
+        sequencer.pattern(),
+        sequencer.clip(),
         {8U, 1U, 2U, 6U}
     ));
-    assert(sequencer.pattern.patternTimingRevision.get() == unchangedRevision);
+    assert(sequencer.pattern().patternTimingRevision.get() == unchangedRevision);
     const auto after = core::sequencer::captureRuntimeStateSignature(
-        sequencer.pattern,
-        sequencer.clip,
+        sequencer.pattern(),
+        sequencer.clip(),
         {},
         {}
     );
     assert(!before.matches(after));
     assert(after.matches(core::sequencer::captureRuntimeStateSignature(
-        sequencer.pattern,
-        sequencer.clip,
+        sequencer.pattern(),
+        sequencer.clip(),
         {},
         {}
     )));
@@ -165,19 +170,19 @@ void test_region_markers_invalidate_both_flat_runtime_buffers() {
     index = bank.refresh();
     bank.commit(index);
     assert(bank.activeSnapshot().clips[0].playStartTick ==
-           sequencer.clip.playStartTick);
+           sequencer.clip().playStartTick);
     assert(bank.activeSnapshot().clips[0].loopStartTick ==
-           sequencer.clip.loopStartTick);
+           sequencer.clip().loopStartTick);
     assert(bank.activeSnapshot().clips[0].loopEndTick ==
-           sequencer.clip.loopEndTick);
+           sequencer.clip().loopEndTick);
     index = bank.refresh();
     bank.commit(index);
     assert(bank.activeSnapshot().clips[0].playStartTick ==
-           sequencer.clip.playStartTick);
+           sequencer.clip().playStartTick);
     assert(bank.activeSnapshot().clips[0].loopStartTick ==
-           sequencer.clip.loopStartTick);
+           sequencer.clip().loopStartTick);
     assert(bank.activeSnapshot().clips[0].loopEndTick ==
-           sequencer.clip.loopEndTick);
+           sequencer.clip().loopEndTick);
 
     std::cout << "[PASS] test_region_markers_invalidate_both_flat_runtime_buffers\n";
 }
@@ -185,8 +190,9 @@ void test_region_markers_invalidate_both_flat_runtime_buffers() {
 void test_refresh_skips_unchanged_cc_lane_payloads_per_buffer() {
     using namespace core::state::sequencer;
 
-    SequencerState sequencer;
     SequencerTrackBankState trackBank;
+    SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{
         sequencer,
@@ -194,12 +200,12 @@ void test_refresh_skips_unchanged_cc_lane_payloads_per_buffer() {
         projectNavigation,
     };
 
-    auto* lanes = ensureSequencerCcLaneBank(sequencer.pattern);
+    auto* lanes = ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     SequencerCcLaneDraft draft;
     draft.destination.controller = 74;
     assert(createSequencerCcLane(*lanes, 0, draft).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
 
     uint8_t index = bank.refresh();
     bank.commit(index);
@@ -217,7 +223,7 @@ void test_refresh_skips_unchanged_cc_lane_payloads_per_buffer() {
     assert(bank.lanePayloadWriteCount() == 2);
 
     assert(setSequencerCcLaneEvent(*lanes, 0, 3, 96).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
     index = bank.refresh();
     bank.commit(index);
     assert(bank.lanePayloadWriteCount() == 3);
@@ -234,8 +240,8 @@ void test_refresh_skips_unchanged_cc_lane_payloads_per_buffer() {
     bank.commit(index);
     assert(bank.lanePayloadWriteCount() == 4);
 
-    sequencer.pattern.ccLanes.reset();
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().ccLanes.reset();
+    sequencer.pattern().bumpCcLaneRevision();
     index = bank.refresh();
     bank.commit(index);
     index = bank.refresh();
@@ -252,8 +258,9 @@ void test_refresh_skips_unchanged_cc_lane_payloads_per_buffer() {
 }
 
 void test_refresh_captures_inactive_bank_track() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
@@ -279,14 +286,15 @@ void test_refresh_captures_inactive_bank_track() {
 }
 
 void test_refresh_switches_active_track_sources() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     assert(core::state::sequencer::resizeClipPatternContent(sequencer, 12));
-    sequencer.pattern.note[0] = 67;
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().note[0] = 67;
+    sequencer.pattern().bumpStepDataRevision();
 
     trackBank.syncSharedTrackState(0x0005, 0);
     uint8_t index = bank.refresh();
@@ -298,9 +306,10 @@ void test_refresh_switches_active_track_sources() {
     inactiveTrack0.note[0] = 60;
     inactiveTrack0.bumpStepDataRevision();
 
+    sequencer.selectPattern(trackBank.track(2U), trackBank.clip(2U));
     assert(core::state::sequencer::resizeClipPatternContent(sequencer, 32));
-    sequencer.pattern.note[0] = 80;
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().note[0] = 80;
+    sequencer.pattern().bumpStepDataRevision();
 
     trackBank.syncSharedTrackState(0x0005, 2);
     index = bank.refresh();
@@ -318,8 +327,9 @@ void test_refresh_switches_active_track_sources() {
 }
 
 void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
@@ -362,8 +372,9 @@ void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
 }
 
 void test_refresh_resolves_project_and_pattern_scale() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
@@ -389,7 +400,7 @@ void test_refresh_resolves_project_and_pattern_scale() {
     ));
     assert(sequencer.setPatternScaleOverride(overrideScale));
     assert(
-        sequencer.pattern.pitchEditMode ==
+        sequencer.pattern().pitchEditMode ==
         core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
     );
 
@@ -418,8 +429,9 @@ void test_refresh_resolves_project_and_pattern_scale() {
 }
 
 void test_refresh_resolves_project_and_pattern_swing() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
@@ -447,8 +459,9 @@ void test_refresh_resolves_project_and_pattern_swing() {
 
 void test_quick_controls_preview_round_trips_through_inactive_runtime_buffers() {
     namespace seq = core::state::sequencer;
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState trackBank;
+    seq::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{
         sequencer,
@@ -456,15 +469,15 @@ void test_quick_controls_preview_round_trips_through_inactive_runtime_buffers() 
         projectNavigation,
     };
 
-    sequencer.pattern.setContentLength(8U);
-    assert(sequencer.pattern.setStepNoteAt(0U, 60U));
-    auto* liveLanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    sequencer.pattern().setContentLength(8U);
+    assert(sequencer.pattern().setStepNoteAt(0U, 60U));
+    auto* liveLanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(liveLanes != nullptr);
     seq::SequencerCcLaneDraft laneDraft{};
     laneDraft.destination.controller = 74U;
     assert(seq::createSequencerCcLane(*liveLanes, 0U, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*liveLanes, 0U, 0U, 11U).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
 
     uint8_t index = bank.refresh();
     bank.commit(index);
@@ -473,8 +486,8 @@ void test_quick_controls_preview_round_trips_through_inactive_runtime_buffers() 
 
     const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
     assert(sequencer.quickControlsDraft.begin(
-        sequencer.pattern,
-        sequencer.clip,
+        sequencer.pattern(),
+        sequencer.clip(),
         openingPath,
         sequencer.page.get(),
         sequencer.focusedStep.get()));
@@ -517,8 +530,9 @@ void test_quick_controls_preview_round_trips_through_inactive_runtime_buffers() 
 
 void test_resident_and_document_publications_converge() {
     namespace seq = core::state::sequencer;
-    seq::SequencerState editor;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState editor{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::sequencer::SequencerRuntimeSnapshotBank resident{editor, tracks, navigation};
     core::sequencer::SequencerRuntimeSnapshotBank documents{editor, tracks, navigation};
@@ -526,8 +540,8 @@ void test_resident_and_document_publications_converge() {
     seq::SequencerClipRuntimeSources sources{};
     tracks.syncSharedTrackState(0xFFFF, 0);
     for (uint8_t track = 0; track < clips.size(); ++track) {
-        auto& pattern = seq::mutableCanonicalTrackPattern(tracks, editor, track);
-        auto& clip = seq::mutableCanonicalTrackClip(tracks, editor, track);
+        auto& pattern = tracks.track(track);
+        auto& clip = tracks.clip(track);
         assert(seq::resizeClipPatternContent(pattern, clip, 32));
         pattern.note[0] = 40 + track;
         pattern.note.back() = 80 + track;
@@ -558,7 +572,7 @@ void test_resident_and_document_publications_converge() {
         // equivalent documents those revisions before comparing full signatures.
         for (uint8_t track = 0; track < clips.size(); ++track) {
             clips[track].pattern.patternScaleRevision =
-                seq::canonicalTrackPattern(tracks, editor, track).patternScaleRevision.get();
+                tracks.track(track).patternScaleRevision.get();
         }
         // Update both alternating buffers, then exercise both cache hits.
         for (unsigned replay = 0; replay < 4; ++replay) {

@@ -492,20 +492,20 @@
         "callCount": 2
       }
     ],
-    "activeSpareProviders": {
+    "canonicalBankProviders": {
       "path": "src/state/sequencer/SequencerHistory.cpp",
       "providers": [
         {
           "function": "reserveHistoryTrackBankSnapshotStorage",
           "expectedActiveTrackBindingCount": 1,
-          "expectedSkipGuardCount": 1,
-          "expectedGraphResetCount": 1,
-          "expectedCcResetCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 0,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         },
@@ -518,8 +518,8 @@
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 1,
-          "expectedEditorGraphRouteCount": 1,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 1,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         },
@@ -532,8 +532,8 @@
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 1,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 1,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 1,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         },
@@ -546,22 +546,22 @@
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 1,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 1,
           "expectedDataCaptureCallCount": 1
         },
         {
           "function": "applyHistorySnapshot",
-          "expectedActiveTrackBindingCount": 1,
-          "expectedSkipGuardCount": 2,
+          "expectedActiveTrackBindingCount": 0,
+          "expectedSkipGuardCount": 0,
           "expectedGraphResetCount": 0,
           "expectedCcResetCount": 0,
-          "expectedActiveScratchClearCount": 2,
-          "expectedDraftGuardCount": 0,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 1,
           "expectedSnapshotActiveGuardCount": 0,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         }

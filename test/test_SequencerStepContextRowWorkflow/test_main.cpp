@@ -45,7 +45,7 @@ void test_focused_context_row_opens_or_creates_matching_child() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.setContentLength(8);
+    sequencer.pattern().setContentLength(8);
 
     sequencer.stepEdit.focusedRow.set(step_edit_rows::MICRO_SEQUENCE);
     auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
@@ -79,7 +79,7 @@ void test_copy_paste_requires_focused_child_kind() {
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
     auto& clipboard = state.structureClipboard;
-    sequencer.pattern.setContentLength(8);
+    sequencer.pattern().setContentLength(8);
 
     sequencer.stepEdit.focusedRow.set(step_edit_rows::MICRO_SEQUENCE);
     auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
@@ -107,7 +107,7 @@ void test_copy_paste_requires_focused_child_kind() {
         3,
         clipboard
     ));
-    assert(!rootStepHasCycleStates(sequencer.pattern, 3));
+    assert(!rootStepHasCycleStates(sequencer.pattern(), 3));
 
     sequencer.stepEdit.focusedRow.set(step_edit_rows::MICRO_SEQUENCE);
     assert(step_context_row_workflow::canPasteFocusedContextChild(
@@ -120,7 +120,7 @@ void test_copy_paste_requires_focused_child_kind() {
         3,
         clipboard
     ));
-    assert(rootStepHasMicroSequence(sequencer.pattern, 3));
+    assert(rootStepHasMicroSequence(sequencer.pattern(), 3));
 
     std::cout << "[PASS] test_copy_paste_requires_focused_child_kind\n";
 }
@@ -129,7 +129,7 @@ void test_clear_focused_context_child() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.setContentLength(8);
+    sequencer.pattern().setContentLength(8);
     sequencer.stepEdit.focusedRow.set(step_edit_rows::CYCLE_STATES);
 
     auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
@@ -139,11 +139,11 @@ void test_clear_focused_context_child() {
     assert(result.opened);
     assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
-    assert(rootStepHasCycleStates(sequencer.pattern, 4));
+    assert(rootStepHasCycleStates(sequencer.pattern(), 4));
 
     assert(step_context_row_workflow::focusedContextHasChild(sequencer, 4));
     assert(step_context_row_workflow::clearFocusedContextChild(sequencer, 4));
-    assert(!rootStepHasCycleStates(sequencer.pattern, 4));
+    assert(!rootStepHasCycleStates(sequencer.pattern(), 4));
 
     std::cout << "[PASS] test_clear_focused_context_child\n";
 }

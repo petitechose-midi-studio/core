@@ -248,8 +248,8 @@ struct SequencerDomainState {
         }
     };
 
-    core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
+    core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerClipGridState> clips;
     core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;

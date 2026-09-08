@@ -26,11 +26,8 @@ struct DrumTrackBankSnapshot {
 /**
  * Owns persistent sequencer state for all shared tracks.
  *
- * The active editor is kept outside this bank for low-friction UI editing.
- * Flat authored values are projected between the fixed editor signals and the
- * bank on a switch, while the PSRAM Graph/CC payload ownership is exchanged.
- * This keeps bindings stable without cloning either cold payload on the hot
- * Track-switch gesture.
+ * Every resident Pattern/Clip stays in its Track. The editor borrows the
+ * selected pair; navigation never copies values or rotates payload owners.
  */
 struct SequencerTrackBankState {
     static constexpr uint8_t TRACK_COUNT = 16;

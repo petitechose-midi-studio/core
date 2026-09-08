@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -129,17 +130,17 @@ uint64_t byteHash(const void* data, std::size_t size) noexcept {
 }
 
 void setLength(seq::SequencerState& sequencer, uint8_t length) {
-    sequencer.pattern.setContentLength(length);
+    sequencer.pattern().setContentLength(length);
     sequencer.page.set(0U);
     sequencer.focusedStep.set(0U);
 }
 
 void dirtyRootStep(seq::SequencerState& sequencer, uint8_t step = 0U) {
-    sequencer.pattern.note[step] = 73U;
-    auto enabled = sequencer.pattern.enabledMask.get();
+    sequencer.pattern().note[step] = 73U;
+    auto enabled = sequencer.pattern().enabledMask.get();
     enabled.setBit(step, true);
-    sequencer.pattern.enabledMask.set(enabled);
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().enabledMask.set(enabled);
+    sequencer.pattern().bumpStepDataRevision();
 }
 
 void fillPage(
@@ -340,7 +341,7 @@ void assertReady(
 
 void test_exact_nine_builders_and_stable_keys() {
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillPageSelectionClipboard(clipboard);
@@ -353,7 +354,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::PageSelectionPaste);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         MutationPlan plan;
@@ -364,7 +365,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::PageClear);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 16U);
         MutationPlan plan;
         assertReady(
@@ -374,7 +375,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::PageDelete);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillPageClipboard(clipboard);
@@ -387,7 +388,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::PagePaste);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillStepsClipboard(clipboard);
@@ -405,7 +406,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::StepPaste);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         MutationPlan plan;
@@ -419,7 +420,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::FocusedStepReset);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         oc::note::sequencer::StepBitMask128 selected{};
@@ -436,7 +437,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::StepSelectionReset);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         MutationPlan plan;
@@ -447,7 +448,7 @@ void test_exact_nine_builders_and_stable_keys() {
             Action::PageSelectionReset);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 16U);
         MutationPlan plan;
         assertReady(
@@ -463,14 +464,14 @@ void test_exact_nine_builders_and_stable_keys() {
 
 void test_rejected_and_semantic_no_change_preflights() {
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         MutationPlan plan;
         assert(core::handler::buildSequencerPageClearMutationPlan(
                    sequencer, 0U, 0U, plan) == Preflight::NoChange);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         oc::note::sequencer::StepBitMask128 selected{};
         MutationPlan plan;
@@ -482,7 +483,7 @@ void test_rejected_and_semantic_no_change_preflights() {
                    plan) == Preflight::NoChange);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         MutationPlan plan;
         assert(core::handler::buildSequencerPageClearMutationPlan(
@@ -492,7 +493,7 @@ void test_rejected_and_semantic_no_change_preflights() {
                    plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState malformed;
         malformed.kind.set(
@@ -507,14 +508,14 @@ void test_rejected_and_semantic_no_change_preflights() {
                Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 16U);
         MutationPlan plan;
         assert(core::handler::buildSequencerPageDeleteMutationPlan(
                    sequencer, 0U, 1U, plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 16U);
         core::state::StructureClipboardState clipboard;
         fillPageClipboard(clipboard);
@@ -525,7 +526,7 @@ void test_rejected_and_semantic_no_change_preflights() {
                Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         sequencer.focusedStep.set(1U);
@@ -537,7 +538,7 @@ void test_rejected_and_semantic_no_change_preflights() {
                    plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         sequencer.focusedStep.set(8U);
         sequencer.page.set(1U);
@@ -546,7 +547,7 @@ void test_rejected_and_semantic_no_change_preflights() {
                    sequencer, 0U, 0U, plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         sequencer.page.set(1U);
         MutationPlan plan;
@@ -554,7 +555,7 @@ void test_rejected_and_semantic_no_change_preflights() {
                    sequencer, 0U, 0U, plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         MutationPlan plan;
@@ -567,7 +568,7 @@ void test_rejected_and_semantic_no_change_preflights() {
                    plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         oc::note::sequencer::StepBitMask128 selected{};
@@ -581,10 +582,10 @@ void test_rejected_and_semantic_no_change_preflights() {
                    plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         const auto child = seq::createMicroSequence(
-            sequencer.pattern, seq::rootStepNodeId(0U), 4U);
+            sequencer.pattern(), seq::rootStepNodeId(0U), 4U);
         assert(child.ok);
         assert(seq::enterMicroSequenceContentView(
             sequencer, seq::rootStepNodeId(0U), child.id));
@@ -597,10 +598,10 @@ void test_rejected_and_semantic_no_change_preflights() {
                    plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
-        assert(seq::ensureGraphRoot(sequencer.pattern));
-        auto& malformed = sequencer.pattern.graph->stepNodes[0U];
+        assert(seq::ensureGraphRoot(sequencer.pattern()));
+        auto& malformed = sequencer.pattern().graph->stepNodes[0U];
         malformed.flags = static_cast<uint16_t>(
             malformed.flags |
             oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE);
@@ -615,7 +616,7 @@ void test_rejected_and_semantic_no_change_preflights() {
 
 void test_pattern_clipboard_and_content_path_staleness() {
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         MutationPlan plan;
@@ -635,7 +636,7 @@ void test_pattern_clipboard_and_content_path_staleness() {
         assert(execution.revalidate(execution.mutationContext, sequencer));
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         dirtyRootStep(sequencer);
         MutationPlan plan;
@@ -647,13 +648,13 @@ void test_pattern_clipboard_and_content_path_staleness() {
         const Execution execution =
             core::handler::makeSequencerPreparedPageStructureExecution(plan);
         assert(execution.revalidate(execution.mutationContext, sequencer));
-        sequencer.pattern.bumpStepDataRevision();
+        sequencer.pattern().bumpStepDataRevision();
         assert(!execution.revalidate(execution.mutationContext, sequencer));
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
-        assert(seq::ensureGraphRoot(sequencer.pattern));
+        assert(seq::ensureGraphRoot(sequencer.pattern()));
         core::state::StructureClipboardState clipboard;
         fillStepsClipboard(clipboard);
         attachScalarSourceGraph(clipboard);
@@ -677,7 +678,7 @@ void test_pattern_clipboard_and_content_path_staleness() {
         assert(!execution.revalidate(execution.mutationContext, sequencer));
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillStepsClipboard(clipboard);
@@ -700,17 +701,17 @@ void test_pattern_clipboard_and_content_path_staleness() {
         assert(!execution.revalidate(execution.mutationContext, sequencer));
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         const auto child = seq::createMicroSequence(
-            sequencer.pattern, seq::rootStepNodeId(0U), 4U);
+            sequencer.pattern(), seq::rootStepNodeId(0U), 4U);
         assert(child.ok);
-        const auto* graph = seq::graphView(sequencer.pattern);
+        const auto* graph = seq::graphView(sequencer.pattern());
         assert(graph != nullptr);
         const auto* sequence = graph->sequence(child.id);
         assert(sequence != nullptr);
         assert(seq::setNodeNoteOffset(
-            sequencer.pattern, sequence->firstStepNode, 4));
+            sequencer.pattern(), sequence->firstStepNode, 4));
         assert(seq::enterMicroSequenceContentView(
             sequencer, seq::rootStepNodeId(0U), child.id));
         MutationPlan plan;
@@ -734,7 +735,7 @@ void test_pattern_clipboard_and_content_path_staleness() {
 
 void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillStepsClipboard(clipboard, 2U);
@@ -758,7 +759,7 @@ void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
         assert(plan.compactGraphOnSeal());
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillStepsClipboard(clipboard);
@@ -776,7 +777,7 @@ void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
                    plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillStepsClipboard(clipboard);
@@ -794,7 +795,7 @@ void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
                    plan) == Preflight::Rejected);
     }
     {
-        seq::SequencerState sequencer;
+        core::state::sequencer::SequencerDetachedEditor sequencer;
         setLength(sequencer, 8U);
         core::state::StructureClipboardState clipboard;
         fillStepsClipboard(clipboard, 2U);
@@ -809,13 +810,13 @@ void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
         assert(!seq::validInitializedSequencerGraph(source));
 
         const uint32_t stepRevision =
-            sequencer.pattern.stepDataRevision.get();
+            sequencer.pattern().stepDataRevision.get();
         const uint32_t graphRevision =
-            sequencer.pattern.graphRevision.get();
-        const uint32_t ccRevision = sequencer.pattern.ccLaneRevision.get();
+            sequencer.pattern().graphRevision.get();
+        const uint32_t ccRevision = sequencer.pattern().ccLaneRevision.get();
         const uint32_t timingRevision =
-            sequencer.pattern.patternTimingRevision.get();
-        const uint8_t note = sequencer.pattern.note[0U];
+            sequencer.pattern().patternTimingRevision.get();
+        const uint8_t note = sequencer.pattern().note[0U];
         MutationPlan plan;
         {
             allocation_trace::Scope trace;
@@ -829,13 +830,13 @@ void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
                        plan) == Preflight::Rejected);
             assert(allocation_trace::count == 0U);
         }
-        assert(sequencer.pattern.stepDataRevision.get() == stepRevision);
-        assert(sequencer.pattern.graphRevision.get() == graphRevision);
-        assert(sequencer.pattern.ccLaneRevision.get() == ccRevision);
-        assert(sequencer.pattern.patternTimingRevision.get() ==
+        assert(sequencer.pattern().stepDataRevision.get() == stepRevision);
+        assert(sequencer.pattern().graphRevision.get() == graphRevision);
+        assert(sequencer.pattern().ccLaneRevision.get() == ccRevision);
+        assert(sequencer.pattern().patternTimingRevision.get() ==
                timingRevision);
-        assert(sequencer.pattern.note[0U] == note);
-        assert(sequencer.pattern.graph == nullptr);
+        assert(sequencer.pattern().note[0U] == note);
+        assert(sequencer.pattern().graph == nullptr);
     }
 
     std::cout << "[PASS] Graph copy charge is aggregate/exact and malformed-safe\n";
@@ -849,7 +850,7 @@ struct CoreHarness {
     CoreHarness()
         : state(storages.settings),
           history(Services::fromCoreState(state)) {
-        state.sequencer.pattern.setContentLength(8U);
+        state.sequencer.pattern().setContentLength(8U);
         state.sequencerTracks.reset();
         settle();
     }
@@ -863,8 +864,6 @@ struct CoreHarness {
     }
 
     void synchronizeActiveTrack() {
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(
-            state.sequencerTracks, state.sequencer));
         settle();
     }
 };
@@ -907,11 +906,11 @@ void test_page_selection_stale_and_aggregate_capacity_fail_atomically() {
         CoreHarness harness;
         auto& sequencer = harness.state.sequencer;
         setLength(sequencer, seq::SequencerState::MAX_STEPS);
-        assert(seq::ensureGraphRoot(sequencer.pattern));
+        assert(seq::ensureGraphRoot(sequencer.pattern()));
 
         for (uint16_t root = 0U;
              root < seq::SequencerState::MAX_STEPS &&
-             sequencer.pattern.graph->stepNodeCount <
+             sequencer.pattern().graph->stepNodeCount <
                  GraphLimits::MAX_STEP_NODES -
                      GraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP;
              ++root) {
@@ -920,12 +919,12 @@ void test_page_selection_stale_and_aggregate_capacity_fail_atomically() {
                 (root >= 48U && root < 56U);
             if (destinationRoot) continue;
             const auto created = seq::createMicroSequence(
-                sequencer.pattern,
+                sequencer.pattern(),
                 seq::rootStepNodeId(static_cast<uint8_t>(root)),
                 2U);
             assert(created.ok);
         }
-        assert(sequencer.pattern.graph->stepNodeCount ==
+        assert(sequencer.pattern().graph->stepNodeCount ==
                GraphLimits::MAX_STEP_NODES -
                    GraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
 
@@ -944,7 +943,7 @@ void test_page_selection_stale_and_aggregate_capacity_fail_atomically() {
         seq::SequencerHistoryPatternSnapshot musicalBefore;
         tx::captureMusicalSnapshot(harness.state, musicalBefore);
         const uint64_t graphHashBefore = byteHash(
-            sequencer.pattern.graph.get(), sizeof(Graph));
+            sequencer.pattern().graph.get(), sizeof(Graph));
 
         Transaction transaction(
             sequencer, harness.history, Action::PageSelectionPaste);
@@ -966,8 +965,8 @@ void test_page_selection_stale_and_aggregate_capacity_fail_atomically() {
                    core::handler::makeSequencerPreparedPageStructureExecution(
                        plan)) == Result::Failed);
 
-        assert(sequencer.pattern.graph != nullptr);
-        assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+        assert(sequencer.pattern().graph != nullptr);
+        assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
                graphHashBefore);
         tx::assertMusicalSnapshot(harness.state, musicalBefore);
         tx::assertStateInvariant(harness.state, invariantBefore);
@@ -980,10 +979,10 @@ void test_page_selection_stale_and_aggregate_capacity_fail_atomically() {
 }
 
 void test_graph_paste_releases_canonical_default_targets_idempotently() {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     setLength(sequencer, 8U);
-    assert(seq::ensureGraphRoot(sequencer.pattern));
-    const uint32_t revisionBefore = sequencer.pattern.graphRevision.get();
+    assert(seq::ensureGraphRoot(sequencer.pattern()));
+    const uint32_t revisionBefore = sequencer.pattern().graphRevision.get();
 
     core::state::StructureClipboardState clipboard;
     fillStepsClipboard(clipboard);
@@ -1008,26 +1007,26 @@ void test_graph_paste_releases_canonical_default_targets_idempotently() {
                execution.mutationContext, sequencer, Services{}) ==
            MutationOutcome::Changed);
 
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     assert(graph->stepNodes[0U].noteOffset == 5);
-    assert(sequencer.pattern.graphRevision.get() == revisionBefore + 1U);
+    assert(sequencer.pattern().graphRevision.get() == revisionBefore + 1U);
 
     std::cout << "[PASS] enabled/default Graph targets release idempotently\n";
 }
 
 void test_mixed_graph_paste_skips_semantically_identical_payloads() {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     setLength(sequencer, 8U);
     core::state::StructureClipboardState clipboard;
     fillStepsClipboard(clipboard, 2U);
     attachMicroSequenceSourceGraph(clipboard, 2U);
     assert(seq::copyStepNodePayloadFromGraph(
-        sequencer.pattern,
+        sequencer.pattern(),
         seq::rootStepNodeId(0U),
         *clipboard.sequencerGraph,
         seq::rootStepNodeId(0U)));
-    const auto* graphBefore = seq::graphView(sequencer.pattern);
+    const auto* graphBefore = seq::graphView(sequencer.pattern());
     assert(graphBefore != nullptr);
     assert(graphBefore->sequenceCount == 2U);
     assert(graphBefore->stepNodeCount == 144U);
@@ -1055,7 +1054,7 @@ void test_mixed_graph_paste_skips_semantically_identical_payloads() {
                execution.mutationContext, sequencer, history) ==
            MutationOutcome::Changed);
 
-    const auto* graphAfter = seq::graphView(sequencer.pattern);
+    const auto* graphAfter = seq::graphView(sequencer.pattern());
     assert(graphAfter != nullptr);
     assert(graphAfter->sequenceCount == 3U);
     assert(graphAfter->stepNodeCount == 160U);
@@ -1167,20 +1166,20 @@ void runChildOffsetExtensionCase(
     uint16_t containerId = GraphLimits::INVALID_ID;
     if (cycleStates) {
         const auto created = seq::createCycleStateSet(
-            sequencer.pattern, seq::rootStepNodeId(0U), oldLength);
+            sequencer.pattern(), seq::rootStepNodeId(0U), oldLength);
         assert(created.ok);
         containerId = created.id;
         assert(seq::setCycleStateSetOffset(
-            sequencer.pattern, containerId, offset));
+            sequencer.pattern(), containerId, offset));
         assert(seq::enterCycleStatesContentView(
             sequencer, seq::rootStepNodeId(0U), containerId));
     } else {
         const auto created = seq::createMicroSequence(
-            sequencer.pattern, seq::rootStepNodeId(0U), oldLength);
+            sequencer.pattern(), seq::rootStepNodeId(0U), oldLength);
         assert(created.ok);
         containerId = created.id;
         assert(seq::setMicroSequenceOffset(
-            sequencer.pattern, containerId, offset));
+            sequencer.pattern(), containerId, offset));
         assert(seq::enterMicroSequenceContentView(
             sequencer, seq::rootStepNodeId(0U), containerId));
     }
@@ -1190,7 +1189,7 @@ void runChildOffsetExtensionCase(
             sequencer, logical);
         assert(node != GraphLimits::INVALID_ID);
         assert(seq::setNodeNoteOffset(
-            sequencer.pattern,
+            sequencer.pattern(),
             node,
             static_cast<int8_t>(logical + 1U)));
     }
@@ -1198,19 +1197,19 @@ void runChildOffsetExtensionCase(
         sequencer, cycleStates ? 1U : 2U);
     if (cycleStates) {
         assert(seq::createMicroSequence(
-            sequencer.pattern, nestedOwner, 2U).ok);
+            sequencer.pattern(), nestedOwner, 2U).ok);
     } else {
         assert(seq::createCycleStateSet(
-            sequencer.pattern, nestedOwner, 2U).ok);
+            sequencer.pattern(), nestedOwner, 2U).ok);
     }
     harness.synchronizeActiveTrack();
 
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const void* const graphOwner = graph;
     const uint64_t beforeHash = byteHash(graph, sizeof(Graph));
     const uint32_t revisionBefore =
-        sequencer.pattern.graphRevision.get();
+        sequencer.pattern().graphRevision.get();
     std::array<GraphNode, oldLength> oldLogical{};
     for (uint8_t logical = 0U; logical < oldLength; ++logical) {
         const uint16_t node = seq::activeContentStepNodeId(
@@ -1245,10 +1244,10 @@ void runChildOffsetExtensionCase(
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Committed);
 
-    assert(sequencer.pattern.graph.get() == graphOwner);
+    assert(sequencer.pattern().graph.get() == graphOwner);
     assert(seq::activeContentLength(sequencer) == expectedLength);
-    assert(sequencer.pattern.graphRevision.get() == revisionBefore + 1U);
-    graph = sequencer.pattern.graph.get();
+    assert(sequencer.pattern().graphRevision.get() == revisionBefore + 1U);
+    graph = sequencer.pattern().graph.get();
     for (uint8_t logical = 0U; logical < oldLength; ++logical) {
         const uint16_t node = seq::activeContentStepNodeId(
             sequencer, logical);
@@ -1272,14 +1271,14 @@ void runChildOffsetExtensionCase(
     const uint64_t afterHash = byteHash(graph, sizeof(Graph));
 
     assert(harness.state.undoSequencerHistory());
-    assert(sequencer.pattern.graph != nullptr);
+    assert(sequencer.pattern().graph != nullptr);
     assert(seq::activeContentLength(sequencer) == oldLength);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            beforeHash);
     assert(harness.state.redoSequencerHistory());
-    assert(sequencer.pattern.graph != nullptr);
+    assert(sequencer.pattern().graph != nullptr);
     assert(seq::activeContentLength(sequencer) == expectedLength);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            afterHash);
 }
 
@@ -1312,24 +1311,24 @@ void runChildOffsetReplacementAndExtensionCase(
     constexpr uint8_t oldLength = 4U;
     if (cycleStates) {
         const auto created = seq::createCycleStateSet(
-            sequencer.pattern, seq::rootStepNodeId(0U), oldLength);
+            sequencer.pattern(), seq::rootStepNodeId(0U), oldLength);
         assert(created.ok);
         assert(seq::setCycleStateSetOffset(
-            sequencer.pattern, created.id, offset));
+            sequencer.pattern(), created.id, offset));
         assert(seq::enterCycleStatesContentView(
             sequencer, seq::rootStepNodeId(0U), created.id));
     } else {
         const auto created = seq::createMicroSequence(
-            sequencer.pattern, seq::rootStepNodeId(0U), oldLength);
+            sequencer.pattern(), seq::rootStepNodeId(0U), oldLength);
         assert(created.ok);
         assert(seq::setMicroSequenceOffset(
-            sequencer.pattern, created.id, offset));
+            sequencer.pattern(), created.id, offset));
         assert(seq::enterMicroSequenceContentView(
             sequencer, seq::rootStepNodeId(0U), created.id));
     }
     for (uint8_t logical = 0U; logical < oldLength; ++logical) {
         assert(seq::setNodeNoteOffset(
-            sequencer.pattern,
+            sequencer.pattern(),
             seq::activeContentStepNodeId(sequencer, logical),
             static_cast<int8_t>(logical + 1U)));
     }
@@ -1337,18 +1336,18 @@ void runChildOffsetReplacementAndExtensionCase(
         sequencer, 0U);
     if (cycleStates) {
         assert(seq::createMicroSequence(
-            sequencer.pattern, replacedNode, 2U).ok);
+            sequencer.pattern(), replacedNode, 2U).ok);
     } else {
         assert(seq::createCycleStateSet(
-            sequencer.pattern, replacedNode, 2U).ok);
+            sequencer.pattern(), replacedNode, 2U).ok);
     }
     harness.synchronizeActiveTrack();
 
     const uint64_t beforeHash = byteHash(
-        sequencer.pattern.graph.get(), sizeof(Graph));
+        sequencer.pattern().graph.get(), sizeof(Graph));
     std::array<GraphNode, oldLength - 1U> untouched{};
     for (uint8_t logical = 1U; logical < oldLength; ++logical) {
-        untouched[logical - 1U] = sequencer.pattern.graph->stepNodes[
+        untouched[logical - 1U] = sequencer.pattern().graph->stepNodes[
             seq::activeContentStepNodeId(sequencer, logical)];
     }
 
@@ -1374,30 +1373,30 @@ void runChildOffsetReplacementAndExtensionCase(
 
     assert(seq::activeContentLength(sequencer) == expectedLength);
     assert(seq::validInitializedSequencerGraph(
-        *sequencer.pattern.graph));
-    const auto& replaced = sequencer.pattern.graph->stepNodes[
+        *sequencer.pattern().graph));
+    const auto& replaced = sequencer.pattern().graph->stepNodes[
         seq::activeContentStepNodeId(sequencer, 0U)];
     assert(replaced.noteOffset == 50);
     assert(!replaced.has(oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE));
     assert(!replaced.has(oc::note::sequencer::STEP_NODE_CYCLE_SET));
-    const auto& appended = sequencer.pattern.graph->stepNodes[
+    const auto& appended = sequencer.pattern().graph->stepNodes[
         seq::activeContentStepNodeId(sequencer, secondOffset)];
     assert(appended.noteOffset == 51);
     for (uint8_t logical = 1U; logical < oldLength; ++logical) {
-        const auto& actual = sequencer.pattern.graph->stepNodes[
+        const auto& actual = sequencer.pattern().graph->stepNodes[
             seq::activeContentStepNodeId(sequencer, logical)];
         assert(sameStoredNode(actual, untouched[logical - 1U]));
     }
     const uint64_t afterHash = byteHash(
-        sequencer.pattern.graph.get(), sizeof(Graph));
+        sequencer.pattern().graph.get(), sizeof(Graph));
 
     assert(harness.state.undoSequencerHistory());
     assert(seq::activeContentLength(sequencer) == oldLength);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            beforeHash);
     assert(harness.state.redoSequencerHistory());
     assert(seq::activeContentLength(sequencer) == expectedLength);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            afterHash);
 }
 
@@ -1422,32 +1421,32 @@ void test_child_offset_extension_commit_failure_rolls_back_exactly() {
     CoreHarness harness;
     auto& sequencer = harness.state.sequencer;
     const auto created = seq::createMicroSequence(
-        sequencer.pattern, seq::rootStepNodeId(0U), 4U);
+        sequencer.pattern(), seq::rootStepNodeId(0U), 4U);
     assert(created.ok);
     assert(seq::setMicroSequenceOffset(
-        sequencer.pattern, created.id, -2));
+        sequencer.pattern(), created.id, -2));
     assert(seq::enterMicroSequenceContentView(
         sequencer, seq::rootStepNodeId(0U), created.id));
     for (uint8_t logical = 0U; logical < 4U; ++logical) {
         assert(seq::setNodeNoteOffset(
-            sequencer.pattern,
+            sequencer.pattern(),
             seq::activeContentStepNodeId(sequencer, logical),
             static_cast<int8_t>(logical + 11U)));
     }
-    auto* const emptyCc = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    auto* const emptyCc = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(emptyCc != nullptr);
     emptyCc->revision = 0xA5A55A5AU;
     assert(seq::sequencerCcLaneCount(*emptyCc) == 0U);
     harness.synchronizeActiveTrack();
 
     const auto invariantBefore = tx::captureStateInvariant(harness.state);
-    const void* const graphOwner = sequencer.pattern.graph.get();
-    const void* const ccOwner = sequencer.pattern.ccLanes.get();
+    const void* const graphOwner = sequencer.pattern().graph.get();
+    const void* const ccOwner = sequencer.pattern().ccLanes.get();
     const uint64_t graphHash = byteHash(
-        sequencer.pattern.graph.get(), sizeof(Graph));
+        sequencer.pattern().graph.get(), sizeof(Graph));
     const uint64_t ccHash = byteHash(
-        sequencer.pattern.ccLanes.get(), sizeof(*sequencer.pattern.ccLanes));
-    const uint32_t ccRevision = sequencer.pattern.ccLaneRevision.get();
+        sequencer.pattern().ccLanes.get(), sizeof(*sequencer.pattern().ccLanes));
+    const uint32_t ccRevision = sequencer.pattern().ccLaneRevision.get();
     const uint32_t viewRevision = sequencer.contentView.revision.get();
     const uint8_t focus = sequencer.focusedStep.get();
     const uint8_t page = sequencer.page.get();
@@ -1476,13 +1475,13 @@ void test_child_offset_extension_commit_failure_rolls_back_exactly() {
 
     assert(probe.commitCount == 1U);
     assert(probe.abortCount == 1U);
-    assert(sequencer.pattern.graph.get() == graphOwner);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) == graphHash);
-    assert(sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(sequencer.pattern().graph.get() == graphOwner);
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) == graphHash);
+    assert(sequencer.pattern().ccLanes.get() == ccOwner);
     assert(byteHash(
-               sequencer.pattern.ccLanes.get(),
-               sizeof(*sequencer.pattern.ccLanes)) == ccHash);
-    assert(sequencer.pattern.ccLaneRevision.get() == ccRevision);
+               sequencer.pattern().ccLanes.get(),
+               sizeof(*sequencer.pattern().ccLanes)) == ccHash);
+    assert(sequencer.pattern().ccLaneRevision.get() == ccRevision);
     assert(seq::activeContentLength(sequencer) == 4U);
     assert(sequencer.contentView.revision.get() == viewRevision);
     assert(sequencer.focusedStep.get() == focus);
@@ -1495,7 +1494,7 @@ void test_child_offset_extension_commit_failure_rolls_back_exactly() {
 
 void test_root_step_extension_keeps_cold_cc_exact_under_flat_history() {
     CoreHarness harness;
-    auto& pattern = harness.state.sequencer.pattern;
+    auto& pattern = harness.state.sequencer.pattern();
     auto* editorCc = seq::ensureSequencerCcLaneBank(pattern);
     assert(editorCc != nullptr);
     seq::SequencerCcLaneDraft draft{};
@@ -1570,19 +1569,19 @@ void test_page_delete_keeps_empty_cc_owner_exact_under_flat_history() {
     CoreHarness harness;
     auto& sequencer = harness.state.sequencer;
     setLength(sequencer, 16U);
-    auto* const emptyCc = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    auto* const emptyCc = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(emptyCc != nullptr);
     assert(seq::sequencerCcLaneCount(*emptyCc) == 0U);
     harness.synchronizeActiveTrack();
 
-    auto& pattern = sequencer.pattern;
+    auto& pattern = sequencer.pattern();
     auto& bankPattern = harness.state.sequencerTracks.track(0U);
     const void* const editorOwner = pattern.ccLanes.get();
     const uint32_t editorRevision = pattern.ccLaneRevision.get();
     const uint32_t bankRevision = bankPattern.ccLaneRevision.get();
     const uint64_t editorHash = byteHash(emptyCc, sizeof(*emptyCc));
     assert(editorOwner != nullptr);
-    assert(bankPattern.ccLanes == nullptr);
+    assert(bankPattern.ccLanes.get() == editorOwner);
 
     auto assertEmptyCcExact = [&]() {
         assert(pattern.ccLanes.get() == editorOwner);
@@ -1590,7 +1589,7 @@ void test_page_delete_keeps_empty_cc_owner_exact_under_flat_history() {
         assert(byteHash(pattern.ccLanes.get(), sizeof(*pattern.ccLanes)) ==
                editorHash);
         assert(pattern.ccLaneRevision.get() == editorRevision);
-        assert(bankPattern.ccLanes == nullptr);
+        assert(bankPattern.ccLanes.get() == editorOwner);
         assert(bankPattern.ccLaneRevision.get() == bankRevision);
     };
 
@@ -1622,7 +1621,7 @@ void test_page_delete_keeps_empty_cc_owner_exact_under_flat_history() {
 void test_full_graph_page_history_preserves_empty_cc_owners() {
     CoreHarness harness;
     auto& sequencer = harness.state.sequencer;
-    auto& pattern = sequencer.pattern;
+    auto& pattern = sequencer.pattern();
     assert(seq::ensureGraphRoot(pattern));
     assert(seq::setNodeNoteOffset(
         pattern, seq::rootStepNodeId(0U), 7));
@@ -1687,16 +1686,16 @@ void test_step_extension_reclaims_matching_cold_descendants_near_capacity() {
     CoreHarness harness;
     auto& sequencer = harness.state.sequencer;
     const auto cold = seq::createMicroSequence(
-        sequencer.pattern, seq::rootStepNodeId(8U), 4U);
+        sequencer.pattern(), seq::rootStepNodeId(8U), 4U);
     assert(cold.ok);
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* coldSequence = graph->sequence(cold.id);
     assert(coldSequence != nullptr);
     assert(seq::setNodeNoteOffset(
-        sequencer.pattern, coldSequence->firstStepNode, 1));
+        sequencer.pattern(), coldSequence->firstStepNode, 1));
     saturateMicroSequenceCapacityOutsideSpan(
-        sequencer.pattern, 8U, 16U);
+        sequencer.pattern(), 8U, 16U);
     harness.synchronizeActiveTrack();
 
     core::state::StructureClipboardState clipboard;
@@ -1704,7 +1703,7 @@ void test_step_extension_reclaims_matching_cold_descendants_near_capacity() {
     attachMicroSequenceSourceGraph(clipboard, 1U);
 
     const uint64_t beforeHash = byteHash(
-        sequencer.pattern.graph.get(), sizeof(Graph));
+        sequencer.pattern().graph.get(), sizeof(Graph));
     Transaction transaction(sequencer, harness.history, Action::StepPaste);
     assert(transaction.openBoundary());
     MutationPlan plan;
@@ -1728,7 +1727,7 @@ void test_step_extension_reclaims_matching_cold_descendants_near_capacity() {
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Committed);
 
-    graph = seq::graphView(sequencer.pattern);
+    graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     assert(seq::validInitializedSequencerGraph(*graph));
     const auto comparison = seq::compareSequencerGraphPayloads(
@@ -1742,12 +1741,12 @@ void test_step_extension_reclaims_matching_cold_descendants_near_capacity() {
     const uint64_t afterHash = byteHash(graph, sizeof(Graph));
 
     assert(harness.state.undoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 8U);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(sequencer.pattern().length.get() == 8U);
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            beforeHash);
     assert(harness.state.redoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 9U);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(sequencer.pattern().length.get() == 9U);
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            afterHash);
 
     std::cout << "[PASS] Step extension reclaims/rebuilds matching cold descendants\n";
@@ -1757,23 +1756,23 @@ void test_step_extension_capacity_failure_restores_matching_cold_target() {
     CoreHarness harness;
     auto& sequencer = harness.state.sequencer;
     const auto cold = seq::createMicroSequence(
-        sequencer.pattern, seq::rootStepNodeId(10U), 4U);
+        sequencer.pattern(), seq::rootStepNodeId(10U), 4U);
     assert(cold.ok);
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* coldSequence = graph->sequence(cold.id);
     assert(coldSequence != nullptr);
     assert(seq::setNodeNoteOffset(
-        sequencer.pattern, coldSequence->firstStepNode, 1));
+        sequencer.pattern(), coldSequence->firstStepNode, 1));
     saturateMicroSequenceCapacityOutsideSpan(
-        sequencer.pattern, 8U, 12U);
+        sequencer.pattern(), 8U, 12U);
     harness.synchronizeActiveTrack();
 
     core::state::StructureClipboardState clipboard;
     fillStepsClipboard(clipboard, 2U);
     attachMicroSequenceSourceGraph(clipboard, 2U);
     const auto invariantBefore = tx::captureStateInvariant(harness.state);
-    const void* const graphOwner = sequencer.pattern.graph.get();
+    const void* const graphOwner = sequencer.pattern().graph.get();
     const uint64_t graphHash = byteHash(graphOwner, sizeof(Graph));
 
     Transaction transaction(sequencer, harness.history, Action::StepPaste);
@@ -1800,10 +1799,10 @@ void test_step_extension_capacity_failure_restores_matching_cold_target() {
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Failed);
 
-    assert(sequencer.pattern.graph.get() == graphOwner);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(sequencer.pattern().graph.get() == graphOwner);
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            graphHash);
-    assert(sequencer.pattern.length.get() == 8U);
+    assert(sequencer.pattern().length.get() == 8U);
     tx::assertStateInvariant(harness.state, invariantBefore);
     assert(!harness.state.hasPendingSequencerPatternHistoryCoalescing());
 
@@ -1817,12 +1816,12 @@ void test_root_extension_from_graphless_and_disabled_destinations() {
         auto& sequencer = harness.state.sequencer;
         const void* disabledOwnerAddress = nullptr;
         if (disabledOwner) {
-            sequencer.pattern.graph = core::app::makeExtmemUnique<Graph>();
-            assert(sequencer.pattern.graph != nullptr);
+            sequencer.pattern().graph = core::app::makeExtmemUnique<Graph>();
+            assert(sequencer.pattern().graph != nullptr);
             assert(seq::isCanonicalDisabledSequencerGraph(
-                *sequencer.pattern.graph));
-            disabledOwnerAddress = sequencer.pattern.graph.get();
-            sequencer.pattern.bumpGraphRevision();
+                *sequencer.pattern().graph));
+            disabledOwnerAddress = sequencer.pattern().graph.get();
+            sequencer.pattern().bumpGraphRevision();
             harness.synchronizeActiveTrack();
         }
 
@@ -1852,21 +1851,21 @@ void test_root_extension_from_graphless_and_disabled_destinations() {
                        makeSequencerPreparedPageStructureExecution(plan)) ==
                Result::Committed);
 
-        const auto* graph = seq::graphView(sequencer.pattern);
+        const auto* graph = seq::graphView(sequencer.pattern());
         assert(graph != nullptr);
         if (disabledOwner) {
-            assert(sequencer.pattern.graph.get() == disabledOwnerAddress);
+            assert(sequencer.pattern().graph.get() == disabledOwnerAddress);
         }
         assert(graph->stepNodes[8U].has(
             oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
         assert(graph->stepNodes[8U].noteOffset == 5);
-        assert(sequencer.pattern.length.get() == 9U);
+        assert(sequencer.pattern().length.get() == 9U);
         assert(harness.state.undoSequencerHistory());
-        assert(sequencer.pattern.length.get() == 8U);
-        assert(seq::graphView(sequencer.pattern) == nullptr);
+        assert(sequencer.pattern().length.get() == 8U);
+        assert(seq::graphView(sequencer.pattern()) == nullptr);
         assert(harness.state.redoSequencerHistory());
-        assert(sequencer.pattern.length.get() == 9U);
-        graph = seq::graphView(sequencer.pattern);
+        assert(sequencer.pattern().length.get() == 9U);
+        graph = seq::graphView(sequencer.pattern());
         assert(graph != nullptr);
         assert(graph->stepNodes[8U].noteOffset == 5);
     }
@@ -1902,20 +1901,20 @@ void test_prospective_graph_commit_undo_and_redo_are_exact() {
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Committed);
 
-    const auto* graph = seq::graphView(harness.state.sequencer.pattern);
+    const auto* graph = seq::graphView(harness.state.sequencer.pattern());
     assert(graph != nullptr);
     assert(graph->stepNodes[0U].has(
         oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
     assert(graph->stepNodes[0U].noteOffset == 5);
     assert(harness.state.sequencer.focusedStep.get() == 0U);
-    assert(harness.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(harness.state.sequencerTracks.track(0U).graph.get() == graph);
 
     assert(harness.state.undoSequencerHistory());
-    assert(harness.state.sequencer.pattern.graph == nullptr);
-    assert(seq::canonicalTrackPattern(harness.state.sequencerTracks, harness.state.sequencer, 0U).graph == nullptr);
+    assert(harness.state.sequencer.pattern().graph == nullptr);
+    assert(harness.state.sequencerTracks.track(0U).graph == nullptr);
     assert(harness.state.sequencer.focusedStep.get() == 3U);
     assert(harness.state.redoSequencerHistory());
-    graph = seq::graphView(harness.state.sequencer.pattern);
+    graph = seq::graphView(harness.state.sequencer.pattern());
     assert(graph != nullptr);
     assert(graph->stepNodes[0U].noteOffset == 5);
     assert(harness.state.sequencer.focusedStep.get() == 0U);
@@ -1928,17 +1927,17 @@ void test_page_delete_reclaims_descendants_from_cold_root_tail() {
     auto& sequencer = harness.state.sequencer;
     setLength(sequencer, 16U);
     const auto coldChild = seq::createMicroSequence(
-        sequencer.pattern, seq::rootStepNodeId(100U), 4U);
+        sequencer.pattern(), seq::rootStepNodeId(100U), 4U);
     assert(coldChild.ok);
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* child = graph->sequence(coldChild.id);
     assert(child != nullptr);
     assert(seq::setNodeNoteOffset(
-        sequencer.pattern, child->firstStepNode, 6));
+        sequencer.pattern(), child->firstStepNode, 6));
     harness.synchronizeActiveTrack();
     const uint64_t beforeHash = byteHash(
-        sequencer.pattern.graph.get(), sizeof(Graph));
+        sequencer.pattern().graph.get(), sizeof(Graph));
 
     Transaction transaction(sequencer, harness.history, Action::PageDelete);
     assert(transaction.openBoundary());
@@ -1954,22 +1953,22 @@ void test_page_delete_reclaims_descendants_from_cold_root_tail() {
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Committed);
 
-    assert(sequencer.pattern.length.get() == 8U);
-    assert(seq::validInitializedSequencerGraph(*sequencer.pattern.graph));
-    assert(sequencer.pattern.graph->stepNodeCount ==
+    assert(sequencer.pattern().length.get() == 8U);
+    assert(seq::validInitializedSequencerGraph(*sequencer.pattern().graph));
+    assert(sequencer.pattern().graph->stepNodeCount ==
            seq::SequencerState::MAX_STEPS);
-    assert(!sequencer.pattern.graph->stepNodes[100U].has(
+    assert(!sequencer.pattern().graph->stepNodes[100U].has(
         oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE));
     const uint64_t afterHash = byteHash(
-        sequencer.pattern.graph.get(), sizeof(Graph));
+        sequencer.pattern().graph.get(), sizeof(Graph));
 
     assert(harness.state.undoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 16U);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(sequencer.pattern().length.get() == 16U);
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            beforeHash);
     assert(harness.state.redoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 8U);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(sequencer.pattern().length.get() == 8U);
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            afterHash);
 
     std::cout << "[PASS] PageDelete compacts descendants from cold root tail\n";
@@ -1980,7 +1979,7 @@ void test_post_reclaim_capacity_failure_rolls_back_exactly() {
     auto& sequencer = harness.state.sequencer;
     setLength(sequencer, seq::SequencerState::MAX_STEPS);
     const auto retained = seq::createMicroSequence(
-        sequencer.pattern, seq::rootStepNodeId(127U), 4U);
+        sequencer.pattern(), seq::rootStepNodeId(127U), 4U);
     assert(retained.ok);
     harness.synchronizeActiveTrack();
 
@@ -1991,9 +1990,9 @@ void test_post_reclaim_capacity_failure_rolls_back_exactly() {
     const auto invariantBefore = tx::captureStateInvariant(harness.state);
     seq::SequencerHistoryPatternSnapshot musicalBefore;
     tx::captureMusicalSnapshot(harness.state, musicalBefore);
-    assert(sequencer.pattern.graph);
+    assert(sequencer.pattern().graph);
     const uint64_t graphHashBefore = byteHash(
-        sequencer.pattern.graph.get(), sizeof(Graph));
+        sequencer.pattern().graph.get(), sizeof(Graph));
 
     Transaction transaction(sequencer, harness.history, Action::StepPaste);
     assert(transaction.openBoundary());
@@ -2017,8 +2016,8 @@ void test_post_reclaim_capacity_failure_rolls_back_exactly() {
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Failed);
 
-    assert(sequencer.pattern.graph);
-    assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
+    assert(sequencer.pattern().graph);
+    assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            graphHashBefore);
     tx::assertMusicalSnapshot(harness.state, musicalBefore);
     tx::assertStateInvariant(harness.state, invariantBefore);
@@ -2103,12 +2102,12 @@ constexpr Services::Operations kCommitObservationOperations{
 };
 
 void test_focus_is_replayable_and_detached_view_publication_is_postcommit() {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     setLength(sequencer, 8U);
     sequencer.focusedStep.set(3U);
-    assert(seq::ensureGraphRoot(sequencer.pattern));
+    assert(seq::ensureGraphRoot(sequencer.pattern()));
     assert(seq::setNodeNoteOffset(
-        sequencer.pattern, seq::rootStepNodeId(0U), 7));
+        sequencer.pattern(), seq::rootStepNodeId(0U), 7));
 
     CommitObservation observation{.sequencer = &sequencer};
     const Services history = Services::fromStaticOperations<
@@ -2135,7 +2134,7 @@ void test_focus_is_replayable_and_detached_view_publication_is_postcommit() {
 }
 
 void test_builder_revalidation_and_flat_mutation_allocate_nothing() {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     setLength(sequencer, 8U);
     dirtyRootStep(sequencer);
     MutationPlan plan;
@@ -2152,13 +2151,13 @@ void test_builder_revalidation_and_flat_mutation_allocate_nothing() {
         assert(allocation_trace::count == 0U);
     }
     assert(mutation == MutationOutcome::Changed);
-    assert(sequencer.pattern.note[0U] == seq::SequencerState::DEFAULT_NOTE);
+    assert(sequencer.pattern().note[0U] == seq::SequencerState::DEFAULT_NOTE);
 
     std::cout << "[PASS] plan build/revalidate/mutation are runtime-allocation free\n";
 }
 
 void test_reused_plan_is_reconstructed_before_early_rejection() {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     setLength(sequencer, 8U);
 
     MutationPlan plan;

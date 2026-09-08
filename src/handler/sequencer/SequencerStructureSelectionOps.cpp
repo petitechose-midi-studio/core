@@ -125,10 +125,8 @@ FLASHMEM core::app::ExtmemUniquePtr<
         if ((mask & structure_slots::slotBit(track)) == 0U) continue;
         if (clipboard->count >= clipboard->tracks.size()) return nullptr;
 
-        const auto& pattern = core::state::sequencer::canonicalTrackPattern(
-            tracks, sequencer, track);
-        const auto& clip = core::state::sequencer::canonicalTrackClip(
-            tracks, sequencer, track);
+        const auto& pattern = tracks.track(track);
+        const auto& clip = tracks.clip(track);
         auto& entry = clipboard->tracks[clipboard->count++];
         entry.valid = true;
         entry.sourceTrack = track;

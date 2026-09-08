@@ -267,12 +267,12 @@ void test_follow_choice_order_matches_the_editor_grammar() {
 
 void test_resident_switch_preserves_both_clip_documents() {
     seq::SequencerTrackBankState bank;
-    seq::SequencerState active;
+    seq::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
     seq::SequencerClipGridState grid;
     bank.reset();
 
-    seed(active.pattern, active.clip, 64U);
-    assert(seq::ensureGraphRoot(active.pattern));
+    seed(active.pattern(), active.clip(), 64U);
+    assert(seq::ensureGraphRoot(active.pattern()));
     auto secondPattern = core::app::makeExtmemUnique<seq::SequencerPatternState>();
     assert(secondPattern);
     seq::SequencerClipState secondClip;
@@ -291,14 +291,14 @@ void test_resident_switch_preserves_both_clip_documents() {
     // reset. No caller-level refresh is needed after those two transitions.
     assert(active.contentView.revision.get() == contentRevisionBeforeSwitch + 2U);
     assert(grid.residentSlot(0U) == 1U);
-    assert(active.pattern.note[0] == 72U);
+    assert(active.pattern().note[0] == 72U);
     assert(grid.inactiveDocument({0U, 0U}) != nullptr);
     assert(grid.inactiveDocument({0U, 0U})->pattern.note[0] == 64U);
     assert(grid.inactiveRetainedBytes() > retainedBeforeSwitch);
 
     assert(seq::switchResidentSequencerClip(grid, bank, active, {0U, 0U}));
     assert(grid.residentSlot(0U) == 0U);
-    assert(active.pattern.note[0] == 64U);
+    assert(active.pattern().note[0] == 64U);
     assert(grid.inactiveDocument({0U, 1U})->pattern.note[0] == 72U);
     assert(grid.inactiveRetainedBytes() == retainedBeforeSwitch);
     std::cout << "[PASS] resident switching preserves both Clips without allocation\n";
@@ -312,15 +312,15 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
         for (bool drum : {false, true}) {
             for (bool promote : {false, true}) {
                 seq::SequencerTrackBankState bank;
-                seq::SequencerState active;
+                seq::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
                 seq::SequencerClipGridState grid;
                 bank.syncSharedTrackState(3U, 0U);
                 grid.synchronizeEnabledTracks(3U);
                 if (drum) {
                     assert(bank.setTrackKind(track, seq::SequencerTrackKind::DRUM, true));
                 }
-                auto& pattern = seq::mutableCanonicalTrackPattern(bank, active, track);
-                auto& clip = seq::mutableCanonicalTrackClip(bank, active, track);
+                auto& pattern = bank.track(track);
+                auto& clip = bank.clip(track);
                 seed(pattern, clip, 60U);
                 assert(seq::ensureGraphRoot(pattern));
                 const auto* originalGraph = pattern.graph.get();
@@ -365,7 +365,7 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                     unsigned calls = 0U;
                     void render() {
                         ++calls;
-                        const auto& current = seq::canonicalTrackPattern(bank, active, track);
+                        const auto& current = bank.track(track);
                         assert(grid.residentSlot(track) == 2U);
                         assert(current.note[0] == 74U);
                         assert(current.graph.get() == graph);
@@ -413,12 +413,12 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
 
 void test_history_targets_the_authored_clip_after_resident_switch() {
     seq::SequencerTrackBankState bank;
-    seq::SequencerState active;
+    seq::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
     seq::SequencerClipGridState grid;
     seq::SequencerHistoryService history;
     bank.reset();
 
-    seed(active.pattern, active.clip, 64U);
+    seed(active.pattern(), active.clip(), 64U);
     auto secondPattern = core::app::makeExtmemUnique<seq::SequencerPatternState>();
     assert(secondPattern);
     seq::SequencerClipState secondClip;
@@ -438,24 +438,24 @@ void test_history_targets_the_authored_clip_after_resident_switch() {
         .property = seq::StepProperty::NOTE,
     };
     seq::captureFlatHistorySnapshot(active, change->before);
-    active.pattern.setStepNoteAt(0U, 65U);
+    active.pattern().setStepNoteAt(0U, 65U);
     seq::captureFlatHistorySnapshot(active, change->after);
     assert(history.canRecordPattern(*change));
     history.recordPreparedPattern(std::move(change));
 
     assert(seq::switchResidentSequencerClip(grid, bank, active, {0U, 1U}));
-    assert(active.pattern.note[0] == 72U);
+    assert(active.pattern().note[0] == 72U);
 
     const uint32_t generationBeforeUndo = grid.generation({0U, 0U});
     const auto undone = history.undoWithResult(bank, active, grid);
     assert(undone.applied && undone.descriptor.clipIndex == 0U);
-    assert(active.pattern.note[0] == 72U);
+    assert(active.pattern().note[0] == 72U);
     assert(grid.inactiveDocument({0U, 0U})->pattern.note[0] == 64U);
     assert(grid.generation({0U, 0U}) != generationBeforeUndo);
 
     const auto redone = history.redoWithResult(bank, active, grid);
     assert(redone.applied && redone.descriptor.clipIndex == 0U);
-    assert(active.pattern.note[0] == 72U);
+    assert(active.pattern().note[0] == 72U);
     assert(grid.inactiveDocument({0U, 0U})->pattern.note[0] == 65U);
     std::cout << "[PASS] history follows exact Clip identity\n";
 }
@@ -463,7 +463,7 @@ void test_history_targets_the_authored_clip_after_resident_switch() {
 void test_clip_structure_history_transfers_ownership_without_project_copies() {
     seq::SequencerClipGridState grid;
     seq::SequencerTrackBankState bank;
-    seq::SequencerState active;
+    seq::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
     seq::SequencerHistoryService history;
     bank.reset();
 
@@ -522,7 +522,7 @@ void test_clip_structure_history_transfers_ownership_without_project_copies() {
 void test_cross_track_transfer_is_kind_safe_and_preserves_residency() {
     seq::SequencerClipGridState grid;
     seq::SequencerTrackBankState bank;
-    seq::SequencerState active;
+    seq::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
     bank.reset();
     bank.syncSharedTrackState(0x0007U, 0U);
     grid.synchronizeEnabledTracks(0x0007U);
@@ -645,7 +645,7 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
     test_support::CoreStorages storages;
     core::state::CoreState state(storages.settings);
 
-    seed(state.sequencer.pattern, state.sequencer.clip, 60U);
+    seed(state.sequencer.pattern(), state.sequencer.clip(), 60U);
     assert(state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
     assert(state.sequencerClips.isOccupied({0U, 1U}));
     assert(state.undoSequencerHistory());

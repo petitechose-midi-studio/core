@@ -41,13 +41,13 @@ FLASHMEM void configureStepPropertyEncoder(
     const core::state::sequencer::SequencerState& sequencer, uint8_t step,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {
     const auto config = input_utils::encoderConfigForProperty(
-        property, sequencer.pattern.pitchEditMode, scaleSettings);
+        property, sequencer.pattern().pitchEditMode, scaleSettings);
     encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
     encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
     encoders.setDiscreteSteps(encoderId, config.discreteSteps);
     encoders.setPosition(
         encoderId, core::state::sequencer::activeContentStepPropertyToNormalized(
-                       sequencer, step, property, sequencer.pattern.pitchEditMode, scaleSettings));
+                       sequencer, step, property, sequencer.pattern().pitchEditMode, scaleSettings));
 }
 
 }  // namespace
@@ -89,13 +89,13 @@ FLASHMEM bool setFocusedRowValue(core::state::sequencer::SequencerState& sequenc
         const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
         const uint8_t range = input_utils::normalizedToVariationRange(property, normalized);
         const bool changed = core::state::sequencer::setNodeLocalVariationRange(
-            sequencer.pattern, nodeId, property, range);
+            sequencer.pattern(), nodeId, property, range);
         if (changed) { sequencer.invalidateVariationTelemetry(); }
         return changed;
     }
 
     return core::state::sequencer::setActiveContentStepFromNormalized(
-        sequencer, step, property, normalized, sequencer.pattern.pitchEditMode, scaleSettings);
+        sequencer, step, property, normalized, sequencer.pattern().pitchEditMode, scaleSettings);
 }
 
 FLASHMEM void configureFocusedRowEncoder(
@@ -136,7 +136,7 @@ FLASHMEM void configureFocusedRowEncoder(
         encoders.setDiscreteSteps(encoderId, config.discreteSteps);
 
         uint8_t range = 0;
-        const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+        const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
         const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
         if (graph != nullptr) {
             const auto* node = graph->stepNode(nodeId);
@@ -158,7 +158,7 @@ FLASHMEM bool resetFocusedRowToDefault(core::state::sequencer::SequencerState& s
         changed = core::state::sequencer::setActiveContentStepEnabled(sequencer, step, false);
     } else if (focusedRowIsChord(sequencer)) {
         changed = core::state::sequencer::clearNodeChordState(
-            sequencer.pattern, core::state::sequencer::activeContentStepNodeId(sequencer, step));
+            sequencer.pattern(), core::state::sequencer::activeContentStepNodeId(sequencer, step));
     } else if (focusedRowIsProperty(sequencer)) {
         changed = core::state::sequencer::resetActiveContentStepPropertyToDefault(
             sequencer, step, focusedProperty(sequencer));

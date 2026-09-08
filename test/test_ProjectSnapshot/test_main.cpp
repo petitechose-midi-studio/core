@@ -186,13 +186,13 @@ void configureProjectSession(core::state::CoreState& state) {
     ));
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.setContentLength(15);
-    state.sequencer.pattern.stepsPerBeat.set(6);
+    state.sequencer.pattern().setContentLength(15);
+    state.sequencer.pattern().stepsPerBeat.set(6);
     assert(project::setProjectTrackMidiChannel(state.projectTracks, 1U, 9U).changed());
     state.sequencer.setStepDataAt(0, 66, 111, 88);
-    state.sequencer.pattern.toggle(0);
-    assert(sequencer::ensureGraphRoot(state.sequencer.pattern));
-    auto* ccLanes = sequencer::ensureSequencerCcLaneBank(state.sequencer.pattern);
+    state.sequencer.pattern().toggle(0);
+    assert(sequencer::ensureGraphRoot(state.sequencer.pattern()));
+    auto* ccLanes = sequencer::ensureSequencerCcLaneBank(state.sequencer.pattern());
     assert(ccLanes != nullptr);
     sequencer::SequencerCcLaneDraft ccLane{};
     ccLane.destination.controller = 74U;
@@ -220,7 +220,7 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(state.resetMusicalProject() ==
            core::state::ProjectResetOutcome::Completed);
     assert(state.statusBar.tempo.get() == 120.0f);
-    assert(state.sequencer.pattern.length.get() == sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(state.sequencer.pattern().length.get() == sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(state.sharedTrackActive.get() == 0);
     assert(state.macroUi.manualOverrides.entryCount == 0);
 
@@ -283,13 +283,13 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(restoredAutomation.primaryModulation.amount > 0.3699f &&
            restoredAutomation.primaryModulation.amount < 0.3701f);
 
-    assert(state.sequencer.pattern.length.get() == 15);
-    assert(state.sequencer.pattern.stepsPerBeat.get() == 6);
+    assert(state.sequencer.pattern().length.get() == 15);
+    assert(state.sequencer.pattern().stepsPerBeat.get() == 6);
     assert(state.projectTracks.authored.midiChannels[1] == 9U);
-    assert(state.sequencer.pattern.isEnabled(0));
-    assert(state.sequencer.pattern.note[0] == 66);
-    assert(state.sequencer.pattern.velocity[0] == 111);
-    assert(state.sequencer.pattern.gate[0] == 88);
+    assert(state.sequencer.pattern().isEnabled(0));
+    assert(state.sequencer.pattern().note[0] == 66);
+    assert(state.sequencer.pattern().velocity[0] == 111);
+    assert(state.sequencer.pattern().gate[0] == 88);
 
     std::cout << "[PASS] test_snapshot_capture_apply_restores_project_session\n";
 }
@@ -468,12 +468,12 @@ void test_snapshot_rejects_invalid_project_tracks_before_live_mutation() {
     invalid.projectTracks.midiChannels[1] = 16U;
 
     const auto beforeTracks = state.projectTracks.authored;
-    const uint8_t beforeNote = state.sequencer.pattern.note[0];
+    const uint8_t beforeNote = state.sequencer.pattern().note[0];
     const uint32_t beforeModified = state.project.metadata.modifiedCounter;
     const auto beforeToken = state.projectSessionSaveToken();
     assert(!project::applyProjectSnapshot(state, invalid));
     assert(project::sameProjectTrackSnapshot(state.projectTracks.authored, beforeTracks));
-    assert(state.sequencer.pattern.note[0] == beforeNote);
+    assert(state.sequencer.pattern().note[0] == beforeNote);
     assert(state.project.metadata.modifiedCounter == beforeModified);
     assert(state.projectSessionSaveToken() == beforeToken);
 
@@ -496,7 +496,7 @@ void test_snapshot_rejects_active_project_track_gesture_before_live_mutation() {
         state.project.metadata.name.size() - 1U
     );
     state.statusBar.tempo.set(101.0f);
-    state.sequencer.pattern.note[0] = 91U;
+    state.sequencer.pattern().note[0] = 91U;
 
     auto tracks = project::ProjectTrackDomainServices::fromCoreState(state);
     assert(tracks.beginGesture(project::ProjectTrackHistoryActionKind::Delay, 3U));
@@ -510,7 +510,7 @@ void test_snapshot_rejects_active_project_track_gesture_before_live_mutation() {
     assert(tracks.hasActiveGesture());
     assert(std::strcmp(state.project.metadata.name.data(), "outgoing") == 0);
     assert(state.statusBar.tempo.get() == 101.0f);
-    assert(state.sequencer.pattern.note[0] == 91U);
+    assert(state.sequencer.pattern().note[0] == 91U);
     assert(project::sameProjectTrackSnapshot(state.projectTracks.authored, tracksBefore));
     assert(state.projectSessionSaveToken() == tokenBefore);
 
@@ -745,7 +745,7 @@ void test_project_load_and_reset_reject_an_active_step_draft() {
 
     project::ProjectSnapshot baseline;
     assert(project::captureProjectSnapshot(state, baseline));
-    state.sequencer.pattern.note[0] = 93;
+    state.sequencer.pattern().note[0] = 93;
     assert(sequencer::beginStepContentDraft(
         state.sequencer,
         sequencer::SequencerStepContentDraftKind::MICRO_SEQUENCE,
@@ -755,7 +755,7 @@ void test_project_load_and_reset_reject_an_active_step_draft() {
     const auto beforeBlockedTransitions = state.projectSessionSaveToken();
     assert(!project::applyProjectSnapshot(state, baseline));
     assert(state.sequencer.stepContentDraft.active.get());
-    assert(state.sequencer.pattern.note[0] == 93);
+    assert(state.sequencer.pattern().note[0] == 93);
     assert(state.sequencer.stepContentDraft.failure ==
            sequencer::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
     assert(state.sequencer.stepContentDraft.blockedTransition ==
@@ -764,7 +764,7 @@ void test_project_load_and_reset_reject_an_active_step_draft() {
     assert(state.resetMusicalProject() ==
            core::state::ProjectResetOutcome::DraftActive);
     assert(state.sequencer.stepContentDraft.active.get());
-    assert(state.sequencer.pattern.note[0] == 93);
+    assert(state.sequencer.pattern().note[0] == 93);
     assert(state.sequencer.stepContentDraft.blockedTransition ==
            sequencer::SequencerStepContentDraftBlockedTransition::RESET);
     assert(state.projectSessionSaveToken() == beforeBlockedTransitions);

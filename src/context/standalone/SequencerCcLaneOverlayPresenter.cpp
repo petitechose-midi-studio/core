@@ -173,7 +173,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
     std::array<ms::ui::KeyValueRow, ROW_CAPACITY> rows{};
     int rowCount = 0;
     int selectedIndex = 0;
-    const auto* bank = seq::sequencerCcLaneView(state_.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(state_.sequencer.pattern());
     const auto activeTrack = state_.tracks.activeTrackIndex();
     const uint8_t inheritedChannel =
         core::state::project::projectTrackMidiChannel(
@@ -291,7 +291,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         );
         const uint8_t length = std::max<uint8_t>(
             1U,
-            state_.sequencer.pattern.length.get()
+            state_.sequencer.pattern().length.get()
         );
         const uint8_t start = static_cast<uint8_t>(
             (ui.focusedStep / GRID_WINDOW) * GRID_WINDOW
@@ -352,8 +352,8 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         };
         const int16_t playhead = state_.sequencer.playheadStep.get();
         const auto region = seq::clipPlaybackRegion(
-            state_.sequencer.pattern,
-            state_.sequencer.clip
+            state_.sequencer.pattern(),
+            state_.sequencer.clip()
         );
         for (uint8_t cell = 0; cell < GRID_WINDOW; ++cell) {
             const uint8_t step = static_cast<uint8_t>(start + cell);

@@ -1008,10 +1008,10 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
             sizeof(out.valueLabel),
             "%u",
             static_cast<unsigned>(ccLanes
-                ? (core::state::sequencer::sequencerCcLaneView(sequencer_.pattern)
+                ? (core::state::sequencer::sequencerCcLaneView(sequencer_.pattern())
                     ? core::state::sequencer::sequencerCcLaneCount(
                         *core::state::sequencer::sequencerCcLaneView(
-                            sequencer_.pattern
+                            sequencer_.pattern()
                         )
                     )
                     : 0U)
@@ -1040,7 +1040,7 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
                isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
         if (ccLanes) {
             const auto* bank =
-                core::state::sequencer::sequencerCcLaneView(sequencer_.pattern);
+                core::state::sequencer::sequencerCcLaneView(sequencer_.pattern());
             const bool add =
                 core::state::sequencer::sequencerPropertySelectionIsAdd(
                     bank,
@@ -1142,7 +1142,7 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
     out.targetRouteValid = ui.routeValid;
 
     const seq::SequencerCcLane* lane = nullptr;
-    const auto* bank = seq::sequencerCcLaneView(sequencer_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(sequencer_.pattern());
     if (bank && ui.focusedLane < bank->lanes.size() &&
         bank->lanes[ui.focusedLane].occupied) {
         lane = &bank->lanes[ui.focusedLane];
@@ -2181,7 +2181,7 @@ FLASHMEM bool SequencerPatternEditorUxSurface::captureSemanticUxContext(
             core::state::sequencer::SequencerState::STEPS_PER_PAGE
     );
     out.targetStep = sequencer_.patternEditor.windowStart;
-    out.targetCount = sequencer_.pattern.length.get();
+    out.targetCount = sequencer_.pattern().length.get();
     out.hasDraftActive = true;
     out.draftActive = randomize_.active;
 

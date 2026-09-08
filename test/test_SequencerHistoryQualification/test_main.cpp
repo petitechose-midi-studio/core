@@ -52,7 +52,7 @@ constexpr bool hasCc(PayloadKind kind) {
 }
 
 void preparePayload(Harness& h, PayloadKind kind) {
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     pattern.setContentLength(8U);
     assert(pattern.setStepDataAt(
         0U,
@@ -259,8 +259,8 @@ void prepareFlatHistoryPair(
     seq::SequencerHistoryPatternSnapshot& after
 ) {
     seq::captureFlatHistorySnapshot(h.state.sequencer, before);
-    assert(!h.state.sequencer.pattern.isEnabled(1U));
-    h.state.sequencer.pattern.setEnabled(1U, true);
+    assert(!h.state.sequencer.pattern().isEnabled(1U));
+    h.state.sequencer.pattern().setEnabled(1U, true);
     seq::captureFlatHistorySnapshot(h.state.sequencer, after);
 }
 
@@ -324,8 +324,8 @@ void test_prepared_pattern_publication_is_allocation_free() {
 
     seq::SequencerHistoryPatternSnapshot before;
     assert(seq::captureHistorySnapshot(h.state.sequencer, before));
-    assert(!h.state.sequencer.pattern.isEnabled(1U));
-    h.state.sequencer.pattern.setEnabled(1U, true);
+    assert(!h.state.sequencer.pattern().isEnabled(1U));
+    h.state.sequencer.pattern().setEnabled(1U, true);
     seq::SequencerHistoryPatternSnapshot after;
     assert(seq::captureHistorySnapshot(h.state.sequencer, after));
 

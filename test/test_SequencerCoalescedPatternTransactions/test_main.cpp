@@ -103,10 +103,8 @@ struct Harness {
     core::state::CoreState state;
 
     Harness() : state(storages.settings) {
-        state.sequencer.pattern.setContentLength(8U);
-        state.sequencer.pattern.note[kStep] = kInitialNote;
-        state.sequencerTracks.reset();
-        assert(test_support::sequencer_transaction::seedActiveBankSpare(state.sequencerTracks, state.sequencer));
+        state.sequencer.pattern().setContentLength(8U);
+        state.sequencer.pattern().note[kStep] = kInitialNote;
         settle();
     }
 
@@ -198,8 +196,8 @@ void assertCommittedOwnerIdentities(const core::state::CoreState& state,
     if (plan == PayloadPlan::FlatOnly) {
         assert(after.editorGraphOwner == before.editorGraphOwner);
         assert(after.editorCcOwner == before.editorCcOwner);
-        assert(after.bankGraphOwner == before.bankGraphOwner);
-        assert(after.bankCcOwner == before.bankCcOwner);
+        assert(after.bankGraphOwner == after.editorGraphOwner);
+        assert(after.bankCcOwner == after.editorCcOwner);
         return;
     }
 
@@ -214,22 +212,22 @@ void assertCommittedOwnerIdentities(const core::state::CoreState& state,
         assert(after.editorGraphOwner == before.editorGraphOwner);
     }
 
-    assert(after.bankGraphOwner == before.bankGraphOwner);
+    assert(after.bankGraphOwner == after.editorGraphOwner);
     assert(after.editorCcOwner == before.editorCcOwner);
-    assert(after.bankCcOwner == before.bankCcOwner);
+    assert(after.bankCcOwner == after.editorCcOwner);
 }
 
 seq::SequencerCcLaneBankPtr stageCcLaneEvent(const core::state::CoreState& state, uint8_t value) {
     seq::SequencerCcLaneBankPtr staged;
     assert(
-        seq::cloneSequencerCcLaneBank(staged, seq::sequencerCcLaneView(state.sequencer.pattern)));
+        seq::cloneSequencerCcLaneBank(staged, seq::sequencerCcLaneView(state.sequencer.pattern())));
     assert(staged != nullptr);
     assert(seq::setSequencerCcLaneEvent(*staged, 0U, kStep, value).changed());
     return staged;
 }
 
 uint8_t editorCcLaneEventValue(const core::state::CoreState& state) {
-    const auto* lanes = seq::sequencerCcLaneView(state.sequencer.pattern);
+    const auto* lanes = seq::sequencerCcLaneView(state.sequencer.pattern());
     assert(lanes != nullptr);
     assert(lanes->lanes[0U].activeMask.test(kStep));
     return lanes->lanes[0U].values[kStep];
@@ -243,7 +241,7 @@ uint8_t bankCcLaneEventValue(const core::state::CoreState& state) {
 }
 
 void initializePayload(Harness& h, InitialPayload payload) {
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     if (hasInitialGraph(payload)) {
         assert(seq::ensureGraphRoot(pattern));
         assert(seq::setNodeLocalVariationRange(pattern, seq::rootStepNodeId(kStep),
@@ -263,9 +261,7 @@ void initializePayload(Harness& h, InitialPayload payload) {
         pattern.bumpCcLaneRevision();
     }
 
-    h.state.sequencerTracks.reset();
 
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     h.settle();
 
     assert((pattern.graph != nullptr) == ownsInitialGraph(payload));
@@ -318,16 +314,16 @@ void test_flat_begin_seal_commit_is_exact_and_undoable() {
     assert(h.state.sequencerHistory.undoCount() == before.sequencerUndoCount);
     assert(h.state.commitSequencerPatternHistoryCoalescing());
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[kStep] == 72U);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 72U);
+    assert(h.state.sequencer.pattern().note[kStep] == 72U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 72U);
     assertOnePublicationAfterQueuedNotifications(h, before);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 72U);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 72U);
+    assert(h.state.sequencer.pattern().note[kStep] == 72U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 72U);
 
     std::cout << "[PASS] Flat begin/seal/commit is exact and undoable\n";
 }
@@ -369,7 +365,7 @@ void test_typed_domain_commit_adapter_distinguishes_failure_from_empty_boundary(
     }
     tx::assertFailureInjectionReset();
     tx::assertStateInvariant(h.state, beforeAbort);
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
 
     // An interrupted begin is a deterministic malformed boundary. Committing
     // it must report Failed, retain the pending owner for recovery, and perform
@@ -395,8 +391,8 @@ void test_typed_domain_commit_adapter_distinguishes_failure_from_empty_boundary(
     mutateFlatAndSeal(h.state, 74U);
     assert(history.commitCoalescedPatternEditOutcome() == Outcome::Committed);
     assert(history.commitCoalescedPatternEditOutcome() == Outcome::NoPending);
-    assert(h.state.sequencer.pattern.note[kStep] == 74U);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 74U);
+    assert(h.state.sequencer.pattern().note[kStep] == 74U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 74U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     std::cout
@@ -422,19 +418,19 @@ void test_core_state_flush_commits_pending_step_without_allocation_and_global_re
 #endif
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[kStep] == 71U);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 71U);
+    assert(h.state.sequencer.pattern().note[kStep] == 71U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 71U);
     assertOnePublicationAfterQueuedNotifications(h, before);
     assert(h.state.sequencerHistory.retainedBytes() ==
            before.retainedBytes +
                expectedRetainedBytes(PayloadPlan::FlatOnly, InitialPayload::None));
 
     assert(h.state.undoProjectHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(h.state.redoProjectHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 71U);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 71U);
+    assert(h.state.sequencer.pattern().note[kStep] == 71U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 71U);
 
     std::cout << "[PASS] CoreState::flush is allocation-free and Global Redo exact\n";
 }
@@ -462,26 +458,26 @@ void test_same_key_continuation_and_commit_allocate_nothing() {
 
     assertOnePublicationAfterQueuedNotifications(h, before);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 62U);
+    assert(h.state.sequencer.pattern().note[kStep] == 62U);
 
     std::cout << "[PASS] same-key continuation and commit allocate nothing\n";
 }
 
-void test_restored_active_scratch_coalesces_flat_step_property_edits() {
+void test_restored_canonical_owner_coalesces_flat_step_property_edits() {
     Harness h;
     initializePayload(h, InitialPayload::GraphAndCc);
     restoreThroughCanonicalBankSnapshot(h);
 
-    const auto* const editorGraphOwner = h.state.sequencer.pattern.graph.get();
-    const auto* const editorCcOwner = h.state.sequencer.pattern.ccLanes.get();
+    const auto* const editorGraphOwner = h.state.sequencer.pattern().graph.get();
+    const auto* const editorCcOwner = h.state.sequencer.pattern().ccLanes.get();
     assert(editorGraphOwner != nullptr);
     assert(editorCcOwner != nullptr);
-    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
-    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph.get() == h.state.sequencer.pattern().graph.get());
+    assert(h.state.sequencerTracks.track(0U).ccLanes.get() == h.state.sequencer.pattern().ccLanes.get());
 
-    const uint8_t initialVelocity = h.state.sequencer.pattern.velocity[kStep];
+    const uint8_t initialVelocity = h.state.sequencer.pattern().velocity[kStep];
     const auto before = tx::captureStateInvariant(h.state);
 
     assert(seq::sequencerHistoryOpenAccepted(
@@ -497,18 +493,18 @@ void test_restored_active_scratch_coalesces_flat_step_property_edits() {
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(h.state.commitSequencerPatternHistoryCoalescing());
 
-    assert(h.state.sequencer.pattern.graph.get() == editorGraphOwner);
-    assert(h.state.sequencer.pattern.ccLanes.get() == editorCcOwner);
-    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
-    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    assert(h.state.sequencer.pattern().graph.get() == editorGraphOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == editorCcOwner);
+    assert(h.state.sequencerTracks.track(0U).graph.get() == h.state.sequencer.pattern().graph.get());
+    assert(h.state.sequencerTracks.track(0U).ccLanes.get() == h.state.sequencer.pattern().ccLanes.get());
     assertOnePublicationAfterQueuedNotifications(h, before);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.velocity[kStep] == initialVelocity);
+    assert(h.state.sequencer.pattern().velocity[kStep] == initialVelocity);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.velocity[kStep] == 102U);
+    assert(h.state.sequencer.pattern().velocity[kStep] == 102U);
 
-    std::cout << "[PASS] restored active scratch preserves one flat-property Undo gesture\n";
+    std::cout << "[PASS] restored canonical owner preserves one flat-property Undo gesture\n";
 }
 
 void test_same_key_no_op_keeps_the_last_real_after_and_refreshes_timeout() {
@@ -531,7 +527,7 @@ void test_same_key_no_op_keeps_the_last_real_after_and_refreshes_timeout() {
 #endif
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[kStep] == 64U);
+    assert(h.state.sequencer.pattern().note[kStep] == 64U);
     assert(!h.state.updateSequencerPatternHistoryCoalescing(699U));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.updateSequencerPatternHistoryCoalescing(700U));
@@ -539,7 +535,7 @@ void test_same_key_no_op_keeps_the_last_real_after_and_refreshes_timeout() {
     assertOnePublicationAfterQueuedNotifications(h, before);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
 
     std::cout << "[PASS] same-key no-op preserves the real after and refreshes timeout\n";
 }
@@ -569,12 +565,12 @@ void test_same_key_payload_plan_drift_is_rejected_without_publication() {
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     tx::assertStateInvariant(h.state, sealed);
-    assert(h.state.sequencer.pattern.note[kStep] == 63U);
-    assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == 63U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 63U);
 
     assert(h.state.commitSequencerPatternHistoryCoalescing());
     assertOnePublicationAfterQueuedNotifications(h, before);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 63U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 63U);
 
     std::cout << "[PASS] same-key payload-plan drift rejects without publication\n";
 }
@@ -584,7 +580,7 @@ void test_return_to_before_cancels_the_session_exactly() {
     const auto invariantBefore = tx::captureStateInvariant(h.state);
     seq::SequencerHistoryPatternSnapshot musicalBefore;
     tx::captureMusicalSnapshot(h.state, musicalBefore);
-    const uint32_t stepDataRevisionBefore = h.state.sequencer.pattern.stepDataRevision.get();
+    const uint32_t stepDataRevisionBefore = h.state.sequencer.pattern().stepDataRevision.get();
     const uint32_t bankStepDataRevisionBefore =
         h.state.sequencerTracks.track(0U).stepDataRevision.get();
 
@@ -601,7 +597,7 @@ void test_return_to_before_cancels_the_session_exactly() {
 
     tx::assertStateInvariant(h.state, invariantBefore);
     tx::assertMusicalSnapshot(h.state, musicalBefore);
-    assert(h.state.sequencer.pattern.stepDataRevision.get() == stepDataRevisionBefore);
+    assert(h.state.sequencer.pattern().stepDataRevision.get() == stepDataRevisionBefore);
     assert(h.state.sequencerTracks.track(0U).stepDataRevision.get() == bankStepDataRevisionBefore);
 
     std::cout << "[PASS] returning to before cancels the session exactly\n";
@@ -615,10 +611,10 @@ void test_timing_and_variation_net_returns_restore_every_revision() {
         tx::captureMusicalSnapshot(h.state, musicalBefore);
 
         beginFlat(h.state, 100U);
-        assert(h.state.sequencer.pattern.setPatternSwingOffsetPercent(17));
+        assert(h.state.sequencer.pattern().setPatternSwingOffsetPercent(17));
         assert(h.state.sealSequencerPatternHistoryCoalescing(true));
         beginFlat(h.state, 200U);
-        assert(h.state.sequencer.pattern.setPatternSwingOffsetPercent(0));
+        assert(h.state.sequencer.pattern().setPatternSwingOffsetPercent(0));
         assert(h.state.sealSequencerPatternHistoryCoalescing(true));
 
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -633,10 +629,10 @@ void test_timing_and_variation_net_returns_restore_every_revision() {
         tx::captureMusicalSnapshot(h.state, musicalBefore);
 
         beginFlat(h.state, 100U);
-        assert(h.state.sequencer.pattern.setVariationRangeForProperty(seq::StepProperty::NOTE, 7U));
+        assert(h.state.sequencer.pattern().setVariationRangeForProperty(seq::StepProperty::NOTE, 7U));
         assert(h.state.sealSequencerPatternHistoryCoalescing(true));
         beginFlat(h.state, 200U);
-        assert(h.state.sequencer.pattern.setVariationRangeForProperty(seq::StepProperty::NOTE, 0U));
+        assert(h.state.sequencer.pattern().setVariationRangeForProperty(seq::StepProperty::NOTE, 0U));
         assert(h.state.sealSequencerPatternHistoryCoalescing(true));
 
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -664,11 +660,11 @@ void test_key_change_commits_the_old_session_before_new_begin_failure() {
     }
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[kStep] == 66U);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 66U);
+    assert(h.state.sequencer.pattern().note[kStep] == 66U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 66U);
     assertOnePublicationAfterQueuedNotifications(h, before);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
 
     std::cout << "[PASS] key change preserves old commit when new begin fails\n";
 }
@@ -691,8 +687,8 @@ void test_step_to_cc_transition_keeps_old_commit_when_cc_begin_fails() {
     }
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[kStep] == 66U);
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).note[kStep] == 66U);
+    assert(h.state.sequencer.pattern().note[kStep] == 66U);
+    assert(h.state.sequencerTracks.track(0U).note[kStep] == 66U);
     assert(editorCcLaneEventValue(h.state) == 91U);
     assert(bankCcLaneEventValue(h.state) == 91U);
     assertCommittedOwnerIdentities(h.state, before, PayloadPlan::FlatOnly, InitialPayload::CcOnly);
@@ -702,9 +698,9 @@ void test_step_to_cc_transition_keeps_old_commit_when_cc_begin_fails() {
     assertOnePublicationAfterQueuedNotifications(h, before);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 66U);
+    assert(h.state.sequencer.pattern().note[kStep] == 66U);
 
     std::cout << "[PASS] Step-to-CC transition commits Step before CC fail-1\n";
 }
@@ -719,7 +715,7 @@ void test_cc_to_step_transition_keeps_old_commit_when_step_begin_fails() {
     assert(seq::sequencerHistoryOpenAccepted(
         h.state.beginOrContinueSequencerCcLaneEventHistoryCoalescing(0U, kStep, 91, 92,
                                                                         stagedCc.get(), 100U)));
-    seq::installSequencerCcLaneBank(h.state.sequencer.pattern, std::move(stagedCc));
+    seq::installSequencerCcLaneBank(h.state.sequencer.pattern(), std::move(stagedCc));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(editorCcLaneEventValue(h.state) == 92U);
 
@@ -733,17 +729,17 @@ void test_cc_to_step_transition_keeps_old_commit_when_step_begin_fails() {
     }
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(editorCcLaneEventValue(h.state) == 92U);
-    assert(bankCcLaneEventValue(h.state) == 91U);
+    assert(bankCcLaneEventValue(h.state) == 92U);
 
     const auto after = tx::captureStateInvariant(h.state);
     assert(after.editorCcOwner == stagedCcOwner);
     assert(after.editorCcOwner != before.editorCcOwner);
     assert(after.bankCcOwner != nullptr);
-    assert(after.bankCcOwner == before.bankCcOwner);
-    assert(after.bankCcOwner != after.editorCcOwner);
+    assert(after.bankCcOwner == stagedCcOwner);
+    assert(after.bankCcOwner == after.editorCcOwner);
     assert(after.editorGraphOwner == before.editorGraphOwner);
     assert(after.bankGraphOwner == before.bankGraphOwner);
     assert(after.sequencerUndoCount == before.sequencerUndoCount + 1U);
@@ -864,23 +860,23 @@ void test_net_return_rearms_a_preexisting_generic_mutation() {
     assert(
         seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
-    assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern, seq::rootStepNodeId(kStep),
+    assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern(), seq::rootStepNodeId(kStep),
                                            seq::StepProperty::NOTE, 5U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(
         seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullWithProspectiveGraph)));
-    h.state.sequencer.pattern.graph->reset();
-    h.state.sequencer.pattern.bumpGraphRevision();
+    h.state.sequencer.pattern().graph->reset();
+    h.state.sequencer.pattern().bumpGraphRevision();
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == before.sequencerUndoCount);
-    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
 
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
     assertOnlyGenericMutationPublished(h, before);
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
     assert(h.state.sequencer.focusedStep.get() == 1U);
 
     std::cout << "[PASS] Graph net return re-arms an earlier queued generic mutation\n";
@@ -904,17 +900,17 @@ void test_no_op_seal_is_immediate_and_byte_identical() {
     {
         Harness h;
         const auto before = tx::captureStateInvariant(h.state);
-        assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
         assert(seq::sequencerHistoryOpenAccepted(
             h.state.beginOrContinueSequencerPatternHistoryCoalescing(
             kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
-        assert(h.state.sequencer.pattern.graph != nullptr);
-        assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(h.state.sequencer.pattern().graph != nullptr);
+        assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
         assert(h.state.sealSequencerPatternHistoryCoalescing(false));
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-        assert(h.state.sequencer.pattern.graph == nullptr);
-        assert(h.state.sequencerTracks.track(0U).graph == nullptr);
-        assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(h.state.sequencer.pattern().graph == nullptr);
+        assert(h.state.sequencerTracks.track(0U).graph.get() == h.state.sequencer.pattern().graph.get());
+        assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
         tx::assertStateInvariant(h.state, before);
     }
 
@@ -932,23 +928,23 @@ void test_prospective_graph_net_return_releases_the_live_owner_exactly() {
     assert(
         seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
-    assert(h.state.sequencer.pattern.graph != nullptr);
-    assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern, seq::rootStepNodeId(kStep),
+    assert(h.state.sequencer.pattern().graph != nullptr);
+    assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern(), seq::rootStepNodeId(kStep),
                                            seq::StepProperty::NOTE, 6U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
 
     assert(
         seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullWithProspectiveGraph)));
-    assert(h.state.sequencer.pattern.graph != nullptr);
-    h.state.sequencer.pattern.graph->reset();
-    h.state.sequencer.pattern.bumpGraphRevision();
+    assert(h.state.sequencer.pattern().graph != nullptr);
+    h.state.sequencer.pattern().graph->reset();
+    h.state.sequencer.pattern().bumpGraphRevision();
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(!h.state.commitSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.graph == nullptr);
-    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(h.state.sequencer.pattern().graph == nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph.get() == h.state.sequencer.pattern().graph.get());
     tx::assertStateInvariant(h.state, before);
     tx::assertMusicalSnapshot(h.state, musicalBefore);
 
@@ -958,7 +954,7 @@ void test_prospective_graph_net_return_releases_the_live_owner_exactly() {
 void test_prospective_graph_commits_without_post_begin_allocation() {
     Harness h;
     const auto before = tx::captureStateInvariant(h.state);
-    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
 
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
     {
@@ -968,10 +964,10 @@ void test_prospective_graph_commits_without_post_begin_allocation() {
         assert(seq::sequencerHistoryOpenAccepted(
             h.state.beginOrContinueSequencerPatternHistoryCoalescing(
             kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
-        assert(h.state.sequencer.pattern.graph != nullptr);
-        assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(h.state.sequencer.pattern().graph != nullptr);
+        assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
         assert(seq::setNodeLocalVariationRange(
-            h.state.sequencer.pattern, seq::rootStepNodeId(kStep), seq::StepProperty::NOTE, 5U));
+            h.state.sequencer.pattern(), seq::rootStepNodeId(kStep), seq::StepProperty::NOTE, 5U));
         assert(h.state.sealSequencerPatternHistoryCoalescing(true));
         assert(h.state.commitSequencerPatternHistoryCoalescing());
         tx::assertMaxPlusOneStillArmed(3U);
@@ -980,14 +976,14 @@ void test_prospective_graph_commits_without_post_begin_allocation() {
     assert(
         seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
-    assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern, seq::rootStepNodeId(kStep),
+    assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern(), seq::rootStepNodeId(kStep),
                                            seq::StepProperty::NOTE, 5U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(h.state.commitSequencerPatternHistoryCoalescing());
 #endif
 
-    const auto* editorGraph = seq::graphView(h.state.sequencer.pattern);
-    const auto* bankGraph = seq::graphView(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U));
+    const auto* editorGraph = seq::graphView(h.state.sequencer.pattern());
+    const auto* bankGraph = seq::graphView(h.state.sequencerTracks.track(0U));
     assert(editorGraph != nullptr && bankGraph != nullptr);
     assert(seq::nodeLocalVariationRange(*editorGraph->stepNode(seq::rootStepNodeId(kStep)),
                                         seq::StepProperty::NOTE) == 5U);
@@ -996,12 +992,12 @@ void test_prospective_graph_commits_without_post_begin_allocation() {
     assertOnePublicationAfterQueuedNotifications(h, before);
 
     assert(h.state.undoSequencerHistory());
-    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
-    assert(seq::graphView(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U)) == nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
+    assert(seq::graphView(h.state.sequencerTracks.track(0U)) == nullptr);
     assert(h.state.redoSequencerHistory());
-    assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
-    assert(seq::graphView(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U)) != nullptr);
-    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) != nullptr);
+    assert(seq::graphView(h.state.sequencerTracks.track(0U)) != nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph.get() == h.state.sequencer.pattern().graph.get());
 
     std::cout << "[PASS] prospective Graph has no post-begin allocation\n";
 }
@@ -1009,8 +1005,8 @@ void test_prospective_graph_commits_without_post_begin_allocation() {
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
 void mutateMatrixCandidateAndSeal(core::state::CoreState& state, PayloadPlan plan) {
     if (plan == PayloadPlan::FullWithProspectiveGraph) {
-        assert(state.sequencer.pattern.graph != nullptr);
-        assert(seq::setNodeLocalVariationRange(state.sequencer.pattern, seq::rootStepNodeId(kStep),
+        assert(state.sequencer.pattern().graph != nullptr);
+        assert(seq::setNodeLocalVariationRange(state.sequencer.pattern(), seq::rootStepNodeId(kStep),
                                                seq::StepProperty::NOTE, 7U));
     } else {
         assert(state.sequencer.setStepNoteAt(kStep, 74U));
@@ -1099,7 +1095,7 @@ void test_sealed_commit_ignores_fail_one() {
     }
 
     assertOnePublicationAfterQueuedNotifications(h, before);
-    assert(h.state.sequencer.pattern.note[kStep] == 73U);
+    assert(h.state.sequencer.pattern().note[kStep] == 73U);
 
     std::cout << "[PASS] sealed commit performs zero allocation under fail-1\n";
 }
@@ -1113,7 +1109,7 @@ int main() {
     test_typed_domain_commit_adapter_distinguishes_failure_from_empty_boundary();
     test_core_state_flush_commits_pending_step_without_allocation_and_global_redoes();
     test_same_key_continuation_and_commit_allocate_nothing();
-    test_restored_active_scratch_coalesces_flat_step_property_edits();
+    test_restored_canonical_owner_coalesces_flat_step_property_edits();
     test_same_key_no_op_keeps_the_last_real_after_and_refreshes_timeout();
     test_same_key_payload_plan_drift_is_rejected_without_publication();
     test_timeout_boundary_is_exact_and_commit_allocates_nothing();

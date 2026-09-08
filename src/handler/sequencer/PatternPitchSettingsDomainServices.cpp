@@ -18,7 +18,7 @@ FLASHMEM StepSequencerScaleSettings editableScaleSettings(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::sequencer::SequencerTrackBankState& trackBank
 ) {
-    const auto& pattern = sequencer.pattern;
+    const auto& pattern = sequencer.pattern();
     auto settings = core::state::sequencer::isPatternScaleOverride(pattern.scalePolicy)
         ? pattern.scaleOverride
         : trackBank.projectScaleSettings();
@@ -48,8 +48,8 @@ projectContextChange(
         sequencer,
         source,
         target,
-        sequencer.pattern.pitchEditMode,
-        sequencer.pattern.pitchEditMode
+        sequencer.pattern().pitchEditMode,
+        sequencer.pattern().pitchEditMode
     );
 }
 
@@ -66,12 +66,12 @@ FLASHMEM bool synchronizeActiveGraphDraftPitchContext(
     if (draft == nullptr) return false;
 
     bool changed =
-        draft->setPatternScalePolicy(sequencer.pattern.scalePolicy);
+        draft->setPatternScalePolicy(sequencer.pattern().scalePolicy);
     changed =
-        draft->setPatternScaleOverride(sequencer.pattern.scaleOverride) ||
+        draft->setPatternScaleOverride(sequencer.pattern().scaleOverride) ||
         changed;
     changed =
-        draft->setPitchEditMode(sequencer.pattern.pitchEditMode) ||
+        draft->setPitchEditMode(sequencer.pattern().pitchEditMode) ||
         changed;
     if (changed) sequencer.stepContentDraft.touch();
     return changed;
@@ -85,7 +85,7 @@ FLASHMEM PatternPitchSettingsDomainServices::PatternPitchSettingsDomainServices(
 
 FLASHMEM int PatternPitchSettingsDomainServices::currentChoiceIndex(uint8_t row) const {
     const auto settings = editableScaleSettings(*sequencer_, *track_bank_);
-    const auto& pattern = sequencer_->pattern;
+    const auto& pattern = sequencer_->pattern();
 
     switch (row) {
         case 0:
@@ -102,7 +102,7 @@ FLASHMEM int PatternPitchSettingsDomainServices::currentChoiceIndex(uint8_t row)
 }
 
 FLASHMEM int PatternPitchSettingsDomainServices::choiceCount(uint8_t row) const {
-    const auto& pattern = sequencer_->pattern;
+    const auto& pattern = sequencer_->pattern();
     switch (row) {
         case 0:
             return catalog::PATTERN_SCALE_POLICY_COUNT;
@@ -128,7 +128,7 @@ PatternPitchSettingsDomainServices::applyChoice(
 ) const {
     using ProjectionStats =
         core::state::sequencer::SequencerChordContextProjectionStats;
-    auto& pattern = sequencer_->pattern;
+    auto& pattern = sequencer_->pattern();
     const auto sourceSettings =
         editableScaleSettings(*sequencer_, *track_bank_);
 

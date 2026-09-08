@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #include <cassert>
 #include <iostream>
 
@@ -122,33 +123,33 @@ void test_projects_root_step_content_badges() {
 }
 
 void test_root_grid_projects_micro_rail_and_current_substep() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8U);
-    sequencer.pattern.setEnabled(0U, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8U);
+    sequencer.pattern().setEnabled(0U, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTickOffset.set(2U);
 
     const auto micro = createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootStepNodeId(0U),
         4U
     );
     assert(micro.ok);
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     assert(setNodeEnabledOverride(
-        sequencer.pattern,
+        sequencer.pattern(),
         static_cast<uint16_t>(sequence->firstStepNode + 1U),
         false
     ));
 
-    auto rail = buildStepContentBadgeProjection(sequencer.pattern, 0U);
+    auto rail = buildStepContentBadgeProjection(sequencer.pattern(), 0U);
     applyMicroSequencePlaybackProjection(
         rail,
-        sequencer.pattern.gate[0U],
-        sequencer.pattern.stepsPerBeat.get(),
+        sequencer.pattern().gate[0U],
+        sequencer.pattern().stepsPerBeat.get(),
         sequencer.playheadStepTickOffset.get(),
         sequencer.expandedVariationTelemetry,
         0U
@@ -166,8 +167,8 @@ void test_root_grid_projects_micro_rail_and_current_substep() {
     sequencer.expandedVariationTelemetry.localTick[1U] = 5U;
     applyMicroSequencePlaybackProjection(
         rail,
-        sequencer.pattern.gate[0U],
-        sequencer.pattern.stepsPerBeat.get(),
+        sequencer.pattern().gate[0U],
+        sequencer.pattern().stepsPerBeat.get(),
         sequencer.playheadStepTickOffset.get(),
         sequencer.expandedVariationTelemetry,
         0U
@@ -179,28 +180,28 @@ void test_root_grid_projects_micro_rail_and_current_substep() {
 }
 
 void test_root_grid_projects_rotated_cycle_phase() {
-    SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     const auto cycle = createCycleStateSet(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootStepNodeId(0U),
         4U
     );
     assert(cycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* set = graph->cycleSet(cycle.id);
     assert(set != nullptr);
     assert(setNodeEnabledOverride(
-        sequencer.pattern,
+        sequencer.pattern(),
         static_cast<uint16_t>(set->firstStateNode + 1U),
         false
     ));
-    assert(setCycleStateSetOffset(sequencer.pattern, cycle.id, 1));
+    assert(setCycleStateSetOffset(sequencer.pattern(), cycle.id, 1));
 
-    auto phase = buildStepContentBadgeProjection(sequencer.pattern, 0U);
+    auto phase = buildStepContentBadgeProjection(sequencer.pattern(), 0U);
     applyCycleStatePlaybackProjection(
         phase,
-        sequencer.pattern,
+        sequencer.pattern(),
         rootStepNodeId(0U),
         6U
     );
@@ -232,19 +233,19 @@ void test_invalid_or_missing_graph_has_no_badges() {
 }
 
 void test_projects_child_context_resolved_values_and_badges() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[1] = 60;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[1] = 60;
 
-    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(1), 2);
+    const auto micro = createMicroSequence(sequencer.pattern(), rootStepNodeId(1), 2);
     assert(micro.ok);
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const auto microNode = sequence->firstStepNode;
-    assert(setNodeNoteOffset(sequencer.pattern, microNode, 2));
-    assert(createCycleStateSet(sequencer.pattern, microNode, 4).ok);
+    assert(setNodeNoteOffset(sequencer.pattern(), microNode, 2));
+    assert(createCycleStateSet(sequencer.pattern(), microNode, 4).ok);
 
     sequencer.focusedStep.set(1);
     assert(enterMicroSequenceContentView(sequencer, rootStepNodeId(1), micro.id));
@@ -259,7 +260,7 @@ void test_projects_child_context_resolved_values_and_badges() {
     assert(projection.note == 62);
 
     const auto badges = buildStepContentBadgeProjectionForNode(
-        sequencer.pattern,
+        sequencer.pattern(),
         projection.nodeId
     );
     assert(badges.cycleStates);
@@ -270,24 +271,24 @@ void test_projects_child_context_resolved_values_and_badges() {
 }
 
 void test_child_note_offsets_follow_pattern_pitch_context() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
 
     const auto micro = createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootStepNodeId(0),
         2
     );
     assert(micro.ok);
     const auto* graph = core::state::sequencer::graphView(
-        sequencer.pattern
+        sequencer.pattern()
     );
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     assert(setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         sequence->firstStepNode,
         1
     ));
@@ -383,21 +384,21 @@ void test_projects_chord_badge_for_local_chord_step() {
 }
 
 void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTickOffset.set(0);
 
     oc::note::sequencer::StepSequencerChordSpec rootChord{};
     rootChord.voiceCount = 4;
-    assert(setNodeChordSpec(sequencer.pattern, rootStepNodeId(0), rootChord));
+    assert(setNodeChordSpec(sequencer.pattern(), rootStepNodeId(0), rootChord));
 
-    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto micro = createMicroSequence(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(micro.ok);
-    const auto* graph = sequencer.pattern.graph.get();
+    const auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
@@ -427,7 +428,7 @@ void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
         true
     );
 
-    auto badges = buildStepContentBadgeProjectionForNode(sequencer.pattern, childNode);
+    auto badges = buildStepContentBadgeProjectionForNode(sequencer.pattern(), childNode);
     assert(!badges.chord);
     assert(mergeExpandedTelemetryChordBadgeForNode(
         badges,
@@ -446,16 +447,16 @@ void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
 }
 
 void test_root_grid_projects_runtime_expansion_limit_warning() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().setEnabled(0, true);
     sequencer.playheadStep.set(0);
     sequencer.expandedVariationTelemetry.valid = true;
     sequencer.expandedVariationTelemetry.rootStepIndex = 0;
     sequencer.expandedVariationTelemetry.noteBudgetExceeded = true;
 
     auto rootBadges =
-        buildStepContentBadgeProjection(sequencer.pattern, 0);
+        buildStepContentBadgeProjection(sequencer.pattern(), 0);
     assert(!mergeExpandedTelemetryChordBadgeForNode(
         rootBadges,
         sequencer.expandedVariationTelemetry,
@@ -466,7 +467,7 @@ void test_root_grid_projects_runtime_expansion_limit_warning() {
     assert(rootBadges.expansionLimitReached);
 
     auto otherBadges =
-        buildStepContentBadgeProjection(sequencer.pattern, 1);
+        buildStepContentBadgeProjection(sequencer.pattern(), 1);
     assert(!mergeExpandedTelemetryChordBadgeForNode(
         otherBadges,
         sequencer.expandedVariationTelemetry,
@@ -480,18 +481,18 @@ void test_root_grid_projects_runtime_expansion_limit_warning() {
 }
 
 void test_parent_grid_summarizes_final_child_pitch() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
 
-    sequencer.pattern.note[1] = 60;
-    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(1), 2);
+    sequencer.pattern().note[1] = 60;
+    const auto micro = createMicroSequence(sequencer.pattern(), rootStepNodeId(1), 2);
     assert(micro.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* microSequence = graph->sequence(micro.id);
     assert(microSequence != nullptr);
     const auto microNode = microSequence->firstStepNode;
-    assert(setNodeNoteOffset(sequencer.pattern, microNode, 2));
+    assert(setNodeNoteOffset(sequencer.pattern(), microNode, 2));
 
     uint8_t childNote = 0;
     auto projection = core::state::sequencer::resolveActiveContentStepProjection(
@@ -507,15 +508,15 @@ void test_parent_grid_summarizes_final_child_pitch() {
     ));
     assert(childNote == 62);
 
-    sequencer.pattern.note[2] = 60;
-    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(2), 4);
+    sequencer.pattern().note[2] = 60;
+    const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(2), 4);
     assert(cycle.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     assert(setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         static_cast<uint16_t>(cycleSet->firstStateNode + 1U),
         3
     ));
@@ -534,23 +535,23 @@ void test_parent_grid_summarizes_final_child_pitch() {
     ));
     assert(childNote == 63);
 
-    sequencer.pattern.note[3] = 60;
-    const auto nestedMicro = createMicroSequence(sequencer.pattern, rootStepNodeId(3), 2);
+    sequencer.pattern().note[3] = 60;
+    const auto nestedMicro = createMicroSequence(sequencer.pattern(), rootStepNodeId(3), 2);
     assert(nestedMicro.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* nestedSequence = graph->sequence(nestedMicro.id);
     assert(nestedSequence != nullptr);
     const auto nestedMicroNode = nestedSequence->firstStepNode;
-    assert(setNodeNoteOffset(sequencer.pattern, nestedMicroNode, 2));
-    const auto nestedCycle = createCycleStateSet(sequencer.pattern, nestedMicroNode, 2);
+    assert(setNodeNoteOffset(sequencer.pattern(), nestedMicroNode, 2));
+    const auto nestedCycle = createCycleStateSet(sequencer.pattern(), nestedMicroNode, 2);
     assert(nestedCycle.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
     assert(nestedCycleSet != nullptr);
     assert(setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1U),
         3
     ));
@@ -573,37 +574,37 @@ void test_parent_grid_summarizes_final_child_pitch() {
 }
 
 void test_parent_tile_displays_final_child_pitch_across_nested_cycles() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
 
-    const auto rootCycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto rootCycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(rootCycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* rootCycleSet = graph->cycleSet(rootCycle.id);
     assert(rootCycleSet != nullptr);
     const auto rootStateNode = static_cast<uint16_t>(rootCycleSet->firstStateNode + 1U);
-    assert(setNodeNoteOffset(sequencer.pattern, rootStateNode, 1));
+    assert(setNodeNoteOffset(sequencer.pattern(), rootStateNode, 1));
 
-    const auto secondCycle = createCycleStateSet(sequencer.pattern, rootStateNode, 2);
+    const auto secondCycle = createCycleStateSet(sequencer.pattern(), rootStateNode, 2);
     assert(secondCycle.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* secondCycleSet = graph->cycleSet(secondCycle.id);
     assert(secondCycleSet != nullptr);
     const auto secondStateNode = static_cast<uint16_t>(secondCycleSet->firstStateNode + 1U);
-    assert(setNodeNoteOffset(sequencer.pattern, secondStateNode, 2));
+    assert(setNodeNoteOffset(sequencer.pattern(), secondStateNode, 2));
 
-    const auto thirdCycle = createCycleStateSet(sequencer.pattern, secondStateNode, 2);
+    const auto thirdCycle = createCycleStateSet(sequencer.pattern(), secondStateNode, 2);
     assert(thirdCycle.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* thirdCycleSet = graph->cycleSet(thirdCycle.id);
     assert(thirdCycleSet != nullptr);
     const auto thirdStateNode = static_cast<uint16_t>(thirdCycleSet->firstStateNode + 1U);
-    assert(setNodeNoteOffset(sequencer.pattern, thirdStateNode, 3));
+    assert(setNodeNoteOffset(sequencer.pattern(), thirdStateNode, 3));
 
     sequencer.probabilityCycleIndex = 7;
 
@@ -625,27 +626,27 @@ void test_parent_tile_displays_final_child_pitch_across_nested_cycles() {
 }
 
 void test_child_grid_summarizes_intermediate_child_pitch() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
 
-    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(cycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     const auto stateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 1U);
-    assert(setNodeNoteOffset(sequencer.pattern, stateNode, 2));
+    assert(setNodeNoteOffset(sequencer.pattern(), stateNode, 2));
 
-    const auto nestedCycle = createCycleStateSet(sequencer.pattern, stateNode, 2);
+    const auto nestedCycle = createCycleStateSet(sequencer.pattern(), stateNode, 2);
     assert(nestedCycle.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
     assert(nestedCycleSet != nullptr);
     assert(setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1U),
         3
     ));
@@ -681,20 +682,20 @@ void test_child_grid_summarizes_intermediate_child_pitch() {
 }
 
 void test_child_summary_reports_representative_local_variation() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
 
-    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(cycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     const auto stateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 1U);
-    assert(setNodeNoteOffset(sequencer.pattern, stateNode, 2));
-    assert(setNodeLocalVariationRange(sequencer.pattern, stateNode, StepProperty::NOTE, 5));
+    assert(setNodeNoteOffset(sequencer.pattern(), stateNode, 2));
+    assert(setNodeLocalVariationRange(sequencer.pattern(), stateNode, StepProperty::NOTE, 5));
 
     sequencer.probabilityCycleIndex = 1;
     auto projection = core::state::sequencer::resolveActiveContentStepProjection(
@@ -713,15 +714,15 @@ void test_child_summary_reports_representative_local_variation() {
     assert(summary.note == 62);
     assert(summary.localVariation.pitchSemitones == 5);
 
-    const auto micro = createMicroSequence(sequencer.pattern, stateNode, 2);
+    const auto micro = createMicroSequence(sequencer.pattern(), stateNode, 2);
     assert(micro.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const auto microNode = sequence->firstStepNode;
-    assert(setNodeNoteOffset(sequencer.pattern, microNode, 3));
-    assert(setNodeLocalVariationRange(sequencer.pattern, microNode, StepProperty::VELOCITY, 12));
+    assert(setNodeNoteOffset(sequencer.pattern(), microNode, 3));
+    assert(setNodeLocalVariationRange(sequencer.pattern(), microNode, StepProperty::VELOCITY, 12));
 
     projection = core::state::sequencer::resolveActiveContentStepProjection(
         sequencer,
@@ -743,27 +744,27 @@ void test_child_summary_reports_representative_local_variation() {
 }
 
 void test_intermediate_cycle_summary_uses_owner_activation_count() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[2] = 60;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[2] = 60;
 
-    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(2), 4);
+    const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(2), 4);
     assert(cycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     const auto stateNode = cycleSet->firstStateNode;
 
-    const auto nestedCycle = createCycleStateSet(sequencer.pattern, stateNode, 4);
+    const auto nestedCycle = createCycleStateSet(sequencer.pattern(), stateNode, 4);
     assert(nestedCycle.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
     assert(nestedCycleSet != nullptr);
-    assert(setNodeNoteOffset(sequencer.pattern, nestedCycleSet->firstStateNode, 3));
+    assert(setNodeNoteOffset(sequencer.pattern(), nestedCycleSet->firstStateNode, 3));
     assert(setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         static_cast<uint16_t>(nestedCycleSet->firstStateNode + 2U),
         -3
     ));
@@ -809,24 +810,24 @@ void test_intermediate_cycle_summary_uses_owner_activation_count() {
 }
 
 void test_nested_child_playhead_follows_active_owner_path() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTicks = 24;
     sequencer.playheadStepTickOffset.set(0);
 
-    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(cycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     const auto stateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 1U);
 
-    const auto nestedCycle = createCycleStateSet(sequencer.pattern, stateNode, 2);
+    const auto nestedCycle = createCycleStateSet(sequencer.pattern(), stateNode, 2);
     assert(nestedCycle.ok);
 
     sequencer.focusedStep.set(0);
@@ -869,15 +870,15 @@ void test_nested_child_playhead_follows_active_owner_path() {
 }
 
 void test_micro_child_playhead_reports_local_continuous_progress() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8U);
-    sequencer.pattern.setEnabled(0U, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8U);
+    sequencer.pattern().setEnabled(0U, true);
     sequencer.probabilityCycleMask.setBit(0U, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTicks = 24U;
 
     const auto micro = createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootStepNodeId(0U),
         2U
     );
@@ -913,20 +914,20 @@ void test_micro_child_playhead_reports_local_continuous_progress() {
 }
 
 void test_child_disabled_state_is_reported_to_parent_summary() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
 
-    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 4);
+    const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(0), 4);
     assert(cycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     const auto thirdStateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 2U);
     assert(core::state::sequencer::setNodeEnabledOverride(
-        sequencer.pattern,
+        sequencer.pattern(),
         thirdStateNode,
         false
     ));
@@ -952,24 +953,24 @@ void test_child_disabled_state_is_reported_to_parent_summary() {
 }
 
 void test_child_playhead_remains_visible_when_selected_state_is_disabled() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTicks = 24;
     sequencer.playheadStepTickOffset.set(0);
 
-    const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 4);
+    const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(0), 4);
     assert(cycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
     const auto thirdStateNode = static_cast<uint16_t>(cycleSet->firstStateNode + 2U);
     assert(core::state::sequencer::setNodeEnabledOverride(
-        sequencer.pattern,
+        sequencer.pattern(),
         thirdStateNode,
         false
     ));
@@ -990,24 +991,24 @@ void test_child_playhead_remains_visible_when_selected_state_is_disabled() {
 }
 
 void test_parent_summary_uses_current_micro_substep_runtime_note() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTicks = 24;
 
-    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto micro = createMicroSequence(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(micro.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const auto firstNode = sequence->firstStepNode;
     const auto secondNode = static_cast<uint16_t>(sequence->firstStepNode + 1U);
-    assert(setNodeEnabledOverride(sequencer.pattern, firstNode, false));
-    assert(setNodeNoteOffset(sequencer.pattern, secondNode, 7));
+    assert(setNodeEnabledOverride(sequencer.pattern(), firstNode, false));
+    assert(setNodeNoteOffset(sequencer.pattern(), secondNode, 7));
 
     const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
         sequencer,
@@ -1042,24 +1043,24 @@ void test_parent_summary_uses_current_micro_substep_runtime_note() {
 }
 
 void test_resolved_projection_reports_current_child_runtime_note() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTicks = 24;
 
-    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto micro = createMicroSequence(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(micro.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const auto firstNode = sequence->firstStepNode;
     const auto secondNode = static_cast<uint16_t>(sequence->firstStepNode + 1U);
-    assert(setNodeEnabledOverride(sequencer.pattern, firstNode, false));
-    assert(setNodeNoteOffset(sequencer.pattern, secondNode, 7));
+    assert(setNodeEnabledOverride(sequencer.pattern(), firstNode, false));
+    assert(setNodeNoteOffset(sequencer.pattern(), secondNode, 7));
 
     sequencer.playheadStepTickOffset.set(12);
     const auto context =
@@ -1114,9 +1115,9 @@ void test_resolved_step_display_values_follow_visible_variation() {
 }
 
 void test_step_editor_projection_ignores_previous_cycle_runtime_values() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(1);
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(1);
+    sequencer.pattern().setEnabled(0, true);
     assert(sequencer.setStepNoteAt(0, 72));
     assert(sequencer.setStepVelocityAt(0, 91));
     assert(sequencer.setStepGateAt(0, 175));
@@ -1170,21 +1171,21 @@ void test_step_editor_projection_ignores_previous_cycle_runtime_values() {
 }
 
 void test_resolved_projection_reports_runtime_inherited_chord_badge() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
     sequencer.playheadStep.set(0);
     sequencer.playheadStepTickOffset.set(0);
 
     oc::note::sequencer::StepSequencerChordSpec rootChord{};
     rootChord.voiceCount = 4;
-    assert(setNodeChordSpec(sequencer.pattern, rootStepNodeId(0), rootChord));
+    assert(setNodeChordSpec(sequencer.pattern(), rootStepNodeId(0), rootChord));
 
-    const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto micro = createMicroSequence(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(micro.ok);
-    const auto* graph = sequencer.pattern.graph.get();
+    const auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
@@ -1224,7 +1225,7 @@ void test_resolved_projection_reports_runtime_inherited_chord_badge() {
         0,
         false
     );
-    auto badges = buildStepContentBadgeProjectionForNode(sequencer.pattern, step.nodeId);
+    auto badges = buildStepContentBadgeProjectionForNode(sequencer.pattern(), step.nodeId);
     assert(mergeExpandedTelemetryChordBadgeForNode(
         badges,
         sequencer.expandedVariationTelemetry,
@@ -1243,14 +1244,14 @@ void test_resolved_projection_reports_runtime_inherited_chord_badge() {
 }
 
 void test_resolved_projection_sums_pattern_and_local_random_preview() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.setEnabled(0, true);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().setEnabled(0, true);
     sequencer.activeStepProperty.set(StepProperty::NOTE);
     assert(sequencer.setVariationRangeForProperty(StepProperty::NOTE, 2));
     assert(setNodeLocalVariationRange(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootStepNodeId(0),
         StepProperty::NOTE,
         3
@@ -1277,26 +1278,26 @@ void test_resolved_projection_sums_pattern_and_local_random_preview() {
 }
 
 void test_ui_allows_three_child_content_levels_when_engine_depth_is_four() {
-    SequencerState sequencer;
-    sequencer.pattern.setContentLength(8);
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().setContentLength(8);
 
-    const auto rootCycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
+    const auto rootCycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(0), 2);
     assert(rootCycle.ok);
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* rootCycleSet = graph->cycleSet(rootCycle.id);
     assert(rootCycleSet != nullptr);
     const auto firstStateNode = rootCycleSet->firstStateNode;
 
-    const auto secondCycle = createCycleStateSet(sequencer.pattern, firstStateNode, 2);
+    const auto secondCycle = createCycleStateSet(sequencer.pattern(), firstStateNode, 2);
     assert(secondCycle.ok);
-    graph = sequencer.pattern.graph.get();
+    graph = sequencer.pattern().graph.get();
     assert(graph != nullptr);
     const auto* secondCycleSet = graph->cycleSet(secondCycle.id);
     assert(secondCycleSet != nullptr);
     const auto secondStateNode = secondCycleSet->firstStateNode;
 
-    const auto thirdCycle = createCycleStateSet(sequencer.pattern, secondStateNode, 2);
+    const auto thirdCycle = createCycleStateSet(sequencer.pattern(), secondStateNode, 2);
     assert(thirdCycle.ok);
 
     sequencer.focusedStep.set(0);

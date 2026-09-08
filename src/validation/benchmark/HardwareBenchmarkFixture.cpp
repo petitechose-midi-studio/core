@@ -30,10 +30,10 @@ bool prepareHardwareBenchmarkFixture(core::state::CoreState& state) {
 
     // 16 deterministic sixteenth notes, plus a non-conflicting CC1 lane on
     // Track 1's route. Track 2 is silent except its shared Slow Tide CC71.
-    auto& pattern = state.sequencer.pattern;
+    auto& pattern = state.sequencer.pattern();
     pattern.length.set(16U);
     pattern.stepsPerBeat.set(4U);
-    resetClipToPattern(state.sequencer.clip, pattern);
+    resetClipToPattern(state.sequencer.clip(), pattern);
     state.sequencer.bumpClipRevision();
     constexpr std::array<uint8_t, 4> notes{48U, 52U, 55U, 52U};
     for (uint8_t step = 0; step < 16U; ++step) {

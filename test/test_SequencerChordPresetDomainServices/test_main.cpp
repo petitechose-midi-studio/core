@@ -60,8 +60,8 @@ struct Harness {
         resetTestRoot();
         assert(filesystem.init());
         assert(productFiles.init());
-        state.sequencer.pattern.setContentLength(8U);
-        state.sequencer.pattern.note[0] = 60U;
+        state.sequencer.pattern().setContentLength(8U);
+        state.sequencer.pattern().note[0] = 60U;
     }
 
     void beginChordDraft(uint8_t step, uint16_t nodeId) {
@@ -164,7 +164,7 @@ void test_local_save_exact_load_and_cross_basis_projection() {
     const auto pitchProjection = pitchSettings.applyChoice(3U, 0);
     assert(pitchProjection.hasChanges());
     assert(
-        h.state.sequencer.pattern.pitchEditMode ==
+        h.state.sequencer.pattern().pitchEditMode ==
         seq::SequencerPitchEditMode::FOLLOW_SCALE
     );
 
@@ -232,12 +232,12 @@ void test_single_cannot_save_and_parent_capture_is_flattened() {
         {0U, 4U, 7U, 11U, 16U, 19U}
     );
     assert(seq::setNodeChordSpec(
-        h.state.sequencer.pattern,
+        h.state.sequencer.pattern(),
         rootNode,
         parent
     ));
     const auto sequence = seq::createMicroSequence(
-        h.state.sequencer.pattern,
+        h.state.sequencer.pattern(),
         rootNode,
         2U
     );
@@ -247,7 +247,7 @@ void test_single_cannot_save_and_parent_capture_is_flattened() {
         rootNode,
         sequence.id
     ));
-    const auto* graph = seq::graphView(h.state.sequencer.pattern);
+    const auto* graph = seq::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     const auto* micro = graph->sequence(sequence.id);
     assert(micro != nullptr);

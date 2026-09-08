@@ -80,7 +80,7 @@ struct Harness {
 void enableFirstSteps(core::state::sequencer::SequencerState& sequencer, uint8_t count) {
     oc::note::sequencer::StepBitMask128 mask{};
     for (uint8_t step = 0; step < count; ++step) mask.setBit(step);
-    sequencer.pattern.enabledMask.set(mask);
+    sequencer.pattern().enabledMask.set(mask);
 }
 
 void focusRandomize(Harness& h) {
@@ -137,15 +137,15 @@ void test_opt_edits_coalesce_per_field_and_restore_exact_region() {
     assert(core::state::sequencer::resizeClipPatternContent(
         h.state.sequencer, 16));
     assert(h.handler.openFromCurrentPage());
-    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.pattern().length.get() == 16);
     assert(core::state::sequencer::clipPlaybackRegion(
-        h.state.sequencer.pattern, h.state.sequencer.clip).loopEnd == 16);
+        h.state.sequencer.pattern(), h.state.sequencer.clip()).loopEnd == 16);
 
     h.turn(Config::EncoderID::OPT, 11.0f / 127.0f);
     h.turn(Config::EncoderID::OPT, 7.0f / 127.0f);
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
     assert(core::state::sequencer::clipPlaybackRegion(
-        h.state.sequencer.pattern, h.state.sequencer.clip).loopEnd == 8);
+        h.state.sequencer.pattern(), h.state.sequencer.clip()).loopEnd == 8);
     assert(h.state.sequencerHistory.undoCount() == 0);
 
     // Changing field closes exactly one contiguous OPT gesture.
@@ -154,16 +154,16 @@ void test_opt_edits_coalesce_per_field_and_restore_exact_region() {
     h.handler.close();
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 16);
+    assert(h.state.sequencer.pattern().length.get() == 16);
     auto region = core::state::sequencer::clipPlaybackRegion(
-        h.state.sequencer.pattern, h.state.sequencer.clip);
+        h.state.sequencer.pattern(), h.state.sequencer.clip());
     assert(region.playStart == 0);
     assert(region.loopStart == 0);
     assert(region.loopEnd == 16);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
     assert(core::state::sequencer::clipPlaybackRegion(
-        h.state.sequencer.pattern, h.state.sequencer.clip).loopEnd == 8);
+        h.state.sequencer.pattern(), h.state.sequencer.clip()).loopEnd == 8);
 }
 
 void test_external_track_switch_commits_old_owner_then_closes() {
@@ -172,7 +172,7 @@ void test_external_track_switch_commits_old_owner_then_closes() {
         h.state.sequencer, 16));
     assert(h.handler.openFromCurrentPage());
     h.turn(Config::EncoderID::OPT, 7.0f / 127.0f);
-    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(h.state.sequencer.pattern().length.get() == 8);
     h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0);
 
     assert(
@@ -250,11 +250,11 @@ void test_randomize_preview_reroll_and_cancel_never_publish() {
     assert(core::state::sequencer::resizeClipPatternContent(
         h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
-    const auto before = h.state.sequencer.pattern.note;
+    const auto before = h.state.sequencer.pattern().note;
     assert(h.handler.openFromCurrentPage());
     focusRandomize(h);
     assert(h.randomize.summary.changedCount > 0U);
-    assert(h.state.sequencer.pattern.note == before);
+    assert(h.state.sequencer.pattern().note == before);
 
     const uint32_t seed = h.randomize.draft.seed;
     const auto firstPreview = h.randomize.preview.note;
@@ -262,13 +262,13 @@ void test_randomize_preview_reroll_and_cancel_never_publish() {
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.randomize.draft.seed != seed);
     assert(h.randomize.preview.note != firstPreview);
-    assert(h.state.sequencer.pattern.note == before);
+    assert(h.state.sequencer.pattern().note == before);
 
     h.press(Config::ButtonID::LEFT_TOP);
     h.release(Config::ButtonID::LEFT_TOP);
     assert(!h.randomize.active);
     assert(h.state.sequencer.patternEditor.active.get());
-    assert(h.state.sequencer.pattern.note == before);
+    assert(h.state.sequencer.pattern().note == before);
     assert(h.state.sequencerHistory.undoCount() == 0U);
 }
 
@@ -277,25 +277,24 @@ void test_randomize_apply_is_one_exact_flat_history_entry() {
     assert(core::state::sequencer::resizeClipPatternContent(
         h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
-    const auto before = h.state.sequencer.pattern.note;
+    const auto before = h.state.sequencer.pattern().note;
     assert(h.handler.openFromCurrentPage());
     focusRandomize(h);
     const auto expected = h.randomize.preview.note;
     assert(expected != before);
 
-    const auto bankBefore = h.state.sequencerTracks.track(0).note;
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(!h.randomize.active);
     assert(h.state.sequencer.patternEditor.active.get());
-    assert(h.state.sequencer.pattern.note == expected);
-    assert(h.state.sequencerTracks.track(0).note == bankBefore);
+    assert(h.state.sequencer.pattern().note == expected);
+    assert(h.state.sequencerTracks.track(0).note == expected);
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note == before);
+    assert(h.state.sequencer.pattern().note == before);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.note == expected);
+    assert(h.state.sequencer.pattern().note == expected);
 }
 
 void test_randomize_apply_stops_at_failed_history_barrier() {
@@ -304,7 +303,7 @@ void test_randomize_apply_stops_at_failed_history_barrier() {
     assert(core::state::sequencer::resizeClipPatternContent(
         h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
-    const auto before = h.state.sequencer.pattern.note;
+    const auto before = h.state.sequencer.pattern().note;
     assert(h.handler.openFromCurrentPage());
     focusRandomize(h);
     const auto expected = h.randomize.preview.note;
@@ -333,7 +332,7 @@ void test_randomize_apply_stops_at_failed_history_barrier() {
 #endif
 
     assert(h.randomize.active);
-    assert(h.state.sequencer.pattern.note == before);
+    assert(h.state.sequencer.pattern().note == before);
     assert(h.state.sequencerTracks.track(0).note == before);
     assert(h.state.sequencerHistory.undoCount() == 0U);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -344,7 +343,7 @@ void test_randomize_apply_stops_at_failed_history_barrier() {
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(!h.randomize.active);
-    assert(h.state.sequencer.pattern.note == expected);
+    assert(h.state.sequencer.pattern().note == expected);
     assert(h.state.sequencerHistory.undoCount() == 1U);
 }
 
@@ -354,7 +353,7 @@ void test_randomize_apply_allocation_failure_keeps_preview_retryable() {
     assert(core::state::sequencer::resizeClipPatternContent(
         h.state.sequencer, 16));
     enableFirstSteps(h.state.sequencer, 16);
-    const auto before = h.state.sequencer.pattern.note;
+    const auto before = h.state.sequencer.pattern().note;
     assert(h.handler.openFromCurrentPage());
     focusRandomize(h);
     const auto preview = h.randomize.preview.note;
@@ -372,7 +371,7 @@ void test_randomize_apply_allocation_failure_keeps_preview_retryable() {
 
     assert(h.randomize.active);
     assert(h.randomize.preview.note == preview);
-    assert(h.state.sequencer.pattern.note == before);
+    assert(h.state.sequencer.pattern().note == before);
     assert(h.state.sequencerTracks.track(0).note == before);
     assert(h.state.sequencerHistory.undoCount() == 0U);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
@@ -381,7 +380,7 @@ void test_randomize_apply_allocation_failure_keeps_preview_retryable() {
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(!h.randomize.active);
-    assert(h.state.sequencer.pattern.note == preview);
+    assert(h.state.sequencer.pattern().note == preview);
     assert(h.state.sequencerHistory.undoCount() == 1U);
 }
 #endif
@@ -394,10 +393,10 @@ void test_add_page_extends_to_next_window_and_is_one_undoable_action() {
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
-    assert(h.state.sequencer.pattern.length.get() == 24U);
+    assert(h.state.sequencer.pattern().length.get() == 24U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.length.get() == 16U);
+    assert(h.state.sequencer.pattern().length.get() == 16U);
 }
 
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
@@ -423,7 +422,7 @@ void test_add_page_begin_failure_preserves_ui_and_pattern() {
 
     assert(h.state.sequencer.patternEditor.focusedField ==
            seq::SequencerPatternEditorField::DIVISION);
-    assert(h.state.sequencer.pattern.length.get() == 16U);
+    assert(h.state.sequencer.pattern().length.get() == 16U);
     assert(h.state.sequencer.page.get() == pageBefore);
     assert(h.state.sequencer.focusedStep.get() == focusedStepBefore);
     assert(h.state.sequencerHistory.undoCount() == 0U);

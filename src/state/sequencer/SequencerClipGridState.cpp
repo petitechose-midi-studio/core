@@ -131,7 +131,7 @@ FLASHMEM void installDocumentPattern(
             std::move(document.graph),
             std::move(document.ccLanes)
         );
-        active.pattern.ccLaneRevision.set(document.ccLaneRevision);
+        active.pattern().ccLaneRevision.set(document.ccLaneRevision);
         resetTransientTrackState(active);
     } else {
         installTrackContentSnapshotWithOwnedPayload(
@@ -172,8 +172,8 @@ FLASHMEM bool exchangeCanonicalTrackDocument(
         return false;
     }
 
-    auto& pattern = mutableCanonicalTrackPattern(bank, active, track);
-    auto& clip = mutableCanonicalTrackClip(bank, active, track);
+    auto& pattern = bank.track(track);
+    auto& clip = bank.clip(track);
     if (!validClipRegion(pattern, clip)) return false;
 
     SequencerPatternSnapshot outgoingPattern;
@@ -202,7 +202,7 @@ FLASHMEM uint32_t canonicalTrackRetainedBytes(
     const SequencerState& active,
     uint8_t track
 ) noexcept {
-    const auto& pattern = canonicalTrackPattern(bank, active, track);
+    const auto& pattern = bank.track(track);
     uint32_t bytes = sizeof(SequencerClipDocument) +
         kExtmemAllocationOverheadEstimate;
     if (graphView(pattern) != nullptr) {
@@ -222,7 +222,7 @@ FLASHMEM uint16_t canonicalTrackRetainedSpans(
     const SequencerState& active,
     uint8_t track
 ) noexcept {
-    const auto& pattern = canonicalTrackPattern(bank, active, track);
+    const auto& pattern = bank.track(track);
     return static_cast<uint16_t>(
         1U + (graphView(pattern) != nullptr ? 1U : 0U) +
         (bank.trackKind(track) == SequencerTrackKind::DRUM ||

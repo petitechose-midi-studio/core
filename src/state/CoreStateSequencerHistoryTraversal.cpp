@@ -234,7 +234,7 @@ FLASHMEM void reconcileSequencerCcLaneUiFromRestoredHistory(sequencer::Sequencer
         ccLaneUi.mode == sequencer::SequencerCcLaneUiMode::LANE_SETTINGS;
     if (!laneScopedMode) return;
 
-    const auto* bank = sequencer::sequencerCcLaneView(editor.pattern);
+    const auto* bank = sequencer::sequencerCcLaneView(editor.pattern());
     const bool focusedLaneExists = bank != nullptr && ccLaneUi.focusedLane < bank->lanes.size() &&
                                    bank->lanes[ccLaneUi.focusedLane].occupied;
     if (!focusedLaneExists) {

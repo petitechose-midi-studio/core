@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -256,9 +257,7 @@ void settleSetup(Harness& h) {
 }
 
 void initializeActivePayload(Harness& h, PayloadKind kind) {
-    authorPayload(h.state.sequencer.pattern, kind);
-    h.state.sequencerTracks.reset();
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
+    authorPayload(h.state.sequencer.pattern(), kind);
     settleSetup(h);
 }
 
@@ -267,9 +266,7 @@ void initializeCapturedTracks(
     PayloadKind kind,
     uint16_t capturedMask
 ) {
-    authorPayload(h.state.sequencer.pattern, kind);
-    h.state.sequencerTracks.reset();
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
+    authorPayload(h.state.sequencer.pattern(), kind);
     for (uint8_t track = 1U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -282,10 +279,10 @@ void initializeCapturedTracks(
 
 void stageActivePattern(const Harness& h, seq::SequencerState& staged) {
     staged.reset();
-    staged.clip = h.state.sequencer.clip;
+    staged.clip() = h.state.sequencer.clip();
     assert(seq::copyPatternState(
-        staged.pattern,
-        h.state.sequencer.pattern
+        staged.pattern(),
+        h.state.sequencer.pattern()
     ));
 }
 
@@ -312,8 +309,8 @@ void stageTrackBank(
         ));
     }
     assert(seq::copyPatternState(
-        stagedActive.pattern,
-        h.state.sequencer.pattern
+        stagedActive.pattern(),
+        h.state.sequencer.pattern()
     ));
     stagedActive.focusedStep.set(h.state.sequencer.focusedStep.get());
     stagedActive.activeStepProperty.set(
@@ -343,8 +340,8 @@ void installTrackBankStateForTest(
         graphs[i] = std::move(stagedBank.track(i).graph);
         ccLaneBanks[i] = std::move(stagedBank.track(i).ccLanes);
     }
-    auto editorGraph = std::move(stagedActive.pattern.graph);
-    auto editorCcLanes = std::move(stagedActive.pattern.ccLanes);
+    auto editorGraph = std::move(stagedActive.pattern().graph);
+    auto editorCcLanes = std::move(stagedActive.pattern().ccLanes);
 
     seq::applyTrackBankSnapshot(bank, active, snapshot);
     for (uint8_t i = 0; i < seq::SequencerTrackBankState::TRACK_COUNT; ++i) {
@@ -354,10 +351,10 @@ void installTrackBankStateForTest(
         bank.track(i).ccLaneRevision.set(stagedBank.track(i).ccLaneRevision.get());
     }
     const uint8_t activeTrack = bank.activeTrackIndex();
-    active.pattern.graph = std::move(editorGraph);
-    active.pattern.graphRevision.set(snapshot.tracks[activeTrack].graphRevision);
-    seq::installSequencerCcLaneBank(active.pattern, std::move(editorCcLanes));
-    active.pattern.ccLaneRevision.set(stagedActive.pattern.ccLaneRevision.get());
+    active.pattern().graph = std::move(editorGraph);
+    active.pattern().graphRevision.set(snapshot.tracks[activeTrack].graphRevision);
+    seq::installSequencerCcLaneBank(active.pattern(), std::move(editorCcLanes));
+    active.pattern().ccLaneRevision.set(stagedActive.pattern().ccLaneRevision.get());
 }
 
 void publishStagedFlatPattern(
@@ -365,10 +362,10 @@ void publishStagedFlatPattern(
     const seq::SequencerState& staged
 ) {
     seq::SequencerPatternSnapshot flat{};
-    seq::captureSnapshot(staged.pattern, flat);
-    seq::applySnapshotPreservingGraph(h.state.sequencer.pattern, flat);
-    h.state.sequencer.pattern.ccLaneRevision.set(
-        staged.pattern.ccLaneRevision.get()
+    seq::captureSnapshot(staged.pattern(), flat);
+    seq::applySnapshotPreservingGraph(h.state.sequencer.pattern(), flat);
+    h.state.sequencer.pattern().ccLaneRevision.set(
+        staged.pattern().ccLaneRevision.get()
     );
 }
 
@@ -383,8 +380,8 @@ struct BankOwnerInvariant {
 
 BankOwnerInvariant captureBankOwners(const Harness& h) {
     BankOwnerInvariant result;
-    result.editorGraph = h.state.sequencer.pattern.graph.get();
-    result.editorCc = h.state.sequencer.pattern.ccLanes.get();
+    result.editorGraph = h.state.sequencer.pattern().graph.get();
+    result.editorCc = h.state.sequencer.pattern().ccLanes.get();
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -724,7 +721,7 @@ void test_pattern_staged_provider_overlap_contract() {
             seq::SequencerHistoryPatternStorage::FullGraph,
             prepared
         ));
-        seq::SequencerState staged;
+        core::state::sequencer::SequencerDetachedEditor staged;
         stageActivePattern(h, staged);
 
         assert(allocation_trace::count == ARM_PATTERN_STAGED_SPANS);
@@ -744,6 +741,16 @@ void test_pattern_staged_provider_overlap_contract() {
     std::cout << "[PASS] Pattern staged/provider overlap is 7 spans\n";
 }
 
+// Detached candidates are explicit; a live bank capture always reads its owner.
+bool captureStagedAfter(const seq::SequencerState& staged,
+                        seq::SequencerHistoryPatternChange& change) {
+    if (change.storage == seq::SequencerHistoryPatternStorage::FlatOnly) {
+        seq::captureFlatHistorySnapshot(staged, change.after);
+        return true;
+    }
+    return seq::captureHistorySnapshotUsingReservedStorage(staged, change.after);
+}
+
 void runPatternCommit(
     PayloadKind kind,
     seq::SequencerHistoryPatternStorage storage
@@ -754,46 +761,44 @@ void runPatternCommit(
     assert(seq::captureHistorySnapshot(h.state.sequencer, expectedBefore));
     PreparedPattern prepared;
     assert(preparePattern(h, storage, prepared));
-    seq::SequencerState staged;
+    core::state::sequencer::SequencerDetachedEditor staged;
     stageActivePattern(h, staged);
-    staged.pattern.setEnabled(1U, true);
+    staged.pattern().setEnabled(1U, true);
     if (storage == seq::SequencerHistoryPatternStorage::FullGraph && hasGraph(kind)) {
         assert(seq::setNodeNoteOffset(
-            staged.pattern,
+            staged.pattern(),
             seq::rootStepNodeId(0U),
             11
         ));
     }
     if (storage == seq::SequencerHistoryPatternStorage::FullGraph && hasCc(kind)) {
-        assert(staged.pattern.ccLanes != nullptr);
+        assert(staged.pattern().ccLanes != nullptr);
         assert(seq::setSequencerCcLaneEvent(
-            *staged.pattern.ccLanes,
+            *staged.pattern().ccLanes,
             0U,
             0U,
             42U
         ).changed());
-        staged.pattern.bumpCcLaneRevision();
+        staged.pattern().bumpCcLaneRevision();
     }
     seq::SequencerHistoryPatternSnapshot expectedAfter;
     assert(seq::captureHistorySnapshot(staged, expectedAfter));
-    assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
-        h.state.sequencerTracks,
-        staged,
+    assert(captureStagedAfter(staged,
         *prepared.change
     ));
     assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
 
     const auto before = tx::captureStateInvariant(h.state);
     const auto bankOwners = captureBankOwners(h);
-    const auto editorGraph = h.state.sequencer.pattern.graph.get();
-    const auto editorCc = h.state.sequencer.pattern.ccLanes.get();
+    const auto editorGraph = h.state.sequencer.pattern().graph.get();
+    const auto editorCc = h.state.sequencer.pattern().ccLanes.get();
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         seq::installPatternStateToEditor(
             h.state.sequencer,
-            staged.pattern,
-            staged.clip
+            staged.pattern(),
+            staged.clip()
         );
         assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
         tx::assertMaxPlusOneStillArmed(0U);
@@ -811,29 +816,33 @@ void runPatternCommit(
 
     tx::assertMusicalSnapshot(h.state, expectedAfter);
     const auto afterBankOwners = captureBankOwners(h);
-    assert(afterBankOwners.graphs == bankOwners.graphs);
-    assert(afterBankOwners.cc == bankOwners.cc);
-    assert(afterBankOwners.graphRevisions == bankOwners.graphRevisions);
-    assert(afterBankOwners.ccRevisions == bankOwners.ccRevisions);
-    assert(h.state.sequencer.pattern.isEnabled(1U));
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).isEnabled(1U));
+    for (uint8_t track = 1U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
+        assert(afterBankOwners.graphs[track] == bankOwners.graphs[track]);
+        assert(afterBankOwners.cc[track] == bankOwners.cc[track]);
+        assert(afterBankOwners.graphRevisions[track] == bankOwners.graphRevisions[track]);
+        assert(afterBankOwners.ccRevisions[track] == bankOwners.ccRevisions[track]);
+    }
+    assert(afterBankOwners.graphs[0U] == h.state.sequencer.pattern().graph.get());
+    assert(afterBankOwners.cc[0U] == h.state.sequencer.pattern().ccLanes.get());
+    assert(h.state.sequencer.pattern().isEnabled(1U));
+    assert(h.state.sequencerTracks.track(0U).isEnabled(1U));
     if (storage == seq::SequencerHistoryPatternStorage::FullGraph && hasGraph(kind)) {
-        assert(h.state.sequencer.pattern.graph.get() != editorGraph);
+        assert(h.state.sequencer.pattern().graph.get() != editorGraph);
     } else {
-        assert(h.state.sequencer.pattern.graph.get() == editorGraph);
+        assert(h.state.sequencer.pattern().graph.get() == editorGraph);
     }
     if (storage == seq::SequencerHistoryPatternStorage::FullGraph && hasCc(kind)) {
-        assert(h.state.sequencer.pattern.ccLanes.get() != editorCc);
+        assert(h.state.sequencer.pattern().ccLanes.get() != editorCc);
     } else {
-        assert(h.state.sequencer.pattern.ccLanes.get() == editorCc);
+        assert(h.state.sequencer.pattern().ccLanes.get() == editorCc);
     }
 
     h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeUndo = tx::captureStateInvariant(h.state);
     assert(h.state.undoSequencerHistory());
     tx::assertMusicalSnapshot(h.state, expectedBefore);
-    assert(!h.state.sequencer.pattern.isEnabled(1U));
-    assert(!seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).isEnabled(1U));
+    assert(!h.state.sequencer.pattern().isEnabled(1U));
+    assert(!h.state.sequencerTracks.track(0U).isEnabled(1U));
     assert(
         h.state.project.metadata.modifiedCounter ==
         beforeUndo.modifiedCounter + 1U
@@ -845,8 +854,8 @@ void runPatternCommit(
     const auto beforeRedo = tx::captureStateInvariant(h.state);
     assert(h.state.redoSequencerHistory());
     tx::assertMusicalSnapshot(h.state, expectedAfter);
-    assert(h.state.sequencer.pattern.isEnabled(1U));
-    assert(seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, 0U).isEnabled(1U));
+    assert(h.state.sequencer.pattern().isEnabled(1U));
+    assert(h.state.sequencerTracks.track(0U).isEnabled(1U));
     assert(
         h.state.project.metadata.modifiedCounter ==
         beforeRedo.modifiedCounter + 1U
@@ -987,33 +996,31 @@ void prepareGraphCcPatternTraversalEntry(Harness& h, bool targetActive) {
         seq::SequencerHistoryPatternStorage::FullGraph,
         prepared
     ));
-    seq::SequencerState staged;
+    core::state::sequencer::SequencerDetachedEditor staged;
     stageActivePattern(h, staged);
-    staged.pattern.setEnabled(1U, true);
+    staged.pattern().setEnabled(1U, true);
     assert(seq::setNodeNoteOffset(
-        staged.pattern,
+        staged.pattern(),
         seq::rootStepNodeId(0U),
         11
     ));
-    assert(staged.pattern.ccLanes != nullptr);
+    assert(staged.pattern().ccLanes != nullptr);
     assert(seq::setSequencerCcLaneEvent(
-        *staged.pattern.ccLanes,
+        *staged.pattern().ccLanes,
         0U,
         0U,
         42U
     ).changed());
-    staged.pattern.bumpCcLaneRevision();
-    assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
-        h.state.sequencerTracks,
-        staged,
+    staged.pattern().bumpCcLaneRevision();
+    assert(captureStagedAfter(staged,
         *prepared.change
     ));
 
     assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
     seq::installPatternStateToEditor(
         h.state.sequencer,
-        staged.pattern,
-        staged.clip
+        staged.pattern(),
+        staged.clip()
     );
     assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
     settleSetup(h);
@@ -1103,12 +1110,10 @@ void assertSuccessfulPatternTraversalOwners(
     if (targetActive) {
         assert(after.editorGraph != before.editorGraph);
         assert(after.editorCc != before.editorCc);
-        assert(after.graphs[0U] == before.graphs[0U]);
-        assert(after.cc[0U] == before.cc[0U]);
-        assert(after.graphRevisions[0U] == before.graphRevisions[0U]);
-        assert(after.ccRevisions[0U] == before.ccRevisions[0U]);
-        assert(after.editorGraph != after.graphs[0U]);
-        assert(after.editorCc != after.cc[0U]);
+        assert(after.graphs[0U] != before.graphs[0U]);
+        assert(after.cc[0U] != before.cc[0U]);
+        assert(after.editorGraph == after.graphs[0U]);
+        assert(after.editorCc == after.cc[0U]);
     } else {
         assert(after.editorGraph == before.editorGraph);
         assert(after.editorCc == before.editorCc);
@@ -1243,11 +1248,9 @@ void test_pattern_noop_admission_preserves_live_state() {
         seq::SequencerHistoryPatternStorage::FullGraph,
         noOp
     ));
-    seq::SequencerState staged;
+    core::state::sequencer::SequencerDetachedEditor staged;
     stageActivePattern(h, staged);
-    assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
-        h.state.sequencerTracks,
-        staged,
+    assert(captureStagedAfter(staged,
         *noOp.change
     ));
 
@@ -1299,7 +1302,7 @@ void test_pattern_identity_and_flat_cc_drift_are_rejected() {
             seq::SequencerHistoryPatternStorage::FlatOnly,
             prepared
         ));
-        seq::SequencerState staged;
+        core::state::sequencer::SequencerDetachedEditor staged;
         stageActivePattern(h, staged);
         seq::SequencerHistoryPatternSnapshot liveMusical;
         tx::captureMusicalSnapshot(h.state, liveMusical);
@@ -1308,14 +1311,12 @@ void test_pattern_identity_and_flat_cc_drift_are_rejected() {
         const auto* bankCcOwner = h.state.sequencerTracks.track(0U).ccLanes.get();
         const uint32_t bankCcRevision =
             h.state.sequencerTracks.track(0U).ccLaneRevision.get();
-        auto* stagedCc = staged.pattern.ccLanes.get();
+        auto* stagedCc = staged.pattern().ccLanes.get();
         assert(stagedCc != nullptr);
         assert(seq::setSequencerCcLaneEvent(*stagedCc, 0U, 0U, 42U).changed());
-        staged.pattern.bumpCcLaneRevision();
-        staged.pattern.setEnabled(1U, true);
-        assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
-            h.state.sequencerTracks,
-            staged,
+        staged.pattern().bumpCcLaneRevision();
+        staged.pattern().setEnabled(1U, true);
+        assert(captureStagedAfter(staged,
             *prepared.change
         ));
 
@@ -1353,16 +1354,16 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
         1U
     ));
 
-    const auto* editorGraph = seq::graphView(h.state.sequencer.pattern);
+    const auto* editorGraph = seq::graphView(h.state.sequencer.pattern());
     const auto* spareGraph = seq::graphView(h.state.sequencerTracks.track(1U));
     assert(editorGraph != nullptr);
     assert(spareGraph != nullptr);
     assert(
-        h.state.sequencer.pattern.graphRevision.get() ==
+        h.state.sequencer.pattern().graphRevision.get() ==
         h.state.sequencerTracks.track(1U).graphRevision.get()
     );
     assert(
-        editorGraph->stepNode(seq::rootStepNodeId(0U))->noteOffset !=
+        editorGraph->stepNode(seq::rootStepNodeId(0U))->noteOffset ==
         spareGraph->stepNode(seq::rootStepNodeId(0U))->noteOffset
     );
 
@@ -1374,7 +1375,7 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
     ));
     assert(staleFlat.change != nullptr);
 
-    h.state.sequencer.pattern.setEnabled(2U, true);
+    h.state.sequencer.pattern().setEnabled(2U, true);
     auto expected = captureBankSnapshotMusicalProof(h);
     const auto owners = captureBankOwners(h);
     const auto before = tx::captureStateInvariant(h.state);
@@ -1410,7 +1411,7 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
     assert(runtime.laneSnapshot(frame) != nullptr);
     assert(seq::sameOptionalSequencerCcLaneBank(
         runtime.laneSnapshot(frame)->lanesForTrack(1U),
-        seq::sequencerCcLaneView(h.state.sequencer.pattern)));
+        seq::sequencerCcLaneView(h.state.sequencer.pattern())));
     assertBankOwners(h, owners);
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -1422,15 +1423,15 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
     std::cout << "[PASS] generic publication allocates zero; canonical capture/runtime/navigation stay exact\n";
 }
 
-void test_flat_publication_ignores_spare_payload_revision_drift() {
+void test_flat_publication_ignores_unselected_track_payload_revision_drift() {
     Harness h;
     initializeActivePayload(h, PayloadKind::GraphAndCc);
-    auto& bankPattern = h.state.sequencerTracks.track(0U);
+    auto& bankPattern = h.state.sequencerTracks.track(1U);
     bankPattern.graphRevision.set(
-        h.state.sequencer.pattern.graphRevision.get() + 7U
+        h.state.sequencer.pattern().graphRevision.get() + 7U
     );
     bankPattern.ccLaneRevision.set(
-        h.state.sequencer.pattern.ccLaneRevision.get() + 9U
+        h.state.sequencer.pattern().ccLaneRevision.get() + 9U
     );
 
     PreparedPattern prepared;
@@ -1439,12 +1440,10 @@ void test_flat_publication_ignores_spare_payload_revision_drift() {
         seq::SequencerHistoryPatternStorage::FlatOnly,
         prepared
     ));
-    seq::SequencerState staged;
+    core::state::sequencer::SequencerDetachedEditor staged;
     stageActivePattern(h, staged);
-    staged.pattern.setEnabled(1U, true);
-    assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
-        h.state.sequencerTracks,
-        staged,
+    staged.pattern().setEnabled(1U, true);
+    assert(captureStagedAfter(staged,
         *prepared.change
     ));
     assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
@@ -1454,14 +1453,14 @@ void test_flat_publication_ignores_spare_payload_revision_drift() {
 
     assert(
         bankPattern.graphRevision.get() ==
-        h.state.sequencer.pattern.graphRevision.get() + 7U
+        h.state.sequencer.pattern().graphRevision.get() + 7U
     );
     assert(
         bankPattern.ccLaneRevision.get() ==
-        h.state.sequencer.pattern.ccLaneRevision.get() + 9U
+        h.state.sequencer.pattern().ccLaneRevision.get() + 9U
     );
     assertNoDeferredPublication(h);
-    std::cout << "[PASS] Flat publication ignores spare payload revision drift\n";
+    std::cout << "[PASS] Flat publication ignores unselected Track payload revision drift\n";
 }
 
 void test_prepared_publication_is_exact_during_notification_drain() {
@@ -1473,12 +1472,10 @@ void test_prepared_publication_is_exact_during_notification_drain() {
         seq::SequencerHistoryPatternStorage::FlatOnly,
         prepared
     ));
-    seq::SequencerState staged;
+    core::state::sequencer::SequencerDetachedEditor staged;
     stageActivePattern(h, staged);
-    staged.pattern.setEnabled(1U, true);
-    assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
-        h.state.sequencerTracks,
-        staged,
+    staged.pattern().setEnabled(1U, true);
+    assert(captureStagedAfter(staged,
         *prepared.change
     ));
     assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
@@ -1534,7 +1531,7 @@ void test_domain_prepared_pattern_publishes_once_without_bank_synchronization() 
         *change
     ));
 
-    h.state.sequencer.pattern.setEnabled(1U, true);
+    h.state.sequencer.pattern().setEnabled(1U, true);
     assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
         h.state.sequencerTracks,
         h.state.sequencer,
@@ -1544,15 +1541,15 @@ void test_domain_prepared_pattern_publishes_once_without_bank_synchronization() 
         h.state
     );
     assert(history.canRecordPattern(*change));
-    assert(!h.state.sequencerTracks.track(0U).isEnabled(1U));
+    assert(h.state.sequencerTracks.track(0U).isEnabled(1U));
 
     const auto before = tx::captureStateInvariant(h.state);
     history.recordPreparedPattern(std::move(change));
-    assert(!h.state.sequencerTracks.track(0U).isEnabled(1U));
+    assert(h.state.sequencerTracks.track(0U).isEnabled(1U));
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
-    assert(!h.state.sequencerTracks.track(0U).isEnabled(1U));
-    assert(h.state.sequencer.pattern.isEnabled(1U));
+    assert(h.state.sequencerTracks.track(0U).isEnabled(1U));
+    assert(h.state.sequencer.pattern().isEnabled(1U));
     assertExactlyOnePublication(h.state, before);
     assertNoDeferredPublication(h);
     assert(h.state.sequencerHistory.undoCount() == 1U);
@@ -1564,7 +1561,7 @@ seq::SequencerPatternState& canonicalTrackPattern(Harness& h, uint8_t track) {
     const uint8_t target =
         seq::SequencerTrackBankState::clampTrackIndex(track);
     return target == h.state.sequencerTracks.activeTrackIndex()
-        ? h.state.sequencer.pattern
+        ? h.state.sequencer.pattern()
         : h.state.sequencerTracks.track(target);
 }
 
@@ -1575,7 +1572,7 @@ const seq::SequencerPatternState& canonicalTrackPattern(
     const uint8_t target =
         seq::SequencerTrackBankState::clampTrackIndex(track);
     return target == h.state.sequencerTracks.activeTrackIndex()
-        ? h.state.sequencer.pattern
+        ? h.state.sequencer.pattern()
         : h.state.sequencerTracks.track(target);
 }
 
@@ -1633,92 +1630,29 @@ void assertHistoryBlockedDraft(
     assertDraftInvariant(h, before);
 }
 
-void test_bank_snapshot_active_scratch_is_excluded_and_cleared_on_apply() {
+void test_bank_snapshot_retains_and_restores_all_canonical_owners() {
     Harness h;
-    initializeActivePayload(h, PayloadKind::GraphAndCc);
-    const uint8_t activeTrack = h.state.sequencerTracks.activeTrackIndex();
-    auto& scratch = h.state.sequencerTracks.track(activeTrack);
-    scratch.reset();
-    authorPayload(scratch, PayloadKind::GraphAndCc, 7U);
-    assert(seq::graphView(scratch) != nullptr);
-    assert(seq::sequencerCcLaneView(scratch) != nullptr);
-
+    initializeCapturedTracks(h, PayloadKind::GraphAndCc, 0xFFFFU);
     seq::SequencerHistoryTrackBankSnapshot captured;
-    assert(seq::captureHistorySnapshot(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        captured
-    ));
-    assert(captured.flat.activeTrack == activeTrack);
-    assert(captured.editorGraph != nullptr);
-    assert(captured.editorCcLanes != nullptr);
-    assert(!captured.bankGraphs[activeTrack]);
-    assert(!captured.bankCcLanes[activeTrack]);
-    const auto root = seq::rootStepNodeId(0U);
-    assert(captured.editorGraph->stepNode(root) != nullptr);
-    assert(seq::graphView(scratch)->stepNode(root) != nullptr);
-    assert(
-        captured.editorGraph->stepNode(root)->noteOffset !=
-        seq::graphView(scratch)->stepNode(root)->noteOffset
-    );
-    assert(seq::sameOptionalSequencerCcLaneBank(
-        captured.editorCcLanes.get(),
-        seq::sequencerCcLaneView(h.state.sequencer.pattern)
-    ));
-    assert(!seq::sameOptionalSequencerCcLaneBank(
-        captured.editorCcLanes.get(),
-        seq::sequencerCcLaneView(scratch)
-    ));
-
-    assert(seq::setNodeNoteOffset(
-        h.state.sequencer.pattern,
-        root,
-        -4
-    ));
-    assert(seq::setSequencerCcLaneEvent(
-        *h.state.sequencer.pattern.ccLanes,
-        0U,
-        0U,
-        17U
-    ).changed());
-    h.state.sequencer.pattern.bumpCcLaneRevision();
-    assert(h.state.sequencer.pattern.setStepDataAt(
-        0U,
-        72U,
-        101U,
-        seq::SequencerPatternState::DEFAULT_GATE_PERCENT
-    ));
-
-    assert(seq::applyHistorySnapshot(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        captured
-    ));
-    assert(seq::graphView(h.state.sequencerTracks.track(activeTrack)) == nullptr);
-    assert(
-        seq::sequencerCcLaneView(h.state.sequencerTracks.track(activeTrack)) ==
-        nullptr
-    );
-    assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
-    assert(
-        seq::graphView(h.state.sequencer.pattern)->stepNode(root)->noteOffset ==
-        captured.editorGraph->stepNode(root)->noteOffset
-    );
-    assert(seq::sameOptionalSequencerCcLaneBank(
-        seq::sequencerCcLaneView(h.state.sequencer.pattern),
-        captured.editorCcLanes.get()
-    ));
-
+    assert(seq::captureHistorySnapshot(h.state.sequencerTracks, h.state.sequencer, captured));
+    for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
+        auto& live = h.state.sequencerTracks.track(track);
+        assert(captured.bankGraphs[track]);
+        assert(captured.bankCcLanes[track]);
+        assert(captured.bankGraphs[track].get() != live.graph.get());
+        assert(captured.bankCcLanes[track].get() != live.ccLanes.get());
+        assert(std::memcmp(captured.bankGraphs[track].get(), live.graph.get(), sizeof(*live.graph)) == 0);
+        assert(seq::sameOptionalSequencerCcLaneBank(captured.bankCcLanes[track].get(), live.ccLanes.get()));
+        assert(seq::setNodeNoteOffset(live, seq::rootStepNodeId(0U), -4));
+        assert(seq::setSequencerCcLaneEvent(*live.ccLanes, 0U, 0U, 17U).changed());
+        live.bumpCcLaneRevision();
+    }
+    assert(seq::applyHistorySnapshot(h.state.sequencerTracks, h.state.sequencer, captured));
+    assert(&h.state.sequencer.pattern() == &h.state.sequencerTracks.track(captured.flat.activeTrack));
     seq::SequencerHistoryTrackBankSnapshot restored;
-    assert(seq::captureHistorySnapshot(
-        h.state.sequencerTracks,
-        h.state.sequencer,
-        restored
-    ));
+    assert(seq::captureHistorySnapshot(h.state.sequencerTracks, h.state.sequencer, restored));
     assert(seq::sameMusicalHistorySnapshot(restored, captured));
-
-    std::cout
-        << "[PASS] BankSnapshot capture excludes active scratch and apply clears it\n";
+    std::cout << "[PASS] BankSnapshot independently retains and restores all 16 owners\n";
 }
 
 void test_bank_snapshot_apply_restores_revision_contract() {
@@ -1749,8 +1683,8 @@ void test_bank_snapshot_apply_restores_revision_contract() {
         captured
     ));
     assert(captured.flat.projectScaleRevision == capturedProjectRevision);
-    assert(!captured.bankGraphs[activeTrack]);
-    assert(!captured.bankCcLanes[activeTrack]);
+    assert(captured.bankGraphs[activeTrack]);
+    assert(captured.bankCcLanes[activeTrack]);
 
     std::array<uint32_t, seq::SequencerTrackBankState::TRACK_COUNT>
         ccRevisionsBeforeApply{};
@@ -1789,9 +1723,7 @@ void test_bank_snapshot_apply_restores_revision_contract() {
          ++track) {
         const auto& pattern = canonicalTrackPattern(h, track);
         assertCapturedPatternRevisionVector(pattern, captured.flat.tracks[track]);
-        const auto* expectedCc = track == activeTrack
-            ? captured.editorCcLanes.get()
-            : captured.bankCcLanes[track].get();
+        const auto* expectedCc = captured.bankCcLanes[track].get();
         assert(seq::sameOptionalSequencerCcLaneBank(
             seq::sequencerCcLaneView(pattern),
             expectedCc
@@ -1801,9 +1733,9 @@ void test_bank_snapshot_apply_restores_revision_contract() {
             ccRevisionsBeforeApply[track]
         );
     }
-    assert(seq::graphView(h.state.sequencerTracks.track(activeTrack)) == nullptr);
+    assert(seq::graphView(h.state.sequencerTracks.track(activeTrack)) != nullptr);
     assert(
-        seq::sequencerCcLaneView(h.state.sequencerTracks.track(activeTrack)) ==
+        seq::sequencerCcLaneView(h.state.sequencerTracks.track(activeTrack)) !=
         nullptr
     );
 
@@ -1868,9 +1800,9 @@ void test_prepared_bank_admission_rejects_active_step_draft() {
         PreparedStructure prepared;
         assert(prepareStructure(h, 0x0001U, prepared));
         seq::SequencerTrackBankState stagedBank;
-        seq::SequencerState stagedActive;
+        seq::SequencerState stagedActive{stagedBank.track(stagedBank.activeTrackIndex()), stagedBank.clip(stagedBank.activeTrackIndex())};
         stageTrackBank(h, stagedBank, stagedActive);
-        assert(stagedActive.pattern.setStepDataAt(
+        assert(stagedActive.pattern().setStepDataAt(
             0U,
             61U,
             91U,
@@ -2118,7 +2050,7 @@ void test_structure_noop_and_commit_are_exact() {
     PreparedStructure prepared;
     assert(prepareStructure(h, 0x0003U, prepared));
     seq::SequencerTrackBankState stagedBank;
-    seq::SequencerState stagedActive;
+    seq::SequencerState stagedActive{stagedBank.track(stagedBank.activeTrackIndex()), stagedBank.clip(stagedBank.activeTrackIndex())};
     stageTrackBank(h, stagedBank, stagedActive);
     stagedBank.syncSharedTrackState(0x0003U, 0U);
     assert(seq::switchActiveTrack(stagedBank, stagedActive, 1U));
@@ -2319,7 +2251,7 @@ void prepareMaximumCoupledStructureReplay(
     prepared.change->activationAfterAudibleMask = 0x0003U;
 
     h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
-    h.state.sequencer.pattern.setEnabled(2U, true);
+    h.state.sequencer.pattern().setEnabled(2U, true);
     auto& macroTrack = h.state.pages.tracks[0U];
     macroTrack.enabledPageMask = 0x0003U;
     macroTrack.activePage = 1U;
@@ -2666,11 +2598,11 @@ void test_coupled_structure_replay_draft_precedes_allocation() {
 }
 
 void test_presence_growth_is_rejected_by_strict_capture() {
-    seq::SequencerState staged;
+    core::state::sequencer::SequencerDetachedEditor staged;
     staged.reset();
     seq::SequencerHistoryPatternSnapshot storage;
     assert(seq::reserveHistorySnapshotStorage(staged, storage));
-    authorPayload(staged.pattern, PayloadKind::GraphAndCc);
+    authorPayload(staged.pattern(), PayloadKind::GraphAndCc);
     assert(!seq::captureHistorySnapshotUsingReservedStorage(staged,
         storage
     ));
@@ -2678,9 +2610,9 @@ void test_presence_growth_is_rejected_by_strict_capture() {
 }
 
 void test_cc_capture_validation_preserves_detached_owners() {
-    seq::SequencerState source;
+    core::state::sequencer::SequencerDetachedEditor source;
     source.reset();
-    authorPayload(source.pattern, PayloadKind::GraphAndCc);
+    authorPayload(source.pattern(), PayloadKind::GraphAndCc);
 
     seq::SequencerHistoryPatternSnapshot storage;
     assert(seq::reserveHistorySnapshotStorage(source, storage));
@@ -2696,11 +2628,11 @@ void test_cc_capture_validation_preserves_detached_owners() {
     const uint8_t capturedController = ccOwner->lanes[0].destination.controller;
 
     assert(seq::setNodeNoteOffset(
-        source.pattern,
+        source.pattern(),
         node,
         static_cast<int8_t>(capturedOffset + 1)
     ));
-    source.pattern.ccLanes->formatVersion = 0U;
+    source.pattern().ccLanes->formatVersion = 0U;
     assert(!seq::captureHistorySnapshotUsingReservedStorage(source,
         storage
     ));
@@ -2714,23 +2646,23 @@ void test_cc_capture_validation_preserves_detached_owners() {
     auto* const detachedOwner = detached.get();
     assert(!seq::cloneSequencerCcLaneBank(
         detached,
-        source.pattern.ccLanes.get()
+        source.pattern().ccLanes.get()
     ));
     assert(detached.get() == detachedOwner);
     assert(detached->lanes[0].destination.controller == capturedController);
     assert(!seq::captureSequencerCcLaneBankUsingReservedStorage(
-        source.pattern.ccLanes.get(),
+        source.pattern().ccLanes.get(),
         detached
     ));
     assert(detached.get() == detachedOwner);
     assert(detached->lanes[0].destination.controller == capturedController);
 
-    source.pattern.ccLanes->formatVersion = seq::SequencerCcLaneBank::FORMAT_VERSION;
+    source.pattern().ccLanes->formatVersion = seq::SequencerCcLaneBank::FORMAT_VERSION;
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         assert(!seq::cloneSequencerCcLaneBank(
             detached,
-            source.pattern.ccLanes.get()
+            source.pattern().ccLanes.get()
         ));
         tx::assertFailureConsumed(1U);
         assert(detached.get() == detachedOwner);
@@ -2787,7 +2719,7 @@ void test_structure_after_builder_and_live_revalidation_are_exact() {
         change->after
     ));
 
-    auto* const liveGraph = h.state.sequencer.pattern.graph.get();
+    auto* const liveGraph = h.state.sequencer.pattern().graph.get();
     assert(liveGraph != nullptr);
     assert(liveGraph->stepNodeCount != 0U);
     const int8_t activeNodeOffset = liveGraph->stepNodes[0U].noteOffset;
@@ -2818,7 +2750,7 @@ void test_structure_after_builder_and_live_revalidation_are_exact() {
         change->after
     ));
 
-    auto* const liveCc = h.state.sequencer.pattern.ccLanes.get();
+    auto* const liveCc = h.state.sequencer.pattern().ccLanes.get();
     assert(liveCc != nullptr);
     ++liveCc->revision;
     assert(!seq::liveHistoryStructureSnapshotMatches(
@@ -3094,10 +3026,10 @@ int main() {
     test_pattern_noop_admission_preserves_live_state();
     test_pattern_identity_and_flat_cc_drift_are_rejected();
     test_generic_publication_preserves_spares_and_canonical_readers();
-    test_flat_publication_ignores_spare_payload_revision_drift();
+    test_flat_publication_ignores_unselected_track_payload_revision_drift();
     test_prepared_publication_is_exact_during_notification_drain();
     test_domain_prepared_pattern_publishes_once_without_bank_synchronization();
-    test_bank_snapshot_active_scratch_is_excluded_and_cleared_on_apply();
+    test_bank_snapshot_retains_and_restores_all_canonical_owners();
     test_bank_snapshot_apply_restores_revision_contract();
     test_structure_preparation_allocation_matrix();
     test_structure_noop_and_commit_are_exact();

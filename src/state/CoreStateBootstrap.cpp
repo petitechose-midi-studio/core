@@ -8,6 +8,7 @@
 #include <oc/state/ChangeCoalescer.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/CoreStateDiagnostics.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 
@@ -36,29 +37,35 @@ FLASHMEM void CoreStateBootstrap::configureMacroMutationCoalescing_(CoreState& s
 }
 
 FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreState& state) {
-    state.sequencerDomain_.mutationCoalescer =
+    if (!state.sequencerDomain_.mutationCoalescer) {
+        state.sequencerDomain_.mutationCoalescer =
         std::make_unique<oc::state::ChangeCoalescer<
             SequencerDomainState::MUTATION_COALESCER_SUBSCRIPTION_COUNT>>(
             [&state]() { state.markProjectMutated(); },
             SEQUENCER_PROJECT_SAVE_DELAY_MS
         );
+        state.sequencer.setPatternSelectionCallback(&state, [](void* context) {
+            configureSequencerMutationCoalescing_(*static_cast<CoreState*>(context));
+        });
+    }
 
     auto& coalescer = *state.sequencerDomain_.mutationCoalescer;
-    coalescer.watch(state.sequencer.pattern.length);
-    coalescer.watch(state.sequencer.pattern.stepsPerBeat);
-    coalescer.watch(state.sequencer.pattern.enabledMask);
-    coalescer.watch(state.sequencer.pattern.stepDataRevision);
+    coalescer.clearSubscriptions();
+    coalescer.watch(state.sequencer.pattern().length);
+    coalescer.watch(state.sequencer.pattern().stepsPerBeat);
+    coalescer.watch(state.sequencer.pattern().enabledMask);
+    coalescer.watch(state.sequencer.pattern().stepDataRevision);
     coalescer.watch(state.sequencer.page);
     coalescer.watch(state.sequencer.focusedStep);
     coalescer.watch(state.sequencer.activeStepProperty);
     coalescer.watch(state.sequencerTracks.activeTrackSignal());
     coalescer.watch(state.sequencerTracks.enabledMaskSignal());
-    coalescer.watch(state.sequencer.pattern.patternVariationRevision);
-    coalescer.watch(state.sequencer.pattern.patternScaleRevision);
+    coalescer.watch(state.sequencer.pattern().patternVariationRevision);
+    coalescer.watch(state.sequencer.pattern().patternScaleRevision);
     coalescer.watch(state.sequencerTracks.projectScaleRevisionSignal());
-    coalescer.watch(state.sequencer.pattern.patternTimingRevision);
-    coalescer.watch(state.sequencer.pattern.swingOffsetPercent);
-    coalescer.watch(state.sequencer.pattern.patternNudgePercent);
+    coalescer.watch(state.sequencer.pattern().patternTimingRevision);
+    coalescer.watch(state.sequencer.pattern().swingOffsetPercent);
+    coalescer.watch(state.sequencer.pattern().patternNudgePercent);
     coalescer.watch(state.sequencerTracks.drumRevisionSignal());
     coalescer.watch(state.sequencerClips.revisionSignal());
     // Project Track channel/mute mirrors are intentionally absent: their
@@ -108,8 +115,7 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
 }
 
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
-    state.sequencer.reset();
-    state.sequencerTracks.reset();
+    sequencer::resetTrackBank(state.sequencerTracks, state.sequencer);
     state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     if (!state.deviceSettingsStore.load(
             state.midiSync,

@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -82,8 +83,9 @@ struct HistoryRecorder {
 };
 
 void test_new_micro_is_unpublished_until_one_prepared_apply() {
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     HistoryRecorder recorder;
     auto history = recorder.services();
 
@@ -93,15 +95,15 @@ void test_new_micro_is_unpublished_until_one_prepared_apply() {
     assert(result.opened && result.created && result.draft);
     assert(sequencer.stepContentDraft.active.get());
     assert(!sequencer.stepContentDraft.modified());
-    assert(!rootHasChild(sequencer.pattern, 3, seq::StepContentChildKind::MICRO_SEQUENCE));
+    assert(!rootHasChild(sequencer.pattern(), 3, seq::StepContentChildKind::MICRO_SEQUENCE));
     assert(rootHasChild(seq::authoringPattern(sequencer), 3,
                         seq::StepContentChildKind::MICRO_SEQUENCE));
 
     assert(seq::setActiveContentStepFromNormalized(sequencer, 0, seq::StepProperty::NOTE,
-                                                   62.0f / 127.0f, sequencer.pattern.pitchEditMode,
+                                                   62.0f / 127.0f, sequencer.pattern().pitchEditMode,
                                                    {}));
     assert(sequencer.stepContentDraft.modified());
-    assert(!rootHasChild(sequencer.pattern, 3, seq::StepContentChildKind::MICRO_SEQUENCE));
+    assert(!rootHasChild(sequencer.pattern(), 3, seq::StepContentChildKind::MICRO_SEQUENCE));
 
     assert(draft_workflow::apply(sequencer, tracks, history));
     assert(!sequencer.stepContentDraft.active.get());
@@ -114,13 +116,13 @@ void test_new_micro_is_unpublished_until_one_prepared_apply() {
     assert(recorder.prepared->after.graph);
     assert(graphHasChild(*recorder.prepared->after.graph, 3,
                          seq::StepContentChildKind::MICRO_SEQUENCE));
-    assert(rootHasChild(sequencer.pattern, 3, seq::StepContentChildKind::MICRO_SEQUENCE));
-    assert(!rootHasChild(tracks.track(tracks.activeTrackIndex()), 3,
+    assert(rootHasChild(sequencer.pattern(), 3, seq::StepContentChildKind::MICRO_SEQUENCE));
+    assert(rootHasChild(tracks.track(tracks.activeTrackIndex()), 3,
                         seq::StepContentChildKind::MICRO_SEQUENCE));
 }
 
 void test_pristine_back_abandons_without_history() {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     const auto result = seq::openOrCreateActiveContentChild(
         sequencer, 1, seq::StepContentChildKind::CYCLE_STATES, seq::DEFAULT_CYCLE_STATE_COUNT);
     assert(result.opened && result.draft);
@@ -128,12 +130,13 @@ void test_pristine_back_abandons_without_history() {
 
     assert(draft_workflow::requestBack(sequencer) == draft_workflow::BackResult::DISCARDED);
     assert(!sequencer.stepContentDraft.active.get());
-    assert(!rootHasChild(sequencer.pattern, 1, seq::StepContentChildKind::CYCLE_STATES));
+    assert(!rootHasChild(sequencer.pattern(), 1, seq::StepContentChildKind::CYCLE_STATES));
 }
 
 void test_modified_back_defaults_to_save_and_supports_continue_discard() {
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     HistoryRecorder recorder;
     auto history = recorder.services();
 
@@ -142,7 +145,7 @@ void test_modified_back_defaults_to_save_and_supports_continue_discard() {
                                             seq::DEFAULT_MICRO_SEQUENCE_LENGTH);
     assert(result.opened && result.draft);
     assert(seq::setActiveContentStepFromNormalized(sequencer, 0, seq::StepProperty::VELOCITY, 1.0f,
-                                                   sequencer.pattern.pitchEditMode, {}));
+                                                   sequencer.pattern().pitchEditMode, {}));
 
     assert(draft_workflow::requestBack(sequencer) == draft_workflow::BackResult::CONTINUE_EDITING);
     assert(sequencer.stepContentDraft.exitPromptVisible.get());
@@ -161,12 +164,13 @@ void test_modified_back_defaults_to_save_and_supports_continue_discard() {
            draft_workflow::BackResult::DISCARDED);
     assert(!sequencer.stepContentDraft.active.get());
     assert(recorder.preparedCount == 0);
-    assert(!rootHasChild(sequencer.pattern, 2, seq::StepContentChildKind::MICRO_SEQUENCE));
+    assert(!rootHasChild(sequencer.pattern(), 2, seq::StepContentChildKind::MICRO_SEQUENCE));
 }
 
 void test_failed_preflight_preserves_draft_and_published_pattern() {
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     HistoryRecorder recorder;
     recorder.admit = false;
     auto history = recorder.services();
@@ -175,7 +179,7 @@ void test_failed_preflight_preserves_draft_and_published_pattern() {
         sequencer, 0, seq::StepContentChildKind::CYCLE_STATES, seq::DEFAULT_CYCLE_STATE_COUNT);
     assert(result.opened && result.draft);
     assert(seq::setActiveContentStepFromNormalized(sequencer, 0, seq::StepProperty::NOTE, 1.0f,
-                                                   sequencer.pattern.pitchEditMode, {}));
+                                                   sequencer.pattern().pitchEditMode, {}));
     const uint32_t feedbackRevisionBefore = sequencer.historyFeedback.revision.get();
 
     assert(!draft_workflow::apply(sequencer, tracks, history));
@@ -184,13 +188,14 @@ void test_failed_preflight_preserves_draft_and_published_pattern() {
     assert(sequencer.stepContentDraft.failure ==
            seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE);
     assert(recorder.preparedCount == 0);
-    assert(!rootHasChild(sequencer.pattern, 0, seq::StepContentChildKind::CYCLE_STATES));
+    assert(!rootHasChild(sequencer.pattern(), 0, seq::StepContentChildKind::CYCLE_STATES));
     assertHistoryRejection(sequencer, "History unavailable", feedbackRevisionBefore + 1U);
 }
 
 void test_allocation_failure_keeps_draft_and_save_prompt_retryable() {
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     HistoryRecorder recorder;
     auto history = recorder.services();
 
@@ -198,7 +203,7 @@ void test_allocation_failure_keeps_draft_and_save_prompt_retryable() {
         sequencer, 0U, seq::StepContentChildKind::CYCLE_STATES, seq::DEFAULT_CYCLE_STATE_COUNT);
     assert(result.opened && result.draft);
     assert(seq::setActiveContentStepFromNormalized(sequencer, 0U, seq::StepProperty::NOTE, 1.0F,
-                                                   sequencer.pattern.pitchEditMode, {}));
+                                                   sequencer.pattern().pitchEditMode, {}));
     assert(draft_workflow::requestBack(sequencer) == draft_workflow::BackResult::CONTINUE_EDITING);
     assert(sequencer.stepContentDraft.exitPromptVisible.get());
     const uint32_t feedbackRevisionBefore = sequencer.historyFeedback.revision.get();
@@ -217,13 +222,14 @@ void test_allocation_failure_keeps_draft_and_save_prompt_retryable() {
     assert(sequencer.stepContentDraft.failure ==
            seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY);
     assert(recorder.preparedCount == 0U);
-    assert(!rootHasChild(sequencer.pattern, 0U, seq::StepContentChildKind::CYCLE_STATES));
+    assert(!rootHasChild(sequencer.pattern(), 0U, seq::StepContentChildKind::CYCLE_STATES));
     assertHistoryRejection(sequencer, "Memory unavailable", feedbackRevisionBefore + 1U);
 }
 
 void test_track_switch_is_blocked_without_losing_the_active_draft() {
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     tracks.reset();
 
     const auto result =
@@ -231,7 +237,7 @@ void test_track_switch_is_blocked_without_losing_the_active_draft() {
                                             seq::DEFAULT_MICRO_SEQUENCE_LENGTH);
     assert(result.opened && result.draft);
     assert(seq::setActiveContentStepFromNormalized(sequencer, 0, seq::StepProperty::NOTE, 1.0f,
-                                                   sequencer.pattern.pitchEditMode, {}));
+                                                   sequencer.pattern().pitchEditMode, {}));
 
     assert(!seq::switchActiveTrack(tracks, sequencer, 1));
     assert(tracks.activeTrackIndex() == 0);
@@ -241,15 +247,16 @@ void test_track_switch_is_blocked_without_losing_the_active_draft() {
            seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
     assert(sequencer.stepContentDraft.blockedTransition ==
            seq::SequencerStepContentDraftBlockedTransition::TRACK);
-    assert(!rootHasChild(sequencer.pattern, 1, seq::StepContentChildKind::MICRO_SEQUENCE));
+    assert(!rootHasChild(sequencer.pattern(), 1, seq::StepContentChildKind::MICRO_SEQUENCE));
 }
 
 void test_unpublishable_flat_draft_mutation_is_rejected_explicitly() {
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     HistoryRecorder recorder;
     auto history = recorder.services();
-    const uint8_t publishedNote = sequencer.pattern.note[0];
+    const uint8_t publishedNote = sequencer.pattern().note[0];
 
     const auto result =
         seq::openOrCreateActiveContentChild(sequencer, 0, seq::StepContentChildKind::MICRO_SEQUENCE,
@@ -259,14 +266,14 @@ void test_unpublishable_flat_draft_mutation_is_rejected_explicitly() {
 
     assert(!draft_workflow::apply(sequencer, tracks, history));
     assert(sequencer.stepContentDraft.active.get());
-    assert(sequencer.pattern.note[0] == publishedNote);
+    assert(sequencer.pattern().note[0] == publishedNote);
     assert(sequencer.stepContentDraft.failure ==
            seq::SequencerStepContentDraftFailure::UNPUBLISHABLE_MUTATION);
     assert(recorder.preparedCount == 0);
 }
 
 void test_chord_draft_sanitizes_invalid_mode_without_allocating_graph_scratch() {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     const auto nodeId = seq::rootStepNodeId(0);
 
     assert(seq::beginStepContentDraft(sequencer, seq::SequencerStepContentDraftKind::CHORD, 0,
@@ -289,7 +296,7 @@ void test_chord_draft_sanitizes_invalid_mode_without_allocating_graph_scratch() 
 void test_transition_rejection_is_active_only_idempotent_and_exactly_labelled() {
     using Transition = seq::SequencerStepContentDraftBlockedTransition;
 
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     const uint32_t inactiveRevision = sequencer.stepContentDraft.revision.get();
     const uint32_t inactiveContentRevision = sequencer.contentView.revision.get();
     assert(!sequencer.stepContentDraft.rejectTransitionIfActive(Transition::HISTORY));

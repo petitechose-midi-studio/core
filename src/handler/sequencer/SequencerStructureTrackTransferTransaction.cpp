@@ -786,19 +786,7 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             );
     }
 
-    if ((prepared.plan.targetMask & previousActiveBit) == 0) {
-        auto& outgoing = tracks.track(prepared.previousActiveTrack);
-        core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
-            outgoing,
-            tracks.clip(prepared.previousActiveTrack),
-            prepared.history->before.tracks[prepared.previousActiveTrack].flat,
-            prepared.history->before.tracks[prepared.previousActiveTrack].clip,
-            std::move(sequencer.pattern.graph),
-            std::move(sequencer.pattern.ccLanes)
-        );
-    }
-
-    for (uint8_t index = 1; index < prepared.plan.count; ++index) {
+    for (uint8_t index = 0; index < prepared.plan.count; ++index) {
         const auto& destination = prepared.plan.entries[index];
         auto& target = tracks.track(destination.targetTrack);
         const auto& afterTrack =
@@ -813,18 +801,8 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
         );
     }
 
-    const auto& firstDestination = prepared.plan.entries[0];
-    tracks.track(firstDestination.targetTrack).graph.reset();
-    tracks.track(firstDestination.targetTrack).ccLanes.reset();
-    const auto& firstAfter =
-        prepared.history->after.tracks[firstDestination.targetTrack];
-    core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedPayload(
-        sequencer,
-        firstAfter.flat,
-        firstAfter.clip,
-        std::move(prepared.destinationGraphs[0U]),
-        std::move(prepared.destinationCcLanes[0U])
-    );
+    sequencer.selectPattern(tracks.track(prepared.plan.firstTarget), tracks.clip(prepared.plan.firstTarget));
+    sequencer.bumpClipRevision();
     core::state::sequencer::resetTransientTrackState(sequencer);
     sequencer.focusedStep.set(prepared.history->after.focusedStep);
     sequencer.page.set(prepared.history->after.page);

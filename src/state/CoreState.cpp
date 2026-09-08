@@ -82,8 +82,11 @@ FLASHMEM core::app::ExtmemUniquePtr<project::ProjectTrackState> createProjectTra
     return tracks;
 }
 
-FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState() {
-    auto state = core::app::makeExtmemUnique<sequencer::SequencerState>();
+FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState(
+    sequencer::SequencerTrackBankState& tracks
+) {
+    auto state = core::app::makeExtmemUnique<sequencer::SequencerState>(
+        tracks.track(0U), tracks.clip(0U));
     if (!state) failCoreStateAllocation("sequencer editor state");
     return state;
 }
@@ -129,7 +132,7 @@ FLASHMEM MacroDomainState::MacroDomainState()
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
 FLASHMEM SequencerDomainState::SequencerDomainState()
-    : editor(createSequencerEditorState()), tracks(createSequencerTrackBankState()),
+    : tracks(createSequencerTrackBankState()), editor(createSequencerEditorState(*tracks)),
       clips(createSequencerClipGridState()),
       history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>()) {
     if (!history) failCoreStateAllocation("sequencer history service");

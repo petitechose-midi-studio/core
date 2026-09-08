@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -124,11 +125,11 @@ void testPatternPresetFileStoreRoundTrip() {
     assert(store.nextPresetId(firstId, sizeof(firstId)));
     assert(std::strcmp(firstId, "pattern-preset-001") == 0);
 
-    seq::SequencerState source{};
+    core::state::sequencer::SequencerDetachedEditor source;
     source.reset();
-    assert(source.pattern.setContentLength(24U));
-    source.pattern.setEnabled(4U, true);
-    assert(source.pattern.setStepDataAt(4U, 67U, 109U, 175U, -5, 81U));
+    assert(source.pattern().setContentLength(24U));
+    source.pattern().setEnabled(4U, true);
+    assert(source.pattern().setStepDataAt(4U, 67U, 109U, 175U, -5, 81U));
 
     seq::SequencerPatternPresetMetadata metadata{};
     assert(seq::setSequencerPatternPresetMetadata(
@@ -141,7 +142,7 @@ void testPatternPresetFileStoreRoundTrip() {
     std::array<uint8_t, PatternPresetFileStore::MAX_FILE_SIZE> payload{};
     const auto encoded = codec::encode(
         metadata,
-        source.pattern,
+        source.pattern(),
         nullptr,
         payload.data(),
         static_cast<uint16_t>(payload.size())
@@ -196,18 +197,18 @@ void testPatternPresetFileStoreRoundTrip() {
     ));
     assert(loadedSize == encoded.bytesWritten);
 
-    seq::SequencerState decoded{};
+    core::state::sequencer::SequencerDetachedEditor decoded;
     decoded.reset();
     seq::SequencerPatternPresetMetadata decodedMetadata{};
     assert(codec::decode(
         loadedBytes.data(),
         loadedSize,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         nullptr
     ));
     assert(std::strcmp(decodedMetadata.semanticName, "Broken pulse") == 0);
-    assert(seq::sameMusicalPatternState(source.pattern, decoded.pattern));
+    assert(seq::sameMusicalPatternState(source.pattern(), decoded.pattern()));
 
     resetTestRoot();
     std::cout << "[PASS] PatternPresetFileStore round-trip and catalog\n";

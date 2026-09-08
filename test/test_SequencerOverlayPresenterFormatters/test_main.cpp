@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -20,7 +21,7 @@ using core::state::sequencer::SequencerStepPresetFootprint;
 using core::state::sequencer::SequencerPresetLibraryMode;
 
 void test_picker_list_uses_semantic_names_and_disambiguates_duplicates() {
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(SequencerPresetLibraryMode::SAVE);
     picker.setEntry(0, "preset-a", "Pulse", true);
@@ -52,7 +53,7 @@ void test_picker_list_uses_semantic_names_and_disambiguates_duplicates() {
 void test_pattern_folder_projects_enter_as_the_primary_action() {
     namespace seq = core::state::sequencer;
 
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(
         SequencerPresetLibraryMode::LOAD,
@@ -83,7 +84,7 @@ void test_pattern_folder_projects_enter_as_the_primary_action() {
 }
 
 void test_picker_detail_is_temporary_semantic_impact_projection() {
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(SequencerPresetLibraryMode::LOAD);
     picker.setEntry(0, "preset-chromatic", "Orbit", true);
@@ -155,7 +156,7 @@ void test_picker_detail_is_temporary_semantic_impact_projection() {
 }
 
 void test_picker_action_strip_projects_guard_and_temporary_outcome() {
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(SequencerPresetLibraryMode::LOAD);
     picker.setEntry(0, "preset-a", "Pulse", true);
@@ -211,7 +212,7 @@ void test_picker_action_strip_projects_guard_and_temporary_outcome() {
 }
 
 void test_picker_explains_capacity_storage_and_queued_states() {
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(SequencerPresetLibraryMode::LOAD);
     picker.setEntry(0, "preset-a", "Pulse", true);
@@ -261,7 +262,7 @@ void test_picker_explains_capacity_storage_and_queued_states() {
 }
 
 void test_picker_exposes_deferred_inspection_state() {
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(SequencerPresetLibraryMode::LOAD);
     picker.setEntry(0, "preset-a", "Pulse", true);
@@ -284,7 +285,7 @@ void test_picker_exposes_deferred_inspection_state() {
 
 void test_picker_revision_tracks_rendered_feedback_identity() {
     namespace contextual = core::state::contextual;
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(SequencerPresetLibraryMode::LOAD);
     picker.setEntry(0, "preset-a", "Pulse", true);

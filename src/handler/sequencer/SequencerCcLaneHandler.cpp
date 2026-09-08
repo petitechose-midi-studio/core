@@ -251,7 +251,7 @@ FLASHMEM bool SequencerCcLaneHandler::configureTransitionEncoder(
     uint8_t indexInWindow
 ) {
     if (indexInWindow >= Config::MACRO_COUNT) return false;
-    const auto* bank = seq::sequencerCcLaneView(sequencer_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(sequencer_.pattern());
     const auto& ui = sequencer_.ccLaneUi;
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return false;
     const auto& lane = bank->lanes[ui.focusedLane];
@@ -382,7 +382,7 @@ FLASHMEM void SequencerCcLaneHandler::syncMacroEncoderContract(bool ownsGrid) {
         macro_encoders_configured_ = true;
     }
 
-    const auto* bank = seq::sequencerCcLaneView(sequencer_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(sequencer_.pattern());
     const auto& ui = sequencer_.ccLaneUi;
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return;
     const auto& lane = bank->lanes[ui.focusedLane];

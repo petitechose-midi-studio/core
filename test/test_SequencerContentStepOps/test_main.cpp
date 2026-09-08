@@ -18,12 +18,12 @@ void test_reset_root_property_to_default_also_resets_local_variation() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.note[2] = 74;
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().note[2] = 74;
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(2);
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootNode,
         core::state::sequencer::StepProperty::NOTE,
         3
@@ -34,9 +34,9 @@ void test_reset_root_property_to_default_also_resets_local_variation() {
         2,
         core::state::sequencer::StepProperty::NOTE
     ));
-    assert(sequencer.pattern.note[2] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    assert(sequencer.pattern().note[2] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
 
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* node = graph->stepNode(rootNode);
     assert(node != nullptr);
@@ -52,11 +52,11 @@ void test_reset_child_property_to_default_preserves_existing_revision_behavior()
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.setContentLength(8);
+    sequencer.pattern().setContentLength(8);
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto micro = core::state::sequencer::createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootNode,
         2
     );
@@ -68,9 +68,9 @@ void test_reset_child_property_to_default_preserves_existing_revision_behavior()
     ));
 
     const auto childNode = core::state::sequencer::activeContentStepNodeId(sequencer, 0);
-    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern, childNode, 5));
+    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern(), childNode, 5));
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        sequencer.pattern,
+        sequencer.pattern(),
         childNode,
         core::state::sequencer::StepProperty::NOTE,
         4
@@ -84,7 +84,7 @@ void test_reset_child_property_to_default_preserves_existing_revision_behavior()
     ));
     assert(sequencer.contentView.revision.get() == beforeOffsetReset + 1U);
 
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* node = graph->stepNode(childNode);
     assert(node != nullptr);
@@ -96,7 +96,7 @@ void test_reset_child_property_to_default_preserves_existing_revision_behavior()
     ) == 0);
 
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        sequencer.pattern,
+        sequencer.pattern(),
         childNode,
         core::state::sequencer::StepProperty::NOTE,
         2
@@ -116,7 +116,7 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.setContentLength(8);
+    sequencer.pattern().setContentLength(8);
 
     const auto createdMicro = core::state::sequencer::openOrCreateActiveContentChild(
         sequencer,
@@ -131,7 +131,7 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
 
     assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
-    const uint32_t graphRevisionBeforeReopen = sequencer.pattern.graphRevision.get();
+    const uint32_t graphRevisionBeforeReopen = sequencer.pattern().graphRevision.get();
     const auto reopenedMicro = core::state::sequencer::openOrCreateActiveContentChild(
         sequencer,
         0,
@@ -141,7 +141,7 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
     assert(reopenedMicro.opened);
     assert(!reopenedMicro.created);
     assert(reopenedMicro.contentId == createdMicro.contentId);
-    assert(sequencer.pattern.graphRevision.get() == graphRevisionBeforeReopen);
+    assert(sequencer.pattern().graphRevision.get() == graphRevisionBeforeReopen);
 
     assert(core::state::sequencer::leaveContentView(sequencer));
     const auto createdCycle = core::state::sequencer::openOrCreateActiveContentChild(
@@ -164,7 +164,7 @@ void test_copy_paste_and_clear_active_child_content() {
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
     auto& clipboard = state.structureClipboard;
-    sequencer.pattern.setContentLength(8);
+    sequencer.pattern().setContentLength(8);
 
     const auto createdMicro = core::state::sequencer::openOrCreateActiveContentChild(
         sequencer,
@@ -227,7 +227,7 @@ void test_copy_paste_and_clear_active_child_content() {
     assert(reopenedMicro.opened);
     assert(!reopenedMicro.created);
     const auto pastedChildNode = core::state::sequencer::activeContentStepNodeId(sequencer, 0);
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* node = graph->stepNode(pastedChildNode);
     assert(node != nullptr);

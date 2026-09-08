@@ -50,8 +50,9 @@ core::sequencer::ProjectTrackRuntimeSnapshot projectTracks() {
 }
 
 struct Fixture {
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState tracks;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
+
     seq::SequencerClipGridState clips;
     seq::SequencerClipLaunchQueue launches;
     core::state::project::ProjectNavigationState navigation;
@@ -75,11 +76,11 @@ struct Fixture {
     };
 
     Fixture() {
-        sequencer.pattern.note[0U] = 60U;
-        sequencer.pattern.velocity[0U] = 100U;
-        sequencer.pattern.gate[0U] = 100U;
-        sequencer.pattern.setEnabled(0U, true);
-        sequencer.pattern.bumpStepDataRevision();
+        sequencer.pattern().note[0U] = 60U;
+        sequencer.pattern().velocity[0U] = 100U;
+        sequencer.pattern().gate[0U] = 100U;
+        sequencer.pattern().setEnabled(0U, true);
+        sequencer.pattern().bumpStepDataRevision();
         tracks.reset();
         clips.reset(0x0001U);
         assert(clips.installInactiveDocument({0U, 1U}, makeDocument(72U)));

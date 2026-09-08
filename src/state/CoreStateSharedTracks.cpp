@@ -53,8 +53,7 @@ FLASHMEM uint16_t clipLoopTicks(
     uint16_t loopStart = 0U;
     uint16_t loopEnd = 0U;
     if (state.sequencerClips.isResident(address)) {
-        const auto& clip = sequencer::canonicalTrackClip(
-            state.sequencerTracks, state.sequencer, address.track);
+        const auto& clip = state.sequencerTracks.clip(address.track);
         loopStart = clip.loopStartTick;
         loopEnd = clip.loopEndTick;
     } else {
@@ -407,10 +406,8 @@ FLASHMEM bool CoreState::duplicateSequencerClip(
     if (sequencerClips.isResident(source)) {
         const auto kind = sequencerTracks.trackKind(source.track);
         if (!sequencer::captureSequencerClipDocument(
-                sequencer::canonicalTrackPattern(
-                    sequencerTracks, sequencer, source.track),
-                sequencer::canonicalTrackClip(
-                    sequencerTracks, sequencer, source.track),
+                sequencerTracks.track(source.track),
+                sequencerTracks.clip(source.track),
                 kind,
                 kind == sequencer::SequencerTrackKind::DRUM
                     ? &sequencerTracks.drumTrack(source.track)

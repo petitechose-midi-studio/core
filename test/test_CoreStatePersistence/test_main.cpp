@@ -29,17 +29,17 @@ void test_core_state_owns_only_settings_storage() {
             state.projectTracks.authored.midiChannels[0],
             nextCc
         ));
-        state.sequencer.pattern.setContentLength(8U);
+        state.sequencer.pattern().setContentLength(8U);
         assert(state.sequencer.setStepDataAt(0U, 72U, 111U, 75U));
-        state.sequencer.pattern.setEnabled(0U, true);
+        state.sequencer.pattern().setEnabled(0U, true);
         state.flush();
     }
 
     core::state::CoreState restored(storage.settings);
-    assert(restored.sequencer.pattern.note[0] != 72U ||
-           restored.sequencer.pattern.velocity[0] != 111U ||
-           restored.sequencer.pattern.gate[0] != 75U ||
-           !restored.sequencer.pattern.isEnabled(0U));
+    assert(restored.sequencer.pattern().note[0] != 72U ||
+           restored.sequencer.pattern().velocity[0] != 111U ||
+           restored.sequencer.pattern().gate[0] != 75U ||
+           !restored.sequencer.pattern().isEnabled(0U));
 
     drainNotifications();
     std::cout << "[PASS] CoreState persists settings only; projects/presets are file based\n";

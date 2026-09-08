@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -293,10 +294,11 @@ void test_nested_projection_uses_resolved_child_root() {
 }
 
 void test_project_projection_skips_pattern_overrides() {
-    core::state::sequencer::SequencerState active;
     core::state::sequencer::SequencerTrackBankState bank;
+    core::state::sequencer::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     authorScalePolicyChord(
-        active.pattern,
+        active.pattern(),
         0,
         customChord(Basis::ChromaticSemitones, 3, 5)
     );
@@ -328,7 +330,7 @@ void test_project_projection_skips_pattern_overrides() {
     assert(stats.projected == 2);
     assert(stats.changed == 2);
     assert(
-        chordAt(active.pattern, 0).intervalBasis() ==
+        chordAt(active.pattern(), 0).intervalBasis() ==
         Basis::ScaleDegrees
     );
     assert(
@@ -344,12 +346,13 @@ void test_project_projection_skips_pattern_overrides() {
 void test_pattern_projection_keeps_active_chord_draft_coherent() {
     using core::state::sequencer::SequencerStepContentDraftKind;
 
-    core::state::sequencer::SequencerState active;
     core::state::sequencer::SequencerTrackBankState bank;
+    core::state::sequencer::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     const auto nodeId =
         core::state::sequencer::rootStepNodeId(0);
     authorScalePolicyChord(
-        active.pattern,
+        active.pattern(),
         0,
         customChord(Basis::ChromaticSemitones, 3, 5)
     );
@@ -370,11 +373,11 @@ void test_pattern_projection_keeps_active_chord_draft_coherent() {
             active,
             chromaticScale(),
             fHarmonicMinor(),
-            active.pattern.pitchEditMode, active.pattern.pitchEditMode
+            active.pattern().pitchEditMode, active.pattern().pitchEditMode
         );
 
     assert(
-        chordAt(active.pattern, nodeId).intervalBasis() ==
+        chordAt(active.pattern(), nodeId).intervalBasis() ==
         Basis::ScaleDegrees
     );
     assert(active.stepContentDraft.chord.localPresent);
@@ -394,15 +397,15 @@ void test_pattern_projection_keeps_active_chord_draft_coherent() {
 void test_graphless_chord_draft_uses_the_canonical_projector() {
     using core::state::sequencer::SequencerStepContentDraftKind;
 
-    core::state::sequencer::SequencerState sequencer;
-    sequencer.pattern.note[0] = 65;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
+    sequencer.pattern().note[0] = 65;
     assert(sequencer.setPitchEditMode(
         SequencerPitchEditMode::CHROMATIC
     ));
     const auto nodeId =
         core::state::sequencer::rootStepNodeId(0);
     assert(core::state::sequencer::graphView(
-        sequencer.pattern
+        sequencer.pattern()
     ) == nullptr);
     assert(core::state::sequencer::beginStepContentDraft(
         sequencer,
@@ -426,7 +429,7 @@ void test_graphless_chord_draft_uses_the_canonical_projector() {
         );
 
     assert(core::state::sequencer::graphView(
-        sequencer.pattern
+        sequencer.pattern()
     ) == nullptr);
     assert(
         sequencer.stepContentDraft.chord.spec.intervalBasis() ==

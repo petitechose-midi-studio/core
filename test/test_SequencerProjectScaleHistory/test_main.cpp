@@ -280,9 +280,8 @@ void initializeTopology(
     PayloadKind kind,
     bool populateEveryCanonicalTrack
 ) {
-    authorPayload(h.state.sequencer.pattern, kind, 0U);
-    h.state.sequencerTracks.reset();
-    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
+    authorPayload(h.state.sequencer.pattern(), kind, 0U);
+
     if (populateEveryCanonicalTrack) {
         h.state.sequencerTracks.syncSharedTrackState(0xFFFFU, kActiveTrack);
         for (uint8_t track = 1U;
@@ -382,7 +381,7 @@ ExactLiveProof captureExactLiveProof(const Harness& h) {
         h.state.sequencer,
         proof.bank
     );
-    proof.editor = capturePatternProof(h.state.sequencer.pattern);
+    proof.editor = capturePatternProof(h.state.sequencer.pattern());
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -406,7 +405,7 @@ void assertExactLiveProof(const Harness& h, const ExactLiveProof& expected) {
         actualBank
     );
     assert(sameBankSnapshot(actualBank, expected.bank));
-    assertPatternProof(h.state.sequencer.pattern, expected.editor);
+    assertPatternProof(h.state.sequencer.pattern(), expected.editor);
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -436,7 +435,7 @@ CanonicalPayloadProof captureCanonicalPayloadProof(const Harness& h) {
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
         const auto& pattern = track == active
-            ? h.state.sequencer.pattern
+            ? h.state.sequencer.pattern()
             : h.state.sequencerTracks.track(track);
         proof.graph[track] = graphHash(pattern);
         proof.cc[track] = ccHash(pattern);
@@ -529,19 +528,18 @@ void assertProjectScaleDescriptor(const Harness& h) {
                "Project Scale") == 0);
 }
 
-void assertScratchEmpty(const Harness& h) {
+void assertCanonicalOwner(const Harness& h) {
     const auto& scratch = h.state.sequencerTracks.track(
         h.state.sequencerTracks.activeTrackIndex()
     );
-    assert(scratch.graph == nullptr);
-    assert(scratch.ccLanes == nullptr);
+    assert(&scratch == &h.state.sequencer.pattern());
 }
 
 void test_state_operation_rows_revisions_overrides_and_scratch() {
     seq::SequencerTrackBankState bank;
-    seq::SequencerState active;
-    authorPayload(active.pattern, PayloadKind::GraphAndCc, 0U);
-    bank.reset();
+    seq::SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    authorPayload(active.pattern(), PayloadKind::GraphAndCc, 0U);
+
     bank.syncSharedTrackState(0xFFFFU, kActiveTrack);
     for (uint8_t track = 1U; track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
@@ -585,9 +583,9 @@ void test_state_operation_rows_revisions_overrides_and_scratch() {
         graphs[track] = bank.track(track).graph.get();
         cc[track] = bank.track(track).ccLanes.get();
     }
-    const auto editorBefore = revisions(active.pattern);
-    const auto* editorGraph = active.pattern.graph.get();
-    const auto* editorCc = active.pattern.ccLanes.get();
+    const auto editorBefore = revisions(active.pattern());
+    const auto* editorGraph = active.pattern().graph.get();
+    const auto* editorCc = active.pattern().ccLanes.get();
     const uint32_t projectRevision = bank.projectScaleRevisionSignal().get();
     const auto target = seq::resolveProjectScaleChoice(
         current,
@@ -600,30 +598,24 @@ void test_state_operation_rows_revisions_overrides_and_scratch() {
     assert(result.projection.failures == 0U);
     assert(sameScale(bank.projectScaleSettings(), target));
     assert(bank.projectScaleRevisionSignal().get() == projectRevision + 1U);
-    assertRevisionDelta(active.pattern, editorBefore, 1U);
-    assert(active.pattern.graph.get() == editorGraph);
-    assert(active.pattern.ccLanes.get() == editorCc);
+    assertRevisionDelta(active.pattern(), editorBefore, 1U);
+    assert(active.pattern().graph.get() == editorGraph);
+    assert(active.pattern().ccLanes.get() == editorCc);
 
     for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
-        const bool activeScratch = track == kActiveTrack;
         const bool override = track == 3U || track == 11U;
         assertRevisionDelta(bank.track(track), before[track],
-                            (!activeScratch && !override) ? 1U : 0U);
-        if (activeScratch) {
-            assert(bank.track(track).graph == nullptr);
-            assert(bank.track(track).ccLanes == nullptr);
-        } else {
-            assert(bank.track(track).graph.get() == graphs[track]);
-            assert(bank.track(track).ccLanes.get() == cc[track]);
-        }
+                            !override ? 1U : 0U);
+        assert(bank.track(track).graph.get() == graphs[track]);
+        assert(bank.track(track).ccLanes.get() == cc[track]);
     }
 
-    const auto stableEditor = revisions(active.pattern);
+    const auto stableEditor = revisions(active.pattern());
     const auto stableProjectRevision = bank.projectScaleRevisionSignal().get();
     const auto noChange = applyScaleTransition(bank, active, target);
     assert(!noChange.changed);
-    assertRevisionDelta(active.pattern, stableEditor, 0U);
+    assertRevisionDelta(active.pattern(), stableEditor, 0U);
     assert(bank.projectScaleRevisionSignal().get() == stableProjectRevision);
 
     std::cout << "[PASS] state scale operation locks rows, revisions, overrides and scratch\n";
@@ -715,7 +707,7 @@ void runSuccessfulCase(
     );
     const auto beforePayload = captureCanonicalPayloadProof(h);
     const auto beforeState = tx::captureStateInvariant(h.state);
-    const auto editorBefore = revisions(h.state.sequencer.pattern);
+    const auto editorBefore = revisions(h.state.sequencer.pattern());
     std::array<RevisionVector, seq::SequencerTrackBankState::TRACK_COUNT> trackBefore{};
     std::array<const void*, seq::SequencerTrackBankState::TRACK_COUNT> graphOwners{};
     std::array<const void*, seq::SequencerTrackBankState::TRACK_COUNT> ccOwners{};
@@ -725,8 +717,8 @@ void runSuccessfulCase(
         graphOwners[track] = h.state.sequencerTracks.track(track).graph.get();
         ccOwners[track] = h.state.sequencerTracks.track(track).ccLanes.get();
     }
-    const auto* editorGraph = h.state.sequencer.pattern.graph.get();
-    const auto* editorCc = h.state.sequencer.pattern.ccLanes.get();
+    const auto* editorGraph = h.state.sequencer.pattern().graph.get();
+    const auto* editorCc = h.state.sequencer.pattern().ccLanes.get();
     const uint32_t telemetryBefore =
         h.state.sequencer.variationTelemetryRevision.get();
 
@@ -738,9 +730,9 @@ void runSuccessfulCase(
         h.state.sequencerTracks.projectScaleRevisionSignal().get() ==
         beforeSnapshot.projectScaleRevision + 1U
     );
-    assertRevisionDelta(h.state.sequencer.pattern, editorBefore, 1U);
-    assert(h.state.sequencer.pattern.graph.get() == editorGraph);
-    assert(h.state.sequencer.pattern.ccLanes.get() == editorCc);
+    assertRevisionDelta(h.state.sequencer.pattern(), editorBefore, 1U);
+    assert(h.state.sequencer.pattern().graph.get() == editorGraph);
+    assert(h.state.sequencer.pattern().ccLanes.get() == editorCc);
     assert(
         h.state.sequencer.variationTelemetryRevision.get() ==
         telemetryBefore + 1U
@@ -750,14 +742,14 @@ void runSuccessfulCase(
         assertRevisionDelta(
             h.state.sequencerTracks.track(track),
             trackBefore[track],
-            track == kActiveTrack ? 0U : 1U
+            1U
         );
         if (track != kActiveTrack) {
             assert(h.state.sequencerTracks.track(track).graph.get() == graphOwners[track]);
             assert(h.state.sequencerTracks.track(track).ccLanes.get() == ccOwners[track]);
         }
     }
-    assertScratchEmpty(h);
+    assertCanonicalOwner(h);
 
     const auto committed = tx::captureStateInvariant(h.state);
     assert(committed.sequencerUndoCount == beforeState.sequencerUndoCount + 1U);
@@ -788,7 +780,7 @@ void runSuccessfulCase(
     seq::captureTrackBankSnapshot(h.state.sequencerTracks, h.state.sequencer, undone);
     assert(sameBankSnapshot(undone, beforeSnapshot));
     assertCanonicalPayloadProof(h, beforePayload);
-    assertScratchEmpty(h);
+    assertCanonicalOwner(h);
 
     h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     assert(h.state.redoSequencerHistory());
@@ -796,7 +788,7 @@ void runSuccessfulCase(
     seq::captureTrackBankSnapshot(h.state.sequencerTracks, h.state.sequencer, redone);
     assert(sameBankSnapshot(redone, afterSnapshot));
     assertCanonicalPayloadProof(h, afterPayload);
-    assertScratchEmpty(h);
+    assertCanonicalOwner(h);
 }
 
 void test_project_owner_rows_and_payload_topologies_commit_exactly() {
@@ -884,7 +876,7 @@ void test_maximum_topology_fail_nth_is_exact_and_atomic() {
          ++track) {
         trackBefore[track] = revisions(h.state.sequencerTracks.track(track));
     }
-    const auto editorBefore = revisions(h.state.sequencer.pattern);
+    const auto editorBefore = revisions(h.state.sequencer.pattern());
     const auto stateBefore = tx::captureStateInvariant(h.state);
     {
         allocation_trace::Scope trace;
@@ -907,16 +899,16 @@ void test_maximum_topology_fail_nth_is_exact_and_atomic() {
     }
     tx::assertFailureInjectionReset();
 
-    assertRevisionDelta(h.state.sequencer.pattern, editorBefore, 1U);
+    assertRevisionDelta(h.state.sequencer.pattern(), editorBefore, 1U);
     for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
         assertRevisionDelta(
             h.state.sequencerTracks.track(track),
             trackBefore[track],
-            track == kActiveTrack ? 0U : 1U
+            1U
         );
     }
-    assertScratchEmpty(h);
+    assertCanonicalOwner(h);
     assert(h.state.sequencerHistory.undoCount() == stateBefore.sequencerUndoCount + 1U);
     assert(h.state.projectHistory.undoCount() == stateBefore.projectUndoCount + 1U);
     assertProjectScaleDescriptor(h);
@@ -940,7 +932,7 @@ int chromaticChoice() {
 void authorProjectChords(Harness& h) {
     initializeTopology(h, PayloadKind::GraphAndCc, true);
     for (uint8_t track = 0U; track < 16U; ++track) {
-        auto& pattern = seq::mutableCanonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, track);
+        auto& pattern = h.state.sequencerTracks.track(track);
         assert(seq::setNodeChordSpec(pattern, seq::rootStepNodeId(0U), degreeChord()));
     }
     settle(h);
@@ -997,8 +989,8 @@ void test_exact_chords_failures_and_allocation_free_replay() {
         assert(allocation_trace::count == 0U);
         tx::assertMaxPlusOneStillArmed(0U);
     }
-    assert(h.state.sequencer.pattern.graph.get() == before.editor.graphOwner);
-    assert(h.state.sequencer.pattern.ccLanes.get() == before.editor.ccOwner);
+    assert(h.state.sequencer.pattern().graph.get() == before.editor.graphOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == before.editor.ccOwner);
     std::cout << "[PASS] exact chords, fail-1..2 and repeated allocation-free Undo/Redo\n";
 }
 
@@ -1039,13 +1031,13 @@ void test_nonresident_clips_and_navigation_replay() {
     auto* inactive = h.state.sequencerClips.inactiveDocument({0U, 1U});
     assert(inactive);
     const auto inactiveBefore = hashBytes(inactive->graph.get(), sizeof(*inactive->graph));
-    const auto residentBefore = graphHash(h.state.sequencer.pattern);
+    const auto residentBefore = graphHash(h.state.sequencer.pattern());
     assert(h.state.clearProjectHistory());
     settle(h);
     auto result = h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, chromaticChoice());
     assert(result.outcome == Outcome::Committed && result.projection.changed == 17U);
     const auto inactiveAfter = hashBytes(inactive->graph.get(), sizeof(*inactive->graph));
-    const auto residentAfter = graphHash(h.state.sequencer.pattern);
+    const auto residentAfter = graphHash(h.state.sequencer.pattern());
     assert(inactiveBefore != inactiveAfter);
     assert(h.state.switchSequencerClipForEditing({0U, 1U}));
     assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 1U));
@@ -1075,7 +1067,7 @@ void test_dense_chords_and_retained_budget() {
     Harness h;
     authorProjectChords(h);
     for (uint8_t track = 0U; track < 16U; ++track) {
-        auto& graph = *seq::mutableCanonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, track).graph;
+        auto& graph = *h.state.sequencerTracks.track(track).graph;
         graph.stepNodeCount = static_cast<uint16_t>(graph.stepNodes.size());
         for (auto& node : graph.stepNodes) {
             node.flags |= oc::note::sequencer::STEP_NODE_CHORD_LOCAL;
@@ -1100,9 +1092,9 @@ void test_dense_chords_and_retained_budget() {
     // four dense entries exceed the history byte budget despite fitting its scope limit.
     for (uint8_t track = 0U; track < 16U; ++track) {
         seq::SequencerClipDocumentPtr doc;
-        const auto& pattern = seq::canonicalTrackPattern(h.state.sequencerTracks, h.state.sequencer, track);
+        const auto& pattern = h.state.sequencerTracks.track(track);
         assert(seq::captureSequencerClipDocument(pattern,
-            seq::canonicalTrackClip(h.state.sequencerTracks, h.state.sequencer, track),
+            h.state.sequencerTracks.clip(track),
             seq::SequencerTrackKind::INSTRUMENT, nullptr, doc));
         doc->ccLanes.reset();
         assert(h.state.sequencerClips.installInactiveDocument({track, 1U}, std::move(doc)));
@@ -1133,7 +1125,7 @@ void test_nested_lossy_projection_and_empty_disabled_overrides() {
     auto source = h.state.sequencerTracks.projectScaleSettings();
     source.type = oc::note::sequencer::StepSequencerScaleType::Chromatic;
     assert(h.state.sequencerTracks.setProjectScaleSettings(source));
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     const auto micro = seq::createMicroSequence(pattern, 0U, 2U);
     assert(micro.ok);
     const auto child = pattern.graph->sequences[micro.id].firstStepNode;

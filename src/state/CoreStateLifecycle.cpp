@@ -80,8 +80,7 @@ FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
 }
 
 FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
-    state.sequencer.reset();
-    state.sequencerTracks.reset();
+    sequencer::resetTrackBank(state.sequencerTracks, state.sequencer);
     state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     state.requestSequencerRuntimeProjectReset();
 }
@@ -163,8 +162,7 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.projectTracks.reset();
     state.pages.initDefaults();
 
-    state.sequencer.reset();
-    state.sequencerTracks.reset();
+    sequencer::resetTrackBank(state.sequencerTracks, state.sequencer);
     state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     state.requestSequencerRuntimeProjectReset();
 

@@ -106,9 +106,9 @@ int main() {
         assert(state.pages.tracks[0].pages[0].isMacroActive(1U));
         assert(state.projectTracks.authored.midiChannels[0] == 5U);
         assert(state.projectTracks.authored.midiChannels[1] == 6U);
-        const auto& pattern = state.sequencer.pattern;
+        const auto& pattern = state.sequencer.pattern();
         assert(pattern.length.get() == 16U && pattern.stepsPerBeat.get() == 4U);
-        assert(state.sequencer.clip.loopEndTick == 4U * oc::note::clock::PPQN);
+        assert(state.sequencer.clip().loopEndTick == 4U * oc::note::clock::PPQN);
         constexpr uint8_t notes[] = {48U, 52U, 55U, 52U};
         for (uint8_t step = 0; step < 16U; ++step) {
             assert(pattern.isEnabled(step));

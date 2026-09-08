@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -118,16 +119,16 @@ project::ProjectSnapshot makeSnapshot() {
     // One Drum hit owns Graph root slot 0. Persist a nested Micro -> Cycle
     // payload so the Project round-trip covers both the cold lane mapping and
     // the Graph owned by the active sequencer Track.
-    sequencer::SequencerState advanced{};
+    core::state::sequencer::SequencerDetachedEditor advanced;
     assert(advanced.setStepDataAt(0U, 64U, 103U, 100U, 0, 100U));
     const auto root = sequencer::rootStepNodeId(0U);
     const auto micro = sequencer::createMicroSequence(
-        advanced.pattern,
+        advanced.pattern(),
         root,
         3U
     );
     assert(micro.ok);
-    const auto* graph = sequencer::graphView(advanced.pattern);
+    const auto* graph = sequencer::graphView(advanced.pattern());
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
@@ -135,17 +136,17 @@ project::ProjectSnapshot makeSnapshot() {
         sequence->firstStepNode + 1U
     );
     assert(sequencer::setNodeVelocityOffset(
-        advanced.pattern,
+        advanced.pattern(),
         microNode,
         -23
     ));
     const auto cycle = sequencer::createCycleStateSet(
-        advanced.pattern,
+        advanced.pattern(),
         microNode,
         2U
     );
     assert(cycle.ok);
-    graph = sequencer::graphView(advanced.pattern);
+    graph = sequencer::graphView(advanced.pattern());
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
@@ -153,16 +154,16 @@ project::ProjectSnapshot makeSnapshot() {
         cycleSet->firstStateNode + 1U
     );
     assert(sequencer::setNodeGateOffset(
-        advanced.pattern,
+        advanced.pattern(),
         cycleNode,
         17
     ));
     assert(drum.bindAdvancedRootSlot(0U, 1U, 3U));
     sequencer::captureSnapshot(
-        advanced.pattern,
+        advanced.pattern(),
         snapshot.sequencer.flat.tracks[6U]
     );
-    snapshot.sequencer.editorGraph = std::move(advanced.pattern.graph);
+    snapshot.sequencer.bankGraphs[snapshot.sequencer.flat.activeTrack] = std::move(advanced.pattern().graph);
 
     sequencer::SequencerPatternState inactiveInstrument{};
     inactiveInstrument.reset();
@@ -361,29 +362,29 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     assert(loaded.drumTracks->tracks[6U].pattern.lanes[1U].velocity[3U] == 111U);
     assert(loaded.drumTracks->tracks[6U].pattern.effectiveLength(1U) == 7U);
     assert(loaded.drumTracks->tracks[6U].advancedRootSlot(1U, 3U) == 0);
-    assert(loaded.sequencer.editorGraph);
-    const auto* rootNode = loaded.sequencer.editorGraph->stepNode(
+    assert(loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]);
+    const auto* rootNode = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->stepNode(
         sequencer::rootStepNodeId(0U)
     );
     assert(rootNode != nullptr);
-    const auto* microSequence = loaded.sequencer.editorGraph->sequence(
+    const auto* microSequence = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->sequence(
         rootNode->childSequenceId
     );
     assert(microSequence != nullptr);
     assert(microSequence->length == 3U);
-    const auto* microNode = loaded.sequencer.editorGraph->stepNode(
+    const auto* microNode = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->stepNode(
         static_cast<sequencer::SequencerGraphNodeId>(
             microSequence->firstStepNode + 1U
         )
     );
     assert(microNode != nullptr);
     assert(microNode->velocityOffset == -23);
-    const auto* cycleSet = loaded.sequencer.editorGraph->cycleSet(
+    const auto* cycleSet = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->cycleSet(
         microNode->cycleSetId
     );
     assert(cycleSet != nullptr);
     assert(cycleSet->length == 2U);
-    const auto* cycleNode = loaded.sequencer.editorGraph->stepNode(
+    const auto* cycleNode = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->stepNode(
         static_cast<sequencer::SequencerGraphNodeId>(
             cycleSet->firstStateNode + 1U
         )
@@ -671,7 +672,7 @@ void testEveryDecodeAllocationFailurePreservesOutput() {
     auto target = makeSnapshot();
     target.project.transport.tempoBpm = 87.0F;
     const auto beforeSize = encodeSnapshot(target, *before);
-    const auto* graph = target.sequencer.editorGraph.get();
+    const auto* graph = target.sequencer.bankGraphs[target.sequencer.flat.activeTrack].get();
     const auto* drums = target.drumTracks.get();
     const auto* control = target.projectControl.get();
     const auto* clip = target.clips.documents[1U].get();
@@ -683,7 +684,7 @@ void testEveryDecodeAllocationFailurePreservesOutput() {
             assert(!result.ok && !result.overwriteSafe);
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
-        assert(target.sequencer.editorGraph.get() == graph);
+        assert(target.sequencer.bankGraphs[target.sequencer.flat.activeTrack].get() == graph);
         assert(target.drumTracks.get() == drums);
         assert(target.projectControl.get() == control);
         assert(target.clips.documents[1U].get() == clip);

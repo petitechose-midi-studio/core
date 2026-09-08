@@ -49,21 +49,20 @@ struct Harness {
     Harness()
         : state(storages.settings),
           history(History::fromCoreState(state)) {
-        (void)state.sequencer.pattern.setContentLength(8U);
+        (void)state.sequencer.pattern().setContentLength(8U);
         const auto first = seq::createMicroSequence(
-            state.sequencer.pattern, seq::rootStepNodeId(0U), 2U);
+            state.sequencer.pattern(), seq::rootStepNodeId(0U), 2U);
         const auto current = seq::createMicroSequence(
-            state.sequencer.pattern, seq::rootStepNodeId(1U), 2U);
+            state.sequencer.pattern(), seq::rootStepNodeId(1U), 2U);
         assert(first.ok && current.ok && first.id != current.id);
         originalSequence = current.id;
 
-        const auto* graph = seq::graphView(state.sequencer.pattern);
+        const auto* graph = seq::graphView(state.sequencer.pattern());
         assert(graph != nullptr);
         const auto* sequence = graph->sequence(current.id);
         assert(sequence != nullptr);
         originalFirstNode = sequence->firstStepNode;
 
-        state.sequencerTracks.reset();
         assert(seq::enterMicroSequenceContentView(
             state.sequencer,
             seq::rootStepNodeId(1U),
@@ -108,7 +107,7 @@ struct Mutation {
         const History& history
     ) noexcept {
         auto& self = *static_cast<Mutation*>(context);
-        auto* graph = sequencer.pattern.graph.get();
+        auto* graph = sequencer.pattern().graph.get();
         if (graph == nullptr ||
             !seq::resetStepNodePayloadUnversioned(
                 *graph, seq::rootStepNodeId(0U))) {
@@ -201,10 +200,10 @@ void test_precompaction_remaps_detached_path_and_publishes_after_commit() {
 
 void test_failed_post_precompaction_mutation_aborts_without_ui_publication() {
     Harness h;
-    auto* const graphOwner = h.state.sequencer.pattern.graph.get();
+    auto* const graphOwner = h.state.sequencer.pattern().graph.get();
     assert(graphOwner != nullptr);
     const uint64_t graphHash = byteHash(graphOwner, sizeof(*graphOwner));
-    const uint32_t graphRevision = h.state.sequencer.pattern.graphRevision.get();
+    const uint32_t graphRevision = h.state.sequencer.pattern().graphRevision.get();
     const uint32_t viewRevision = h.state.sequencer.contentView.revision.get();
     const auto frame = *h.state.sequencer.contentView.currentFrame();
 
@@ -222,9 +221,9 @@ void test_failed_post_precompaction_mutation_aborts_without_ui_publication() {
 
     assert(mutation.revalidated && mutation.mutated);
     assert(mutation.finalizeCount == 0U);
-    assert(h.state.sequencer.pattern.graph.get() == graphOwner);
+    assert(h.state.sequencer.pattern().graph.get() == graphOwner);
     assert(byteHash(graphOwner, sizeof(*graphOwner)) == graphHash);
-    assert(h.state.sequencer.pattern.graphRevision.get() == graphRevision);
+    assert(h.state.sequencer.pattern().graphRevision.get() == graphRevision);
     assert(h.state.sequencer.contentView.revision.get() == viewRevision);
     assert(h.state.sequencer.contentView.stackDepth == 1U);
     assert(h.state.sequencer.contentView.currentFrame() != nullptr);

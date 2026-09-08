@@ -136,7 +136,7 @@ FLASHMEM bool ownsChordDraftNode(
 }
 
 FLASHMEM uint32_t publishedRevisionFor(const SequencerState& sequencer) {
-    return sequencer.pattern.graphRevision.get() + 1U;
+    return sequencer.pattern().graphRevision.get() + 1U;
 }
 
 }  // namespace
@@ -146,7 +146,7 @@ FLASHMEM SequencerPatternState& authoringPattern(SequencerState& sequencer) {
         return *quickControls;
     }
     auto* draft = sequencer.stepContentDraft.pattern();
-    return draft != nullptr ? *draft : sequencer.pattern;
+    return draft != nullptr ? *draft : sequencer.pattern();
 }
 
 FLASHMEM const SequencerPatternState& authoringPattern(
@@ -156,7 +156,7 @@ FLASHMEM const SequencerPatternState& authoringPattern(
         return *quickControls;
     }
     const auto* draft = sequencer.stepContentDraft.pattern();
-    return draft != nullptr ? *draft : sequencer.pattern;
+    return draft != nullptr ? *draft : sequencer.pattern();
 }
 
 FLASHMEM SequencerClipState& authoringClip(SequencerState& sequencer) {
@@ -164,7 +164,7 @@ FLASHMEM SequencerClipState& authoringClip(SequencerState& sequencer) {
         return *quickControls;
     }
     auto* draft = sequencer.stepContentDraft.clip();
-    return draft != nullptr ? *draft : sequencer.clip;
+    return draft != nullptr ? *draft : sequencer.clip();
 }
 
 FLASHMEM const SequencerClipState& authoringClip(
@@ -174,7 +174,7 @@ FLASHMEM const SequencerClipState& authoringClip(
         return *quickControls;
     }
     const auto* draft = sequencer.stepContentDraft.clip();
-    return draft != nullptr ? *draft : sequencer.clip;
+    return draft != nullptr ? *draft : sequencer.clip();
 }
 
 FLASHMEM bool beginStepContentDraft(
@@ -184,8 +184,8 @@ FLASHMEM bool beginStepContentDraft(
     uint16_t ownerNodeId
 ) {
     return sequencer.stepContentDraft.begin(
-        sequencer.pattern,
-        sequencer.clip,
+        sequencer.pattern(),
+        sequencer.clip(),
         kind,
         ownerStep,
         ownerNodeId
@@ -290,14 +290,14 @@ FLASHMEM bool stepContentDraftHasPublishableSubset(
 
     SequencerPatternSnapshot published{};
     SequencerPatternSnapshot authored{};
-    captureSnapshot(sequencer.pattern, published);
+    captureSnapshot(sequencer.pattern(), published);
     captureSnapshot(*draft, authored);
     const auto* draftClip = sequencer.stepContentDraft.clip();
     return draftClip != nullptr &&
            samePublishableFlatPattern(published, authored) &&
-           sequencer.clip.playStartTick == draftClip->playStartTick &&
-           sequencer.clip.loopStartTick == draftClip->loopStartTick &&
-           sequencer.clip.loopEndTick == draftClip->loopEndTick;
+           sequencer.clip().playStartTick == draftClip->playStartTick &&
+           sequencer.clip().loopStartTick == draftClip->loopStartTick &&
+           sequencer.clip().loopEndTick == draftClip->loopEndTick;
 }
 
 FLASHMEM bool captureStepContentDraftAfterSnapshot(
@@ -306,15 +306,15 @@ FLASHMEM bool captureStepContentDraftAfterSnapshot(
 ) {
     if (!sequencer.stepContentDraft.active.get()) return false;
 
-    captureSnapshot(sequencer.pattern, out.flat);
-    captureSnapshot(sequencer.clip, out.clip);
+    captureSnapshot(sequencer.pattern(), out.flat);
+    captureSnapshot(sequencer.clip(), out.clip);
     out.flat.graphRevision = publishedRevisionFor(sequencer);
     out.focusedStep = sequencer.focusedStep.get();
     if (!reserveHistorySnapshotGraphStorage(out)) return false;
 
     if (sequencer.stepContentDraft.kind.get() ==
         SequencerStepContentDraftKind::CHORD) {
-        const auto* published = graphView(sequencer.pattern);
+        const auto* published = graphView(sequencer.pattern());
         if (published != nullptr) {
             *out.graph = *published;
         } else {
@@ -348,7 +348,7 @@ FLASHMEM bool captureStepContentDraftRuntimeGraph(
 
     if (sequencer.stepContentDraft.kind.get() ==
         SequencerStepContentDraftKind::CHORD) {
-        if (const auto* published = graphView(sequencer.pattern)) {
+        if (const auto* published = graphView(sequencer.pattern())) {
             out = *published;
         } else {
             initializeRootGraph(out);
@@ -376,7 +376,7 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
             SequencerStepContentDraftKind::CHORD) {
         const uint32_t revision = publishedRevisionFor(sequencer);
         core::app::ExtmemUniquePtr<Graph> prepared;
-        Graph* destination = sequencer.pattern.graph.get();
+        Graph* destination = sequencer.pattern().graph.get();
         if (destination == nullptr) {
             prepared = core::app::makeExtmemUnique<Graph>();
             if (!prepared) {
@@ -397,8 +397,8 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
             );
             return false;
         }
-        if (prepared) sequencer.pattern.graph = std::move(prepared);
-        sequencer.pattern.graphRevision.set(revision);
+        if (prepared) sequencer.pattern().graph = std::move(prepared);
+        sequencer.pattern().graphRevision.set(revision);
         sequencer.invalidateVariationTelemetry();
         sequencer.stepContentDraft.resetSession();
         return true;
@@ -415,7 +415,7 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
     const uint32_t revision = publishedRevisionFor(sequencer);
 
     core::app::ExtmemUniquePtr<Graph> prepared;
-    if (source != nullptr && !sequencer.pattern.graph) {
+    if (source != nullptr && !sequencer.pattern().graph) {
         prepared = core::app::makeExtmemUnique<Graph>(*source);
         if (!prepared) {
             sequencer.stepContentDraft.noteFailure(
@@ -426,21 +426,21 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
     }
 
     if (source == nullptr) {
-        sequencer.pattern.graph.reset();
-    } else if (sequencer.pattern.graph) {
-        *sequencer.pattern.graph = *source;
+        sequencer.pattern().graph.reset();
+    } else if (sequencer.pattern().graph) {
+        *sequencer.pattern().graph = *source;
     } else {
-        sequencer.pattern.graph = std::move(prepared);
+        sequencer.pattern().graph = std::move(prepared);
     }
     if (const auto* draftClip = sequencer.stepContentDraft.clip()) {
-        if (sequencer.clip.playStartTick != draftClip->playStartTick ||
-            sequencer.clip.loopStartTick != draftClip->loopStartTick ||
-            sequencer.clip.loopEndTick != draftClip->loopEndTick) {
-            sequencer.clip = *draftClip;
+        if (sequencer.clip().playStartTick != draftClip->playStartTick ||
+            sequencer.clip().loopStartTick != draftClip->loopStartTick ||
+            sequencer.clip().loopEndTick != draftClip->loopEndTick) {
+            sequencer.clip() = *draftClip;
             sequencer.bumpClipRevision();
         }
     }
-    sequencer.pattern.graphRevision.set(revision);
+    sequencer.pattern().graphRevision.set(revision);
     sequencer.invalidateVariationTelemetry();
     sequencer.stepContentDraft.resetSession();
     return true;

@@ -78,17 +78,6 @@ inline bool commitAdmittedStructure(
     return true;
 }
 
-/** Populate a deliberately noncanonical spare for ownership/rollback fixtures. */
-inline bool seedActiveBankSpare(
-    core::state::sequencer::SequencerTrackBankState& bank,
-    const core::state::sequencer::SequencerState& editor
-) {
-    if (!core::state::sequencer::copyPatternState(
-            bank.track(bank.activeTrackIndex()), editor.pattern)) return false;
-    bank.clip(bank.activeTrackIndex()) = editor.clip;
-    return true;
-}
-
 /** Reproduces the retired Core facade only inside integration tests. */
 inline bool commitAdmittedPattern(
     core::state::CoreState& state,
@@ -234,7 +223,7 @@ struct StateInvariant {
 };
 
 inline StateInvariant captureStateInvariant(const core::state::CoreState& state) {
-    const auto& editor = state.sequencer.pattern;
+    const auto& editor = state.sequencer.pattern();
     const auto& bank = state.sequencerTracks.track(
         state.sequencerTracks.activeTrackIndex()
     );

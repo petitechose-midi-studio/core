@@ -112,7 +112,7 @@ FLASHMEM SequencerHistoryProjectScaleChangePtr prepareHistoryProjectScaleChange(
             ++patternIndex;
         };
         for (uint8_t track = 0U; track < SequencerTrackBankState::TRACK_COUNT; ++track) {
-            const auto& pattern = canonicalTrackPattern(bank, active, track);
+            const auto& pattern = bank.track(track);
             visit({track, clips.residentSlot(track)}, pattern.note, pattern.length.get(),
                   pattern.graph.get(), pattern.pitchEditMode, pattern.scalePolicy,
                   pattern.graphRevision.get(), pattern.patternScaleRevision.get());

@@ -1316,7 +1316,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStructureSelection() {
     core::state::SequencerPageSelectionClipboard clipboard;
     if (!capturePageSelectionClipboard(sequencer_, selection.selectedMask.get(), clipboard) ||
         !structure_clipboard_.storeSequencerPageSelection(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
     selection.placing.set(true);
@@ -1768,13 +1768,13 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
         if (track_ui_.previewAddSlot.get()) return;
         core::state::sequencer::SequencerPatternSnapshot snapshot;
         core::state::sequencer::SequencerClipSnapshot clip;
-        core::state::sequencer::captureSnapshot(sequencer_.pattern, snapshot);
-        core::state::sequencer::captureSnapshot(sequencer_.clip, clip);
+        core::state::sequencer::captureSnapshot(sequencer_.pattern(), snapshot);
+        core::state::sequencer::captureSnapshot(sequencer_.clip(), clip);
         if (!structure_clipboard_.storeSequencerTrack(
                 snapshot, clip,
-                core::state::sequencer::graphView(sequencer_.pattern),
+                core::state::sequencer::graphView(sequencer_.pattern()),
                 currentActiveTrack(),
-                core::state::sequencer::sequencerCcLaneView(sequencer_.pattern),
+                core::state::sequencer::sequencerCcLaneView(sequencer_.pattern()),
                 tracks_.isDrumTrack(currentActiveTrack())
                     ? &tracks_.drumTrack(currentActiveTrack())
                     : nullptr)) {
@@ -1799,7 +1799,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
     const uint8_t page = sequencer_.visiblePage();
     if (!capturePageClipboard(sequencer_, page, clipboard)) return;
     if (!structure_clipboard_.storeSequencerPage(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
 }
@@ -1901,7 +1901,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyFocusedStep() {
     if (!captureFocusedStepClipboard(sequencer_, tracks_, step, clipboard)) return;
 
     if (!structure_clipboard_.storeSequencerSteps(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
 }
@@ -1920,7 +1920,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
         return;
     }
     if (!structure_clipboard_.storeSequencerSteps(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
     selection.placing.set(true);

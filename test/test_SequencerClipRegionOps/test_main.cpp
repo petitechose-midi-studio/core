@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -70,24 +71,24 @@ void test_division_conversion_rejects_noncanonical_values() {
 }
 
 void test_set_and_resize_are_single_timing_mutations() {
-    core::state::sequencer::SequencerState state;
+    core::state::sequencer::SequencerDetachedEditor state;
     const uint32_t initialRevision = state.clipRevision.get();
     assert(setClipPlaybackRegion(state, {8, 1, 2, 8}));
-    expectRegion(clipPlaybackRegion(state.pattern, state.clip), 8, 1, 2, 8);
+    expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 8, 1, 2, 8);
     assert(state.clipRevision.get() == initialRevision + 1U);
 
     assert(core::state::sequencer::resizeClipPatternContent(state, 16));
-    expectRegion(clipPlaybackRegion(state.pattern, state.clip), 16, 1, 2, 16);
+    expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 16, 1, 2, 16);
     assert(state.clipRevision.get() == initialRevision + 2U);
 
     assert(setClipPlaybackRegion(state, {16, 6, 10, 12}));
     assert(core::state::sequencer::resizeClipPatternContent(state, 8));
-    expectRegion(clipPlaybackRegion(state.pattern, state.clip), 8, 6, 7, 8);
+    expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 8, 6, 7, 8);
 
     const uint32_t finalRevision = state.clipRevision.get();
     assert(!core::state::sequencer::resizeClipPatternContent(state, 0));
     assert(!core::state::sequencer::resizeClipPatternContent(state, 129));
-    expectRegion(clipPlaybackRegion(state.pattern, state.clip), 8, 6, 7, 8);
+    expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 8, 6, 7, 8);
     assert(state.clipRevision.get() == finalRevision);
 }
 
@@ -150,9 +151,9 @@ void test_snapshot_round_trip_preserves_region_exactly() {
 }
 
 void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
-    core::state::sequencer::SequencerState state;
+    core::state::sequencer::SequencerDetachedEditor state;
     assert(setClipPlaybackRegion(state, {16, 0, 8, 16}));
-    auto* bank = core::state::sequencer::ensureSequencerCcLaneBank(state.pattern);
+    auto* bank = core::state::sequencer::ensureSequencerCcLaneBank(state.pattern());
     assert(bank != nullptr);
     core::state::sequencer::SequencerCcLaneDraft draft{};
     draft.destination.controller = 74;
@@ -171,8 +172,8 @@ void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
     ).changed());
 
     assert(core::state::sequencer::insertPage(state, 1));
-    expectRegion(clipPlaybackRegion(state.pattern, state.clip), 24, 0, 16, 24);
-    bank = state.pattern.ccLanes.get();
+    expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 24, 0, 16, 24);
+    bank = state.pattern().ccLanes.get();
     assert(bank != nullptr);
     assert(!bank->lanes[0].activeMask.test(10));
     assert(bank->lanes[0].activeMask.test(18));
@@ -183,12 +184,12 @@ void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
     ) == core::state::sequencer::SequencerCcLaneTransition::EASE_OUT);
 
     assert(core::state::sequencer::deletePage(state, 0));
-    expectRegion(clipPlaybackRegion(state.pattern, state.clip), 16, 0, 8, 16);
+    expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 16, 0, 8, 16);
     assert(bank->lanes[0].activeMask.test(10));
     assert(bank->lanes[0].values[10] == 91);
 
     assert(core::state::sequencer::rotatePattern(state, 1));
-    expectRegion(clipPlaybackRegion(state.pattern, state.clip), 16, 0, 8, 16);
+    expectRegion(clipPlaybackRegion(state.pattern(), state.clip()), 16, 0, 8, 16);
     assert(!bank->lanes[0].activeMask.test(10));
     assert(bank->lanes[0].activeMask.test(11));
     assert(bank->lanes[0].values[11] == 91);

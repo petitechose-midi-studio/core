@@ -319,7 +319,7 @@ FLASHMEM bool setClipPlaybackRegion(
 ) {
     return publishActiveClipMutation(
         sequencer,
-        setClipPlaybackRegion(sequencer.pattern, sequencer.clip, region)
+        setClipPlaybackRegion(sequencer.pattern(), sequencer.clip(), region)
     );
 }
 
@@ -330,8 +330,8 @@ FLASHMEM bool resizeClipPatternContent(
     return publishActiveClipMutation(
         sequencer,
         resizeClipPatternContent(
-            sequencer.pattern,
-            sequencer.clip,
+            sequencer.pattern(),
+            sequencer.clip(),
             newContentLength
         )
     );
@@ -345,8 +345,8 @@ FLASHMEM bool insertClipPatternSpan(
     return publishActiveClipMutation(
         sequencer,
         insertClipPatternSpan(
-            sequencer.pattern,
-            sequencer.clip,
+            sequencer.pattern(),
+            sequencer.clip(),
             insertAt,
             insertedLength
         )
@@ -361,8 +361,8 @@ FLASHMEM bool removeClipPatternSpan(
     return publishActiveClipMutation(
         sequencer,
         removeClipPatternSpan(
-            sequencer.pattern,
-            sequencer.clip,
+            sequencer.pattern(),
+            sequencer.clip(),
             removeAt,
             removedLength
         )
@@ -376,8 +376,8 @@ FLASHMEM bool setClipPatternStepsPerBeat(
     return publishActiveClipMutation(
         sequencer,
         setClipPatternStepsPerBeat(
-            sequencer.pattern,
-            sequencer.clip,
+            sequencer.pattern(),
+            sequencer.clip(),
             stepsPerBeat
         )
     );

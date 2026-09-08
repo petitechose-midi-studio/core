@@ -539,11 +539,7 @@ FLASHMEM void SequencerClipLauncherSurface::rebuildPreviews() {
                 column * seq::ClipWorkspaceUiState::VISIBLE_ROWS + row
             ];
             if (props_.clips->isResident(address)) {
-                const auto& clip = seq::canonicalTrackClip(
-                    *props_.tracks,
-                    *props_.sequencer,
-                    track
-                );
+                const auto& clip = (*props_.tracks).clip(track);
                 if (props_.tracks->isDrumTrack(track)) {
                     projectDrumPreview(
                         props_.tracks->drumTrack(track),
@@ -553,11 +549,7 @@ FLASHMEM void SequencerClipLauncherSurface::rebuildPreviews() {
                         preview
                     );
                 } else {
-                    const auto& pattern = seq::canonicalTrackPattern(
-                        *props_.tracks,
-                        *props_.sequencer,
-                        track
-                    );
+                    const auto& pattern = (*props_.tracks).track(track);
                     projectMelodicPreview(
                         pattern,
                         clip,

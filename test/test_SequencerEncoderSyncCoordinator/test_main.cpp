@@ -102,7 +102,7 @@ void expects_pattern_focus_syncs_opt_to_pattern_dimension() {
 void expects_step_focus_syncs_opt_to_focused_step_property() {
     SequencerEncoderSyncHarness h;
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.focusedStep.set(2);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.state.sequencer.setStepVelocityAt(2, 96);
@@ -120,11 +120,11 @@ void expects_step_focus_syncs_opt_to_focused_step_property() {
             h.state.sequencer,
             2,
             StepProperty::VELOCITY,
-            h.state.sequencer.pattern.pitchEditMode,
+            h.state.sequencer.pattern().pitchEditMode,
             core::state::sequencer::resolveEffectiveScaleSettings(
                 h.state.sequencerTracks.projectScaleSettings(),
-                h.state.sequencer.pattern.scalePolicy,
-                h.state.sequencer.pattern.scaleOverride
+                h.state.sequencer.pattern().scalePolicy,
+                h.state.sequencer.pattern().scaleOverride
             )
         )
     ));
@@ -393,13 +393,13 @@ void expects_history_replay_to_publish_only_the_canonical_owner() {
         auto& tracks = h.state.sequencerTracks;
         tracks.syncSharedTrackState(3U, 0U);
         editor.patternQuickControls.focusedItem.set(seq::PatternQuickControlItem::SWING);
-        assert(seq::ensureGraphRoot(editor.pattern));
-        auto* lanes = seq::ensureSequencerCcLaneBank(editor.pattern);
+        assert(seq::ensureGraphRoot(editor.pattern()));
+        auto* lanes = seq::ensureSequencerCcLaneBank(editor.pattern());
         seq::SequencerCcLaneDraft draft{};
         draft.destination.controller = 74U;
         assert(lanes && seq::createSequencerCcLane(*lanes, 0U, draft).changed());
         assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 0U, 99U).changed());
-        editor.pattern.bumpCcLaneRevision();
+        editor.pattern().bumpCcLaneRevision();
         const auto capture = [&](seq::SequencerHistoryPatternSnapshot& snapshot) {
             if (storage == seq::SequencerHistoryPatternStorage::FullGraph)
                 assert(seq::captureHistorySnapshot(editor, snapshot));
@@ -437,29 +437,27 @@ void expects_history_replay_to_publish_only_the_canonical_owner() {
             }
             // No syncNow(): exercise the real deferred watcher.
             test_support::drainNotifications();
-            assert(editor.pattern.swingOffsetPercent.get() == (redo ? 17 : 0));
+            assert(editor.pattern().swingOffsetPercent.get() == (redo ? 17 : 0));
             assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
                 input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::SWING)));
-            assert(editor.pattern.graph && editor.pattern.ccLanes->lanes[0].values[0] == 99U);
-            assert(!tracks.track(0U).graph && !tracks.track(0U).ccLanes);
-            assert(tracks.track(0U).swingOffsetPercent.get() == scratchSwing);
-            assert(tracks.track(0U).patternTimingRevision.get() == scratchRevision);
+            assert(editor.pattern().graph && editor.pattern().ccLanes->lanes[0].values[0] == 99U);
+            assert(&tracks.track(0U) == &editor.pattern());
         }
         // Switch away before replay: the same logical target is now in the bank.
         assert(seq::switchActiveTrack(tracks, editor, 1U));
-        const auto otherSwing = editor.pattern.swingOffsetPercent.get();
+        const auto otherSwing = editor.pattern().swingOffsetPercent.get();
         assert(h.state.undoSequencerHistory());
-        assert(editor.pattern.swingOffsetPercent.get() == otherSwing);
+        assert(editor.pattern().swingOffsetPercent.get() == otherSwing);
         assert(tracks.track(0U).swingOffsetPercent.get() == 0);
         assert(h.state.redoSequencerHistory());
         assert(seq::switchActiveTrack(tracks, editor, 0U));
         test_support::drainNotifications();
-        assert(editor.pattern.swingOffsetPercent.get() == 17);
-        assert(editor.pattern.graph && editor.pattern.ccLanes->lanes[0].values[0] == 99U);
+        assert(editor.pattern().swingOffsetPercent.get() == 17);
+        assert(editor.pattern().graph && editor.pattern().ccLanes->lanes[0].values[0] == 99U);
         // A new real coalesced edit must not require the old active mirror.
-        const auto previousNote = editor.pattern.note[0U];
-        const auto* graph = editor.pattern.graph.get();
-        const auto* cc = editor.pattern.ccLanes.get();
+        const auto previousNote = editor.pattern().note[0U];
+        const auto* graph = editor.pattern().graph.get();
+        const auto* cc = editor.pattern().ccLanes.get();
         assert(seq::sequencerHistoryOpenAccepted(
             h.state.beginOrContinueSequencerPatternHistoryCoalescing(
                 0U, StepProperty::NOTE, 100U, seq::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
@@ -467,9 +465,9 @@ void expects_history_replay_to_publish_only_the_canonical_owner() {
         assert(h.state.sealSequencerPatternHistoryCoalescing(true));
         assert(h.state.commitSequencerPatternHistoryCoalescing());
         assert(h.state.undoSequencerHistory());
-        assert(editor.pattern.note[0U] == previousNote);
-        assert(editor.pattern.graph.get() == graph && editor.pattern.ccLanes.get() == cc);
-        assert(editor.pattern.ccLanes->lanes[0].values[0] == 99U);
+        assert(editor.pattern().note[0U] == previousNote);
+        assert(editor.pattern().graph.get() == graph && editor.pattern().ccLanes.get() == cc);
+        assert(editor.pattern().ccLanes->lanes[0].values[0] == 99U);
     }
     std::cout << "[PASS] canonical history replay, OOM, deferred encoder and track navigation\n";
 }
@@ -489,19 +487,19 @@ void expects_clip_installation_to_resolve_the_final_encoder_target() {
     const float previousPosition = h.encoderHw.getPosition(OPT_ENCODER_ID);
 
     // Leave an outgoing length notification pending across installation.
-    assert(editor.pattern.setContentLength(12U));
+    assert(editor.pattern().setContentLength(12U));
     assert(seq::switchResidentSequencerClip(
         h.state.sequencerClips, h.state.sequencerTracks, editor, {0U, 1U}));
     assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID), previousPosition));
     test_support::drainNotifications(); // Deliberately no syncNow().
-    assert(editor.pattern.length.get() == 16U);
+    assert(editor.pattern().length.get() == 16U);
     assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
         input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::LENGTH)));
     assert(!almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID), previousPosition));
     assert(seq::switchResidentSequencerClip(
         h.state.sequencerClips, h.state.sequencerTracks, editor, {0U, 0U}));
     test_support::drainNotifications();
-    assert(editor.pattern.length.get() == 12U);
+    assert(editor.pattern().length.get() == 12U);
     assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
         input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::LENGTH)));
     std::cout << "[PASS] deferred encoder resolves the installed Clip in both directions\n";

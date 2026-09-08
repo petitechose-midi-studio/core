@@ -244,6 +244,7 @@ enum class MacroMode : uint8_t {
 };
 
 struct Script {
+    seq::SequencerState* sequencer = nullptr;
     TrackBank* tracks = nullptr;
     mac::MacroPagesState* macroPages = nullptr;
     oc::state::Signal<uint8_t, 8>* sharedActive = nullptr;
@@ -417,6 +418,7 @@ struct Script {
         assert(self.tracks != nullptr);
         assert(self.sharedMask != nullptr);
         assert(self.sharedActive != nullptr);
+        self.sequencer->selectPattern(self.tracks->track(activeTrack), self.tracks->clip(activeTrack));
         self.tracks->syncSharedTrackState(enabledMask, activeTrack);
         if (self.macroPages != nullptr) {
             self.macroPages->syncSharedTrackState(enabledMask, activeTrack);
@@ -486,8 +488,6 @@ Plan basePlan(
     plan.afterPage = 0U;
     plan.targetTrack = kInvalidTrack;
     plan.macroAffectedTrack = kInvalidMacroTrack;
-    plan.incomingOwnerPolicy =
-        seq::SequencerActiveTrackIncomingOwnerPolicy::Preserve;
     return plan;
 }
 
@@ -496,8 +496,6 @@ Plan createPlan() {
                          0x0003U, 1U, 0x0002U, 0x0003U);
     plan.targetTrack = 1U;
     plan.canonicalResetTrackMask = 0x0002U;
-    plan.incomingOwnerPolicy =
-        seq::SequencerActiveTrackIncomingOwnerPolicy::Reset;
     return plan;
 }
 
@@ -569,7 +567,7 @@ Plan macroCreatePlan() {
 
 struct Harness {
     TrackBank tracks;
-    seq::SequencerState sequencer;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
     mac::MacroPagesState macros;
     seq::SequencerTrackActivationQueue activationQueue;
     oc::state::Signal<uint8_t, 8> sharedActive{0U};
@@ -578,6 +576,7 @@ struct Harness {
 
     Harness() {
         script.tracks = &tracks;
+        script.sequencer = &sequencer;
         script.macroPages = &macros;
         script.sharedActive = &sharedActive;
         script.sharedMask = &sharedMask;
@@ -650,6 +649,8 @@ std::unique_ptr<Harness> makeHarness(
         plan.beforeEnabledMask,
         plan.beforeActiveTrack
     );
+    harness->sequencer.selectPattern(harness->tracks.track(plan.beforeActiveTrack),
+                                     harness->tracks.clip(plan.beforeActiveTrack));
     harness->macros.syncSharedTrackState(
         plan.beforeEnabledMask,
         plan.beforeActiveTrack
@@ -695,15 +696,9 @@ void seedRequiredOwners(Harness& harness, const Plan& plan) {
         const uint16_t bit = static_cast<uint16_t>(1U << track);
         if ((plan.capturedTrackMask & bit) == 0U) continue;
         auto& pattern = track == plan.beforeActiveTrack
-            ? harness.sequencer.pattern
+            ? harness.sequencer.pattern()
             : harness.tracks.track(track);
         installOwners(pattern, tag++);
-    }
-    if (plan.beforeActiveTrack != plan.afterActiveTrack) {
-        installOwners(
-            harness.tracks.track(plan.beforeActiveTrack),
-            tag
-        );
     }
 }
 
@@ -800,7 +795,7 @@ void capturePatternProof(
 
 LiveProof captureLiveProof(const Harness& harness) {
     LiveProof proof{};
-    capturePatternProof(harness.sequencer.pattern, 0U, proof);
+    capturePatternProof(harness.sequencer.pattern(), 0U, proof);
     for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
         capturePatternProof(
             harness.tracks.track(track),
@@ -883,7 +878,6 @@ void assertPlanEquals(const Plan& actual, const Plan& expected) {
     assert(actual.afterPage == expected.afterPage);
     assert(actual.targetTrack == expected.targetTrack);
     assert(actual.macroAffectedTrack == expected.macroAffectedTrack);
-    assert(actual.incomingOwnerPolicy == expected.incomingOwnerPolicy);
 }
 
 void assertCommittedLifecycle(const Script& script, bool hasMacro) {
@@ -1025,8 +1019,6 @@ void test_abi_plans_and_all_seven_actions_commit() {
 
     assert(plans[0U].targetTrack == 1U);
     assert(plans[0U].canonicalResetTrackMask == 0x0002U);
-    assert(plans[0U].incomingOwnerPolicy ==
-           seq::SequencerActiveTrackIncomingOwnerPolicy::Reset);
     assert(plans[1U].beforeEnabledMask == 0x0003U);
     assert(plans[1U].afterEnabledMask == 0x0002U);
     assert(plans[2U].targetTrack == kInvalidTrack);
@@ -1645,7 +1637,7 @@ void test_plan_tokens_checkpoint_and_live_drift_abort_before_tail() {
                 harness->refs(), direct.action, harness->execution()
             );
         assert(prepared.ready());
-        ++harness->sequencer.pattern.note[0U];
+        ++harness->sequencer.pattern().note[0U];
         const Result result =
             core::handler::commitPreparedSequencerTrackStructureTransaction(
                 std::move(prepared)
@@ -1883,19 +1875,19 @@ ColdOwners coldOwners(const seq::SequencerPatternState& pattern) {
     return {pattern.graph.get(), pattern.ccLanes.get()};
 }
 
-void test_create_reset_and_remove_preserve_rotate_exact_owners() {
+void test_create_resets_target_and_remove_preserves_canonical_owners() {
     {
         const Plan plan = createPlan();
         auto harness = makeHarness(plan);
         seedRequiredOwners(*harness, plan);
-        const ColdOwners editor = coldOwners(harness->sequencer.pattern);
+        const ColdOwners editor = coldOwners(harness->sequencer.pattern());
         const ColdOwners outgoingScratch =
             coldOwners(harness->tracks.track(0U));
         const ColdOwners incoming = coldOwners(harness->tracks.track(1U));
-        assert(editor.graph != outgoingScratch.graph);
+        assert(editor.graph == outgoingScratch.graph);
         assert(editor.graph != incoming.graph);
         assert(outgoingScratch.graph != incoming.graph);
-        assert(editor.cc != outgoingScratch.cc);
+        assert(editor.cc == outgoingScratch.cc);
         assert(editor.cc != incoming.cc);
         assert(outgoingScratch.cc != incoming.cc);
 
@@ -1906,12 +1898,10 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
         assert(result.status == Status::Committed);
         assert(coldOwners(harness->tracks.track(0U)).graph == editor.graph);
         assert(coldOwners(harness->tracks.track(0U)).cc == editor.cc);
-        assert(harness->sequencer.pattern.graph == nullptr);
-        assert(harness->sequencer.pattern.ccLanes == nullptr);
-        assert(coldOwners(harness->tracks.track(1U)).graph ==
-               outgoingScratch.graph);
-        assert(coldOwners(harness->tracks.track(1U)).cc ==
-               outgoingScratch.cc);
+        assert(harness->sequencer.pattern().graph == nullptr);
+        assert(harness->sequencer.pattern().ccLanes == nullptr);
+        assert(coldOwners(harness->tracks.track(1U)).graph == nullptr);
+        assert(coldOwners(harness->tracks.track(1U)).cc == nullptr);
         assert(seq::liveHistoryStructureSnapshotMatches(
             harness->tracks,
             harness->sequencer,
@@ -1923,7 +1913,7 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
         const Plan plan = removeCurrentPlan();
         auto harness = makeHarness(plan);
         seedRequiredOwners(*harness, plan);
-        const ColdOwners editor = coldOwners(harness->sequencer.pattern);
+        const ColdOwners editor = coldOwners(harness->sequencer.pattern());
         const ColdOwners outgoingScratch =
             coldOwners(harness->tracks.track(0U));
         const ColdOwners incoming = coldOwners(harness->tracks.track(1U));
@@ -1935,12 +1925,10 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
         assert(result.status == Status::Committed);
         assert(coldOwners(harness->tracks.track(0U)).graph == editor.graph);
         assert(coldOwners(harness->tracks.track(0U)).cc == editor.cc);
-        assert(harness->sequencer.pattern.graph.get() == incoming.graph);
-        assert(harness->sequencer.pattern.ccLanes.get() == incoming.cc);
-        assert(coldOwners(harness->tracks.track(1U)).graph ==
-               outgoingScratch.graph);
-        assert(coldOwners(harness->tracks.track(1U)).cc ==
-               outgoingScratch.cc);
+        assert(harness->sequencer.pattern().graph.get() == incoming.graph);
+        assert(harness->sequencer.pattern().ccLanes.get() == incoming.cc);
+        assert(coldOwners(harness->tracks.track(1U)).graph == incoming.graph);
+        assert(coldOwners(harness->tracks.track(1U)).cc == incoming.cc);
         assert(seq::liveHistoryStructureSnapshotMatches(
             harness->tracks,
             harness->sequencer,
@@ -1967,7 +1955,7 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
     }
 
     std::cout
-        << "[PASS] Reset/Preserve owner rotations and scratch drift hold\n";
+        << "[PASS] Reset/Preserve canonical owners and owner drift hold\n";
 }
 
 }  // namespace
@@ -1983,7 +1971,7 @@ int main() {
     test_plan_tokens_checkpoint_and_live_drift_abort_before_tail();
     test_no_change_and_macro_control_normalization_contracts();
     test_activation_guard_rejects_collisions_and_any_late_queue_drift();
-    test_create_reset_and_remove_preserve_rotate_exact_owners();
+    test_create_resets_target_and_remove_preserves_canonical_owners();
     std::cout
         << "All SequencerPreparedTrackStructureTransaction tests passed\n";
     return 0;

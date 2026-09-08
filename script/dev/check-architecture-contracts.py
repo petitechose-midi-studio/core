@@ -58,6 +58,16 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
 )
 
 FORBIDDEN_LEGACY = (
+    "SequencerPreparedActiveTrackRotation",
+    "SequencerActiveTrackIncomingOwnerPolicy",
+    "SequencerTrackFlatSnapshotView",
+    "canonicalTrackPattern",
+    "mutableCanonicalTrackPattern",
+    "canonicalTrackClip",
+    "mutableCanonicalTrackClip",
+    # Public UX and metric labels are stable strings, never C++ accessors.
+    '"sequencer.pattern()',
+    '"sequencer.clip()',
     "PERF_LOG",
     "PerfWindowCounters",
     "SequencerPlaybackProfiler",
@@ -3186,7 +3196,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "commitPreparedSequencerTrackTransfer",
         r"commitAdmittedMacroTrackStructureHistoryAfter\s*\(.*?"
         r"installTrackContentSnapshotWithOwnedPayload\s*\(.*?"
-        r"installTrackContentSnapshotToEditorWithOwnedPayload\s*\(.*?"
+        r"sequencer\.selectPattern\s*\(.*?"
         r"publishPreparedSequencerState\s*\(.*?"
         r"reconcilePreparedMacroTrackTransfer\s*\(.*?"
         r"history\.commitAdmittedStructure\s*\(.*?"
@@ -3695,8 +3705,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"plan\.capturedTrackMask\s*=\s*static_cast<uint16_t>\s*\(\s*"
         r"oldActiveBit\s*\|\s*"
         r"(?:[A-Za-z_][A-Za-z0-9_]*::)*slotBit\s*\(\s*mutation\.nextActive\s*\)\s*"
-        r"\)\s*;.*?"
-        r"SequencerActiveTrackIncomingOwnerPolicy::Preserve",
+        r"\)\s*;",
         "SelectionRemove plan must affect S while capturing only the old/new active pair",
     )
     require_in_function(
@@ -3704,11 +3713,10 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "FLASHMEM PlanOutcome buildPlan",
         r"action\s*==\s*Action::SequencerRemoveSelection.*?"
         r"const\s+uint8_t\s+incomingLength\s*=\s*"
-        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*canonicalTrackPattern\s*\(\s*"
-        r"context\.state\.tracks\s*,\s*context\.state\.sequencer\s*,\s*"
+        r"\(?context\.state\.tracks\)?\.track\s*\(\s*"
         r"mutation\.nextActive\s*\)\.length\.get\s*\(\s*\)\s*;.*?"
         r"fillActiveChangeFocus\s*\(\s*context\s*,\s*incomingLength\s*,\s*plan\s*\)",
-        "SelectionRemove focus must use the active editor when the active Track survives",
+        "SelectionRemove focus must use the canonical destination bank owner",
     )
     require_in_function(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
@@ -4913,7 +4921,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"structure_selection_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*46\s*>\s+grid_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*4\s*>\s+grid_tick_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*28\s*>\s+selector_overlay_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*25\s*>\s+selector_overlay_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*5\s*>\s+overlay_visibility_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+left_action_strip_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*27\s*>\s+bottom_action_strip_watcher_\s*;",

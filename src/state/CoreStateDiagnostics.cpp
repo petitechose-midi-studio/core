@@ -125,11 +125,11 @@ FLASHMEM void configureDebugLabels(CoreState& state) {
     state.sequencer.patternEditor.active.setDebugLabel(
         "core.sequencer.patternEditor.active"
     );
-    state.sequencer.pattern.patternVariationRevision.setDebugLabel("core.sequencer.pattern.patternVariationRevision");
-    state.sequencer.pattern.patternScaleRevision.setDebugLabel("core.sequencer.pattern.patternScaleRevision");
-    state.sequencer.pattern.patternTimingRevision.setDebugLabel("core.sequencer.pattern.patternTimingRevision");
-    state.sequencer.pattern.swingOffsetPercent.setDebugLabel("core.sequencer.pattern.swingOffsetPercent");
-    state.sequencer.pattern.patternNudgePercent.setDebugLabel("core.sequencer.pattern.patternNudgePercent");
+    state.sequencer.pattern().patternVariationRevision.setDebugLabel("core.sequencer.pattern.patternVariationRevision");
+    state.sequencer.pattern().patternScaleRevision.setDebugLabel("core.sequencer.pattern.patternScaleRevision");
+    state.sequencer.pattern().patternTimingRevision.setDebugLabel("core.sequencer.pattern.patternTimingRevision");
+    state.sequencer.pattern().swingOffsetPercent.setDebugLabel("core.sequencer.pattern.swingOffsetPercent");
+    state.sequencer.pattern().patternNudgePercent.setDebugLabel("core.sequencer.pattern.patternNudgePercent");
     state.sequencer.contentView.revision.setDebugLabel("core.sequencer.contentView.revision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
     state.sequencerTracks.projectScaleRevisionSignal().setDebugLabel("core.sequencerTracks.projectScaleRevision");

@@ -371,8 +371,6 @@ FLASHMEM PlanOutcome buildPlan(
     plan.affectedTrackMask =
         core::state::shared::slotBit(context.targetTrack);
     plan.canonicalResetTrackMask = 0U;
-    plan.incomingOwnerPolicy = core::state::sequencer::
-        SequencerActiveTrackIncomingOwnerPolicy::Preserve;
 
     const uint16_t oldActiveBit =
         core::state::shared::slotBit(beforeActive);

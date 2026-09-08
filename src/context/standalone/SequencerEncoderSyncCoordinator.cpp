@@ -294,15 +294,15 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         navigation_focus_,
         overlays_.revisionSignal(),
         sequencer_.page,
-        sequencer_.pattern.length,
-        sequencer_.pattern.graphRevision,
+        sequencer_.patternChanges.length,
+        sequencer_.patternChanges.graphRevision,
         sequencer_.focusedStep,
         sequencer_.activeStepProperty,
         sequencer_.stepStatePropertyActive,
         sequencer_.contentView.kind,
         sequencer_.contentView.length,
         sequencer_.contentView.revision,
-        sequencer_.pattern.patternScaleRevision,
+        sequencer_.patternChanges.patternScaleRevision,
         track_bank_.projectScaleRevisionSignal(),
         sequencer_.ccLaneUi.revision,
         sequencer_.structureUi.stepSelection.active,
@@ -312,10 +312,7 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         sequencer_.patternQuickControls.selecting,
         sequencer_.patternQuickControls.focusedItem,
         sequencer_.patternQuickControls.offsetSteps,
-        sequencer_.pattern.stepsPerBeat,
-        sequencer_.pattern.swingOffsetPercent,
-        sequencer_.pattern.patternNudgePercent,
-        sequencer_.pattern.patternTimingRevision,
+        sequencer_.patternChanges.patternTimingRevision,
         sequencer_.patternQuickControls.previewRevision,
         sequencer_.clipWorkspace.revision,
         clips_.revisionSignal()
@@ -807,12 +804,12 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     }
     const auto effectiveScale = core::state::sequencer::resolveEffectiveScaleSettings(
         track_bank_.projectScaleSettings(),
-        sequencer_.pattern.scalePolicy,
-        sequencer_.pattern.scaleOverride
+        sequencer_.pattern().scalePolicy,
+        sequencer_.pattern().scaleOverride
     );
     const auto config = input_utils::encoderConfigForProperty(
         property,
-        sequencer_.pattern.pitchEditMode,
+        sequencer_.pattern().pitchEditMode,
         effectiveScale
     );
 

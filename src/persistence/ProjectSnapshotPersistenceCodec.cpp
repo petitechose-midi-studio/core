@@ -379,12 +379,8 @@ FLASHMEM bool buildSequencerEnvelope(
         return false;
     }
     for (uint8_t i = 0; i < source.graphs.size(); ++i) {
-        source.graphs[i] = (i == activeTrack)
-            ? snapshot.sequencer.editorGraph.get()
-            : snapshot.sequencer.bankGraphs[i].get();
-        source.ccLanes[i] = (i == activeTrack)
-            ? snapshot.sequencer.editorCcLanes.get()
-            : snapshot.sequencer.bankCcLanes[i].get();
+        source.graphs[i] = snapshot.sequencer.bankGraphs[i].get();
+        source.ccLanes[i] = snapshot.sequencer.bankCcLanes[i].get();
     }
 
     const auto encoded = sequencer_codec::fillProjectSequencerEnvelope(

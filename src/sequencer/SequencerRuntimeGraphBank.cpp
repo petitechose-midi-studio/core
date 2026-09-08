@@ -36,8 +36,7 @@ FLASHMEM bool SequencerRuntimeGraphBank::prepare(
         const bool inactiveClip = clipSource.document != nullptr;
         const auto& residentState = active && quickControlsPattern != nullptr
             ? *quickControlsPattern
-            : core::state::sequencer::canonicalTrackPattern(
-                  trackBank, sequencer, track);
+            : trackBank.track(track);
         const auto* sourceGraph = inactiveClip
             ? clipSource.document->graph.get()
             : core::state::sequencer::graphView(residentState);

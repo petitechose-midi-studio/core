@@ -79,8 +79,7 @@ FLASHMEM bool samePlan(const Plan& lhs, const Plan& rhs) noexcept {
            lhs.beforePage == rhs.beforePage &&
            lhs.afterPage == rhs.afterPage &&
            lhs.targetTrack == rhs.targetTrack &&
-           lhs.macroAffectedTrack == rhs.macroAffectedTrack &&
-           lhs.incomingOwnerPolicy == rhs.incomingOwnerPolicy;
+           lhs.macroAffectedTrack == rhs.macroAffectedTrack;
 }
 
 namespace {
@@ -111,7 +110,7 @@ FLASHMEM bool validCommonPlan(
         plan.beforeActiveTrack != sharedTracks.activeTrack() ||
         plan.beforeFocusedStep != sequencer.focusedStep.get() ||
         plan.beforePage != sequencer.page.get() ||
-        plan.beforeFocusedStep >= sequencer.pattern.length.get() ||
+        plan.beforeFocusedStep >= sequencer.pattern().length.get() ||
         plan.beforePage >= core::state::sequencer::SequencerState::PAGE_COUNT ||
         (macroPages != nullptr &&
          (macroPages->currentTrackEnabledMask() != plan.beforeEnabledMask ||
@@ -126,7 +125,7 @@ FLASHMEM bool validCommonPlan(
             ? core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH
             : (activeChanges
                    ? tracks.track(plan.afterActiveTrack).length.get()
-                   : sequencer.pattern.length.get());
+                   : sequencer.pattern().length.get());
     if (incomingLength == 0U ||
         incomingLength > core::state::sequencer::SequencerState::MAX_STEPS) {
         return false;
@@ -186,10 +185,6 @@ FLASHMEM bool validActionPlan(
         return false;
     }
 
-    const auto preserve = core::state::sequencer::
-        SequencerActiveTrackIncomingOwnerPolicy::Preserve;
-    const auto reset = core::state::sequencer::
-        SequencerActiveTrackIncomingOwnerPolicy::Reset;
     switch (requestedAction) {
         case Action::SequencerCreate: {
             if (plan.targetTrack >= TrackBank::TRACK_COUNT) return false;
@@ -203,8 +198,7 @@ FLASHMEM bool validActionPlan(
                    plan.affectedTrackMask == targetBit &&
                    plan.capturedTrackMask ==
                        static_cast<uint16_t>(oldActiveBit | targetBit) &&
-                   plan.canonicalResetTrackMask == targetBit &&
-                   plan.incomingOwnerPolicy == reset;
+                   plan.canonicalResetTrackMask == targetBit;
         }
         case Action::SequencerRemoveCurrent:
         case Action::MacroDelete: {
@@ -219,8 +213,7 @@ FLASHMEM bool validActionPlan(
                    plan.afterActiveTrack == mutation.nextActive &&
                    plan.affectedTrackMask == oldActiveBit &&
                    plan.capturedTrackMask == activePair &&
-                   plan.canonicalResetTrackMask == 0U &&
-                   plan.incomingOwnerPolicy == preserve;
+                   plan.canonicalResetTrackMask == 0U;
         }
         case Action::SequencerRemoveSelection: {
             if (plan.targetTrack != TrackBank::TRACK_COUNT ||
@@ -243,8 +236,7 @@ FLASHMEM bool validActionPlan(
             return plan.afterEnabledMask == nextMask &&
                    plan.afterActiveTrack == nextActive &&
                    plan.capturedTrackMask == activePair &&
-                   plan.canonicalResetTrackMask == 0U &&
-                   plan.incomingOwnerPolicy == preserve;
+                   plan.canonicalResetTrackMask == 0U;
         }
         case Action::MacroReset: {
             if (plan.targetTrack >= TrackBank::TRACK_COUNT) return false;
@@ -255,8 +247,7 @@ FLASHMEM bool validActionPlan(
                    plan.affectedTrackMask == targetBit &&
                    plan.capturedTrackMask ==
                        static_cast<uint16_t>(oldActiveBit | targetBit) &&
-                   plan.canonicalResetTrackMask == 0U &&
-                   plan.incomingOwnerPolicy == preserve;
+                   plan.canonicalResetTrackMask == 0U;
         }
         case Action::MacroPaste: {
             if (plan.targetTrack >= TrackBank::TRACK_COUNT) return false;
@@ -269,8 +260,7 @@ FLASHMEM bool validActionPlan(
                    plan.affectedTrackMask == targetBit &&
                    plan.capturedTrackMask ==
                        static_cast<uint16_t>(oldActiveBit | targetBit) &&
-                   plan.canonicalResetTrackMask == 0U &&
-                   plan.incomingOwnerPolicy == preserve;
+                   plan.canonicalResetTrackMask == 0U;
         }
         case Action::MacroCreate: {
             if (plan.targetTrack >= TrackBank::TRACK_COUNT) return false;
@@ -284,8 +274,7 @@ FLASHMEM bool validActionPlan(
                    plan.affectedTrackMask == targetBit &&
                    plan.capturedTrackMask ==
                        static_cast<uint16_t>(oldActiveBit | targetBit) &&
-                   plan.canonicalResetTrackMask == 0U &&
-                   plan.incomingOwnerPolicy == preserve;
+                   plan.canonicalResetTrackMask == 0U;
         }
         default:
             return false;

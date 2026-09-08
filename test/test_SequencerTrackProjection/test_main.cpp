@@ -82,8 +82,8 @@ void testClipQuickPropertySessionEndsAfterFeedbackExpires() {
 void testEmptyTrackPreviewProjectsNoMusicalState() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings);
-    state.sequencer.pattern.setEnabled(0U, true);
-    state.sequencer.pattern.note[0U] = 72U;
+    state.sequencer.pattern().setEnabled(0U, true);
+    state.sequencer.pattern().note[0U] = 72U;
 
     auto source = sourceFor(state);
     auto frame = core::ui::sequencer::buildSequencerStepGridProps(source);
@@ -154,9 +154,9 @@ void testDrumTrackAndPatternProjectTheSameMusicalHeader() {
 void testPitchFeedbackProjectsTonalValueWithoutChangingContext() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings);
-    state.sequencer.pattern.setContentLength(8U);
-    state.sequencer.pattern.setEnabled(3U, true);
-    state.sequencer.pattern.note[3U] = 66U;
+    state.sequencer.pattern().setContentLength(8U);
+    state.sequencer.pattern().setEnabled(3U, true);
+    state.sequencer.pattern().note[3U] = 66U;
     state.sequencer.activeStepProperty.set(
         core::state::sequencer::StepProperty::NOTE
     );

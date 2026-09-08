@@ -1791,9 +1791,9 @@ void test_macro_page_selection_uses_shared_grammar_and_warns_before_overwrite() 
 
 void test_macro_track_selection_copies_the_complete_global_track() {
     MacroPerformanceHarness h;
-    h.state.sequencer.pattern.setContentLength(8U);
-    h.state.sequencer.pattern.setEnabled(0U, true);
-    h.state.sequencer.pattern.note[0] = 79U;
+    h.state.sequencer.pattern().setContentLength(8U);
+    h.state.sequencer.pattern().setEnabled(0U, true);
+    h.state.sequencer.pattern().note[0] = 79U;
     auto& page = h.state.pages.pageData(0U, 0U);
     page.setMacroActive(2U, true);
     page.cc[2] = 22U;
@@ -1842,7 +1842,7 @@ void test_macro_track_selection_copies_the_complete_global_track() {
 
     assert(h.state.currentSharedTrackEnabledMask() == 0x0003U);
     assert(h.state.currentSharedActiveTrack() == 1U);
-    assert(h.state.sequencer.pattern.note[0] == 79U);
+    assert(h.state.sequencer.pattern().note[0] == 79U);
     assert(h.state.pages.pageData(1U, 0U).isMacroActive(2U));
     assert(h.state.pages.pageData(1U, 0U).cc[2] == 22U);
     assert(

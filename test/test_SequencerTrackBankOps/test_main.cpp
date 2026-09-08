@@ -1,144 +1,40 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
-
-#include <array>
 #include <cassert>
-#include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <utility>
-
-#include <oc/state/NotificationQueue.hpp>
-
+#include <new>
+#include <oc/state/ChangeCoalescer.hpp>
+#include <oc/state/StaticSignalWatcher.hpp>
 #include "app/ExtmemAllocator.hpp"
-#include "state/sequencer/SequencerClipRegionOps.hpp"
-#include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/CoreState.hpp"
+#include "../support/CoreStorages.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
+#include "../support/NotificationTestUtils.hpp"
 
 #if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
 #error "This test requires native EXTMEM failure injection"
 #endif
 
+static bool countHeap = false;
+static unsigned heapAllocations = 0U;
+void* operator new(std::size_t size) {
+    if (countHeap) ++heapAllocations;
+    if (void* memory = std::malloc(size ? size : 1U)) return memory;
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete[](void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+
 namespace {
-
 namespace seq = core::state::sequencer;
-
-using Graph = oc::note::sequencer::StepSequencerGraph;
-struct SnapshotOwner {
-    std::unique_ptr<seq::SequencerPatternSnapshot> pattern;
-    seq::SequencerClipSnapshot clip{};
-
-    explicit operator bool() const noexcept { return static_cast<bool>(pattern); }
-    seq::SequencerPatternSnapshot& operator*() const noexcept { return *pattern; }
-    seq::SequencerPatternSnapshot* operator->() const noexcept { return pattern.get(); }
-};
-
-struct OwnerSet {
-    const Graph* graph = nullptr;
-    const seq::SequencerCcLaneBank* ccLanes = nullptr;
-};
-
-void seedFlat(
-    seq::SequencerPatternState& pattern,
-    seq::SequencerClipState& clip,
-    uint8_t tag
-) {
-    constexpr std::array<uint8_t, 8U> validStepsPerBeat{
-        3U, 4U, 6U, 8U, 12U, 16U, 24U, 32U,
-    };
-    const uint8_t length = static_cast<uint8_t>(16U + tag);
-    pattern.length.set(length);
-    pattern.stepsPerBeat.set(validStepsPerBeat[tag % validStepsPerBeat.size()]);
-    assert(seq::setClipPlaybackRegion(
-        pattern,
-        clip,
-        {length, static_cast<uint8_t>(tag & 0x01U),
-         static_cast<uint8_t>(tag & 0x01U), length}
-    ));
-
-    auto enabled = oc::note::sequencer::StepBitMask128{};
-    enabled.setBit(0U, true);
-    enabled.setBit(tag, true);
-    pattern.enabledMask.set(enabled);
-    pattern.note[0] = static_cast<uint8_t>(48U + tag);
-    pattern.velocity[1] = static_cast<uint8_t>(80U + tag);
-    pattern.gate[2] = static_cast<uint16_t>(90U + tag);
-    pattern.nudge[3] = static_cast<int8_t>(tag);
-    pattern.probability[4] = static_cast<uint8_t>(70U + tag);
-    pattern.swingOffsetPercent.set(static_cast<int8_t>(tag));
-    pattern.patternNudgePercent.set(static_cast<int8_t>(-tag));
-    pattern.stepDataRevision.set(100U + tag);
-    pattern.patternVariationRevision.set(200U + tag);
-    pattern.patternScaleRevision.set(300U + tag);
-    pattern.patternTimingRevision.set(400U + tag);
-    pattern.graphRevision.set(500U + tag);
-    pattern.ccLaneRevision.set(600U + tag);
-}
-
-void installDistinctOwners(seq::SequencerPatternState& pattern) {
-    pattern.graph = core::app::makeExtmemUnique<Graph>();
-    pattern.ccLanes = core::app::makeExtmemUnique<seq::SequencerCcLaneBank>();
-    assert(pattern.graph);
-    assert(pattern.ccLanes);
-    pattern.graph->enabled = true;
-}
-
-SnapshotOwner captureFlat(
-    const seq::SequencerPatternState& pattern,
-    const seq::SequencerClipState& clip
-) {
-    SnapshotOwner snapshot{
-        std::make_unique<seq::SequencerPatternSnapshot>(),
-        {},
-    };
-    assert(snapshot);
-    seq::captureSnapshot(pattern, *snapshot);
-    seq::captureSnapshot(clip, snapshot.clip);
-    return snapshot;
-}
-
-SnapshotOwner makeFinalFlat(
-    const seq::SequencerPatternSnapshot& source,
-    uint8_t tag
-) {
-    SnapshotOwner snapshot{
-        std::make_unique<seq::SequencerPatternSnapshot>(source),
-        {},
-    };
-    assert(snapshot);
-    snapshot->note[0] = static_cast<uint8_t>(60U + tag);
-    snapshot->velocity[1] = static_cast<uint8_t>(90U + tag);
-    snapshot->gate[2] = static_cast<uint16_t>(110U + tag);
-    snapshot->nudge[3] = static_cast<int8_t>(-tag);
-    snapshot->probability[4] = static_cast<uint8_t>(80U + tag);
-    snapshot->stepDataRevision += static_cast<uint32_t>(10U + tag);
-    snapshot->patternVariationRevision += static_cast<uint32_t>(20U + tag);
-    snapshot->patternScaleRevision += static_cast<uint32_t>(30U + tag);
-    snapshot->patternTimingRevision += static_cast<uint32_t>(40U + tag);
-    snapshot->graphRevision += static_cast<uint32_t>(50U + tag);
-    const uint16_t ticksPerStep = seq::sequencerTicksPerStep(source.stepsPerBeat);
-    snapshot.clip.loopEndTick = static_cast<uint16_t>(source.length * ticksPerStep);
-    return snapshot;
-}
-
-seq::SequencerTrackFlatSnapshotView flatView(
-    const SnapshotOwner& snapshot,
-    uint32_t ccLaneRevision
-) {
-    return {
-        .snapshot = snapshot.pattern.get(),
-        .clip = &snapshot.clip,
-        .ccLaneRevision = ccLaneRevision,
-    };
-}
-
-OwnerSet owners(const seq::SequencerPatternState& pattern) {
-    return {
-        .graph = pattern.graph.get(),
-        .ccLanes = pattern.ccLanes.get(),
-    };
-}
 
 void seedTransientTrackState(seq::SequencerState& active) {
     active.stepEdit.stepIndex.set(7U);
@@ -238,340 +134,165 @@ void assertTransientTrackStateReset(
     assert(active.stepContentDraft.scratch.get() == expectedDraftScratch);
 }
 
-void test_canonical_track_pattern_resolves_editor_and_bank_authority() {
-    seq::SequencerState active;
-    seq::SequencerTrackBankState bank;
-    bank.syncSharedTrackState(0x0006U, 1U);
 
-    active.pattern.note[0] = 61U;
-    bank.track(1U).note[0] = 62U;
-    bank.track(2U).note[0] = 63U;
-    bank.track(seq::SequencerTrackBankState::TRACK_COUNT - 1U).note[0] = 64U;
 
-    assert(&seq::canonicalTrackPattern(bank, active, 1U) == &active.pattern);
-    assert(seq::canonicalTrackPattern(bank, active, 1U).note[0] == 61U);
-    assert(&seq::canonicalTrackPattern(bank, active, 2U) == &bank.track(2U));
-    assert(seq::canonicalTrackPattern(bank, active, 2U).note[0] == 63U);
-    assert(seq::canonicalTrackPattern(
-        bank,
-        active,
-        seq::SequencerTrackBankState::TRACK_COUNT
-    ).note[0] == 64U);
-
-    seq::mutableCanonicalTrackPattern(bank, active, 1U).note[1] = 65U;
-    seq::mutableCanonicalTrackPattern(bank, active, 2U).note[1] = 66U;
-    assert(active.pattern.note[1] == 65U);
-    assert(bank.track(1U).note[1] != 65U);
-    assert(bank.track(2U).note[1] == 66U);
-
-    std::cout << "[PASS] canonical Track access resolves editor and bank authority\n";
-}
-
-void test_prepared_rotation_preserves_payloads_without_publication_or_allocation() {
-    seq::SequencerState active;
-    seq::SequencerTrackBankState bank;
-    bank.syncSharedTrackState(0x0007U, 0U);
-
-    seedFlat(active.pattern, active.clip, 1U);
-    seedFlat(bank.track(0U), bank.clip(0U), 2U);
-    seedFlat(bank.track(1U), bank.clip(1U), 3U);
-    seedFlat(bank.track(2U), bank.clip(2U), 4U);
-    installDistinctOwners(active.pattern);
-    installDistinctOwners(bank.track(0U));
-    installDistinctOwners(bank.track(1U));
-    installDistinctOwners(bank.track(2U));
+void test_navigation_preserves_every_musical_owner_and_revision() {
+    auto bank = std::make_unique<seq::SequencerTrackBankState>();
+    bank->syncSharedTrackState(0xFFFFU, 0U);
+    std::array<seq::SequencerHistoryPatternSnapshot, 16> before;
+    std::array<const void*, 16> graphs{}, ccLanes{};
+    for (uint8_t i = 0U; i < 16U; ++i) {
+        auto& pattern = bank->track(i);
+        pattern.setStepNoteAt(0U, 60U + i);
+        pattern.setContentLength(8U + i);
+        assert(seq::ensureGraphRoot(pattern));
+        pattern.ccLanes = core::app::makeExtmemUnique<seq::SequencerCcLaneBank>();
+        assert(pattern.ccLanes);
+        assert(seq::captureHistorySnapshot(pattern, bank->clip(i), 0U, before[i]));
+        graphs[i] = pattern.graph.get();
+        ccLanes[i] = pattern.ccLanes.get();
+    }
+    seq::SequencerState active{bank->track(0U), bank->clip(0U)};
     seedTransientTrackState(active);
-
-    const uint8_t focusedBefore = 13U;
-    const uint8_t pageBefore = 1U;
-    active.focusedStep.set(focusedBefore);
-    active.page.set(pageBefore);
-
-    const auto expectedOutgoing = captureFlat(active.pattern, active.clip);
-    const auto expectedIncoming = captureFlat(bank.track(1U), bank.clip(1U));
-    const auto finalOutgoing = makeFinalFlat(*expectedOutgoing, 5U);
-    const auto finalIncoming = makeFinalFlat(*expectedIncoming, 6U);
-    const uint32_t expectedIncomingCcRevision = bank.track(1U).ccLaneRevision.get();
-    const uint32_t finalOutgoingCcRevision = active.pattern.ccLaneRevision.get() + 50U;
-    const uint32_t finalIncomingCcRevision = expectedIncomingCcRevision + 60U;
-
-    const auto editorBefore = owners(active.pattern);
-    const auto outgoingScratchBefore = owners(bank.track(0U));
-    const auto incomingBefore = owners(bank.track(1U));
-    const auto draftScratchBefore = active.stepContentDraft.scratch.get();
-    std::array<OwnerSet, seq::SequencerTrackBankState::TRACK_COUNT> bankOwnersBefore{};
-    for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
-        bankOwnersBefore[track] = owners(bank.track(track));
-    }
-
-    int enabledNotifications = 0;
-    int activeNotifications = 0;
-    int flatNotifications = 0;
-    const Graph* graphObservedByFlatCallback = nullptr;
-    bool transientsResetWhenObserved = false;
-    auto enabledSubscription = bank.enabledMaskSignal().subscribe(
-        [&](const uint16_t&) { ++enabledNotifications; }
-    );
-    auto activeSubscription = bank.activeTrackSignal().subscribe(
-        [&](const uint8_t&) { ++activeNotifications; }
-    );
-    auto flatSubscription = active.pattern.stepDataRevision.subscribe(
-        [&](const uint32_t&) {
-            ++flatNotifications;
-            graphObservedByFlatCallback = active.pattern.graph.get();
-            transientsResetWhenObserved = !active.stepEdit.localVariationEditActive.get() &&
-                                          !active.contextSelector.visible &&
-                                          active.contentView.kind.get() ==
-                                              seq::SequencerContentViewKind::ROOT;
+    const auto* scratch = active.stepContentDraft.scratch.get();
+    active.focusedStep.set(63U);
+    active.page.set(7U);
+    test_support::drainNotifications();
+    for (uint8_t round = 0U; round < 4U; ++round) {
+        for (uint8_t i = 1U; i <= 16U; ++i) {
+            const uint8_t target = i % 16U;
+            {
+                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                heapAllocations = 0U;
+                countHeap = true;
+                assert(seq::switchActiveTrack(*bank, active, target));
+                countHeap = false;
+                assert(heapAllocations == 0U);
+                assert(core::app::testing::extmemAllocationAttempt == 0U);
+            }
+            assert(&active.pattern() == &bank->track(target));
+            assert(&active.clip() == &bank->clip(target));
+            assert(active.focusedStep.get() < active.pattern().length.get());
+            for (uint8_t track = 0U; track < 16U; ++track) {
+                assert(bank->track(track).graph.get() == graphs[track]);
+                assert(bank->track(track).ccLanes.get() == ccLanes[track]);
+                assert(seq::liveHistoryPatternSnapshotMatches(
+                    bank->track(track), bank->clip(track), before[track]));
+            }
+            test_support::drainNotifications();
         }
-    );
-    assert(enabledSubscription);
-    assert(activeSubscription);
-    assert(flatSubscription);
-
-    auto& queue = oc::state::NotificationQueue::instance();
-    queue.flush();
-    queue.resetOverflowCount();
-
-    seq::SequencerPreparedActiveTrackRotation prepared{};
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        assert(seq::prepareActiveTrackOwnerRotation(
-            bank,
-            active,
-            1U,
-            flatView(expectedOutgoing, active.pattern.ccLaneRevision.get()),
-            flatView(expectedIncoming, expectedIncomingCcRevision),
-            flatView(finalOutgoing, finalOutgoingCcRevision),
-            flatView(finalIncoming, finalIncomingCcRevision),
-            seq::SequencerActiveTrackIncomingOwnerPolicy::Preserve,
-            prepared
-        ));
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-        assert(seq::preparedActiveTrackOwnerRotationMatches(bank, active, prepared));
-
-        seq::rotateActiveTrackOwnersNoPublish(bank, active, prepared);
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
     }
-
-    assert(bank.currentEnabledMask() == 0x0007U);
-    assert(bank.activeTrackIndex() == 0U);
-    assert(enabledNotifications == 0);
-    assert(activeNotifications == 0);
-    assert(flatNotifications == 0);
-    assert(active.focusedStep.get() == focusedBefore);
-    assert(active.page.get() == pageBefore);
-
-    assert(owners(bank.track(0U)).graph == editorBefore.graph);
-    assert(owners(bank.track(0U)).ccLanes == editorBefore.ccLanes);
-    assert(owners(active.pattern).graph == incomingBefore.graph);
-    assert(owners(active.pattern).ccLanes == incomingBefore.ccLanes);
-    assert(owners(bank.track(1U)).graph == outgoingScratchBefore.graph);
-    assert(owners(bank.track(1U)).ccLanes == outgoingScratchBefore.ccLanes);
-    for (uint8_t track = 2U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
-        assert(owners(bank.track(track)).graph == bankOwnersBefore[track].graph);
-        assert(owners(bank.track(track)).ccLanes == bankOwnersBefore[track].ccLanes);
-    }
-
-    assert(seq::sequencerPatternMatchesFlatSnapshot(
-        bank.track(0U),
-        bank.clip(0U),
-        flatView(finalOutgoing, finalOutgoingCcRevision)
-    ));
-    assert(seq::sequencerPatternMatchesFlatSnapshot(
-        active.pattern,
-        active.clip,
-        flatView(finalIncoming, finalIncomingCcRevision)
-    ));
-    assert(seq::sequencerPatternMatchesFlatSnapshot(
-        bank.track(1U),
-        bank.clip(1U),
-        flatView(expectedIncoming, expectedIncomingCcRevision)
-    ));
-    assertTransientTrackStateReset(active, draftScratchBefore);
-
-    assert(queue.pendingCount() == 1U);
-    assert(!queue.hasOverflowed());
-    queue.flush();
-    assert(flatNotifications == 1);
-    assert(graphObservedByFlatCallback == incomingBefore.graph);
-    assert(transientsResetWhenObserved);
-    assert(enabledNotifications == 0);
-    assert(activeNotifications == 0);
-
-    std::cout << "[PASS] prepared owner rotation is exact, deferred and allocation-free\n";
-}
-
-void test_prepared_rotation_can_reset_incoming_payload_without_allocation() {
-    seq::SequencerState active;
-    seq::SequencerTrackBankState bank;
-    bank.syncSharedTrackState(0x0001U, 0U);
-    seedFlat(active.pattern, active.clip, 1U);
-    seedFlat(bank.track(0U), bank.clip(0U), 2U);
-    seedFlat(bank.track(1U), bank.clip(1U), 3U);
-    installDistinctOwners(active.pattern);
-    installDistinctOwners(bank.track(0U));
-    installDistinctOwners(bank.track(1U));
-
-    const auto expectedOutgoing = captureFlat(active.pattern, active.clip);
-    const auto expectedIncoming = captureFlat(bank.track(1U), bank.clip(1U));
-    const auto finalOutgoing = makeFinalFlat(*expectedOutgoing, 7U);
-    auto canonicalPattern = std::make_unique<seq::SequencerPatternState>();
-    assert(canonicalPattern);
-    const seq::SequencerClipState canonicalClip{};
-    const auto finalIncoming = captureFlat(*canonicalPattern, canonicalClip);
-
-    const auto editorBefore = owners(active.pattern);
-    const auto outgoingScratchBefore = owners(bank.track(0U));
-    const auto incomingBefore = owners(bank.track(1U));
-    seq::SequencerPreparedActiveTrackRotation prepared{};
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        assert(seq::prepareActiveTrackOwnerRotation(
-            bank,
-            active,
-            1U,
-            flatView(expectedOutgoing, active.pattern.ccLaneRevision.get()),
-            flatView(expectedIncoming, bank.track(1U).ccLaneRevision.get()),
-            flatView(finalOutgoing, active.pattern.ccLaneRevision.get() + 70U),
-            flatView(finalIncoming, canonicalPattern->ccLaneRevision.get()),
-            seq::SequencerActiveTrackIncomingOwnerPolicy::Reset,
-            prepared
-        ));
-        seq::rotateActiveTrackOwnersNoPublish(bank, active, prepared);
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
-    }
-
-    assert(owners(bank.track(0U)).graph == editorBefore.graph);
-    assert(owners(bank.track(0U)).ccLanes == editorBefore.ccLanes);
-    assert(owners(bank.track(1U)).graph == outgoingScratchBefore.graph);
-    assert(owners(bank.track(1U)).ccLanes == outgoingScratchBefore.ccLanes);
-    assert(active.pattern.graph == nullptr);
-    assert(active.pattern.ccLanes == nullptr);
-    assert(incomingBefore.graph != nullptr);
-    assert(incomingBefore.ccLanes != nullptr);
-    assert(bank.activeTrackIndex() == 0U);
-    assert(bank.currentEnabledMask() == 0x0001U);
-    assert(seq::sequencerPatternMatchesFlatSnapshot(
-        active.pattern,
-        active.clip,
-        flatView(finalIncoming, canonicalPattern->ccLaneRevision.get())
-    ));
-
-    std::cout << "[PASS] reset policy discards the incoming payload in the no-fail tail\n";
-}
-
-void test_invalid_and_stale_preflight_are_side_effect_free() {
-    seq::SequencerState active;
-    seq::SequencerTrackBankState bank;
-    bank.syncSharedTrackState(0x0003U, 0U);
-    seedFlat(active.pattern, active.clip, 1U);
-    seedFlat(bank.track(0U), bank.clip(0U), 2U);
-    seedFlat(bank.track(1U), bank.clip(1U), 3U);
-    installDistinctOwners(active.pattern);
-    installDistinctOwners(bank.track(0U));
-    installDistinctOwners(bank.track(1U));
-
-    const auto expectedOutgoing = captureFlat(active.pattern, active.clip);
-    const auto expectedIncoming = captureFlat(bank.track(1U), bank.clip(1U));
-    const auto finalOutgoing = makeFinalFlat(*expectedOutgoing, 4U);
-    const auto finalIncoming = makeFinalFlat(*expectedIncoming, 5U);
-    const auto outgoingView = flatView(expectedOutgoing, active.pattern.ccLaneRevision.get());
-    const auto incomingView = flatView(expectedIncoming, bank.track(1U).ccLaneRevision.get());
-    const auto editorOwner = owners(active.pattern);
-    const auto incomingOwner = owners(bank.track(1U));
-
-    SnapshotOwner nonCanonical{
-        std::make_unique<seq::SequencerPatternSnapshot>(*expectedOutgoing),
-        expectedOutgoing.clip,
-    };
-    assert(nonCanonical);
-    nonCanonical->variationRanges.pitchSemitones = 0xFFU;
-    assert(!seq::sequencerPatternMatchesFlatSnapshot(
-        active.pattern,
-        active.clip,
-        flatView(nonCanonical, active.pattern.ccLaneRevision.get())
-    ));
-    *nonCanonical = *expectedOutgoing;
-    nonCanonical->scaleOverride.root = 12U;
-    assert(!seq::sequencerPatternMatchesFlatSnapshot(
-        active.pattern,
-        active.clip,
-        flatView(nonCanonical, active.pattern.ccLaneRevision.get())
-    ));
-
-    seq::SequencerPreparedActiveTrackRotation invalid{};
-    assert(!seq::prepareActiveTrackOwnerRotation(
-        bank,
-        active,
-        seq::SequencerTrackBankState::TRACK_COUNT,
-        outgoingView,
-        incomingView,
-        flatView(finalOutgoing, 700U),
-        flatView(finalIncoming, 800U),
-        seq::SequencerActiveTrackIncomingOwnerPolicy::Preserve,
-        invalid
-    ));
-    assert(invalid.outgoingTrack == seq::SequencerTrackBankState::TRACK_COUNT);
-    assert(seq::sequencerPatternMatchesFlatSnapshot(
-        active.pattern, active.clip, outgoingView));
-    assert(seq::sequencerPatternMatchesFlatSnapshot(
-        bank.track(1U), bank.clip(1U), incomingView));
-    assert(owners(active.pattern).graph == editorOwner.graph);
-    assert(owners(active.pattern).ccLanes == editorOwner.ccLanes);
-
-    seq::SequencerPreparedActiveTrackRotation prepared{};
-    assert(seq::prepareActiveTrackOwnerRotation(
-        bank,
-        active,
-        1U,
-        outgoingView,
-        incomingView,
-        flatView(finalOutgoing, 700U),
-        flatView(finalIncoming, 800U),
-        seq::SequencerActiveTrackIncomingOwnerPolicy::Preserve,
-        prepared
-    ));
-
-    active.pattern.note[0] = static_cast<uint8_t>(active.pattern.note[0] + 1U);
-    const uint8_t staleNote = active.pattern.note[0];
-    assert(!seq::preparedActiveTrackOwnerRotationMatches(bank, active, prepared));
-    assert(active.pattern.note[0] == staleNote);
-    assert(owners(active.pattern).graph == editorOwner.graph);
-    assert(owners(bank.track(1U)).graph == incomingOwner.graph);
-    active.pattern.note[0] = expectedOutgoing->note[0];
-
-    std::swap(active.pattern.graph, bank.track(1U).graph);
-    const auto swappedEditorGraph = active.pattern.graph.get();
-    const auto swappedIncomingGraph = bank.track(1U).graph.get();
-    assert(!seq::preparedActiveTrackOwnerRotationMatches(bank, active, prepared));
-    assert(active.pattern.graph.get() == swappedEditorGraph);
-    assert(bank.track(1U).graph.get() == swappedIncomingGraph);
-    std::swap(active.pattern.graph, bank.track(1U).graph);
-
+    assertTransientTrackStateReset(active, scratch);
+    assert(!seq::switchActiveTrack(*bank, active, 0U));
     active.stepContentDraft.active.set(true);
-    const uint32_t draftRevision = active.stepContentDraft.revision.get();
-    assert(!seq::preparedActiveTrackOwnerRotationMatches(bank, active, prepared));
-    assert(active.stepContentDraft.active.get());
-    assert(active.stepContentDraft.revision.get() == draftRevision);
-    assert(active.stepContentDraft.failure == seq::SequencerStepContentDraftFailure::NONE);
-    assert(active.stepContentDraft.blockedTransition ==
-           seq::SequencerStepContentDraftBlockedTransition::NONE);
-
-    assert(bank.currentEnabledMask() == 0x0003U);
-    assert(bank.activeTrackIndex() == 0U);
-    std::cout << "[PASS] invalid and stale preflight reject without live mutation\n";
+    assert(!seq::switchActiveTrack(*bank, active, 1U));
+    assert(bank->activeTrackIndex() == 0U);
+    assert(&active.pattern() == &bank->track(0U));
+    active.stepContentDraft.active.set(false);
+    assert(seq::switchActiveTrack(*bank, active, 255U));
+    assert(bank->activeTrackIndex() == 15U);
 }
 
-}  // namespace
+void test_observation_follows_selection_before_old_owner_destruction() {
+    auto old = std::make_unique<seq::SequencerPatternState>();
+    seq::SequencerPatternState next;
+    seq::SequencerClipState oldClip, nextClip;
+    seq::SequencerState editor{*old, oldClip};
+    struct Observer {
+        seq::SequencerState& editor;
+        unsigned calls = 0U;
+        uint8_t note = 0U;
+        void render() { ++calls; note = editor.pattern().note[0U]; }
+    } observer{editor};
+    oc::state::StaticWatchGroup<1> watcher;
+    watcher.bind<&Observer::render>(observer, 0U);
+    assert(watcher.watch(editor.patternChanges.stepDataRevision));
+    old->setStepNoteAt(0U, 61U);
+    next.setStepNoteAt(0U, 72U);
+    editor.selectPattern(next, nextClip);
+    old.reset();
+    assert(observer.calls == 0U);
+    test_support::drainNotifications();
+    assert(observer.calls == 1U && observer.note == 72U);
+    next.setPatternSwingOffsetPercent(25);
+    test_support::drainNotifications();
+    assert(observer.calls == 1U); // Timing does not redraw a step-only consumer.
+    next.setStepNoteAt(0U, 73U);
+    test_support::drainNotifications();
+    assert(observer.calls == 2U && observer.note == 73U);
+    // Distinct owners with equal values and revisions still change selection.
+    old = std::make_unique<seq::SequencerPatternState>();
+    old->setStepNoteAt(0U, 73U);
+    old->stepDataRevision.set(next.stepDataRevision.get());
+    editor.selectPattern(*old, oldClip);
+    test_support::drainNotifications();
+    assert(observer.calls == 3U && observer.note == 73U);
+    next.setStepNoteAt(0U, 90U);
+    test_support::drainNotifications();
+    assert(observer.calls == 3U);
+    // Ensure the borrowing editor is detached before old's local owner dies.
+    editor.selectPattern(next, nextClip);
+    test_support::drainNotifications();
+}
+
+void test_core_navigation_rebinds_autosave_without_heap_allocation() {
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+    assert(state.setSharedTrackState(0xFFFFU, 0U));
+    test_support::drainNotifications();
+    state.flushProjectMutationCoalescing();
+    heapAllocations = 0U;
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        countHeap = true;
+        for (unsigned i = 1U; i <= 64U; ++i) {
+            const uint8_t track = i % seq::SequencerTrackBankState::TRACK_COUNT;
+            assert(state.setSharedTrackState(0xFFFFU, track));
+            assert(&state.sequencer.pattern() == &state.sequencerTracks.track(track));
+            const auto& selected = state.sequencer.pattern();
+            assert(selected.patternScaleRevision.subscriberCount() == 2U);
+            assert(selected.swingOffsetPercent.subscriberCount() == 2U);
+            assert(selected.patternNudgePercent.subscriberCount() == 2U);
+            const auto& previous = state.sequencerTracks.track((i - 1U) % 16U);
+            assert(previous.patternScaleRevision.subscriberCount() == 0U);
+            assert(previous.swingOffsetPercent.subscriberCount() == 0U);
+            assert(previous.patternNudgePercent.subscriberCount() == 0U);
+            test_support::drainNotifications();
+        }
+        state.flushProjectMutationCoalescing();
+        countHeap = false;
+        assert(heapAllocations == 0U);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+}
+
+void test_rebinding_save_subscriptions_preserves_the_pending_window() {
+    unsigned saves = 0U;
+    oc::state::Signal<int> previous{0}, next{0};
+    oc::state::ChangeCoalescer<1> coalescer([&] { ++saves; }, 300U);
+    assert(coalescer.watch(previous));
+    previous.set(1);
+    test_support::drainNotifications();
+    assert(coalescer.hasPendingChanges());
+    coalescer.clearSubscriptions();
+    assert(coalescer.watch(next));
+    assert(coalescer.hasPendingChanges());
+    coalescer.flush();
+    assert(saves == 1U);
+    previous.set(2);
+    test_support::drainNotifications();
+    assert(!coalescer.hasPendingChanges());
+    next.set(3);
+    test_support::drainNotifications();
+    coalescer.flush();
+    assert(saves == 2U);
+}
+} // namespace
 
 int main() {
-    test_canonical_track_pattern_resolves_editor_and_bank_authority();
-    test_prepared_rotation_preserves_payloads_without_publication_or_allocation();
-    test_prepared_rotation_can_reset_incoming_payload_without_allocation();
-    test_invalid_and_stale_preflight_are_side_effect_free();
-    std::cout << "All SequencerTrackBankOps tests passed.\n";
-    return 0;
+    test_navigation_preserves_every_musical_owner_and_revision();
+    test_observation_follows_selection_before_old_owner_destruction();
+    test_rebinding_save_subscriptions_preserves_the_pending_window();
+    test_core_navigation_rebinds_autosave_without_heap_allocation();
+    std::cout << "Bank ownership, navigation, filtered observation and save rebinding passed\n";
 }

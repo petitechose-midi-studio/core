@@ -94,7 +94,7 @@ uint64_t fingerprintSequencer(const core::state::CoreState& state) {
     mixBytes(hash, &active, sizeof(active));
     mixBytes(hash, &focus, sizeof(focus));
     mixBytes(hash, &page, sizeof(page));
-    const uint64_t editor = fingerprintPattern(state.sequencer.pattern);
+    const uint64_t editor = fingerprintPattern(state.sequencer.pattern());
     mixBytes(hash, &editor, sizeof(editor));
     for (uint8_t track = 0U;
          track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
@@ -306,7 +306,7 @@ void test_all_owner_shapes_commit_through_the_product_adapter() {
     for (const OwnerShape shape : shapes) {
         CoreStorages storage;
         core::state::CoreState state(storage.settings);
-        seedOwnerShape(state.sequencer.pattern, shape);
+        seedOwnerShape(state.sequencer.pattern(), shape);
         state.pages.tracks[0].pages[0].cc[0] = 99U;
         const Result result =
             core::handler::executeMacroResetTrackStructure(state, 0U);
@@ -395,7 +395,7 @@ void runFailureMatrix(Prepare&& prepare, Execute&& execute) {
 void test_product_t1_t2_failure_ordinals_are_exact() {
     runFailureMatrix<7U>(
         [](core::state::CoreState& state) {
-            seedOwnerShape(state.sequencer.pattern, OwnerShape::Both);
+            seedOwnerShape(state.sequencer.pattern(), OwnerShape::Both);
             state.pages.tracks[0].pages[0].cc[0] = 91U;
         },
         [](core::state::CoreState& state) {
@@ -410,7 +410,7 @@ void test_product_t1_t2_failure_ordinals_are_exact() {
     source.pages[0].cc[0] = 101U;
     runFailureMatrix<11U>(
         [](core::state::CoreState& state) {
-            seedOwnerShape(state.sequencer.pattern, OwnerShape::Both);
+            seedOwnerShape(state.sequencer.pattern(), OwnerShape::Both);
             seedOwnerShape(
                 state.sequencerTracks.track(1U),
                 OwnerShape::Both
@@ -493,7 +493,7 @@ void test_delete_preserves_cold_content_and_replays_globally() {
     core::state::CoreState state(storage.settings);
     assert(state.setSharedTrackState(0x0003U, 0U));
     state.pages.tracks[0].pages[0].cc[0] = 77U;
-    state.sequencer.pattern.note[0] = 65U;
+    state.sequencer.pattern().note[0] = 65U;
     configureAutomation(state.pages.control, address(0U));
     assert(state.macroUi.manualOverrides.activate(address(0U), 0.9f) ==
            core::state::macro::MacroManualOverrideState::ActivateStatus::
@@ -619,7 +619,7 @@ void test_reset_paste_and_create_apply_exact_scopes() {
                    &state.structureClipboard.macroTrack,
                    sizeof(core::state::macro::MacroTrackData)
                ) == 0);
-        assert(state.sequencer.pattern.note[0] == 74U);
+        assert(state.sequencer.pattern().note[0] == 74U);
         assert(fingerprint(state.structureClipboard.macroTrack) ==
                clipboardTrack);
         assert(fingerprint(*state.structureClipboard.macroAutomationSet) ==
@@ -635,7 +635,7 @@ void test_reset_paste_and_create_apply_exact_scopes() {
         assert(state.sharedTrackActive.get() == 0U);
         assert(state.redoProjectHistory());
         assert(state.sharedTrackActive.get() == 1U);
-        assert(state.sequencer.pattern.note[0] == sequencerNoteBefore);
+        assert(state.sequencer.pattern().note[0] == sequencerNoteBefore);
         settle(state);
     }
 
@@ -660,7 +660,7 @@ void test_reset_paste_and_create_apply_exact_scopes() {
         assert(state.sharedTrackActive.get() == 2U);
         assert(state.pages.tracks[2].activePage == 0U);
         assert(state.pages.tracks[2].enabledPageMask == 0x0001U);
-        assert(state.sequencer.pattern.note[0] == 76U);
+        assert(state.sequencer.pattern().note[0] == 76U);
         assert(!test_support::project_control::readSlot(
                     state.pages.control,
                     address(2U, 4U, 1U)
@@ -680,15 +680,15 @@ void test_manual_only_nochange_has_no_durable_publication() {
     assert(state.macroUi.manualOverrides.activate(address(0U), 0.95f) ==
            core::state::macro::MacroManualOverrideState::ActivateStatus::
                ACTIVATED);
-    const auto* graphBefore = state.sequencer.pattern.graph.get();
-    const auto* ccBefore = state.sequencer.pattern.ccLanes.get();
+    const auto* graphBefore = state.sequencer.pattern().graph.get();
+    const auto* ccBefore = state.sequencer.pattern().ccLanes.get();
     const CommitCounters before = captureCommitCounters(state);
     const Result reset =
         core::handler::executeMacroResetTrackStructure(state, 0U);
     assert(reset.status == Status::NoChange);
     assert(!state.macroUi.manualOverrides.activeFor(address(0U)));
-    assert(state.sequencer.pattern.graph.get() == graphBefore);
-    assert(state.sequencer.pattern.ccLanes.get() == ccBefore);
+    assert(state.sequencer.pattern().graph.get() == graphBefore);
+    assert(state.sequencer.pattern().ccLanes.get() == ccBefore);
     assert(captureCommitCounters(state).configRevision ==
            before.configRevision);
     assert(state.pages.control.authoredRevision == before.controlRevision);

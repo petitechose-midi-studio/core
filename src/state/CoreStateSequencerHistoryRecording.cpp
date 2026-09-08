@@ -341,7 +341,7 @@ CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
         if (!pending.sealed ||
             !pending.preparedPatternChange ||
             !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
-                sequencer.pattern) ||
+                sequencer.pattern()) ||
             pending.activeTrack != sequencerTracks.activeTrackIndex()) {
             return Outcome::HistoryUnavailable;
         }
@@ -384,14 +384,14 @@ CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     pending.preparedPatternChange = std::move(change);
 
     if (prospectiveGraph) {
-        if (sequencer.pattern.graph) {
+        if (sequencer.pattern().graph) {
             pending.clear();
             return Outcome::HistoryUnavailable;
         }
-        sequencer.pattern.graph = std::move(prospectiveGraph);
+        sequencer.pattern().graph = std::move(prospectiveGraph);
         pending.prospectiveGraphInstalled = true;
     }
-    pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern);
+    pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern());
     // Preparation is now irrevocably successful but the caller has not yet
     // performed its live mutation. Isolate any earlier generic Sequencer mark
     // (including a still-queued callback) so Step publication can subsume it,
@@ -456,7 +456,7 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
         pending.payloadPlan == payloadPlan &&
         pending.graphCompactionRequested() == compactGraphOnSeal) {
         if (!pending.sealed || !pending.preparedPatternChange ||
-            !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(sequencer.pattern) ||
+            !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(sequencer.pattern()) ||
             pending.activeTrack != sequencerTracks.activeTrackIndex() ||
             !sequencer::preparedHistoryPatternAfterMatchesTrack(
                 sequencerTracks, sequencer, activeTrack, pending.preparedPatternChange->after,
@@ -490,8 +490,8 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
     const bool preserveEmptyPageCcOwner =
         owner == sequencer::SequencerPreparedPatternEditOwner::PageStructure &&
         change->storage == sequencer::SequencerHistoryPatternStorage::FullGraph &&
-        sequencer.pattern.ccLanes != nullptr &&
-        !hasCanonicalCcPayload(sequencer.pattern);
+        sequencer.pattern().ccLanes != nullptr &&
+        !hasCanonicalCcPayload(sequencer.pattern());
     if (preserveEmptyPageCcOwner) {
         // LOCK-P reserves no CC payload for an allocated owner with zero
         // occupied lanes. Page actions never mutate it, so this existing bit
@@ -516,14 +516,14 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
     pending.preparedPatternChange = std::move(change);
 
     if (prospectiveGraph) {
-        if (sequencer.pattern.graph) {
+        if (sequencer.pattern().graph) {
             pending.clear();
             return finish(Outcome::HistoryUnavailable);
         }
-        sequencer.pattern.graph = std::move(prospectiveGraph);
+        sequencer.pattern().graph = std::move(prospectiveGraph);
         pending.prospectiveGraphInstalled = true;
     }
-    pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern);
+    pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern());
     consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
     return finish(Outcome::Started);
 }
@@ -540,7 +540,7 @@ FLASHMEM bool CoreState::sequencerPreparedPatternEditReady(
            !pending.sealed && !pending.hasChange &&
            pending.preparedPatternChange &&
            pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
-               sequencer.pattern);
+               sequencer.pattern());
 }
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -563,7 +563,7 @@ CoreState::precompactSequencerPreparedPatternEditGraph(
         !contentPath.valid || !pending.preparedPatternChange ||
         pending.preparedPatternChange->storage !=
             sequencer::SequencerHistoryPatternStorage::FullGraph ||
-        sequencer::graphView(sequencer.pattern) == nullptr ||
+        sequencer::graphView(sequencer.pattern()) == nullptr ||
         !pending.preparedPatternChange->after.graph) {
         return Outcome::Failed;
     }
@@ -572,7 +572,7 @@ CoreState::precompactSequencerPreparedPatternEditGraph(
     // stack class. The caller keeps only the four-frame active path.
     sequencer::SequencerGraphCompactionRemap remap;
     const auto compaction = sequencer::compactGraphUsingReservedStorage(
-        sequencer.pattern,
+        sequencer.pattern(),
         *pending.preparedPatternChange->after.graph,
         remap);
     if (!compaction.ok ||
@@ -596,7 +596,7 @@ FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(bool mutationChan
         pending.sealed || !pending.preparedPatternChange ||
         pending.activeTrack != sequencerTracks.activeTrackIndex() ||
         !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
-            sequencer.pattern)) {
+            sequencer.pattern())) {
         return false;
     }
 
@@ -616,13 +616,13 @@ FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(bool mutationChan
     }
 
     auto& change = *pending.preparedPatternChange;
-    if (pending.prospectiveGraphInstalled && sequencer.pattern.graph &&
-        !sequencer.pattern.graph->enabled) {
-        sequencer.pattern.graph.reset();
+    if (pending.prospectiveGraphInstalled && sequencer.pattern().graph &&
+        !sequencer.pattern().graph->enabled) {
+        sequencer.pattern().graph.reset();
         // The transaction still introduced this owner relative to Before.
         // Keep that rollback fact, but rebind the live proof before any
         // fallible capture/admission step.
-        change.setPreparedPayloadOwnerProof(sequencer.pattern);
+        change.setPreparedPayloadOwnerProof(sequencer.pattern());
     }
     if (!sequencer::capturePreparedHistoryPatternAfterUsingReservedStorage(sequencerTracks,
                                                                            sequencer, change)) {
@@ -650,10 +650,10 @@ FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(bool mutationChan
         // counters without publishing the cancelled edit. A Graph
         // created prospectively for this session is not part of Before and
         // must not survive an otherwise exact net return.
-        if (pending.prospectiveGraphInstalled && !change.before.graph && sequencer.pattern.graph) {
-            sequencer.pattern.graph.reset();
+        if (pending.prospectiveGraphInstalled && !change.before.graph && sequencer.pattern().graph) {
+            sequencer.pattern().graph.reset();
         }
-        sequencer::synchronizeHistoryPatternRevisionSignals(sequencer.pattern, change.before.flat,
+        sequencer::synchronizeHistoryPatternRevisionSignals(sequencer.pattern(), change.before.flat,
                                                             change.before.ccLaneRevision);
         // Cancel callbacks from the musical round trip. If the generic
         // coalescer already owned an earlier mutation, re-arm that independent
@@ -713,7 +713,7 @@ CoreState::sealSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatternE
     const bool activeTrackMatches =
         (pending.activeTrack == sequencerTracks.activeTrackIndex());
     const bool payloadOwnerProofMatches =
-        pending.preparedPatternChange->preparedPayloadOwnerProofMatches(sequencer.pattern);
+        pending.preparedPatternChange->preparedPayloadOwnerProofMatches(sequencer.pattern());
     if (!activeTrackMatches ||
         !payloadOwnerProofMatches) {
         if (rollbackPreparedSequencerPatternEdit_()) return finish(Outcome::FailedClosed);
@@ -735,12 +735,12 @@ CoreState::sealSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatternE
         );
     }
 
-    if (pending.prospectiveGraphInstalled && sequencer.pattern.graph &&
-        !sequencer.pattern.graph->enabled) {
-        sequencer.pattern.graph.reset();
+    if (pending.prospectiveGraphInstalled && sequencer.pattern().graph &&
+        !sequencer.pattern().graph->enabled) {
+        sequencer.pattern().graph.reset();
         // `prospectiveGraphInstalled` describes Before ownership, not current
         // presence. Preserve it so every later failure can still roll back.
-        pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern);
+        pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern());
     }
     if (pending.graphWasPrecompacted()) {
         // The reclaim phase already compacted after every planned destination
@@ -776,7 +776,7 @@ CoreState::sealSequencerPreparedPatternEditWithGraphCompaction_(
 
     auto& change = *pending.preparedPatternChange;
     if (change.storage != sequencer::SequencerHistoryPatternStorage::FullGraph ||
-        sequencer::graphView(sequencer.pattern) == nullptr || !change.after.graph) {
+        sequencer::graphView(sequencer.pattern()) == nullptr || !change.after.graph) {
         if (rollbackPreparedSequencerPatternEdit_()) return Outcome::FailedClosed;
         OC_LOG_ERROR(kPreparedGraphCompactionRollbackFailed);
         return Outcome::Failed;
@@ -786,7 +786,7 @@ CoreState::sealSequencerPreparedPatternEditWithGraphCompaction_(
     // The explicit noinline boundary is a RAM1 stack contract on Teensy.
     sequencer::SequencerGraphCompactionRemap compactionRemap;
     const auto compaction = sequencer::compactGraphUsingReservedStorage(
-        sequencer.pattern, *change.after.graph, compactionRemap);
+        sequencer.pattern(), *change.after.graph, compactionRemap);
     if (!compaction.ok) {
         if (rollbackPreparedSequencerPatternEdit_()) return Outcome::FailedClosed;
         OC_LOG_ERROR(kPreparedGraphCompactionRollbackFailed);
@@ -817,11 +817,11 @@ CoreState::finishSequencerPreparedPatternEdit_(
         sequencer::capturePreparedHistoryPatternAfterUsingReservedStorage(
             sequencerTracks, sequencer, change);
     const bool emptyCcOwnerStillExact = !preserveEmptyPageCcOwner ||
-        (sequencer.pattern.ccLanes != nullptr &&
-         !hasCanonicalCcPayload(sequencer.pattern) &&
+        (sequencer.pattern().ccLanes != nullptr &&
+         !hasCanonicalCcPayload(sequencer.pattern()) &&
          change.after.ccLanes == nullptr &&
          change.after.ccLaneRevision == change.before.ccLaneRevision &&
-         change.preparedCcLaneOwnerProofMatches(sequencer.pattern));
+         change.preparedCcLaneOwnerProofMatches(sequencer.pattern()));
     if (!afterCaptured ||
         !emptyCcOwnerStillExact) {
         if (rollbackPreparedSequencerPatternEdit_()) return Outcome::FailedClosed;
@@ -837,10 +837,10 @@ CoreState::finishSequencerPreparedPatternEdit_(
     change.descriptor = descriptor;
 
     if (sequencer::sameMusicalHistorySnapshot(change.before, change.after)) {
-        if (pending.prospectiveGraphInstalled && !change.before.graph && sequencer.pattern.graph) {
-            sequencer.pattern.graph.reset();
+        if (pending.prospectiveGraphInstalled && !change.before.graph && sequencer.pattern().graph) {
+            sequencer.pattern().graph.reset();
         }
-        sequencer::synchronizeHistoryPatternRevisionSignals(sequencer.pattern, change.before.flat,
+        sequencer::synchronizeHistoryPatternRevisionSignals(sequencer.pattern(), change.before.flat,
                                                             change.before.ccLaneRevision);
         if (compactionRemap != nullptr) {
             sequencer::finalizePreparedSequencerGraphMutation(sequencer, *compactionRemap,
@@ -872,7 +872,7 @@ CoreState::finishSequencerPreparedPatternEdit_(
     pending.sealed = true;
     // The central seal may intentionally release an unused prospective Graph.
     // Rebind the exact proof only after capture/admission has succeeded.
-    pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern);
+    pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern());
     return Outcome::Sealed;
 }
 
@@ -1157,7 +1157,7 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
     const bool activeTarget = targetTrack == sequencerTracks.activeTrackIndex();
     if (!pending.sealed || !pending.preparedPatternChange ||
         !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
-            sequencer::canonicalTrackPattern(sequencerTracks, sequencer, targetTrack)) ||
+            sequencerTracks.track(targetTrack)) ||
         !sequencer::preparedHistoryPatternAfterMatchesTrack(
             sequencerTracks, sequencer, targetTrack, pending.preparedPatternChange->after,
             pending.preparedPatternChange->storage) ||
@@ -1167,11 +1167,7 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
         return SequencerPatternHistoryCommitOutcome::Failed;
     }
 
-    auto& targetPattern = sequencer::mutableCanonicalTrackPattern(
-        sequencerTracks,
-        sequencer,
-        targetTrack
-    );
+    auto& targetPattern = sequencerTracks.track(targetTrack);
     sequencer::synchronizeHistoryPatternRevisionSignals(
         targetPattern, pending.preparedPatternChange->after.flat,
         pending.preparedPatternChange->after.ccLaneRevision);
@@ -1262,10 +1258,10 @@ CoreState::applySequencerPreparedQuickControlsEdit(
         change.storage == sequencer::SequencerHistoryPatternStorage::FullGraph &&
         change.trackIndex == activeTrack &&
         change.descriptor.trackIndex == activeTrack &&
-        change.preparedPayloadOwnerProofMatches(sequencer.pattern) &&
+        change.preparedPayloadOwnerProofMatches(sequencer.pattern()) &&
         sequencer::liveHistoryPatternSnapshotMatches(
-            sequencer.pattern,
-            sequencer.clip,
+            sequencer.pattern(),
+            sequencer.clip(),
             change.before
         );
     const bool candidateOwnerShapeMatches =
@@ -1307,17 +1303,17 @@ CoreState::applySequencerPreparedQuickControlsEdit(
     const sequencer::SequencerClipSnapshot beforeClip = change.before.clip;
     const uint32_t beforeCcLaneRevision = change.before.ccLaneRevision;
     sequencer.quickControlsDraft.suspendPreview();
-    std::swap(sequencer.pattern.graph, draft->graph);
-    std::swap(sequencer.pattern.ccLanes, draft->ccLanes);
-    sequencer::applySnapshot(sequencer.clip, change.after.clip);
+    std::swap(sequencer.pattern().graph, draft->graph);
+    std::swap(sequencer.pattern().ccLanes, draft->ccLanes);
+    sequencer::applySnapshot(sequencer.clip(), change.after.clip);
     sequencer::applySnapshotToEditorPreservingGraph(sequencer, change.after.flat);
     sequencer.bumpClipRevision();
     sequencer::synchronizeHistoryPatternRevisionSignals(
-        sequencer.pattern,
+        sequencer.pattern(),
         change.after.flat,
         change.after.ccLaneRevision
     );
-    change.setPreparedPayloadOwnerProof(sequencer.pattern);
+    change.setPreparedPayloadOwnerProof(sequencer.pattern());
     consumePendingSequencerMutation_();
     pending.hasChange = true;
     pending.sealed = true;
@@ -1325,13 +1321,13 @@ CoreState::applySequencerPreparedQuickControlsEdit(
     const auto commitOutcome = commitSequencerPatternHistoryCoalescing_();
     if (commitOutcome == CommitOutcome::Committed) return commitOutcome;
 
-    std::swap(sequencer.pattern.graph, draft->graph);
-    std::swap(sequencer.pattern.ccLanes, draft->ccLanes);
-    sequencer::applySnapshot(sequencer.clip, beforeClip);
+    std::swap(sequencer.pattern().graph, draft->graph);
+    std::swap(sequencer.pattern().ccLanes, draft->ccLanes);
+    sequencer::applySnapshot(sequencer.clip(), beforeClip);
     sequencer::applySnapshotToEditorPreservingGraph(sequencer, beforeFlat);
     sequencer.bumpClipRevision();
     sequencer::synchronizeHistoryPatternRevisionSignals(
-        sequencer.pattern,
+        sequencer.pattern(),
         beforeFlat,
         beforeCcLaneRevision
     );
@@ -1361,10 +1357,10 @@ CoreState::abortSequencerPreparedPatternEdit(
         pending.preparedPatternChange &&
         (pending.activeTrack == sequencerTracks.activeTrackIndex()) &&
         pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
-            sequencer.pattern) &&
+            sequencer.pattern()) &&
         sequencer::liveHistoryPatternSnapshotMatches(
-            sequencer.pattern,
-            sequencer.clip,
+            sequencer.pattern(),
+            sequencer.clip(),
             pending.preparedPatternChange->before)) {
         clearPreparedSequencerPatternEditWithoutLiveRestore_();
         return Outcome::Aborted;

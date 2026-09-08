@@ -130,9 +130,9 @@ public:
 };
 
 void enableStep(SequencerState& state, uint8_t step) {
-    auto mask = state.pattern.enabledMask.get();
+    auto mask = state.pattern().enabledMask.get();
     mask.setBit(step, true);
-    state.pattern.enabledMask.set(mask);
+    state.pattern().enabledMask.set(mask);
 }
 
 const core::sequencer::SequencerRuntimeSnapshotBank::Snapshot& refreshSnapshot(
@@ -247,8 +247,9 @@ public:
 
 void test_track_engine_switches_between_melodic_and_drum_without_stale_notes() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue queue;
@@ -257,8 +258,8 @@ void test_track_engine_switches_between_melodic_and_drum_without_stale_notes() {
         sequencer, bank, navigation,
     };
 
-    setRootStep(sequencer.pattern, 60U, 1U);
-    assert(sequencer.pattern.setStepGateAt(0U, 400U));
+    setRootStep(sequencer.pattern(), 60U, 1U);
+    assert(sequencer.pattern().setStepGateAt(0U, 400U));
     auto projectTracks = makeProjectTracks();
     SequencerTrackFixturePlaybackAdapter service{
         sequencer, status, queue, graphBank,
@@ -336,8 +337,9 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
     namespace seq = core::state::sequencer;
     using core::sequencer::DrumPlaybackEngine;
     using core::sequencer::SequencerPlaybackService;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue queue;
@@ -350,7 +352,7 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
     assert(drum.kit.setLaneCount(1U));
     assert(drum.pattern.setStepEnabled(0U, 0U, true));
     assert(seq::createMicroSequence(
-        sequencer.pattern, seq::rootStepNodeId(0U), 2U).ok);
+        sequencer.pattern(), seq::rootStepNodeId(0U), 2U).ok);
     assert(drum.bindAdvancedRootSlot(0U, 0U, 0U));
     bank.publishDrumMutation(0U);
     sequencer.drumSequencer.bindTrack(0U, drum, bank);
@@ -406,8 +408,9 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
 }
 
 void test_timer_control_does_not_wait_for_content_publication() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::state::project::ProjectTrackState project;
     core::state::StatusBarState status;
@@ -469,20 +472,21 @@ void storeTrackClipboard(
 ) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
     core::state::sequencer::SequencerClipSnapshot clip;
-    core::state::sequencer::captureSnapshot(editor.pattern, snapshot);
-    core::state::sequencer::captureSnapshot(editor.clip, clip);
+    core::state::sequencer::captureSnapshot(editor.pattern(), snapshot);
+    core::state::sequencer::captureSnapshot(editor.clip(), clip);
     assert(clipboard.storeSequencerTrack(
         snapshot,
         clip,
         nullptr,
         0,
-        core::state::sequencer::sequencerCcLaneView(editor.pattern)
+        core::state::sequencer::sequencerCcLaneView(editor.pattern())
     ));
 }
 
 void test_canonical_project_track_contract_is_the_only_routing_authority() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue queue;
@@ -491,7 +495,7 @@ void test_canonical_project_track_contract_is_the_only_routing_authority() {
         sequencer, bank, navigation,
     };
 
-    setRootStep(sequencer.pattern, 60U, 4U);
+    setRootStep(sequencer.pattern(), 60U, 4U);
     setRootStep(bank.track(1U), 61U, 4U);
     setRootStep(bank.track(2U), 62U, 4U);
     // Every Sequencer Track is enabled and unmuted. The Project runtime
@@ -540,8 +544,9 @@ void test_canonical_project_track_contract_is_the_only_routing_authority() {
 
 void test_project_track_note_delay_positive_and_predictive_negative() {
     {
-        SequencerState sequencer;
         core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
         core::state::project::ProjectNavigationState navigation;
         core::state::StatusBarState status;
         core::sequencer::RealtimeMidiQueue queue;
@@ -549,13 +554,13 @@ void test_project_track_note_delay_positive_and_predictive_negative() {
         core::sequencer::SequencerRuntimeSnapshotBank snapshots{
             sequencer, bank, navigation,
         };
-        sequencer.pattern.setContentLength(2U);
-        sequencer.pattern.stepsPerBeat.set(4U);
-        sequencer.pattern.note[0] = 60U;
-        sequencer.pattern.velocity[0] = 100U;
-        sequencer.pattern.gate[0] = 100U;
-        sequencer.pattern.setEnabled(0U, true);
-        sequencer.pattern.bumpStepDataRevision();
+        sequencer.pattern().setContentLength(2U);
+        sequencer.pattern().stepsPerBeat.set(4U);
+        sequencer.pattern().note[0] = 60U;
+        sequencer.pattern().velocity[0] = 100U;
+        sequencer.pattern().gate[0] = 100U;
+        sequencer.pattern().setEnabled(0U, true);
+        sequencer.pattern().bumpStepDataRevision();
         const auto& snapshot = refreshSnapshot(
             snapshots, graphBank, sequencer, bank
         );
@@ -592,8 +597,9 @@ void test_project_track_note_delay_positive_and_predictive_negative() {
     }
 
     auto runNegativeCase = [](bool predictive) {
-        SequencerState sequencer;
         core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
         core::state::project::ProjectNavigationState navigation;
         core::state::StatusBarState status;
         core::sequencer::RealtimeMidiQueue queue;
@@ -601,13 +607,13 @@ void test_project_track_note_delay_positive_and_predictive_negative() {
         core::sequencer::SequencerRuntimeSnapshotBank snapshots{
             sequencer, bank, navigation,
         };
-        sequencer.pattern.setContentLength(2U);
-        sequencer.pattern.stepsPerBeat.set(4U);
-        sequencer.pattern.note[1] = 61U;
-        sequencer.pattern.velocity[1] = 100U;
-        sequencer.pattern.gate[1] = 100U;
-        sequencer.pattern.setEnabled(1U, true);
-        sequencer.pattern.bumpStepDataRevision();
+        sequencer.pattern().setContentLength(2U);
+        sequencer.pattern().stepsPerBeat.set(4U);
+        sequencer.pattern().note[1] = 61U;
+        sequencer.pattern().velocity[1] = 100U;
+        sequencer.pattern().gate[1] = 100U;
+        sequencer.pattern().setEnabled(1U, true);
+        sequencer.pattern().bumpStepDataRevision();
         const auto& snapshot = refreshSnapshot(
             snapshots, graphBank, sequencer, bank
         );
@@ -652,8 +658,9 @@ void test_project_track_note_delay_positive_and_predictive_negative() {
 }
 
 void test_negative_delay_tempo_change_rebuilds_future_plan_once() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue queue;
@@ -662,13 +669,13 @@ void test_negative_delay_tempo_change_rebuilds_future_plan_once() {
         sequencer, bank, navigation,
     };
 
-    sequencer.pattern.setContentLength(2U);
-    sequencer.pattern.stepsPerBeat.set(4U);
-    sequencer.pattern.note[1] = 61U;
-    sequencer.pattern.velocity[1] = 100U;
-    sequencer.pattern.gate[1] = 100U;
-    sequencer.pattern.setEnabled(1U, true);
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().setContentLength(2U);
+    sequencer.pattern().stepsPerBeat.set(4U);
+    sequencer.pattern().note[1] = 61U;
+    sequencer.pattern().velocity[1] = 100U;
+    sequencer.pattern().gate[1] = 100U;
+    sequencer.pattern().setEnabled(1U, true);
+    sequencer.pattern().bumpStepDataRevision();
     const auto& snapshot = refreshSnapshot(
         snapshots, graphBank, sequencer, bank
     );
@@ -740,8 +747,9 @@ void test_negative_delay_tempo_change_rebuilds_future_plan_once() {
 }
 
 void test_delay_change_during_active_gate_panics_then_resyncs() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue queue;
@@ -750,17 +758,17 @@ void test_delay_change_during_active_gate_panics_then_resyncs() {
         sequencer, bank, navigation,
     };
 
-    sequencer.pattern.setContentLength(4U);
-    sequencer.pattern.stepsPerBeat.set(4U);
-    sequencer.pattern.note[0] = 60U;
-    sequencer.pattern.note[1] = 61U;
-    sequencer.pattern.velocity[0] = 100U;
-    sequencer.pattern.velocity[1] = 100U;
-    sequencer.pattern.gate[0] = 100U;
-    sequencer.pattern.gate[1] = 100U;
-    sequencer.pattern.setEnabled(0U, true);
-    sequencer.pattern.setEnabled(1U, true);
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().setContentLength(4U);
+    sequencer.pattern().stepsPerBeat.set(4U);
+    sequencer.pattern().note[0] = 60U;
+    sequencer.pattern().note[1] = 61U;
+    sequencer.pattern().velocity[0] = 100U;
+    sequencer.pattern().velocity[1] = 100U;
+    sequencer.pattern().gate[0] = 100U;
+    sequencer.pattern().gate[1] = 100U;
+    sequencer.pattern().setEnabled(0U, true);
+    sequencer.pattern().setEnabled(1U, true);
+    sequencer.pattern().bumpStepDataRevision();
     const auto& snapshot = refreshSnapshot(
         snapshots, graphBank, sequencer, bank
     );
@@ -829,8 +837,9 @@ void test_delay_change_during_active_gate_panics_then_resyncs() {
 }
 
 void test_graph_revision_change_resyncs_playback_service_graph() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -841,11 +850,11 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
         projectNavigation,
     };
 
-    sequencer.pattern.setContentLength(4);
-    sequencer.pattern.stepsPerBeat.set(4);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.velocity[0] = 96;
-    sequencer.pattern.gate[0] = 100;
+    sequencer.pattern().setContentLength(4);
+    sequencer.pattern().stepsPerBeat.set(4);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().velocity[0] = 96;
+    sequencer.pattern().gate[0] = 100;
     enableStep(sequencer, 0);
 
     SequencerTrackFixturePlaybackAdapter service{
@@ -871,17 +880,17 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto sequence = core::state::sequencer::createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         rootNode,
         2
     );
     assert(sequence.ok);
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     assert(graph != nullptr);
     const auto* child = graph->sequence(sequence.id);
     assert(child != nullptr);
     assert(core::state::sequencer::setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         static_cast<uint16_t>(child->firstStepNode + 1U),
         7
     ));
@@ -912,8 +921,9 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
 }
 
 void test_playback_service_uses_one_shot_prelude_then_internal_loop() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -924,8 +934,8 @@ void test_playback_service_uses_one_shot_prelude_then_internal_loop() {
         projectNavigation,
     };
 
-    sequencer.pattern.setContentLength(8);
-    sequencer.pattern.stepsPerBeat.set(4);
+    sequencer.pattern().setContentLength(8);
+    sequencer.pattern().stepsPerBeat.set(4);
     assert(core::state::sequencer::setClipPlaybackRegion(
         sequencer,
         {8, 2, 4, 6}
@@ -961,8 +971,9 @@ void test_playback_service_uses_one_shot_prelude_then_internal_loop() {
 }
 
 void test_staged_track_applies_at_first_region_loop_start_after_prelude() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::state::sequencer::SequencerTrackActivationQueue activations;
@@ -973,7 +984,7 @@ void test_staged_track_applies_at_first_region_loop_start_after_prelude() {
         bank,
         projectNavigation,
     };
-    setRootStep(sequencer.pattern, 60, 8);
+    setRootStep(sequencer.pattern(), 60, 8);
     assert(core::state::sequencer::setClipPlaybackRegion(
         sequencer,
         {8, 1, 3, 6}
@@ -998,8 +1009,8 @@ void test_staged_track_applies_at_first_region_loop_start_after_prelude() {
     core::state::sequencer::SequencerTrackActivationBatch paste;
     assert(activations.prepare(0x0001, 0x0001, true, paste));
     assert(activations.armPrepared(paste));
-    sequencer.pattern.note[0] = 72;
-    sequencer.pattern.bumpStepDataRevision();
+    sequencer.pattern().note[0] = 72;
+    sequencer.pattern().bumpStepDataRevision();
     activations.publishPrepared(paste);
     const auto& staged = refreshSnapshot(
         snapshotBank,
@@ -1020,8 +1031,9 @@ void test_staged_track_applies_at_first_region_loop_start_after_prelude() {
 }
 
 void test_muted_track_does_not_emit_note_events() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -1032,11 +1044,11 @@ void test_muted_track_does_not_emit_note_events() {
         projectNavigation,
     };
 
-    sequencer.pattern.setContentLength(4);
-    sequencer.pattern.stepsPerBeat.set(4);
-    sequencer.pattern.note[0] = 60;
-    sequencer.pattern.velocity[0] = 96;
-    sequencer.pattern.gate[0] = 100;
+    sequencer.pattern().setContentLength(4);
+    sequencer.pattern().stepsPerBeat.set(4);
+    sequencer.pattern().note[0] = 60;
+    sequencer.pattern().velocity[0] = 96;
+    sequencer.pattern().gate[0] = 100;
     enableStep(sequencer, 0);
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -1082,8 +1094,9 @@ void test_muted_track_does_not_emit_note_events() {
 }
 
 void test_audible_track_applies_at_local_loop_boundary_and_cancels_old_midi_plan() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::state::sequencer::SequencerTrackActivationQueue activations;
@@ -1092,7 +1105,7 @@ void test_audible_track_applies_at_local_loop_boundary_and_cancels_old_midi_plan
     core::sequencer::SequencerRuntimeSnapshotBank snapshotBank{
         sequencer, bank, projectNavigation,
     };
-    setRootStep(sequencer.pattern, 60, 4);
+    setRootStep(sequencer.pattern(), 60, 4);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer, status, midiQueue, runtimeGraphBank, &activations,
@@ -1110,7 +1123,7 @@ void test_audible_track_applies_at_local_loop_boundary_and_cancels_old_midi_plan
     core::state::sequencer::SequencerTrackActivationBatch paste;
     assert(activations.prepare(0x0001, 0x0001, true, paste));
     assert(activations.armPrepared(paste));
-    setRootStep(sequencer.pattern, 72, 4);
+    setRootStep(sequencer.pattern(), 72, 4);
     activations.publishPrepared(paste);
     const auto& staged = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank, &activations
@@ -1145,8 +1158,9 @@ void test_audible_track_applies_at_local_loop_boundary_and_cancels_old_midi_plan
 }
 
 void test_transport_stop_applies_staged_track_on_first_scheduler_boundary() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::state::sequencer::SequencerTrackActivationQueue activations;
@@ -1155,7 +1169,7 @@ void test_transport_stop_applies_staged_track_on_first_scheduler_boundary() {
     core::sequencer::SequencerRuntimeSnapshotBank snapshotBank{
         sequencer, bank, projectNavigation,
     };
-    setRootStep(sequencer.pattern, 60, 8);
+    setRootStep(sequencer.pattern(), 60, 8);
     SequencerTrackFixturePlaybackAdapter service{
         sequencer, status, midiQueue, runtimeGraphBank, &activations,
     };
@@ -1167,7 +1181,7 @@ void test_transport_stop_applies_staged_track_on_first_scheduler_boundary() {
     core::state::sequencer::SequencerTrackActivationBatch paste;
     assert(activations.prepare(0x0001, 0x0001, true, paste));
     assert(activations.armPrepared(paste));
-    setRootStep(sequencer.pattern, 73, 8);
+    setRootStep(sequencer.pattern(), 73, 8);
     activations.publishPrepared(paste);
     const auto& staged = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank, &activations
@@ -1181,8 +1195,9 @@ void test_transport_stop_applies_staged_track_on_first_scheduler_boundary() {
 }
 
 void test_inactive_target_applies_on_first_staged_update() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::state::sequencer::SequencerTrackActivationQueue activations;
@@ -1217,8 +1232,9 @@ void test_inactive_target_applies_on_first_staged_update() {
 }
 
 void test_multi_track_activation_uses_each_tracks_local_loop_boundary() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::state::sequencer::SequencerTrackActivationQueue activations;
@@ -1227,7 +1243,7 @@ void test_multi_track_activation_uses_each_tracks_local_loop_boundary() {
     core::sequencer::SequencerRuntimeSnapshotBank snapshotBank{
         sequencer, bank, projectNavigation,
     };
-    setRootStep(sequencer.pattern, 60, 4);
+    setRootStep(sequencer.pattern(), 60, 4);
     setRootStep(bank.track(1), 61, 8);
     bank.syncSharedTrackState(0x0003, 0);
     SequencerTrackFixturePlaybackAdapter service{
@@ -1241,7 +1257,7 @@ void test_multi_track_activation_uses_each_tracks_local_loop_boundary() {
     core::state::sequencer::SequencerTrackActivationBatch paste;
     assert(activations.prepare(0x0003, 0x0003, true, paste));
     assert(activations.armPrepared(paste));
-    setRootStep(sequencer.pattern, 70, 4);
+    setRootStep(sequencer.pattern(), 70, 4);
     setRootStep(bank.track(1), 71, 8);
     activations.publishPrepared(paste);
     const auto& staged = refreshSnapshot(
@@ -1264,8 +1280,9 @@ void test_multi_track_activation_uses_each_tracks_local_loop_boundary() {
 
 void test_cc_lane_runtime_is_integrated_once_per_tick_before_note_on() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -1276,8 +1293,8 @@ void test_cc_lane_runtime_is_integrated_once_per_tick_before_note_on() {
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
-    setRootStep(sequencer.pattern, 60, 4);
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    setRootStep(sequencer.pattern(), 60, 4);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
         .destination = seq::SequencerCcLaneDestination{
@@ -1292,7 +1309,7 @@ void test_cc_lane_runtime_is_integrated_once_per_tick_before_note_on() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 0, 91).changed());
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -1400,8 +1417,9 @@ void test_cc_lane_runtime_is_integrated_once_per_tick_before_note_on() {
 
 void test_project_track_mute_and_solo_filter_note_and_cc_emission() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::SequencerRuntimeGraphBank runtimeGraphBank;
@@ -1409,8 +1427,8 @@ void test_project_track_mute_and_solo_filter_note_and_cc_emission() {
         sequencer, bank, projectNavigation,
     };
 
-    setRootStep(sequencer.pattern, 60, 4);
-    auto* trackZeroLanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    setRootStep(sequencer.pattern(), 60, 4);
+    auto* trackZeroLanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(trackZeroLanes != nullptr);
     seq::SequencerCcLaneDraft trackZeroLane{};
     trackZeroLane.destination.controller = 74;
@@ -1422,7 +1440,7 @@ void test_project_track_mute_and_solo_filter_note_and_cc_emission() {
     assert(seq::setSequencerCcLaneEvent(
         *trackZeroLanes, 0, 0, 81
     ).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
 
     auto& trackOne = bank.track(1);
     setRootStep(trackOne, 67, 4);
@@ -1503,8 +1521,9 @@ void test_project_track_mute_and_solo_filter_note_and_cc_emission() {
 }
 
 void test_project_track_unmute_resumes_current_phase_without_history_replay() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -1513,12 +1532,12 @@ void test_project_track_unmute_resumes_current_phase_without_history_replay() {
         sequencer, bank, projectNavigation,
     };
 
-    setRootStep(sequencer.pattern, 60, 4);
-    sequencer.pattern.note[2] = 64;
-    sequencer.pattern.velocity[2] = 100;
-    sequencer.pattern.gate[2] = 100;
-    sequencer.pattern.setEnabled(2, true);
-    sequencer.pattern.bumpStepDataRevision();
+    setRootStep(sequencer.pattern(), 60, 4);
+    sequencer.pattern().note[2] = 64;
+    sequencer.pattern().velocity[2] = 100;
+    sequencer.pattern().gate[2] = 100;
+    sequencer.pattern().setEnabled(2, true);
+    sequencer.pattern().bumpStepDataRevision();
 
     const auto& snapshot = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank
@@ -1559,8 +1578,9 @@ void test_project_track_unmute_resumes_current_phase_without_history_replay() {
 }
 
 void test_active_track_switch_does_not_panic_or_reset_playing_track() {
-    SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -1569,7 +1589,7 @@ void test_active_track_switch_does_not_panic_or_reset_playing_track() {
         sequencer, bank, projectNavigation,
     };
 
-    setRootStep(sequencer.pattern, 60, 4);
+    setRootStep(sequencer.pattern(), 60, 4);
     bank.syncSharedTrackState(0x0003U, 0U);
     const auto& initial = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank
@@ -1627,8 +1647,9 @@ void test_active_track_switch_does_not_panic_or_reset_playing_track() {
 
 void test_track_three_channel_five_cc74_precedes_note_on() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -1724,13 +1745,13 @@ void test_track_paste_emits_note_and_inherited_cc_on_destination_channel() {
     constexpr uint8_t inheritedController = 74;
     constexpr uint8_t inheritedValue = 93;
 
-    setRootStep(state.sequencer.pattern, pastedNote, 1);
+    setRootStep(state.sequencer.pattern(), pastedNote, 1);
     assert(core::state::project::setProjectTrackMidiChannel(
         state.projectTracks,
         0,
         sourceChannel
     ).changed());
-    auto* sourceLanes = seq::ensureSequencerCcLaneBank(state.sequencer.pattern);
+    auto* sourceLanes = seq::ensureSequencerCcLaneBank(state.sequencer.pattern());
     assert(sourceLanes != nullptr);
     seq::SequencerCcLaneDraft inheritedLane{};
     inheritedLane.destination.controller = inheritedController;
@@ -1740,7 +1761,7 @@ void test_track_paste_emits_note_and_inherited_cc_on_destination_channel() {
     assert(seq::setSequencerCcLaneEvent(
         *sourceLanes, 0, 0, inheritedValue
     ).changed());
-    state.sequencer.pattern.bumpCcLaneRevision();
+    state.sequencer.pattern().bumpCcLaneRevision();
 
     assert(core::state::project::setProjectTrackMidiChannel(
         state.projectTracks,
@@ -1880,8 +1901,9 @@ void test_track_paste_emits_note_and_inherited_cc_on_destination_channel() {
 
 void test_cc_lane_event_is_emitted_on_note_off_only_step() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -1894,8 +1916,8 @@ void test_cc_lane_event_is_emitted_on_note_off_only_step() {
 
     // Step 0 owns the note. Step 1 is deliberately note-empty and only owns
     // a CC event, at the exact tick where step 0's 100% gate emits Note-Off.
-    setRootStep(sequencer.pattern, 60, 4);
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    setRootStep(sequencer.pattern(), 60, 4);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
         .destination = seq::SequencerCcLaneDestination{
@@ -1910,7 +1932,7 @@ void test_cc_lane_event_is_emitted_on_note_off_only_step() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 1, 91).changed());
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -1986,8 +2008,9 @@ void test_cc_lane_event_is_emitted_on_note_off_only_step() {
 
 void test_editing_future_cc_step_waits_for_playhead() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -1998,9 +2021,9 @@ void test_editing_future_cc_step_waits_for_playhead() {
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
-    sequencer.pattern.setContentLength(4);
-    sequencer.pattern.stepsPerBeat.set(4);
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    sequencer.pattern().setContentLength(4);
+    sequencer.pattern().stepsPerBeat.set(4);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
         .destination = seq::SequencerCcLaneDestination{
@@ -2014,7 +2037,7 @@ void test_editing_future_cc_step_waits_for_playhead() {
         .initialValue = 0,
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2040,10 +2063,10 @@ void test_editing_future_cc_step_waits_for_playhead() {
 
     // Editing step 2 while the playhead is still on step 0 must update the
     // immutable project snapshot only. It must not author a live value early.
-    lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 2, 99).changed());
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
     const auto& edited = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank
     );
@@ -2098,8 +2121,9 @@ void test_editing_future_cc_step_waits_for_playhead() {
 
 void test_negative_project_delay_predicts_cc_lane_without_advancing_live_hold() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -2111,9 +2135,9 @@ void test_negative_project_delay_predicts_cc_lane_without_advancing_live_hold() 
     core::sequencer::SequencerCcLaneRuntime predictiveRuntime;
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
-    sequencer.pattern.setContentLength(4);
-    sequencer.pattern.stepsPerBeat.set(4);
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    sequencer.pattern().setContentLength(4);
+    sequencer.pattern().stepsPerBeat.set(4);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
         .destination = seq::SequencerCcLaneDestination{
@@ -2126,7 +2150,7 @@ void test_negative_project_delay_predicts_cc_lane_without_advancing_live_hold() 
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 1, 99).changed());
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2175,8 +2199,9 @@ void test_negative_project_delay_predicts_cc_lane_without_advancing_live_hold() 
 
 void test_negative_cc_lookahead_crosses_uint32_tick_wrap() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -2210,9 +2235,9 @@ void test_negative_cc_lookahead_crosses_uint32_tick_wrap() {
     ));
     assert(future.stepIndex != current.playback.stepIndex);
 
-    sequencer.pattern.setContentLength(8U);
-    sequencer.pattern.stepsPerBeat.set(4U);
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    sequencer.pattern().setContentLength(8U);
+    sequencer.pattern().stepsPerBeat.set(4U);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     seq::SequencerCcLaneDraft laneDraft{};
     laneDraft.destination.controller = 74U;
@@ -2222,7 +2247,7 @@ void test_negative_cc_lookahead_crosses_uint32_tick_wrap() {
     assert(seq::setSequencerCcLaneEvent(
         *lanes, 0U, future.stepIndex, 103U
     ).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2286,8 +2311,9 @@ void test_negative_cc_lookahead_crosses_uint32_tick_wrap() {
 
 void test_failed_negative_cc_projection_falls_back_due_now() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -2299,9 +2325,9 @@ void test_failed_negative_cc_projection_falls_back_due_now() {
     core::sequencer::SequencerCcLaneRuntime predictiveRuntime;
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
-    sequencer.pattern.setContentLength(8U);
-    sequencer.pattern.stepsPerBeat.set(4U);
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    sequencer.pattern().setContentLength(8U);
+    sequencer.pattern().stepsPerBeat.set(4U);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     seq::SequencerCcLaneDraft laneDraft{};
     laneDraft.destination.controller = 71U;
@@ -2311,7 +2337,7 @@ void test_failed_negative_cc_projection_falls_back_due_now() {
     laneDraft.destination.pinnedChannel = 0U;
     assert(seq::createSequencerCcLane(*lanes, 0U, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 0U, 88U).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2357,8 +2383,9 @@ void test_failed_negative_cc_projection_falls_back_due_now() {
 
 void test_sixteen_track_negative_cc_lookahead_uses_one_complete_pass() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -2368,7 +2395,7 @@ void test_sixteen_track_negative_cc_lookahead_uses_one_complete_pass() {
     };
 
     for (uint8_t track = 0U; track < 16U; ++track) {
-        auto& pattern = track == 0U ? sequencer.pattern : bank.track(track);
+        auto& pattern = track == 0U ? sequencer.pattern() : bank.track(track);
         pattern.setContentLength(8U);
         pattern.stepsPerBeat.set(4U);
         auto* lanes = seq::ensureSequencerCcLaneBank(pattern);
@@ -2473,8 +2500,9 @@ void test_sixteen_track_negative_cc_lookahead_uses_one_complete_pass() {
 void test_transport_stop_keeps_lane_winner_without_macro_fallback_or_reemit() {
     namespace seq = core::state::sequencer;
     namespace shared = core::state::shared;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -2485,7 +2513,7 @@ void test_transport_stop_keeps_lane_winner_without_macro_fallback_or_reemit() {
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
         .destination = seq::SequencerCcLaneDestination{
@@ -2500,7 +2528,7 @@ void test_transport_stop_keeps_lane_winner_without_macro_fallback_or_reemit() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 0, 91).changed());
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
     const shared::MidiCcCandidate macro{
         .destination = shared::MidiCcDestination{
             .identity = shared::MidiCcDestinationIdentity{
@@ -2591,8 +2619,9 @@ void test_transport_stop_keeps_lane_winner_without_macro_fallback_or_reemit() {
 void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
     namespace seq = core::state::sequencer;
     namespace shared = core::state::shared;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState projectNavigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue midiQueue;
@@ -2603,7 +2632,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
-    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
         .destination = seq::SequencerCcLaneDestination{
@@ -2618,7 +2647,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 0, 91).changed());
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2671,14 +2700,14 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
     }
 
     // Explicit Pin is independent from the missing Track route.
-    lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     lanes->lanes[0].destination.routePolicy =
         seq::SequencerCcLaneRoutePolicy::PINNED;
     lanes->lanes[0].destination.pinnedPort = 0;
     lanes->lanes[0].destination.pinnedChannel = 6;
     ++lanes->revision;
-    sequencer.pattern.ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().ccLaneRevision.set(lanes->revision);
     auto& pinned = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank
     );
@@ -2774,8 +2803,9 @@ void test_cc_runtime_rejects_complete_bad_bank_without_partial_holds() {
 
 void test_cc_composition_switches_between_current_predictive_and_fallback() {
     namespace seq = core::state::sequencer;
-    SequencerState sequencer;
     seq::SequencerTrackBankState bank;
+    SequencerState sequencer{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     core::state::project::ProjectNavigationState navigation;
     core::state::StatusBarState status;
     core::sequencer::RealtimeMidiQueue queue;
@@ -2783,7 +2813,7 @@ void test_cc_composition_switches_between_current_predictive_and_fallback() {
     core::sequencer::SequencerRuntimeSnapshotBank snapshots{sequencer, bank, navigation};
     constexpr std::array<uint8_t, 4> tracks{0U, 1U, 2U, 15U};
     for (const auto track : tracks) {
-        auto& pattern = track == 0U ? sequencer.pattern : bank.track(track);
+        auto& pattern = track == 0U ? sequencer.pattern() : bank.track(track);
         pattern.setContentLength(4U);
         pattern.stepsPerBeat.set(4U);
         auto* lanes = seq::ensureSequencerCcLaneBank(pattern);

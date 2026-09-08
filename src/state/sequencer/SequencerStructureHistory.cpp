@@ -497,10 +497,10 @@ FLASHMEM bool liveHistoryStructureSnapshotMatches(
         if ((snapshot.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
             continue;
         }
-        const auto& live = canonicalTrackPattern(bank, active, track);
+        const auto& live = bank.track(track);
         if (!liveHistoryPatternSnapshotMatches(
                 live,
-                canonicalTrackClip(bank, active, track),
+                bank.clip(track),
                 snapshot.tracks[track]
             )) {
             return false;
@@ -568,8 +568,7 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
     }
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((replay.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0U ||
-            i == replay.targetActiveTrack) continue;
+        if ((replay.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0U) continue;
         installTrackContentSnapshotWithOwnedPayload(
             bank.track(i),
             bank.clip(i),
@@ -581,15 +580,8 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
     }
 
     const uint8_t targetActive = replay.targetActiveTrack;
-    bank.track(targetActive).graph.reset();
-    bank.track(targetActive).ccLanes.reset();
-    installTrackContentSnapshotToEditorWithOwnedPayload(
-        active,
-        snapshot->tracks[targetActive].flat,
-        snapshot->tracks[targetActive].clip,
-        std::move(replay.trackGraphs[targetActive]),
-        std::move(replay.trackCcLanes[targetActive])
-    );
+    active.selectPattern(bank.track(targetActive), bank.clip(targetActive));
+    active.bumpClipRevision();
     commitHistoryStructureDrumSnapshot(bank, *snapshot);
     bank.syncSharedTrackState(snapshot->enabledMask, targetActive);
     active.focusedStep.set(snapshot->focusedStep);

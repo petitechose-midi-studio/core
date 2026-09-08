@@ -11,6 +11,7 @@
 #include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
 #include "SequencerPatternState.hpp"
+#include "SequencerPatternObservation.hpp"
 #include "SequencerClipState.hpp"
 #include "SequencerPatternEditorState.hpp"
 #include "SequencerQuickControlsDraft.hpp"
@@ -31,8 +32,18 @@ struct SequencerState {
     static constexpr uint16_t DEFAULT_GATE_PERCENT = SequencerPatternState::DEFAULT_GATE_PERCENT;
     static constexpr uint8_t DEFAULT_PROBABILITY = SequencerPatternState::DEFAULT_PROBABILITY;
 
-    SequencerPatternState pattern;
-    SequencerClipState clip;
+    SequencerPatternState& pattern() { return *pattern_; }
+    const SequencerPatternState& pattern() const { return *pattern_; }
+    SequencerClipState& clip() { return *clip_; }
+    const SequencerClipState& clip() const { return *clip_; }
+    SequencerPatternObservation patternChanges;
+
+    // The musical owner outlives the editor. Selection never copies its data.
+    void selectPattern(SequencerPatternState& pattern, SequencerClipState& clip);
+    void setPatternSelectionCallback(void* context, void (*callback)(void*)) {
+        selectionContext_ = context;
+        selectionCallback_ = callback;
+    }
 
     /// Bumps when the active Track's implicit Clip boundaries change.
     Signal<uint32_t, 4> clipRevision{0};
@@ -92,7 +103,7 @@ struct SequencerState {
     SequencerStructureUiState structureUi;
     DrumSequencerState drumSequencer;
 
-    SequencerState();
+    SequencerState(SequencerPatternState& pattern, SequencerClipState& clip);
     ~SequencerState();
 
     static uint8_t clampMidi7(uint8_t value) {
@@ -123,7 +134,7 @@ struct SequencerState {
     void invalidateStepVariationTelemetry(uint8_t step);
 
     uint8_t variationRangeForProperty(StepProperty property) const {
-        return pattern.variationRangeForProperty(property);
+        return pattern().variationRangeForProperty(property);
     }
 
     bool setVariationRangeForProperty(StepProperty property, uint8_t range);
@@ -169,6 +180,7 @@ struct SequencerState {
     );
 
     void reset();
+    void resetEditorState();
 
     void updateUi(uint32_t nowMs) {
         stepInlineFeedback.update(nowMs);
@@ -178,15 +190,15 @@ struct SequencerState {
     }
 
     uint8_t activePageCount() const {
-        return pattern.activePageCount();
+        return pattern().activePageCount();
     }
 
     uint8_t normalizePage(uint8_t page) const {
-        return pattern.normalizePage(page);
+        return pattern().normalizePage(page);
     }
 
     uint8_t clampPage(uint8_t page) const {
-        return pattern.clampPage(page);
+        return pattern().clampPage(page);
     }
 
     uint8_t visiblePage() const {
@@ -194,24 +206,29 @@ struct SequencerState {
     }
 
     uint8_t pageStartStep(uint8_t page) const {
-        return pattern.pageStartStep(page);
+        return pattern().pageStartStep(page);
     }
 
     uint8_t pageStartStepClamped(uint8_t page) const {
-        return pattern.pageStartStepClamped(page);
+        return pattern().pageStartStepClamped(page);
     }
 
     uint8_t pageForStep(uint8_t step) const {
-        return pattern.pageForStep(step);
+        return pattern().pageForStep(step);
     }
 
     bool resolveStepInPage(uint8_t page, uint8_t indexInPage, uint8_t& outStep) const {
-        return pattern.resolveStepInPage(page, indexInPage, outStep);
+        return pattern().resolveStepInPage(page, indexInPage, outStep);
     }
 
     bool isInPattern(uint8_t step) const {
-        return pattern.isInPattern(step);
+        return pattern().isInPattern(step);
     }
+private:
+    SequencerPatternState* pattern_;
+    SequencerClipState* clip_;
+    void* selectionContext_ = nullptr;
+    void (*selectionCallback_)(void*) = nullptr;
 };
 
 }  // namespace core::state::sequencer

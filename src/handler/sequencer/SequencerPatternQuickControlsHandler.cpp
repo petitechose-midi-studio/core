@@ -125,7 +125,7 @@ FLASHMEM bool rootLengthEditRequiresFullPayload(
     // LENGTH can destructively trim CC events. Reserve the CC payload for the
     // entire 500 ms gesture whenever the owner exists, so crossing an authored
     // event does not change the transaction plan (and therefore split Undo).
-    return core::state::sequencer::sequencerCcLaneView(sequencer.pattern) != nullptr;
+    return core::state::sequencer::sequencerCcLaneView(sequencer.pattern()) != nullptr;
 }
 
 }  // namespace
@@ -197,11 +197,11 @@ FLASHMEM void SequencerPatternQuickControlsHandler::open() {
     nested_step_draft_ = parentStepDraft != nullptr;
     const auto& openingPattern = nested_step_draft_
         ? *parentStepDraft
-        : sequencer_.pattern;
+        : sequencer_.pattern();
     const auto* parentStepClip = sequencer_.stepContentDraft.clip();
     const auto& openingClip = nested_step_draft_ && parentStepClip != nullptr
         ? *parentStepClip
-        : sequencer_.clip;
+        : sequencer_.clip();
     if (!sequencer_.quickControlsDraft.begin(
             openingPattern,
             openingClip,
