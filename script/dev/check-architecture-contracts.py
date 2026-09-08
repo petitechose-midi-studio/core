@@ -656,6 +656,22 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
         r"\s*bytes\s*\)\s*;",
         "strict allocation must use the canonical PSRAM pool sink",
     )
+    require_once(
+        strict_allocate, EXTMEM_ALLOCATOR_SOURCE, "allocateExtmemStrict",
+        r"\bif\s*\(\s*forOverwrite\s*&&\s*extmem_smalloc_pool\.oomfn\s*==\s*nullptr\s*\)"
+        r"\s*\{\s*auto\s+overwritePool\s*=\s*extmem_smalloc_pool\s*;"
+        r"\s*overwritePool\.do_zero\s*=\s*0\s*;"
+        r"\s*allocated\s*=\s*sm_malloc_pool\s*\(\s*&overwritePool\s*,\s*bytes\s*\)\s*;"
+        r"\s*\}\s*else\s*\{\s*allocated\s*=\s*sm_malloc_pool\s*\("
+        r"\s*&extmem_smalloc_pool\s*,\s*bytes\s*\)\s*;\s*\}",
+        "overwrite allocation must exclusively select a fixed-pool descriptor copy "
+        "or the canonical growing-pool descriptor",
+    )
+    require_once(
+        allocator_code, EXTMEM_ALLOCATOR_SOURCE, "allocateExtmemStrict",
+        r"\bbool\s+forOverwrite\s*=\s*false\b",
+        "ordinary strict allocations must preserve zeroing by default",
+    )
     if strict_allocate is not None:
         failure_hooks = len(re.findall(
             r"\bcore::diagnostics::trackExtmemAllocationFailure\s*\(\s*\)",
@@ -676,17 +692,17 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
         "strict free must use the matching canonical PSRAM pool sink",
     )
 
-    for name, body in (
-        ("allocateExtmemStrict", strict_allocate),
-        ("freeExtmemStrict", strict_free),
+    for name, body, expected in (
+        ("allocateExtmemStrict", strict_allocate, 2),
+        ("freeExtmemStrict", strict_free, 1),
     ):
         if body is None:
             continue
         found = len(DIRECT_SMALLOC_MUTATION_CALL.findall(body))
-        if found != 1:
+        if found != expected:
             errors.append(
                 f"{EXTMEM_ALLOCATOR_SOURCE}: {name} must contain exactly "
-                f"one smalloc pool mutation (found {found})"
+                f"{expected} smalloc pool call site(s) (found {found})"
             )
 
     if strict_allocate is not None and re.search(
@@ -711,10 +727,10 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
     pool_mutation_count = len(
         DIRECT_SMALLOC_MUTATION_CALL.findall(allocator_code)
     )
-    if pool_mutation_count != 2:
+    if pool_mutation_count != 3:
         errors.append(
-            f"{EXTMEM_ALLOCATOR_SOURCE}: expected only the canonical "
-            "smalloc allocation/free pair "
+            f"{EXTMEM_ALLOCATOR_SOURCE}: expected only the two exclusive "
+            "smalloc allocation alternatives and canonical free "
             f"(found {pool_mutation_count} pool mutations)"
         )
 
@@ -740,7 +756,10 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
             body,
             EXTMEM_ALLOCATOR_SOURCE,
             helper,
-            r"\ballocateExtmemStrict\s*\(",
+            (r"\ballocateExtmemStrict\s*\([^;]*,\s*true\s*\)"
+             if helper in ("makeExtmemUniqueCopy", "makeExtmemUniqueForOverwrite",
+                           "makeExtmemUniqueArrayForOverwrite")
+             else r"\ballocateExtmemStrict\s*\("),
             "EXTMEM helper must allocate through allocateExtmemStrict",
         )
         require_once(

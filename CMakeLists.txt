@@ -214,6 +214,12 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     set_tests_properties(check_ArchitectureContracts PROPERTIES LABELS core)
 
     add_test(
+        NAME check_ExtmemLifetimeContracts
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-extmem-lifetime-contracts.py")
+    set_tests_properties(check_ExtmemLifetimeContracts PROPERTIES LABELS core)
+
+    add_test(
         NAME check_SequencerHistoryInventory
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-sequencer-history-inventory.py")
