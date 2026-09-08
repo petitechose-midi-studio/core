@@ -65,7 +65,7 @@ void assignShape(
         0.5f
     ));
     assert(modulation::setProjectModulationDestinationScale(
-        control.authored.modulation,
+        control.authored().modulation,
         modulation::projectControlDestination(address),
         scaleQ15
     ).changed());
@@ -97,7 +97,7 @@ void test_track_clear_removes_note_route_without_deleting_root_source() {
     modulation::ModulatorAdsrDraft source{};
     source.name = "Shared ADSR";
     const auto created = modulation::createAdsrModulator(
-        control.authored.modulation,
+        control.authored().modulation,
         source
     );
     assert(created.changed());
@@ -110,14 +110,14 @@ void test_track_clear_removes_note_route_without_deleting_root_source() {
         .noteMax = 127U,
     };
     assert(modulation::addProjectModulationTrigger(
-        control.authored.modulation,
+        control.authored().modulation,
         trigger
     ).changed());
 
-    assert(ops::clearTracksInDomain(control.authored, static_cast<uint16_t>(1U << 2U)));
-    assert(control.authored.modulation.sourceCount == 1U);
-    assert(control.authored.modulation.sources[0].id == created.sourceId);
-    assert(control.authored.modulation.triggerBindingCount == 0U);
+    assert(ops::clearTracksInDomain(control.authored(), static_cast<uint16_t>(1U << 2U)));
+    assert(control.authored().modulation.sourceCount == 1U);
+    assert(control.authored().modulation.sources[0].id == created.sourceId);
+    assert(control.authored().modulation.triggerBindingCount == 0U);
     std::cout << "[PASS] Track clear removes its route and keeps root ADSR\n";
 }
 
@@ -136,8 +136,8 @@ void test_detached_track_clear_mutates_only_the_requested_domain() {
     assignLane(control, removed, 2U);
     assignLane(control, retained, 2U);
 
-    auto detached = control.authored;
-    const auto liveBefore = control.authored;
+    auto detached = control.authored();
+    const auto liveBefore = control.authored();
     assert(ops::clearTracksInDomain(
         detached,
         static_cast<uint16_t>(1U << removed.track)
@@ -145,9 +145,9 @@ void test_detached_track_clear_mutates_only_the_requested_domain() {
     assert(!domainSlotPresent(detached, removed));
     assert(domainSlotPresent(detached, retained));
     assert(std::memcmp(
-        &control.authored,
+        &control.authored(),
         &liveBefore,
-        sizeof(control.authored)
+        sizeof(control.authored())
     ) == 0);
 
     const auto detachedBeforeInvalid = detached;
@@ -188,11 +188,11 @@ void test_page_compaction_remaps_complete_project_destinations() {
         shifted
     );
     assert(shiftedBefore.automation.stored());
-    const auto bindingId = control.authored.modulation.outputBindings[0].id;
-    const auto sourceId = control.authored.modulation.outputBindings[0].sourceId;
+    const auto bindingId = control.authored().modulation.outputBindings[0].id;
+    const auto sourceId = control.authored().modulation.outputBindings[0].sourceId;
 
     // Old Pages 0 and 2 survive. Page 2 becomes Page 1.
-    assert(modulation::compactProjectControlPagesInDomain(control.authored, 0U, 0x0005U));
+    assert(modulation::compactProjectControlPagesInDomain(control.authored(), 0U, 0x0005U));
 
     const macro::MacroAutomationSlotAddress compacted{
         .track = 0,
@@ -209,18 +209,18 @@ void test_page_compaction_remaps_complete_project_destinations() {
     assert(!test_support::project_control::readSlot(control, removed).present());
     assert(!test_support::project_control::readSlot(control, shifted).present());
     assert(test_support::project_control::readSlot(control, unrelated).present());
-    assert(control.authored.modulation.outputBindings[0].id == bindingId);
-    assert(control.authored.modulation.outputBindings[0].sourceId == sourceId);
-    assert(control.authored.modulation.outputBindings[0].destination ==
+    assert(control.authored().modulation.outputBindings[0].id == bindingId);
+    assert(control.authored().modulation.outputBindings[0].sourceId == sourceId);
+    assert(control.authored().modulation.outputBindings[0].destination ==
            modulation::projectControlDestination(compacted));
     assert(modulation::projectModulationDestinationScaleQ15(
-        control.authored.modulation,
+        control.authored().modulation,
         modulation::projectControlDestination(compacted)
     ) == 49152U);
     assert(modulation::validProjectModulationDomain(
-        control.authored.modulation,
-        control.authored.curves,
-        &control.authored.automation
+        control.authored().modulation,
+        control.authored().curves,
+        &control.authored().automation
     ));
 
     std::cout << "[PASS] Page compaction remaps complete Project destinations\n";
@@ -238,7 +238,7 @@ void test_empty_page_clipboard_replaces_existing_control_with_empty_scope() {
     core::state::MacroAutomationClipboard clipboard;
     clipboard.trackScope = false;
     assert(ops::replacePageFromClipboardInDomain(
-        control.authored,
+        control.authored(),
         destAddress.track,
         destAddress.page,
         &clipboard
@@ -248,8 +248,8 @@ void test_empty_page_clipboard_replaces_existing_control_with_empty_scope() {
         destAddress
     );
     assert(!result.present());
-    assert(control.authored.curves.recordCount == 0);
-    assert(control.authored.curves.pointCount == 0);
+    assert(control.authored().curves.recordCount == 0);
+    assert(control.authored().curves.pointCount == 0);
 
     std::cout << "[PASS] Empty page clipboard clears the Project scope\n";
 }
@@ -271,7 +271,7 @@ void test_empty_structure_copy_does_not_allocate_control_clipboard() {
     };
     assignLane(destControl, destAddress, 2);
     assert(ops::replacePageFromClipboardInDomain(
-        destControl.authored,
+        destControl.authored(),
         destAddress.track,
         destAddress.page,
         clipboard.macroAutomationSet.get()
@@ -302,12 +302,12 @@ void test_track_structure_copy_captures_all_page_automation() {
 
     modulation::ProjectControlState destinationControl;
     assert(ops::replaceTrackFromClipboardInDomain(
-        destinationControl.authored,
+        destinationControl.authored(),
         5U,
         clipboard.macroAutomationSet.get()
     ));
     assert(modulation::projectModulationDestinationScaleQ15(
-        destinationControl.authored.modulation,
+        destinationControl.authored().modulation,
         modulation::projectControlDestination({.track = 5, .page = 9, .macro = 6})
     ) == 16384U);
 
@@ -326,8 +326,8 @@ void test_detached_track_replace_builds_the_final_domain_offline() {
     modulation::ProjectControlState liveControl;
     assignLane(liveControl, {.track = 6, .page = 1, .macro = 0}, 3U);
     assignLane(liveControl, {.track = 4, .page = 1, .macro = 0}, 2U);
-    const auto liveBefore = liveControl.authored;
-    auto detached = liveControl.authored;
+    const auto liveBefore = liveControl.authored();
+    auto detached = liveControl.authored();
 
     assert(ops::replaceTrackFromClipboardInDomain(
         detached,
@@ -353,9 +353,9 @@ void test_detached_track_replace_builds_the_final_domain_offline() {
         {.track = 4, .page = 1, .macro = 0}
     ));
     assert(std::memcmp(
-        &liveControl.authored,
+        &liveControl.authored(),
         &liveBefore,
-        sizeof(liveControl.authored)
+        sizeof(liveControl.authored())
     ) == 0);
     assert(modulation::validProjectModulationDomain(
         detached.modulation,
@@ -374,7 +374,7 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
         .macro = 2,
     };
     assignLane(control, destAddress, 3);
-    const auto before = control;
+    const auto before = control.authored();
 
     core::state::MacroAutomationClipboard clipboard;
     clipboard.valid = true;
@@ -391,33 +391,33 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
     entry.control.automation.enabled = true;
 
     assert(!ops::replacePageFromClipboardInDomain(
-        control.authored,
+        control.authored(),
         destAddress.track,
         destAddress.page,
         &clipboard
     ));
-    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
+    assert(std::memcmp(&control.authored(), &before, sizeof(before)) == 0);
 
     clipboard.count = static_cast<uint8_t>(clipboard.entries.size() + 1U);
     assert(!ops::replacePageFromClipboardInDomain(
-        control.authored,
+        control.authored(),
         destAddress.track,
         destAddress.page,
         &clipboard
     ));
-    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
+    assert(std::memcmp(&control.authored(), &before, sizeof(before)) == 0);
 
     clipboard.count = 0;
     clipboard.pointPool.used = static_cast<uint16_t>(
         clipboard.pointPool.points.size() + 1U
     );
     assert(!ops::replacePageFromClipboardInDomain(
-        control.authored,
+        control.authored(),
         destAddress.track,
         destAddress.page,
         &clipboard
     ));
-    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
+    assert(std::memcmp(&control.authored(), &before, sizeof(before)) == 0);
 
     std::cout << "[PASS] Malformed clipboard cannot mutate Project control\n";
 }

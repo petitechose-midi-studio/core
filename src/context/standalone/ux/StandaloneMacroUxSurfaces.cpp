@@ -854,12 +854,12 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             });
         const auto modulationRows =
             core::state::macro::buildMacroModulationRows(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 destination
             );
         const auto contextAction =
             core::state::macro::macroContextActionAt(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 modulationRows,
                 core::state::macro::macroRootItemAt(
                     macro_edit_.focusedRow.get()
@@ -1292,7 +1292,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         const bool allRow = row == 0;
         const bool addRow = row == addSourceRow;
         const int targetOrdinal = row - firstAssignmentRow;
-        const auto& graph = pages_.control.authored.modulation;
+        const auto& graph = pages_.control.authored().modulation;
         const core::state::modulation::ModulationBindingState* binding = nullptr;
         int ordinal = 0;
         if (!allRow && !addRow && targetOrdinal >= 0) {
@@ -1344,8 +1344,8 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                 core::state::modulation::depth::amountQ15ToPercent(
                 binding->amountQ15,
                 core::state::modulation::depth::scaleFor(
-                    pages_.control.authored.modulation,
-                    pages_.control.authored.curves,
+                    pages_.control.authored().modulation,
+                    pages_.control.authored().curves,
                     *binding
                 )
             );
@@ -1483,7 +1483,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
     }
 
     if (phase == core::state::MacroEditFlowPhase::MODULATOR_PICKER) {
-        const auto& graph = pages_.control.authored.modulation;
+        const auto& graph = pages_.control.authored().modulation;
         if (graph.sourceCount == 0U) return false;
         const int selected = std::clamp(
             macro_edit_.modulatorPickerIndex.get(),

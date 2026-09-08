@@ -423,7 +423,7 @@ MacroHistoryService::preparePageStructure(
         core::app::makeExtmemUnique<MacroPageStructureHistoryPayload>();
     if (!change->pageStructure) return {};
     auto& payload = *change->pageStructure;
-    if (!payload.control.prepare(pages.control.authored)) return {};
+    if (!payload.control.prepare(pages.control.authored())) return {};
 
     change->kind = MacroHistoryActionKind::PAGE_STRUCTURE;
     change->address = {
@@ -457,12 +457,12 @@ FLASHMEM bool MacroHistoryService::commitPreparedPageStructure(
     const auto& candidate = *payload.control.candidate();
     if (!core::state::modulation::validProjectModulationDomain(
             candidate.modulation, candidate.curves, &candidate.automation) ||
-        !payload.control.sealCandidate(pages.control.authored)) return false;
+        !payload.control.sealCandidate(pages.control.authored())) return false;
     if (sameMacroTrackData(payload.beforeTrack, payload.afterTrack) &&
         !payload.control.changed()) return false;
     change->address.page = payload.afterTrack.activePage;
     if (payload.control.changed()) {
-        payload.control.apply(pages.control.authored);
+        payload.control.apply(pages.control);
         pages.control.markAuthoredMutation();
     }
     pages.tracks[payload.track] = payload.afterTrack;

@@ -97,13 +97,13 @@ FLASHMEM bool applyDestinationScale(
     if (scaleQ15 == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) return true;
     const auto destination = projectControlDestination(address);
     const auto applied = setProjectModulationDestinationScale(
-        control.authored.modulation,
+        control.authored().modulation,
         destination,
         scaleQ15
     );
     return applied.changed() ||
            projectModulationDestinationScaleQ15(
-               control.authored.modulation,
+               control.authored().modulation,
                destination
            ) == scaleQ15;
 }
@@ -123,9 +123,9 @@ FLASHMEM MacroTypedPastePreflight preflightCapacity(
     plan.reclaimablePointCount = reclaimable;
     plan.freePointCount = static_cast<uint16_t>(
         core::state::modulation::PROJECT_CURVE_POINT_CAPACITY -
-        pages.control.authored.curves.pointCount
+        pages.control.authored().curves.pointCount
     );
-    const auto& authored = pages.control.authored;
+    const auto& authored = pages.control.authored();
     if (static_cast<uint32_t>(authored.automation.entryCount) +
             addedAutomationEntries >
             core::state::modulation::PROJECT_AUTOMATION_ENTRY_CAPACITY ||
@@ -543,7 +543,7 @@ FLASHMEM bool pasteSlotEntryFromClipboard(
     if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
         return false;
     }
-    auto pendingDomain = core::app::makeExtmemUniqueCopy(pages.control.authored);
+    auto pendingDomain = core::app::makeExtmemUniqueCopy(pages.control.authored());
     if (!pendingDomain) return false;
     auto pendingPage = pages.pageData(address.track, address.page);
     if (!pasteSlotEntryFromClipboardInDomain(
@@ -553,7 +553,7 @@ FLASHMEM bool pasteSlotEntryFromClipboard(
             clipboard,
             clipboardIndex
         ) ||
-        !pages.control.tryPublishAuthored(*pendingDomain)) {
+        !pages.control.tryPublishAuthored(pendingDomain)) {
         return false;
     }
     pages.pageData(address.track, address.page) = pendingPage;
@@ -640,7 +640,7 @@ FLASHMEM MacroTypedPastePreflight preflightModulationPaste(
             rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
             return rejected;
         }
-        const auto& graph = pages.control.authored.modulation;
+        const auto& graph = pages.control.authored().modulation;
         const auto* source = findProjectModulator(graph, draft.sourceId);
         if (source == nullptr) {
             rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
@@ -722,7 +722,7 @@ FLASHMEM bool pasteModulationFromClipboard(
             )) {
             return false;
         }
-        auto& graph = pages.control.authored.modulation;
+        auto& graph = pages.control.authored().modulation;
         for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
             auto& existing = graph.outputBindings[index];
             if (existing.sourceId != draft.sourceId ||

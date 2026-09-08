@@ -120,8 +120,8 @@ FLASHMEM bool MacroHistoryService::setAutomationMetadataCoalesced_(
                 false
             )) {
             const auto changed = setProjectAutomationCurveSpec(
-                pages.control.authored.automation,
-                pages.control.authored.curves,
+                pages.control.authored().automation,
+                pages.control.authored().curves,
                 projectControlDestination(address),
                 spec
             );
@@ -148,8 +148,8 @@ FLASHMEM bool MacroHistoryService::setAutomationMetadataCoalesced_(
         return false;
     }
     const auto changed = setProjectAutomationCurveSpec(
-        pages.control.authored.automation,
-        pages.control.authored.curves,
+        pages.control.authored().automation,
+        pages.control.authored().curves,
         projectControlDestination(address),
         spec
     );
@@ -164,8 +164,8 @@ FLASHMEM bool MacroHistoryService::setAutomationMetadataCoalesced_(
             true
         )) {
         const auto restored = setProjectAutomationCurveSpec(
-            pages.control.authored.automation,
-            pages.control.authored.curves,
+            pages.control.authored().automation,
+            pages.control.authored().curves,
             projectControlDestination(address),
             change->automation->metadata.before
         );
@@ -378,7 +378,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
         return false;
     }
     auto* binding = findProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         bindingId
     );
     const auto destination = projectControlDestination(address);
@@ -404,7 +404,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
             const bool enabled =
                 (binding->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
             if (!updateProjectModulationBinding(
-                    pages.control.authored.modulation,
+                    pages.control.authored().modulation,
                     bindingId,
                     amountQ15,
                     binding->application,
@@ -438,14 +438,14 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
     );
     if (!change) return false;
     binding = findProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         bindingId
     );
     if (binding == nullptr) return false;
     const bool enabled =
         (binding->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
     if (!updateProjectModulationBinding(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             bindingId,
             amountQ15,
             binding->application,
@@ -466,7 +466,7 @@ FLASHMEM bool MacroHistoryService::setModulationDestinationScaleCoalesced(
 ) {
     using namespace core::state::modulation;
     if (!macroAutomationAddressValid(address)) return false;
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     const auto destination = projectControlDestination(address);
     const uint16_t current = projectModulationDestinationScaleQ15(
         graph,
@@ -531,7 +531,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingEnabled(
 ) {
     using namespace core::state::modulation;
     auto* binding = findProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         bindingId
     );
     if (binding == nullptr ||
@@ -548,7 +548,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingEnabled(
     );
     if (!change) return false;
     if (!updateProjectModulationBinding(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             bindingId,
             binding->amountQ15,
             binding->application,
@@ -571,7 +571,7 @@ FLASHMEM bool MacroHistoryService::setAllModulationBindingsEnabled(
     if (!macroAutomationAddressValid(address)) return false;
     const auto destination = projectControlDestination(address);
     bool needsChange = false;
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
         const auto& binding = graph.outputBindings[index];
         if (binding.destination == destination &&
@@ -588,7 +588,7 @@ FLASHMEM bool MacroHistoryService::setAllModulationBindingsEnabled(
         MacroHistoryActionKind::SOURCE_STATE
     );
     if (!change) return false;
-    auto& mutableGraph = pages.control.authored.modulation;
+    auto& mutableGraph = pages.control.authored().modulation;
     for (uint16_t index = 0; index < mutableGraph.outputBindingCount; ++index) {
         auto& binding = mutableGraph.outputBindings[index];
         if (binding.destination != destination) continue;
@@ -611,7 +611,7 @@ FLASHMEM bool MacroHistoryService::removeModulationBinding(
 ) {
     using namespace core::state::modulation;
     const auto* binding = findProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         bindingId
     );
     if (binding == nullptr ||
@@ -625,7 +625,7 @@ FLASHMEM bool MacroHistoryService::removeModulationBinding(
     );
     if (!change ||
         !removeProjectModulationBinding(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             bindingId
         ).changed()) {
         return false;
@@ -641,7 +641,7 @@ FLASHMEM bool MacroHistoryService::clearModulationBindings(
     using namespace core::state::modulation;
     if (!macroAutomationAddressValid(address)) return false;
     const auto destination = projectControlDestination(address);
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     bool stored = false;
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
         if (graph.outputBindings[index].destination == destination) {

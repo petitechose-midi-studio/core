@@ -83,19 +83,19 @@ FLASHMEM bool captureAutomationMetadataHistory(
         return false;
     }
     const auto* record = core::state::modulation::findProjectCurve(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         view.automation.id
     );
     if (record == nullptr ||
         record->pointCount != view.automation.pointCount ||
         static_cast<uint32_t>(record->pointOffset) + record->pointCount >
-            pages.control.authored.curves.pointCount) {
+            pages.control.authored().curves.pointCount) {
         return false;
     }
     out.before = view.automation.spec;
     out.after = view.automation.spec;
     out.pointFingerprint = automationPointFingerprint(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         *record
     );
     out.pointCount = record->pointCount;
@@ -131,16 +131,16 @@ FLASHMEM bool liveAutomationMetadataMatches(
         return false;
     }
     const auto* record = core::state::modulation::findProjectCurve(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         view.automation.id
     );
     if (record == nullptr || record->pointCount != payload.pointCount ||
         static_cast<uint32_t>(record->pointOffset) + record->pointCount >
-            pages.control.authored.curves.pointCount) {
+            pages.control.authored().curves.pointCount) {
         return false;
     }
     return !verifyPoints ||
-        automationPointFingerprint(pages.control.authored.curves, *record) ==
+        automationPointFingerprint(pages.control.authored().curves, *record) ==
             payload.pointFingerprint;
 }
 
@@ -163,8 +163,8 @@ FLASHMEM bool applyAutomationMetadataHistory(
     const auto& rollback = after ? payload.before : payload.after;
     const auto applied =
         core::state::modulation::setProjectAutomationCurveSpec(
-            pages.control.authored.automation,
-            pages.control.authored.curves,
+            pages.control.authored().automation,
+            pages.control.authored().curves,
             core::state::modulation::projectControlDestination(address),
             target
         );
@@ -181,8 +181,8 @@ FLASHMEM bool applyAutomationMetadataHistory(
     }
     const auto restored =
         core::state::modulation::setProjectAutomationCurveSpec(
-            pages.control.authored.automation,
-            pages.control.authored.curves,
+            pages.control.authored().automation,
+            pages.control.authored().curves,
             core::state::modulation::projectControlDestination(address),
             rollback
         );
@@ -323,7 +323,7 @@ FLASHMEM bool applyAutomationTakeAtomically(
     bool after
 ) {
     if (!automationTakePayloadConsistent(payload, true)) return false;
-    auto pending = core::app::makeExtmemUniqueCopy(pages.control.authored);
+    auto pending = core::app::makeExtmemUniqueCopy(pages.control.authored());
     if (!pending) return false;
     const auto& snapshots = after ? payload.after : payload.before;
     for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
@@ -340,7 +340,7 @@ FLASHMEM bool applyAutomationTakeAtomically(
             return false;
         }
     }
-    return pages.control.tryPublishAuthored(*pending);
+    return pages.control.tryPublishAuthored(pending);
 }
 
 FLASHMEM void normalizeCurveOffsets(MacroSlotHistorySnapshot& snapshot) {
@@ -362,18 +362,18 @@ FLASHMEM bool liveProjectCurveMatches(
                !core::state::modulation::valid(live.id);
     }
     const auto* record = core::state::modulation::findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         live.id
     );
     if (record == nullptr || record->pointCount != live.pointCount ||
         static_cast<uint32_t>(record->pointOffset) + record->pointCount >
-            control.authored.curves.pointCount ||
+            control.authored().curves.pointCount ||
         static_cast<uint32_t>(snapshotOffset) + live.pointCount >
             snapshot.points.size()) {
         return false;
     }
     for (uint16_t i = 0; i < live.pointCount; ++i) {
-        const auto& point = control.authored.curves.points[
+        const auto& point = control.authored().curves.points[
             static_cast<uint16_t>(record->pointOffset + i)
         ];
         if (!samePoint(

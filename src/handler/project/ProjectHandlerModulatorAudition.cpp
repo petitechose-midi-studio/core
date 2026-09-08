@@ -125,7 +125,7 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     if (!pickerTarget.valid) return;
     const uint8_t track = navigation_.destinationPickerTrack;
     const uint8_t page = navigation_.destinationPickerPage;
-    auto& graph = pages_.control.authored.modulation;
+    auto& graph = pages_.control.authored().modulation;
 
     const ModulatorKind creatingKind = navigation_.creatingModulatorKind;
     char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
@@ -287,13 +287,13 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         navigation_.setLifecycleFeedback(feedback);
     } else {
         const auto* binding = findProjectModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             begun.bindingId
         );
         const auto scale = binding != nullptr
             ? depth_parameter::scaleFor(
-                  pages_.control.authored.modulation,
-                  pages_.control.authored.curves,
+                  pages_.control.authored().modulation,
+                  pages_.control.authored().curves,
                   *binding
               )
             : depth_parameter::Scale::STANDARD;
@@ -331,7 +331,7 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
         macros_,
         pages_
     );
-    auto& graph = pages_.control.authored.modulation;
+    auto& graph = pages_.control.authored().modulation;
     publishModulatorMutation(false);
     if (macroReturn) {
         (void)modulator_navigation::returnToMacroFromAudition(

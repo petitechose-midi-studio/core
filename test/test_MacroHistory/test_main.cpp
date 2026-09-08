@@ -31,24 +31,41 @@ void testAuthoredPublicationIsValidatedAtomicAndExact() {
     control->authoredRevision = UINT32_MAX;
     control->compiledRevision = UINT32_MAX;
     control->runtimeContextHash = 42U;
-    auto before = std::make_unique<ProjectControlState>(*control);
-    auto candidate = std::make_unique<ProjectControlDomainState>(control->authored);
+    const auto* original = &control->authored();
+    auto before = std::make_unique<ProjectControlDomainState>(control->authored());
+    auto candidate = core::app::makeExtmemUniqueCopy(control->authored());
+    auto expected = std::make_unique<ProjectControlDomainState>();
+    std::vector<uint8_t> ownerBefore(sizeof(*control));
+    std::memcpy(ownerBefore.data(), control.get(), ownerBefore.size());
+    const auto unchanged = [&](const auto& member) {
+        const auto offset = reinterpret_cast<const uint8_t*>(&member) -
+                            reinterpret_cast<const uint8_t*>(control.get());
+        return std::memcmp(&member, ownerBefore.data() + offset, sizeof(member)) == 0;
+    };
     core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+    core::app::ExtmemUniquePtr<ProjectControlDomainState> missing;
+    assert(!control->tryPublishAuthored(missing));
     candidate->curves.pointCount = PROJECT_CURVE_POINT_CAPACITY + 1U;
-    assert(!control->tryPublishAuthored(*candidate));
-    assert(std::memcmp(control.get(), before.get(), sizeof(*control)) == 0);
+    assert(!control->tryPublishAuthored(candidate));
+    assert(std::memcmp(control.get(), ownerBefore.data(), sizeof(*control)) == 0);
+    assert(std::memcmp(&control->authored(), before.get(), sizeof(*before)) == 0);
     assert(candidate->curves.pointCount == PROJECT_CURVE_POINT_CAPACITY + 1U);
     candidate->curves.pointCount = 0U;
     candidate->curves.nextCurveId = 2U;
-    // Publication preserves inactive bytes too; no partial-copy lifetime shortcut.
     candidate->curves.points.back() = {257U, -1200};
-    assert(control->tryPublishAuthored(*candidate));
-    assert(std::memcmp(&control->authored, candidate.get(), sizeof(*candidate)) == 0);
+    *expected = *candidate;
+    const auto* published = candidate.get();
+    assert(control->tryPublishAuthored(candidate));
+    assert(&control->authored() == published && candidate.get() == original);
+    assert(std::memcmp(&control->authored(), expected.get(), sizeof(*expected)) == 0);
+    assert(std::memcmp(candidate.get(), before.get(), sizeof(*before)) == 0);
     assert(control->authoredRevision == 1U && control->compiledRevision == UINT32_MAX);
-    assert(control->runtimeContextHash == before->runtimeContextHash);
-    assert(std::memcmp(&control->plan, &before->plan, sizeof(control->plan)) == 0);
-    assert(std::memcmp(&control->runtime, &before->runtime, sizeof(control->runtime)) == 0);
+    assert(unchanged(control->plan) && unchanged(control->runtime));
+    assert(unchanged(control->runtimeContextHash) && unchanged(control->timeTelemetry));
+    assert(unchanged(control->sourceScratch) && unchanged(control->triggerScratch));
+    assert(unchanged(control->audition) && unchanged(control->focus));
     assert(core::app::testing::extmemAllocationAttempt == 0U);
+
 }
 
 void compileActiveControlPlan(
@@ -61,7 +78,7 @@ void compileActiveControlPlan(
     context.activeMacroMask[0] =
         static_cast<uint8_t>(1U << kAddress.macro);
     assert(compileProjectControlRuntimePlan(
-        control.authored,
+        control.authored(),
         context,
         control.plan
     ).compiled());
@@ -134,7 +151,7 @@ void seedCurves(macro::MacroPagesState& pages) {
         0.65f
     ));
     assert(core::state::modulation::setProjectModulationDestinationScale(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         core::state::modulation::projectControlDestination(kAddress),
         49152U
     ).changed());
@@ -206,7 +223,7 @@ void test_depth_turns_coalesce_without_extra_entries() {
     macro::MacroPagesState pages;
     seedCurves(pages);
     const auto bindingId =
-        pages.control.authored.modulation.outputBindings[0].id;
+        pages.control.authored().modulation.outputBindings[0].id;
     compileActiveControlPlan(pages.control);
     assert(runtimeBinding(pages.control, bindingId) != nullptr);
     macro::MacroHistoryService history;
@@ -240,7 +257,7 @@ void test_global_depth_is_compact_coalesced_and_independent_from_bypass() {
     seedCurves(pages);
     macro::MacroHistoryService history;
     const auto destination = projectControlDestination(kAddress);
-    const auto bindingId = pages.control.authored.modulation.outputBindings[0].id;
+    const auto bindingId = pages.control.authored().modulation.outputBindings[0].id;
     compileActiveControlPlan(pages.control);
     assert(runtimeDestination(pages.control, destination) != nullptr);
 
@@ -268,11 +285,11 @@ void test_global_depth_is_compact_coalesced_and_independent_from_bypass() {
     )->destinationScaleQ15 == 16384U);
     assert(history.undoCount() == 1U);
     assert(projectModulationDestinationScaleQ15(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         destination
     ) == 16384U);
     assert((findProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         bindingId
     )->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U);
 
@@ -280,12 +297,12 @@ void test_global_depth_is_compact_coalesced_and_independent_from_bypass() {
     assert(pages.control.compiledRevision !=
            pages.control.authoredRevision);
     assert(projectModulationDestinationScaleQ15(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         destination
     ) == 49152U);
     assert(history.redo(pages));
     assert(projectModulationDestinationScaleQ15(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         destination
     ) == 16384U);
     std::cout << "[PASS] Global Depth coalesces independently from bypass\n";
@@ -300,13 +317,13 @@ void test_automation_timing_edits_are_compact_coalesced_and_exact() {
     assert(readProjectControlMacroDestination(pages.control, kAddress, before));
     assert(before.automation.stored());
     const auto* beforeRecord = findProjectCurve(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         before.automation.id
     );
     assert(beforeRecord != nullptr && beforeRecord->pointCount == 2U);
     const std::array<ProjectPackedCurvePoint, 2> expectedPoints{{
-        pages.control.authored.curves.points[beforeRecord->pointOffset],
-        pages.control.authored.curves.points[beforeRecord->pointOffset + 1U],
+        pages.control.authored().curves.points[beforeRecord->pointOffset],
+        pages.control.authored().curves.points[beforeRecord->pointOffset + 1U],
     }};
     const uint16_t originalDuration = before.automation.spec.durationTicks;
     const uint16_t originalWindow = before.automation.spec.windowOffsetTicks;
@@ -356,17 +373,17 @@ void test_automation_timing_edits_are_compact_coalesced_and_exact() {
 
     assert(readProjectControlMacroDestination(pages.control, kAddress, edited));
     const auto* editedRecord = findProjectCurve(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         edited.automation.id
     );
     assert(editedRecord != nullptr && editedRecord->pointCount == 2U);
-    assert(pages.control.authored.curves.points[editedRecord->pointOffset].tick ==
+    assert(pages.control.authored().curves.points[editedRecord->pointOffset].tick ==
            expectedPoints[0].tick);
-    assert(pages.control.authored.curves.points[editedRecord->pointOffset].value ==
+    assert(pages.control.authored().curves.points[editedRecord->pointOffset].value ==
            expectedPoints[0].value);
-    assert(pages.control.authored.curves.points[editedRecord->pointOffset + 1U].tick ==
+    assert(pages.control.authored().curves.points[editedRecord->pointOffset + 1U].tick ==
            expectedPoints[1].tick);
-    assert(pages.control.authored.curves.points[editedRecord->pointOffset + 1U].value ==
+    assert(pages.control.authored().curves.points[editedRecord->pointOffset + 1U].value ==
            expectedPoints[1].value);
     assert(std::fabs(edited.primaryModulation.amount - 0.65f) < 0.0001f);
     std::cout << "[PASS] Automation timing uses compact exact coalesced history\n";
@@ -382,8 +399,8 @@ void test_automation_timing_copy_on_write_preserves_shared_owner() {
         .macro = 2U,
     };
     assert(duplicateProjectAutomationCurve(
-        pages.control.authored.automation,
-        pages.control.authored.curves,
+        pages.control.authored().automation,
+        pages.control.authored().curves,
         projectControlDestination(kAddress),
         projectControlDestination(copyAddress)
     ).changed());
@@ -454,11 +471,11 @@ void test_automation_timing_undo_fails_closed_on_point_corruption() {
     ProjectControlMacroDestinationView view{};
     assert(readProjectControlMacroDestination(pages.control, kAddress, view));
     const auto* record = findProjectCurve(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         view.automation.id
     );
     assert(record != nullptr);
-    ++pages.control.authored.curves.points[record->pointOffset].value;
+    ++pages.control.authored().curves.points[record->pointOffset].value;
     pages.control.markAuthoredMutation();
     assert(!history.undo(pages));
     assert(history.undoCount() == 1U);
@@ -484,7 +501,7 @@ void test_assignment_undo_preserves_unrelated_macro_fields() {
 
 void test_history_admission_rejects_oversized_slot() {
     macro::MacroPagesState pages;
-    auto& domain = pages.control.authored;
+    auto& domain = pages.control.authored();
     const uint16_t pointCount = static_cast<uint16_t>(
         macro::MACRO_HISTORY_POINT_CAPACITY + 1U
     );
@@ -614,7 +631,7 @@ void appendAutomationFiller(
 ) {
     using namespace core::state::modulation;
     assert(pointCount > 1U);
-    auto& domain = pages.control.authored;
+    auto& domain = pages.control.authored();
     auto& arena = domain.curves;
     assert(arena.recordCount < PROJECT_CURVE_LIVE_CAPACITY);
     assert(pointCount <= PROJECT_CURVE_POINT_CAPACITY - arena.pointCount);
@@ -655,7 +672,7 @@ core::state::modulation::ModulatorId addProjectLfo(
     auto draft = defaultLfoDraft();
     draft.name = name;
     const auto result = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         draft
     );
     assert(result.changed());
@@ -677,7 +694,7 @@ core::state::modulation::ModulationBindingId addBinding(
     draft.amountQ15 = amountQ15;
     draft.enabled = enabled;
     const auto result = addProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         draft
     );
     assert(result.changed());
@@ -706,11 +723,11 @@ void test_assignment_history_is_destination_scoped_and_order_stable() {
     );
     const auto second = addBinding(pages, secondSource, kAddress, -8192);
     assert(setProjectModulationDestinationScale(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         projectControlDestination(kAddress),
         49152U
     ).changed());
-    const auto before = pages.control.authored.modulation;
+    const auto before = pages.control.authored().modulation;
 
     assert(history.setModulationBindingDepthCoalesced(
         pages,
@@ -719,25 +736,25 @@ void test_assignment_history_is_destination_scoped_and_order_stable() {
         -0.75f
     ));
     history.endCoalescing();
-    const auto afterDepth = pages.control.authored.modulation;
+    const auto afterDepth = pages.control.authored().modulation;
     assert(findProjectModulationBinding(afterDepth, first)->amountQ15 == 4096);
     assert(findProjectModulationBinding(afterDepth, unrelated)->amountQ15 == 12288);
     assert(findProjectModulationBinding(afterDepth, second)->amountQ15 < -24000);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &before,
         sizeof(before)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &afterDepth,
         sizeof(afterDepth)
     ) == 0);
 
     assert(history.setAllModulationBindingsEnabled(pages, kAddress, false));
-    const auto afterBypass = pages.control.authored.modulation;
+    const auto afterBypass = pages.control.authored().modulation;
     assert((findProjectModulationBinding(afterBypass, first)->flags &
             PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U);
     assert((findProjectModulationBinding(afterBypass, second)->flags &
@@ -746,13 +763,13 @@ void test_assignment_history_is_destination_scoped_and_order_stable() {
             PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &afterDepth,
         sizeof(afterDepth)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &afterBypass,
         sizeof(afterBypass)
     ) == 0);
@@ -780,46 +797,46 @@ void test_assignment_remove_and_clear_keep_roots_and_unrelated_edges() {
     );
     const auto second = addBinding(pages, secondSource, kAddress, -8192);
     assert(setProjectModulationDestinationScale(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         projectControlDestination(kAddress),
         49152U
     ).changed());
-    const auto before = pages.control.authored.modulation;
+    const auto before = pages.control.authored().modulation;
 
     assert(history.removeModulationBinding(pages, kAddress, first));
-    const auto afterRemove = pages.control.authored.modulation;
+    const auto afterRemove = pages.control.authored().modulation;
     assert(afterRemove.sourceCount == 3U);
     assert(afterRemove.outputBindingCount == 2U);
     assert(afterRemove.outputBindings[0].id == unrelated);
     assert(afterRemove.outputBindings[1].id == second);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &before,
         sizeof(before)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &afterRemove,
         sizeof(afterRemove)
     ) == 0);
     assert(history.undo(pages));
 
     assert(history.clearModulationBindings(pages, kAddress));
-    const auto afterClear = pages.control.authored.modulation;
+    const auto afterClear = pages.control.authored().modulation;
     assert(afterClear.sourceCount == 3U);
     assert(afterClear.outputBindingCount == 1U);
     assert(afterClear.outputBindings[0].id == unrelated);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &before,
         sizeof(before)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &afterClear,
         sizeof(afterClear)
     ) == 0);
@@ -852,10 +869,10 @@ void test_sparse_macro_removal_purges_all_destination_state_atomically() {
     );
     assert(valid(secondBinding) && valid(unrelatedBinding));
     const auto sourceCountBefore =
-        pages.control.authored.modulation.sourceCount;
+        pages.control.authored().modulation.sourceCount;
     auto before = core::app::makeExtmemUnique<ProjectControlDomainState>();
     assert(before);
-    *before = pages.control.authored;
+    *before = pages.control.authored();
     macro::MacroAutomationHistorySnapshot automationBefore{};
     assert(macro::captureMacroAutomationHistorySnapshot(
         pages,
@@ -874,22 +891,22 @@ void test_sparse_macro_removal_purges_all_destination_state_atomically() {
     const auto removedSlot =
         test_support::project_control::readSlot(pages.control, kAddress);
     assert(!removedSlot.present());
-    assert(pages.control.authored.modulation.sourceCount == sourceCountBefore);
+    assert(pages.control.authored().modulation.sourceCount == sourceCountBefore);
     assert(findProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         unrelatedBinding
     ) != nullptr);
     assert(findProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         secondBinding
     ) == nullptr);
     assert(projectModulationDestinationScaleQ15(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         projectControlDestination(kAddress)
     ) == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
     auto after = core::app::makeExtmemUnique<ProjectControlDomainState>();
     assert(after);
-    *after = pages.control.authored;
+    *after = pages.control.authored();
 
     assert(history.undo(pages));
     assert(macro::liveMacroAutomationMatchesHistorySnapshot(
@@ -897,7 +914,7 @@ void test_sparse_macro_removal_purges_all_destination_state_atomically() {
         automationBefore
     ));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &before->modulation,
         sizeof(before->modulation)
     ) == 0);
@@ -908,7 +925,7 @@ void test_sparse_macro_removal_purges_all_destination_state_atomically() {
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &after->modulation,
         sizeof(after->modulation)
     ) == 0);
@@ -925,7 +942,7 @@ void test_lfo_audition_cancel_is_byte_stable_and_history_free() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
-    const auto before = pages.control.authored.modulation;
+    const auto before = pages.control.authored().modulation;
     const uint32_t beforeRevision = pages.control.authoredRevision;
 
     const auto begun = history.beginLfoModulatorAudition(
@@ -940,12 +957,12 @@ void test_lfo_audition_cancel_is_byte_stable_and_history_free() {
     assert(history.undoCount() == 0);
 
     auto* source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         begun.sourceId
     );
     assert(source != nullptr);
     source->parameters.lfo.shape = ModulatorLfoShape::TRIANGLE;
-    auto& binding = pages.control.authored.modulation.outputBindings[0];
+    auto& binding = pages.control.authored().modulation.outputBindings[0];
     binding.amountQ15 = -12288;
     pages.control.markAuthoredMutation();
 
@@ -955,7 +972,7 @@ void test_lfo_audition_cancel_is_byte_stable_and_history_free() {
     assert(history.undoCount() == 0);
     assert(pages.control.authoredRevision == beforeRevision);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &before,
         sizeof(before)
     ) == 0);
@@ -974,38 +991,38 @@ void test_lfo_audition_apply_is_one_compact_undo_redo_action() {
     );
     assert(begun.changed());
     auto* source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         begun.sourceId
     );
     assert(source != nullptr);
     source->parameters.lfo.shape = ModulatorLfoShape::SAW_DOWN;
-    pages.control.authored.modulation.outputBindings[0].amountQ15 = -16384;
+    pages.control.authored().modulation.outputBindings[0].amountQ15 = -16384;
     pages.control.markAuthoredMutation();
 
     assert(history.commitModulatorAudition(pages, kAddress));
     assert(history.undoCount() == 1);
     assert(!history.modulatorAuditionPending(kAddress));
     assert(!pages.control.audition.active());
-    const auto committedSource = pages.control.authored.modulation.sources[0];
+    const auto committedSource = pages.control.authored().modulation.sources[0];
     const auto committedBinding =
-        pages.control.authored.modulation.outputBindings[0];
+        pages.control.authored().modulation.outputBindings[0];
 
     assert(history.undo(pages));
-    assert(pages.control.authored.modulation.sourceCount == 0);
-    assert(pages.control.authored.modulation.outputBindingCount == 0);
-    assert(pages.control.authored.modulation.nextSourceId == 1);
-    assert(pages.control.authored.modulation.nextBindingId == 1);
+    assert(pages.control.authored().modulation.sourceCount == 0);
+    assert(pages.control.authored().modulation.outputBindingCount == 0);
+    assert(pages.control.authored().modulation.nextSourceId == 1);
+    assert(pages.control.authored().modulation.nextBindingId == 1);
 
     assert(history.redo(pages));
-    assert(pages.control.authored.modulation.sourceCount == 1);
-    assert(pages.control.authored.modulation.outputBindingCount == 1);
+    assert(pages.control.authored().modulation.sourceCount == 1);
+    assert(pages.control.authored().modulation.outputBindingCount == 1);
     assert(std::memcmp(
-        &pages.control.authored.modulation.sources[0],
+        &pages.control.authored().modulation.sources[0],
         &committedSource,
         sizeof(committedSource)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation.outputBindings[0],
+        &pages.control.authored().modulation.outputBindings[0],
         &committedBinding,
         sizeof(committedBinding)
     ) == 0);
@@ -1017,8 +1034,8 @@ void test_lfo_audition_capacity_failure_has_no_partial_state() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
-    pages.control.authored.modulation.sourceCount = PROJECT_MODULATOR_CAPACITY;
-    const auto before = pages.control.authored.modulation;
+    pages.control.authored().modulation.sourceCount = PROJECT_MODULATOR_CAPACITY;
+    const auto before = pages.control.authored().modulation;
     const auto pageBefore = pages.pageData(0, 0);
 
     const auto result = history.beginLfoModulatorAudition(
@@ -1033,7 +1050,7 @@ void test_lfo_audition_capacity_failure_has_no_partial_state() {
     assert(!history.modulatorAuditionPending(kAddress));
     assert(history.undoCount() == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &before,
         sizeof(before)
     ) == 0);
@@ -1050,7 +1067,7 @@ void test_macro_create_audition_cancel_restores_page_graph_and_ids() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto pageBefore = pages.pageData(0, 0);
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
     const uint32_t revisionBefore = pages.control.authoredRevision;
 
     const auto begun = history.beginLfoModulatorAudition(
@@ -1073,7 +1090,7 @@ void test_macro_create_audition_cancel_restores_page_graph_and_ids() {
         sizeof(pageBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1097,7 +1114,7 @@ void test_macro_create_and_assignment_are_one_undo_redo_action() {
     assert(history.commitModulatorAudition(pages, kAddress));
     assert(history.undoCount() == 1U);
     const auto pageAfter = pages.pageData(0, 0);
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
 
     assert(history.undo(pages));
     assert(std::memcmp(
@@ -1105,10 +1122,10 @@ void test_macro_create_and_assignment_are_one_undo_redo_action() {
         &pageBefore,
         sizeof(pageBefore)
     ) == 0);
-    assert(pages.control.authored.modulation.sourceCount == 0U);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
-    assert(pages.control.authored.modulation.nextSourceId == 1U);
-    assert(pages.control.authored.modulation.nextBindingId == 1U);
+    assert(pages.control.authored().modulation.sourceCount == 0U);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().modulation.nextSourceId == 1U);
+    assert(pages.control.authored().modulation.nextBindingId == 1U);
 
     assert(history.redo(pages));
     assert(std::memcmp(
@@ -1117,7 +1134,7 @@ void test_macro_create_and_assignment_are_one_undo_redo_action() {
         sizeof(pageAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -1138,7 +1155,7 @@ void test_missing_track_page_and_sparse_macro_commit_atomically() {
     auto binding = defaultBindingDraft();
     binding.destination = projectControlDestination(address);
     const auto trackBefore = pages.tracks[address.track];
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
 
     auto begun = history.beginLfoModulatorAudition(
         pages,
@@ -1158,7 +1175,7 @@ void test_missing_track_page_and_sparse_macro_commit_atomically() {
     assert(history.cancelModulatorAudition(pages, address));
     assert(pages.currentTrackEnabledMask() == 0x0001U);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1179,7 +1196,7 @@ void test_missing_track_page_and_sparse_macro_commit_atomically() {
     assert(pages.pageData(1U, 0U).cc[5] == 5U);
     assert(pages.currentActiveTrack() == 0U);
     const auto trackAfter = pages.tracks[address.track];
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
 
     assert(history.undo(pages));
     assert(pages.currentTrackEnabledMask() == 0x0001U);
@@ -1189,7 +1206,7 @@ void test_missing_track_page_and_sparse_macro_commit_atomically() {
         sizeof(trackBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1201,7 +1218,7 @@ void test_missing_track_page_and_sparse_macro_commit_atomically() {
         sizeof(trackAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -1213,18 +1230,18 @@ void test_macro_create_duplicate_and_capacity_failures_are_exact_noops() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto source = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultLfoDraft()
     );
     assert(source.changed());
     auto binding = defaultBindingDraft();
     binding.sourceId = source.sourceId;
     assert(addProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         binding
     ).changed());
     const auto duplicatePageBefore = pages.pageData(0, 0);
-    const auto duplicateGraphBefore = pages.control.authored.modulation;
+    const auto duplicateGraphBefore = pages.control.authored().modulation;
 
     const auto duplicate = history.beginExistingModulatorAudition(
         pages,
@@ -1240,17 +1257,17 @@ void test_macro_create_duplicate_and_capacity_failures_are_exact_noops() {
         sizeof(duplicatePageBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &duplicateGraphBefore,
         sizeof(duplicateGraphBefore)
     ) == 0);
 
     macro::MacroPagesState fullPages;
     macro::MacroHistoryService fullHistory;
-    fullPages.control.authored.modulation.outputBindingCount =
+    fullPages.control.authored().modulation.outputBindingCount =
         PROJECT_MODULATION_BINDING_CAPACITY;
     const auto fullPageBefore = fullPages.pageData(0, 0);
-    const auto fullGraphBefore = fullPages.control.authored.modulation;
+    const auto fullGraphBefore = fullPages.control.authored().modulation;
     const auto full = fullHistory.beginLfoModulatorAudition(
         fullPages,
         kAddress,
@@ -1265,7 +1282,7 @@ void test_macro_create_duplicate_and_capacity_failures_are_exact_noops() {
         sizeof(fullPageBefore)
     ) == 0);
     assert(std::memcmp(
-        &fullPages.control.authored.modulation,
+        &fullPages.control.authored().modulation,
         &fullGraphBefore,
         sizeof(fullGraphBefore)
     ) == 0);
@@ -1278,7 +1295,7 @@ void test_macro_create_stale_add_slot_is_rejected_without_history() {
     macro::MacroHistoryService history;
     pages.pageData(0, 0).setMacroActive(kAddress.macro, true);
     const auto pageBefore = pages.pageData(0, 0);
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
     const auto result = history.beginLfoModulatorAudition(
         pages,
         kAddress,
@@ -1295,7 +1312,7 @@ void test_macro_create_stale_add_slot_is_rejected_without_history() {
         sizeof(pageBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1308,12 +1325,12 @@ void test_macro_create_cancel_and_failed_commit_are_exact() {
     macro::MacroHistoryService history;
     auto draft = defaultLfoDraft();
     const auto source = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         draft
     );
     assert(source.changed());
     const auto pageBefore = pages.pageData(0, 0);
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
     const auto begun = history.beginExistingModulatorAudition(
         pages,
         kAddress,
@@ -1334,7 +1351,7 @@ void test_macro_create_cancel_and_failed_commit_are_exact() {
         sizeof(pageBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1347,11 +1364,11 @@ void test_existing_modulator_cancel_preserves_root_and_is_byte_stable() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto created = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultLfoDraft()
     );
     assert(created.changed());
-    const auto before = pages.control.authored.modulation;
+    const auto before = pages.control.authored().modulation;
     const uint32_t beforeRevision = pages.control.authoredRevision;
 
     const auto begun = history.beginExistingModulatorAudition(
@@ -1362,15 +1379,15 @@ void test_existing_modulator_cancel_preserves_root_and_is_byte_stable() {
     );
     assert(begun.changed());
     assert(!pages.control.audition.sourceCreated());
-    assert(pages.control.authored.modulation.sourceCount == 1U);
-    pages.control.authored.modulation.outputBindings[0].amountQ15 = -8192;
+    assert(pages.control.authored().modulation.sourceCount == 1U);
+    pages.control.authored().modulation.outputBindings[0].amountQ15 = -8192;
     pages.control.markAuthoredMutation();
 
     assert(history.cancelModulatorAudition(pages, kAddress));
     assert(history.undoCount() == 0U);
     assert(pages.control.authoredRevision == beforeRevision);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &before,
         sizeof(before)
     ) == 0);
@@ -1382,11 +1399,11 @@ void test_existing_modulator_apply_undo_redo_moves_only_binding() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto created = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultLfoDraft()
     );
     assert(created.changed());
-    const auto root = pages.control.authored.modulation.sources[0];
+    const auto root = pages.control.authored().modulation.sources[0];
 
     const auto begun = history.beginExistingModulatorAudition(
         pages,
@@ -1395,32 +1412,32 @@ void test_existing_modulator_apply_undo_redo_moves_only_binding() {
         defaultBindingDraft()
     );
     assert(begun.changed());
-    pages.control.authored.modulation.outputBindings[0].amountQ15 = -12288;
+    pages.control.authored().modulation.outputBindings[0].amountQ15 = -12288;
     pages.control.markAuthoredMutation();
     assert(history.commitModulatorAudition(pages, kAddress));
     assert(history.undoCount() == 1U);
     const auto committedBinding =
-        pages.control.authored.modulation.outputBindings[0];
+        pages.control.authored().modulation.outputBindings[0];
 
     assert(history.undo(pages));
-    assert(pages.control.authored.modulation.sourceCount == 1U);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().modulation.sourceCount == 1U);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
     assert(std::memcmp(
-        &pages.control.authored.modulation.sources[0],
+        &pages.control.authored().modulation.sources[0],
         &root,
         sizeof(root)
     ) == 0);
 
     assert(history.redo(pages));
-    assert(pages.control.authored.modulation.sourceCount == 1U);
-    assert(pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(pages.control.authored().modulation.sourceCount == 1U);
+    assert(pages.control.authored().modulation.outputBindingCount == 1U);
     assert(std::memcmp(
-        &pages.control.authored.modulation.sources[0],
+        &pages.control.authored().modulation.sources[0],
         &root,
         sizeof(root)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.modulation.outputBindings[0],
+        &pages.control.authored().modulation.outputBindings[0],
         &committedBinding,
         sizeof(committedBinding)
     ) == 0);
@@ -1432,11 +1449,11 @@ void test_project_source_edits_coalesce_and_restore_exact_source() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto created = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultLfoDraft()
     );
     assert(created.changed());
-    const auto original = pages.control.authored.modulation.sources[0];
+    const auto original = pages.control.authored().modulation.sources[0];
 
     auto parameters = original.parameters.lfo;
     parameters.periodTicks = 192;
@@ -1456,7 +1473,7 @@ void test_project_source_edits_coalesce_and_restore_exact_source() {
     assert(history.undoCount() == 2U);
     assert(history.undo(pages));
     const auto* source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         created.sourceId
     );
     assert(source != nullptr);
@@ -1465,7 +1482,7 @@ void test_project_source_edits_coalesce_and_restore_exact_source() {
 
     assert(history.undo(pages));
     source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         created.sourceId
     );
     assert(source != nullptr);
@@ -1473,7 +1490,7 @@ void test_project_source_edits_coalesce_and_restore_exact_source() {
     assert(history.redo(pages));
     assert(history.redo(pages));
     source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         created.sourceId
     );
     assert(source != nullptr);
@@ -1490,10 +1507,10 @@ void test_project_source_rename_is_one_exact_undo_action() {
     auto binding = defaultBindingDraft();
     binding.sourceId = sourceId;
     assert(addProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         binding
     ).changed());
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
 
     assert(history.setProjectModulatorName(
         pages,
@@ -1502,22 +1519,22 @@ void test_project_source_rename_is_one_exact_undo_action() {
     ));
     assert(history.undoCount() == 1U);
     assert(std::strcmp(
-        pages.control.authored.modulation.sources[0].name.data(),
+        pages.control.authored().modulation.sources[0].name.data(),
         "Shared Motion"
     ) == 0);
-    assert(pages.control.authored.modulation.outputBindings[0].sourceId ==
+    assert(pages.control.authored().modulation.outputBindings[0].sourceId ==
            sourceId);
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -1531,16 +1548,16 @@ void test_unassigned_lfo_creation_is_one_undo_action() {
     auto draft = defaultLfoDraft();
     const auto created = history.createUnassignedLfo(pages, draft);
     assert(created.changed());
-    assert(pages.control.authored.modulation.sourceCount == 1U);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().modulation.sourceCount == 1U);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
     assert(history.undoCount() == 1U);
     assert(history.undo(pages));
-    assert(pages.control.authored.modulation.sourceCount == 0U);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().modulation.sourceCount == 0U);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
     assert(history.redo(pages));
-    assert(pages.control.authored.modulation.sourceCount == 1U);
-    assert(pages.control.authored.modulation.sources[0].id == created.sourceId);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().modulation.sourceCount == 1U);
+    assert(pages.control.authored().modulation.sources[0].id == created.sourceId);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
     std::cout << "[PASS] explicit Unassigned LFO creation is one Undo action\n";
 }
 
@@ -1549,7 +1566,7 @@ void test_unassigned_adsr_creation_includes_trigger_in_one_undo_action() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     auto source = defaultAdsrDraft();
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
     const auto created = history.createUnassignedAdsr(
         pages,
         source,
@@ -1557,7 +1574,7 @@ void test_unassigned_adsr_creation_includes_trigger_in_one_undo_action() {
     );
     assert(created.changed());
     assert(history.undoCount() == 1U);
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
     assert(graphAfter.sourceCount == 1U);
     assert(graphAfter.outputBindingCount == 0U);
     assert(graphAfter.triggerBindingCount == 1U);
@@ -1567,13 +1584,13 @@ void test_unassigned_adsr_creation_includes_trigger_in_one_undo_action() {
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -1586,7 +1603,7 @@ void test_adsr_audition_cancel_and_apply_are_atomic() {
     macro::MacroHistoryService history;
     auto binding = defaultBindingDraft();
     binding.application = ModulationApplication::NATURAL;
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
 
     auto invalidTrigger = defaultAdsrTrigger();
     invalidTrigger.trigger.track = PROJECT_MODULATION_TRACK_COUNT;
@@ -1600,7 +1617,7 @@ void test_adsr_audition_cancel_and_apply_are_atomic() {
     assert(rejected.status == ProjectModulationStatus::INVALID_ARGUMENT);
     assert(!pages.control.audition.active() && history.undoCount() == 0U);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1613,13 +1630,13 @@ void test_adsr_audition_cancel_and_apply_are_atomic() {
         binding
     );
     assert(begun.changed());
-    assert(pages.control.authored.modulation.sourceCount == 1U);
-    assert(pages.control.authored.modulation.triggerBindingCount == 1U);
-    assert(pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(pages.control.authored().modulation.sourceCount == 1U);
+    assert(pages.control.authored().modulation.triggerBindingCount == 1U);
+    assert(pages.control.authored().modulation.outputBindingCount == 1U);
     assert(history.cancelModulatorAudition(pages, kAddress));
     assert(history.undoCount() == 0U);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1634,19 +1651,19 @@ void test_adsr_audition_cancel_and_apply_are_atomic() {
     assert(begun.changed());
     assert(history.commitModulatorAudition(pages, kAddress));
     assert(history.undoCount() == 1U);
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
     assert(graphAfter.triggerBindings[0].sourceId == begun.sourceId);
     assert(graphAfter.outputBindings[0].sourceId == begun.sourceId);
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -1658,17 +1675,17 @@ void test_adsr_parameters_and_trigger_route_coalesce_by_stable_identity() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto created = createAdsrModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultAdsrDraft()
     );
     assert(created.changed());
     auto triggerDraft = defaultAdsrTrigger();
     triggerDraft.sourceId = created.sourceId;
     assert(addProjectModulationTrigger(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         triggerDraft
     ).changed());
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
     const auto triggerId = graphBefore.triggerBindings[0].id;
 
     auto parameters = graphBefore.sources[0].parameters.adsr;
@@ -1686,7 +1703,7 @@ void test_adsr_parameters_and_trigger_route_coalesce_by_stable_identity() {
     ));
     assert(history.undoCount() == 1U);
     history.endCoalescing();
-    const auto graphAfterParameters = pages.control.authored.modulation;
+    const auto graphAfterParameters = pages.control.authored().modulation;
 
     auto route = graphAfterParameters.triggerBindings[0].trigger;
     route.track = 1U;
@@ -1712,30 +1729,30 @@ void test_adsr_parameters_and_trigger_route_coalesce_by_stable_identity() {
         112U
     ));
     assert(history.undoCount() == 2U);
-    assert(pages.control.authored.modulation.triggerBindings[0].id == triggerId);
-    assert(pages.control.authored.modulation.triggerBindings[0].trigger == route);
-    assert(pages.control.authored.modulation.triggerBindings[0].velocityMin ==
+    assert(pages.control.authored().modulation.triggerBindings[0].id == triggerId);
+    assert(pages.control.authored().modulation.triggerBindings[0].trigger == route);
+    assert(pages.control.authored().modulation.triggerBindings[0].velocityMin ==
            16U);
-    assert(pages.control.authored.modulation.triggerBindings[0].velocityMax ==
+    assert(pages.control.authored().modulation.triggerBindings[0].velocityMax ==
            112U);
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfterParameters,
         sizeof(graphAfterParameters)
     ) == 0);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -1747,17 +1764,17 @@ void test_adsr_duplicate_copies_trigger_and_undo_is_exact() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto created = createAdsrModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultAdsrDraft()
     );
     assert(created.changed());
     auto trigger = defaultAdsrTrigger();
     trigger.sourceId = created.sourceId;
     assert(addProjectModulationTrigger(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         trigger
     ).changed());
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
 
     const auto duplicated = history.duplicateProjectModulator(
         pages,
@@ -1765,7 +1782,7 @@ void test_adsr_duplicate_copies_trigger_and_undo_is_exact() {
         "ADSR 2"
     );
     assert(duplicated.changed());
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
     assert(graphAfter.sourceCount == 2U);
     assert(graphAfter.triggerBindingCount == 2U);
     assert(graphAfter.triggerBindings[0].id != graphAfter.triggerBindings[1].id);
@@ -1779,13 +1796,13 @@ void test_adsr_duplicate_copies_trigger_and_undo_is_exact() {
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -1797,11 +1814,11 @@ void test_existing_assignment_cancel_and_undo_are_exact() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     const auto created = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultLfoDraft()
     );
     assert(created.changed());
-    const auto original = pages.control.authored.modulation.sources[0];
+    const auto original = pages.control.authored().modulation.sources[0];
     constexpr macro::MacroAutomationSlotAddress other{
         .track = 3,
         .page = 0,
@@ -1816,11 +1833,11 @@ void test_existing_assignment_cancel_and_undo_are_exact() {
     assert(begun.changed());
     assert(history.cancelModulatorAudition(pages, other));
     assert(std::memcmp(
-        &pages.control.authored.modulation.sources[0],
+        &pages.control.authored().modulation.sources[0],
         &original,
         sizeof(original)
     ) == 0);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
 
     begun = history.beginExistingModulatorAudition(
         pages, other, created.sourceId, binding
@@ -1829,13 +1846,13 @@ void test_existing_assignment_cancel_and_undo_are_exact() {
     assert(history.commitModulatorAudition(pages, other));
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation.sources[0],
+        &pages.control.authored().modulation.sources[0],
         &original,
         sizeof(original)
     ) == 0);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
     assert(history.redo(pages));
-    assert(pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(pages.control.authored().modulation.outputBindingCount == 1U);
     std::cout << "[PASS] Existing assignment Cancel and Undo restore the root\n";
 }
 
@@ -1858,8 +1875,8 @@ void test_project_modulator_split_is_one_exact_undo_action() {
     sourceDraft.points = points.data();
     sourceDraft.pointCount = static_cast<uint16_t>(points.size());
     const auto created = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         sourceDraft
     );
     assert(created.changed());
@@ -1885,12 +1902,12 @@ void test_project_modulator_split_is_one_exact_undo_action() {
     ModulationTriggerDraft trigger{};
     trigger.sourceId = created.sourceId;
     assert(addProjectModulationTrigger(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         trigger
     ).changed());
 
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
     const ModulatorSplitRequest request{
         .sourceId = created.sourceId,
         .cloneName = "Slow Tide T2",
@@ -1900,8 +1917,8 @@ void test_project_modulator_split_is_one_exact_undo_action() {
     const auto split = history.splitProjectModulator(pages, request);
     assert(split.changed());
     assert(history.undoCount() == 1U);
-    const auto graphAfter = pages.control.authored.modulation;
-    const auto arenaAfter = pages.control.authored.curves;
+    const auto graphAfter = pages.control.authored().modulation;
+    const auto arenaAfter = pages.control.authored().curves;
     assert(graphAfter.sourceCount == 2U);
     assert(graphAfter.triggerBindingCount == 2U);
     assert(graphAfter.outputBindings[1].sourceId == split.sourceId);
@@ -1910,23 +1927,23 @@ void test_project_modulator_split_is_one_exact_undo_action() {
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaAfter,
         sizeof(arenaAfter)
     ) == 0);
@@ -1952,47 +1969,47 @@ void test_root_delete_undo_restores_graph_and_recorded_curve_exactly() {
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
     const auto created = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         draft
     );
     assert(created.changed());
     auto binding = defaultBindingDraft();
     binding.sourceId = created.sourceId;
     assert(addProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         binding
     ).changed());
     assert(setProjectModulationDestinationScale(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         binding.destination,
         49152U
     ).changed());
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
 
     const auto removed = history.deleteProjectModulator(
         pages,
         created.sourceId
     );
     assert(removed.changed());
-    assert(pages.control.authored.modulation.sourceCount == 0U);
-    assert(pages.control.authored.modulation.outputBindingCount == 0U);
-    assert(pages.control.authored.curves.recordCount == 0U);
+    assert(pages.control.authored().modulation.sourceCount == 0U);
+    assert(pages.control.authored().modulation.outputBindingCount == 0U);
+    assert(pages.control.authored().curves.recordCount == 0U);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
     assert(history.redo(pages));
-    assert(pages.control.authored.modulation.sourceCount == 0U);
-    assert(pages.control.authored.curves.recordCount == 0U);
+    assert(pages.control.authored().modulation.sourceCount == 0U);
+    assert(pages.control.authored().curves.recordCount == 0U);
     std::cout << "[PASS] root delete Undo restores graph and curve exactly\n";
 }
 
@@ -2014,30 +2031,30 @@ void test_root_delete_undo_restores_shared_curve_reference() {
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
     const auto created = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         draft
     );
     assert(created.changed());
     const auto clone = duplicateProjectModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         created.sourceId,
         "Motion 2"
     );
     assert(clone.changed());
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
     assert(history.deleteProjectModulator(pages, created.sourceId).changed());
-    assert(pages.control.authored.curves.records[0].referenceCount == 1U);
+    assert(pages.control.authored().curves.records[0].referenceCount == 1U);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
@@ -2062,41 +2079,41 @@ void test_recorded_source_duplicate_undo_restores_shared_reference() {
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
     const auto created = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         draft
     );
     assert(created.changed());
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
     const auto duplicate = history.duplicateProjectModulator(
         pages,
         created.sourceId,
         "Motion 2"
     );
     assert(duplicate.changed());
-    const auto graphAfter = pages.control.authored.modulation;
-    const auto arenaAfter = pages.control.authored.curves;
+    const auto graphAfter = pages.control.authored().modulation;
+    const auto arenaAfter = pages.control.authored().curves;
     assert(arenaAfter.records[0].referenceCount == 2U);
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaAfter,
         sizeof(arenaAfter)
     ) == 0);
@@ -2122,37 +2139,37 @@ void test_unassigned_recorded_shape_creation_is_one_exact_undo_action() {
     };
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
 
     const auto created = history.createUnassignedRecordedShape(pages, draft);
     assert(created.changed());
     assert(history.undoCount() == 1U);
-    const auto graphAfter = pages.control.authored.modulation;
-    const auto arenaAfter = pages.control.authored.curves;
+    const auto graphAfter = pages.control.authored().modulation;
+    const auto arenaAfter = pages.control.authored().curves;
     assert(graphAfter.sourceCount == 1U);
     assert(arenaAfter.recordCount == 1U);
     assert(arenaAfter.records[0].id == created.curveId);
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaAfter,
         sizeof(arenaAfter)
     ) == 0);
@@ -2185,8 +2202,8 @@ void test_assigned_recorded_shape_creation_commits_topology_atomically() {
         address
     );
     assert(plan.valid && plan.changesTopology());
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
     const auto trackBefore = pages.tracks[address.track];
     const uint16_t enabledBefore = pages.currentTrackEnabledMask();
 
@@ -2203,19 +2220,19 @@ void test_assigned_recorded_shape_creation_commits_topology_atomically() {
     assert(pages.pageData(address.track, address.page).isMacroActive(
         address.macro
     ));
-    const auto graphAfter = pages.control.authored.modulation;
-    const auto arenaAfter = pages.control.authored.curves;
+    const auto graphAfter = pages.control.authored().modulation;
+    const auto arenaAfter = pages.control.authored().curves;
     const auto trackAfter = pages.tracks[address.track];
     const uint16_t enabledAfter = pages.currentTrackEnabledMask();
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
@@ -2227,12 +2244,12 @@ void test_assigned_recorded_shape_creation_commits_topology_atomically() {
     assert(pages.currentTrackEnabledMask() == enabledBefore);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaAfter,
         sizeof(arenaAfter)
     ) == 0);
@@ -2265,8 +2282,8 @@ void test_unique_recorded_shape_replace_restores_compacted_arena_exactly() {
     first.points = firstPoints.data();
     first.pointCount = static_cast<uint16_t>(firstPoints.size());
     const auto firstSource = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         first
     );
     assert(firstSource.changed());
@@ -2275,13 +2292,13 @@ void test_unique_recorded_shape_replace_restores_compacted_arena_exactly() {
     second.points = secondPoints.data();
     second.pointCount = static_cast<uint16_t>(secondPoints.size());
     const auto secondSource = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         second
     );
     assert(secondSource.changed());
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
     constexpr std::array<ProjectPackedCurvePoint, 5> replacement{{
         {0U, -15000},
         {96U, -5000},
@@ -2300,30 +2317,30 @@ void test_unique_recorded_shape_replace_restores_compacted_arena_exactly() {
     );
     assert(replaced.changed());
     assert(replaced.curveId == firstSource.curveId);
-    const auto graphAfter = pages.control.authored.modulation;
-    const auto arenaAfter = pages.control.authored.curves;
+    const auto graphAfter = pages.control.authored().modulation;
+    const auto arenaAfter = pages.control.authored().curves;
     assert(arenaAfter.records[1].id == secondSource.curveId);
     assert(arenaAfter.records[1].pointOffset == replacement.size());
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaAfter,
         sizeof(arenaAfter)
     ) == 0);
@@ -2351,8 +2368,8 @@ void test_unique_recorded_shape_shrink_restores_nonzero_tails_exactly() {
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
     const auto source = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         draft
     );
     assert(source.changed());
@@ -2364,18 +2381,18 @@ void test_unique_recorded_shape_shrink_restores_nonzero_tails_exactly() {
     trailingDraft.points = trailing.data();
     trailingDraft.pointCount = static_cast<uint16_t>(trailing.size());
     assert(createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         trailingDraft
     ).changed());
-    auto& arena = pages.control.authored.curves;
+    auto& arena = pages.control.authored().curves;
     for (uint16_t index = 0U; index < 4U; ++index) {
         arena.points[static_cast<uint16_t>(arena.pointCount + index)] = {
             static_cast<uint16_t>(500U + index),
             static_cast<int16_t>(14000 + index),
         };
     }
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
     const auto arenaBefore = arena;
     constexpr std::array<ProjectPackedCurvePoint, 2> replacement{{
         {0U, 9000}, {384U, -9000},
@@ -2388,7 +2405,7 @@ void test_unique_recorded_shape_shrink_restores_nonzero_tails_exactly() {
         static_cast<uint16_t>(replacement.size())
     );
     assert(replaced.changed());
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
     const auto arenaAfter = arena;
     assert(arenaAfter.pointCount + 3U == arenaBefore.pointCount);
     bool nonzeroTail = false;
@@ -2402,14 +2419,14 @@ void test_unique_recorded_shape_shrink_restores_nonzero_tails_exactly() {
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(&arena, &arenaBefore, sizeof(arenaBefore)) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
@@ -2434,14 +2451,14 @@ void test_shared_recorded_shape_replace_is_exact_copy_on_write() {
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
     const auto source = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         draft
     );
     assert(source.changed());
     const auto clone = duplicateProjectModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         source.sourceId,
         "Shared 2"
     );
@@ -2454,12 +2471,12 @@ void test_shared_recorded_shape_replace_is_exact_copy_on_write() {
     foreignDraft.points = foreignPoints.data();
     foreignDraft.pointCount = static_cast<uint16_t>(foreignPoints.size());
     const auto foreign = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         foreignDraft
     );
     assert(foreign.changed());
-    auto& liveArena = pages.control.authored.curves;
+    auto& liveArena = pages.control.authored().curves;
     liveArena.records[liveArena.recordCount] = {
         .id = ProjectCurveId{999U},
         .pointOffset = 313U,
@@ -2474,7 +2491,7 @@ void test_shared_recorded_shape_replace_is_exact_copy_on_write() {
             static_cast<int16_t>(13000 + index),
         };
     }
-    const auto graphBefore = pages.control.authored.modulation;
+    const auto graphBefore = pages.control.authored().modulation;
     const auto arenaBefore = liveArena;
     constexpr std::array<ProjectPackedCurvePoint, 4> replacement{{
         {0U, 1000}, {128U, 12000}, {256U, -12000}, {384U, 2000},
@@ -2488,7 +2505,7 @@ void test_shared_recorded_shape_replace_is_exact_copy_on_write() {
     );
     assert(replaced.changed());
     assert(replaced.curveId != source.curveId);
-    const auto graphAfter = pages.control.authored.modulation;
+    const auto graphAfter = pages.control.authored().modulation;
     const auto arenaAfter = liveArena;
     assert(arenaAfter.recordCount == 3U);
     assert(arenaAfter.records[0].referenceCount == 1U);
@@ -2501,23 +2518,23 @@ void test_shared_recorded_shape_replace_is_exact_copy_on_write() {
 
     assert(history.undo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
     assert(history.redo(pages));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphAfter,
         sizeof(graphAfter)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaAfter,
         sizeof(arenaAfter)
     ) == 0);
@@ -2543,20 +2560,20 @@ void test_recorded_shape_history_limits_fail_before_mutation() {
     };
     draft.points = oversized.data();
     draft.pointCount = static_cast<uint16_t>(oversized.size());
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
     const uint32_t revisionBefore = pages.control.authoredRevision;
     const auto failed = history.createUnassignedRecordedShape(pages, draft);
     assert(failed.status == ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED);
     assert(history.undoCount() == 0U);
     assert(pages.control.authoredRevision == revisionBefore);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
@@ -2574,13 +2591,13 @@ void test_recorded_shape_history_limits_fail_before_mutation() {
     draft.points = deletePoints.data();
     draft.pointCount = static_cast<uint16_t>(deletePoints.size());
     const auto created = createRecordedShapeModulator(
-        pages.control.authored.modulation,
-        pages.control.authored.curves,
+        pages.control.authored().modulation,
+        pages.control.authored().curves,
         draft
     );
     assert(created.changed());
-    const auto deleteGraphBefore = pages.control.authored.modulation;
-    const auto deleteArenaBefore = pages.control.authored.curves;
+    const auto deleteGraphBefore = pages.control.authored().modulation;
+    const auto deleteArenaBefore = pages.control.authored().curves;
     const auto rejected = history.deleteProjectModulator(
         pages,
         created.sourceId
@@ -2588,12 +2605,12 @@ void test_recorded_shape_history_limits_fail_before_mutation() {
     assert(rejected.status == ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED);
     assert(history.undoCount() == 0U);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &deleteGraphBefore,
         sizeof(deleteGraphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &deleteArenaBefore,
         sizeof(deleteArenaBefore)
     ) == 0);
@@ -2628,7 +2645,7 @@ void test_recorded_shape_undo_fails_closed_on_live_corruption() {
         replacement.data(),
         static_cast<uint16_t>(replacement.size())
     ).changed());
-    auto& arena = pages.control.authored.curves;
+    auto& arena = pages.control.authored().curves;
     const auto beforeAttempt = arena;
     arena.points[arena.records[0].pointOffset].value ^= 1;
     const auto corrupted = arena;
@@ -2661,17 +2678,17 @@ void test_recorded_shape_redo_is_invalidated_for_all_three_apis() {
         draft
     ).changed());
     assert(unassignedHistory.undo(unassignedPages));
-    unassignedPages.control.authored.curves.points[0] = {777U, 1234};
-    const auto unassignedGraph = unassignedPages.control.authored.modulation;
-    const auto unassignedArena = unassignedPages.control.authored.curves;
+    unassignedPages.control.authored().curves.points[0] = {777U, 1234};
+    const auto unassignedGraph = unassignedPages.control.authored().modulation;
+    const auto unassignedArena = unassignedPages.control.authored().curves;
     assert(!unassignedHistory.redo(unassignedPages));
     assert(std::memcmp(
-        &unassignedPages.control.authored.modulation,
+        &unassignedPages.control.authored().modulation,
         &unassignedGraph,
         sizeof(unassignedGraph)
     ) == 0);
     assert(std::memcmp(
-        &unassignedPages.control.authored.curves,
+        &unassignedPages.control.authored().curves,
         &unassignedArena,
         sizeof(unassignedArena)
     ) == 0);
@@ -2689,20 +2706,20 @@ void test_recorded_shape_redo_is_invalidated_for_all_three_apis() {
     assert(assignedHistory.undo(assignedPages));
     assignedPages.pageData(kAddress.track, kAddress.page).cc[kAddress.macro] ^=
         1U;
-    const auto assignedGraph = assignedPages.control.authored.modulation;
-    const auto assignedArena = assignedPages.control.authored.curves;
+    const auto assignedGraph = assignedPages.control.authored().modulation;
+    const auto assignedArena = assignedPages.control.authored().curves;
     const auto assignedPage = assignedPages.pageData(
         kAddress.track,
         kAddress.page
     );
     assert(!assignedHistory.redo(assignedPages));
     assert(std::memcmp(
-        &assignedPages.control.authored.modulation,
+        &assignedPages.control.authored().modulation,
         &assignedGraph,
         sizeof(assignedGraph)
     ) == 0);
     assert(std::memcmp(
-        &assignedPages.control.authored.curves,
+        &assignedPages.control.authored().curves,
         &assignedArena,
         sizeof(assignedArena)
     ) == 0);
@@ -2715,14 +2732,14 @@ void test_recorded_shape_redo_is_invalidated_for_all_three_apis() {
     macro::MacroPagesState replacePages;
     macro::MacroHistoryService replaceHistory;
     const auto source = createRecordedShapeModulator(
-        replacePages.control.authored.modulation,
-        replacePages.control.authored.curves,
+        replacePages.control.authored().modulation,
+        replacePages.control.authored().curves,
         draft
     );
     assert(source.changed());
     binding.sourceId = source.sourceId;
     assert(addProjectModulationBinding(
-        replacePages.control.authored.modulation,
+        replacePages.control.authored().modulation,
         binding
     ).changed());
     constexpr std::array<ProjectPackedCurvePoint, 3> replacement{{
@@ -2736,18 +2753,18 @@ void test_recorded_shape_redo_is_invalidated_for_all_three_apis() {
         static_cast<uint16_t>(replacement.size())
     ).changed());
     assert(replaceHistory.undo(replacePages));
-    replacePages.control.authored.modulation.outputBindings[0].amountQ15 ^=
+    replacePages.control.authored().modulation.outputBindings[0].amountQ15 ^=
         1;
-    const auto replaceGraph = replacePages.control.authored.modulation;
-    const auto replaceArena = replacePages.control.authored.curves;
+    const auto replaceGraph = replacePages.control.authored().modulation;
+    const auto replaceArena = replacePages.control.authored().curves;
     assert(!replaceHistory.redo(replacePages));
     assert(std::memcmp(
-        &replacePages.control.authored.modulation,
+        &replacePages.control.authored().modulation,
         &replaceGraph,
         sizeof(replaceGraph)
     ) == 0);
     assert(std::memcmp(
-        &replacePages.control.authored.curves,
+        &replacePages.control.authored().curves,
         &replaceArena,
         sizeof(replaceArena)
     ) == 0);
@@ -2770,9 +2787,9 @@ void test_assigned_recorded_shape_rolls_back_post_curve_failure_exactly() {
     };
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
-    pages.control.authored.modulation.nextBindingId = 0U;
-    const auto graphBefore = pages.control.authored.modulation;
-    const auto arenaBefore = pages.control.authored.curves;
+    pages.control.authored().modulation.nextBindingId = 0U;
+    const auto graphBefore = pages.control.authored().modulation;
+    const auto arenaBefore = pages.control.authored().curves;
     const auto pageBefore = pages.pageData(kAddress.track, kAddress.page);
     const uint32_t revisionBefore = pages.control.authoredRevision;
     const auto failed = history.createAssignedRecordedShape(
@@ -2786,12 +2803,12 @@ void test_assigned_recorded_shape_rolls_back_post_curve_failure_exactly() {
     assert(history.undoCount() == 0U);
     assert(pages.control.authoredRevision == revisionBefore);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
     assert(std::memcmp(
-        &pages.control.authored.curves,
+        &pages.control.authored().curves,
         &arenaBefore,
         sizeof(arenaBefore)
     ) == 0);
@@ -2808,7 +2825,7 @@ void test_recorded_shape_creation_undo_rejects_source_permutation() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     assert(createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         defaultLfoDraft()
     ).changed());
     constexpr std::array<ProjectPackedCurvePoint, 2> points{{
@@ -2824,7 +2841,7 @@ void test_recorded_shape_creation_undo_rejects_source_permutation() {
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
     assert(history.createUnassignedRecordedShape(pages, draft).changed());
-    auto& domain = pages.control.authored;
+    auto& domain = pages.control.authored();
     assert(domain.modulation.sourceCount == 2U);
     std::swap(domain.modulation.sources[0], domain.modulation.sources[1]);
     assert(validProjectModulationDomain(
@@ -2868,19 +2885,19 @@ void test_recorded_shape_creation_undo_rejects_new_source_references() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto existing = createLfoModulator(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             defaultLfoDraft()
         );
         assert(existing.changed());
         auto binding = defaultBindingDraft();
         binding.sourceId = existing.sourceId;
         assert(addProjectModulationBinding(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             binding
         ).changed());
         const auto created = history.createUnassignedRecordedShape(pages, draft);
         assert(created.changed());
-        auto& domain = pages.control.authored;
+        auto& domain = pages.control.authored();
         domain.modulation.outputBindings[0].sourceId = created.sourceId;
         assert(validProjectModulationDomain(
             domain.modulation,
@@ -2907,19 +2924,19 @@ void test_recorded_shape_creation_undo_rejects_new_source_references() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto existing = createLfoModulator(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             defaultLfoDraft()
         );
         assert(existing.changed());
         auto trigger = defaultAdsrTrigger();
         trigger.sourceId = existing.sourceId;
         assert(addProjectModulationTrigger(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             trigger
         ).changed());
         const auto created = history.createUnassignedRecordedShape(pages, draft);
         assert(created.changed());
-        auto& domain = pages.control.authored;
+        auto& domain = pages.control.authored();
         domain.modulation.triggerBindings[0].sourceId = created.sourceId;
         assert(validProjectModulationDomain(
             domain.modulation,
@@ -2963,19 +2980,19 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         assert(createRecordedShapeModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             draft
         ).changed());
-        ++pages.control.authored.curves.records[0].referenceCount;
-        const auto before = pages.control.authored;
+        ++pages.control.authored().curves.records[0].referenceCount;
+        const auto before = pages.control.authored();
         const uint32_t revision = pages.control.authoredRevision;
         const auto failed = history.createUnassignedRecordedShape(pages, draft);
         assert(failed.status == ProjectModulationStatus::INVARIANT_VIOLATION);
         assert(history.undoCount() == 0U);
         assert(pages.control.authoredRevision == revision);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -2987,16 +3004,16 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         auto secondDraft = defaultLfoDraft();
         secondDraft.name = "LFO 2";
         assert(createLfoModulator(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             defaultLfoDraft()
         ).changed());
         assert(createLfoModulator(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             secondDraft
         ).changed());
-        pages.control.authored.modulation.sources[1].id =
-            pages.control.authored.modulation.sources[0].id;
-        const auto before = pages.control.authored;
+        pages.control.authored().modulation.sources[1].id =
+            pages.control.authored().modulation.sources[0].id;
+        const auto before = pages.control.authored();
         const auto pageBefore = pages.pageData(kAddress.track, kAddress.page);
         const auto failed = history.createAssignedRecordedShape(
             pages,
@@ -3008,7 +3025,7 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         assert(failed.status == ProjectModulationStatus::INVARIANT_VIOLATION);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3023,17 +3040,17 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         assert(createLfoModulator(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             defaultLfoDraft()
         ).changed());
-        pages.control.authored.modulation.nextSourceId =
-            pages.control.authored.modulation.sources[0].id.value;
-        const auto before = pages.control.authored;
+        pages.control.authored().modulation.nextSourceId =
+            pages.control.authored().modulation.sources[0].id.value;
+        const auto before = pages.control.authored();
         const auto failed = history.createUnassignedRecordedShape(pages, draft);
         assert(failed.status == ProjectModulationStatus::INVARIANT_VIOLATION);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3043,13 +3060,13 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto source = createRecordedShapeModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             draft
         );
         assert(source.changed());
-        pages.control.authored.curves.nextCurveId = source.curveId.value;
-        const auto before = pages.control.authored;
+        pages.control.authored().curves.nextCurveId = source.curveId.value;
+        const auto before = pages.control.authored();
         constexpr std::array<ProjectPackedCurvePoint, 3> replacement{{
             {0U, -7000}, {192U, 7000}, {384U, 0},
         }};
@@ -3063,7 +3080,7 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         assert(failed.status == ProjectModulationStatus::INVARIANT_VIOLATION);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3073,13 +3090,13 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto source = createRecordedShapeModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             draft
         );
         assert(source.changed());
-        pages.control.authored.curves.points[1].tick = 385U;
-        const auto before = pages.control.authored;
+        pages.control.authored().curves.points[1].tick = 385U;
+        const auto before = pages.control.authored();
         constexpr std::array<ProjectPackedCurvePoint, 3> replacement{{
             {0U, -8000}, {192U, 8000}, {384U, 0},
         }};
@@ -3093,7 +3110,7 @@ void test_recorded_shape_apis_reject_invalid_domains_atomically() {
         assert(failed.status == ProjectModulationStatus::INVARIANT_VIOLATION);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3119,13 +3136,13 @@ void test_recorded_shape_id_and_no_change_failures_are_atomic() {
     {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
-        pages.control.authored.curves.nextCurveId = 0U;
-        const auto before = pages.control.authored;
+        pages.control.authored().curves.nextCurveId = 0U;
+        const auto before = pages.control.authored();
         const auto failed = history.createUnassignedRecordedShape(pages, draft);
         assert(failed.status == ProjectModulationStatus::ID_EXHAUSTED);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3135,24 +3152,24 @@ void test_recorded_shape_id_and_no_change_failures_are_atomic() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto source = createRecordedShapeModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             draft
         );
         assert(source.changed());
         assert(duplicateProjectModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             source.sourceId,
             "Atomic 2"
         ).changed());
-        pages.control.authored.curves.nextCurveId = 0U;
+        pages.control.authored().curves.nextCurveId = 0U;
         assert(validProjectModulationDomain(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
-            &pages.control.authored.automation
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
+            &pages.control.authored().automation
         ));
-        const auto before = pages.control.authored;
+        const auto before = pages.control.authored();
         constexpr std::array<ProjectPackedCurvePoint, 3> replacement{{
             {0U, -9000}, {192U, 9000}, {384U, 0},
         }};
@@ -3166,7 +3183,7 @@ void test_recorded_shape_id_and_no_change_failures_are_atomic() {
         assert(failed.status == ProjectModulationStatus::ID_EXHAUSTED);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3176,12 +3193,12 @@ void test_recorded_shape_id_and_no_change_failures_are_atomic() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto source = createRecordedShapeModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             draft
         );
         assert(source.changed());
-        const auto before = pages.control.authored;
+        const auto before = pages.control.authored();
         const uint32_t revision = pages.control.authoredRevision;
         const auto unchanged = history.replaceProjectRecordedShapeCurve(
             pages,
@@ -3194,7 +3211,7 @@ void test_recorded_shape_id_and_no_change_failures_are_atomic() {
         assert(history.undoCount() == 0U);
         assert(pages.control.authoredRevision == revision);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3224,13 +3241,13 @@ void test_recorded_shape_point_capacity_failures_are_atomic() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto source = createRecordedShapeModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             draft
         );
         assert(source.changed());
         appendAutomationFiller(pages, fillerPointCount);
-        const auto before = pages.control.authored;
+        const auto before = pages.control.authored();
         constexpr std::array<ProjectPackedCurvePoint, 4> replacement{{
             {0U, -9000}, {128U, 0}, {256U, 9000}, {384U, 0},
         }};
@@ -3245,7 +3262,7 @@ void test_recorded_shape_point_capacity_failures_are_atomic() {
             ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3255,19 +3272,19 @@ void test_recorded_shape_point_capacity_failures_are_atomic() {
         macro::MacroPagesState pages;
         macro::MacroHistoryService history;
         const auto source = createRecordedShapeModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             draft
         );
         assert(source.changed());
         assert(duplicateProjectModulator(
-            pages.control.authored.modulation,
-            pages.control.authored.curves,
+            pages.control.authored().modulation,
+            pages.control.authored().curves,
             source.sourceId,
             "Capacity 2"
         ).changed());
         appendAutomationFiller(pages, fillerPointCount);
-        const auto before = pages.control.authored;
+        const auto before = pages.control.authored();
         constexpr std::array<ProjectPackedCurvePoint, 2> replacement{{
             {0U, 7000}, {384U, -7000},
         }};
@@ -3282,7 +3299,7 @@ void test_recorded_shape_point_capacity_failures_are_atomic() {
             ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED);
         assert(history.undoCount() == 0U);
         assert(std::memcmp(
-            &pages.control.authored,
+            &pages.control.authored(),
             &before,
             sizeof(before)
         ) == 0);
@@ -3320,7 +3337,7 @@ void test_multi_macro_take_is_one_atomic_undo_redo_action() {
         second,
         secondBefore
     ));
-    const auto modulationBefore = pages.control.authored.modulation;
+    const auto modulationBefore = pages.control.authored().modulation;
 
     macro::MacroHistoryService history;
     auto change = history.prepareAutomationTake(
@@ -3352,7 +3369,7 @@ void test_multi_macro_take_is_one_atomic_undo_redo_action() {
 
     auto staged = core::app::makeExtmemUnique<ProjectControlDomainState>();
     assert(staged);
-    *staged = pages.control.authored;
+    *staged = pages.control.authored();
     for (uint8_t macroIndex : {uint8_t{1U}, uint8_t{2U}}) {
         const auto& snapshot = payload.after[macroIndex];
         assert(replaceProjectControlAutomationInDomain(
@@ -3369,13 +3386,13 @@ void test_multi_macro_take_is_one_atomic_undo_redo_action() {
         &staged->automation
     ));
     const uint32_t revisionBeforePublish = pages.control.authoredRevision;
-    pages.control.authored = *staged;
+    pages.control.authored() = *staged;
     pages.control.markAuthoredMutation();
     assert(history.commitPreparedAutomationTake(pages, change));
     assert(history.undoCount() == 1U);
     assert(pages.control.authoredRevision == revisionBeforePublish + 1U);
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &modulationBefore,
         sizeof(modulationBefore)
     ) == 0);
@@ -3384,7 +3401,7 @@ void test_multi_macro_take_is_one_atomic_undo_redo_action() {
     assert(macro::liveMacroAutomationMatchesHistorySnapshot(pages, firstBefore));
     assert(macro::liveMacroAutomationMatchesHistorySnapshot(pages, secondBefore));
     assert(std::memcmp(
-        &pages.control.authored.modulation,
+        &pages.control.authored().modulation,
         &modulationBefore,
         sizeof(modulationBefore)
     ) == 0);
@@ -3459,7 +3476,7 @@ void commitMaximumAutomationTake(
 
     auto staged = core::app::makeExtmemUnique<ProjectControlDomainState>();
     assert(staged);
-    *staged = pages.control.authored;
+    *staged = pages.control.authored();
     for (uint8_t macroIndex = 0U; macroIndex < macro::MACRO_COUNT;
          ++macroIndex) {
         const auto& after = payload.after[macroIndex];
@@ -3471,7 +3488,7 @@ void commitMaximumAutomationTake(
             after.pointCount
         ));
     }
-    pages.control.authored = *staged;
+    pages.control.authored() = *staged;
     pages.control.markAuthoredMutation();
     assert(history.commitPreparedAutomationTake(pages, change));
 }
@@ -3479,7 +3496,7 @@ void commitMaximumAutomationTake(
 void test_page_history_replays_dense_shared_arena_exactly_without_allocating() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
-    auto& domain = pages.control.authored;
+    auto& domain = pages.control.authored();
     pages.tracks[0].enabledPageMask = 0xFFFFU;
     pages.tracks[0].activePage = 15U;
     pages.syncActiveTrackCache();
@@ -3522,31 +3539,31 @@ void test_page_history_replays_dense_shared_arena_exactly_without_allocating() {
     const auto beforeTrack = pages.tracks[0];
     macro::MacroHistoryService history;
     assert(history.compactPages(pages, 0U, 0x8005U));
-    auto after = std::make_unique<ProjectControlDomainState>(domain);
+    auto after = std::make_unique<ProjectControlDomainState>(pages.control.authored());
     const auto afterTrack = pages.tracks[0];
-    assert(validProjectModulationDomain(domain.modulation, domain.curves,
-                                        &domain.automation));
+    assert(validProjectModulationDomain(pages.control.authored().modulation, pages.control.authored().curves,
+                                        &pages.control.authored().automation));
     for (uint8_t iteration = 0U; iteration < 4U; ++iteration) {
         core::app::testing::ScopedExtmemAllocationFailure fail(1U);
         assert(history.undo(pages));
-        assert(std::memcmp(&domain, before.get(), sizeof(domain)) == 0);
+        assert(std::memcmp(&pages.control.authored(), before.get(), sizeof(pages.control.authored())) == 0);
         assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
         assert(history.redo(pages));
-        assert(std::memcmp(&domain, after.get(), sizeof(domain)) == 0);
+        assert(std::memcmp(&pages.control.authored(), after.get(), sizeof(pages.control.authored())) == 0);
         assert(std::memcmp(&pages.tracks[0], &afterTrack, sizeof(afterTrack)) == 0);
         assert(core::app::testing::extmemAllocationAttempt == 0U);
     }
     // Drift in an unused arena tail is guarded just like a live value, in both
-    // replay directions. Rejection changes neither history nor the live domain.
+    // replay directions. Rejection changes neither history nor the live pages.control.authored().
     for (bool undo : {true, false}) {
-        domain.curves.points.back().value ^= 1;
-        auto drifted = std::make_unique<ProjectControlDomainState>(domain);
+        pages.control.authored().curves.points.back().value ^= 1;
+        auto drifted = std::make_unique<ProjectControlDomainState>(pages.control.authored());
         const auto revision = pages.control.authoredRevision;
         assert(!(undo ? history.undo(pages) : history.redo(pages)));
-        assert(std::memcmp(&domain, drifted.get(), sizeof(domain)) == 0);
+        assert(std::memcmp(&pages.control.authored(), drifted.get(), sizeof(pages.control.authored())) == 0);
         assert(pages.control.authoredRevision == revision);
         assert(history.undoCount() == (undo ? 1U : 0U));
-        domain.curves.points.back().value ^= 1;
+        pages.control.authored().curves.points.back().value ^= 1;
         assert(undo ? history.undo(pages) : history.redo(pages));
     }
     std::cout << "[PASS] Page history replays shared dense arena and tails exactly without allocations\n";
@@ -3558,14 +3575,14 @@ void test_page_history_preparation_and_compaction_fail_atomically() {
     pages.tracks[0].enabledPageMask = 7U;
     macro::MacroHistoryService history;
     auto before = std::make_unique<core::state::modulation::ProjectControlDomainState>(
-        pages.control.authored);
+        pages.control.authored());
     const auto beforeTrack = pages.tracks[0];
     const auto revision = pages.control.authoredRevision;
     for (size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
         core::app::testing::ScopedExtmemAllocationFailure fail(ordinal);
         assert(!history.compactPages(pages, 0U, 5U));
         assert(core::app::testing::extmemAllocationAttempt == ordinal);
-        assert(std::memcmp(&pages.control.authored, before.get(), sizeof(*before)) == 0);
+        assert(std::memcmp(&pages.control.authored(), before.get(), sizeof(*before)) == 0);
         assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
         assert(pages.control.authoredRevision == revision);
         assert(history.undoCount() == 0U);
@@ -3578,12 +3595,12 @@ void test_page_history_preparation_and_compaction_fail_atomically() {
         assert(core::app::testing::extmemAllocationAttempt == 0U);
     }
     // Reject malformed counts before the compactor can index any array.
-    pages.control.authored.automation.entryCount = 129U;
+    pages.control.authored().automation.entryCount = 129U;
     before->automation.entryCount = 129U;
     assert(!history.compactPages(pages, 0U, 5U));
-    assert(std::memcmp(&pages.control.authored, before.get(), sizeof(*before)) == 0);
+    assert(std::memcmp(&pages.control.authored(), before.get(), sizeof(*before)) == 0);
     assert(pages.control.authoredRevision == revision);
-    pages.control.authored.automation.entryCount = 1U;
+    pages.control.authored().automation.entryCount = 1U;
     before->automation.entryCount = 1U;
     auto noChange = history.preparePageStructure(pages, 0U);
     assert(noChange);
@@ -3609,7 +3626,7 @@ void test_page_history_preparation_and_compaction_fail_atomically() {
     assert(!history.compactPages(pages, 0U, 5U));
     assert(history.undoCount() == 0U && history.redoCount() == 1U);
     assert(history.retainedBytes() == retained);
-    assert(std::memcmp(&pages.control.authored, before.get(), sizeof(*before)) == 0);
+    assert(std::memcmp(&pages.control.authored(), before.get(), sizeof(*before)) == 0);
     assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
     history.setProjectHistoryEventSink(nullptr);
     std::cout << "[PASS] Page history rejects OOM, invalid input and denied admission atomically\n";
@@ -3623,14 +3640,14 @@ void test_detached_page_commit_rejects_stale_and_invalid_candidates() {
         assert(prepared);
         prepared->pageStructure->afterTrack.pages[0].values[0] = 0.23f;
         if (fault == 0U) pages.tracks[0].pages[0].values[1] = 0.71f;
-        else if (fault == 1U) ++pages.control.authored.modulation.nextSourceId;
+        else if (fault == 1U) ++pages.control.authored().modulation.nextSourceId;
         else prepared->pageStructure->control.candidate()->automation.entryCount = 129U;
-        const auto live = pages.control.authored;
+        const auto live = pages.control.authored();
         const auto track = pages.tracks[0];
         const auto revision = pages.control.authoredRevision;
         core::app::testing::ScopedExtmemAllocationFailure fail(1U);
         assert(!history.commitPreparedPageStructure(pages, std::move(prepared)));
-        assert(std::memcmp(&pages.control.authored, &live, sizeof(live)) == 0);
+        assert(std::memcmp(&pages.control.authored(), &live, sizeof(live)) == 0);
         assert(std::memcmp(&pages.tracks[0], &track, sizeof(track)) == 0);
         assert(pages.control.authoredRevision == revision);
         assert(history.undoCount() == 0U);

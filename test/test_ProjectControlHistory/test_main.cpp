@@ -7,16 +7,17 @@
 #include <iostream>
 
 #include "state/modulation/ProjectControlHistory.hpp"
+#include "state/modulation/ProjectControlState.hpp"
 
 using namespace core::state::modulation;
 
-static void checkPrefixBoundaries() {
+static void checkFullDomainReplay() {
     auto before = std::make_unique<ProjectControlDomainState>();
     auto after = std::make_unique<ProjectControlDomainState>();
-    auto live = std::make_unique<ProjectControlDomainState>();
+    auto live = std::make_unique<ProjectControlState>();
     for (const bool detached : {false, true}) {
         ProjectControlHistory history;
-        // Reuse one history with growing/shrinking prefixes and an empty delta.
+        // Reuse one history with early, middle, final, dense changes and an unchanged domain.
         for (const int edit : {4, 3, 2, 1, 0, 1, 3}) {
             std::memcpy(after.get(), before.get(), sizeof(*after));
             if (edit == 1) after->automation.entryCount = 1U;
@@ -28,25 +29,32 @@ static void checkPrefixBoundaries() {
             core::app::testing::ScopedExtmemAllocationFailure fail(1U);
             assert(detached ? history.sealCandidate(*before) : history.captureAfter(*after));
             assert(history.changed() == (edit != 0));
-            std::memcpy(live.get(), after.get(), sizeof(*live));
+            live->authored() = detached ? *before : *after;
+            if (detached) history.apply(*live);
             for (int cycle = 0; cycle < 3; ++cycle) {
-                assert(history.matches(*live, true));
+                assert(history.matches(live->authored(), true));
                 history.apply(*live);
-                assert(std::memcmp(live.get(), before.get(), sizeof(*live)) == 0);
-                assert(history.matches(*live, false));
+                assert(std::memcmp(&live->authored(), before.get(), sizeof(*before)) == 0);
+                assert(history.matches(live->authored(), false));
                 history.apply(*live);
-                assert(std::memcmp(live.get(), after.get(), sizeof(*live)) == 0);
+                assert(std::memcmp(&live->authored(), after.get(), sizeof(*after)) == 0);
             }
-            // The integrity guard still covers the suffix excluded from XOR.
-            live->curves.points.back().value ^= 1;
-            assert(!history.matches(*live, true));
+            // The integrity guard covers inactive points as well as active fields.
+            live->authored().curves.points.back().value ^= 1;
+            assert(!history.matches(live->authored(), true));
             assert(core::app::testing::extmemAllocationAttempt == 0U);
         }
     }
 }
 
 int main() {
-    checkPrefixBoundaries();
+    {
+        core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+        ProjectControlState unavailable;
+        assert(!unavailable.hasAuthored());
+        unavailable.clear();
+    }
+    checkFullDomainReplay();
     auto before = std::make_unique<ProjectControlDomainState>();
     before->curves.points.back() = {257U, -1200};
     auto after = std::make_unique<ProjectControlDomainState>(*before);
@@ -76,26 +84,28 @@ int main() {
         assert(history.ready() && history.changed());
         assert(history.candidate() == nullptr);
         assert(!history.captureAfter(*after) && !history.sealCandidate(*before));
-        auto live = std::make_unique<ProjectControlDomainState>(*after);
+        auto live = std::make_unique<ProjectControlState>();
+        live->authored() = detached ? *before : *after;
+        if (detached) history.apply(*live);
         for (int cycle = 0; cycle < 4; ++cycle) {
             core::app::testing::ScopedExtmemAllocationFailure fail(1U);
-            assert(history.matches(*live, true));
+            assert(history.matches(live->authored(), true));
             history.apply(*live);
-            assert(std::memcmp(live.get(), before.get(), sizeof(*live)) == 0);
-            assert(history.matches(*live, false));
+            assert(std::memcmp(&live->authored(), before.get(), sizeof(*before)) == 0);
+            assert(history.matches(live->authored(), false));
             history.apply(*live);
-            assert(std::memcmp(live.get(), after.get(), sizeof(*live)) == 0);
+            assert(std::memcmp(&live->authored(), after.get(), sizeof(*after)) == 0);
             assert(core::app::testing::extmemAllocationAttempt == 0U);
         }
-        live->curves.points.back().value ^= 1;
-        assert(!history.matches(*live, true));
+        live->authored().curves.points.back().value ^= 1;
+        assert(!history.matches(live->authored(), true));
         {
             core::app::testing::ScopedExtmemAllocationFailure fail(1U);
             assert(!history.prepare(*before));
             assert(history.ready() && history.matches(*after, true));
-            std::memcpy(live.get(), after.get(), sizeof(*live));
+            live->authored() = *after;
             history.apply(*live);
-            assert(std::memcmp(live.get(), before.get(), sizeof(*live)) == 0);
+            assert(std::memcmp(&live->authored(), before.get(), sizeof(*before)) == 0);
         }
     }
 
@@ -116,9 +126,10 @@ int main() {
         assert(detached ? unchanged.sealCandidate(*before) : unchanged.captureAfter(*before));
         assert(unchanged.ready() && !unchanged.hasStorage() && !unchanged.changed());
         assert(unchanged.matches(*before, false) && unchanged.matches(*before, true));
-        auto live = std::make_unique<ProjectControlDomainState>(*before);
+        auto live = std::make_unique<ProjectControlState>();
+        live->authored() = *before;
         unchanged.apply(*live);
-        assert(std::memcmp(live.get(), before.get(), sizeof(*live)) == 0);
+        assert(std::memcmp(&live->authored(), before.get(), sizeof(*before)) == 0);
     }
     std::cout << "[PASS] live and detached Control history are exact, sealed and allocation-free on replay\n";
 }

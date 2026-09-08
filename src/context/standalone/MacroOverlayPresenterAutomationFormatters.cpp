@@ -78,7 +78,7 @@ FLASHMEM void buildAutomationRenderData(
          static_cast<uint16_t>(1U << macroIndex)) != 0;
 
     if (phase == core::state::MacroEditFlowPhase::MODULATOR_PICKER) {
-        const auto& graph = source.pages.control.authored.modulation;
+        const auto& graph = source.pages.control.authored().modulation;
         std::snprintf(data.title.data(), data.title.size(), "%s", "Use Existing");
         std::snprintf(data.meta.data(), data.meta.size(), "%s", "Focus is silent");
         data.rowCount = static_cast<int>(graph.sourceCount);
@@ -137,7 +137,7 @@ FLASHMEM void buildAutomationRenderData(
         const auto destination =
             core::state::modulation::projectControlDestination(address);
         const auto rows = menu::buildMacroModulationRows(
-            source.pages.control.authored.modulation,
+            source.pages.control.authored().modulation,
             destination
         );
         const uint16_t count = rows.assignmentCount;
@@ -190,7 +190,7 @@ FLASHMEM void buildAutomationRenderData(
         const auto navigationFeedback =
             source.macroEdit.modulatorNavigationFeedback.get();
         const bool reusable =
-            source.pages.control.authored.modulation.sourceCount > 0U;
+            source.pages.control.authored().modulation.sourceCount > 0U;
         if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE) {
             std::snprintf(
                 data.meta.data(), data.meta.size(), "%s", "Add source"
@@ -377,7 +377,7 @@ FLASHMEM void buildAutomationRenderData(
                 modulationDomainLabel = "Centered LFO";
             } else {
                 const auto* curve = core::state::modulation::findProjectCurve(
-                    source.pages.control.authored.curves,
+                    source.pages.control.authored().curves,
                     slot->primaryModulation.recordedShape.id
                 );
                 modulationDomainLabel = curve != nullptr &&

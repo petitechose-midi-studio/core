@@ -249,7 +249,7 @@ captureMaximumSelectionProof(core::state::CoreState& state) {
     auto* macro = proof->macroStructure.get();
     assert(macro != nullptr);
     macro->afterTracks = macro->beforeTracks;
-    assert(macro->control.sealCandidate(state.pages.control.authored));
+    assert(macro->control.sealCandidate(state.pages.control.authored()));
     return proof;
 }
 

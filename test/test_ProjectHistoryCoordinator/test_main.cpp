@@ -268,7 +268,7 @@ void test_cross_domain_timeline_is_exact_and_semantic() {
     assertUndoLabel(h.state, "Create Modulator");
 
     assert(h.state.undoProjectHistory());
-    assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 0U);
     assertUndoLabel(h.state, "Create CC Lane");
     assert(h.state.undoProjectHistory());
     assert(!hasCcLane(h.state));
@@ -293,7 +293,7 @@ void test_cross_domain_timeline_is_exact_and_semantic() {
     assert(hasCcLane(h.state));
     assertRedoLabel(h.state, "Create Modulator");
     assert(h.state.redoProjectHistory());
-    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 1U);
     assert(h.state.projectHistory.redoCount() == 0U);
 
     std::cout << "[PASS] global history alternates Macro, Step, CC and Modulation exactly\n";
@@ -660,7 +660,7 @@ void test_global_history_is_fail_closed_during_modulator_audition() {
     );
     assert(begun.changed());
     const uint8_t sourceCount =
-        h.state.pages.control.authored.modulation.sourceCount;
+        h.state.pages.control.authored().modulation.sourceCount;
     const std::size_t undoCount = h.state.projectHistory.undoCount();
     const std::size_t redoCount = h.state.projectHistory.redoCount();
 
@@ -669,7 +669,7 @@ void test_global_history_is_fail_closed_during_modulator_audition() {
     assert(!h.state.redoProjectHistory());
     assert(h.state.projectHistory.undoCount() == undoCount);
     assert(h.state.projectHistory.redoCount() == redoCount);
-    assert(h.state.pages.control.authored.modulation.sourceCount == sourceCount);
+    assert(h.state.pages.control.authored().modulation.sourceCount == sourceCount);
     assert(h.state.pages.pageData(0U, 0U).cc[kMacro.macro] == 74U);
 
     h.state.pages.control.audition.mode =
@@ -679,7 +679,7 @@ void test_global_history_is_fail_closed_during_modulator_audition() {
     assert(!h.state.redoProjectHistory());
     assert(h.state.projectHistory.undoCount() == undoCount);
     assert(h.state.projectHistory.redoCount() == redoCount);
-    assert(h.state.pages.control.authored.modulation.sourceCount == sourceCount);
+    assert(h.state.pages.control.authored().modulation.sourceCount == sourceCount);
 
     std::cout
         << "[PASS] global Undo/Redo is fail-closed during valid or malformed audition\n";

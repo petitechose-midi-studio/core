@@ -40,7 +40,7 @@ FLASHMEM bool readProjectControlMacroDestination(
     const macro::MacroAutomationSlotAddress& address,
     ProjectControlMacroDestinationView& out
 ) {
-    return readDomainMacroSlot(control.authored, address, out);
+    return readDomainMacroSlot(control.authored(), address, out);
 }
 
 FLASHMEM ModulationBindingId projectControlFocusedModulationBinding(
@@ -49,7 +49,7 @@ FLASHMEM ModulationBindingId projectControlFocusedModulationBinding(
 ) {
     if (!validAddress(address)) return {};
     const auto destination = projectControlDestination(address);
-    auto& graph = control.authored.modulation;
+    auto& graph = control.authored().modulation;
     auto* entry = focusEntryFor(control.focus, destination);
     if (entry != nullptr) {
         const auto* binding = bindingById(graph, entry->bindingId);
@@ -76,7 +76,7 @@ FLASHMEM bool setProjectControlFocusedModulationBinding(
 ) {
     if (!validAddress(address) || !valid(bindingId)) return false;
     const auto destination = projectControlDestination(address);
-    const auto* binding = bindingById(control.authored.modulation, bindingId);
+    const auto* binding = bindingById(control.authored().modulation, bindingId);
     if (binding == nullptr || binding->destination != destination) return false;
     auto& entry = allocateFocusEntry(control.focus, destination);
     const bool changed = entry.bindingId != bindingId;
@@ -108,7 +108,7 @@ FLASHMEM bool setProjectControlAutomationEnabled(
 ) {
     if (!validAddress(address)) return false;
     const auto result = setProjectAutomationEnabled(
-        control.authored.automation,
+        control.authored().automation,
         projectControlDestination(address),
         enabled
     );
@@ -128,11 +128,11 @@ FLASHMEM bool setProjectControlModulationEnabled(
         return false;
     }
     auto* binding = bindingById(
-        control.authored.modulation,
+        control.authored().modulation,
         view.primaryModulation.bindingId
     );
     if (binding == nullptr || findProjectModulator(
-            control.authored.modulation,
+            control.authored().modulation,
             view.primaryModulation.sourceId
         ) == nullptr) return false;
     bool changed = false;
@@ -160,7 +160,7 @@ FLASHMEM bool setProjectControlModulationAmount(
         return false;
     }
     auto* binding = bindingById(
-        control.authored.modulation,
+        control.authored().modulation,
         view.primaryModulation.bindingId
     );
     if (binding == nullptr) return false;
@@ -180,8 +180,8 @@ FLASHMEM bool clearProjectControlAutomation(
 ) {
     if (!validAddress(address)) return false;
     const auto removed = deleteProjectAutomationCurve(
-        control.authored.automation,
-        control.authored.curves,
+        control.authored().automation,
+        control.authored().curves,
         projectControlDestination(address)
     );
     if (!removed.changed()) return false;
@@ -195,7 +195,7 @@ FLASHMEM bool clearProjectControlModulation(
 ) {
     ProjectControlMacroDestinationView view{};
     if (!readProjectControlMacroDestination(control, address, view) ||
-        !removePrimaryModulation(control.authored, view)) {
+        !removePrimaryModulation(control.authored(), view)) {
         return false;
     }
     control.markAuthoredMutation();
@@ -328,8 +328,8 @@ FLASHMEM bool assignProjectControlAutomation(
     spec.valueDomain = ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR;
     spec.origin = ProjectCurveOrigin::NATIVE;
     const auto result = setProjectAutomationCurve(
-        control.authored.automation,
-        control.authored.curves,
+        control.authored().automation,
+        control.authored().curves,
         projectControlDestination(address),
         spec,
         scratch->data(),
@@ -386,7 +386,7 @@ FLASHMEM bool captureProjectControlMacroDestination(
     modulationPointCount = view.primaryModulation.recordedShape.pointCount;
     if (automationPointCount > 0U) {
         for (uint16_t index = 0; index < automationPointCount; ++index) {
-            const auto& point = control.authored.curves.points[
+            const auto& point = control.authored().curves.points[
                 view.automation.pointOffset + index
             ];
             outPoints[index] = point;
@@ -394,7 +394,7 @@ FLASHMEM bool captureProjectControlMacroDestination(
     }
     if (modulationPointCount > 0U) {
         for (uint16_t index = 0; index < modulationPointCount; ++index) {
-            const auto& point = control.authored.curves.points[
+            const auto& point = control.authored().curves.points[
                 view.primaryModulation.recordedShape.pointOffset + index
             ];
             outPoints[automationPointCount + index] = point;
@@ -411,7 +411,7 @@ FLASHMEM bool replaceProjectControlMacroDestination(
     uint16_t sourcePointCount
 ) {
     if (!validAddress(address)) return false;
-    auto pending = core::app::makeExtmemUniqueCopy(control.authored);
+    auto pending = core::app::makeExtmemUniqueCopy(control.authored());
     if (!pending) return false;
     if (!replaceSlotInDomain(
             *pending,
@@ -419,7 +419,7 @@ FLASHMEM bool replaceProjectControlMacroDestination(
             sourceState,
             sourcePoints,
             sourcePointCount
-        ) || !control.tryPublishAuthored(*pending)) {
+        ) || !control.tryPublishAuthored(pending)) {
         return false;
     }
     return true;
@@ -451,8 +451,8 @@ FLASHMEM bool replaceProjectControlAutomation(
         return false;
     }
     const auto result = setProjectAutomationCurve(
-        control.authored.automation,
-        control.authored.curves,
+        control.authored().automation,
+        control.authored().curves,
         projectControlDestination(address),
         source.spec,
         sourcePoints,
@@ -529,7 +529,7 @@ FLASHMEM bool replaceProjectControlRecordedShape(
         return false;
     }
 
-    auto pending = core::app::makeExtmemUniqueCopy(control.authored);
+    auto pending = core::app::makeExtmemUniqueCopy(control.authored());
     if (!pending) return false;
     ProjectControlMacroDestinationView pendingView{};
     if (!readDomainMacroSlot(*pending, address, pendingView) ||
@@ -546,7 +546,7 @@ FLASHMEM bool replaceProjectControlRecordedShape(
             source,
             amount,
             sourcePoints
-        ) || !control.tryPublishAuthored(*pending)) {
+        ) || !control.tryPublishAuthored(pending)) {
         return false;
     }
     return true;

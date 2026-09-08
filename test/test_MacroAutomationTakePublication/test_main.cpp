@@ -37,10 +37,10 @@ void checkPublication(bool existingDenseCurve) {
     assert(test_support::project_control::appendModulationPoint(shape, 0.0f, -0.5f));
     assert(test_support::project_control::appendModulationPoint(shape, 1.0f, 0.5f));
     assert(test_support::project_control::assignModulation(control, {0, 0, 0}, shape, 0.4f));
-    for (size_t i = control.authored.curves.pointCount; i < control.authored.curves.points.size(); ++i) {
-        control.authored.curves.points[i] = {static_cast<uint16_t>(i), 123};
+    for (size_t i = control.authored().curves.pointCount; i < control.authored().curves.points.size(); ++i) {
+        control.authored().curves.points[i] = {static_cast<uint16_t>(i), 123};
     }
-    const auto before = std::make_unique<ProjectControlDomainState>(control.authored);
+    const auto before = std::make_unique<ProjectControlDomainState>(control.authored());
     const auto undoBefore = state->macroHistory.undoCount();
     (void)services.setAutomationTakeTiming(MacroAutomationTakeTiming::HOLD);
     assert(services.armAutomationTake());
@@ -76,12 +76,12 @@ void checkPublication(bool existingDenseCurve) {
         assert(highWater > std::max(before->curves.pointCount, expected->curves.pointCount));
     }
     assert(services.releaseAutomationTake(2000));
-    assert(std::memcmp(&control.authored, expected.get(), sizeof(*expected)) == 0);
+    assert(std::memcmp(&control.authored(), expected.get(), sizeof(*expected)) == 0);
     assert(state->macroHistory.undoCount() == undoBefore + 1);
     assert(state->macroHistory.undo(state->pages));
-    assert(std::memcmp(&control.authored.modulation, &before->modulation, sizeof(before->modulation)) == 0);
+    assert(std::memcmp(&control.authored().modulation, &before->modulation, sizeof(before->modulation)) == 0);
     assert(state->macroHistory.redo(state->pages));
-    assert(validProjectModulationDomain(control.authored.modulation, control.authored.curves, &control.authored.automation));
+    assert(validProjectModulationDomain(control.authored().modulation, control.authored().curves, &control.authored().automation));
     test_support::drainNotifications();
 }
 

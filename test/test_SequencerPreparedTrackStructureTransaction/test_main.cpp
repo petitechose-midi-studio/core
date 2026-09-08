@@ -813,8 +813,8 @@ LiveProof captureLiveProof(const Harness& harness) {
         sizeof(harness.macros.tracks)
     );
     proof.controlHash = byteHash(
-        &harness.macros.control.authored,
-        sizeof(harness.macros.control.authored)
+        &harness.macros.control.authored(),
+        sizeof(harness.macros.control.authored())
     );
     proof.trackMask = harness.tracks.currentEnabledMask();
     proof.sharedMask = harness.sharedMask.get();

@@ -22,7 +22,7 @@ struct Fixture {
         mod::ModulatorLfoDraft source{};
         source.name = "Session LFO";
         const auto created = mod::createLfoModulator(
-            control.authored.modulation,
+            control.authored().modulation,
             source
         );
         assert(created.changed());
@@ -33,7 +33,7 @@ struct Fixture {
         binding.destination = destination;
         binding.amountQ15 = 8192;
         const auto assigned = mod::addProjectModulationBinding(
-            control.authored.modulation,
+            control.authored().modulation,
             binding
         );
         assert(assigned.changed());
@@ -172,7 +172,7 @@ void test_audition_resolution_fails_closed() {
     assert(session.capabilityMask == 0U);
 
     fixture.control.audition.bindingId = fixture.bindingId;
-    fixture.control.authored.modulation.outputBindings[0].sourceId =
+    fixture.control.authored().modulation.outputBindings[0].sourceId =
         mod::ModulatorId{fixture.sourceId.value + 1U};
     session = mod::resolveProjectModulatorSourceSession(
         fixture.control,

@@ -83,7 +83,7 @@ FLASHMEM bool MacroHistoryService::pasteModulationBinding(
         return false;
     }
 
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     ModulationBindingState* existing = nullptr;
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
         auto& candidate = graph.outputBindings[index];
@@ -133,7 +133,7 @@ FLASHMEM bool MacroHistoryService::setProjectModulatorEnabled(
         return false;
     }
     auto* source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     if (!source) return false;
@@ -142,14 +142,14 @@ FLASHMEM bool MacroHistoryService::setProjectModulatorEnabled(
     change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
     change->sourceEdit.before = *source;
     const auto result = core::state::modulation::setProjectModulatorEnabled(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId,
         enabled
     );
     if (!result.changed()) return false;
     pages.control.markAuthoredMutation();
     change->sourceEdit.after = *findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     change->sourceEdit.valid = true;
@@ -167,7 +167,7 @@ FLASHMEM bool MacroHistoryService::setProjectModulatorName(
         return false;
     }
     auto* source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     if (!source) return false;
@@ -176,14 +176,14 @@ FLASHMEM bool MacroHistoryService::setProjectModulatorName(
     change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
     change->sourceEdit.before = *source;
     const auto result = core::state::modulation::setProjectModulatorName(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId,
         name
     );
     if (!result.changed()) return false;
     pages.control.markAuthoredMutation();
     change->sourceEdit.after = *findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     change->sourceEdit.valid = true;
@@ -201,7 +201,7 @@ FLASHMEM bool MacroHistoryService::setProjectLfoParametersCoalesced(
         return false;
     }
     auto* source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     if (!source || source->kind != ModulatorKind::LFO) return false;
@@ -210,14 +210,14 @@ FLASHMEM bool MacroHistoryService::setProjectLfoParametersCoalesced(
     change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
     change->sourceEdit.before = *source;
     const auto result = core::state::modulation::setProjectLfoParameters(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId,
         parameters
     );
     if (!result.changed()) return false;
     pages.control.markAuthoredMutation();
     change->sourceEdit.after = *findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     change->sourceEdit.valid = true;
@@ -234,7 +234,7 @@ FLASHMEM bool MacroHistoryService::setProjectAdsrParametersCoalesced(
         return false;
     }
     auto* source = findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     if (!source || source->kind != ModulatorKind::ADSR) return false;
@@ -243,14 +243,14 @@ FLASHMEM bool MacroHistoryService::setProjectAdsrParametersCoalesced(
     change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
     change->sourceEdit.before = *source;
     const auto result = core::state::modulation::setProjectAdsrParameters(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId,
         parameters
     );
     if (!result.changed()) return false;
     pages.control.markAuthoredMutation();
     change->sourceEdit.after = *findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     change->sourceEdit.valid = true;

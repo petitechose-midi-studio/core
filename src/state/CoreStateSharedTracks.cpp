@@ -113,7 +113,7 @@ FLASHMEM void CoreState::reconcilePreparedMacroTrackTransfer(uint16_t capturedTr
     configRevision.set(
         macro::nextMacroConfigRevision(configRevision.get(), macro::kMacroConfigDirtyAll));
     project::reconcileProjectModulatorNavigationAfterHistory(projectNavigation,
-                                                             pages.control.authored.modulation);
+                                                             pages.control.authored().modulation);
 }
 
 bool CoreState::refreshSharedTrackStateFromMacroPages() {

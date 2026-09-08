@@ -108,7 +108,7 @@ FLASHMEM bool applyCapacityDelta(
         if (cursor.automationEntries == 0U) return false;
         --cursor.automationEntries;
         const auto* curve = findProjectCurve(
-            pages.control.authored.curves,
+            pages.control.authored().curves,
             target.automation.id
         );
         if (curve == nullptr || curve->referenceCount == 0U) {
@@ -129,7 +129,7 @@ FLASHMEM bool applyCapacityDelta(
         const auto destination =
             projectControlDestination(target.address);
         if (projectModulationDestinationScaleQ15(
-                pages.control.authored.modulation,
+                pages.control.authored().modulation,
                 destination
             ) != PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) {
             if (cursor.destinationScales == 0U) return false;
@@ -294,17 +294,17 @@ FLASHMEM MacroSlotClipboardPlan buildMacroSlotClipboardPlan(
     bool capacityExhausted = false;
     CapacityCursor capacity{
         .automationEntries =
-            pages.control.authored.automation.entryCount,
+            pages.control.authored().automation.entryCount,
         .modulatorSources =
-            pages.control.authored.modulation.sourceCount,
+            pages.control.authored().modulation.sourceCount,
         .modulationBindings =
-            pages.control.authored.modulation.outputBindingCount,
+            pages.control.authored().modulation.outputBindingCount,
         .destinationScales =
-            pages.control.authored.modulation.destinationScaleCount,
+            pages.control.authored().modulation.destinationScaleCount,
         .curveRecords =
-            pages.control.authored.curves.recordCount,
+            pages.control.authored().curves.recordCount,
         .curvePoints =
-            pages.control.authored.curves.pointCount,
+            pages.control.authored().curves.pointCount,
     };
     for (uint8_t index = 0U; index < payload.count; ++index) {
         const auto& source = payload.entries[index];

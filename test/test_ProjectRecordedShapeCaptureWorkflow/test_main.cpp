@@ -118,13 +118,13 @@ void test_create_unassigned_is_one_history_backed_source() {
     assert(fixture.workflow.status() ==
            modulation::ProjectRecordedShapeCaptureStatus::COMMITTED);
     assert(!fixture.workflow.active());
-    assert(fixture.pages.control.authored.modulation.sourceCount == 1U);
-    assert(fixture.pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(fixture.pages.control.authored().modulation.sourceCount == 1U);
+    assert(fixture.pages.control.authored().modulation.outputBindingCount == 0U);
     const auto& source =
-        fixture.pages.control.authored.modulation.sources[0U];
+        fixture.pages.control.authored().modulation.sources[0U];
     assert(source.id == committed.sourceId);
     assert(source.kind == modulation::ModulatorKind::RECORDED_SHAPE);
-    assert(fixture.pages.control.authored.curves.recordCount == 1U);
+    assert(fixture.pages.control.authored().curves.recordCount == 1U);
     assert(fixture.probe.mutated == 1U);
     assert(fixture.probe.published == 0U);
     assert(fixture.probe.cleared == 0U);
@@ -157,9 +157,9 @@ void test_create_assigned_applies_sparse_macro_topology_at_release() {
     assert(fixture.pages.isTrackEnabled(address.track));
     assert(fixture.pages.pageData(address.track, address.page)
                .isMacroActive(address.macro));
-    assert(fixture.pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(fixture.pages.control.authored().modulation.outputBindingCount == 1U);
     const auto& binding =
-        fixture.pages.control.authored.modulation.outputBindings[0U];
+        fixture.pages.control.authored().modulation.outputBindings[0U];
     assert(binding.sourceId == committed.sourceId);
     assert(binding.destination ==
            modulation::projectControlDestination(address));
@@ -180,18 +180,18 @@ void test_replace_prefills_and_copy_on_write_is_exact() {
     );
     assert(duplicate.changed());
     const auto* originalBefore = modulation::findProjectModulator(
-        fixture.pages.control.authored.modulation,
+        fixture.pages.control.authored().modulation,
         seed.sourceId
     );
     const auto* duplicateBefore = modulation::findProjectModulator(
-        fixture.pages.control.authored.modulation,
+        fixture.pages.control.authored().modulation,
         duplicate.sourceId
     );
     assert(originalBefore != nullptr && duplicateBefore != nullptr);
     const auto sharedCurve = originalBefore->parameters.recordedCurveId;
     assert(duplicateBefore->parameters.recordedCurveId == sharedCurve);
     assert(modulation::findProjectCurve(
-               fixture.pages.control.authored.curves,
+               fixture.pages.control.authored().curves,
                sharedCurve)->referenceCount == 2U);
 
     assert(fixture.workflow.armReplaceExisting(3000U, seed.sourceId));
@@ -205,21 +205,21 @@ void test_replace_prefills_and_copy_on_write_is_exact() {
     assert(replaced.changed());
 
     const auto* originalAfter = modulation::findProjectModulator(
-        fixture.pages.control.authored.modulation,
+        fixture.pages.control.authored().modulation,
         seed.sourceId
     );
     const auto* duplicateAfter = modulation::findProjectModulator(
-        fixture.pages.control.authored.modulation,
+        fixture.pages.control.authored().modulation,
         duplicate.sourceId
     );
     assert(originalAfter != nullptr && duplicateAfter != nullptr);
     assert(originalAfter->parameters.recordedCurveId != sharedCurve);
     assert(duplicateAfter->parameters.recordedCurveId == sharedCurve);
     assert(modulation::findProjectCurve(
-               fixture.pages.control.authored.curves,
+               fixture.pages.control.authored().curves,
                sharedCurve)->referenceCount == 1U);
     assert(modulation::findProjectCurve(
-               fixture.pages.control.authored.curves,
+               fixture.pages.control.authored().curves,
                originalAfter->parameters.recordedCurveId)->referenceCount ==
            1U);
     assert(fixture.probe.cleared == 1U);
@@ -253,7 +253,7 @@ void test_project_phase_wrap_and_transport_invalidation() {
     assert(!fixture.workflow.active());
     assert(fixture.workflow.status() ==
            modulation::ProjectRecordedShapeCaptureStatus::INVALIDATED);
-    assert(fixture.pages.control.authored.modulation.sourceCount == 0U);
+    assert(fixture.pages.control.authored().modulation.sourceCount == 0U);
     assert(fixture.probe.cleared == 1U);
     assert(fixture.probe.mutated == 0U);
     std::cout << "[PASS] Project phase wrap and transport fail-closed\n";
@@ -267,7 +267,7 @@ void test_untouched_release_and_cancel_publish_nothing() {
     assert(noOp.status == modulation::ProjectModulationStatus::NO_CHANGE);
     assert(fixture.workflow.status() ==
            modulation::ProjectRecordedShapeCaptureStatus::NO_CHANGE);
-    assert(fixture.pages.control.authored.modulation.sourceCount == 0U);
+    assert(fixture.pages.control.authored().modulation.sourceCount == 0U);
     assert(fixture.history.undoCount() == 0U);
     assert(fixture.probe.mutated == 0U);
 
@@ -277,7 +277,7 @@ void test_untouched_release_and_cancel_publish_nothing() {
     assert(fixture.workflow.cancel());
     assert(fixture.workflow.status() ==
            modulation::ProjectRecordedShapeCaptureStatus::CANCELLED);
-    assert(fixture.pages.control.authored.modulation.sourceCount == 0U);
+    assert(fixture.pages.control.authored().modulation.sourceCount == 0U);
     assert(fixture.history.undoCount() == 0U);
     assert(fixture.probe.mutated == 0U);
     std::cout << "[PASS] no-op/cancel retain scratch only\n";
@@ -297,7 +297,7 @@ void test_concurrent_authored_or_curve_mutation_rolls_back_audition() {
         const auto rejected = assigned.workflow.release(6000U);
         assert(rejected.status ==
                modulation::ProjectModulationStatus::INVARIANT_VIOLATION);
-        assert(assigned.pages.control.authored.modulation.sourceCount == 0U);
+        assert(assigned.pages.control.authored().modulation.sourceCount == 0U);
         assert(assigned.probe.cleared == 1U);
         assert(assigned.probe.mutated == 0U);
     }
@@ -311,16 +311,16 @@ void test_concurrent_authored_or_curve_mutation_rolls_back_audition() {
                    .expectedCurvePointHashValid);
         assert(replaced.workflow.touchDeltaQ15(1000, 6100U));
         const auto* source = modulation::findProjectModulator(
-            replaced.pages.control.authored.modulation,
+            replaced.pages.control.authored().modulation,
             seed.sourceId
         );
         assert(source != nullptr);
         const auto* record = modulation::findProjectCurve(
-            replaced.pages.control.authored.curves,
+            replaced.pages.control.authored().curves,
             source->parameters.recordedCurveId
         );
         assert(record != nullptr);
-        replaced.pages.control.authored.curves.points[record->pointOffset]
+        replaced.pages.control.authored().curves.points[record->pointOffset]
             .value++;
         const auto curveRejected = replaced.workflow.release(6100U);
         assert(curveRejected.status ==
@@ -364,7 +364,7 @@ void test_macro_ui_lifecycle_reset_clears_live_audition() {
     assert(fixture.workflow.status() ==
            modulation::ProjectRecordedShapeCaptureStatus::IDLE);
     assert(fixture.probe.cleared == 1U);
-    assert(fixture.pages.control.authored.modulation.sourceCount == 0U);
+    assert(fixture.pages.control.authored().modulation.sourceCount == 0U);
     assert(fixture.probe.mutated == 0U);
     std::cout << "[PASS] lifecycle reset clears audition\n";
 }
@@ -377,7 +377,7 @@ void test_capacity_failure_is_visible_and_atomic() {
         char name[modulation::PROJECT_MODULATOR_NAME_CAPACITY]{};
         std::snprintf(name, sizeof(name), "L%u", index);
         assert(modulation::createLfoModulator(
-            fixture.pages.control.authored.modulation,
+            fixture.pages.control.authored().modulation,
             modulation::ModulatorLfoDraft{.name = name}
         ).changed());
     }
@@ -406,8 +406,8 @@ void test_noncanonical_binding_amount_is_rejected_before_arm() {
     assert(!fixture.workflow.active());
     assert(fixture.workflow.lastProjectStatus() ==
            modulation::ProjectModulationStatus::INVALID_ARGUMENT);
-    assert(fixture.pages.control.authored.modulation.sourceCount == 0U);
-    assert(fixture.pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(fixture.pages.control.authored().modulation.sourceCount == 0U);
+    assert(fixture.pages.control.authored().modulation.outputBindingCount == 0U);
     assert(fixture.history.undoCount() == 0U);
     assert(fixture.probe.mutated == 0U);
     std::cout << "[PASS] INT16_MIN binding amount rejected atomically\n";

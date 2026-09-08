@@ -114,7 +114,7 @@ bool MacroAutomationPlaybackService::ensureProjectRuntime_(
         OC_PERF_SCOPE(perfPlanCompile, "project-control.plan-compile");
         const auto compiled =
             core::state::modulation::compileProjectControlRuntimePlan(
-                control.authored,
+                control.authored(),
                 context,
                 control.plan
             );
@@ -475,7 +475,7 @@ bool MacroAutomationPlaybackService::produceProjectFrame_(
         const auto evaluated =
             core::state::modulation::evaluateProjectControlRuntimeWithBaseProvider(
                 control.plan,
-                control.authored.curves,
+                control.authored().curves,
                 frame->time,
                 &control.triggerScratch,
                 provideBase_,
@@ -564,7 +564,7 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
         next_due_ms_ = nowMs +
             macro::projectControlUpdatePeriodMilliseconds(
                 control.plan,
-                control.authored.curves,
+                control.authored().curves,
                 control.timeTelemetry,
                 activeAuthorCount_()
             );

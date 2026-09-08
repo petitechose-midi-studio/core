@@ -17,9 +17,9 @@ FLASHMEM bool readProjectControlCurvePoint(
     bool signedOutput,
     ProjectControlCurvePoint& out
 ) {
-    const auto* record = findProjectCurve(control.authored.curves, curveId);
+    const auto* record = findProjectCurve(control.authored().curves, curveId);
     if (record == nullptr || pointIndex >= record->pointCount) return false;
-    const auto& point = control.authored.curves.points[
+    const auto& point = control.authored().curves.points[
         static_cast<uint16_t>(record->pointOffset + pointIndex)
     ];
     out.beat = static_cast<float>(point.tick) /
@@ -37,16 +37,16 @@ projectControlCurveWindowSummary(
     ProjectCurveId curveId
 ) {
     ProjectControlCurveWindowSummary summary{};
-    const auto* record = findProjectCurve(control.authored.curves, curveId);
+    const auto* record = findProjectCurve(control.authored().curves, curveId);
     if (record == nullptr || record->pointCount == 0U) return summary;
     summary.active = true;
     summary.sourceDurationTicks = record->sourceDurationTicks;
     summary.durationTicks = record->durationTicks;
     summary.windowOffsetTicks = record->windowOffsetTicks;
-    summary.firstPointTick = control.authored.curves.points[
+    summary.firstPointTick = control.authored().curves.points[
         record->pointOffset
     ].tick;
-    summary.lastPointTick = control.authored.curves.points[
+    summary.lastPointTick = control.authored().curves.points[
         static_cast<uint16_t>(record->pointOffset + record->pointCount - 1U)
     ].tick;
     summary.pointCount = record->pointCount;
@@ -65,7 +65,7 @@ FLASHMEM float evaluateProjectControlCurveRecordImpl(
 ) {
     if (record.pointCount == 0U ||
         static_cast<uint32_t>(record.pointOffset) + record.pointCount >
-            control.authored.curves.pointCount) {
+            control.authored().curves.pointCount) {
         return fallback;
     }
 
@@ -96,7 +96,7 @@ FLASHMEM float evaluateProjectControlCurveRecordImpl(
             ? std::clamp(value, 0.0f, 1.0f)
             : std::clamp(value, -1.0f, 1.0f);
     };
-    const auto& arena = control.authored.curves;
+    const auto& arena = control.authored().curves;
     const uint16_t firstIndex = record.pointOffset;
     const uint16_t lastIndex = static_cast<uint16_t>(
         record.pointOffset + record.pointCount - 1U
@@ -142,7 +142,7 @@ FLASHMEM float evaluateProjectControlCurve(
     float elapsedBeat,
     float fallback
 ) {
-    const auto* record = findProjectCurve(control.authored.curves, curveId);
+    const auto* record = findProjectCurve(control.authored().curves, curveId);
     return record == nullptr
         ? fallback
         : evaluateProjectControlCurveRecordImpl(
@@ -160,8 +160,8 @@ FLASHMEM float evaluateProjectControlCurveRecord(
     float elapsedBeat,
     float fallback
 ) {
-    if (recordIndex < control.authored.curves.recordCount) {
-        const auto& record = control.authored.curves.records[recordIndex];
+    if (recordIndex < control.authored().curves.recordCount) {
+        const auto& record = control.authored().curves.records[recordIndex];
         if (record.id == curveId) {
             return evaluateProjectControlCurveRecordImpl(
                 control,

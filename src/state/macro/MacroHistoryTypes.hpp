@@ -352,8 +352,8 @@ struct MacroSlotDeletionHistoryPayload {
 
 /**
  * One reversible Page edit. Preparation reserves the complete before-domain;
- * commit turns it into a bytewise XOR with the after-domain, or releases it
- * when only Track metadata changed. The same delta replays both directions.
+ * commit exchanges it with the live domain, or releases it when only Track
+ * metadata changed. Replay exchanges the retained and live domains.
  * This in-memory representation never crosses a persistence/firmware boundary.
  */
 struct MacroPageStructureHistoryPayload {

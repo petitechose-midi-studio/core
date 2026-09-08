@@ -172,7 +172,7 @@ void test_assignment_tap_opens_exact_source_workspace() {
     h.configureModulation();
     h.openModulationEditor();
 
-    const auto& graph = h.state.pages.control.authored.modulation;
+    const auto& graph = h.state.pages.control.authored().modulation;
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 1U);
     const auto sourceId = graph.sources[0].id;
@@ -287,7 +287,7 @@ void test_recorded_shape_assignment_depth_uses_typed_full_range() {
     MacroAutomationHarness h;
     h.state.pages.setMacroSlotActive(0U, true);
     auto& control = h.state.pages.control;
-    auto& graph = control.authored.modulation;
+    auto& graph = control.authored().modulation;
 
     const ProjectPackedCurvePoint points[]{
         {0U, -32767},
@@ -304,7 +304,7 @@ void test_recorded_shape_assignment_depth_uses_typed_full_range() {
     sourceDraft.pointCount = 2U;
     const auto source = createRecordedShapeModulator(
         graph,
-        control.authored.curves,
+        control.authored().curves,
         sourceDraft
     );
     assert(source.changed());
@@ -344,7 +344,7 @@ void test_all_row_edits_global_depth_without_rewriting_assignment() {
     h.handler.update(0U);
     const auto destination = projectControlDestination({0U, 0U, 0U});
     const auto bindingBefore =
-        h.state.pages.control.authored.modulation.outputBindings[0];
+        h.state.pages.control.authored().modulation.outputBindings[0];
 
     h.turn(Config::EncoderID::NAV, -1.0f);
     assert(h.state.macroEdit.modulationFocusedRow.get() == 0U);
@@ -356,11 +356,11 @@ void test_all_row_edits_global_depth_without_rewriting_assignment() {
     h.turn(Config::EncoderID::OPT, 0.25f);
     assert(h.state.macroHistory.undoCount() == 1U);
     assert(projectModulationDestinationScaleQ15(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         destination
     ) == 16384U);
     const auto* binding = findProjectModulationBinding(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         bindingBefore.id
     );
     assert(binding != nullptr && binding->amountQ15 == bindingBefore.amountQ15);
@@ -368,19 +368,19 @@ void test_all_row_edits_global_depth_without_rewriting_assignment() {
 
     assert(h.state.undoProjectHistory());
     assert(projectModulationDestinationScaleQ15(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         destination
     ) == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     binding = findProjectModulationBinding(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         bindingBefore.id
     );
     assert(binding != nullptr &&
            (binding->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U);
     assert(projectModulationDestinationScaleQ15(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         destination
     ) == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
     std::cout << "[PASS] All row separates Global Depth from aggregate bypass\n";
@@ -520,11 +520,11 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
     };
 
     auto assertRejectedWithoutMutation = [&]() {
-        std::array<unsigned char, sizeof(h.state.pages.control.authored)> before{};
+        std::array<unsigned char, sizeof(h.state.pages.control.authored())> before{};
         std::memcpy(
             before.data(),
-            &h.state.pages.control.authored,
-            sizeof(h.state.pages.control.authored)
+            &h.state.pages.control.authored(),
+            sizeof(h.state.pages.control.authored())
         );
         const auto plan = clipboard_ops::preflightAutomationPaste(
             h.state.pages,
@@ -540,8 +540,8 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
         ));
         assert(std::memcmp(
             before.data(),
-            &h.state.pages.control.authored,
-            sizeof(h.state.pages.control.authored)
+            &h.state.pages.control.authored(),
+            sizeof(h.state.pages.control.authored())
         ) == 0);
     };
 
@@ -835,7 +835,7 @@ void test_new_lfo_selection_opens_full_project_source_workspace() {
 
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATION);
-    assert(h.state.pages.control.authored.modulation.sourceCount == 0);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 0);
     assert(h.encoderHw.getDiscreteSteps(
         static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
     ) == 1);
@@ -848,12 +848,12 @@ void test_new_lfo_selection_opens_full_project_source_workspace() {
     assert(h.state.pages.control.audition.sourceCreated());
     assert(h.state.pages.control.audition.mode ==
            ProjectModulatorSourceSessionMode::AUDITION_NEW);
-    assert(h.state.pages.control.authored.modulation.sourceCount == 1);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 1);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount == 1);
     assert(h.state.macroHistory.undoCount() == 0);
-    const auto& source = h.state.pages.control.authored.modulation.sources[0];
+    const auto& source = h.state.pages.control.authored().modulation.sources[0];
     const auto& binding =
-        h.state.pages.control.authored.modulation.outputBindings[0];
+        h.state.pages.control.authored().modulation.outputBindings[0];
     assert(std::strcmp(source.name.data(), "LFO 1") == 0);
     assert(source.parameters.lfo.shape == ModulatorLfoShape::SINE);
     assert(source.parameters.lfo.periodTicks == PROJECT_CONTROL_TICKS_PER_BEAT);
@@ -893,7 +893,7 @@ void test_new_adsr_selection_keeps_create_origin_and_exact_return_ids() {
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
 
-    const auto& graph = h.state.pages.control.authored.modulation;
+    const auto& graph = h.state.pages.control.authored().modulation;
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATOR_CREATE);
     assert(h.state.pages.control.audition.mode ==
@@ -946,11 +946,11 @@ void test_record_shape_row_opens_the_existing_context_capture() {
            ));
     assert(h.state.macroEdit.contextSelectorActive.get());
     const auto rows = core::state::macro::buildMacroModulationRows(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         core::state::modulation::projectControlDestination({0U, 0U, 0U})
     );
     assert(core::state::macro::macroContextActionAt(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         rows,
         core::state::macro::MacroRootItem::MODULATION,
         h.state.macroEdit.contextPropertyIndex.get()
@@ -975,7 +975,7 @@ core::state::modulation::ModulatorId createReusableLfo(
     draft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
     draft.parameters.timing = ModulatorTimingMode::SYNC;
     const auto created = createLfoModulator(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         draft
     );
     assert(created.changed());
@@ -1002,7 +1002,7 @@ core::state::modulation::ModulationBindingId bindReusableLfo(
     draft.amountQ15 = amountQ15;
     draft.application = ModulationApplication::AROUND_BASE;
     const auto result = addProjectModulationBinding(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         draft
     );
     assert(result.changed());
@@ -1032,7 +1032,7 @@ void test_stale_assignment_row_cannot_remove_the_replacement_edge() {
     // Simulate the projected edge disappearing before release. Dense storage
     // moves the second edge into the same UI ordinal; the armed action must
     // retain the original BindingId and fail closed, never retarget by row.
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     assert(removeProjectModulationBinding(graph, armedBinding).changed());
     h.state.pages.control.markAuthoredMutation();
     assert(graph.outputBindingCount == 1U);
@@ -1069,7 +1069,7 @@ void test_stale_all_row_cannot_clear_replacement_assignments() {
     assert(h.state.macroEdit.contextFeedback.get().action ==
            core::state::contextual::ContextActionId::CLEAR);
 
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     assert(removeProjectModulationBinding(graph, armedBinding).changed());
     h.state.pages.control.markAuthoredMutation();
     const auto replacementBinding =
@@ -1113,7 +1113,7 @@ void test_stale_assignment_row_cannot_paste_over_replacement_edge() {
     assert(h.state.macroEdit.contextFeedback.get().action ==
            core::state::contextual::ContextActionId::OVERWRITE);
 
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     assert(removeProjectModulationBinding(graph, armedTarget).changed());
     h.state.pages.control.markAuthoredMutation();
     const auto replacementTarget = bindReusableLfo(h, sourceId, 1, -4096);
@@ -1159,9 +1159,9 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
         h.state.macroEdit.modulatorPickerIndex.get();
     const uint32_t authoredRevision = h.state.pages.control.authoredRevision;
     const uint16_t sourceCount =
-        h.state.pages.control.authored.modulation.sourceCount;
+        h.state.pages.control.authored().modulation.sourceCount;
     const uint16_t bindingCount =
-        h.state.pages.control.authored.modulation.outputBindingCount;
+        h.state.pages.control.authored().modulation.outputBindingCount;
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
@@ -1174,12 +1174,12 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
     assert(h.state.macroEdit.modulatorPickerIndex.get() ==
            pickerSelection);
     assert(h.state.pages.control.authoredRevision == authoredRevision);
-    assert(h.state.pages.control.authored.modulation.sourceCount == sourceCount);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount ==
+    assert(h.state.pages.control.authored().modulation.sourceCount == sourceCount);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount ==
            bindingCount);
-    assert(h.state.pages.control.authored.modulation.sources[0].id == firstSource);
-    assert(h.state.pages.control.authored.modulation.sources[1].id == secondSource);
-    assert(h.state.pages.control.authored.modulation.outputBindings[0].id ==
+    assert(h.state.pages.control.authored().modulation.sources[0].id == firstSource);
+    assert(h.state.pages.control.authored().modulation.sources[1].id == secondSource);
+    assert(h.state.pages.control.authored().modulation.outputBindings[0].id ==
            existingBinding);
     assert(h.state.macroHistory.undoCount() == 0U);
 
@@ -1200,7 +1200,7 @@ void test_use_existing_opens_common_project_source_with_typed_return() {
     MacroAutomationHarness h;
     h.state.pages.setMacroSlotActive(0, true);
     const auto sourceId = createReusableLfo(h);
-    const auto root = h.state.pages.control.authored.modulation.sources[0];
+    const auto root = h.state.pages.control.authored().modulation.sources[0];
     const auto runtimeBefore = h.state.pages.control.runtime;
     h.openModulationEditor();
     h.handler.update(0);
@@ -1211,7 +1211,7 @@ void test_use_existing_opens_common_project_source_with_typed_return() {
     h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATOR_PICKER);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount == 0U);
     assert(std::memcmp(
         &h.state.pages.control.runtime,
         &runtimeBefore,
@@ -1228,15 +1228,15 @@ void test_use_existing_opens_common_project_source_with_typed_return() {
     assert(h.state.pages.control.audition.mode ==
            ProjectModulatorSourceSessionMode::AUDITION_EXISTING);
     assert(h.state.pages.control.audition.sourceId == sourceId);
-    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 1U);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount == 1U);
     assert(h.state.macroHistory.undoCount() == 0U);
     const auto& binding =
-        h.state.pages.control.authored.modulation.outputBindings[0];
+        h.state.pages.control.authored().modulation.outputBindings[0];
     assert(binding.id == h.state.pages.control.audition.bindingId);
     assert(binding.sourceId == sourceId);
     assert(std::memcmp(
-        &h.state.pages.control.authored.modulation.sources[0],
+        &h.state.pages.control.authored().modulation.sources[0],
         &root,
         sizeof(root)
     ) == 0);
@@ -1294,7 +1294,7 @@ void test_assignment_copy_pastes_shared_source_to_empty_macro_with_one_undo() {
         .page = h.state.pages.currentActivePage(),
         .macro = 1,
     });
-    const auto& graph = h.state.pages.control.authored.modulation;
+    const auto& graph = h.state.pages.control.authored().modulation;
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 2U);
     const auto& pasted = graph.outputBindings[1];
@@ -1308,9 +1308,9 @@ void test_assignment_copy_pastes_shared_source_to_empty_macro_with_one_undo() {
            core::state::contextual::OperationFeedbackStatus::APPLIED);
 
     assert(h.state.macroHistory.undo(h.state.pages));
-    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
-    assert(h.state.pages.control.authored.modulation.outputBindings[0].id ==
+    assert(h.state.pages.control.authored().modulation.sourceCount == 1U);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount == 1U);
+    assert(h.state.pages.control.authored().modulation.outputBindings[0].id ==
            originalBinding);
     std::cout
         << "[PASS] typed assignment Paste reuses source and creates one Undo\n";
@@ -1344,19 +1344,19 @@ void test_assignment_paste_overwrites_only_matching_edge_with_stable_id() {
     h.release(Config::ButtonID::BOTTOM_RIGHT);
 
     const auto* updated = findProjectModulationBinding(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         targetBinding
     );
     assert(updated != nullptr);
     assert(updated->id == targetBinding);
     assert(updated->amountQ15 == 16384);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 2U);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount == 2U);
     assert(h.services.focusedModulationBinding(1) == targetBinding);
     assert(h.state.macroHistory.undoCount() == 1U);
 
     assert(h.state.macroHistory.undo(h.state.pages));
     const auto* restored = findProjectModulationBinding(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         targetBinding
     );
     assert(restored != nullptr);

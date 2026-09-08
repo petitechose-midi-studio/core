@@ -32,7 +32,7 @@ MacroHistoryService::replaceProjectRecordedShapeCurve(
         pendingModulatorSlot_() != nullptr || pages.control.audition.active()) {
         return failure;
     }
-    auto& domain = pages.control.authored;
+    auto& domain = pages.control.authored();
     auto& graph = domain.modulation;
     auto& arena = domain.curves;
     if (!historyDomainValid(domain)) {
@@ -259,7 +259,7 @@ FLASHMEM bool MacroHistoryService::setProjectModulationTriggerCoalesced(
         return false;
     }
     const auto* existing = findProjectModulationTriggerForSource(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId
     );
     if (existing == nullptr) return false;
@@ -268,7 +268,7 @@ FLASHMEM bool MacroHistoryService::setProjectModulationTriggerCoalesced(
     change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_TRIGGER_EDIT;
     change->triggerEdit.before = *existing;
     const auto result = core::state::modulation::setProjectModulationTrigger(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceId,
         trigger,
         enabled,

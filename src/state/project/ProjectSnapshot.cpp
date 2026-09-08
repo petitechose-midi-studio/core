@@ -238,7 +238,7 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
             std::memcpy(
                 reinterpret_cast<uint8_t*>(snapshot_->projectControl.get()) +
                     automation_offset_,
-                reinterpret_cast<const uint8_t*>(&state_->pages.control.authored) +
+                reinterpret_cast<const uint8_t*>(&state_->pages.control.authored()) +
                     automation_offset_,
                 workBytes
             );
@@ -551,7 +551,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         snapshot.sharedTrackEnabledMask,
         snapshot.sharedTrackActive
     );
-    state.pages.control.authored = *snapshot.projectControl;
+    state.pages.control.authored() = *snapshot.projectControl;
     state.pages.control.plan = {};
     state.pages.control.runtime = {};
     state.pages.control.timeTelemetry = {};
@@ -578,7 +578,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     if (!state.clearProjectHistory()) return false;
     core::state::project::reconcileProjectModulatorNavigationAfterHistory(
         state.projectNavigation,
-        state.pages.control.authored.modulation,
+        state.pages.control.authored().modulation,
         false
     );
     // Manual is Project-scoped runtime intent: it survives navigation and UI

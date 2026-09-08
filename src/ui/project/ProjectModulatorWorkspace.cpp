@@ -94,7 +94,7 @@ FLASHMEM bool sourceUsesPositiveDomain(
     if (source.kind == ModulatorKind::LFO) return false;
     if (source.kind == ModulatorKind::ADSR) return true;
     const auto* curve = findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         source.parameters.recordedCurveId
     );
     return curve != nullptr &&
@@ -201,8 +201,8 @@ FLASHMEM void populateAuditionDepthRow(
         ? depth_parameter::amountQ15ToPercent(
               binding->amountQ15,
               depth_parameter::scaleFor(
-                  control->authored.modulation,
-                  control->authored.curves,
+                  control->authored().modulation,
+                  control->authored().curves,
                   *binding
               )
           )
@@ -476,8 +476,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
         const int depth = depth_parameter::amountQ15ToPercent(
             props.auditionBinding->amountQ15,
             depth_parameter::scaleFor(
-                props.control->authored.modulation,
-                props.control->authored.curves,
+                props.control->authored().modulation,
+                props.control->authored().curves,
                 *props.auditionBinding
             )
         );
@@ -768,7 +768,7 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
         out.base = normalizedToQ16(rawValue);
     } else {
         const auto* curve = findProjectCurve(
-            context->control->authored.curves,
+            context->control->authored().curves,
             source.parameters.recordedCurveId
         );
         if (!curve || curve->pointCount == 0U) return false;
@@ -831,7 +831,7 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
     ProjectModulatorRuntimeProjection projection{};
     if (!projectModulatorRuntimeProjectionAtIndex(
             control.plan,
-            control.authored.curves,
+            control.authored().curves,
             control.runtime,
             time,
             context->runtimeSourceIndex,
@@ -1237,6 +1237,8 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     showCaptureFeedback(props, captureActive);
 
     rendered_source_ = *props.source;
+    // Deferred curve callbacks borrow our cache, not an exchangeable domain.
+    curve_sample_context_.source = &rendered_source_;
     rendered_source_id_ = props.source->id;
     rendered_authored_revision_ = props.control->authoredRevision;
     rendered_selected_index_ = props.selectedIndex;

@@ -63,9 +63,9 @@ inline modulation::ProjectCurveRecord* mutableCurve(
     modulation::ProjectCurveId curveId
 ) {
     for (uint16_t index = 0;
-         index < control.authored.curves.recordCount;
+         index < control.authored().curves.recordCount;
          ++index) {
-        auto& record = control.authored.curves.records[index];
+        auto& record = control.authored().curves.records[index];
         if (record.id == curveId) return &record;
     }
     return nullptr;
@@ -89,7 +89,7 @@ inline modulation::ModulatorId addLocalLfo(
     source.parameters.periodTicks =
         modulation::PROJECT_CONTROL_TICKS_PER_BEAT;
     const auto created = modulation::createLfoModulator(
-        control.authored.modulation,
+        control.authored().modulation,
         source
     );
     assert(created.changed());
@@ -100,7 +100,7 @@ inline modulation::ModulatorId addLocalLfo(
         modulation::projectControlDestination(address);
     binding.amountQ15 = 16384;
     assert(modulation::addProjectModulationBinding(
-        control.authored.modulation,
+        control.authored().modulation,
         binding
     ).changed());
     control.markAuthoredMutation();
@@ -115,9 +115,9 @@ inline uint8_t outputBindingCountAt(
         modulation::projectControlDestination(address);
     uint8_t count = 0U;
     for (uint16_t index = 0U;
-         index < control.authored.modulation.outputBindingCount;
+         index < control.authored().modulation.outputBindingCount;
          ++index) {
-        if (control.authored.modulation
+        if (control.authored().modulation
                 .outputBindings[index]
                 .destination == destination) {
             ++count;

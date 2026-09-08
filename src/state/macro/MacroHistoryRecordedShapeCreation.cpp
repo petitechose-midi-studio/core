@@ -52,7 +52,7 @@ MacroHistoryService::createRecordedShape_(
         return failure;
     }
 
-    auto& domain = pages.control.authored;
+    auto& domain = pages.control.authored();
     auto& graph = domain.modulation;
     auto& arena = domain.curves;
     if (!historyDomainValid(domain)) {
@@ -274,8 +274,8 @@ MacroHistoryService::duplicateProjectModulator(
         pendingModulatorSlot_() != nullptr || pages.control.audition.active()) {
         return failure;
     }
-    auto& graph = pages.control.authored.modulation;
-    auto& arena = pages.control.authored.curves;
+    auto& graph = pages.control.authored().modulation;
+    auto& arena = pages.control.authored().curves;
     const auto* source = findProjectModulator(graph, sourceId);
     if (!source) {
         failure.status = ProjectModulationStatus::INVALID_ID;
@@ -370,7 +370,7 @@ MacroHistoryService::beginExistingModulatorAudition(
         return failure;
     }
 
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     const auto* source = findProjectModulator(graph, sourceId);
     if (source == nullptr) {
         failure.status = ProjectModulationStatus::INVALID_ID;
@@ -488,7 +488,7 @@ FLASHMEM bool MacroHistoryService::commitModulatorAudition(
         return false;
     }
     if (!applyDestinationStructure(pages, payload)) return false;
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     const auto* source = core::state::modulation::findProjectModulator(
         graph,
         audition.sourceId

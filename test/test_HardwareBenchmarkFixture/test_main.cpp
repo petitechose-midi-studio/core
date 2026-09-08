@@ -90,7 +90,7 @@ int main() {
         assert(state.activeView.get() == core::ui::ViewType::MACRO);
         assert(state.currentSharedTrackEnabledMask() == 3U);
         assert(state.currentSharedActiveTrack() == 0U);
-        const auto& graph = state.pages.control.authored.modulation;
+        const auto& graph = state.pages.control.authored().modulation;
         assert(graph.sourceCount == 3U && graph.outputBindingCount == 4U);
         assert(graph.outputBindings[0].amountQ15 == 4096);
         assert(graph.outputBindings[1].amountQ15 == 8192);

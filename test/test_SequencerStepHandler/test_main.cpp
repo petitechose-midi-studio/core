@@ -2086,8 +2086,8 @@ TrackMacroInvariant captureTrackMacroInvariant(const SequencerStepHarness& h) {
     out.activeConfigsHash = byteHash(
         h.state.pages.activeConfigs.data(), sizeof(h.state.pages.activeConfigs));
     out.controlAuthoredHash = byteHash(
-        &h.state.pages.control.authored,
-        sizeof(h.state.pages.control.authored));
+        &h.state.pages.control.authored(),
+        sizeof(h.state.pages.control.authored()));
     out.manualOverridesHash = byteHash(
         &h.state.macroUi.manualOverrides,
         sizeof(h.state.macroUi.manualOverrides));

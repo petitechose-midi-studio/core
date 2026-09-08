@@ -561,7 +561,7 @@ void test_snapshot_boundaries_reject_an_active_modulator_audition() {
 
     project::ProjectSnapshot baseline;
     assert(project::captureProjectSnapshot(state, baseline));
-    const auto authoredBefore = state.pages.control.authored;
+    const auto authoredBefore = state.pages.control.authored();
     const uint32_t revisionBefore = state.pages.control.authoredRevision;
 
     const auto begun = beginLfoAudition(state);
@@ -575,13 +575,13 @@ void test_snapshot_boundaries_reject_an_active_modulator_audition() {
     assert(!blockedCapture.begin(state, blockedSnapshot));
     assert(!project::captureProjectSnapshot(state, blockedSnapshot));
 
-    const auto auditionAuthored = state.pages.control.authored;
+    const auto auditionAuthored = state.pages.control.authored();
     const uint32_t auditionRevision = state.pages.control.authoredRevision;
     assert(!project::applyProjectSnapshot(state, baseline));
     assert(state.pages.control.audition.active());
     assert(state.pages.control.authoredRevision == auditionRevision);
     assert(std::memcmp(
-        &state.pages.control.authored,
+        &state.pages.control.authored(),
         &auditionAuthored,
         sizeof(auditionAuthored)
     ) == 0);
@@ -591,7 +591,7 @@ void test_snapshot_boundaries_reject_an_active_modulator_audition() {
     assert(!state.hasPendingProjectTransaction());
     assert(state.pages.control.authoredRevision == revisionBefore);
     assert(std::memcmp(
-        &state.pages.control.authored,
+        &state.pages.control.authored(),
         &authoredBefore,
         sizeof(authoredBefore)
     ) == 0);
@@ -630,7 +630,7 @@ void test_clear_project_history_rolls_back_audition_before_clearing() {
     auto state = makeCoreState(storages);
     configureProjectSession(state);
 
-    const auto authoredBefore = state.pages.control.authored;
+    const auto authoredBefore = state.pages.control.authored();
     const uint32_t revisionBefore = state.pages.control.authoredRevision;
     const auto begun = beginLfoAudition(state);
     assert(begun.changed());
@@ -641,7 +641,7 @@ void test_clear_project_history_rolls_back_audition_before_clearing() {
     assert(!state.hasPendingProjectTransaction());
     assert(state.pages.control.authoredRevision == revisionBefore);
     assert(std::memcmp(
-        &state.pages.control.authored,
+        &state.pages.control.authored(),
         &authoredBefore,
         sizeof(authoredBefore)
     ) == 0);
@@ -729,8 +729,8 @@ void test_full_project_reset_discards_an_unrecoverable_audition_pair() {
            core::state::ProjectResetOutcome::Completed);
     assert(!state.hasPendingProjectTransaction());
     assert(!state.pages.control.audition.active());
-    assert(state.pages.control.authored.modulation.sourceCount == 0U);
-    assert(state.pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(state.pages.control.authored().modulation.sourceCount == 0U);
+    assert(state.pages.control.authored().modulation.outputBindingCount == 0U);
     assert(!state.macroHistory.canUndo());
     assert(!state.sequencerHistory.canUndo());
     assert(!state.projectHistory.canUndo());

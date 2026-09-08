@@ -30,7 +30,7 @@ FLASHMEM bool captureMacroSlotHistorySnapshot(
     out.staticValue = page.values[address.macro];
     out.destinationScaleQ15 =
         core::state::modulation::projectModulationDestinationScaleQ15(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             core::state::modulation::projectControlDestination(address)
         );
 
@@ -106,7 +106,7 @@ FLASHMEM bool liveMacroSlotMatchesHistorySnapshot(
             live
         ) || live.present() != snapshot.slotPresent ||
         core::state::modulation::projectModulationDestinationScaleQ15(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             core::state::modulation::projectControlDestination(address)
         ) != snapshot.destinationScaleQ15) {
         return false;
@@ -155,7 +155,7 @@ FLASHMEM bool applyMacroSlotHistorySnapshot(
             core::state::modulation::
                 PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 &&
         !core::state::modulation::setProjectModulationDestinationScale(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             core::state::modulation::projectControlDestination(address),
             snapshot.destinationScaleQ15
         ).changed()) {
@@ -202,14 +202,14 @@ FLASHMEM bool captureMacroAutomationHistorySnapshot(
     }
 
     const auto* record = core::state::modulation::findProjectCurve(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         view.automation.id
     );
     if (record == nullptr ||
         record->pointCount != view.automation.pointCount ||
         record->pointCount > MACRO_AUTOMATION_RECORDING_MAX_POINTS ||
         static_cast<uint32_t>(record->pointOffset) + record->pointCount >
-            pages.control.authored.curves.pointCount) {
+            pages.control.authored().curves.pointCount) {
         return false;
     }
 
@@ -219,7 +219,7 @@ FLASHMEM bool captureMacroAutomationHistorySnapshot(
     >(out.pointCount);
     if (!out.points) return false;
     for (uint16_t index = 0; index < out.pointCount; ++index) {
-        const auto& point = pages.control.authored.curves.points[
+        const auto& point = pages.control.authored().curves.points[
             static_cast<uint16_t>(record->pointOffset + index)
         ];
         out.points[index] = point;
@@ -262,16 +262,16 @@ FLASHMEM bool liveMacroAutomationMatchesHistorySnapshot(
     if (!live.automation.stored()) return true;
 
     const auto* record = core::state::modulation::findProjectCurve(
-        pages.control.authored.curves,
+        pages.control.authored().curves,
         live.automation.id
     );
     if (record == nullptr || record->pointCount != snapshot.pointCount ||
         static_cast<uint32_t>(record->pointOffset) + record->pointCount >
-            pages.control.authored.curves.pointCount) {
+            pages.control.authored().curves.pointCount) {
         return false;
     }
     for (uint16_t index = 0; index < snapshot.pointCount; ++index) {
-        const auto& point = pages.control.authored.curves.points[
+        const auto& point = pages.control.authored().curves.points[
             static_cast<uint16_t>(record->pointOffset + index)
         ];
         if (!samePoint(point, snapshot.points[index])) {

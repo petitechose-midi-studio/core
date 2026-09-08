@@ -123,6 +123,7 @@ FLASHMEM MacroDomainState::MacroDomainState()
       pages(core::app::makeExtmemUnique<macro::MacroPagesState>()) {
     if (!runtime) failCoreStateAllocation("macro runtime state");
     if (!pages) failCoreStateAllocation("macro pages state");
+    if (!pages->control.hasAuthored()) failCoreStateAllocation("project control domain");
 }
 
 FLASHMEM MacroDomainState::~MacroDomainState() = default;

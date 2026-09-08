@@ -64,8 +64,8 @@ core::state::modulation::ProjectModulationResult addRecordedShape(
         .pointCount = static_cast<uint16_t>(points.size()),
     };
     const auto created = mod::createRecordedShapeModulator(
-        control.authored.modulation,
-        control.authored.curves,
+        control.authored().modulation,
+        control.authored().curves,
         source
     );
     assert(created.changed());
@@ -75,7 +75,7 @@ core::state::modulation::ProjectModulationResult addRecordedShape(
     binding.amountQ15 = amountQ15;
     binding.enabled = enabled;
     const auto bound = mod::addProjectModulationBinding(
-        control.authored.modulation,
+        control.authored().modulation,
         binding
     );
     assert(bound.changed());
@@ -116,7 +116,7 @@ core::state::modulation::ProjectModulationResult addLfo(
     source.parameters.freePeriodMs = freePeriodMs;
     source.parameters.shape = mod::ModulatorLfoShape::SINE;
     const auto created = mod::createLfoModulator(
-        control.authored.modulation,
+        control.authored().modulation,
         source
     );
     assert(created.changed());
@@ -126,7 +126,7 @@ core::state::modulation::ProjectModulationResult addLfo(
     binding.amountQ15 = 32767;
     binding.enabled = enabled;
     const auto bound = mod::addProjectModulationBinding(
-        control.authored.modulation,
+        control.authored().modulation,
         binding
     );
     assert(bound.changed());
@@ -589,14 +589,14 @@ void test_project_preview_applies_destination_global_depth() {
     mod::ModulatorLfoDraft source{};
     source.name = "Square";
     source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
-    const auto created = mod::createLfoModulator(control.authored.modulation, source);
+    const auto created = mod::createLfoModulator(control.authored().modulation, source);
     assert(created.changed());
     mod::ModulationBindingDraft binding{};
     binding.sourceId = created.sourceId;
     binding.destination = target;
     binding.amountQ15 = 16384;
     assert(mod::addProjectModulationBinding(
-        control.authored.modulation,
+        control.authored().modulation,
         binding
     ).changed());
 
@@ -627,7 +627,7 @@ void test_project_preview_applies_destination_global_depth() {
     };
     const int unityPeak = peakFor(unity);
     assert(mod::setProjectModulationDestinationScale(
-        control.authored.modulation,
+        control.authored().modulation,
         target,
         16384U
     ).changed());
@@ -653,14 +653,14 @@ void test_stale_preview_model_reads_live_destination_global_depth() {
     mod::ModulatorLfoDraft source{};
     source.name = "Square";
     source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
-    const auto created = mod::createLfoModulator(control.authored.modulation, source);
+    const auto created = mod::createLfoModulator(control.authored().modulation, source);
     assert(created.changed());
     mod::ModulationBindingDraft binding{};
     binding.sourceId = created.sourceId;
     binding.destination = target;
     binding.amountQ15 = 16384;
     assert(mod::addProjectModulationBinding(
-        control.authored.modulation,
+        control.authored().modulation,
         binding
     ).changed());
 
@@ -691,7 +691,7 @@ void test_stale_preview_model_reads_live_destination_global_depth() {
     };
     const int unityPeak = peakFor(model);
     assert(mod::setProjectModulationDestinationScale(
-        control.authored.modulation,
+        control.authored().modulation,
         target,
         16384U
     ).changed());
@@ -712,14 +712,14 @@ void test_project_square_reports_explicit_discontinuity() {
     mod::ModulatorLfoDraft source{};
     source.name = "Square";
     source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
-    const auto created = mod::createLfoModulator(control.authored.modulation, source);
+    const auto created = mod::createLfoModulator(control.authored().modulation, source);
     assert(created.changed());
     mod::ModulationBindingDraft binding{};
     binding.sourceId = created.sourceId;
     binding.destination = mod::projectControlDestination(address);
     binding.amountQ15 = 16384;
     const auto bound = mod::addProjectModulationBinding(
-        control.authored.modulation,
+        control.authored().modulation,
         binding
     );
     assert(bound.changed());
@@ -759,7 +759,7 @@ void test_provisional_recorded_shape_sums_before_global_scale() {
         "Durable"
     );
     assert(mod::setProjectModulationDestinationScale(
-        control.authored.modulation,
+        control.authored().modulation,
         destination,
         16384U
     ).changed());
@@ -865,7 +865,7 @@ void test_recorded_shape_overdub_substitutes_only_its_source() {
         "Keep me"
     );
     assert(mod::setProjectModulationDestinationScale(
-        control.authored.modulation,
+        control.authored().modulation,
         destination,
         16384U
     ).changed());
@@ -1016,7 +1016,7 @@ void test_compiled_preview_sparse_path_matches_authored_fallback() {
         "Sparse peer"
     );
     assert(mod::setProjectModulationDestinationScale(
-        control.authored.modulation,
+        control.authored().modulation,
         destination,
         24576U
     ).changed());
@@ -1037,7 +1037,7 @@ void test_compiled_preview_sparse_path_matches_authored_fallback() {
     context.activePage[0] = 0U;
     context.activeMacroMask[0] = 0x01U;
     const auto compiled = mod::compileProjectControlRuntimePlan(
-        control.authored,
+        control.authored(),
         context,
         control.plan
     );
@@ -1121,13 +1121,13 @@ void test_preview_cache_falls_back_after_curve_directory_compaction() {
     );
 
     assert(mod::deleteProjectAutomationCurve(
-        control.authored.automation,
-        control.authored.curves,
+        control.authored().automation,
+        control.authored().curves,
         mod::projectControlDestination(first)
     ).changed());
     control.markAuthoredMutation();
     assert(model.authoredRevision != control.authoredRevision);
-    assert(control.authored.curves.recordCount == 1U);
+    assert(control.authored().curves.recordCount == 1U);
 
     const auto afterCompaction = sampleAt(
         model,

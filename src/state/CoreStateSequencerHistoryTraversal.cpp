@@ -271,7 +271,7 @@ FLASHMEM void reconcileMacroTrackStructureFromRestoredHistory(
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(
         state.configRevision.get(), core::state::macro::kMacroConfigDirtyAll));
     core::state::project::reconcileProjectModulatorNavigationAfterHistory(
-        state.projectNavigation, state.pages.control.authored.modulation);
+        state.projectNavigation, state.pages.control.authored().modulation);
 }
 
 }  // namespace

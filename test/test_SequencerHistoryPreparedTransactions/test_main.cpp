@@ -2233,8 +2233,8 @@ uint64_t macroTrackFingerprint(const Harness& h) {
 
 uint64_t macroControlFingerprint(const Harness& h) {
     return replayFingerprint(
-        &h.state.pages.control.authored,
-        sizeof(h.state.pages.control.authored));
+        &h.state.pages.control.authored(),
+        sizeof(h.state.pages.control.authored()));
 }
 
 seq::SequencerTrackActivationExpectedState captureActivationExpected(
@@ -2325,7 +2325,7 @@ void prepareMaximumCoupledStructureReplay(
     macroTrack.activePage = 1U;
     macroTrack.pages[1U].cc[0U] = 99U;
     if (distinctControl) {
-        ++h.state.pages.control.authored.curves.nextCurveId;
+        ++h.state.pages.control.authored().curves.nextCurveId;
         h.state.pages.control.markAuthoredMutation();
     }
     assert(h.state.refreshSharedTrackStateFromSequencer());
@@ -2990,7 +2990,7 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     ));
     auto* distinctPayload = distinctControl->macroStructure.get();
     assert(distinctPayload != nullptr);
-    ++pages.control.authored.curves.nextCurveId;
+    ++pages.control.authored().curves.nextCurveId;
     assert(seq::captureMacroTrackStructureHistoryAfter(pages, *distinctControl));
     assert(distinctPayload->control.changed());
     const uint32_t distinctRevision = pages.control.authoredRevision;

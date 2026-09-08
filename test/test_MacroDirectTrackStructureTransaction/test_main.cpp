@@ -151,7 +151,7 @@ struct FailureProof {
 FailureProof captureFailureProof(const core::state::CoreState& state) {
     return {
         .macroTracks = fingerprint(state.pages.tracks),
-        .control = fingerprint(state.pages.control.authored),
+        .control = fingerprint(state.pages.control.authored()),
         .manual = fingerprint(state.macroUi.manualOverrides),
         .sequencer = fingerprintSequencer(state),
         .projectTracks = fingerprint(state.projectTracks.authored),

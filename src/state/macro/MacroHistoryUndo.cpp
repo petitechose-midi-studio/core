@@ -81,8 +81,8 @@ FLASHMEM bool MacroHistoryService::replay_(
         if (redo) {
             if (!deleteBeforeMatches(pages, *change->modulatorDelete) ||
                 !core::state::modulation::deleteProjectModulator(
-                     pages.control.authored.modulation,
-                     pages.control.authored.curves,
+                     pages.control.authored().modulation,
+                     pages.control.authored().curves,
                      change->modulatorDelete->source.id
                  ).changed()) {
                 return false;
@@ -103,7 +103,7 @@ FLASHMEM bool MacroHistoryService::replay_(
             : change->triggerEdit.before;
         auto* trigger =
             core::state::modulation::findProjectModulationTriggerForSource(
-                pages.control.authored.modulation,
+                pages.control.authored().modulation,
                 expected.sourceId
             );
         if (trigger == nullptr || !sameObjectBits(*trigger, expected)) {
@@ -127,7 +127,7 @@ FLASHMEM bool MacroHistoryService::replay_(
             ? change->sourceEdit.after
             : change->sourceEdit.before;
         auto* source = core::state::modulation::findProjectModulator(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             expected.id
         );
         if (source == nullptr || !sameObjectBits(*source, expected)) {
@@ -136,7 +136,7 @@ FLASHMEM bool MacroHistoryService::replay_(
         *source = target;
         pages.control.markAuthoredMutation();
     } else if (change->destinationScale.valid) {
-        auto& graph = pages.control.authored.modulation;
+        auto& graph = pages.control.authored().modulation;
         const auto& scale = change->destinationScale;
         const uint16_t expected = redo
             ? scale.beforeScaleQ15

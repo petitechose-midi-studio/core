@@ -326,9 +326,9 @@ FLASHMEM ProjectAutomationConversionPlan preflightProjectControlConversion(
         return plan;
     }
     if (!validProjectModulationDomain(
-            control.authored.modulation,
-            control.authored.curves,
-            &control.authored.automation
+            control.authored().modulation,
+            control.authored().curves,
+            &control.authored().automation
         )) {
         plan.status = ProjectAutomationConversionStatus::INVALID_DOMAIN;
         return plan;
@@ -336,7 +336,7 @@ FLASHMEM ProjectAutomationConversionPlan preflightProjectControlConversion(
 
     const auto destination = projectControlDestination(address);
     const auto* automation = findProjectAutomationCurve(
-        control.authored.automation,
+        control.authored().automation,
         destination
     );
     if (automation == nullptr) {
@@ -344,65 +344,65 @@ FLASHMEM ProjectAutomationConversionPlan preflightProjectControlConversion(
         return plan;
     }
     const auto* curve = findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         automation->curveId
     );
     if (curve == nullptr ||
         curve->valueDomain !=
             ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
-        !curveRangeValid(control.authored.curves, *curve)) {
+        !curveRangeValid(control.authored().curves, *curve)) {
         plan.status = ProjectAutomationConversionStatus::INVALID_DOMAIN;
         return plan;
     }
 
     plan.pointCount = curve->pointCount;
     plan.freePointCount = static_cast<uint16_t>(
-        PROJECT_CURVE_POINT_CAPACITY - control.authored.curves.pointCount
+        PROJECT_CURVE_POINT_CAPACITY - control.authored().curves.pointCount
     );
     plan.reference = conversionReference(
-        control.authored.curves,
+        control.authored().curves,
         *curve,
         policy
     );
     plan.normalizationAmplitude = conversionAmplitude(
-        control.authored.curves,
+        control.authored().curves,
         *curve,
         plan.reference
     );
     plan.sourceFingerprint = curveFingerprint(
-        control.authored.curves,
+        control.authored().curves,
         *curve,
         (automation->flags & PROJECT_AUTOMATION_CURVE_FLAG_ENABLED) != 0U
     );
     plan.targetFingerprint = destinationFingerprint(
-        control.authored,
+        control.authored(),
         destination,
         plan.existingBindingCount
     );
     plan.overwritesModulation = plan.existingBindingCount > 0U;
 
-    if (control.authored.modulation.sourceCount >=
+    if (control.authored().modulation.sourceCount >=
             PROJECT_MODULATOR_CAPACITY ||
-        control.authored.modulation.nextSourceId == 0U) {
+        control.authored().modulation.nextSourceId == 0U) {
         plan.status =
             ProjectAutomationConversionStatus::SOURCE_CAPACITY_EXHAUSTED;
         return plan;
     }
     const uint32_t nextBindingCount =
         static_cast<uint32_t>(
-            control.authored.modulation.outputBindingCount
+            control.authored().modulation.outputBindingCount
         ) - plan.existingBindingCount + 1U;
     if (nextBindingCount > PROJECT_MODULATION_BINDING_CAPACITY ||
-        control.authored.modulation.nextBindingId == 0U) {
+        control.authored().modulation.nextBindingId == 0U) {
         plan.status =
             ProjectAutomationConversionStatus::BINDING_CAPACITY_EXHAUSTED;
         return plan;
     }
-    if (control.authored.curves.recordCount >=
+    if (control.authored().curves.recordCount >=
             PROJECT_CURVE_LIVE_CAPACITY ||
-        control.authored.curves.recordCount >=
+        control.authored().curves.recordCount >=
             PROJECT_CURVE_RECORD_CAPACITY ||
-        control.authored.curves.nextCurveId == 0U) {
+        control.authored().curves.nextCurveId == 0U) {
         plan.status =
             ProjectAutomationConversionStatus::CURVE_CAPACITY_EXHAUSTED;
         return plan;
@@ -451,11 +451,11 @@ FLASHMEM bool applyProjectControlConversion(
 
     const auto destination = projectControlDestination(plan.address);
     const auto* automation = findProjectAutomationCurve(
-        control.authored.automation,
+        control.authored().automation,
         destination
     );
     const auto* curve = automation != nullptr
-        ? findProjectCurve(control.authored.curves, automation->curveId)
+        ? findProjectCurve(control.authored().curves, automation->curveId)
         : nullptr;
     if (curve == nullptr || curve->pointCount != plan.pointCount) {
         return false;
@@ -464,10 +464,10 @@ FLASHMEM bool applyProjectControlConversion(
     auto normalized = core::app::makeExtmemUniqueArrayForOverwrite<
         ProjectPackedCurvePoint
     >(curve->pointCount);
-    auto pending = core::app::makeExtmemUniqueCopy(control.authored);
+    auto pending = core::app::makeExtmemUniqueCopy(control.authored());
     if (!normalized || !pending) return false;
     for (uint16_t index = 0U; index < curve->pointCount; ++index) {
-        const auto& point = control.authored.curves.points[
+        const auto& point = control.authored().curves.points[
             static_cast<uint16_t>(curve->pointOffset + index)
         ];
         const float absolute = unpackAbsolute(point.value);
@@ -515,7 +515,7 @@ FLASHMEM bool applyProjectControlConversion(
         disabled.status != ProjectModulationStatus::NO_CHANGE) {
         return false;
     }
-    if (!control.tryPublishAuthored(*pending)) {
+    if (!control.tryPublishAuthored(pending)) {
         return false;
     }
 

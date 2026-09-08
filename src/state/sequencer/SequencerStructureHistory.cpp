@@ -684,7 +684,7 @@ FLASHMEM bool captureMacroTrackStructureHistoryBefore(
         SequencerHistoryMacroTrackStructurePayload
     >();
     if (!payload) return false;
-    if (!payload->control.prepare(pages.control.authored)) return false;
+    if (!payload->control.prepare(pages.control.authored())) return false;
     payload->capturedTrackMask = sanitized;
     payload->affectedTrackIndex = affectedTrackIndex;
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
@@ -710,7 +710,7 @@ FLASHMEM bool captureMacroTrackStructureHistoryAfter(
         }
         payload->afterTracks[track] = pages.tracks[track];
     }
-    return payload->control.captureAfter(pages.control.authored);
+    return payload->control.captureAfter(pages.control.authored());
 }
 
 FLASHMEM bool macroTrackStructureHistoryChanged(
@@ -739,7 +739,7 @@ FLASHMEM bool liveMacroTrackStructureMatches(
     const SequencerHistoryMacroTrackStructurePayload& payload,
     bool after
 ) {
-    if (!payload.control.matches(pages.control.authored, after)) return false;
+    if (!payload.control.matches(pages.control.authored(), after)) return false;
     const auto& tracks = after ? payload.afterTracks : payload.beforeTracks;
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
         if ((payload.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
@@ -785,7 +785,7 @@ FLASHMEM void commitMacroTrackStructureHistoryReplay(
         failStructureHistoryInvariant();
     }
     if (payload.control.changed()) {
-        payload.control.apply(pages.control.authored);
+        payload.control.apply(pages.control);
         pages.control.markAuthoredMutation();
     }
     const auto& tracks = after ? payload.afterTracks : payload.beforeTracks;

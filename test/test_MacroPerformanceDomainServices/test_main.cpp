@@ -58,12 +58,12 @@ void fillAutomationPointPoolExcept(
 
     for (uint8_t track = 0;
          track < core::state::macro::TRACK_COUNT &&
-         control.authored.curves.pointCount <
+         control.authored().curves.pointCount <
              core::state::modulation::PROJECT_CURVE_POINT_CAPACITY;
          ++track) {
         for (uint8_t macro = 0;
              macro < core::state::macro::MACRO_COUNT &&
-             control.authored.curves.pointCount <
+             control.authored().curves.pointCount <
                  core::state::modulation::PROJECT_CURVE_POINT_CAPACITY;
              ++macro) {
             const auto address = core::state::macro::MacroAutomationSlotAddress{
@@ -79,7 +79,7 @@ void fillAutomationPointPoolExcept(
             ));
         }
     }
-    assert(control.authored.curves.pointCount ==
+    assert(control.authored().curves.pointCount ==
            core::state::modulation::PROJECT_CURVE_POINT_CAPACITY);
 }
 
@@ -161,11 +161,11 @@ void assertCurvePayloadEquals(
     bool signedValues
 ) {
     const auto* expected = core::state::modulation::findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         expectedId
     );
     const auto* actual = core::state::modulation::findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         actualId
     );
     assert(expected != nullptr && actual != nullptr);
@@ -686,7 +686,7 @@ void test_shared_automation_take_records_late_join_and_one_undo() {
     const MacroAutomationSlotAddress first{0U, 0U, 0U};
     const MacroAutomationSlotAddress second{0U, 0U, 1U};
     configureModulation(state.pages.control, first, 0.4f);
-    const auto graphBefore = state.pages.control.authored.modulation;
+    const auto graphBefore = state.pages.control.authored().modulation;
     const uint8_t undoBefore = state.macroHistory.undoCount();
 
     assert(services.setAutomationTakeTiming(MacroAutomationTakeTiming::BAR_1));
@@ -702,7 +702,7 @@ void test_shared_automation_take_records_late_join_and_one_undo() {
     assert(!services.updateAutomationTake(3000U));
     assert(state.macroHistory.undoCount() == undoBefore + 1U);
     assert(std::memcmp(
-        &state.pages.control.authored.modulation,
+        &state.pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -872,14 +872,14 @@ void test_take_cancel_restores_manual_and_preflight_failure_is_clean() {
     const auto fullServices =
         core::handler::MacroPerformanceDomainServices::fromCoreState(full);
     fillAutomationPointPoolExcept(full.pages.control, address);
-    const auto authoredBefore = full.pages.control.authored;
+    const auto authoredBefore = full.pages.control.authored();
     const uint8_t undoBefore = full.macroHistory.undoCount();
     assert(fullServices.armAutomationTake());
     assert(!fullServices.recordAutomationTakeValue(0U, 1000U, 0.7f));
     assert(full.macroUi.automationTake.phase == MacroAutomationTakePhase::IDLE);
     assert(full.macroHistory.undoCount() == undoBefore);
     assert(std::memcmp(
-        &full.pages.control.authored,
+        &full.pages.control.authored(),
         &authoredBefore,
         sizeof(authoredBefore)
     ) == 0);
@@ -1026,7 +1026,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     };
     state.pages.setMacroSlotActive(1, true);
 
-    auto& graph = state.pages.control.authored.modulation;
+    auto& graph = state.pages.control.authored().modulation;
     ModulatorLfoDraft sharedDraft{};
     sharedDraft.name = "Shared LFO";
     sharedDraft.parameters.shape = ModulatorLfoShape::TRIANGLE;
@@ -1079,7 +1079,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     assert(graph.outputBindingCount == 3U);
 
     assert(state.macroHistory.undo(state.pages));
-    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(&state.pages.control.authored().modulation, &graphBefore, sizeof(state.pages.control.authored().modulation)) == 0);
     assert(std::memcmp(
         &state.pages.control.runtime,
         &runtimeBefore,
@@ -1090,7 +1090,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     assert(slot.modulationCount > 0U);
 
     assert(state.macroHistory.redo(state.pages));
-    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(&state.pages.control.authored().modulation, &graphBefore, sizeof(state.pages.control.authored().modulation)) == 0);
     assert(std::memcmp(
         &state.pages.control.runtime,
         &runtimeBefore,
@@ -1119,7 +1119,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
         services, 0U, 3000U, 0.6f, 3500U, 0.1f, 4000U
     ));
     assert(state.macroHistory.undoCount() == 4U);
-    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(&state.pages.control.authored().modulation, &graphBefore, sizeof(state.pages.control.authored().modulation)) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
     auto replacementFirst = test_support::project_control::readCurvePoint(
         state.pages.control,
@@ -1137,7 +1137,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     assert(std::fabs(replacementSecond.value - 0.1f) < 0.005f);
 
     assert(state.macroHistory.undo(state.pages));
-    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(&state.pages.control.authored().modulation, &graphBefore, sizeof(state.pages.control.authored().modulation)) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
     replacementFirst = test_support::project_control::readCurvePoint(
         state.pages.control,
@@ -1155,7 +1155,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     assert(std::fabs(replacementSecond.value - second.value) < 0.0001f);
 
     assert(state.macroHistory.redo(state.pages));
-    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(&state.pages.control.authored().modulation, &graphBefore, sizeof(state.pages.control.authored().modulation)) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
     replacementFirst = test_support::project_control::readCurvePoint(
         state.pages.control,
@@ -1172,7 +1172,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     assert(std::fabs(replacementFirst.value - 0.6f) < 0.005f);
     assert(std::fabs(replacementSecond.value - 0.1f) < 0.005f);
     std::cout
-        << "[PASS] Automation take preserves shared LFO graph through Undo/Redo\n";
+        << "[PASS] Automation take preserves shared LFO state.pages.control.authored().modulation through Undo/Redo\n";
 }
 
 void test_failed_first_automation_take_does_not_leave_an_empty_slot() {
@@ -1187,7 +1187,7 @@ void test_failed_first_automation_take_does_not_leave_an_empty_slot() {
     };
     fillAutomationPointPoolExcept(state.pages.control, address);
     const uint16_t entryCountBefore =
-        state.pages.control.authored.automation.entryCount;
+        state.pages.control.authored().automation.entryCount;
 
     assert(services.armAutomationTake());
     assert(!services.recordAutomationTakeValue(0U, 1000U, 0.25f));
@@ -1199,8 +1199,8 @@ void test_failed_first_automation_take_does_not_leave_an_empty_slot() {
         state.pages.control,
         address
     ).present());
-    assert(state.pages.control.authored.automation.entryCount == entryCountBefore);
-    assert(state.pages.control.authored.curves.pointCount ==
+    assert(state.pages.control.authored().automation.entryCount == entryCountBefore);
+    assert(state.pages.control.authored().curves.pointCount ==
            core::state::modulation::PROJECT_CURVE_POINT_CAPACITY);
     assert(!state.project.metadata.dirty);
 
@@ -1316,11 +1316,11 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     }
 
     const auto sourceBindingBefore =
-        state.pages.control.authored.modulation.outputBindings[0];
+        state.pages.control.authored().modulation.outputBindings[0];
     const auto targetBindingBefore =
-        state.pages.control.authored.modulation.outputBindings[1];
+        state.pages.control.authored().modulation.outputBindings[1];
     const uint16_t sourceCountBefore =
-        state.pages.control.authored.modulation.sourceCount;
+        state.pages.control.authored().modulation.sourceCount;
     assert(edit.copyModulation(0));
     assert(state.structureClipboard.hasMacroModulationAssignment());
     const auto plan = edit.preflightModulationPaste(1);
@@ -1338,7 +1338,7 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     );
     assert(page.cc[1] == 11);
     assert(std::fabs(page.values[1] - 0.66f) < 0.0001f);
-    const auto& graph = state.pages.control.authored.modulation;
+    const auto& graph = state.pages.control.authored().modulation;
     assert(graph.sourceCount == sourceCountBefore);
     assert(graph.outputBindingCount == 3U);
     assert(std::memcmp(
@@ -1856,8 +1856,8 @@ void test_config_history_is_compact_and_preserves_unrelated_content() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
     configureAutomation(state.pages.control, {0U, 0U, 0U});
-    std::array<uint8_t, sizeof(state.pages.control.authored)> authored{};
-    std::memcpy(authored.data(), &state.pages.control.authored, authored.size());
+    std::array<uint8_t, sizeof(state.pages.control.authored())> authored{};
+    std::memcpy(authored.data(), &state.pages.control.authored(), authored.size());
     const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
     const uint8_t before = state.pages.activePageData().cc[0];
     const uint8_t after = before == 74U ? 75U : 74U;
@@ -1882,7 +1882,7 @@ void test_config_history_is_compact_and_preserves_unrelated_content() {
     assert(state.pages.activePageData().cc[1] == 99U);
     assert(state.pages.activePageData().values[0] == 0.9f);
     assert(state.projectTracks.authored.midiChannels[0] == 2U);
-    assert(std::memcmp(authored.data(), &state.pages.control.authored, authored.size()) == 0);
+    assert(std::memcmp(authored.data(), &state.pages.control.authored(), authored.size()) == 0);
     std::cout << "[PASS] compact config history preserves curves and unrelated routing\n";
 }
 
@@ -1952,7 +1952,7 @@ void test_detached_page_operations_allocation_failures_and_replay() {
                 assert(clipboard.storeMacroSlotSelection(pages, 0U, selected));
             } else assert(clipboard.storeMacroPage(pages.pageData(0U, 0U), pages.control, 0U, 0U));
             (void)state.macroUi.manualOverrides.activate({.track = 0, .page = 0, .macro = 0}, 0.81f);
-            const auto before = pages.control.authored;
+            const auto before = pages.control.authored();
             const auto beforeTrack = pages.tracks[0];
             const auto beforeManual = state.macroUi.manualOverrides;
             const auto revision = pages.control.authoredRevision;
@@ -1977,22 +1977,22 @@ void test_detached_page_operations_allocation_failures_and_replay() {
             }
             assert(applied == (ordinal == allocations + 1U));
             if (!applied) {
-                assert(std::memcmp(&pages.control.authored, &before, sizeof(before)) == 0);
+                assert(std::memcmp(&pages.control.authored(), &before, sizeof(before)) == 0);
                 assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
                 assert(std::memcmp(&state.macroUi.manualOverrides, &beforeManual, sizeof(beforeManual)) == 0);
                 assert(pages.control.authoredRevision == revision);
                 assert(state.configRevision.get() == configRevision);
                 assert(state.macroHistory.undoCount() == 0U);
             } else {
-                const auto after = pages.control.authored;
+                const auto after = pages.control.authored();
                 const auto afterTrack = pages.tracks[0];
                 core::app::testing::ScopedExtmemAllocationFailure fail(1U);
                 assert(state.macroHistory.undoCount() == 1U);
                 assert(state.macroHistory.undo(pages));
-                assert(std::memcmp(&pages.control.authored, &before, sizeof(before)) == 0);
+                assert(std::memcmp(&pages.control.authored(), &before, sizeof(before)) == 0);
                 assert(std::memcmp(&pages.tracks[0], &beforeTrack, sizeof(beforeTrack)) == 0);
                 assert(state.macroHistory.redo(pages));
-                assert(std::memcmp(&pages.control.authored, &after, sizeof(after)) == 0);
+                assert(std::memcmp(&pages.control.authored(), &after, sizeof(after)) == 0);
                 assert(std::memcmp(&pages.tracks[0], &afterTrack, sizeof(afterTrack)) == 0);
                 assert(core::app::testing::extmemAllocationAttempt == 0U);
             }

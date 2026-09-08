@@ -27,7 +27,7 @@ FLASHMEM bool deleteBeforeMatches(
         (payload.curvePointCount > 0U && !payload.curvePoints)) {
         return false;
     }
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     if (graph.sourceCount != payload.beforeSourceCount ||
         graph.outputBindingCount != payload.beforeBindingCount ||
         graph.triggerBindingCount != payload.beforeTriggerCount ||
@@ -71,7 +71,7 @@ FLASHMEM bool deleteBeforeMatches(
         }
     }
     if (!payload.curvePresent) return true;
-    const auto& arena = pages.control.authored.curves;
+    const auto& arena = pages.control.authored().curves;
     const auto* record = findProjectCurve(arena, payload.curve.id);
     return arena.nextCurveId == payload.nextCurveId &&
            arena.recordCount == payload.beforeCurveRecordCount &&
@@ -85,8 +85,8 @@ FLASHMEM bool restoreDeletedModulator(
 ) {
     using namespace core::state::modulation;
     if (!deleteAfterMatches(pages, payload)) return false;
-    auto& graph = pages.control.authored.modulation;
-    auto& arena = pages.control.authored.curves;
+    auto& graph = pages.control.authored().modulation;
+    auto& arena = pages.control.authored().curves;
 
     if (payload.curvePresent) {
         if (payload.curveShared) {

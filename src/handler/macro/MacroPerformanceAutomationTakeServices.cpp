@@ -199,7 +199,7 @@ FLASHMEM bool MacroPerformanceDomainServices::beginAutomationTake_(
     {
         OC_PERF_SCOPE(perfCopy, "macro.take.begin.copy-domain");
         staged = core::app::makeExtmemUniqueCopy(
-            pages_->control.authored
+            pages_->control.authored()
         );
         OC_PERF_UNITS(
             perfCopy,
@@ -272,7 +272,7 @@ FLASHMEM bool MacroPerformanceDomainServices::beginAutomationTake_(
     // redundant: this restored snapshot is the transaction's staging base.
     {
         OC_PERF_SCOPE(perfRestore, "macro.take.begin.restore-domain");
-        *staged = pages_->control.authored;
+        *staged = pages_->control.authored();
         OC_PERF_UNITS(perfRestore, sizeof(ProjectControlDomainState), 1U);
     }
     for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
@@ -574,7 +574,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
     {
         OC_PERF_SCOPE(perfPublish, "macro.take.commit.publish-domain");
         const auto& staged = *macro_ui_->automationTakeDomain;
-        auto& authored = pages_->control.authored;
+        auto& authored = pages_->control.authored();
         authored.automation = staged.automation;
         // Records/header are small and copied in full; points beyond the peak
         // were never touched and already match. Preserve even inactive bytes

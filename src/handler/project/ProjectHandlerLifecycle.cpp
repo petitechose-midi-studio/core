@@ -135,7 +135,7 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
         }
         publishModulatorMutation(false);
         const auto* source = core::state::modulation::findProjectModulator(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             sourceId
         );
         char feedback[32]{};

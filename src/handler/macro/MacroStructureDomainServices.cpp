@@ -88,16 +88,16 @@ FLASHMEM bool hasActiveProjectModulation(
     const auto destination =
         core::state::modulation::projectControlDestination(address);
     for (uint16_t index = 0;
-         index < control.authored.modulation.outputBindingCount;
+         index < control.authored().modulation.outputBindingCount;
          ++index) {
-        const auto& binding = control.authored.modulation.outputBindings[index];
+        const auto& binding = control.authored().modulation.outputBindings[index];
         if (binding.destination != destination ||
             (binding.flags &
              core::state::modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U) {
             continue;
         }
         const auto* source = core::state::modulation::findProjectModulator(
-            control.authored.modulation,
+            control.authored().modulation,
             binding.sourceId
         );
         if (source != nullptr &&
@@ -827,7 +827,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
         ) != 0;
     const bool controlChanged =
         std::memcmp(
-            &pages_->control.authored,
+            &pages_->control.authored(),
             &pendingDomain,
             sizeof(pendingDomain)
         ) != 0;

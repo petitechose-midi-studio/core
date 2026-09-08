@@ -1,11 +1,13 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <type_traits>
 
 #include "state/modulation/ProjectControlDomainState.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
+#include "app/ExtmemAllocator.hpp"
 
 namespace core::state::modulation {
 
@@ -83,7 +85,14 @@ struct ProjectModulationFocusState {
  * one drained trigger frame; both stay in the enclosing EXTMEM owner.
  */
 struct ProjectControlState {
-    ProjectControlDomainState authored{};
+private:
+    friend class ProjectControlHistory;
+    core::app::ExtmemUniquePtr<ProjectControlDomainState> authored_;
+public:
+    // References are borrowed until the next structural publication.
+    ProjectControlDomainState& authored() { assert(authored_); return *authored_; }
+    const ProjectControlDomainState& authored() const { assert(authored_); return *authored_; }
+    bool hasAuthored() const { return authored_ != nullptr; }
     ProjectModulationRuntimePlan plan{};
     ProjectControlRuntimeState runtime{};
     ProjectControlTimeTelemetry timeTelemetry{};
@@ -100,8 +109,8 @@ struct ProjectControlState {
 
     void clear();
 
-    /** Validate the detached domain before publishing it and invalidating the plan. */
-    [[nodiscard]] bool tryPublishAuthored(const ProjectControlDomainState& candidate);
+    /** Validate, exchange owners, invalidate the plan; candidate receives the old domain. */
+    [[nodiscard]] bool tryPublishAuthored(core::app::ExtmemUniquePtr<ProjectControlDomainState>& candidate);
 
     void markAuthoredMutation() {
         ++authoredRevision;
@@ -134,7 +143,7 @@ static_assert(sizeof(ProjectModulationFocusEntry) == 12U);
 static_assert(sizeof(ProjectModulationFocusState) == 100U);
 // DAHDSR adds exact accepted-note masks and smoothing state to the EXTMEM
 // runtime slab; no authored Source, persistent payload or RAM1 static grows.
-static_assert(sizeof(ProjectControlState) == 186036U);
-static_assert(std::is_trivially_copyable_v<ProjectControlState>);
+static_assert(sizeof(ProjectControlState) == 26520U + sizeof(void*));
+static_assert(!std::is_copy_constructible_v<ProjectControlState>);
 
 }  // namespace core::state::modulation

@@ -259,7 +259,7 @@ FLASHMEM bool prepareMacroStructureTransfer(
             )) {
         return false;
     }
-    return payload->control.sealCandidate(pages.control.authored);
+    return payload->control.sealCandidate(pages.control.authored());
 }
 
 FLASHMEM bool copyGraphIntoReservedStorage(GraphPtr& destination, const Graph* source) {

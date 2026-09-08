@@ -42,7 +42,7 @@ inline core::state::modulation::ModulatorId addReusableLfo(
     draft.parameters.timing = ModulatorTimingMode::SYNC;
     draft.accent = accent;
     return createLfoModulator(
-        state.pages.control.authored.modulation,
+        state.pages.control.authored().modulation,
         draft
     ).sourceId;
 }
@@ -111,7 +111,7 @@ inline void prepareMacroReusableModulatorsScenario(core::state::CoreState& state
         remote.amountQ15 = 4096;
         remote.application = ModulationApplication::NATURAL;
         (void)addProjectModulationBinding(
-            state.pages.control.authored.modulation,
+            state.pages.control.authored().modulation,
             remote
         );
         state.pages.control.markAuthoredMutation();
@@ -141,14 +141,14 @@ inline core::state::modulation::ModulationBindingId bindReusableModulator(
     draft.application = ModulationApplication::NATURAL;
     draft.enabled = true;
     return addProjectModulationBinding(
-        state.pages.control.authored.modulation,
+        state.pages.control.authored().modulation,
         draft
     ).bindingId;
 }
 
 inline void prepareMacroMultiModulationScenario(core::state::CoreState& state) {
     prepareMacroReusableModulatorsScenario(state);
-    auto& graph = state.pages.control.authored.modulation;
+    auto& graph = state.pages.control.authored().modulation;
     if (graph.sourceCount < 2U) return;
     const auto drift = addReusableLfo(
         state,

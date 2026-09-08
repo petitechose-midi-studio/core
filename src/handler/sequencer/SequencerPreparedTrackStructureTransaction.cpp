@@ -459,7 +459,7 @@ prepareSequencerTrackStructureTransaction(
             prepared.status_ = Status::Invalid;
             return prepared;
         }
-        if (!payload.control.sealCandidate(state.macroPages->control.authored)) {
+        if (!payload.control.sealCandidate(state.macroPages->control.authored())) {
             prepared.status_ = Status::Stale;
             return prepared;
         }

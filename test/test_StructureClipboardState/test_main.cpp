@@ -301,7 +301,7 @@ void test_modulation_assignment_clipboard_references_shared_source_only() {
     sourceDraft.name = "Shared LFO";
     sourceDraft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     const auto source = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceDraft
     );
     assert(source.changed());
@@ -311,7 +311,7 @@ void test_modulation_assignment_clipboard_references_shared_source_only() {
     bindingDraft.amountQ15 = -12288;
     bindingDraft.application = ModulationApplication::AROUND_BASE;
     const auto binding = addProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         bindingDraft
     );
     assert(binding.changed());
@@ -346,7 +346,7 @@ void test_project_modulator_source_clipboard_keeps_stable_reference() {
     draft.name = "Shared Source";
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     const auto created = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         draft
     );
     assert(created.changed());

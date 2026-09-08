@@ -97,13 +97,13 @@ FLASHMEM int defaultBindingDepthPercent(
     auto scale = depth_parameter::Scale::STANDARD;
     if (valid(requestedSource)) {
         const auto* source = findProjectModulator(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             requestedSource
         );
         if (source != nullptr) {
             scale = depth_parameter::scaleFor(
                 *source,
-                pages.control.authored.curves
+                pages.control.authored().curves
             );
         }
     } else if (navigation.creatingModulatorSource &&
@@ -253,15 +253,15 @@ FLASHMEM const ModulatorSourceState* sourceAtRegistryIndex(
     const ProjectControlState& control,
     uint16_t index
 ) {
-    return index < control.authored.modulation.sourceCount
-        ? &control.authored.modulation.sources[index]
+    return index < control.authored().modulation.sourceCount
+        ? &control.authored().modulation.sources[index]
         : nullptr;
 }
 
 FLASHMEM void populateRegistryRow(const ProjectControlState& control,
                                   int index,
                                   ms::ui::KeyValueRowBuffer& out) {
-    const auto& graph = control.authored.modulation;
+    const auto& graph = control.authored().modulation;
     if (index < 0) return;
     if (index >= static_cast<int>(graph.sourceCount)) {
         setText(out.key, "+ Source");
@@ -310,7 +310,7 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
         );
     } else {
         const auto* curve = findProjectCurve(
-            control.authored.curves,
+            control.authored().curves,
             source.parameters.recordedCurveId
         );
         formatDuration(primary, sizeof(primary), curve ? curve->durationTicks : 0U);
@@ -440,7 +440,7 @@ FLASHMEM void populateSourceDetailRow(
         case SourceDetailItem::LENGTH: {
             setText(out.key, "Length");
             const auto* curve = findProjectCurve(
-                control.authored.curves,
+                control.authored().curves,
                 source.parameters.recordedCurveId
             );
             formatDuration(value, sizeof(value), curve ? curve->durationTicks : 0U);
@@ -451,7 +451,7 @@ FLASHMEM void populateSourceDetailRow(
         case SourceDetailItem::SOURCE_DOMAIN: {
             setText(out.key, "Domain");
             const auto* curve = findProjectCurve(
-                control.authored.curves,
+                control.authored().curves,
                 source.parameters.recordedCurveId
             );
             setText(
@@ -508,7 +508,7 @@ FLASHMEM void populateSourceDetailRow(
             formatTriggerSummary(
                 value,
                 sizeof(value),
-                control.authored.modulation,
+                control.authored().modulation,
                 source.id
             );
             setText(out.value, value);
@@ -531,7 +531,7 @@ FLASHMEM void populateSourceDetailRow(
                 sizeof(value),
                 "%u >",
                 static_cast<unsigned>(sourceDestinationCount(
-                    control.authored.modulation,
+                    control.authored().modulation,
                     source.id
                 ))
             );
@@ -635,7 +635,7 @@ FLASHMEM void populateSourceOptionsRow(
                 sizeof(value),
                 "%u >",
                 static_cast<unsigned>(sourceDestinationCount(
-                    control.authored.modulation,
+                    control.authored().modulation,
                     source.id
                 ))
             );
@@ -658,7 +658,7 @@ FLASHMEM void populateTriggerRow(
         return;
     }
     const auto* binding = findProjectModulationTriggerForSource(
-        control.authored.modulation,
+        control.authored().modulation,
         sourceId
     );
     if (!binding) return;
@@ -728,7 +728,7 @@ FLASHMEM void populateDestinationRow(
     ms::ui::KeyValueRowBuffer& out
 ) {
     if (index < 0) return;
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     const auto* binding = core::state::project::modulators::sourceBindingAtOrdinal(
         graph,
         sourceId,
@@ -759,7 +759,7 @@ FLASHMEM void populateDestinationRow(
         binding->amountQ15,
         depth_parameter::scaleFor(
             graph,
-            pages.control.authored.curves,
+            pages.control.authored().curves,
             *binding
         )
     );
@@ -857,7 +857,7 @@ FLASHMEM void populateDestinationPickerRow(
         : sourceId;
     bool alreadyAssigned = false;
     if (valid(effectiveSource)) {
-        const auto& graph = pages.control.authored.modulation;
+        const auto& graph = pages.control.authored().modulation;
         for (uint16_t bindingIndex = 0;
              bindingIndex < graph.outputBindingCount;
              ++bindingIndex) {
@@ -881,15 +881,15 @@ FLASHMEM void populateDestinationPickerRow(
     );
     if (auditioned) {
         const auto* binding = findProjectModulationBinding(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             pages.control.audition.bindingId
         );
         const int16_t percent = binding != nullptr
             ? depth_parameter::amountQ15ToPercent(
                   binding->amountQ15,
                   depth_parameter::scaleFor(
-                      pages.control.authored.modulation,
-                      pages.control.authored.curves,
+                      pages.control.authored().modulation,
+                      pages.control.authored().curves,
                       *binding
                   )
               )

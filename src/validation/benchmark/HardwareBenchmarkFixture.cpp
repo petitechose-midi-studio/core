@@ -11,7 +11,7 @@ namespace core::validation::benchmark {
 bool prepareHardwareBenchmarkFixture(core::state::CoreState& state) {
     using namespace core::state::sequencer;
     core::validation::fixtures::prepareMacroMultiModulationScenario(state);
-    const auto& graph = state.pages.control.authored.modulation;
+    const auto& graph = state.pages.control.authored().modulation;
     if (graph.sourceCount != 3U || graph.outputBindingCount != 4U) return false;
 
     // Macro 1 exercises the focused Pulse Lift assignment; Macro 2 remains

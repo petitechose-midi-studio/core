@@ -159,17 +159,17 @@ void test_full_automation_domain_blocks_the_whole_plan() {
 
     for (uint8_t track = 0U;
          track < macro::TRACK_COUNT &&
-         pages.control.authored.automation.entryCount <
+         pages.control.authored().automation.entryCount <
              modulation::PROJECT_AUTOMATION_ENTRY_CAPACITY;
          ++track) {
         for (uint8_t page = 0U;
              page < macro::PAGE_COUNT &&
-             pages.control.authored.automation.entryCount <
+             pages.control.authored().automation.entryCount <
                  modulation::PROJECT_AUTOMATION_ENTRY_CAPACITY;
              ++page) {
             for (uint8_t slot = 0U;
                  slot < macro::MACRO_COUNT &&
-                 pages.control.authored.automation.entryCount <
+                 pages.control.authored().automation.entryCount <
                      modulation::PROJECT_AUTOMATION_ENTRY_CAPACITY;
                  ++slot) {
                 const macro::MacroAutomationSlotAddress address{
@@ -190,7 +190,7 @@ void test_full_automation_domain_blocks_the_whole_plan() {
         }
     }
     assert(
-        pages.control.authored.automation.entryCount ==
+        pages.control.authored().automation.entryCount ==
         modulation::PROJECT_AUTOMATION_ENTRY_CAPACITY
     );
 
