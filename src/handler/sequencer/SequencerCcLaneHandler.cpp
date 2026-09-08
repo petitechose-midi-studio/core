@@ -198,10 +198,12 @@ FLASHMEM void SequencerCcLaneHandler::syncOverlayVisibility() {
 
 void SequencerCcLaneHandler::update(uint32_t nowMs) {
     syncOverlayVisibility();
-    updateNavButtonGesture(nowMs);
-    syncOptEncoderContract();
-    syncMacroEncoderContract();
-    updateMacroButtonGestures(nowMs);
+    const bool ownsGrid = mainGridOwnsInput();
+    const bool ownsInput = ownsGrid || ccOverlayOwnsInput();
+    updateNavButtonGesture(nowMs, ownsInput);
+    syncOptEncoderContract(ownsInput);
+    syncMacroEncoderContract(ownsGrid);
+    updateMacroButtonGestures(nowMs, ownsInput);
     workflow_.update(nowMs);
 }
 
@@ -220,10 +222,9 @@ FLASHMEM void SequencerCcLaneHandler::resetNavButtonTracking() {
     nav_press_started_at_ms_ = 0;
 }
 
-FLASHMEM void SequencerCcLaneHandler::updateNavButtonGesture(uint32_t nowMs) {
-    const bool ownsInput = mainGridOwnsInput() || ccOverlayOwnsInput();
+FLASHMEM void SequencerCcLaneHandler::updateNavButtonGesture(uint32_t nowMs, bool ownsInput) {
     if (!ownsInput) {
-        if (!buttons_.isPressed(ButtonID::NAV)) resetNavButtonTracking();
+        if (nav_button_tracked_ && !buttons_.isPressed(ButtonID::NAV)) resetNavButtonTracking();
         return;
     }
     if (!buttons_.isPressed(ButtonID::NAV)) return;
@@ -299,8 +300,7 @@ FLASHMEM void SequencerCcLaneHandler::invalidateMacroEncoderContract() {
     synced_window_start_ = 0xFF;
 }
 
-FLASHMEM void SequencerCcLaneHandler::updateMacroButtonGestures(uint32_t nowMs) {
-    const bool ownsInput = mainGridOwnsInput() || ccOverlayOwnsInput();
+FLASHMEM void SequencerCcLaneHandler::updateMacroButtonGestures(uint32_t nowMs, bool ownsInput) {
     if (!ownsInput) {
         if (transition_encoder_mask_ != 0) invalidateMacroEncoderContract();
         macro_button_down_mask_ = 0;
@@ -354,8 +354,7 @@ FLASHMEM void SequencerCcLaneHandler::updateMacroButtonGestures(uint32_t nowMs) 
     }
 }
 
-FLASHMEM void SequencerCcLaneHandler::syncMacroEncoderContract() {
-    const bool ownsGrid = mainGridOwnsInput();
+FLASHMEM void SequencerCcLaneHandler::syncMacroEncoderContract(bool ownsGrid) {
     if (!ownsGrid) {
         macro_encoders_configured_ = false;
         synced_lane_revision_ = 0xFFFFFFFFU;
@@ -417,8 +416,7 @@ FLASHMEM void SequencerCcLaneHandler::syncMacroEncoderContract() {
     synced_window_start_ = start;
 }
 
-FLASHMEM void SequencerCcLaneHandler::syncOptEncoderContract() {
-    const bool ownsOpt = mainGridOwnsInput() || ccOverlayOwnsInput();
+FLASHMEM void SequencerCcLaneHandler::syncOptEncoderContract(bool ownsOpt) {
     if (!ownsOpt) {
         opt_directional_configured_ = false;
         return;
