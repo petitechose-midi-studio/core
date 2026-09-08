@@ -26,7 +26,8 @@ manifest["recipe"] = {
     )
 }
 for relative in repositories:
-    repo = workspace / relative
+    # A worktree may have another directory name; identify the compiled Core.
+    repo = core if relative == "midi-studio/core" else workspace / relative
     names = subprocess.check_output(
         ["git", "-C", str(repo), "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
     ).decode("utf-8").split("\0")

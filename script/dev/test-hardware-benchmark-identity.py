@@ -15,6 +15,7 @@ class IdentityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             core = root / "midi-studio/core"
+            canonical_core = core
             core.mkdir(parents=True)
             source = core / "main.cpp"
             source.write_text("int main() {}\n", encoding="utf-8")
@@ -52,7 +53,7 @@ class IdentityTest(unittest.TestCase):
                     self.appended.update(kwargs)
 
             def git_files(command):
-                return b"main.cpp\0" if Path(command[2]) == core else b""
+                return b"main.cpp\0" if Path(command[2]) in (core, canonical_core) else b""
 
             def generate():
                 env = Environment()
@@ -79,6 +80,20 @@ class IdentityTest(unittest.TestCase):
             self.assertNotEqual(library_changed, source_changed)
             (package / "package.json").write_text('{"version":"2.0"}', encoding="utf-8")
             self.assertNotEqual(generate(), library_changed)
+            # A sibling worktree must identify the compiled checkout, even when
+            # a different canonical Core checkout exists in the same workspace.
+            core = root / "midi-studio/core-worktree"
+            core.mkdir()
+            worktree_source = core / "main.cpp"
+            worktree_source.write_text("int main() { return 2; }\n", encoding="utf-8")
+            worktree_identity = generate()
+            manifest = json.loads((build / "hardware-benchmark-manifest.json").read_text())
+            self.assertEqual(manifest["files"]["midi-studio/core/main.cpp"],
+                             hashlib.sha256(worktree_source.read_bytes()).hexdigest())
+            source.write_text("int main() { return 3; }\n", encoding="utf-8")
+            self.assertEqual(generate(), worktree_identity)
+            worktree_source.write_text("int main() { return 4; }\n", encoding="utf-8")
+            self.assertNotEqual(generate(), worktree_identity)
             with patch.object(Environment, "get_package_dir", return_value=None):
                 with self.assertRaisesRegex(RuntimeError, "missing package"):
                     generate()
