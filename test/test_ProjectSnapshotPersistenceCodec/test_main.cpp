@@ -17,6 +17,7 @@
 #include "state/project/ProjectSnapshot.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace {
@@ -412,6 +413,10 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     assert(loaded.clips.sceneBehaviors[1U] == source.clips.sceneBehaviors[1U]);
     assert(sameTracks(loaded.projectTracks, source.projectTracks));
 
+    // Revisions and ownership may change across load, but authored bytes must not.
+    assert(encodeSnapshot(loaded, *second) == firstSize);
+    assert(std::equal(first->begin(), first->begin() + firstSize, second->begin()));
+
     std::cout << "[PASS] current snapshot round-trip is deterministic\n";
 }
 
@@ -641,12 +646,61 @@ void testStaleCurrentChunkVersionsAreRejectedStrictly() {
 
 }  // namespace
 
+void testEveryDecodeAllocationFailurePreservesOutput() {
+    auto source = makeSnapshot();
+    source.sequencer.bankCcLanes[1U] =
+        core::app::makeExtmemUnique<sequencer::SequencerCcLaneBank>();
+    assert(source.sequencer.bankCcLanes[1U]);
+    assert(sequencer::createSequencerCcLane(
+        *source.sequencer.bankCcLanes[1U], 0U, {}).changed());
+    assert(sequencer::setSequencerCcLaneEvent(
+        *source.sequencer.bankCcLanes[1U], 0U, 0U, 91U).changed());
+    auto encoded = std::make_unique<ProjectBytes>();
+    auto before = std::make_unique<ProjectBytes>();
+    auto after = std::make_unique<ProjectBytes>();
+    const auto size = encodeSnapshot(source, *encoded);
+    std::size_t attempts = 0U;
+    {
+        project::ProjectSnapshot decoded;
+        core::app::testing::ScopedExtmemAllocationFailure trace(10000U);
+        assert(snapshot_codec::decodeProjectSnapshot(encoded->data(), size, decoded).ok);
+        attempts = core::app::testing::extmemAllocationAttempt;
+        assert(attempts > 0U && attempts < 10000U);
+        assert(decoded.sequencer.bankCcLanes[1U]->lanes[0U].values[0U] == 91U);
+    }
+    auto target = makeSnapshot();
+    target.project.transport.tempoBpm = 87.0F;
+    const auto beforeSize = encodeSnapshot(target, *before);
+    const auto* graph = target.sequencer.editorGraph.get();
+    const auto* drums = target.drumTracks.get();
+    const auto* control = target.projectControl.get();
+    const auto* clip = target.clips.documents[1U].get();
+    for (std::size_t ordinal = 1U; ordinal <= attempts; ++ordinal) {
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result = snapshot_codec::decodeProjectSnapshot(
+                encoded->data(), size, target);
+            assert(!result.ok && !result.overwriteSafe);
+            assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+        }
+        assert(target.sequencer.editorGraph.get() == graph);
+        assert(target.drumTracks.get() == drums);
+        assert(target.projectControl.get() == control);
+        assert(target.clips.documents[1U].get() == clip);
+        assert(encodeSnapshot(target, *after) == beforeSize);
+        assert(std::equal(before->begin(), before->begin() + beforeSize, after->begin()));
+    }
+    std::cout << "[PASS] Project decode fail-1.." << attempts
+              << " preserves output bytes and owners\n";
+}
+
 int main() {
     testCurrentSnapshotRoundTripAndDeterminism();
     testMissingCurrentTrackChunkIsRejected();
     testMissingMacroAndSequencerChunksAreRejectedAtomically();
     testCurrentProjectChunkSetIsExact();
     testStaleCurrentChunkVersionsAreRejectedStrictly();
+    testEveryDecodeAllocationFailurePreservesOutput();
     std::cout << "All ProjectSnapshotPersistenceCodec tests passed\n";
     return 0;
 }

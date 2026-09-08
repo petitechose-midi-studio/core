@@ -8,6 +8,7 @@
 #include <iostream>
 
 #include "persistence/PatternPresetFactoryLibrary.hpp"
+#include "state/sequencer/SequencerState.hpp"
 
 namespace {
 

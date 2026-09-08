@@ -30,9 +30,13 @@ bool fillProjectSequencerPayload(
     uint8_t* out,
     uint16_t capacity
 );
-bool applyProjectSequencerPayload(const uint8_t* data,
-                                  uint16_t size,
-                                  state::sequencer::SequencerTrackBankState& trackBank,
-                                  state::sequencer::SequencerState& active);
+// Strict detached decode; malformed input leaves all outputs unchanged.
+bool decodeProjectSequencerPayload(
+    const uint8_t* data,
+    uint16_t size,
+    state::sequencer::SequencerTrackBankSnapshot& target,
+    uint8_t& focusedStep,
+    state::sequencer::StepProperty& activeStepProperty
+);
 
 }  // namespace core::persistence::sequencer_codec

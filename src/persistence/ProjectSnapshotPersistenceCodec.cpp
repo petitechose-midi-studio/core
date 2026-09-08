@@ -438,11 +438,9 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
         return false;
     }
 
-    auto bank = core::app::makeExtmemUnique<core::state::sequencer::SequencerTrackBankState>();
-    auto active = core::app::makeExtmemUnique<core::state::sequencer::SequencerState>();
-    auto clips = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerClipGridState>();
-    if (!bank || !active || !clips) {
+    if (!sequencer_codec::decodeProjectSequencerEnvelope(
+            chunk->data, chunk->size, target.sequencer,
+            target.clips, target.drumTracks)) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
                   project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
@@ -450,48 +448,6 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
                   chunk->versionMajor,
                   chunk->versionMinor);
         return false;
-    }
-
-    bank->syncSharedTrackState(target.sharedTrackEnabledMask, target.sharedTrackActive);
-
-    if (!sequencer_codec::applyProjectSequencerEnvelope(
-            chunk->data,
-            chunk->size,
-            *bank,
-            *active,
-            *clips
-        ) ||
-        !core::state::sequencer::captureHistorySnapshot(*bank, *active, target.sequencer)) {
-        addReport(report,
-                  project_file::LoadSeverity::ERROR,
-                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor);
-        return false;
-    }
-    core::state::sequencer::extractSequencerClipGridSnapshot(
-        *clips,
-        target.clips
-    );
-
-    if (bank->drumTrackMask() != 0U) {
-        if (!target.drumTracks) {
-            target.drumTracks = core::app::makeExtmemUnique<
-                core::state::sequencer::DrumTrackBankSnapshot>();
-        }
-        if (!target.drumTracks) {
-            addReport(report,
-                      project_file::LoadSeverity::ERROR,
-                      project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
-                      chunk->id,
-                      chunk->versionMajor,
-                      chunk->versionMinor);
-            return false;
-        }
-        bank->captureDrumTrackBank(*target.drumTracks);
-    } else {
-        target.drumTracks.reset();
     }
 
     return true;

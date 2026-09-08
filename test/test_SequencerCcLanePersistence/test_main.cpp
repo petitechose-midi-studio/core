@@ -13,6 +13,7 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace {
@@ -65,8 +66,7 @@ void authorTwoLanes(seq::SequencerPatternState& pattern) {
     pattern.bumpCcLaneRevision();
 }
 
-void assertTwoLanes(const seq::SequencerPatternState& pattern) {
-    const auto* bank = seq::sequencerCcLaneView(pattern);
+void assertTwoLanes(const seq::SequencerCcLaneBank* bank) {
     assert(bank != nullptr);
     assert(seq::sequencerCcLaneCount(*bank) == 2U);
     assert(bank->lanes[0].destination.controller == 74U);
@@ -164,7 +164,7 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         encoded.size,
         loaded.pattern
     ));
-    assertTwoLanes(loaded.pattern);
+    assertTwoLanes(seq::sequencerCcLaneView(loaded.pattern));
     assert(loaded.pattern.length.get() == 32U);
     assert(loaded.clip.playStartTick == 0U);
     assert(loaded.clip.loopStartTick == 0U);
@@ -231,21 +231,15 @@ void authorTrackRegions(
     }
 }
 
-void assertTrackRegions(
-    const seq::SequencerTrackBankState& bank,
-    const seq::SequencerState& active
-) {
-    const uint8_t activeTrack = bank.activeTrackIndex();
-    for (uint8_t track = 0U;
-         track < seq::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        const auto& pattern = track == activeTrack ? active.pattern : bank.track(track);
-        const auto& clip = track == activeTrack ? active.clip : bank.clip(track);
-        const auto region = seq::clipPlaybackRegion(pattern, clip);
-        assert(region.contentLength == 128U);
-        assert(region.playStart == track);
-        assert(region.loopStart == static_cast<uint8_t>(track + 1U));
-        assert(region.loopEnd == static_cast<uint8_t>(track + 100U));
+void assertTrackRegions(const seq::SequencerTrackBankSnapshot& bank) {
+    for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
+        const auto& pattern = bank.tracks[track];
+        const auto& clip = bank.clips[track];
+        const auto ticks = seq::sequencerTicksPerStep(pattern.stepsPerBeat);
+        assert(pattern.length == 128U);
+        assert(clip.playStartTick == track * ticks);
+        assert(clip.loopStartTick == (track + 1U) * ticks);
+        assert(clip.loopEndTick == (track + 100U) * ticks);
     }
 }
 
@@ -316,41 +310,39 @@ void testProjectRoundTripEveryTrackOwner() {
         static_cast<uint32_t>(projectBytes.bytes.size())
     );
     assert(projectEncoded.ok);
-    seq::SequencerState projectLoaded{};
-    seq::SequencerTrackBankState projectBank{};
-    seq::SequencerClipGridState projectGrid{};
-    projectLoaded.reset();
-    projectBank.reset();
-    assert(codec::applyProjectSequencerEnvelope(
+    seq::SequencerHistoryTrackBankSnapshot projectBank{};
+    seq::SequencerClipGridSnapshot projectGrid{};
+    core::app::ExtmemUniquePtr<seq::DrumTrackBankSnapshot> projectDrums;
+    assert(codec::decodeProjectSequencerEnvelope(
         projectBytes.bytes.data(),
         projectEncoded.size,
         projectBank,
-        projectLoaded,
-        projectGrid
+        projectGrid,
+        projectDrums
     ));
-    assertTwoLanes(projectLoaded.pattern);
-    assert(!projectBank.track(projectBank.activeTrackIndex()).ccLanes);
-    assert(!projectBank.track(projectBank.activeTrackIndex()).graph);
-    assert(seq::sequencerCcLaneView(projectBank.track(1U))->lanes[3].values[64] == 42U);
-    assert(projectBank.isDrumTrack(2U));
-    assert(projectBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
-    assert(projectBank.drumTrack(2U).pattern.lanes[1U].velocity[3U] == 109U);
-    assertTrackRegions(projectBank, projectLoaded);
-    assert(projectGrid.isStop({0U, 3U}));
-    assert(projectGrid.clipBehavior({0U, 0U}) ==
+    assertTwoLanes(projectBank.editorCcLanes.get());
+    assert(!projectBank.bankCcLanes[projectBank.flat.activeTrack]);
+    assert(!projectBank.bankGraphs[projectBank.flat.activeTrack]);
+    assert(projectBank.bankCcLanes[1U]->lanes[3].values[64] == 42U);
+    assert(projectDrums && (projectDrums->drumTrackMask & (1U << 2U)));
+    assert(projectDrums->tracks[2U].pattern.stepEnabled(1U, 3U));
+    assert(projectDrums->tracks[2U].pattern.lanes[1U].velocity[3U] == 109U);
+    assertTrackRegions(projectBank.flat);
+    assert((projectGrid.stopMasks[3U] & 1U) != 0U);
+    assert(projectGrid.clipBehaviors[seq::SequencerClipGridState::cellIndex({0U, 0U})] ==
            projectClips.clipBehaviors[
                seq::SequencerClipGridState::cellIndex({0U, 0U})]);
-    assert(projectGrid.sceneBehavior(0U) == projectClips.sceneBehaviors[0U]);
+    assert(projectGrid.sceneBehaviors[0U] == projectClips.sceneBehaviors[0U]);
 
     projectBytes.bytes[4U] = static_cast<uint8_t>(
         codec::ENVELOPE_VERSION - 1U
     );
-    assert(!codec::applyProjectSequencerEnvelope(
+    assert(!codec::decodeProjectSequencerEnvelope(
         projectBytes.bytes.data(),
         projectEncoded.size,
         projectBank,
-        projectLoaded,
-        projectGrid
+        projectGrid,
+        projectDrums
     ));
 
     std::cout << "[PASS] Project retains every Track-local lane owner\n";
@@ -378,21 +370,16 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
     );
     assert(projectEncoded.ok);
 
-    seq::SequencerState loaded{};
-    seq::SequencerTrackBankState loadedBank{};
-    seq::SequencerClipGridState loadedGrid{};
-    loaded.reset();
-    loadedBank.reset();
-    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
-    assert(loadedBank.drumTrackMask() != 0U);
-    assert(codec::applyProjectSequencerEnvelope(
-        projectBytes.bytes.data(),
-        projectEncoded.size,
-        loadedBank,
-        loaded,
-        loadedGrid
+    seq::SequencerHistoryTrackBankSnapshot loaded{};
+    seq::SequencerClipGridSnapshot loadedGrid{};
+    auto drums = core::app::makeExtmemUnique<seq::DrumTrackBankSnapshot>();
+    assert(drums);
+    drums->drumTrackMask = 1U;
+    assert(codec::decodeProjectSequencerEnvelope(
+        projectBytes.bytes.data(), projectEncoded.size,
+        loaded, loadedGrid, drums
     ));
-    assert(loadedBank.drumTrackMask() == 0U);
+    assert(!drums);
 
     std::cout << "[PASS] Drum state is replaced by a Drum-free envelope\n";
 }

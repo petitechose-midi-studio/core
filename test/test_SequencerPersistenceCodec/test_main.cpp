@@ -165,12 +165,32 @@ void testPatternDecoderRejectsAtomically() {
 
 void testProjectHeaderIsStrict() {
     sequencer::SequencerTrackBankSnapshot snapshot{};
+    snapshot.activeTrack = 7U;
+    snapshot.enabledMask = 0xFFFFU;
+    snapshot.projectScaleSettings.root = 9U;
+    for (uint8_t track = 0U; track < 16U; ++track) {
+        auto& pattern = snapshot.tracks[track];
+        pattern.length = 128U;
+        pattern.stepsPerBeat = 6U;
+        pattern.enabledMask.setBit(127U);
+        pattern.note[127U] = static_cast<uint8_t>(70U + track);
+        pattern.velocity[127U] = static_cast<uint8_t>(90U + track);
+        pattern.gate[127U] = 725U;
+        pattern.nudge[127U] = -23;
+        pattern.probability[127U] = 83U;
+        pattern.variationRanges = {12U, 20U, 30U, 4U};
+        pattern.swingOffsetPercent = -25;
+        pattern.patternNudgePercent = 17;
+        pattern.pitchEditMode = sequencer::SequencerPitchEditMode::CHROMATIC;
+        pattern.scalePolicy = sequencer::SequencerPatternScalePolicy::OVERRIDE;
+        pattern.scaleOverride.root = static_cast<uint8_t>(track % 12U);
+    }
     auto projectBytes = std::make_unique<ProjectBytes>();
     assert(projectBytes);
     assert(codec::fillProjectSequencerPayload(
         snapshot,
-        0U,
-        sequencer::StepProperty::NOTE,
+        95U,
+        sequencer::StepProperty::PROBABILITY,
         projectBytes->data(),
         static_cast<uint16_t>(projectBytes->size())
     ));
@@ -178,19 +198,38 @@ void testProjectHeaderIsStrict() {
     auto malformedProject = std::make_unique<ProjectBytes>(*projectBytes);
     assert(malformedProject);
     (*malformedProject)[3] = 1U;
-    sequencer::SequencerTrackBankState projectBank{};
-    projectBank.syncSharedTrackState(0x0004U, 2U);
-    sequencer::SequencerState projectActive{};
-    assert(!codec::applyProjectSequencerPayload(
+    sequencer::SequencerTrackBankSnapshot projectBank{};
+    projectBank.enabledMask = 0x0004U;
+    projectBank.activeTrack = 2U;
+    uint8_t focused = 7U;
+    auto property = sequencer::StepProperty::GATE;
+    assert(!codec::decodeProjectSequencerPayload(
         malformedProject->data(),
         static_cast<uint16_t>(malformedProject->size()),
         projectBank,
-        projectActive
+        focused,
+        property
     ));
-    assert(projectBank.currentEnabledMask() == 0x0004U);
-    assert(projectBank.activeTrackIndex() == 2U);
+    assert(projectBank.enabledMask == 0x0004U);
+    assert(projectBank.activeTrack == 2U);
+    assert(focused == 7U && property == sequencer::StepProperty::GATE);
 
-    std::cout << "[PASS] Project header accept only the current shape\n";
+    // A late invalid field must not leave earlier Tracks partially decoded.
+    *malformedProject = *projectBytes;
+    malformedProject->back() = 1U;
+    assert(!codec::decodeProjectSequencerPayload(
+        malformedProject->data(), malformedProject->size(), projectBank, focused, property));
+    assert(projectBank.enabledMask == 0x0004U && projectBank.activeTrack == 2U);
+    assert(focused == 7U && property == sequencer::StepProperty::GATE);
+
+    assert(codec::decodeProjectSequencerPayload(
+        projectBytes->data(), projectBytes->size(), projectBank, focused, property));
+    assert(focused == 95U && property == sequencer::StepProperty::PROBABILITY);
+    assert(codec::fillProjectSequencerPayload(
+        projectBank, focused, property, malformedProject->data(), malformedProject->size()));
+    assert(*malformedProject == *projectBytes);
+
+    std::cout << "[PASS] Project round-trip and strict atomic validation\n";
 }
 
 }  // namespace

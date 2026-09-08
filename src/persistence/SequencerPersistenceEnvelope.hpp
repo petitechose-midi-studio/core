@@ -12,8 +12,11 @@
 #include "persistence/SequencerPersistencePayloads.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerClipGridState.hpp"
-#include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+
+namespace core::state::sequencer {
+struct SequencerHistoryTrackBankSnapshot;
+}
 
 namespace core::persistence::sequencer_codec {
 
@@ -123,10 +126,16 @@ EnvelopeEncodeResult fillProjectSequencerEnvelope(
     uint32_t capacity
 );
 
-bool applyProjectSequencerEnvelope(const uint8_t* data,
-                                   uint32_t size,
-                                   state::sequencer::SequencerTrackBankState& trackBank,
-                                   state::sequencer::SequencerState& active,
-                                   state::sequencer::SequencerClipGridState& clips);
+/**
+ * Decodes into caller-owned detached staging. On failure the candidate must
+ * be discarded. No live editor is read, allocated, notified or modified.
+ */
+bool decodeProjectSequencerEnvelope(
+    const uint8_t* data,
+    uint32_t size,
+    state::sequencer::SequencerHistoryTrackBankSnapshot& target,
+    state::sequencer::SequencerClipGridSnapshot& clips,
+    core::app::ExtmemUniquePtr<state::sequencer::DrumTrackBankSnapshot>& drums
+);
 
 }  // namespace core::persistence::sequencer_codec

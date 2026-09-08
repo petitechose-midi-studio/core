@@ -16,9 +16,9 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphCanonicalPolicy.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
-#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::persistence::sequencer_codec {
 
@@ -689,91 +689,6 @@ FLASHMEM bool sectionHasExactRecordShape(const SectionView& section, uint16_t re
            section.byteSize == static_cast<uint16_t>(section.count * recordSize);
 }
 
-using ClipRegionArray = std::array<
-    state::sequencer::SequencerClipPlaybackRegion,
-    PERSISTED_TRACK_COUNT>;
-
-FLASHMEM bool flatPatternContentLength(
-    const SectionView& flat,
-    EnvelopeKind kind,
-    uint8_t track,
-    uint8_t& out
-) {
-    uint32_t offset = 0;
-    switch (kind) {
-        case EnvelopeKind::Pattern:
-            if (track != 0U) return false;
-            break;
-        case EnvelopeKind::ProjectSequencer:
-            offset = 9U + static_cast<uint32_t>(track) *
-                PROJECT_SEQUENCER_TRACK_PAYLOAD_SIZE;
-            break;
-    }
-    if (flat.data == nullptr || offset >= flat.byteSize) return false;
-    out = flat.data[offset];
-    return true;
-}
-
-FLASHMEM bool decodeClipRegions(
-    const SectionView& flat,
-    const std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>& sections,
-    EnvelopeKind kind,
-    ClipRegionArray& out
-) {
-    const uint8_t ownerCount = kind == EnvelopeKind::Pattern
-        ? 1U
-        : PERSISTED_TRACK_COUNT;
-    for (uint8_t track = 0; track < PERSISTED_TRACK_COUNT; ++track) {
-        const auto& section = sections[track].clipRegion;
-        if (track >= ownerCount) {
-            if (section.data != nullptr) return false;
-            continue;
-        }
-
-        uint8_t contentLength = 0;
-        if (!flatPatternContentLength(flat, kind, track, contentLength)) return false;
-        if (section.data == nullptr || section.count != 1U ||
-            !sectionHasExactRecordShape(section, CLIP_REGION_RECORD_SIZE)) {
-            return false;
-        }
-        const state::sequencer::SequencerClipPlaybackRegion region{
-            contentLength,
-            section.data[0],
-            section.data[1],
-            section.data[2],
-        };
-        if (!region.isValid()) return false;
-        out[track] = region;
-    }
-    return true;
-}
-
-FLASHMEM void installClipRegion(
-    state::sequencer::SequencerPatternState& target,
-    state::sequencer::SequencerClipState& clip,
-    const state::sequencer::SequencerClipPlaybackRegion& region
-) {
-    (void)state::sequencer::setClipPlaybackRegion(target, clip, region);
-}
-
-FLASHMEM void installTrackClipRegions(
-    const ClipRegionArray& regions,
-    uint8_t activeTrack,
-    state::sequencer::SequencerTrackBankState& trackBank,
-    state::sequencer::SequencerState& active
-) {
-    for (uint8_t track = 0; track < PERSISTED_TRACK_COUNT; ++track) {
-        if (track == activeTrack) continue;
-        installClipRegion(
-            trackBank.track(track),
-            trackBank.clip(track),
-            regions[track]
-        );
-    }
-    installClipRegion(active.pattern, active.clip, regions[activeTrack]);
-    active.bumpClipRevision();
-}
-
 FLASHMEM bool linkSequenceValid(const StepSequencerGraph& graph, uint16_t id) {
     return graph.sequence(id) != nullptr;
 }
@@ -940,30 +855,9 @@ FLASHMEM void installDecodedGraph(state::sequencer::SequencerPatternState& targe
     target.bumpGraphRevision();
 }
 
-FLASHMEM uint16_t readU16At(const SectionView& flat, uint16_t offset) {
-    return static_cast<uint16_t>(
-        static_cast<uint16_t>(flat.data[offset]) |
-        static_cast<uint16_t>(static_cast<uint16_t>(flat.data[offset + 1U]) << 8U)
-    );
-}
-
-FLASHMEM uint16_t flatEnabledMask(
-    const SectionView& flat,
-    EnvelopeKind kind
-) {
-    switch (kind) {
-        case EnvelopeKind::ProjectSequencer:
-            return readU16At(flat, 1U);
-        case EnvelopeKind::Pattern:
-        default:
-            return 0U;
-    }
-}
-
 FLASHMEM bool decodeTrackDrums(
     const std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>& sections,
-    const SectionView& flat,
-    EnvelopeKind kind,
+    uint16_t enabledMask,
     DrumBankPtr& out
 ) {
     out.reset();
@@ -974,8 +868,7 @@ FLASHMEM bool decodeTrackDrums(
         }
     }
     if (drumMask == 0U) return true;
-    if (kind == EnvelopeKind::Pattern ||
-        (drumMask & static_cast<uint16_t>(~flatEnabledMask(flat, kind))) != 0U) {
+    if ((drumMask & static_cast<uint16_t>(~enabledMask)) != 0U) {
         return false;
     }
 
@@ -1008,76 +901,6 @@ FLASHMEM bool decodeTrackDrums(
     }
     out = std::move(decoded);
     return true;
-}
-
-FLASHMEM bool projectActiveTrack(
-    const SectionView& flat,
-    uint8_t& out
-) {
-    if (flat.data == nullptr ||
-        flat.byteSize != PROJECT_SEQUENCER_PAYLOAD_SIZE) {
-        return false;
-    }
-    const uint8_t activeTrack = flat.data[0];
-    const uint16_t enabledMask = readU16At(flat, 1U);
-    if (activeTrack >=
-            state::sequencer::SequencerTrackBankState::TRACK_COUNT ||
-        enabledMask == 0U ||
-        (enabledMask & static_cast<uint16_t>(1U << activeTrack)) == 0U) {
-        return false;
-    }
-    out = activeTrack;
-    return true;
-}
-
-FLASHMEM bool decodeTrackGraphs(
-    const std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>& sections,
-    std::array<GraphPtr, PERSISTED_TRACK_COUNT>& graphs
-) {
-    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        if (!decodeGraphSections(sections[i], graphs[i])) return false;
-    }
-    return true;
-}
-
-FLASHMEM bool decodeTrackCcLanes(
-    const std::array<GraphSectionViews, PERSISTED_TRACK_COUNT>& sections,
-    std::array<CcLanePtr, PERSISTED_TRACK_COUNT>& lanes
-) {
-    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        if (!decodeCcLaneSection(sections[i], lanes[i])) return false;
-    }
-    return true;
-}
-
-FLASHMEM void installTrackGraphs(
-    std::array<GraphPtr, PERSISTED_TRACK_COUNT>& graphs,
-    state::sequencer::SequencerTrackBankState& trackBank,
-    state::sequencer::SequencerState& active
-) {
-    auto activeGraph = std::move(graphs[trackBank.activeTrackIndex()]);
-    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        installDecodedGraph(trackBank.track(i), std::move(graphs[i]));
-    }
-    installDecodedGraph(active.pattern, std::move(activeGraph));
-}
-
-FLASHMEM void installTrackCcLanes(
-    std::array<CcLanePtr, PERSISTED_TRACK_COUNT>& lanes,
-    state::sequencer::SequencerTrackBankState& trackBank,
-    state::sequencer::SequencerState& active
-) {
-    auto activeLanes = std::move(lanes[trackBank.activeTrackIndex()]);
-    for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        state::sequencer::installSequencerCcLaneBank(
-            trackBank.track(i),
-            std::move(lanes[i])
-        );
-    }
-    state::sequencer::installSequencerCcLaneBank(
-        active.pattern,
-        std::move(activeLanes)
-    );
 }
 
 FLASHMEM bool decodeClipDocument(
@@ -1396,72 +1219,59 @@ FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
     return writer.finish();
 }
 
-FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
-                                            uint32_t size,
-                                            state::sequencer::SequencerTrackBankState& trackBank,
-                                            state::sequencer::SequencerState& active,
-                                            state::sequencer::SequencerClipGridState& clips) {
+FLASHMEM bool decodeProjectSequencerEnvelope(
+    const uint8_t* data,
+    uint32_t size,
+    state::sequencer::SequencerHistoryTrackBankSnapshot& target,
+    state::sequencer::SequencerClipGridSnapshot& clips,
+    DrumBankPtr& drums
+) {
     SectionView flat{};
-    std::array<GraphSectionViews, PERSISTED_TRACK_COUNT> graphs{};
+    std::array<GraphSectionViews, PERSISTED_TRACK_COUNT> sections{};
     ClipSectionViews clipSections{};
-    if (!findSections(data,
-                      size,
-                      EnvelopeKind::ProjectSequencer,
-                       SectionId::FlatProjectSequencer,
-                       flat,
-                       &graphs,
-                       &clipSections)) {
-        return false;
-    }
-    if (!sectionHasExactRecordShape(flat, PROJECT_SEQUENCER_PAYLOAD_SIZE) || flat.count != 1) {
+    if (!findSections(data, size, EnvelopeKind::ProjectSequencer,
+                      SectionId::FlatProjectSequencer, flat,
+                      &sections, &clipSections) ||
+        !sectionHasExactRecordShape(flat, PROJECT_SEQUENCER_PAYLOAD_SIZE) ||
+        flat.count != 1U) {
         return false;
     }
 
-    std::array<GraphPtr, PERSISTED_TRACK_COUNT> decodedGraphs{};
-    std::array<CcLanePtr, PERSISTED_TRACK_COUNT> decodedLanes{};
-    ClipRegionArray regions{};
-    DrumBankPtr decodedDrums;
-    state::sequencer::SequencerClipGridSnapshot decodedClips;
-    uint8_t activeTrack = 0U;
-    if (!projectActiveTrack(flat, activeTrack) ||
-        !decodeClipRegions(
-            flat,
-            graphs,
-            EnvelopeKind::ProjectSequencer,
-            regions
-        ) ||
-        !decodeTrackGraphs(graphs, decodedGraphs) ||
-        !decodeTrackCcLanes(graphs, decodedLanes) ||
-        !decodeTrackDrums(
-            graphs,
-            flat,
-            EnvelopeKind::ProjectSequencer,
-            decodedDrums
-        ) ||
-        !decodeClipGrid(
-            clipSections,
-            flatEnabledMask(flat, EnvelopeKind::ProjectSequencer),
-            decodedDrums != nullptr ? decodedDrums->drumTrackMask : 0U,
-            decodedClips
-        )) {
+    // The caller owns a disposable candidate. Decode directly into its final
+    // owners; Project decode publishes it only after every chunk is accepted.
+    target.reset();
+    if (!decodeProjectSequencerPayload(flat.data, flat.byteSize, target.flat,
+                                       target.focusedStep, target.activeStepProperty)) {
         return false;
     }
-    if (!applyProjectSequencerPayload(flat.data, flat.byteSize, trackBank, active)) {
-        return false;
+    for (uint8_t track = 0U; track < PERSISTED_TRACK_COUNT; ++track) {
+        const auto& section = sections[track];
+        const auto& regionSection = section.clipRegion;
+        if (regionSection.data == nullptr || regionSection.count != 1U ||
+            !sectionHasExactRecordShape(regionSection, CLIP_REGION_RECORD_SIZE)) {
+            return false;
+        }
+        auto& pattern = target.flat.tracks[track];
+        const state::sequencer::SequencerClipPlaybackRegion region{
+            pattern.length, regionSection.data[0], regionSection.data[1], regionSection.data[2]
+        };
+        if (!region.isValid()) return false;
+        const uint16_t ticks = state::sequencer::sequencerTicksPerStep(pattern.stepsPerBeat);
+        target.flat.clips[track] = {
+            static_cast<uint16_t>(region.playStart * ticks),
+            static_cast<uint16_t>(region.loopStart * ticks),
+            static_cast<uint16_t>(region.loopEnd * ticks),
+        };
+        const bool editor = track == target.flat.activeTrack;
+        auto& graph = editor ? target.editorGraph : target.bankGraphs[track];
+        auto& lanes = editor ? target.editorCcLanes : target.bankCcLanes[track];
+        if (!decodeGraphSections(section, graph) || !decodeCcLaneSection(section, lanes)) {
+            return false;
+        }
     }
-    installTrackGraphs(decodedGraphs, trackBank, active);
-    installTrackCcLanes(decodedLanes, trackBank, active);
-    installTrackClipRegions(regions, activeTrack, trackBank, active);
-    if (decodedDrums) {
-        if (!trackBank.applyDrumTrackBank(*decodedDrums)) return false;
-    } else {
-        trackBank.clearDrumTrackBank();
-    }
-    return state::sequencer::restoreSequencerClipGridSnapshot(
-        clips,
-        std::move(decodedClips),
-        trackBank.currentEnabledMask()
-    );
+    return decodeTrackDrums(sections, target.flat.enabledMask, drums) &&
+        decodeClipGrid(clipSections, target.flat.enabledMask,
+                       drums ? drums->drumTrackMask : 0U, clips);
 }
 
 }  // namespace core::persistence::sequencer_codec
