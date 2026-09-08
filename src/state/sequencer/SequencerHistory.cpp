@@ -774,11 +774,7 @@ FLASHMEM size_t structureChangeRetainedBytes(const SequencerHistoryTrackStructur
     if (change.macroStructure != nullptr) {
         bytes +=
             sizeof(SequencerHistoryMacroTrackStructurePayload) + kExtmemAllocationOverheadEstimate;
-        if (change.macroStructure->beforeControl != nullptr) {
-            bytes += sizeof(core::state::modulation::ProjectControlDomainState) +
-                     kExtmemAllocationOverheadEstimate;
-        }
-        if (change.macroStructure->afterControl != nullptr) {
+        if (change.macroStructure->control.hasStorage()) {
             bytes += sizeof(core::state::modulation::ProjectControlDomainState) +
                      kExtmemAllocationOverheadEstimate;
         }
@@ -795,8 +791,7 @@ FLASHMEM uint16_t structureChangeRetainedSpans(
     );
     if (change.macroStructure != nullptr) {
         ++spans;
-        if (change.macroStructure->beforeControl != nullptr) ++spans;
-        if (change.macroStructure->afterControl != nullptr) ++spans;
+        if (change.macroStructure->control.hasStorage()) ++spans;
     }
     return spans;
 }

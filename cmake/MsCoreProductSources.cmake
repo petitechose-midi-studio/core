@@ -262,6 +262,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/macro/MacroWorkflow.cpp
     src/state/modulation/ProjectControlMacroConversion.cpp
     src/state/modulation/ProjectControlMacroCurveOps.cpp
+    src/state/modulation/ProjectControlHistory.cpp
     src/state/modulation/ProjectControlMacroOps.cpp
     src/state/modulation/ProjectControlMacroOpsInternal.cpp
     src/state/modulation/ProjectControlRuntime.cpp

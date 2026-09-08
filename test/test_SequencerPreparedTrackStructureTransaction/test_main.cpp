@@ -158,14 +158,14 @@ constexpr std::size_t kArmAllocationHeaderBytes = 16U;
 constexpr std::size_t kArmStructureChangeBytes = 27192U;
 constexpr std::size_t kArmGraphBytes = 14792U;
 constexpr std::size_t kArmCcBankBytes = 840U;
-constexpr std::size_t kArmMacroPayloadBytes = 30860U;
+constexpr std::size_t kArmMacroPayloadBytes = 30888U;
 constexpr std::size_t kArmControlDomainBytes = 159516U;
 constexpr std::size_t kArmPairBytes =
     (kArmGraphBytes + kArmAllocationHeaderBytes) +
     (kArmCcBankBytes + kArmAllocationHeaderBytes);
 constexpr std::size_t kArmMacroAddonBytes =
     (kArmMacroPayloadBytes + kArmAllocationHeaderBytes) +
-    2U * (kArmControlDomainBytes + kArmAllocationHeaderBytes);
+    (kArmControlDomainBytes + kArmAllocationHeaderBytes);
 constexpr std::size_t kArmCreatePeak =
     (kArmStructureChangeBytes + kArmAllocationHeaderBytes) +
     3U * kArmPairBytes;
@@ -182,8 +182,8 @@ constexpr std::size_t kArmMacroT2Peak =
 static_assert(kArmPairBytes == 15664U);
 static_assert(kArmCreatePeak == 74200U);
 static_assert(kArmRemovePeak == 89864U);
-static_assert(kArmMacroT1Peak == 408476U);
-static_assert(kArmMacroT2Peak == 439804U);
+static_assert(kArmMacroT1Peak == 248972U);
+static_assert(kArmMacroT2Peak == 280300U);
 
 // Distinct from the logical LOCK-P h=16 accounting above: Teensy smalloc
 // physically rounds payloads to 12-byte quanta and charges two 12-byte
@@ -206,7 +206,7 @@ constexpr std::size_t kSmallocRemovePeak =
     smallocSpan(kArmStructureChangeBytes) + 4U * kSmallocPairBytes;
 constexpr std::size_t kSmallocMacroAddon =
     smallocSpan(kArmMacroPayloadBytes) +
-    2U * smallocSpan(kArmControlDomainBytes);
+    smallocSpan(kArmControlDomainBytes);
 constexpr std::size_t kSmallocMacroT1Peak =
     smallocSpan(kArmStructureChangeBytes) +
     2U * kSmallocPairBytes + kSmallocMacroAddon;
@@ -217,8 +217,8 @@ constexpr std::size_t kSmallocMacroT2Peak =
 static_assert(smallocSpan(kArmControlDomainBytes) == 159540U);
 static_assert(kSmallocCreatePeak == 74268U);
 static_assert(kSmallocRemovePeak == 89952U);
-static_assert(kSmallocMacroT1Peak == 408552U);
-static_assert(kSmallocMacroT2Peak == 439920U);
+static_assert(kSmallocMacroT1Peak == 249036U);
+static_assert(kSmallocMacroT2Peak == 280404U);
 
 enum class Call : uint8_t {
     Build = 0,
@@ -387,7 +387,7 @@ struct Script {
         ++self.admitCount;
         self.admittedAfterControl =
             change.macroStructure != nullptr &&
-            change.macroStructure->afterControl != nullptr;
+            change.macroStructure->control.changed();
         return self.admitOutcomes[index];
     }
 
@@ -1121,23 +1121,21 @@ constexpr std::array<std::size_t, 9U> kRemoveRequests{
     sizeof(Graph), sizeof(CcBank),
 };
 
-constexpr std::array<std::size_t, 8U> kMacroT1Requests{
+constexpr std::array<std::size_t, 7U> kMacroT1Requests{
     sizeof(Change),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(MacroPayload),
-    sizeof(ControlDomain),
     sizeof(ControlDomain),
 };
 
-constexpr std::array<std::size_t, 12U> kMacroT2Requests{
+constexpr std::array<std::size_t, 11U> kMacroT2Requests{
     sizeof(Change),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(MacroPayload),
-    sizeof(ControlDomain),
     sizeof(ControlDomain),
 };
 
@@ -1764,7 +1762,7 @@ void test_no_change_and_macro_control_normalization_contracts() {
             );
         assert(result.status == Status::Committed);
         assert(harness->script.committed->macroStructure);
-        assert(!harness->script.committed->macroStructure->afterControl);
+        assert(!harness->script.committed->macroStructure->control.changed());
         assert(!harness->script.admittedAfterControl);
         assert(harness->macros.control.authoredRevision ==
                controlRevisionBefore);
@@ -1799,7 +1797,7 @@ void test_no_change_and_macro_control_normalization_contracts() {
             );
         assert(result.status == Status::Committed);
         assert(harness->script.committed->macroStructure);
-        assert(harness->script.committed->macroStructure->afterControl);
+        assert(harness->script.committed->macroStructure->control.changed());
         assert(harness->script.admittedAfterControl);
         assert(harness->macros.control.authoredRevision ==
                controlRevisionBefore + 1U);

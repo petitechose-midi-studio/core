@@ -1,5 +1,7 @@
 #pragma once
 
+#include "state/modulation/ProjectControlHistory.hpp"
+
 #include <array>
 #include <cstdint>
 
@@ -356,11 +358,9 @@ struct MacroSlotDeletionHistoryPayload {
  */
 struct MacroPageStructureHistoryPayload {
     uint8_t track = 0U;
-    uint64_t beforeControlHash = 0U;
-    uint64_t afterControlHash = 0U;
     MacroTrackData beforeTrack{};
     MacroTrackData afterTrack{};
-    core::app::ExtmemUniqueArray<uint8_t> controlDelta{};
+    core::state::modulation::ProjectControlHistory control{};
 };
 
 /** Compact destination-wide Depth delta; no binding array is retained. */

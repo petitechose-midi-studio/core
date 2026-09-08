@@ -1,5 +1,7 @@
 #pragma once
 
+#include "state/modulation/ProjectControlHistory.hpp"
+
 #include <array>
 #include <cstdint>
 
@@ -14,8 +16,6 @@ struct SequencerHistoryMacroTrackStructurePayload {
     static constexpr uint8_t INVALID_AFFECTED_TRACK = macro::TRACK_COUNT;
 
     uint16_t capturedTrackMask = 0U;
-    bool afterCaptured = false;
-    // Reuses the ARM padding byte that previously followed afterCaptured.
     // Direct Macro actions set one exact target; multi-Track transfers retain
     // INVALID_AFFECTED_TRACK and use their activation Track mask.
     uint8_t affectedTrackIndex = INVALID_AFFECTED_TRACK;
@@ -23,12 +23,7 @@ struct SequencerHistoryMacroTrackStructurePayload {
         beforeTracks{};
     std::array<core::state::macro::MacroTrackData, macro::TRACK_COUNT>
         afterTracks{};
-    core::app::ExtmemUniquePtr<
-        core::state::modulation::ProjectControlDomainState
-    > beforeControl{};
-    core::app::ExtmemUniquePtr<
-        core::state::modulation::ProjectControlDomainState
-    > afterControl{};
+    core::state::modulation::ProjectControlHistory control{};
 };
 
 struct SequencerHistoryTrackStructureSnapshot {
@@ -141,7 +136,7 @@ static_assert(
     "LOCK-P: ARM Structure snapshot ABI changed"
 );
 static_assert(
-    sizeof(SequencerHistoryMacroTrackStructurePayload) == 30860U,
+    sizeof(SequencerHistoryMacroTrackStructurePayload) == 30888U,
     "LOCK-P: ARM Macro Structure payload ABI changed"
 );
 static_assert(
@@ -283,8 +278,7 @@ void commitMacroTrackStructureHistoryReplay(
 );
 // Preconditions: the coordinated transaction already proved that live state
 // matches `before`, admitted this normalized payload, and crossed its final
-// no-fail boundary. A null afterControl means byte-identical control state;
-// a non-null afterControl is known distinct and is installed without another
+// no-fail boundary. The sealed Control delta is applied without another
 // full-domain comparison.
 void commitAdmittedMacroTrackStructureHistoryAfter(
     core::state::macro::MacroPagesState& pages,

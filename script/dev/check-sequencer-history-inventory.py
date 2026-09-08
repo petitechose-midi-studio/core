@@ -85,9 +85,14 @@ RETIRED_RAW_API_IDENTIFIERS = (
     "pageStructureBeforeMatches",
     "pageStructureAfterMatches",
     "compactProjectControlPages",
+    "normalizeEqualMacroAfterControl",
+    "pageStructureControlHash",
+    "xorPageStructureControl",
 )
 RETIRED_RAW_API_ROOTS = ("src", "test")
 RETIRED_RAW_API_TARGETED_IDENTIFIERS = (
+    ("src/state/sequencer/SequencerStructureHistory.hpp", "beforeControl"),
+    ("src/state/sequencer/SequencerStructureHistory.hpp", "afterControl"),
     (
         "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
         "canRecordFullBank",
@@ -98,6 +103,8 @@ RETIRED_RAW_API_TARGETED_IDENTIFIERS = (
     ),
 )
 RETIRED_RAW_API_MUTATION_LAYERS = (
+    ("track-control-before", "src/state/sequencer/SequencerStructureHistory.hpp", "beforeControl"),
+    ("track-control-after", "src/state/sequencer/SequencerStructureHistory.hpp", "afterControl"),
     (
         "domain-facade",
         "src/handler/sequencer/SequencerHistoryDomainServices.hpp",

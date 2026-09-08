@@ -3591,8 +3591,8 @@ void test_page_history_preparation_and_compaction_fail_atomically() {
 
 void test_retained_budget_preserves_automation_and_bounds_page_structure() {
     constexpr size_t kMaximumAutomationTakeBytes = 132'260U;
-    constexpr size_t kFullPageStructureBytes = 161'968U;
-    constexpr size_t kCompactPageStructureBytes = 2'436U;
+    constexpr size_t kFullPageStructureBytes = 161'976U;
+    constexpr size_t kCompactPageStructureBytes = 2'444U;
 
     macro::MacroPagesState pages;
     seedMaximumAutomationPage(pages);

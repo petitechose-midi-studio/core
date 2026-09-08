@@ -88,7 +88,7 @@ FLASHMEM bool macroAfterRespectsAction(
 ) noexcept {
     if (payload.capturedTrackMask != plan.macroCapturedTrackMask ||
         payload.affectedTrackIndex != plan.macroAffectedTrack ||
-        payload.beforeControl == nullptr || payload.afterControl == nullptr) {
+        !payload.control.hasStorage() || payload.control.ready()) {
         return false;
     }
     for (uint8_t track = 0U;
@@ -108,19 +108,6 @@ FLASHMEM bool macroAfterRespectsAction(
         }
     }
     return true;
-}
-
-FLASHMEM void normalizeEqualMacroAfterControl(
-    core::state::sequencer::SequencerHistoryMacroTrackStructurePayload& payload
-) noexcept {
-    if (payload.beforeControl != nullptr && payload.afterControl != nullptr &&
-        std::memcmp(
-            payload.beforeControl.get(),
-            payload.afterControl.get(),
-            sizeof(core::state::modulation::ProjectControlDomainState)
-        ) == 0) {
-        payload.afterControl.reset();
-    }
 }
 
 FLASHMEM core::state::sequencer::SequencerHistoryDescriptor descriptorFor(
@@ -447,12 +434,12 @@ prepareSequencerTrackStructureTransaction(
         }
         auto& payload = *prepared.change_->macroStructure;
         payload.afterTracks = payload.beforeTracks;
-        *payload.afterControl = *payload.beforeControl;
+        auto& candidate = *payload.control.candidate();
         const MacroOutcome macroOutcome = operations->prepareMacroAfter(
             execution.context_,
             prepared.plan_,
             payload.afterTracks,
-            *payload.afterControl
+            candidate
         );
         if (macroOutcome != MacroOutcome::Ready) {
             prepared.status_ = macroOutcome == MacroOutcome::Stale
@@ -465,15 +452,17 @@ prepareSequencerTrackStructureTransaction(
             return prepared;
         }
         if (!core::state::modulation::validProjectModulationDomain(
-                payload.afterControl->modulation,
-                payload.afterControl->curves,
-                &payload.afterControl->automation
+                candidate.modulation,
+                candidate.curves,
+                &candidate.automation
             )) {
             prepared.status_ = Status::Invalid;
             return prepared;
         }
-        payload.afterCaptured = true;
-        normalizeEqualMacroAfterControl(payload);
+        if (!payload.control.sealCandidate(state.macroPages->control.authored)) {
+            prepared.status_ = Status::Stale;
+            return prepared;
+        }
     }
 
     prepared.change_->descriptor = descriptorFor(*prepared.change_);

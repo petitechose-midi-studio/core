@@ -393,7 +393,7 @@ void runFailureMatrix(Prepare&& prepare, Execute&& execute) {
 }
 
 void test_product_t1_t2_failure_ordinals_are_exact() {
-    runFailureMatrix<8U>(
+    runFailureMatrix<7U>(
         [](core::state::CoreState& state) {
             seedOwnerShape(state.sequencer.pattern, OwnerShape::Both);
             state.pages.tracks[0].pages[0].cc[0] = 91U;
@@ -408,7 +408,7 @@ void test_product_t1_t2_failure_ordinals_are_exact() {
 
     core::state::macro::MacroTrackData source;
     source.pages[0].cc[0] = 101U;
-    runFailureMatrix<12U>(
+    runFailureMatrix<11U>(
         [](core::state::CoreState& state) {
             seedOwnerShape(state.sequencer.pattern, OwnerShape::Both);
             seedOwnerShape(

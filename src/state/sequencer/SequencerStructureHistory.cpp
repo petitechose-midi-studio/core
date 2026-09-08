@@ -684,14 +684,7 @@ FLASHMEM bool captureMacroTrackStructureHistoryBefore(
         SequencerHistoryMacroTrackStructurePayload
     >();
     if (!payload) return false;
-    payload->beforeControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >(pages.control.authored);
-    if (!payload->beforeControl) return false;
-    payload->afterControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    if (!payload->afterControl) return false;
+    if (!payload->control.prepare(pages.control.authored)) return false;
     payload->capturedTrackMask = sanitized;
     payload->affectedTrackIndex = affectedTrackIndex;
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
@@ -708,7 +701,7 @@ FLASHMEM bool captureMacroTrackStructureHistoryAfter(
 ) {
     auto* payload = change.macroStructure.get();
     if (payload == nullptr || payload->capturedTrackMask == 0U ||
-        !payload->beforeControl || !payload->afterControl) {
+        payload->control.candidate() == nullptr) {
         return false;
     }
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
@@ -717,25 +710,15 @@ FLASHMEM bool captureMacroTrackStructureHistoryAfter(
         }
         payload->afterTracks[track] = pages.tracks[track];
     }
-    *payload->afterControl = pages.control.authored;
-    if (std::memcmp(
-            payload->beforeControl.get(),
-            payload->afterControl.get(),
-            sizeof(core::state::modulation::ProjectControlDomainState)
-        ) == 0) {
-        payload->afterControl.reset();
-    }
-    payload->afterCaptured = true;
-    return true;
+    return payload->control.captureAfter(pages.control.authored);
 }
 
 FLASHMEM bool macroTrackStructureHistoryChanged(
     const SequencerHistoryTrackStructureChange& change
 ) {
     const auto* payload = change.macroStructure.get();
-    if (payload == nullptr || !payload->beforeControl ||
-        !payload->afterCaptured) return false;
-    if (payload->afterControl != nullptr) return true;
+    if (payload == nullptr || !payload->control.ready()) return false;
+    if (payload->control.changed()) return true;
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
         if ((payload->capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
             continue;
@@ -756,17 +739,7 @@ FLASHMEM bool liveMacroTrackStructureMatches(
     const SequencerHistoryMacroTrackStructurePayload& payload,
     bool after
 ) {
-    if (!payload.afterCaptured) return false;
-    const auto* control = after && payload.afterControl
-        ? payload.afterControl.get()
-        : payload.beforeControl.get();
-    if (control == nullptr || std::memcmp(
-            &pages.control.authored,
-            control,
-            sizeof(core::state::modulation::ProjectControlDomainState)
-        ) != 0) {
-        return false;
-    }
+    if (!payload.control.matches(pages.control.authored, after)) return false;
     const auto& tracks = after ? payload.afterTracks : payload.beforeTracks;
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
         if ((payload.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
@@ -788,7 +761,7 @@ FLASHMEM bool validateMacroTrackStructureHistoryReplay(
     const SequencerHistoryMacroTrackStructurePayload& payload,
     bool after
 ) {
-    if (!payload.afterCaptured || payload.capturedTrackMask == 0U ||
+    if (!payload.control.ready() || payload.capturedTrackMask == 0U ||
         payload.capturedTrackMask !=
             sequencerHistorySanitizeTrackMask(payload.capturedTrackMask) ||
         (payload.affectedTrackIndex !=
@@ -798,11 +771,7 @@ FLASHMEM bool validateMacroTrackStructureHistoryReplay(
               sequencerHistoryTrackBit(payload.affectedTrackIndex)) == 0U))) {
         return false;
     }
-    const auto* control = after && payload.afterControl
-        ? payload.afterControl.get()
-        : payload.beforeControl.get();
-    return control != nullptr &&
-        liveMacroTrackStructureMatches(pages, payload, !after);
+    return liveMacroTrackStructureMatches(pages, payload, !after);
 }
 
 FLASHMEM void commitMacroTrackStructureHistoryReplay(
@@ -810,21 +779,13 @@ FLASHMEM void commitMacroTrackStructureHistoryReplay(
     const SequencerHistoryMacroTrackStructurePayload& payload,
     bool after
 ) {
-    if (!payload.afterCaptured || payload.capturedTrackMask == 0U ||
+    if (!payload.control.ready() || payload.capturedTrackMask == 0U ||
         payload.capturedTrackMask !=
             sequencerHistorySanitizeTrackMask(payload.capturedTrackMask)) {
         failStructureHistoryInvariant();
     }
-    const auto* control = after && payload.afterControl
-        ? payload.afterControl.get()
-        : payload.beforeControl.get();
-    if (control == nullptr) failStructureHistoryInvariant();
-    if (std::memcmp(
-            &pages.control.authored,
-            control,
-            sizeof(core::state::modulation::ProjectControlDomainState)
-        ) != 0) {
-        pages.control.authored = *control;
+    if (payload.control.changed()) {
+        payload.control.apply(pages.control.authored);
         pages.control.markAuthoredMutation();
     }
     const auto& tracks = after ? payload.afterTracks : payload.beforeTracks;
@@ -840,22 +801,7 @@ FLASHMEM void commitAdmittedMacroTrackStructureHistoryAfter(
     core::state::macro::MacroPagesState& pages,
     const SequencerHistoryMacroTrackStructurePayload& payload
 ) noexcept {
-    if (!payload.afterCaptured || payload.capturedTrackMask == 0U ||
-        payload.capturedTrackMask !=
-            sequencerHistorySanitizeTrackMask(payload.capturedTrackMask) ||
-        payload.beforeControl == nullptr) {
-        failStructureHistoryInvariant();
-    }
-    if (payload.afterControl) {
-        pages.control.authored = *payload.afterControl;
-        pages.control.markAuthoredMutation();
-    }
-    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
-        if ((payload.capturedTrackMask & sequencerHistoryTrackBit(track)) !=
-            0U) {
-            pages.tracks[track] = payload.afterTracks[track];
-        }
-    }
+    commitMacroTrackStructureHistoryReplay(pages, payload, true);
 }
 
 }  // namespace core::state::sequencer

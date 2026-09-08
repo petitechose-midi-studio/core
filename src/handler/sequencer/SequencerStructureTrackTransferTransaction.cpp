@@ -219,8 +219,7 @@ FLASHMEM bool prepareMacroStructureTransfer(
         return false;
     }
     auto* payload = prepared.history->macroStructure.get();
-    if (payload == nullptr || !payload->beforeControl ||
-        !payload->afterControl) {
+    if (payload == nullptr || payload->control.candidate() == nullptr) {
         return false;
     }
     for (uint8_t track = 0U;
@@ -252,24 +251,15 @@ FLASHMEM bool prepareMacroStructureTransfer(
             .wholeTrack = true,
         };
     }
-    *payload->afterControl = *payload->beforeControl;
     if (!core::state::modulation::
             replaceProjectControlStructureInDomain(
-                *payload->afterControl,
+                *payload->control.candidate(),
                 *selection->projectControl,
                 transfer
             )) {
         return false;
     }
-    if (std::memcmp(
-            payload->beforeControl.get(),
-            payload->afterControl.get(),
-            sizeof(*payload->beforeControl)
-        ) == 0) {
-        payload->afterControl.reset();
-    }
-    payload->afterCaptured = true;
-    return true;
+    return payload->control.sealCandidate(pages.control.authored);
 }
 
 FLASHMEM bool copyGraphIntoReservedStorage(GraphPtr& destination, const Graph* source) {

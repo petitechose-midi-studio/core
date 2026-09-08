@@ -418,18 +418,9 @@ bool applyMacroSlotDeletionState(
     const MacroSlotDeletionState& target
 );
 
-uint64_t pageStructureControlHash(
-    const core::state::modulation::ProjectControlDomainState& domain
-);
-
 void syncPageStructureTrack(
     MacroPagesState& pages,
     uint8_t track
-);
-
-void xorPageStructureControl(
-    uint8_t* target,
-    const uint8_t* source
 );
 
 bool applyPageStructureHistory(

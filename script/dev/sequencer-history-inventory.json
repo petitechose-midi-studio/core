@@ -152,9 +152,14 @@
       "MacroPageStructureHistoryOperation",
       "pageStructureBeforeMatches",
       "pageStructureAfterMatches",
-      "compactProjectControlPages"
+      "compactProjectControlPages",
+      "normalizeEqualMacroAfterControl",
+      "pageStructureControlHash",
+      "xorPageStructureControl"
     ],
     "targetedIdentifiers": [
+      {"path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "beforeControl"},
+      {"path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "afterControl"},
       {
         "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
         "identifier": "canRecordFullBank"
@@ -165,6 +170,8 @@
       }
     ],
     "mutationLayers": [
+      {"name": "track-control-before", "path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "beforeControl"},
+      {"name": "track-control-after", "path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "afterControl"},
       {
         "name": "domain-facade",
         "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",

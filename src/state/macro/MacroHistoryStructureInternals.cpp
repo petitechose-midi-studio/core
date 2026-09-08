@@ -110,16 +110,6 @@ FLASHMEM bool applyMacroSlotDeletionState(
     return true;
 }
 
-FLASHMEM uint64_t pageStructureControlHash(
-    const core::state::modulation::ProjectControlDomainState& domain
-) {
-    return hashBytes64(
-        14695981039346656037ULL,
-        &domain,
-        sizeof(domain)
-    );
-}
-
 FLASHMEM void syncPageStructureTrack(
     MacroPagesState& pages,
     uint8_t track
@@ -127,25 +117,6 @@ FLASHMEM void syncPageStructureTrack(
     if (pages.currentActiveTrack() != track) return;
     pages.syncActiveTrackCache();
     pages.updateActiveConfigs();
-}
-
-FLASHMEM void xorPageStructureControl(
-    uint8_t* target,
-    const uint8_t* source
-) {
-    constexpr size_t bytes =
-        sizeof(core::state::modulation::ProjectControlDomainState);
-    static_assert(bytes % sizeof(uint32_t) == 0U);
-    for (size_t index = 0U;
-         index < bytes;
-         index += sizeof(uint32_t)) {
-        // memcpy keeps word-sized access valid without alignment/aliasing casts.
-        uint32_t left, right;
-        std::memcpy(&left, target + index, sizeof(left));
-        std::memcpy(&right, source + index, sizeof(right));
-        left ^= right;
-        std::memcpy(target + index, &left, sizeof(left));
-    }
 }
 
 FLASHMEM bool applyPageStructureHistory(
@@ -156,17 +127,11 @@ FLASHMEM bool applyPageStructureHistory(
     if (payload.track >= TRACK_COUNT ||
         !sameMacroTrackData(pages.tracks[payload.track],
                            after ? payload.beforeTrack : payload.afterTrack) ||
-        pageStructureControlHash(pages.control.authored) !=
-            (after ? payload.beforeControlHash : payload.afterControlHash)) {
+        !payload.control.matches(pages.control.authored, !after)) {
         return false;
     }
-    if (payload.controlDelta) {
-        // Unsigned-byte access is defined for this trivially copyable domain,
-        // including arena tails. No allocation or structural reconstruction.
-        xorPageStructureControl(
-            reinterpret_cast<uint8_t*>(&pages.control.authored),
-            payload.controlDelta.get()
-        );
+    if (payload.control.changed()) {
+        payload.control.apply(pages.control.authored);
         pages.control.markAuthoredMutation();
     }
     pages.tracks[payload.track] = after ? payload.afterTrack : payload.beforeTrack;

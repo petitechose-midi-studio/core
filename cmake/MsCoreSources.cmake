@@ -85,6 +85,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroConversion.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroCurveOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroOpsInternal.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectModulationAutomationOps.cpp"

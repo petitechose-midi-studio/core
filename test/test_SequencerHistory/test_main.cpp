@@ -194,19 +194,16 @@ void test_retained_span_accounting_matches_owner_topology() {
         SequencerHistoryMacroTrackStructurePayload
     >();
     assert(structure->macroStructure);
-    structure->macroStructure->beforeControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    structure->macroStructure->afterControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    assert(structure->macroStructure->beforeControl);
-    assert(structure->macroStructure->afterControl);
+    auto controlBefore = std::make_unique<
+        core::state::modulation::ProjectControlDomainState>();
+    auto& control = structure->macroStructure->control;
+    assert(control.prepare(*controlBefore));
+    ++control.candidate()->modulation.nextSourceId;
+    assert(control.sealCandidate(*controlBefore));
     structure->macroStructure->capturedTrackMask = 0xFFFFU;
-    structure->macroStructure->afterCaptured = true;
     assert(history.canRecordStructure(*structure));
     assert(tx::commitAdmittedStructure(history, std::move(structure)));
-    assert(history.retainedSpans() == 68U);
+    assert(history.retainedSpans() == 67U);
 
     history.clear();
     auto scale = core::app::makeExtmemUnique<SequencerHistoryProjectScaleChange>();

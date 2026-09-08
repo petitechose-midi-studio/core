@@ -249,8 +249,7 @@ captureMaximumSelectionProof(core::state::CoreState& state) {
     auto* macro = proof->macroStructure.get();
     assert(macro != nullptr);
     macro->afterTracks = macro->beforeTracks;
-    macro->afterControl.reset();
-    macro->afterCaptured = true;
+    assert(macro->control.sealCandidate(state.pages.control.authored));
     return proof;
 }
 
@@ -1343,7 +1342,7 @@ void test_track_paste_rebases_lane_lifecycle_and_clears_destination_hold() {
     std::cout << "[PASS] frozen Track paste preserves old Lane until one activation boundary\n";
 }
 
-void test_maximum_selection_transfer_retains_exact_99_allocation_contract() {
+void test_maximum_selection_transfer_retains_exact_98_allocation_contract() {
     using namespace test_support::sequencer_transaction;
     test_support::CoreStorages storages;
     core::state::CoreState state(storages.settings);
@@ -1372,7 +1371,7 @@ void test_maximum_selection_transfer_retains_exact_99_allocation_contract() {
     const uint32_t modifiedBefore = state.project.metadata.modifiedCounter;
 
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(100U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(99U);
         const auto result = executeMaximumSelectionTransfer(state);
         assert(result.status ==
                core::handler::SequencerTrackTransferStatus::APPLIED);
@@ -1380,7 +1379,7 @@ void test_maximum_selection_transfer_retains_exact_99_allocation_contract() {
         assert(result.plan.targetMask == 0xFFFEU);
         assert(result.chronology.status == core::state::sequencer::
             SequencerTrackStructureChronologyStatus::Opened);
-        assertMaxPlusOneStillArmed(99U);
+        assertMaxPlusOneStillArmed(98U);
     }
     assertFailureInjectionReset();
     test_support::drainNotifications();
@@ -1404,13 +1403,13 @@ void test_maximum_selection_transfer_retains_exact_99_allocation_contract() {
     assert(state.currentSharedActiveTrack() == 1U);
     assert(state.sequencer.pattern.note[0] == 40U);
     assert(state.pages.tracks[1U].pages[0U].cc[0U] == 70U);
-    std::cout << "[PASS] maximum selection transfer retains 99 allocations and armed 100\n";
+    std::cout << "[PASS] maximum selection transfer retains 98 allocations and armed 99\n";
 }
 
 void test_maximum_selection_transfer_fails_atomically_at_every_ordinal() {
     using namespace test_support::sequencer_transaction;
     namespace seq = core::state::sequencer;
-    for (std::size_t ordinal = 1U; ordinal <= 99U; ++ordinal) {
+    for (std::size_t ordinal = 1U; ordinal <= 98U; ++ordinal) {
         test_support::CoreStorages storages;
         core::state::CoreState state(storages.settings);
         seedMaximumSelectionTransfer(state);
@@ -1482,7 +1481,7 @@ void test_maximum_selection_transfer_fails_atomically_at_every_ordinal() {
         assertFailureInjectionReset();
     }
     test_support::drainNotifications();
-    std::cout << "[PASS] maximum selection transfer is exact at failures 1..99\n";
+    std::cout << "[PASS] maximum selection transfer is exact at failures 1..98\n";
 }
 
 }  // namespace
@@ -1507,7 +1506,7 @@ int main() {
     test_instrument_paste_over_drum_restores_drum_on_undo();
     test_typed_drum_creation_is_one_atomic_structure_action();
     test_track_paste_rebases_lane_lifecycle_and_clears_destination_hold();
-    test_maximum_selection_transfer_retains_exact_99_allocation_contract();
+    test_maximum_selection_transfer_retains_exact_98_allocation_contract();
     test_maximum_selection_transfer_fails_atomically_at_every_ordinal();
     std::cout << "All SequencerStructureTrackTransferTransaction tests passed\n";
     return 0;

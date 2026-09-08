@@ -2955,7 +2955,7 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     assert(equalPayload->affectedTrackIndex == 2U);
     pages.tracks[2U].activePage = 1U;
     assert(seq::captureMacroTrackStructureHistoryAfter(pages, *equalControl));
-    assert(!equalPayload->afterControl);
+    assert(!equalPayload->control.changed());
 
     const uint32_t equalRevision = pages.control.authoredRevision;
     const uint8_t afterPage = pages.tracks[2U].activePage;
@@ -2992,7 +2992,7 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     assert(distinctPayload != nullptr);
     ++pages.control.authored.curves.nextCurveId;
     assert(seq::captureMacroTrackStructureHistoryAfter(pages, *distinctControl));
-    assert(distinctPayload->afterControl);
+    assert(distinctPayload->control.changed());
     const uint32_t distinctRevision = pages.control.authoredRevision;
     assert(seq::validateMacroTrackStructureHistoryReplay(
         pages,
