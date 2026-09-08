@@ -7,6 +7,8 @@
 #include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
+#include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
+#include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankState.hpp"
 
@@ -512,9 +514,100 @@ void test_quick_controls_preview_round_trips_through_inactive_runtime_buffers() 
         << "[PASS] Quick Controls flat/CC preview round-trips through immutable buffers\n";
 }
 
+
+void test_resident_and_document_publications_converge() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerState editor;
+    seq::SequencerTrackBankState tracks;
+    core::state::project::ProjectNavigationState navigation;
+    core::sequencer::SequencerRuntimeSnapshotBank resident{editor, tracks, navigation};
+    core::sequencer::SequencerRuntimeSnapshotBank documents{editor, tracks, navigation};
+    std::array<seq::SequencerClipDocument, 16> clips{};
+    seq::SequencerClipRuntimeSources sources{};
+    tracks.syncSharedTrackState(0xFFFF, 0);
+    for (uint8_t track = 0; track < clips.size(); ++track) {
+        auto& pattern = seq::mutableCanonicalTrackPattern(tracks, editor, track);
+        auto& clip = seq::mutableCanonicalTrackClip(tracks, editor, track);
+        assert(seq::resizeClipPatternContent(pattern, clip, 32));
+        pattern.note[0] = 40 + track;
+        pattern.note.back() = 80 + track;
+        pattern.velocity[track] = 90;
+        pattern.gate[track] = 125;
+        pattern.nudge[track] = -12;
+        pattern.probability[track] = 73;
+        pattern.bumpStepDataRevision();
+        pattern.swingOffsetPercent.set(track % 2 ? -50 : 50);
+        pattern.scalePolicy = track % 2 ? seq::SequencerPatternScalePolicy::OVERRIDE
+                                       : seq::SequencerPatternScalePolicy::INHERIT_PROJECT;
+        pattern.scaleOverride = {9, StepSequencerScaleType::NaturalMinor,
+            StepSequencerScaleConstraintMode::ConstrainDown};
+        pattern.pitchEditMode = track % 3 ? seq::SequencerPitchEditMode::FOLLOW_SCALE
+                                         : seq::SequencerPitchEditMode::CHROMATIC;
+        seq::captureSnapshot(pattern, clips[track].pattern);
+        seq::captureSnapshot(clip, clips[track].clip);
+        // Document effective values are stale derived data, not runtime authority.
+        clips[track].pattern.effectiveSwingPercent = 255;
+        clips[track].pattern.effectiveScaleSettings.root = 255;
+        sources[track] = {{track, 1}, 1, &clips[track], true};
+    }
+    for (uint8_t round = 0; round < 12; ++round) {
+        navigation.transportSwingPercent = round % 2 ? 70 : 10;
+        tracks.setProjectScaleSettings({round, StepSequencerScaleType::Major,
+            StepSequencerScaleConstraintMode::ConstrainNearest});
+        // Project scale mutation bumps inherited resident revisions. Give the
+        // equivalent documents those revisions before comparing full signatures.
+        for (uint8_t track = 0; track < clips.size(); ++track) {
+            clips[track].pattern.patternScaleRevision =
+                seq::canonicalTrackPattern(tracks, editor, track).patternScaleRevision.get();
+        }
+        // Update both alternating buffers, then exercise both cache hits.
+        for (unsigned replay = 0; replay < 4; ++replay) {
+            const auto oldActive = documents.activeIndex();
+            const auto oldNote = documents.activeSnapshot().tracks[0].note[0];
+            const auto a = resident.refresh();
+            const auto b = documents.refresh(sources);
+            assert(resident.lastRefreshSucceeded() && documents.lastRefreshSucceeded());
+            assert(documents.activeIndex() == oldActive);
+            assert(documents.activeSnapshot().tracks[0].note[0] == oldNote);
+            for (uint8_t track = 0; track < clips.size(); ++track) {
+                const auto& x = resident.snapshot(a).tracks[track];
+                const auto& y = documents.snapshot(b).tracks[track];
+                assert(core::sequencer::captureRuntimeStateSignature(x, resident.snapshot(a).clips[track])
+                    .matches(core::sequencer::captureRuntimeStateSignature(y, documents.snapshot(b).clips[track])));
+                assert(x.note == y.note && x.velocity == y.velocity && x.gate == y.gate);
+                assert(x.nudge == y.nudge && x.probability == y.probability);
+                assert(x.scalePolicy == y.scalePolicy && sameScale(x.scaleOverride, y.scaleOverride));
+                assert(x.swingOffsetPercent == y.swingOffsetPercent && x.pitchEditMode == y.pitchEditMode);
+            }
+            resident.commit(a);
+            documents.commit(b);
+        }
+    }
+    // Equal authored revisions still refresh when the Clip generation changes.
+    clips[0].pattern.note[0] = 99;
+    auto next = documents.refresh(sources);
+    documents.commit(next);
+    assert(documents.activeSnapshot().tracks[0].note[0] == 40);
+    ++sources[0].generation;
+    for (unsigned replay = 0; replay < 2; ++replay) {
+        next = documents.refresh(sources);
+        documents.commit(next);
+        assert(documents.activeSnapshot().tracks[0].note[0] == 99);
+    }
+    // Returning to the resident Clip must replace both cached document payloads.
+    sources[0] = {{0, 0}, sources[0].generation + 1, nullptr, true};
+    for (unsigned replay = 0; replay < 2; ++replay) {
+        next = documents.refresh(sources);
+        documents.commit(next);
+        assert(documents.activeSnapshot().tracks[0].note[0] == 40);
+    }
+    std::cout << "[PASS] resident/document parity: 16 tracks, project scale/swing, cache and generations\n";
+}
+
 }  // namespace
 
 int main() {
+    test_resident_and_document_publications_converge();
     test_refresh_captures_active_editor_state();
     test_refresh_preserves_active_snapshot_until_commit();
     test_refresh_keeps_alternating_buffers_current_without_full_copy();

@@ -117,66 +117,40 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
         const auto& clipSource = sources[i];
-        SequencerRuntimeStateSignature signature{};
-        if (clipSource.document != nullptr) {
-            auto prepared = clipSource.document->pattern;
-            prepared.effectiveScaleSettings =
+        const auto* document = clipSource.document;
+        const auto& source = i == activeTrack ? activePattern : track_bank_.track(i);
+        const auto& sourceClip = i == activeTrack ? activeClip : track_bank_.clip(i);
+        auto signature = document != nullptr
+            ? captureRuntimeStateSignature(document->pattern, document->clip)
+            : captureRuntimeStateSignature(source, sourceClip,
+                  runtimeSnapshot.projectScaleSettings, projectTiming);
+        if (document != nullptr) {
+            signature.effectiveScaleSettings =
                 core::state::sequencer::resolveEffectiveScaleSettings(
                     runtimeSnapshot.projectScaleSettings,
-                    prepared.scalePolicy,
-                    prepared.scaleOverride
-                );
-            prepared.effectiveSwingPercent =
-                core::state::sequencer::SequencerPatternState::
-                    clampEffectiveSwingPercent(
-                        static_cast<int16_t>(runtimeSnapshot.projectSwingPercent) +
-                        prepared.swingOffsetPercent
-                    );
-            signature = captureRuntimeStateSignature(
-                prepared,
-                clipSource.document->clip
-            );
-            if (!forceRefresh && clipSourceSignatures[i].matches(clipSource) &&
-                writeSignatures[i].matches(signature)) {
-                continue;
-            }
-            runtimeSnapshot.tracks[i] = prepared;
-            runtimeSnapshot.clips[i] = clipSource.document->clip;
-        } else {
-            const auto& source = i == activeTrack
-                ? activePattern
-                : track_bank_.track(i);
-            const auto& sourceClip = i == activeTrack
-                ? activeClip
-                : track_bank_.clip(i);
-            signature = captureRuntimeStateSignature(
-                source,
-                sourceClip,
-                runtimeSnapshot.projectScaleSettings,
-                projectTiming
-            );
-            if (!forceRefresh && clipSourceSignatures[i].matches(clipSource) &&
-                writeSignatures[i].matches(signature)) {
-                continue;
-            }
-            core::state::sequencer::captureSnapshot(
-                source,
-                runtimeSnapshot.tracks[i]
-            );
-            core::state::sequencer::captureSnapshot(
-                sourceClip,
-                runtimeSnapshot.clips[i]
-            );
-            runtimeSnapshot.tracks[i].effectiveScaleSettings =
-                core::state::sequencer::resolveEffectiveScaleSettings(
-                    runtimeSnapshot.projectScaleSettings,
-                    runtimeSnapshot.tracks[i].scalePolicy,
-                    runtimeSnapshot.tracks[i].scaleOverride
-                );
-            runtimeSnapshot.tracks[i].effectiveSwingPercent =
-                source.effectiveSwingPercent(
-                    runtimeSnapshot.projectSwingPercent);
+                    document->pattern.scalePolicy,
+                    document->pattern.scaleOverride);
+            signature.effectiveSwingPercent =
+                core::state::sequencer::SequencerPatternState::clampEffectiveSwingPercent(
+                    static_cast<int16_t>(runtimeSnapshot.projectSwingPercent) +
+                    document->pattern.swingOffsetPercent);
         }
+        if (!forceRefresh && clipSourceSignatures[i].matches(clipSource) &&
+            writeSignatures[i].matches(signature)) {
+            continue;
+        }
+
+        // Both residences publish the same runtime representation. Inspect only
+        // the signature on a cache hit; copy musical arrays only on a miss.
+        if (document != nullptr) {
+            runtimeSnapshot.tracks[i] = document->pattern;
+            runtimeSnapshot.clips[i] = document->clip;
+        } else {
+            core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
+            core::state::sequencer::captureSnapshot(sourceClip, runtimeSnapshot.clips[i]);
+        }
+        runtimeSnapshot.tracks[i].effectiveScaleSettings = signature.effectiveScaleSettings;
+        runtimeSnapshot.tracks[i].effectiveSwingPercent = signature.effectiveSwingPercent;
         clipSourceSignatures[i] = {
             clipSource.address.slot,
             clipSource.generation,

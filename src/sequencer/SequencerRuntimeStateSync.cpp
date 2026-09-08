@@ -105,19 +105,6 @@ FLASHMEM uint8_t projectPlaybackPhaseQ8(
     ));
 }
 
-FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
-    const core::state::sequencer::SequencerState& source,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
-    ProjectTimingContext projectTiming
-) {
-    return captureRuntimeStateSignature(
-        source.pattern,
-        source.clip,
-        projectScaleSettings,
-        projectTiming
-    );
-}
-
 // Mutable authoring-state inspection is control-plane work. Keep the snapshot
 // overload below in ITCM because playback uses that one from the timer lane.
 FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(

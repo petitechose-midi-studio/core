@@ -83,12 +83,6 @@ struct SequencerRuntimeTelemetrySnapshot {
 };
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
-    const core::state::sequencer::SequencerState& source,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
-    ProjectTimingContext projectTiming
-);
-
-SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternState& source,
     const core::state::sequencer::SequencerClipState& clip,
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
