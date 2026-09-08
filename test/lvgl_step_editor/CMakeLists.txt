@@ -63,6 +63,36 @@ foreach(target step_editor track_navigation_strip step_grid_widgets main_view_fr
     endif()
 endforeach()
 enable_testing()
+set(MS_CORE_NATIVE_BUILD "" CACHE PATH "Built Core native libraries for the Control workspace regression")
+if(MS_CORE_NATIVE_BUILD)
+    add_executable(project_modulator_workspace project_modulator_workspace.cpp
+        ../../src/ui/project/ProjectModulatorUiModel.cpp
+        ../../src/ui/modulation/ModulatorSparklineModel.cpp
+        ../../../ui/src/ms/ui/widget/CurvePreviewWidget.cpp
+        ../../../ui/src/ms/ui/widget/TextOverflow.cpp
+        "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/PausableTimer.cpp"
+        "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp"
+        "${OC_ROOT}/framework/src/oc/time/Time.cpp")
+    target_compile_features(project_modulator_workspace PRIVATE cxx_std_20)
+    target_compile_definitions(project_modulator_workspace PRIVATE MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION=1)
+    if(MSVC)
+        target_compile_options(project_modulator_workspace PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(project_modulator_workspace PRIVATE -UNDEBUG)
+    endif()
+    target_include_directories(project_modulator_workspace PRIVATE ../../src ../../../ui/src ../../../device-support/src
+        "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src" "${OC_ROOT}/note/src"
+        "${OC_ROOT}/ui-lvgl-components/include")
+    find_library(MS_CORE_NATIVE_LIBRARY NAMES midi_studio_core_native
+        PATHS "${MS_CORE_NATIVE_BUILD}" NO_DEFAULT_PATH REQUIRED)
+    find_library(OC_NOTE_NATIVE_LIBRARY NAMES oc_note_native
+        PATHS "${MS_CORE_NATIVE_BUILD}/open-control-note" NO_DEFAULT_PATH REQUIRED)
+    find_library(OC_FRAMEWORK_NATIVE_LIBRARY NAMES oc_framework_native
+        PATHS "${MS_CORE_NATIVE_BUILD}/open-control-framework" NO_DEFAULT_PATH REQUIRED)
+    target_link_libraries(project_modulator_workspace PRIVATE lvgl::lvgl
+        "${MS_CORE_NATIVE_LIBRARY}" "${OC_NOTE_NATIVE_LIBRARY}" "${OC_FRAMEWORK_NATIVE_LIBRARY}")
+    add_test(NAME project_modulator_workspace COMMAND project_modulator_workspace)
+endif()
 add_test(NAME step_editor COMMAND step_editor)
 add_test(NAME track_navigation_strip COMMAND track_navigation_strip)
 add_test(NAME step_grid_widgets COMMAND step_grid_widgets)

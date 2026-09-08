@@ -161,7 +161,9 @@ FLASHMEM bool applyModulationAssignmentsToGraph(
     const MacroModulationAssignmentSnapshot& target
 ) {
     using namespace core::state::modulation;
-    if (target.assignmentCount > target.assignments.size() ||
+    if (graph.outputBindingCount > graph.outputBindings.size() ||
+        graph.destinationScaleCount > graph.destinationScales.size() ||
+        target.assignmentCount > target.assignments.size() ||
         target.globalBindingCount > graph.outputBindings.size() ||
         (target.assignmentCount == 0U &&
          target.destinationScaleQ15 !=

@@ -19,3 +19,10 @@ resized parent, chord layout, first frame versus full redraw. `--reference`
 only skips the hidden-layout assertion to print the old renderer's framebuffer
 hashes for comparison; it is not the acceptance-test mode. Real font/icon and
 navigation coverage remains in `ms ux run core` workflows.
+
+The optional `project_modulator_workspace` regression links the built Core,
+Note and Framework native libraries. Set `-DMS_CORE_NATIVE_BUILD=/absolute/path/to/core-native-build`
+to enable it. It runs the real curve widget and its LVGL marker timer across
+Control owner exchanges, poisons the retired source before freeing it, then
+checks marker identity after resize and hide/reopen. Only the widget call is
+observed; the production workspace implementation and marker callback run unchanged.

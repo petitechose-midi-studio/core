@@ -817,6 +817,9 @@
     "platformioPath": "platformio.ini",
     "platformioEnvironment": "native",
     "nativeTarget": "midi_studio_core_native",
+    "additionalTestBuildUses": {
+      "test/lvgl_step_editor/CMakeLists.txt": 1
+    },
     "requiredCmakeGuards": [
       "MS_CORE_BUILD_TESTS",
       "BUILD_TESTING"

@@ -2583,6 +2583,7 @@ def seam_errors(root: Path, manifest) -> list[str]:
         seam["cmakePath"]: 1,
         seam["platformioPath"]: 1,
     })
+    expected_build_uses.update(seam.get("additionalTestBuildUses", {}))
     errors += counter_errors("build macro use", expected_build_uses, build_uses)
 
     cmake = (root / seam["cmakePath"]).read_text(encoding="utf-8")
@@ -3401,6 +3402,11 @@ def seam_self_test(manifest) -> bool:
         allocator_path.write_text(allocator, encoding="utf-8")
         (root / seam["cmakePath"]).write_text(cmake, encoding="utf-8")
         (root / seam["platformioPath"]).write_text(platformio, encoding="utf-8")
+        for rel, count in seam.get("additionalTestBuildUses", {}).items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"target_compile_definitions(test PRIVATE {macro}=1)\n" * count,
+                            encoding="utf-8")
         for rel, expected_count in seam["allowedTestUses"].items():
             path = root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
