@@ -965,31 +965,37 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(uint32_t 
 
     const bool trackContext =
         navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK;
-    const auto live = trackContext ? buildTrackPastePlan() : core::state::ClipboardTransferPlan{};
-    if (!trackContext || !live.canCommit()) {
-        const bool changed =
-            paste.plan.hasEntries() || paste.detailVisible || paste.feedback.active;
-        paste.plan = {};
-        paste.clipboardKind = core::state::StructureClipboardKind::NONE;
-        paste.clipboardRevision = 0;
-        paste.detailVisible = false;
-        contextual::clearOperationFeedback(paste.feedback);
-        if (changed) paste.bump();
-        return;
+    if (trackContext) {
+        const auto live = buildTrackPastePlan();
+        if (live.canCommit()) {
+            const bool planChanged =
+                !core::state::sameSequencerTrackClipboardTransferPlan(paste.plan, live);
+            const bool feedbackChanged =
+                paste.feedback.status != contextual::OperationFeedbackStatus::PREVIEW;
+            if (!planChanged && !feedbackChanged) return;
+            paste.plan = live;
+            paste.clipboardKind = structure_clipboard_.kind.get();
+            paste.clipboardRevision = structure_clipboard_.revision.get();
+            setTrackPasteFeedback(contextual::OperationFeedbackStatus::PREVIEW,
+                                  core::state::sequencer::contextualReasonForTrackTransfer(live.reason),
+                                  contextual::OperationFeedbackExpiryPolicy::MANUAL, nowMs);
+            paste.bump();
+            return;
+        }
     }
 
-    const bool planChanged =
-        !core::state::sameSequencerTrackClipboardTransferPlan(paste.plan, live);
-    const bool feedbackChanged =
-        paste.feedback.status != contextual::OperationFeedbackStatus::PREVIEW;
-    if (!planChanged && !feedbackChanged) return;
-    paste.plan = live;
-    paste.clipboardKind = structure_clipboard_.kind.get();
-    paste.clipboardRevision = structure_clipboard_.revision.get();
-    setTrackPasteFeedback(contextual::OperationFeedbackStatus::PREVIEW,
-                          core::state::sequencer::contextualReasonForTrackTransfer(live.reason),
-                          contextual::OperationFeedbackExpiryPolicy::MANUAL, nowMs);
-    paste.bump();
+    const bool changed =
+        paste.plan.hasEntries() || paste.detailVisible || paste.feedback.active;
+    // A captured plan keeps its clipboard identity until cleared, including
+    // failed commits with no entries. Do not rewrite an already idle preview.
+    if (!changed && paste.clipboardKind == core::state::StructureClipboardKind::NONE &&
+        paste.clipboardRevision == 0U) return;
+    paste.plan = {};
+    paste.clipboardKind = core::state::StructureClipboardKind::NONE;
+    paste.clipboardRevision = 0;
+    paste.detailVisible = false;
+    contextual::clearOperationFeedback(paste.feedback);
+    if (changed) paste.bump();
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::updateTrackPasteActivation(uint32_t nowMs) {
@@ -1082,12 +1088,8 @@ FLASHMEM void SequencerStructureEditWorkflow::update(uint32_t nowMs) {
 
     if (contextual::updateOperationFeedback(paste.feedback, nowMs)) { paste.bump(); }
 
-    if (!paste.buttonOwned) {
-        refreshTrackPastePreview(nowMs);
-        return;
-    }
-
     refreshTrackPastePreview(nowMs);
+    if (!paste.buttonOwned) return;
     if (paste.guard.phase == contextual::GuardedActionPhase::PRESSED &&
         (nowMs - paste.guard.pressedAtMs) >= Config::Timing::LATCH_THRESHOLD_MS) {
         // Guard progress is anchored to the physical press so COMMITTED occurs
