@@ -28,6 +28,8 @@ private:
     uint64_t before_hash_ = 0U;
     uint64_t after_hash_ = 0U;
     bool ready_ = false;
+    // Unchanged trailing words stay outside the sealed XOR prefix.
+    uint16_t word_count_ = 0U;
 };
 
 }  // namespace core::state::modulation
