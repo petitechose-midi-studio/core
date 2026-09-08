@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <oc/state/StaticSignalWatcher.hpp>
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/CoreState.hpp"
@@ -12,6 +13,7 @@
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/NotificationTestUtils.hpp"
 
 #if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
 #error "This test requires native EXTMEM failure injection"
@@ -300,6 +302,113 @@ void test_resident_switch_preserves_both_clip_documents() {
     assert(grid.inactiveDocument({0U, 1U})->pattern.note[0] == 72U);
     assert(grid.inactiveRetainedBytes() == retainedBeforeSwitch);
     std::cout << "[PASS] resident switching preserves both Clips without allocation\n";
+}
+
+void test_document_installation_publishes_final_owners_and_editor_state() {
+    // Exercise both consumers of document installation, on both canonical
+    // locations and with each cold-payload policy. Two installs precede one
+    // notification drain; the observer must resolve the final document.
+    for (uint8_t track : {0U, 1U}) {
+        for (bool drum : {false, true}) {
+            for (bool promote : {false, true}) {
+                seq::SequencerTrackBankState bank;
+                seq::SequencerState active;
+                seq::SequencerClipGridState grid;
+                bank.syncSharedTrackState(3U, 0U);
+                grid.synchronizeEnabledTracks(3U);
+                if (drum) {
+                    assert(bank.setTrackKind(track, seq::SequencerTrackKind::DRUM, true));
+                }
+                auto& pattern = seq::mutableCanonicalTrackPattern(bank, active, track);
+                auto& clip = seq::mutableCanonicalTrackClip(bank, active, track);
+                seed(pattern, clip, 60U);
+                assert(seq::ensureGraphRoot(pattern));
+                const auto* originalGraph = pattern.graph.get();
+                if (promote) assert(grid.clearResident({track, 0U}));
+
+                seq::SequencerPatternState source;
+                seq::SequencerClipState sourceClip;
+                seed(source, sourceClip, 72U);
+                assert(seq::ensureGraphRoot(source));
+                if (!drum) {
+                    source.ccLanes = core::app::makeExtmemUnique<seq::SequencerCcLaneBank>();
+                    assert(source.ccLanes);
+                }
+                for (uint8_t slot : {1U, 2U}) {
+                    source.setStepNoteAt(0U, static_cast<uint8_t>(72U + slot));
+                    source.ccLaneRevision.set(40U + slot);
+                    seq::SequencerClipDocumentPtr document;
+                    assert(seq::captureSequencerClipDocument(
+                        source, sourceClip, bank.trackKind(track),
+                        drum ? &bank.drumTrack(track) : nullptr, document));
+                    if (drum) document->drum->kit.lanes[0].midiNote = 42U + slot;
+                    assert(grid.installInactiveDocument({track, slot}, std::move(document)));
+                }
+                const auto* finalGraph = grid.inactiveDocument({track, 2U})->graph.get();
+                const auto* finalCc = grid.inactiveDocument({track, 2U})->ccLanes.get();
+                active.focusedStep.set(63U);
+                active.page.set(7U);
+                active.stepEdit.visible.set(true);
+                active.stepEdit.stepIndex.set(5U);
+                const auto clipRevision = active.clipRevision.get();
+                const auto contentRevision = active.contentView.revision.get();
+                const auto drumRevision = bank.drumTrackRevision(track);
+                test_support::drainNotifications();
+
+                struct Observer {
+                    seq::SequencerTrackBankState& bank;
+                    seq::SequencerState& active;
+                    seq::SequencerClipGridState& grid;
+                    uint8_t track;
+                    const oc::note::sequencer::StepSequencerGraph* graph;
+                    const seq::SequencerCcLaneBank* cc;
+                    unsigned calls = 0U;
+                    void render() {
+                        ++calls;
+                        const auto& current = seq::canonicalTrackPattern(bank, active, track);
+                        assert(grid.residentSlot(track) == 2U);
+                        assert(current.note[0] == 74U);
+                        assert(current.graph.get() == graph);
+                        assert(current.ccLanes.get() == cc);
+                        assert(current.ccLaneRevision.get() == 42U);
+                        if (bank.isDrumTrack(track)) {
+                            assert(bank.drumTrack(track).kit.lanes[0].midiNote == 44U);
+                        }
+                    }
+                } observer{bank, active, grid, track, finalGraph, finalCc};
+                oc::state::StaticWatchGroup<5> watcher;
+                watcher.bind<&Observer::render>(observer, 0U);
+                assert(watcher.watchAll(pattern.stepDataRevision, pattern.graphRevision,
+                    pattern.ccLaneRevision, grid.revisionSignal(), bank.drumRevisionSignal()));
+                pattern.setStepNoteAt(0U, 61U); // Pending work from the outgoing source.
+                {
+                    core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                    assert(seq::switchResidentSequencerClip(grid, bank, active, {track, 1U}));
+                    assert(seq::switchResidentSequencerClip(grid, bank, active, {track, 2U}));
+                    assert(core::app::testing::extmemAllocationAttempt == 0U);
+                }
+                assert(observer.calls == 0U);
+                test_support::drainNotifications();
+                assert(observer.calls == 1U);
+                assert(active.focusedStep.get() == (track == 0U ? 7U : 63U));
+                assert(active.page.get() == (track == 0U ? 0U : 7U));
+                assert(active.stepEdit.visible.get());
+                assert(active.stepEdit.stepIndex.get() == (track == 0U ? 0U : 5U));
+                assert(active.clipRevision.get() == clipRevision + (track == 0U ? 2U : 0U));
+                assert(active.contentView.revision.get() == contentRevision + (track == 0U ? 4U : 0U));
+                assert(bank.drumTrackRevision(track) == drumRevision + (drum ? 2U : 0U));
+                const auto* previous = grid.inactiveDocument({track, 1U});
+                assert(previous && previous->pattern.note[0] == 73U);
+                if (drum) assert(previous->drum->kit.lanes[0].midiNote == 43U);
+                if (!promote) {
+                    const auto* original = grid.inactiveDocument({track, 0U});
+                    assert(original && original->pattern.note[0] == 61U);
+                    assert(original->graph.get() == originalGraph);
+                }
+            }
+        }
+    }
+    std::cout << "[PASS] document installs preserve owners and publish one final coherent view\n";
 }
 
 void test_history_targets_the_authored_clip_after_resident_switch() {
@@ -628,6 +737,7 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
 }  // namespace
 
 int main() {
+    test_document_installation_publishes_final_owners_and_editor_state();
     test_sparse_grid_capacity_and_snapshot_are_exact();
     test_capture_and_snapshot_fail_without_mutating_destination();
     test_grid_rejects_malformed_documents();

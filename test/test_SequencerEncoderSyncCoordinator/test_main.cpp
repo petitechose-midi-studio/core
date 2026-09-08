@@ -474,10 +474,44 @@ void expects_history_replay_to_publish_only_the_canonical_owner() {
     std::cout << "[PASS] canonical history replay, OOM, deferred encoder and track navigation\n";
 }
 
+void expects_clip_installation_to_resolve_the_final_encoder_target() {
+    namespace seq = core::state::sequencer;
+    SequencerEncoderSyncHarness h;
+    auto& editor = h.state.sequencer;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    editor.patternQuickControls.focusedItem.set(seq::PatternQuickControlItem::LENGTH);
+    assert(h.state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
+    auto* document = h.state.sequencerClips.inactiveDocument({0U, 1U});
+    assert(document);
+    document->pattern.length = 16U;
+    assert(h.state.sequencerClips.markInactiveDocumentMutated({0U, 1U}));
+    test_support::drainNotifications();
+    const float previousPosition = h.encoderHw.getPosition(OPT_ENCODER_ID);
+
+    // Leave an outgoing length notification pending across installation.
+    assert(editor.pattern.setContentLength(12U));
+    assert(seq::switchResidentSequencerClip(
+        h.state.sequencerClips, h.state.sequencerTracks, editor, {0U, 1U}));
+    assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID), previousPosition));
+    test_support::drainNotifications(); // Deliberately no syncNow().
+    assert(editor.pattern.length.get() == 16U);
+    assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
+        input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::LENGTH)));
+    assert(!almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID), previousPosition));
+    assert(seq::switchResidentSequencerClip(
+        h.state.sequencerClips, h.state.sequencerTracks, editor, {0U, 0U}));
+    test_support::drainNotifications();
+    assert(editor.pattern.length.get() == 12U);
+    assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
+        input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::LENGTH)));
+    std::cout << "[PASS] deferred encoder resolves the installed Clip in both directions\n";
+}
+
 }  // namespace
 
 int main() {
     std::cout << std::unitbuf;
+    expects_clip_installation_to_resolve_the_final_encoder_target();
     expects_history_replay_to_publish_only_the_canonical_owner();
     expects_pattern_focus_syncs_opt_to_pattern_dimension();
     expects_step_focus_syncs_opt_to_focused_step_property();

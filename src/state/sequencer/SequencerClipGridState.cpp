@@ -115,7 +115,8 @@ FLASHMEM bool sameGraph(const Graph* lhs, const Graph* rhs) noexcept {
     return std::memcmp(lhs, rhs, sizeof(Graph)) == 0;
 }
 
-FLASHMEM void installDocument(
+// Drum ownership is settled separately by the promoting or exchanging caller.
+FLASHMEM void installDocumentPattern(
     SequencerTrackBankState& bank,
     SequencerState& active,
     uint8_t track,
@@ -142,12 +143,6 @@ FLASHMEM void installDocument(
             std::move(document.ccLanes)
         );
         bank.track(track).ccLaneRevision.set(document.ccLaneRevision);
-    }
-
-    if (document.trackKind == SequencerTrackKind::DRUM) {
-        bank.restoreDrumTrack(track, document.trackKind, *document.drum);
-    } else {
-        bank.setTrackKind(track, SequencerTrackKind::INSTRUMENT);
     }
 }
 
@@ -188,31 +183,7 @@ FLASHMEM bool exchangeCanonicalTrackDocument(
     const uint32_t outgoingCcLaneRevision = pattern.ccLaneRevision.get();
     auto outgoingGraph = std::move(pattern.graph);
     auto outgoingCcLanes = std::move(pattern.ccLanes);
-    auto incomingGraph = std::move(document.graph);
-    auto incomingCcLanes = std::move(document.ccLanes);
-
-    const bool editor = bank.activeTrackIndex() == track;
-    if (editor) {
-        installTrackContentSnapshotToEditorWithOwnedPayload(
-            active,
-            document.pattern,
-            document.clip,
-            std::move(incomingGraph),
-            std::move(incomingCcLanes)
-        );
-        active.pattern.ccLaneRevision.set(document.ccLaneRevision);
-        resetTransientTrackState(active);
-    } else {
-        installTrackContentSnapshotWithOwnedPayload(
-            bank.track(track),
-            bank.clip(track),
-            document.pattern,
-            document.clip,
-            std::move(incomingGraph),
-            std::move(incomingCcLanes)
-        );
-        bank.track(track).ccLaneRevision.set(document.ccLaneRevision);
-    }
+    installDocumentPattern(bank, active, track, document);
 
     document.pattern = outgoingPattern;
     document.clip = outgoingClip;
@@ -1668,7 +1639,12 @@ FLASHMEM bool switchResidentSequencerClip(
     if (grid.residentSlot(target.track) == SequencerClipGridState::INVALID_SLOT) {
         auto promoted = grid.promoteInactiveDocument(target);
         if (!promoted) return false;
-        installDocument(bank, active, target.track, *promoted);
+        installDocumentPattern(bank, active, target.track, *promoted);
+        if (promoted->trackKind == SequencerTrackKind::DRUM) {
+            bank.restoreDrumTrack(target.track, promoted->trackKind, *promoted->drum);
+        } else {
+            bank.setTrackKind(target.track, SequencerTrackKind::INSTRUMENT);
+        }
         return true;
     }
 
