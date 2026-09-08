@@ -431,34 +431,6 @@ FLASHMEM bool initializeTrackBankFromActive(
     return true;
 }
 
-FLASHMEM bool storeActiveTrack(SequencerTrackBankState& bank, const SequencerState& active) {
-    const uint8_t track = bank.activeTrackIndex();
-    return copyEditorToPattern(bank.track(track), bank.clip(track), active);
-}
-
-FLASHMEM bool storeActiveTrackPreservingGraph(
-    SequencerTrackBankState& bank,
-    const SequencerState& active
-) {
-    auto& target = bank.track(bank.activeTrackIndex());
-    const bool targetHasGraph = graphView(target) != nullptr;
-    const bool sourceHasGraph = graphView(active.pattern) != nullptr;
-    const bool graphSynchronized =
-        targetHasGraph == sourceHasGraph &&
-        target.graphRevision.get() == active.pattern.graphRevision.get();
-
-    if (!graphSynchronized) {
-        return copyEditorToPattern(
-            target,
-            bank.clip(bank.activeTrackIndex()),
-            active
-        );
-    }
-    if (!copyPatternStatePreservingGraph(target, active.pattern)) return false;
-    bank.clip(bank.activeTrackIndex()) = active.clip;
-    return true;
-}
-
 FLASHMEM bool switchActiveTrack(
     SequencerTrackBankState& bank,
     SequencerState& active,

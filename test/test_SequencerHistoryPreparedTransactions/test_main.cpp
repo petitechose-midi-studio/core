@@ -15,6 +15,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/CoreState.hpp"
+#include "sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -1341,7 +1342,7 @@ void test_pattern_identity_and_flat_cc_drift_are_rejected() {
     std::cout << "[PASS] Pattern Track identity and FlatOnly CC drift gates\n";
 }
 
-void test_flat_preparation_ignores_scratch_payload_and_generic_publication_resynchronizes() {
+void test_generic_publication_preserves_spares_and_canonical_readers() {
     Harness h;
     initializeActivePayload(h, PayloadKind::GraphAndCc);
     authorPayload(
@@ -1378,35 +1379,51 @@ void test_flat_preparation_ignores_scratch_payload_and_generic_publication_resyn
     assert(staleFlat.change != nullptr);
 
     h.state.sequencer.pattern.setEnabled(2U, true);
+    auto expected = captureFullBankMusicalProof(h);
+    const auto owners = captureBankOwners(h);
+    const auto before = tx::captureStateInvariant(h.state);
     test_support::drainNotifications();
     assert(h.state.hasPendingProjectMutationCoalescing());
-    h.state.flushProjectMutationCoalescing();
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.state.flushProjectMutationCoalescing();
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
     assert(!h.state.hasPendingProjectMutationCoalescing());
+    assertBankOwners(h, owners);
+    assertFullBankMusicalProof(h, expected);
+    assert(h.state.project.metadata.modifiedCounter == before.modifiedCounter + 1U);
+    assert(h.state.hasPendingProjectSessionSave());
+    assert(h.state.sequencerHistory.undoCount() == before.sequencerUndoCount);
+    assertNoDeferredPublication(h);
 
-    const auto& bankPattern = h.state.sequencerTracks.track(1U);
-    const auto* synchronizedGraph = seq::graphView(bankPattern);
-    assert(synchronizedGraph != nullptr);
-    assert(
-        synchronizedGraph->stepNode(seq::rootStepNodeId(0U))->noteOffset ==
-        editorGraph->stepNode(seq::rootStepNodeId(0U))->noteOffset
-    );
+    const auto directBefore = tx::captureStateInvariant(h.state);
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.state.markSequencerProjectMutated();
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    assert(h.state.project.metadata.modifiedCounter == directBefore.modifiedCounter + 1U);
+    assertBankOwners(h, owners);
+
+    core::sequencer::SequencerRuntimeSnapshotBank runtime(
+        h.state.sequencer, h.state.sequencerTracks, h.state.projectNavigation);
+    const auto frame = runtime.refresh();
+    assert(runtime.lastRefreshSucceeded());
+    assert(runtime.snapshot(frame).tracks[1U].enabledMask.test(2U));
+    assert(runtime.laneSnapshot(frame) != nullptr);
     assert(seq::sameOptionalSequencerCcLaneBank(
-        seq::sequencerCcLaneView(bankPattern),
-        seq::sequencerCcLaneView(h.state.sequencer.pattern)
-    ));
-    assert(bankPattern.isEnabled(2U));
-    assert(
-        bankPattern.graphRevision.get() ==
-        h.state.sequencer.pattern.graphRevision.get()
-    );
-    assert(
-        bankPattern.ccLaneRevision.get() ==
-        h.state.sequencer.pattern.ccLaneRevision.get()
-    );
-
-    std::cout
-        << "[PASS] Flat preparation ignores scratch payload; generic publication "
-           "resynchronizes it\n";
+        runtime.laneSnapshot(frame)->lanesForTrack(1U),
+        seq::sequencerCcLaneView(h.state.sequencer.pattern)));
+    assertBankOwners(h, owners);
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 0U));
+        assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 1U));
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    assertFullBankMusicalProof(h, expected);
+    std::cout << "[PASS] generic publication allocates zero; canonical capture/runtime/navigation stay exact\n";
 }
 
 void test_flat_publication_ignores_spare_payload_revision_drift() {
@@ -3609,7 +3626,7 @@ int main() {
     test_pattern_traversal_allocation_failures_are_atomic();
     test_pattern_noop_admission_preserves_live_state();
     test_pattern_identity_and_flat_cc_drift_are_rejected();
-    test_flat_preparation_ignores_scratch_payload_and_generic_publication_resynchronizes();
+    test_generic_publication_preserves_spares_and_canonical_readers();
     test_flat_publication_ignores_spare_payload_revision_drift();
     test_prepared_publication_is_exact_during_notification_drain();
     test_domain_prepared_pattern_publishes_once_without_bank_synchronization();

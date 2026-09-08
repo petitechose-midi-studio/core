@@ -97,6 +97,17 @@ inline bool commitAdmittedStructure(
     return true;
 }
 
+/** Populate a deliberately noncanonical spare for ownership/rollback fixtures. */
+inline bool seedActiveBankSpare(
+    core::state::sequencer::SequencerTrackBankState& bank,
+    const core::state::sequencer::SequencerState& editor
+) {
+    if (!core::state::sequencer::copyPatternState(
+            bank.track(bank.activeTrackIndex()), editor.pattern)) return false;
+    bank.clip(bank.activeTrackIndex()) = editor.clip;
+    return true;
+}
+
 /** Reproduces the retired Core facade only inside integration tests. */
 inline bool commitAdmittedPattern(
     core::state::CoreState& state,
@@ -125,14 +136,6 @@ inline bool commitAdmittedPattern(
         return false;
     }
 
-    const bool synchronized =
-        storage == seq::SequencerHistoryPatternStorage::FlatOnly
-            ? seq::storeActiveTrackPreservingGraph(
-                  state.sequencerTracks,
-                  state.sequencer
-              )
-            : seq::storeActiveTrack(state.sequencerTracks, state.sequencer);
-    assert(synchronized);
     state.markProjectMutated();
     state.refreshSharedTrackStateFromSequencer();
     return true;

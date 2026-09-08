@@ -137,26 +137,8 @@ void rotateActiveTrackOwnersNoPublish(
     const SequencerPreparedActiveTrackRotation& prepared
 ) noexcept;
 
-/**
- * Synchronizes the active sequencer editor with the persisted per-track bank.
- *
- * Switching tracks stores the current editor, loads the target track, and clears
- * transient edit overlays while preserving persistent pattern data.
- */
+/** Resets the bank and seeds track zero from the initial editor content. */
 [[nodiscard]] bool initializeTrackBankFromActive(
-    SequencerTrackBankState& bank,
-    const SequencerState& active
-);
-
-[[nodiscard]] bool storeActiveTrack(
-    SequencerTrackBankState& bank,
-    const SequencerState& active
-);
-
-// Avoids a Graph allocation when graph revisions are already synchronized.
-// Pattern-owned CC lanes are still copied so a switched Track's spare bank
-// payload can never be mistaken for the active editor merely by revision.
-[[nodiscard]] bool storeActiveTrackPreservingGraph(
     SequencerTrackBankState& bank,
     const SequencerState& active
 );

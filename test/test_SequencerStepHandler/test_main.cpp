@@ -3139,7 +3139,7 @@ void test_page_selection_clear_and_delete_are_undoable() {
     h.state.sequencer.page.set(0U);
     h.state.sequencer.focusedStep.set(0U);
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -3250,7 +3250,7 @@ void test_pattern_selection_paste_previews_collisions_and_creates_intermediate_p
     }
     h.state.sequencer.pattern.bumpGraphRevision();
     assert(h.state.sequencer.pattern.graph == nullptr);
-    assert(seq::storeActiveTrack(
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(
         h.state.sequencerTracks, h.state.sequencer));
 
     h.turn(Config::EncoderID::NAV, 1.0f);
@@ -3411,7 +3411,7 @@ void test_step_toggle_undo_redo_workflow() {
     h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.focusedStep.set(3);
     createRootMicroSequence(h, 0);
-    assert(core::state::sequencer::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
     assert(!h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencerHistory.undoCount() == 0);
@@ -3679,7 +3679,7 @@ void test_page_paste_existing_target_graph_oom_and_replay() {
     sequencer.page.set(1U);
     sequencer.focusedStep.set(8U);
     sequencer.structureUi.syncPreviewPage(1U);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
     workflow.beginHoldAction(core::state::StructureHoldAction::PASTE);
     const auto graphRevision = sequencer.pattern.graphRevision.get();
     const auto ccRevision = sequencer.pattern.ccLaneRevision.get();
@@ -3823,7 +3823,7 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(8U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto failingWorkflow = makeStructureEditWorkflow(
@@ -3868,7 +3868,7 @@ void test_page_paste_failures_restore_current_and_selection_ui() {
         sequencer.page.set(0U);
         sequencer.focusedStep.set(0U);
         sequencer.structureUi.syncPreviewPage(0U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         auto workflow = makeStructureEditWorkflow(
             h, HistoryServices::fromCoreState(h.state));
@@ -4721,7 +4721,7 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(13U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         h.tap(Config::ButtonID::BOTTOM_LEFT);
 
@@ -4755,7 +4755,7 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(13U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         h.tap(Config::ButtonID::BOTTOM_LEFT);
 
@@ -4776,7 +4776,7 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(12U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         h.press(Config::ButtonID::BOTTOM_LEFT);
         assert(sequencer.structureUi.pageHold.action.get() ==
@@ -4827,7 +4827,7 @@ void test_page_delete_prepared_workflow_shifts_cc_and_replays() {
     sequencer.page.set(1U);
     sequencer.focusedStep.set(10U);
     sequencer.structureUi.syncPreviewPage(1U);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     assert(sequencer.structureUi.pageHold.action.get() ==
@@ -4889,7 +4889,7 @@ void test_page_delete_oom_keeps_hold_until_latched_release() {
     sequencer.page.set(0U);
     sequencer.focusedStep.set(3U);
     sequencer.structureUi.syncPreviewPage(0U);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     assert(sequencer.structureUi.pageHold.action.get() ==
@@ -4931,7 +4931,7 @@ void test_page_delete_single_page_nochange_preserves_ui_until_release() {
     sequencer.page.set(0U);
     sequencer.focusedStep.set(3U);
     sequencer.structureUi.syncPreviewPage(0U);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     core::handler::SequencerStructureEditWorkflow workflow({
         sequencer,
@@ -4991,7 +4991,7 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(12U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         const auto history = HistoryServices::fromStaticOperations<
@@ -5071,7 +5071,7 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(10U);
         sequencer.structureUi.syncPreviewPage(1U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         const auto history = HistoryServices::fromStaticOperations<
@@ -7060,7 +7060,7 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     }
     assert(core::state::sequencer::setNodeChordSpec(
         h.state.sequencer.pattern, core::state::sequencer::rootStepNodeId(3), selectedChord));
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -7211,7 +7211,7 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
         h.state.sequencer.pattern, core::state::sequencer::rootStepNodeId(3), chord));
     h.state.sequencer.pattern.note[8] = 81;
     h.state.sequencer.pattern.setEnabled(8, true);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -7280,7 +7280,7 @@ void test_step_focus_empty_reset_release_clears_hold() {
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     sequencer.pattern.note[3U] = 74U;
     sequencer.pattern.setEnabled(3U, true);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     h.tap(Config::ButtonID::BOTTOM_LEFT);
     assert(!sequencer.pattern.isEnabled(3U));
@@ -7324,7 +7324,7 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     chord.voiceCount = 7;
     assert(core::state::sequencer::setNodeChordSpec(
         h.state.sequencer.pattern, core::state::sequencer::rootStepNodeId(1), chord));
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -7394,7 +7394,7 @@ void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
     h.state.sequencer.pattern.velocity[2] = 105;
     h.state.sequencer.pattern.setEnabled(2, true);
     createRootMicroSequence(h, 2);
-    assert(core::state::sequencer::storeActiveTrack(
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(
         h.state.sequencerTracks, h.state.sequencer));
 
     h.state.sequencer.structureUi.stepSelection.active.set(true);
@@ -7683,7 +7683,7 @@ void test_child_page_selection_reset_shallow_commits_pattern_only_and_replays() 
     selection.scope.set(core::state::StructureSelectionScope::PAGE);
     selection.cursorIndex.set(0U);
     selection.selectedMask.set(0x0001U);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     auto workflow = makeStructureEditWorkflow(
         h, HistoryServices::fromCoreState(h.state));
@@ -7782,7 +7782,7 @@ void test_child_page_selection_deep_reset_removes_descendants_and_replays() {
     selection.scope.set(core::state::StructureSelectionScope::PAGE);
     selection.cursorIndex.set(0U);
     selection.selectedMask.set(0x0001U);
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
     auto workflow = makeStructureEditWorkflow(
         h, HistoryServices::fromCoreState(h.state));
@@ -7876,7 +7876,7 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
         sequencer.pattern.setEnabled(1U, true);
         sequencer.focusedStep.set(1U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         workflow.copyCurrentStructure();
         assert(h.state.structureClipboard.hasSequencerSteps());
@@ -7904,7 +7904,7 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
         sequencer.page.set(0U);
         sequencer.focusedStep.set(3U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(19U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -7930,7 +7930,7 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
         selection.active.set(true);
         selection.cursorStep.set(2U);
         selection.setSelected(2U, true);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(23U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -7956,7 +7956,7 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(29U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -7982,7 +7982,7 @@ void test_prepared_step_page_nochange_paths_are_allocation_free() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(31U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8012,7 +8012,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         createRootMicroSequence(h, 1U);
         sequencer.focusedStep.set(1U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         workflow.copyCurrentStructure();
         auto& selection = sequencer.structureUi.stepSelection;
@@ -8045,7 +8045,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         createRootMicroSequence(h, 3U);
         sequencer.focusedStep.set(3U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(43U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8074,7 +8074,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         selection.active.set(true);
         selection.cursorStep.set(2U);
         selection.setSelected(2U, true);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(47U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8107,7 +8107,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(53U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8138,7 +8138,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(1U);
         selection.selectedMask.set(0x0002U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
         auto workflow = makeStructureEditWorkflow(h, HistoryServices::fromCoreState(h.state));
         h.tick(59U);
         workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
@@ -8167,7 +8167,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         sequencer.pattern.setEnabled(0U, true);
         sequencer.focusedStep.set(0U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8202,7 +8202,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         sequencer.page.set(1U);
         sequencer.focusedStep.set(12U);
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8233,7 +8233,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         selection.active.set(true);
         selection.cursorStep.set(2U);
         selection.setSelected(2U, true);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8266,7 +8266,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(1U);
         selection.selectedMask.set(0x0003U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(
@@ -8300,7 +8300,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         selection.scope.set(core::state::StructureSelectionScope::PAGE);
         selection.cursorIndex.set(0U);
         selection.selectedMask.set(0x0001U);
-        assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
         auto workflow = makeStructureEditWorkflow(

@@ -132,7 +132,7 @@ FLASHMEM bool CoreState::switchSequencerClipForEditing(
             sequencerClips, sequencerTracks, sequencer, target)) {
         return false;
     }
-    markSequencerProjectMutated_();
+    markProjectMutated();
     return true;
 }
 
@@ -220,7 +220,7 @@ FLASHMEM bool CoreState::setSequencerStopSlot(
     const bool changed = stop
         ? sequencerClips.setStop(target)
         : sequencerClips.clearStop(target);
-    if (changed) markSequencerProjectMutated_();
+    if (changed) markProjectMutated();
     return changed;
 }
 
@@ -233,7 +233,7 @@ FLASHMEM bool CoreState::setSequencerClipBehavior(
         return false;
     }
     sequencerClipLaunches.refreshBehavior(target, behavior);
-    markSequencerProjectMutated_();
+    markProjectMutated();
     return true;
 }
 
@@ -245,7 +245,7 @@ FLASHMEM bool CoreState::setSequencerSceneBehavior(
         !sequencerClips.setSceneBehavior(slot, behavior)) {
         return false;
     }
-    markSequencerProjectMutated_();
+    markProjectMutated();
     return true;
 }
 
@@ -296,7 +296,7 @@ FLASHMEM bool CoreState::installSequencerClip(
         return false;
     }
     sequencerHistory.commitAdmittedClipStructure(std::move(change));
-    markSequencerProjectMutated_();
+    markProjectMutated();
     return true;
 }
 
@@ -329,7 +329,7 @@ FLASHMEM bool CoreState::deleteSequencerClip(
     sequencerClipLaunches.synchronizeEnabledTracks(
         sequencerClips, sequencerTracks.currentEnabledMask());
     sequencerHistory.commitAdmittedClipStructure(std::move(change));
-    markSequencerProjectMutated_();
+    markProjectMutated();
     return true;
 }
 
@@ -386,7 +386,7 @@ FLASHMEM bool CoreState::moveSequencerClips(
     sequencerClipLaunches.synchronizeEnabledTracks(
         sequencerClips, sequencerTracks.currentEnabledMask());
     sequencerHistory.commitAdmittedClipStructure(std::move(change));
-    markSequencerProjectMutated_();
+    markProjectMutated();
     return true;
 }
 
@@ -451,13 +451,6 @@ FLASHMEM project::ProjectSaveToken CoreState::requestProjectSessionSave_() {
     projectSessionControl_.savePending = true;
     projectSessionControl_.requestTimestampMs = oc::time::millis();
     return projectSessionSaveToken();
-}
-
-FLASHMEM void CoreState::markSequencerProjectMutated_() {
-    if (!sequencer::storeActiveTrack(sequencerTracks, sequencer)) {
-        OC_LOG_ERROR("[CoreState] Failed to synchronize active sequencer graph");
-    }
-    markProjectMutated();
 }
 
 FLASHMEM bool CoreState::refreshSharedTrackStateFromMacroPages_() {

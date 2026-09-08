@@ -463,6 +463,6 @@ bool CoreState::hasPendingProjectTransaction() const {
            projectTrackHistory.hasPendingGesture();
 }
 
-FLASHMEM void CoreState::markSequencerProjectMutated() { markSequencerProjectMutated_(); }
+FLASHMEM void CoreState::markSequencerProjectMutated() { markProjectMutated(); }
 
 }  // namespace core::state

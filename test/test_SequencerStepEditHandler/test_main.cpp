@@ -2571,7 +2571,7 @@ void test_step_preset_library_saves_and_loads_focused_step() {
     assert(sourceSequence != nullptr);
     assert(core::state::sequencer::setNodeNoteOffset(
         h.state.sequencer.pattern, static_cast<uint16_t>(sourceSequence->firstStepNode + 1U), 6));
-    assert(core::state::sequencer::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
 
     openStepEdit(h, 2);
     h.release(Config::MACRO_BUTTONS[2]);

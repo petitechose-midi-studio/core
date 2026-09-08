@@ -721,26 +721,25 @@ void test_cc_to_step_transition_keeps_old_commit_when_step_begin_fails() {
     assert(editorCcLaneEventValue(h.state) == 92U);
 
     {
-        // Ordinal 1 is the legacy CC commit's active-bank synchronization;
-        // ordinal 2 is the new Step transaction's final Change owner.
-        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        // The CC commit allocates nothing; ordinal 1 is the next Step owner.
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
             kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FlatOnly) ==
                seq::SequencerHistoryOpenOutcome::ResourceUnavailable);
-        tx::assertFailureConsumed(2U);
+        tx::assertFailureConsumed(1U);
     }
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(editorCcLaneEventValue(h.state) == 92U);
-    assert(bankCcLaneEventValue(h.state) == 92U);
+    assert(bankCcLaneEventValue(h.state) == 91U);
 
     const auto after = tx::captureStateInvariant(h.state);
     assert(after.editorCcOwner == stagedCcOwner);
     assert(after.editorCcOwner != before.editorCcOwner);
     assert(after.bankCcOwner != nullptr);
-    assert(after.bankCcOwner != before.bankCcOwner);
+    assert(after.bankCcOwner == before.bankCcOwner);
     assert(after.bankCcOwner != after.editorCcOwner);
     assert(after.editorGraphOwner == before.editorGraphOwner);
     assert(after.bankGraphOwner == before.bankGraphOwner);
@@ -763,7 +762,7 @@ void test_cc_to_step_transition_keeps_old_commit_when_step_begin_fails() {
     test_support::drainNotifications();
     tx::assertStateInvariant(h.state, after);
 
-    std::cout << "[PASS] CC-to-Step transition commits CC before Step fail-2\n";
+    std::cout << "[PASS] CC-to-Step transition commits CC before Step fail-1\n";
 }
 #endif
 

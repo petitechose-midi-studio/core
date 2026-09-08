@@ -1161,7 +1161,7 @@ CoreState::commitSequencerDrumHistoryCoalescing_() {
 
     sequencerHistory.recordPreparedDrum(std::move(change));
     consumePendingSequencerMutation_();
-    markSequencerProjectMutated_();
+    markProjectMutated();
     return SequencerPatternHistoryCommitOutcome::Committed;
 }
 
@@ -1212,7 +1212,7 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
         change->descriptor.clipIndex = sequencerClips.residentSlot(targetTrack);
         pending.clear();
         sequencerHistory.recordPreparedPattern(std::move(change));
-        markSequencerProjectMutated_();
+        markProjectMutated();
         return SequencerPatternHistoryCommitOutcome::Committed;
     }
 

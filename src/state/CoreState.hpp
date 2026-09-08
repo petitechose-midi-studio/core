@@ -432,14 +432,14 @@ public:
     bool hasPendingProjectTransaction() const;
 
     void markSequencerProjectMutated();
-    // Prepared transactions have already synchronized editor and bank. Consume
+    // Prepared transactions have already installed canonical content. Consume
     // only this coalescer's watched notifications, then publish dirty/save once
     // without cloning a cold payload or draining unrelated callbacks.
     void publishPreparedSequencerMutation(
         bool notifyProjectNavigation = true
     );
     /**
-     * Publishes an already-synchronized provisional Sequencer state without
+     * Publishes the provisional canonical Sequencer state without
      * advancing the durable Project revision. The owning interaction must
      * later either commit through publishPreparedSequencerMutation() or
      * restore its captured Before state through the same provisional sink.
@@ -609,7 +609,6 @@ private:
     bool advanceProjectSessionIdentity_();
     void publishProjectSessionReplacement_();
     void markProjectDurableMutation_();
-    void markSequencerProjectMutated_();
     bool refreshSharedTrackStateFromMacroPages_();
     bool refreshSharedTrackStateFromSequencer_();
     bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack);

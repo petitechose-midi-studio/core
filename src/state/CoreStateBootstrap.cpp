@@ -39,9 +39,7 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
     state.sequencerDomain_.mutationCoalescer =
         std::make_unique<oc::state::ChangeCoalescer<
             SequencerDomainState::MUTATION_COALESCER_SUBSCRIPTION_COUNT>>(
-            [&state]() {
-                state.markSequencerProjectMutated_();
-            },
+            [&state]() { state.markProjectMutated(); },
             SEQUENCER_PROJECT_SAVE_DELAY_MS
         );
 

@@ -897,7 +897,7 @@ void authorCoreFullPayload(CoreHarness& h, bool nonemptyCc) {
         assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 0U, 99U).changed());
         pattern.bumpCcLaneRevision();
     }
-    assert(seq::storeActiveTrack(
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(
         h.state.sequencerTracks, h.state.sequencer));
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
@@ -921,7 +921,7 @@ void authorCoreDisabledGraphAndCc(CoreHarness& h) {
     assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 0U, 99U).changed());
     pattern.bumpCcLaneRevision();
 
-    assert(seq::storeActiveTrack(
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(
         h.state.sequencerTracks, h.state.sequencer));
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();

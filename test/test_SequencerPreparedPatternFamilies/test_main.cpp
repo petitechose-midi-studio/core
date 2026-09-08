@@ -87,7 +87,7 @@ void authorFullPayload(Harness& h) {
     assert(seq::createSequencerCcLane(*lanes, 0U, draft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0U, kStep, 99U).changed());
     pattern.bumpCcLaneRevision();
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(h.state.sequencerTracks, h.state.sequencer));
     h.settle();
 }
 
@@ -680,8 +680,12 @@ void test_inactive_commit_preserves_new_track_generic_obligation() {
     assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
     assert(h.state.hasPendingProjectMutationCoalescing());
     assert(h.state.sequencerTracks.track(1U).note[kStep] == 48U);
+    const auto beforeFlush = h.state.project.metadata.modifiedCounter;
     h.state.flushProjectMutationCoalescing();
-    assert(h.state.sequencerTracks.track(1U).note[kStep] == 55U);
+    assert(h.state.sequencerTracks.track(1U).note[kStep] == 48U);
+    assert(h.state.sequencer.pattern.note[kStep] == 55U);
+    assert(h.state.project.metadata.modifiedCounter == beforeFlush + 1U);
+    assert(!h.state.hasPendingProjectMutationCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     std::cout << "[PASS] inactive commit preserves the new Track obligation\n";

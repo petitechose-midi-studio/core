@@ -302,7 +302,7 @@ void test_pattern_snapshot_can_capture_inactive_track() {
 
     setStep(active.pattern, 0, 60);
     active.pattern.velocity[0] = 72;
-    assert(core::state::sequencer::storeActiveTrack(bank, active));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(bank, active));
     assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
 
     setStep(active.pattern, 0, 84);
@@ -478,7 +478,7 @@ void test_flat_pattern_history_preserves_graph_payload() {
         3
     );
     assert(sequence.ok);
-    assert(core::state::sequencer::storeActiveTrack(bank, state));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(bank, state));
 
     const auto* editorGraph = core::state::sequencer::graphView(state.pattern);
     const auto* bankGraph = core::state::sequencer::graphView(bank.track(0));
@@ -552,7 +552,7 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
             37U
         ).changed());
     }
-    assert(core::state::sequencer::storeActiveTrack(bank, state));
+    assert(test_support::sequencer_transaction::seedActiveBankSpare(bank, state));
 
     const auto* editorGraph = core::state::sequencer::graphView(state.pattern);
     const auto* bankGraph = core::state::sequencer::graphView(bank.track(0U));

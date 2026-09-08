@@ -864,7 +864,7 @@ struct CoreHarness {
     }
 
     void synchronizeActiveTrack() {
-        assert(seq::storeActiveTrack(
+        assert(test_support::sequencer_transaction::seedActiveBankSpare(
             state.sequencerTracks, state.sequencer));
         settle();
     }
