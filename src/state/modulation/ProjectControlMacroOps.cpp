@@ -411,24 +411,17 @@ FLASHMEM bool replaceProjectControlMacroDestination(
     uint16_t sourcePointCount
 ) {
     if (!validAddress(address)) return false;
-    auto pending = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    auto pending = core::app::makeExtmemUniqueCopy(control.authored);
     if (!pending) return false;
-    *pending = control.authored;
     if (!replaceSlotInDomain(
             *pending,
             address,
             sourceState,
             sourcePoints,
             sourcePointCount
-        ) || !validProjectModulationDomain(
-            pending->modulation,
-            pending->curves,
-            &pending->automation
-        )) {
+        ) || !control.tryPublishAuthored(*pending)) {
         return false;
     }
-    control.authored = *pending;
-    control.markAuthoredMutation();
     return true;
 }
 
@@ -536,11 +529,8 @@ FLASHMEM bool replaceProjectControlRecordedShape(
         return false;
     }
 
-    auto pending = core::app::makeExtmemUnique<
-        ProjectControlDomainState
-    >();
+    auto pending = core::app::makeExtmemUniqueCopy(control.authored);
     if (!pending) return false;
-    *pending = control.authored;
     ProjectControlMacroDestinationView pendingView{};
     if (!readDomainMacroSlot(*pending, address, pendingView) ||
         pendingView.mutationAmbiguous()) {
@@ -556,15 +546,9 @@ FLASHMEM bool replaceProjectControlRecordedShape(
             source,
             amount,
             sourcePoints
-        ) || !validProjectModulationDomain(
-            pending->modulation,
-            pending->curves,
-            &pending->automation
-        )) {
+        ) || !control.tryPublishAuthored(*pending)) {
         return false;
     }
-    control.authored = *pending;
-    control.markAuthoredMutation();
     return true;
 }
 

@@ -543,11 +543,8 @@ FLASHMEM bool pasteSlotEntryFromClipboard(
     if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
         return false;
     }
-    auto pendingDomain = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
+    auto pendingDomain = core::app::makeExtmemUniqueCopy(pages.control.authored);
     if (!pendingDomain) return false;
-    *pendingDomain = pages.control.authored;
     auto pendingPage = pages.pageData(address.track, address.page);
     if (!pasteSlotEntryFromClipboardInDomain(
             *pendingDomain,
@@ -556,15 +553,9 @@ FLASHMEM bool pasteSlotEntryFromClipboard(
             clipboard,
             clipboardIndex
         ) ||
-        !core::state::modulation::validProjectModulationDomain(
-            pendingDomain->modulation,
-            pendingDomain->curves,
-            &pendingDomain->automation
-        )) {
+        !pages.control.tryPublishAuthored(*pendingDomain)) {
         return false;
     }
-    pages.control.authored = *pendingDomain;
-    pages.control.markAuthoredMutation();
     pages.pageData(address.track, address.page) = pendingPage;
     if (pages.currentActiveTrack() == address.track &&
         pages.currentActivePage() == address.page) {

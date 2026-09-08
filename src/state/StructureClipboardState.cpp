@@ -510,9 +510,7 @@ FLASHMEM bool StructureClipboardState::storeMacroPageSelection(
         core::state::MacroPageSelectionClipboard
     >();
     if (!clipboard) return false;
-    clipboard->projectControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >(pages.control.authored);
+    clipboard->projectControl = core::app::makeExtmemUniqueCopy(pages.control.authored);
     if (!clipboard->projectControl) {
         return false;
     }

@@ -76,9 +76,8 @@ FLASHMEM bool applyMacroSlotDeletionState(
     // Removal and its history replay are cold structural operations. Build the
     // complete Project Control result in one PSRAM scratch object so failure can
     // never expose a half-cleared destination to the realtime runtime.
-    auto pending = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    auto pending = core::app::makeExtmemUniqueCopy(pages.control.authored);
     if (!pending) return false;
-    *pending = pages.control.authored;
     if (!replaceProjectControlAutomationInDomain(
             *pending,
             address,
@@ -89,16 +88,10 @@ FLASHMEM bool applyMacroSlotDeletionState(
         ) || !applyModulationAssignmentsToGraph(
             pending->modulation,
             target.modulation
-        ) || !validProjectModulationDomain(
-            pending->modulation,
-            pending->curves,
-            &pending->automation
-        )) {
+        ) || !pages.control.tryPublishAuthored(*pending)) {
         return false;
     }
 
-    pages.control.authored = *pending;
-    pages.control.markAuthoredMutation();
     auto& page = pages.pageData(address.track, address.page);
     page.setMacroActive(address.macro, target.macroActive);
     page.cc[address.macro] = target.cc;

@@ -323,11 +323,8 @@ FLASHMEM bool applyAutomationTakeAtomically(
     bool after
 ) {
     if (!automationTakePayloadConsistent(payload, true)) return false;
-    auto pending = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
+    auto pending = core::app::makeExtmemUniqueCopy(pages.control.authored);
     if (!pending) return false;
-    *pending = pages.control.authored;
     const auto& snapshots = after ? payload.after : payload.before;
     for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
         const uint16_t bit = static_cast<uint16_t>(1U << macro);
@@ -343,16 +340,7 @@ FLASHMEM bool applyAutomationTakeAtomically(
             return false;
         }
     }
-    if (!core::state::modulation::validProjectModulationDomain(
-            pending->modulation,
-            pending->curves,
-            &pending->automation
-        )) {
-        return false;
-    }
-    pages.control.authored = *pending;
-    pages.control.markAuthoredMutation();
-    return true;
+    return pages.control.tryPublishAuthored(*pending);
 }
 
 FLASHMEM void normalizeCurveOffsets(MacroSlotHistorySnapshot& snapshot) {

@@ -25,6 +25,32 @@ constexpr macro::MacroAutomationSlotAddress kAddress{
     .macro = 1,
 };
 
+void testAuthoredPublicationIsValidatedAtomicAndExact() {
+    using namespace core::state::modulation;
+    auto control = std::make_unique<ProjectControlState>();
+    control->authoredRevision = UINT32_MAX;
+    control->compiledRevision = UINT32_MAX;
+    control->runtimeContextHash = 42U;
+    auto before = std::make_unique<ProjectControlState>(*control);
+    auto candidate = std::make_unique<ProjectControlDomainState>(control->authored);
+    core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+    candidate->curves.pointCount = PROJECT_CURVE_POINT_CAPACITY + 1U;
+    assert(!control->tryPublishAuthored(*candidate));
+    assert(std::memcmp(control.get(), before.get(), sizeof(*control)) == 0);
+    assert(candidate->curves.pointCount == PROJECT_CURVE_POINT_CAPACITY + 1U);
+    candidate->curves.pointCount = 0U;
+    candidate->curves.nextCurveId = 2U;
+    // Publication preserves inactive bytes too; no partial-copy lifetime shortcut.
+    candidate->curves.points.back() = {257U, -1200};
+    assert(control->tryPublishAuthored(*candidate));
+    assert(std::memcmp(&control->authored, candidate.get(), sizeof(*candidate)) == 0);
+    assert(control->authoredRevision == 1U && control->compiledRevision == UINT32_MAX);
+    assert(control->runtimeContextHash == before->runtimeContextHash);
+    assert(std::memcmp(&control->plan, &before->plan, sizeof(control->plan)) == 0);
+    assert(std::memcmp(&control->runtime, &before->runtime, sizeof(control->runtime)) == 0);
+    assert(core::app::testing::extmemAllocationAttempt == 0U);
+}
+
 void compileActiveControlPlan(
     core::state::modulation::ProjectControlState& control
 ) {
@@ -3725,6 +3751,7 @@ void test_track_config_history_is_atomic_and_scoped() {
 }
 
 int main() {
+    testAuthoredPublicationIsValidatedAtomicAndExact();
     test_detached_page_commit_rejects_stale_and_invalid_candidates();
     test_track_config_history_is_atomic_and_scoped();
     test_snapshot_roundtrip_restores_exact_slot();

@@ -8,6 +8,15 @@ namespace core::state::modulation {
 
 FLASHMEM ProjectControlState::ProjectControlState() = default;
 
+FLASHMEM bool ProjectControlState::tryPublishAuthored(const ProjectControlDomainState& candidate) {
+    if (!validProjectModulationDomain(candidate.modulation, candidate.curves, &candidate.automation)) {
+        return false;
+    }
+    authored = candidate;
+    markAuthoredMutation();
+    return true;
+}
+
 FLASHMEM void ProjectControlState::clear() {
     authored.clear();
     plan = {};

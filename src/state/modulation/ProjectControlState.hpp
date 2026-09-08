@@ -100,6 +100,9 @@ struct ProjectControlState {
 
     void clear();
 
+    /** Validate the detached domain before publishing it and invalidating the plan. */
+    [[nodiscard]] bool tryPublishAuthored(const ProjectControlDomainState& candidate);
+
     void markAuthoredMutation() {
         ++authoredRevision;
         if (authoredRevision == 0U) authoredRevision = 1U;

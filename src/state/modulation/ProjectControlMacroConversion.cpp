@@ -464,7 +464,7 @@ FLASHMEM bool applyProjectControlConversion(
     auto normalized = core::app::makeExtmemUniqueArrayForOverwrite<
         ProjectPackedCurvePoint
     >(curve->pointCount);
-    auto pending = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    auto pending = core::app::makeExtmemUniqueCopy(control.authored);
     if (!normalized || !pending) return false;
     for (uint16_t index = 0U; index < curve->pointCount; ++index) {
         const auto& point = control.authored.curves.points[
@@ -481,7 +481,6 @@ FLASHMEM bool applyProjectControlConversion(
         };
     }
 
-    *pending = control.authored;
     if (!removeDestinationBindings(pending->modulation, destination)) {
         return false;
     }
@@ -516,16 +515,10 @@ FLASHMEM bool applyProjectControlConversion(
         disabled.status != ProjectModulationStatus::NO_CHANGE) {
         return false;
     }
-    if (!validProjectModulationDomain(
-            pending->modulation,
-            pending->curves,
-            &pending->automation
-        )) {
+    if (!control.tryPublishAuthored(*pending)) {
         return false;
     }
 
-    control.authored = *pending;
-    control.markAuthoredMutation();
     staticBase = current.reference;
     return true;
 }

@@ -115,9 +115,7 @@ FLASHMEM core::app::ExtmemUniquePtr<
         core::state::SequencerTrackSelectionClipboard
     >();
     if (!clipboard) return nullptr;
-    clipboard->projectControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >(pages.control.authored);
+    clipboard->projectControl = core::app::makeExtmemUniqueCopy(pages.control.authored);
     if (!clipboard->projectControl) return nullptr;
     clipboard->valid = true;
 
