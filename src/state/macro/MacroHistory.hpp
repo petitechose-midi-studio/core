@@ -108,7 +108,9 @@ public:
         const MacroPagesState& pages,
         const core::state::project::ProjectTrackState& projectTracks,
         uint8_t track,
-        uint8_t page
+        uint8_t page,
+        uint8_t ccMask = 0xFFU,
+        bool includeChannel = true
     ) const;
     [[nodiscard]] bool commitPreparedTrackConfig(
         MacroPagesState& pages,

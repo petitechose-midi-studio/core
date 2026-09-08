@@ -1756,13 +1756,112 @@ void test_destination_paste_preserves_canonical_track_channel() {
 
     const auto edit =
         core::handler::MacroEditDomainServices::fromCoreState(state);
+    // An earlier edit must remain reachable after undoing the paste.
+    assert(edit.setConfig(1U, 9U, 22U));
+    const auto revisionBefore = state.configRevision.get();
+    const auto modifiedBefore = state.project.metadata.modifiedCounter;
     assert(edit.copyDestination(0U));
+    assert(!edit.pasteDestination(1U, false));
+    assert(state.pages.activePageData().cc[1] == 22U);
     assert(edit.pasteDestination(1U, true));
+    assert(state.pages.activePageData().cc[1] == 74U);
+    assert(state.projectTracks.authored.midiChannels[0] == 9U);
+    assert(state.macroHistory.undoCount() == 2U);
+    assert(state.projectHistory.undoCount() == 2U);
+    assert(state.projectHistory.peekUndo()->actionKind == static_cast<uint8_t>(
+        core::state::macro::MacroHistoryActionKind::PASTE_DESTINATION));
+    assert(state.configRevision.get() ==
+           core::state::macro::nextMacroConfigRevision(revisionBefore, 1U));
+    assert(state.project.metadata.modifiedCounter == modifiedBefore + 1U);
+    assert(!edit.pasteDestination(1U, true));
+    assert(state.projectHistory.undoCount() == 2U);
+    assert(state.project.metadata.modifiedCounter == modifiedBefore + 1U);
+
+    assert(state.undoProjectHistory());
+    assert(state.pages.activePageData().cc[1] == 22U);
+    assert(state.undoProjectHistory());
+    assert(state.pages.activePageData().cc[1] == 21U);
+    assert(state.projectHistory.undoCount() == 0U);
+    assert(state.redoProjectHistory());
+    assert(state.pages.activePageData().cc[1] == 22U);
+    assert(state.projectHistory.peekRedo()->actionKind == static_cast<uint8_t>(
+        core::state::macro::MacroHistoryActionKind::PASTE_DESTINATION));
+    assert(state.redoProjectHistory());
     assert(state.pages.activePageData().cc[1] == 74U);
     assert(state.projectTracks.authored.midiChannels[0] == 9U);
 
     std::cout
         << "[PASS] destination paste keeps canonical Track Channel\n";
+}
+
+void test_destination_paste_allocation_failures_leave_no_partial_transaction() {
+    bool reachedSuccess = false;
+    for (size_t ordinal = 1U; ordinal <= 8U && !reachedSuccess; ++ordinal) {
+        CoreStorages storage;
+        core::state::CoreState state(storage.settings);
+        state.pages.setMacroSlotActive(0U, true);
+        state.pages.setMacroSlotActive(1U, true);
+        state.pages.activePageData().cc[0] = 74U;
+        state.pages.activePageData().cc[1] = 21U;
+        const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
+        assert(edit.copyDestination(0U));
+        const auto revision = state.configRevision.get();
+        const auto modified = state.project.metadata.modifiedCounter;
+        const auto retained = state.macroHistory.retainedBytes();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure fail(ordinal);
+            reachedSuccess = edit.pasteDestination(1U, true);
+        }
+        if (!reachedSuccess) {
+            assert(state.pages.activePageData().cc[1] == 21U);
+            assert(state.configRevision.get() == revision);
+            assert(state.project.metadata.modifiedCounter == modified);
+            assert(state.macroHistory.undoCount() == 0U);
+            assert(state.projectHistory.undoCount() == 0U);
+            assert(state.macroHistory.retainedBytes() == retained);
+        } else {
+            assert(state.macroHistory.undoCount() == 1U);
+            assert(state.projectHistory.undoCount() == 1U);
+            assert(state.undoProjectHistory());
+            assert(state.pages.activePageData().cc[1] == 21U);
+        }
+    }
+    assert(reachedSuccess);
+    std::cout << "[PASS] destination paste allocation failures are atomic\n";
+}
+
+void test_config_history_is_compact_and_preserves_unrelated_content() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    configureAutomation(state.pages.control, {0U, 0U, 0U});
+    std::array<uint8_t, sizeof(state.pages.control.authored)> authored{};
+    std::memcpy(authored.data(), &state.pages.control.authored, authored.size());
+    const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
+    const uint8_t before = state.pages.activePageData().cc[0];
+    const uint8_t after = before == 74U ? 75U : 74U;
+    assert(edit.setConfig(0U, 0U, after));
+    assert(state.macroHistory.retainedBytes() <= 512U);
+    assert(state.macroHistory.retainedSpans() == 2U);
+
+    // Changes outside the command's scope must neither block Undo nor be overwritten.
+    state.pages.activePageData().cc[1] = 99U;
+    state.pages.activePageData().values[0] = 0.9f;
+    assert(core::state::project::setProjectTrackMidiChannel(state.projectTracks, 0U, 2U).changed());
+    state.pages.activePageData().cc[0] = 127U;
+    assert(!state.undoProjectHistory());
+    state.pages.activePageData().cc[0] = after;
+    {
+        core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+        assert(state.undoProjectHistory());
+        assert(state.pages.activePageData().cc[0] == before);
+        assert(state.redoProjectHistory());
+        assert(state.pages.activePageData().cc[0] == after);
+    }
+    assert(state.pages.activePageData().cc[1] == 99U);
+    assert(state.pages.activePageData().values[0] == 0.9f);
+    assert(state.projectTracks.authored.midiChannels[0] == 2U);
+    assert(std::memcmp(authored.data(), &state.pages.control.authored, authored.size()) == 0);
+    std::cout << "[PASS] compact config history preserves curves and unrelated routing\n";
 }
 
 void test_manual_takeover_is_one_global_value_and_authority_transaction() {
@@ -1838,6 +1937,8 @@ int main() {
     test_macro_track_structure_mutations_preserve_project_track_identity();
     test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries();
     test_destination_paste_preserves_canonical_track_channel();
+    test_destination_paste_allocation_failures_leave_no_partial_transaction();
+    test_config_history_is_compact_and_preserves_unrelated_content();
     test_manual_takeover_is_one_global_value_and_authority_transaction();
     std::cout << "\nAll MacroPerformanceDomainServices tests passed.\n";
     return 0;

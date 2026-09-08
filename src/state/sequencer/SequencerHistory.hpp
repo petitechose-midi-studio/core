@@ -516,6 +516,9 @@ struct SequencerHistoryEntry {
 };
 
 bool captureHistorySnapshot(const SequencerState& source, SequencerHistoryPatternSnapshot& out);
+// Musical staging does not need the live editor's UI, telemetry or navigation state.
+bool captureHistorySnapshot(const SequencerPatternState& source, const SequencerClipState& clip,
+                            uint8_t focusedStep, SequencerHistoryPatternSnapshot& out);
 // Restores the complete musical revision vector without copying payload data
 // or allocating. Used when exact prepared publication/no-op cancellation has
 // already proven the corresponding musical bytes.

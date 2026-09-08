@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "../../src/state/macro/MacroHistory.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
@@ -3519,7 +3520,49 @@ void test_retained_budget_preserves_automation_and_bounds_page_structure() {
 
 }  // namespace
 
+void test_track_config_history_is_atomic_and_scoped() {
+    macro::MacroPagesState pages;
+    core::state::project::ProjectTrackState tracks;
+    macro::MacroHistoryService history;
+    auto& cc = pages.pageData(0U, 0U).cc;
+    const auto before = cc;
+    assert(!history.prepareTrackConfig(pages, tracks, 0U, 0U, 0U));
+    cc[0] = 128U;
+    assert(!history.prepareTrackConfig(pages, tracks, 0U, 0U));
+    cc = before;
+    auto change = history.prepareTrackConfig(pages, tracks, 0U, 0U);
+    assert(change);
+    cc.fill(74U);
+    assert(core::state::project::setProjectTrackMidiChannel(tracks, 0U, 9U).changed());
+    assert(history.commitPreparedTrackConfig(pages, tracks, std::move(change)));
+    assert(!history.undo(pages));  // Routing needs its canonical owner.
+    assert(history.undo(pages, nullptr, nullptr, &tracks));
+    assert(cc == before);
+    assert(tracks.authored.midiChannels[0] == 0U);
+    assert(history.redo(pages, nullptr, nullptr, &tracks));
+    for (auto value : cc) assert(value == 74U);
+    assert(tracks.authored.midiChannels[0] == 9U);
+
+    history.clear();
+    change = history.prepareTrackConfig(pages, tracks, 0U, 0U, 1U, false);
+    assert(change);
+    cc[0] = 128U;
+    cc[1] = 99U;
+    assert(!history.commitPreparedTrackConfig(pages, tracks, std::move(change)));
+    assert(cc[0] == 74U && cc[1] == 99U);
+    assert(history.undoCount() == 0U);
+    change = history.prepareTrackConfig(pages, tracks, 0U, 0U, 1U, false);
+    cc[0] = 75U;
+    assert(history.commitPreparedTrackConfig(pages, tracks, std::move(change)));
+    assert(history.undo(pages));  // A CC-only command needs no routing owner.
+    assert(cc[0] == 74U && cc[1] == 99U);
+    assert(history.redo(pages));
+    assert(cc[0] == 75U && cc[1] == 99U);
+    std::cout << "[PASS] track config history validates and replays only owned fields\n";
+}
+
 int main() {
+    test_track_config_history_is_atomic_and_scoped();
     test_snapshot_roundtrip_restores_exact_slot();
     test_clear_is_one_undo_redo_action();
     test_depth_turns_coalesce_without_extra_entries();

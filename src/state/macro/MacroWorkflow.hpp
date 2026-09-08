@@ -14,6 +14,7 @@ struct CoreState;
 namespace core::state::macro {
 
 struct MacroUiState;
+enum class MacroHistoryActionKind : uint8_t;
 
 /**
  * Macro domain workflow for runtime/page synchronization and config edits.
@@ -87,6 +88,9 @@ struct MacroWorkflow {
     static void switchToPage(CoreState& state, uint8_t pageIndex);
     static void switchToTrack(CoreState& state, uint8_t trackIndex);
     static bool setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc);
+    /** The workflow owns the complete transaction for edits and destination pastes. */
+    static bool setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc,
+                          MacroHistoryActionKind kind);
     static bool setTrackChannel(CoreState& state, uint8_t channel);
     static MacroSlotActivationPlan planMacroSlotActivation(
         const MacroPagesState& pages,

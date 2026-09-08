@@ -131,28 +131,37 @@ struct MacroManualOverrideHistoryPayload {
     bool valid = false;
 };
 
-/** Canonical Project Track side of a combined Channel + Macro CC edit. */
-struct MacroTrackRoutingHistoryPayload {
-    core::state::project::ProjectTrackSnapshot before{};
-    core::state::project::ProjectTrackSnapshot after{};
-    bool valid = false;
-};
-
-/** One all-eight-Macro routing import on one physical Page. */
+/** Routing delta for selected Macros on one Page, optionally including Channel. */
 struct MacroTrackConfigHistoryPayload {
-    core::state::project::ProjectTrackSnapshot beforeTracks{};
-    core::state::project::ProjectTrackSnapshot afterTracks{};
     std::array<uint8_t, MACRO_COUNT> beforeCc{};
     std::array<uint8_t, MACRO_COUNT> afterCc{};
+    uint8_t beforeMidiChannel = 0U;
+    uint8_t afterMidiChannel = 0U;
     uint8_t track = 0U;
     uint8_t page = 0U;
+    uint8_t ccMask = 0xFFU;
+    bool includeChannel = true;
     bool valid = false;
+
+    bool matchesCc(const std::array<uint8_t, MACRO_COUNT>& live,
+                   const std::array<uint8_t, MACRO_COUNT>& expected) const {
+        for (uint8_t i = 0U; i < MACRO_COUNT; ++i) {
+            if ((ccMask & (1U << i)) != 0U && live[i] != expected[i]) return false;
+        }
+        return true;
+    }
+
+    void applyCc(std::array<uint8_t, MACRO_COUNT>& live,
+                 const std::array<uint8_t, MACRO_COUNT>& target) const {
+        for (uint8_t i = 0U; i < MACRO_COUNT; ++i) {
+            if ((ccMask & (1U << i)) != 0U) live[i] = target[i];
+        }
+    }
 };
 
 /** Rare cross-runtime/cross-domain payload kept out of the hot entry body. */
 struct MacroAuxiliaryHistoryPayload {
     MacroManualOverrideHistoryPayload manualOverride{};
-    MacroTrackRoutingHistoryPayload trackRouting{};
     MacroTrackConfigHistoryPayload trackConfig{};
 };
 

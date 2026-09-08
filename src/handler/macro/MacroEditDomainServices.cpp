@@ -16,10 +16,11 @@ namespace automation_clipboard_ops = core::handler::macro::automation_clipboard_
 
 namespace {
 
-bool setConfigFromCoreState(void* context, uint8_t index, uint8_t channel, uint8_t cc) {
+bool setConfigFromCoreState(void* context, uint8_t index, uint8_t channel, uint8_t cc,
+                            core::state::macro::MacroHistoryActionKind kind) {
     auto* state = static_cast<core::state::CoreState*>(context);
     return state != nullptr &&
-           core::state::macro::MacroWorkflow::setConfig(*state, index, channel, cc);
+           core::state::macro::MacroWorkflow::setConfig(*state, index, channel, cc, kind);
 }
 
 void switchToPageFromCoreState(void* context, uint8_t pageIndex) {
@@ -118,9 +119,10 @@ FLASHMEM bool MacroEditDomainServices::isMacroSlotActive(uint8_t index) const {
 
 FLASHMEM bool MacroEditDomainServices::setConfig(uint8_t index,
                                                 uint8_t channel,
-                                                uint8_t cc) const {
+                                                uint8_t cc,
+                                                core::state::macro::MacroHistoryActionKind kind) const {
     return operations_.setConfig != nullptr &&
-           operations_.setConfig(operations_.context, index, channel, cc);
+           operations_.setConfig(operations_.context, index, channel, cc, kind);
 }
 
 FLASHMEM void MacroEditDomainServices::switchToPage(uint8_t pageIndex) const {
@@ -339,26 +341,13 @@ FLASHMEM bool MacroEditDomainServices::pasteDestination(
     if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
         return false;
     }
-    const auto address = automationAddress(index);
-    auto change = history_ != nullptr
-        ? history_->prepare(
-              *pages_,
-              address,
-              core::state::macro::MacroHistoryActionKind::PASTE_DESTINATION
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (history_ != nullptr && !change) return false;
     const uint8_t cc = clipboard_->macroAutomationSet->sourceCc;
     const uint8_t channel = core::state::project::projectTrackMidiChannel(
         *project_tracks_,
         pages_->currentActiveTrack()
     );
-    if (!setConfig(index, channel, cc)) return false;
-    if (history_ != nullptr &&
-        !history_->commitPrepared(*pages_, std::move(change))) {
-        return false;
-    }
-    return true;
+    return setConfig(index, channel, cc,
+                     core::state::macro::MacroHistoryActionKind::PASTE_DESTINATION);
 }
 
 FLASHMEM automation_clipboard_ops::MacroTypedPastePreflight

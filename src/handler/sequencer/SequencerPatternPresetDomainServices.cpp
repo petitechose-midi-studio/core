@@ -35,7 +35,7 @@ struct PatternPresetBuffer {
 
 struct LoadedPatternPreset {
     core::app::ExtmemUniquePtr<PatternPresetBuffer> buffer{};
-    core::app::ExtmemUniquePtr<seq::SequencerState> staged{};
+    core::app::ExtmemUniquePtr<seq::SequencerPatternState> staged{};
     core::app::ExtmemUniquePtr<seq::DrumTrackState> drum{};
     seq::SequencerPatternPresetMetadata metadata{};
     seq::SequencerPatternPresetStatus codecStatus =
@@ -161,7 +161,7 @@ FLASHMEM LoadedPatternPreset loadPreset(
 ) {
     LoadedPatternPreset loaded{};
     loaded.buffer = core::app::makeExtmemUniqueForOverwrite<PatternPresetBuffer>();
-    loaded.staged = core::app::makeExtmemUnique<seq::SequencerState>();
+    loaded.staged = core::app::makeExtmemUnique<seq::SequencerPatternState>();
     if (!loaded.buffer || !loaded.staged) {
         loaded.status = SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
         loaded.codecStatus = seq::SequencerPatternPresetStatus::RESOURCE_EXHAUSTED;
@@ -186,7 +186,7 @@ FLASHMEM LoadedPatternPreset loadPreset(
         const auto encoded =
             core::persistence::PatternPresetFactoryLibrary::encode(
                 presetId,
-                loaded.staged->pattern,
+                *loaded.staged,
                 loaded.drum.get(),
                 loaded.metadata,
                 loaded.buffer->bytes,
@@ -247,7 +247,7 @@ FLASHMEM LoadedPatternPreset loadPreset(
             loaded.buffer->bytes,
             loaded.bytes,
             loaded.metadata,
-            loaded.staged->pattern,
+            *loaded.staged,
             loaded.drum.get(),
             &loaded.codecStatus
         )) {
@@ -268,7 +268,7 @@ FLASHMEM void projectVisualSummary(
     out = {};
     if (!loaded.ok()) return;
 
-    const auto& pattern = loaded.staged->pattern;
+    const auto& pattern = *loaded.staged;
     out.valid = true;
     out.visibleStepCount = std::min<uint8_t>(
         pattern.length.get(),
@@ -1235,8 +1235,8 @@ SequencerPatternPresetDomainServices::inspectPreset(
     }
 
     descriptor.metadata = loaded.metadata;
-    descriptor.patternLength = loaded.staged->pattern.length.get();
-    descriptor.stepsPerBeat = loaded.staged->pattern.stepsPerBeat.get();
+    descriptor.patternLength = loaded.staged->length.get();
+    descriptor.stepsPerBeat = loaded.staged->stepsPerBeat.get();
     descriptor.drumLaneCount = loaded.drum ? loaded.drum->kit.laneCount : 0U;
     projectVisualSummary(loaded, descriptor.visual);
     descriptor.compatibility = compatibilityFor(
@@ -1440,7 +1440,7 @@ SequencerPatternPresetDomainServices::copyFactoryPreset(
     }
     const auto encoded = codec::encode(
         metadata,
-        loaded.staged->pattern,
+        *loaded.staged,
         loaded.drum.get(),
         loaded.buffer->bytes,
         codec::MAX_ENCODED_SIZE
@@ -1559,13 +1559,13 @@ SequencerPatternPresetDomainServices::previewPreset(
         loaded.drum->kit =
             state_->sequencerTracks.drumTrack(target.trackIndex).kit;
         const auto& candidate = *loaded.drum;
-        const auto* sourceGraph = seq::graphView(loaded.staged->pattern);
+        const auto* sourceGraph = seq::graphView(*loaded.staged);
         if (!seq::captureDetachedHistoryDrumAfter(
                 *change,
                 seq::SequencerTrackKind::DRUM,
                 candidate,
                 sourceGraph,
-                loaded.staged->pattern.graphRevision.get()
+                loaded.staged->graphRevision.get()
             )) {
             result.status =
                 SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
@@ -1629,14 +1629,14 @@ SequencerPatternPresetDomainServices::previewPreset(
             candidate
         );
         state_->sequencer.pattern.graph =
-            std::move(loaded.staged->pattern.graph);
+            std::move(loaded.staged->graph);
         state_->sequencer.pattern.graphRevision.set(
-            loaded.staged->pattern.graphRevision.get()
+            loaded.staged->graphRevision.get()
         );
         state_->sequencerTracks.track(target.trackIndex).graph =
             std::move(bankGraph);
         state_->sequencerTracks.track(target.trackIndex).graphRevision.set(
-            loaded.staged->pattern.graphRevision.get()
+            loaded.staged->graphRevision.get()
         );
         seq::refreshContentView(state_->sequencer);
         state_->sequencer.drumSequencer.bump();
@@ -1649,7 +1649,8 @@ SequencerPatternPresetDomainServices::previewPreset(
         >();
         if (!change ||
             !seq::captureHistorySnapshot(state_->sequencer, change->before) ||
-            !seq::captureHistorySnapshot(*loaded.staged, change->after)) {
+            !seq::captureHistorySnapshot(
+                *loaded.staged, state_->sequencer.clip, 0U, change->after)) {
             result.status =
                 SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
             result.codecStatus =
@@ -1668,7 +1669,7 @@ SequencerPatternPresetDomainServices::previewPreset(
         }
 
         seq::SequencerPatternSnapshot flat{};
-        seq::captureSnapshot(loaded.staged->pattern, flat);
+        seq::captureSnapshot(*loaded.staged, flat);
         core::app::ExtmemUniquePtr<
             oc::note::sequencer::StepSequencerGraph
         > bankGraph;
@@ -1676,11 +1677,11 @@ SequencerPatternPresetDomainServices::previewPreset(
         seq::SequencerPreparedActiveTrackSynchronization rollbackBank;
         if (!core::state::cloneSequencerGraph(
                 bankGraph,
-                seq::graphView(loaded.staged->pattern)
+                seq::graphView(*loaded.staged)
             ) ||
             !seq::cloneSequencerCcLaneBank(
                 bankCcLanes,
-                seq::sequencerCcLaneView(loaded.staged->pattern)
+                seq::sequencerCcLaneView(*loaded.staged)
             ) ||
             !seq::prepareActiveTrackSynchronizationFromSnapshot(
                 state_->sequencerTracks,
@@ -1720,8 +1721,8 @@ SequencerPatternPresetDomainServices::previewPreset(
             return result;
         }
 
-        auto editorGraph = std::move(loaded.staged->pattern.graph);
-        auto editorCcLanes = std::move(loaded.staged->pattern.ccLanes);
+        auto editorGraph = std::move(loaded.staged->graph);
+        auto editorCcLanes = std::move(loaded.staged->ccLanes);
         seq::installTrackContentSnapshotToEditorWithOwnedPayload(
             state_->sequencer,
             flat,
@@ -1996,7 +1997,7 @@ SequencerPatternPresetDomainServices::renamePreset(
     );
     const auto encoded = codec::encode(
         loaded.metadata,
-        loaded.staged->pattern,
+        *loaded.staged,
         loaded.drum.get(),
         loaded.buffer->bytes,
         codec::MAX_ENCODED_SIZE

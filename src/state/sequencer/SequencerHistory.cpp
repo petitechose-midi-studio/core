@@ -1397,9 +1397,15 @@ FLASHMEM void captureFlatPatternHistory(
 
 FLASHMEM bool captureHistorySnapshot(const SequencerState& source,
                                      SequencerHistoryPatternSnapshot& out) {
+    return captureHistorySnapshot(source.pattern, source.clip, source.focusedStep.get(), out);
+}
+
+FLASHMEM bool captureHistorySnapshot(const SequencerPatternState& source,
+                                     const SequencerClipState& clip, uint8_t focusedStep,
+                                     SequencerHistoryPatternSnapshot& out) {
     out.reset();
-    return reserveHistorySnapshotStorage(source, out) &&
-           captureHistorySnapshotUsingReservedStorage(source, out);
+    return reservePatternPayloadStorage(source, out.graph, out.ccLanes) &&
+           capturePatternHistoryUsingReservedStorage(source, clip, focusedStep, out);
 }
 
 FLASHMEM void synchronizeHistoryPatternRevisionSignals(SequencerPatternState& target,

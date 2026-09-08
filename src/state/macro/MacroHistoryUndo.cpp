@@ -160,66 +160,40 @@ FLASHMEM bool MacroHistoryService::replay_(
         const auto& config = change->auxiliary->trackConfig;
         const auto& expectedCc = redo ? config.beforeCc : config.afterCc;
         const auto& targetCc = redo ? config.afterCc : config.beforeCc;
-        const auto& expectedTracks = redo
-            ? config.beforeTracks
-            : config.afterTracks;
-        const auto& targetTracks = redo
-            ? config.afterTracks
-            : config.beforeTracks;
-        if (projectTracks == nullptr || config.track >= TRACK_COUNT ||
+        const uint8_t expectedChannel = redo
+            ? config.beforeMidiChannel
+            : config.afterMidiChannel;
+        const uint8_t targetChannel = redo
+            ? config.afterMidiChannel
+            : config.beforeMidiChannel;
+        if ((config.includeChannel && projectTracks == nullptr) || config.ccMask == 0U ||
+            config.track >= TRACK_COUNT ||
             config.page >= PAGE_COUNT ||
-            pages.pageData(config.track, config.page).cc != expectedCc ||
-            !core::state::project::sameProjectTrackSnapshot(
-                projectTracks->authored,
-                expectedTracks
-            )) {
-            return false;
-        }
-        if (!core::state::project::sameProjectTrackSnapshot(
-                config.beforeTracks,
-                config.afterTracks
-            ) && !core::state::project::applyProjectTrackSnapshot(
-                *projectTracks,
-                targetTracks
-            ).changed()) {
-            return false;
-        }
-        pages.pageData(config.track, config.page).cc = targetCc;
-        pages.updateActiveConfigs();
-    } else if (change->auxiliary && change->auxiliary->trackRouting.valid) {
-        const auto& routing = change->auxiliary->trackRouting;
-        if (projectTracks == nullptr || change->slot == nullptr) return false;
-        const auto& expectedRouting = redo ? routing.before : routing.after;
-        const auto& targetRouting = redo ? routing.after : routing.before;
-        const auto& expectedSlot = redo
-            ? change->slot->before
-            : change->slot->after;
-        const auto& targetSlot = redo
-            ? change->slot->after
-            : change->slot->before;
-        if (!core::state::project::sameProjectTrackSnapshot(
-                projectTracks->authored,
-                expectedRouting
+            change->address.track != config.track ||
+            change->address.page != config.page ||
+            !core::state::project::validProjectTrackMidiChannel(
+                expectedChannel
             ) ||
-            !liveMacroSlotMatchesHistorySnapshot(
-                pages,
-                expectedSlot
-            )) {
+            !core::state::project::validProjectTrackMidiChannel(
+                targetChannel
+            ) ||
+            !config.matchesCc(pages.pageData(config.track, config.page).cc, expectedCc) ||
+            (config.includeChannel && core::state::project::projectTrackMidiChannel(
+                *projectTracks,
+                config.track
+            ) != expectedChannel)) {
             return false;
         }
-        if (!core::state::project::applyProjectTrackSnapshot(
+        if (config.includeChannel && expectedChannel != targetChannel &&
+            !core::state::project::setProjectTrackMidiChannel(
                 *projectTracks,
-                targetRouting
+                config.track,
+                targetChannel
             ).changed()) {
             return false;
         }
-        if (!applyMacroSlotHistorySnapshot(pages, targetSlot)) {
-            (void)core::state::project::applyProjectTrackSnapshot(
-                *projectTracks,
-                expectedRouting
-            );
-            return false;
-        }
+        config.applyCc(pages.pageData(config.track, config.page).cc, targetCc);
+        pages.updateActiveConfigs();
     } else if (change->auxiliary &&
                change->auxiliary->manualOverride.valid) {
         const auto& manual = change->auxiliary->manualOverride;
