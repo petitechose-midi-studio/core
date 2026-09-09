@@ -23,6 +23,18 @@ struct FaultFileSystem : oc::impl::HostFileSystem {
     size_t removes = 0, failedReads = 0;
     size_t lists = 0;
     bool failList = false;
+    size_t creates = 0, renames = 0;
+    bool failRename = false;
+    oc::type::Result<void> createDirectory(const char* path) override {
+        ++creates;
+        return oc::impl::HostFileSystem::createDirectory(path);
+    }
+    oc::type::Result<void> rename(const char* from, const char* to) override {
+        ++renames;
+        if (failRename) return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::STORAGE_WRITE_FAILED, "injected rename failure"});
+        return oc::impl::HostFileSystem::rename(from, to);
+    }
     oc::type::Result<void> list(const char* path, oc::interface::DirectoryEntryVisitor visitor, void* context) override {
         ++lists;
         if (failList) return oc::type::Result<void>::err(
@@ -173,6 +185,106 @@ void testListing(const std::filesystem::path& root) {
     std::cout << "List: 256 entries in 32 pages, one scan, invalidation/conflict, overflow, error recovery passed\n";
 }
 
+std::vector<uint8_t> mutationBody(const char* path, const char* destination = nullptr, int recursive = -1) {
+    std::vector<uint8_t> body(386); ByteWriter w(body.data(), body.size());
+    assert(w.writeString(path, 192));
+    if (destination) assert(w.writeString(destination, 192));
+    if (recursive >= 0) assert(w.writeU8(uint8_t(recursive)));
+    body.resize(w.position()); return body;
+}
+
+void testMutations(const std::filesystem::path& root) {
+    Harness h(root);
+    const auto mkdir = mutationBody("projects/folder");
+    const auto creates = h.filesystem.creates;
+    auto result = h.call(Operation::Mkdir, mkdir, 601, 0, 10000);
+    assert(result.state == State::Complete && result.operationId);
+    const auto id = result.operationId;
+    assert(h.filesystem.creates == creates + 1);
+    assert(h.call(Operation::Mkdir, mkdir, 601, 0, 10000).replayed);
+    assert(h.filesystem.creates == creates + 1);
+    assert(h.call(Operation::Delete, mutationBody("projects/folder", nullptr, 0), 601, 0, 10000).error == Error::Conflict);
+    assert(h.call(Operation::Mkdir, mutationBody("projects/other"), 601, 0, 10000).error == Error::Conflict);
+    assert(h.call(Operation::Mkdir, mkdir, 601, 0, 9999).error == Error::Conflict);
+    assert(h.call(Operation::Poll, {}, 601, id).state == State::Complete);
+    const auto rename = mutationBody("projects/folder", "projects/renamed");
+    const auto renames = h.filesystem.renames;
+    assert(h.call(Operation::Rename, rename, 602, 0, 10000).state == State::Complete);
+    assert(h.call(Operation::Rename, rename, 602, 0, 10000).replayed);
+    assert(h.filesystem.renames == renames + 1);
+    assert(!h.files.stat("projects/folder") && h.files.stat("projects/renamed"));
+    const auto remove = mutationBody("projects/renamed", nullptr, 0);
+    const auto removes = h.filesystem.removes;
+    assert(h.call(Operation::Delete, remove, 603, 0, 10000).state == State::Complete);
+    assert(h.call(Operation::Delete, remove, 603, 0, 10000).replayed);
+    assert(h.filesystem.removes == removes + 1);
+    assert(h.call(Operation::Delete, mutationBody("projects/x", nullptr, 2), 604, 0, 10000).error == Error::InvalidArgument);
+    assert(h.call(Operation::Mkdir, mutationBody("tmp/rpc-forbidden"), 604, 0, 10000).error == Error::InvalidArgument);
+    assert(h.call(Operation::Rename, mutationBody("projects/x", "../escape"), 604, 0, 10000).error == Error::InvalidArgument);
+    assert(h.call(Operation::Mkdir, mkdir, 604, 0, 10000, true).error == Error::BusyPlaying);
+    const auto upload = h.start("projects/staging.bin", 0);
+    assert(h.call(Operation::Mkdir, mkdir, 604, 0, 10000).error == Error::ResourceExhausted);
+    assert(h.call(Operation::UploadAbort, identityBody(upload)).state == State::Complete);
+    assert(h.call(Operation::Mkdir, mkdir, 604, 0, 10000).state == State::Complete);
+    h.filesystem.failRename = true;
+    result = h.call(Operation::Rename, rename, 605, 0, 10000);
+    assert(result.error == Error::StorageWriteFailed && result.operationId);
+    h.filesystem.failRename = false;
+    assert(h.call(Operation::Rename, rename, 605, 0, 10000).error == Error::StorageWriteFailed);
+    assert(h.files.stat("projects/folder"));
+    assert(h.files.persistenceJobs().activeJobId() == 0);
+    std::cout << "Mutations: mkdir/rename/delete, cross-operation nonce conflict, exact replay, failure retention, upload exclusion passed\n";
+}
+
+void makeTree(Harness& h) {
+    auto lease = h.files.acquireMutation(core::persistence::ProductMutationOwner::FILESYSTEM_RPC);
+    assert(lease && h.files.createDirectory(lease.value(), "projects/tree/child"));
+    assert(h.files.beginWrite(lease.value(), "projects/tree/child/file", 0) && h.files.finishWrite(lease.value()));
+    assert(h.files.releaseMutation(lease.value()));
+}
+
+void testTreeMutation(const std::filesystem::path& root) {
+    const auto body = mutationBody("projects/tree", nullptr, 1);
+    Harness h(root); makeTree(h);
+    auto result = h.call(Operation::Delete, body, 701, 0, 10000);
+    assert(result.state == State::Pending); auto id = result.operationId;
+    assert(h.call(Operation::Delete, body, 701, 0, 10000).replayed);
+    assert(h.call(Operation::Cancel, {}, 701, id).state == State::Cancelled);
+    assert(h.files.stat("projects/tree/child/file"));
+    result = h.call(Operation::Delete, body, 702, 0, 1); id = result.operationId;
+    h.tick();
+    assert(h.call(Operation::Poll, {}, 702, id).error == Error::DeadlineExceeded);
+    assert(h.files.stat("projects/tree/child/file"));
+    result = h.call(Operation::Delete, body, 703, 0, 10000); id = result.operationId;
+    assert(h.call(Operation::UploadBegin, beginBody("projects/blocked", 0)).error == Error::ResourceExhausted);
+    h.tick(); h.tick();
+    assert(h.call(Operation::Cancel, {}, 703, id).error == Error::CancelTooLate);
+    assert(finish(h, 703, id).state == State::Complete);
+    assert(!h.files.stat("projects/tree"));
+    assert(h.call(Operation::Delete, body, 703, 0, 10000).replayed);
+    assert(h.files.persistenceJobs().activeJobId() == 0);
+    // Storage failure after the hide keeps the recovery marker and blocks writes.
+    Harness failed(root.string() + "-failure"); makeTree(failed);
+    result = failed.call(Operation::Delete, body, 704, 0, 10000); id = result.operationId;
+    failed.filesystem.failRemove = true;
+    assert(finish(failed, 704, id).error == Error::StorageWriteFailed);
+    assert(failed.files.persistenceJobs().activeJobId() == 0);
+    assert(failed.call(Operation::Mkdir, mutationBody("projects/nope"), 705, 0, 10000).error == Error::ResourceExhausted);
+    failed.filesystem.failRemove = false;
+    auto recoveryLease = failed.files.beginRecovery(); assert(recoveryLease);
+    core::persistence::ProductTreeCleanupPlan recovery; recovery.beginRecovery();
+    for (unsigned step = 0; step < 100 && !recovery.terminal(); ++step)
+        recovery.advanceRecovery(failed.files, recoveryLease.value());
+    assert(recovery.completed() && failed.files.completeRecovery(recoveryLease.value(), true));
+    assert(failed.call(Operation::Mkdir, mutationBody("projects/recovered"), 706, 0, 10000).state == State::Complete);
+    Harness media(root.string() + "-media"); makeTree(media);
+    result = media.call(Operation::Delete, body, 707, 0, 10000); id = result.operationId;
+    media.files.markMediaUnavailable(); media.tick();
+    assert(media.call(Operation::Poll, {}, 707, id).error == Error::MediaChanged);
+    assert(media.files.persistenceJobs().activeJobId() == 0);
+    std::cout << "Recursive delete: cancellation/deadline before hide, too-late refusal, retained completion, failure/recovery/media passed\n";
+}
+
 int main(int argc, char** argv) {
     const auto root = std::filesystem::temp_directory_path() / ("ms-core-unified-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -198,6 +310,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     testListing(root.string() + "-list");
+    testMutations(root.string() + "-mutations");
+    testTreeMutation(root.string() + "-tree");
     auto response = h.call(Operation::Capabilities); assert(response.state == State::Complete && response.bodySize == 20);
     assert(h.call(Operation::UploadBegin, beginBody("projects/rpc.bin", 5), 0, 0, 0, true).error == Error::BusyPlaying);
     assert(h.call(Operation::UploadBegin, beginBody("../outside", 5)).error == Error::InvalidArgument);

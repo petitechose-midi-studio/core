@@ -2,6 +2,7 @@
 #include "FileSystemRpcInternal.hpp"
 #include "persistence/AtomicProductFile.hpp"
 #include "persistence/PersistenceChecksum.hpp"
+#include "persistence/ProductConditionalMutationDigest.hpp"
 #include <cstdio>
 #include <cstring>
 #include <utility>
@@ -49,6 +50,20 @@ FLASHMEM FileTransfer::Record* FileTransfer::available() {
     return nullptr;
 }
 
+FLASHMEM void FileTransfer::retain(const Frame& request, uint32_t nowMs, uint32_t identity) {
+    active_ = available(); // Admission checks capacity before acquiring storage.
+    *active_ = {};
+    active_->nonce = request.nonce; active_->id = identity; active_->deadline = request.delayMs;
+    active_->started = nowMs; active_->media = files_.storageIdentity().mediaGeneration;
+    active_->operation = request.operation;
+    (void)p::conditional_mutation::hashBytes(request.body, request.bodySize, active_->fingerprint);
+}
+
+FLASHMEM bool FileTransfer::hasWork() const {
+    const auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_);
+    return session_ || (tree && tree->active());
+}
+
 FLASHMEM void FileTransfer::expire(uint32_t nowMs) {
     for (auto& record : records_) {
         if (record.nonce && &record != active_ && uint32_t(nowMs - record.terminalAt) >= RETENTION_MS)
@@ -64,11 +79,17 @@ FLASHMEM void FileTransfer::terminal(State state, Error error, uint32_t nowMs) {
 }
 
 FLASHMEM bool FileTransfer::irreversible() const {
-    return plan_.mapped() || plan_.requiresRecoveryOnFailure();
+    if (const auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_)) return tree->canonicalHidden();
+    const auto& plan = std::get<p::ProductFileCommitPlan>(work_);
+    return plan.mapped() || plan.requiresRecoveryOnFailure();
 }
 
 FLASHMEM bool FileTransfer::release(bool discard, bool completed) {
     bool okay = true;
+    if (auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_)) {
+        if (tree->active()) tree->cancelDelete(files_);
+        okay = tree->completed() || !tree->canonicalHidden();
+    }
     if (files_.owns(lease_)) {
         if (discard && irreversible()) {
             (void)files_.requireRecovery(lease_, oc::type::ErrorCode::STORAGE_WRITE_FAILED);
@@ -86,7 +107,7 @@ FLASHMEM bool FileTransfer::release(bool discard, bool completed) {
     }
     session_ = 0;
     deferredError_ = Error::None;
-    plan_.reset();
+    work_.emplace<p::ProductFileCommitPlan>();
     return okay;
 }
 
@@ -116,7 +137,7 @@ FLASHMEM Error FileTransfer::begin(const Frame& request, uint32_t nowMs) {
         || !readCanonicalPath(reader, path, sizeof(path)) || reader.remaining() != 0
         || !files_.resolvePath(path, resolved, sizeof(resolved))
         || internal::isProtocolReservedPath(files_, path)) return Error::InvalidArgument;
-    if (session_ || !available()) return Error::ResourceExhausted;
+    if (hasWork() || pending() || !available()) return Error::ResourceExhausted;
     // Coordinator IDs never wrap or repeat during its lifetime. A delayed chunk,
     // abort or commit cannot address a later upload, even after result expiry.
     const uint32_t session = token_.id();
@@ -139,6 +160,8 @@ FLASHMEM Error FileTransfer::execute(const Frame& r, uint32_t nowMs, uint8_t* bo
     ByteReader reader(r.body, r.bodySize);
     ByteWriter writer(body, MAX_BODY);
     uint16_t count = 0; uint32_t session = 0, offset = 0;
+    if (r.operation == Operation::Mkdir || r.operation == Operation::Rename || r.operation == Operation::Delete)
+        return mutate(r, nowMs);
     if (r.operation == Operation::List) {
         char path[sizeof(final_)]{};
         uint16_t start = 0; uint8_t limit = 0; uint32_t snapshot = 0;
@@ -187,10 +210,9 @@ FLASHMEM Error FileTransfer::execute(const Frame& r, uint32_t nowMs, uint8_t* bo
     if (r.operation == Operation::UploadCommit) {
         if (!reader.readU32(session) || reader.remaining()) return Error::InvalidArgument;
         if (!session_ || session != session_ || written_ != expected_ || pending()) return Error::PreconditionFailed;
-        active_ = available();
-        if (!active_) return Error::ResourceExhausted;
-        *active_ = {r.nonce, session_, r.delayMs, nowMs, 0, files_.storageIdentity().mediaGeneration};
-        if (!files_.finishWrite(lease_) || !plan_.begin(files_, lease_, final_, backup_, temporary_,
+        if (!available()) return Error::ResourceExhausted;
+        retain(r, nowMs, session_);
+        if (!files_.finishWrite(lease_) || !std::get<p::ProductFileCommitPlan>(work_).begin(files_, lease_, final_, backup_, temporary_,
                 expected_, p::checksum::crc32Finish(crc_))) {
             release(true); terminal(State::Failed, Error::StorageWriteFailed, nowMs);
             return Error::StorageWriteFailed;
@@ -220,6 +242,36 @@ FLASHMEM Error FileTransfer::execute(const Frame& r, uint32_t nowMs, uint8_t* bo
     return Error::Unsupported;
 }
 
+FLASHMEM Error FileTransfer::mutate(const Frame& r, uint32_t nowMs) {
+    ByteReader reader(r.body, r.bodySize);
+    char path[sizeof(final_)]{}, destination[sizeof(final_)]{}, resolved[sizeof(final_)]{};
+    bool recursive = false;
+    if (!readCanonicalPath(reader, path, sizeof(path)) || !files_.resolvePath(path, resolved, sizeof(resolved))
+        || internal::isProtocolReservedPath(files_, path)) return Error::InvalidArgument;
+    if (r.operation == Operation::Rename && (!readCanonicalPath(reader, destination, sizeof(destination))
+        || !files_.resolvePath(destination, resolved, sizeof(resolved))
+        || internal::isProtocolReservedPath(files_, destination))) return Error::InvalidArgument;
+    if (r.operation == Operation::Delete && !reader.readBool(recursive)) return Error::InvalidArgument;
+    if (reader.remaining()) return Error::InvalidArgument;
+    if (hasWork() || pending() || !available()) return Error::ResourceExhausted;
+    if (recursive) {
+        auto& tree = work_.emplace<p::ProductTreeCleanupPlan>();
+        const auto begun = tree.beginDelete(files_, path);
+        if (!begun) { work_.emplace<p::ProductFileCommitPlan>(); return storageError(begun.error()); }
+        retain(r, nowMs, token_.id());
+        return Error::None;
+    }
+    auto acquired = files_.acquireMutation(p::ProductMutationOwner::FILESYSTEM_RPC);
+    if (!acquired) return storageError(acquired.error());
+    auto lease = std::move(acquired.value());
+    retain(r, nowMs, token_.id());
+    const auto result = r.operation == Operation::Mkdir ? files_.createDirectory(lease, path)
+        : r.operation == Operation::Rename ? files_.rename(lease, path, destination)
+        : files_.remove(lease, path, oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY);
+    const auto released = files_.releaseMutation(lease);
+    return !result ? storageError(result.error()) : !released ? storageError(released.error()) : Error::None;
+}
+
 FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t nowMs, bool playing,
                                       uint8_t* output, size_t capacity) {
     Frame request;
@@ -241,19 +293,22 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
     if (request.operation == Operation::Capabilities) {
         if (request.bodySize) return finish(Error::InvalidArgument);
         ByteWriter writer(output + HEADER, MAX_BODY);
-        writer.writeU32(0x60ffU); // Implemented subset: capabilities/stat/list/read/upload/poll/cancel.
+        writer.writeU32(0x67ffU); // Conditional mutations remain reserved.
         writer.writeU32(30'720); writer.writeU32(524'288); writer.writeU32(RETENTION_MS);
         writer.writeU16(oc::interface::FILESYSTEM_MAX_PATH_LENGTH); writer.writeU8(1); writer.writeU8(RETAINED_CAPACITY);
         response.bodySize = writer.position(); return finish(Error::None);
     }
     const bool query = request.operation == Operation::Poll || request.operation == Operation::Cancel;
+    if (retained(request.operation) && request.bodySize > 386) return finish(Error::InvalidArgument);
     auto* record = find(request.nonce);
-    if (query || (request.operation == Operation::UploadCommit && record)) {
+    if (query || (retained(request.operation) && record)) {
         if (!record || (query && request.operationId != record->id)) return finish(Error::ResultExpired);
         response.operationId = record->id;
         if (!query) {
-            ByteReader reader(request.body, request.bodySize); uint32_t session = 0;
-            if (!reader.readU32(session) || reader.remaining() || session != record->id || request.delayMs != record->deadline)
+            uint8_t fingerprint[32]{};
+            (void)p::conditional_mutation::hashBytes(request.body, request.bodySize, fingerprint);
+            if (request.operation != record->operation || request.delayMs != record->deadline
+                || std::memcmp(fingerprint, record->fingerprint, sizeof(fingerprint)))
                 return finish(Error::Conflict);
             response.replayed = true;
         }
@@ -288,7 +343,8 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
         token_ = std::move(admitted.value());
     }
     const auto quota = request.operation == Operation::UploadBegin || request.operation == Operation::UploadCommit
-        || request.operation == Operation::UploadAbort ? p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+        || request.operation == Operation::UploadAbort || request.operation == Operation::Mkdir
+            ? p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
         : request.operation == Operation::List ? p::PRODUCT_PERSISTENCE_QUOTA_RAW_CATALOG
         : p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
     if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) return finish(Error::ResourceExhausted);
@@ -298,15 +354,18 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
         auto measured = files_.measurePersistenceWork(usage);
         if (measured) error = execute(request, nowMs, output + HEADER, response.bodySize, measured.value());
     }
-    if (token_.valid() && !jobs.finishAdvance(token_, usage, session_ == 0)) {
+    if (token_.valid() && !jobs.finishAdvance(token_, usage, !hasWork())) {
         error = Error::ResourceExhausted;
-        if (session_) deferredError_ = error;
+        if (hasWork()) deferredError_ = error;
     }
-    if (!session_ && token_.valid()) (void)jobs.complete(token_);
-    if (request.operation == Operation::UploadCommit) {
+    if (!hasWork() && token_.valid()) (void)jobs.complete(token_);
+    if (retained(request.operation)) {
         if (auto* admitted = find(request.nonce)) {
             response.operationId = admitted->id;
-            if (admitted == active_) { response.state = State::Pending; response.delayMs = 5; error = Error::None; }
+            if (admitted == active_) {
+                if (hasWork()) { response.state = State::Pending; response.delayMs = 5; error = Error::None; }
+                else terminal(error == Error::None ? State::Complete : State::Failed, error, nowMs);
+            }
         }
     }
     return finish(error);
@@ -314,7 +373,9 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
 
 FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scratch, size_t capacity) {
     expire(nowMs);
-    if (session_ && !files_.owns(lease_)) {
+    if ((session_ && !files_.owns(lease_))
+        || (active_ && (active_->media != files_.storageIdentity().mediaGeneration
+                       || files_.storageState() == p::ProductStorageState::ABSENT))) {
         release(false); terminal(State::Failed, Error::MediaChanged, nowMs); return;
     }
     if (playing) return;
@@ -338,25 +399,32 @@ FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scrat
         return;
     }
     auto& jobs = files_.persistenceJobs();
-    const auto quota = plan_.nextAdvanceReadsData() ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
+    auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_);
+    const auto quota = tree ? p::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP
+        : std::get<p::ProductFileCommitPlan>(work_).nextAdvanceReadsData()
+            ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
     if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) return;
     p::ProductPersistenceWorkUsage usage{};
     bool done = false; Error error = Error::None;
     {
         auto measured = files_.measurePersistenceWork(usage);
         if (measured) {
-            auto advanced = plan_.advance(files_, lease_, scratch, capacity);
-            done = advanced && advanced.value();
-            if (!advanced) error = storageError(advanced.error());
+            if (tree) {
+                done = tree->advanceDelete(files_, &measured.value());
+                if (done && !tree->completed()) error = storageError(tree->error());
+            } else {
+                auto advanced = std::get<p::ProductFileCommitPlan>(work_).advance(files_, lease_, scratch, capacity);
+                done = advanced && advanced.value();
+                if (!advanced) error = storageError(advanced.error());
+            }
         } else error = Error::Internal;
     }
     if (!jobs.finishAdvance(token_, usage, done)) error = Error::ResourceExhausted;
-    if (error != Error::None) deferredError_ = error;
-    else if (done) {
-        const bool success = release(false, true);
-        terminal(success ? State::Complete : State::Failed,
-                 success ? Error::None : Error::StorageWriteFailed, nowMs);
-    }
+    if (done) {
+        const bool success = release(false, error == Error::None);
+        if (!success && error == Error::None) error = Error::StorageWriteFailed;
+        terminal(error == Error::None ? State::Complete : State::Failed, error, nowMs);
+    } else if (error != Error::None) deferredError_ = error;
 }
 
 }  // namespace core::protocol::filesystem::unified

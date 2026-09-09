@@ -1,9 +1,11 @@
 #pragma once
+#include <variant>
 
 #include "UnifiedFileSystemRpc.hpp"
 #include "persistence/ProductFileCommitPlan.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "persistence/ProductDirectoryCatalog.hpp"
+#include "persistence/ProductTreeCleanupPlan.hpp"
 
 namespace core::protocol::filesystem::unified {
 
@@ -26,6 +28,7 @@ private:
     Error execute(const Frame& request, uint32_t nowMs, uint8_t* body, size_t& size,
                   core::persistence::ProductPersistenceWorkMeasurement& measurement);
     Error begin(const Frame& request, uint32_t nowMs);
+    Error mutate(const Frame& request, uint32_t nowMs);
     bool release(bool discard, bool completed = false);
     bool discard(uint32_t nowMs, Error& outcome);
     bool irreversible() const;
@@ -33,17 +36,24 @@ private:
         uint32_t nonce = 0, id = 0, deadline = 0, started = 0, terminalAt = 0, media = 0;
         State state = State::Pending;
         Error error = Error::None;
+        Operation operation = Operation::UploadCommit;
+        uint8_t fingerprint[32]{};
     };
     Record* find(uint32_t nonce);
     Record* available();
+    void retain(const Frame& request, uint32_t nowMs, uint32_t identity);
     void expire(uint32_t nowMs);
     void terminal(State state, Error error, uint32_t nowMs);
     bool pending() const { return active_ != nullptr; }
+    bool hasWork() const;
     core::persistence::ProductFileService& files_;
     core::persistence::ProductDirectoryCatalog& catalog_;
     core::persistence::ProductMutationLease lease_;
     core::persistence::ProductPersistenceJobToken token_;
-    core::persistence::ProductFileCommitPlan plan_;
+    // Only one continuation can own storage; share its memory rather than
+    // retaining a separate plan buffer for each kind of mutation.
+    std::variant<core::persistence::ProductFileCommitPlan,
+                 core::persistence::ProductTreeCleanupPlan> work_;
     char final_[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1]{};
     char temporary_[64]{}, backup_[64]{};
     uint32_t session_ = 0;
