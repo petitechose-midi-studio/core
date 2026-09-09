@@ -1,4 +1,5 @@
 #include <array>
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <filesystem>
@@ -20,6 +21,14 @@ struct FaultFileSystem : oc::impl::HostFileSystem {
     bool failRemove = false;
     bool shortAppend = false, failTemporaryRead = false;
     size_t removes = 0, failedReads = 0;
+    size_t lists = 0;
+    bool failList = false;
+    oc::type::Result<void> list(const char* path, oc::interface::DirectoryEntryVisitor visitor, void* context) override {
+        ++lists;
+        if (failList) return oc::type::Result<void>::err(
+            {oc::type::ErrorCode::STORAGE_READ_FAILED, "injected list failure"});
+        return oc::impl::HostFileSystem::list(path, visitor, context);
+    }
     oc::type::Result<void> remove(const char* path, oc::interface::RemoveMode mode) override {
         ++removes;
         if (failRemove) return oc::type::Result<void>::err(
@@ -43,11 +52,12 @@ struct Harness {
     std::filesystem::path root;
     FaultFileSystem filesystem;
     core::persistence::ProductFileService files;
+    core::persistence::ProductDirectoryCatalog catalog;
     FileTransfer transfer;
     std::array<uint8_t, HEADER + MAX_BODY> input{}, output{}, scratch{};
     uint32_t now = 0;
     explicit Harness(const std::filesystem::path& path)
-        : root(path), filesystem(root.string().c_str()), files(filesystem), transfer(files) {
+        : root(path), filesystem(root.string().c_str()), files(filesystem), catalog(files), transfer(files, catalog) {
         assert(!std::filesystem::exists(root));
         std::filesystem::create_directories(root);
         assert(files.init());
@@ -102,6 +112,67 @@ Frame finish(Harness& h, uint32_t nonce, uint32_t id) {
     assert(false && "commit did not terminate"); return {};
 }
 
+std::vector<uint8_t> listBody(const char* path, uint16_t start = 0, uint8_t limit = 8, uint32_t snapshot = 0) {
+    std::vector<uint8_t> body(210); ByteWriter w(body.data(), body.size());
+    assert(w.writeString(path, 192) && w.writeU16(start) && w.writeU8(limit) && w.writeU32(snapshot));
+    body.resize(w.position()); return body;
+}
+
+void testListing(const std::filesystem::path& root) {
+    Harness h(root);
+    using Reader = core::protocol::filesystem::internal::ByteReader;
+    auto lease = h.files.acquireMutation(core::persistence::ProductMutationOwner::FILESYSTEM_RPC);
+    assert(lease);
+    for (size_t i = 0; i < 256; ++i) {
+        const auto path = "projects/entry-" + std::to_string(i);
+        assert(h.files.beginWrite(lease.value(), path.c_str(), 0) && h.files.finishWrite(lease.value()));
+    }
+    assert(h.files.releaseMutation(lease.value()));
+    uint32_t snapshot = 0; std::vector<std::string> names;
+    for (uint16_t start = 0; start < 256; start += 8) {
+        const auto page = h.call(Operation::List, listBody("projects", start, 8, snapshot));
+        assert(page.state == State::Complete);
+        Reader reader(page.body, page.bodySize);
+        uint32_t id; uint16_t index; uint8_t count; bool more;
+        assert(reader.readU32(id) && id && (!snapshot || id == snapshot)); snapshot = id;
+        assert(reader.readU16(index) && index == start && reader.readU8(count) && count == 8);
+        assert(reader.readBool(more) && more == (start + count < 256));
+        for (uint8_t i = 0; i < count; ++i) {
+            char name[65]; uint8_t type; uint32_t size; bool truncated;
+            assert(reader.readString(name, sizeof(name), 64) && reader.readU8(type) && type == 1);
+            assert(reader.readU32(size) && size == 0 && reader.readBool(truncated) && !truncated);
+            assert(std::find(names.begin(), names.end(), name) == names.end()); names.emplace_back(name);
+        }
+        assert(!reader.remaining());
+    }
+    assert(names.size() == 256 && h.filesystem.lists == 1);
+    assert(h.call(Operation::List, listBody("projects", 257, 8, snapshot)).error == Error::InvalidArgument);
+    assert(h.call(Operation::List, listBody("projects", 1)).error == Error::InvalidArgument);
+    assert(h.call(Operation::List, listBody("projects", 0, 0)).error == Error::InvalidArgument);
+    assert(h.call(Operation::List, listBody("projects", 0, 9)).error == Error::InvalidArgument);
+    auto malformed = listBody("projects"); malformed.push_back(0);
+    assert(h.call(Operation::List, malformed).error == Error::InvalidArgument);
+    assert(h.call(Operation::List, listBody("projects"), 0, 0, 0, true).error == Error::BusyPlaying);
+    assert(h.filesystem.lists == 1);
+    // A shared catalog displaced and then rebuilt for the same path is a different snapshot.
+    const auto empty = h.call(Operation::List, listBody("tmp"));
+    assert(empty.state == State::Complete && empty.bodySize == 8 && empty.body[6] == 0 && empty.body[7] == 0);
+    assert(h.call(Operation::List, listBody("projects", 8, 8, snapshot)).error == Error::Conflict);
+    assert(h.call(Operation::List, listBody("projects")).state == State::Complete);
+    assert(h.call(Operation::List, listBody("projects", 8, 8, snapshot)).error == Error::Conflict);
+    snapshot = h.catalog.rawSnapshotId("projects");
+    lease = h.files.acquireMutation(core::persistence::ProductMutationOwner::FILESYSTEM_RPC);
+    assert(lease && h.files.beginWrite(lease.value(), "projects/overflow", 0) && h.files.finishWrite(lease.value()));
+    assert(h.files.releaseMutation(lease.value()));
+    assert(h.call(Operation::List, listBody("projects", 8, 8, snapshot)).error == Error::Conflict);
+    assert(h.call(Operation::List, listBody("projects")).error == Error::ResourceExhausted);
+    h.filesystem.failList = true;
+    assert(h.call(Operation::List, listBody("tmp")).error == Error::StorageReadFailed);
+    h.filesystem.failList = false;
+    assert(h.call(Operation::List, listBody("tmp")).state == State::Complete);
+    std::cout << "List: 256 entries in 32 pages, one scan, invalidation/conflict, overflow, error recovery passed\n";
+}
+
 int main(int argc, char** argv) {
     const auto root = std::filesystem::temp_directory_path() / ("ms-core-unified-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -114,7 +185,11 @@ int main(int argc, char** argv) {
         while (std::cin.read(reinterpret_cast<char*>(&size), 4)) {
             assert(size <= h.input.size());
             std::cin.read(reinterpret_cast<char*>(h.input.data()), size);
-            h.tick();
+            // Logical foreground scheduling, independent of one RPC poll per step.
+            // Eight admitted turns per exchange keep large-file integrity work
+            // from being artificially limited by Manager's wall-clock poll sleep.
+            // This is an interoperability oracle, not a firmware timing model.
+            for (unsigned turn = 0; turn < 8; ++turn) h.tick();
             assert(h.files.persistenceJobs().beginTurn(++h.now));
             const auto outputSize = uint32_t(h.transfer.process(h.input.data(), size, h.now, false, h.output.data(), h.output.size()));
             std::cout.write(reinterpret_cast<const char*>(&outputSize), 4);
@@ -122,6 +197,7 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    testListing(root.string() + "-list");
     auto response = h.call(Operation::Capabilities); assert(response.state == State::Complete && response.bodySize == 20);
     assert(h.call(Operation::UploadBegin, beginBody("projects/rpc.bin", 5), 0, 0, 0, true).error == Error::BusyPlaying);
     assert(h.call(Operation::UploadBegin, beginBody("../outside", 5)).error == Error::InvalidArgument);

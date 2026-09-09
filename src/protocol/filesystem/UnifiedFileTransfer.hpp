@@ -3,6 +3,7 @@
 #include "UnifiedFileSystemRpc.hpp"
 #include "persistence/ProductFileCommitPlan.hpp"
 #include "persistence/ProductFileService.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 
 namespace core::protocol::filesystem::unified {
 
@@ -13,7 +14,8 @@ class FileTransfer {
 public:
     static constexpr uint8_t RETAINED_CAPACITY = 32;
     static constexpr uint32_t RETENTION_MS = 30'000;
-    explicit FileTransfer(core::persistence::ProductFileService& files) : files_(files) {}
+    FileTransfer(core::persistence::ProductFileService& files,
+                 core::persistence::ProductDirectoryCatalog& catalog) : files_(files), catalog_(catalog) {}
     ~FileTransfer();
     FileTransfer(const FileTransfer&) = delete;
     FileTransfer& operator=(const FileTransfer&) = delete;
@@ -21,7 +23,8 @@ public:
                    uint8_t* output, size_t capacity);
     void advance(uint32_t nowMs, bool playing, uint8_t* scratch, size_t capacity);
 private:
-    Error execute(const Frame& request, uint32_t nowMs, uint8_t* body, size_t& size);
+    Error execute(const Frame& request, uint32_t nowMs, uint8_t* body, size_t& size,
+                  core::persistence::ProductPersistenceWorkMeasurement& measurement);
     Error begin(const Frame& request, uint32_t nowMs);
     bool release(bool discard, bool completed = false);
     bool discard(uint32_t nowMs, Error& outcome);
@@ -37,6 +40,7 @@ private:
     void terminal(State state, Error error, uint32_t nowMs);
     bool pending() const { return active_ != nullptr; }
     core::persistence::ProductFileService& files_;
+    core::persistence::ProductDirectoryCatalog& catalog_;
     core::persistence::ProductMutationLease lease_;
     core::persistence::ProductPersistenceJobToken token_;
     core::persistence::ProductFileCommitPlan plan_;

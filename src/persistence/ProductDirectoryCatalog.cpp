@@ -255,6 +255,9 @@ FLASHMEM bool ProductDirectoryCatalog::rawVisitor_(
 FLASHMEM oc::type::Result<void> ProductDirectoryCatalog::scanRaw_(
     ProductPersistenceWorkMeasurement& measurement
 ) {
+    if (snapshot_id_ == UINT32_MAX)
+        return oc::type::Result<void>::err({ErrorCode::RESOURCE_EXHAUSTED, kCatalogOverflow});
+    ++snapshot_id_;
     raw_count_ = 0U;
     raw_overflow_ = false;
     const auto listed = files_.list(directory_, rawVisitor_, this);
@@ -499,6 +502,10 @@ ProductDirectoryCatalog::rawEntries(
     if (!rawReadyFor_(directory)) return nullptr;
     outCount = raw_count_;
     return raw_entries_;
+}
+
+FLASHMEM uint32_t ProductDirectoryCatalog::rawSnapshotId(const char* directory) const {
+    return rawReadyFor_(directory) ? snapshot_id_ : 0U;
 }
 
 FLASHMEM const ProductDirectoryAssetEntry*

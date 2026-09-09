@@ -134,10 +134,37 @@ FLASHMEM Error FileTransfer::begin(const Frame& request, uint32_t nowMs) {
     return Error::None;
 }
 
-FLASHMEM Error FileTransfer::execute(const Frame& r, uint32_t nowMs, uint8_t* body, size_t& size) {
+FLASHMEM Error FileTransfer::execute(const Frame& r, uint32_t nowMs, uint8_t* body, size_t& size,
+                                     p::ProductPersistenceWorkMeasurement& measurement) {
     ByteReader reader(r.body, r.bodySize);
     ByteWriter writer(body, MAX_BODY);
     uint16_t count = 0; uint32_t session = 0, offset = 0;
+    if (r.operation == Operation::List) {
+        char path[sizeof(final_)]{};
+        uint16_t start = 0; uint8_t limit = 0; uint32_t snapshot = 0;
+        if (!readCanonicalPath(reader, path, sizeof(path)) || !reader.readU16(start)
+            || !reader.readU8(limit) || !reader.readU32(snapshot) || reader.remaining()
+            || !limit || limit > 8 || (!snapshot && start)) return Error::InvalidArgument;
+        if (!snapshot) {
+            const auto prepared = catalog_.prepareRawExternal(path, measurement);
+            if (!prepared) return storageError(prepared.error());
+            snapshot = catalog_.rawSnapshotId(path);
+        } else if (catalog_.rawSnapshotId(path) != snapshot) return Error::Conflict;
+        uint16_t total = 0;
+        const auto* entries = catalog_.rawEntries(path, total);
+        if (!entries || !snapshot) return Error::Conflict;
+        if (start > total) return Error::InvalidArgument;
+        const auto returned = uint8_t(total - start < limit ? total - start : limit);
+        writer.writeU32(snapshot); writer.writeU16(start); writer.writeU8(returned);
+        writer.writeBool(start + returned < total);
+        for (uint16_t i = start; i < start + returned; ++i) {
+            const auto& entry = entries[i];
+            if (!writer.writeString(entry.name, oc::interface::FILESYSTEM_MAX_NAME_LENGTH)
+                || !writer.writeU8(static_cast<uint8_t>(entry.type)) || !writer.writeU32(entry.sizeBytes)
+                || !writer.writeBool(entry.nameTruncated)) return Error::Internal;
+        }
+        size = writer.position(); return Error::None;
+    }
     if (r.operation == Operation::UploadBegin) {
         const auto error = begin(r, nowMs);
         if (error == Error::None) { writer.writeU32(session_); size = writer.position(); }
@@ -214,7 +241,7 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
     if (request.operation == Operation::Capabilities) {
         if (request.bodySize) return finish(Error::InvalidArgument);
         ByteWriter writer(output + HEADER, MAX_BODY);
-        writer.writeU32(0x60fbU); // Implemented subset: capabilities/stat/read/upload/poll/cancel.
+        writer.writeU32(0x60ffU); // Implemented subset: capabilities/stat/list/read/upload/poll/cancel.
         writer.writeU32(30'720); writer.writeU32(524'288); writer.writeU32(RETENTION_MS);
         writer.writeU16(oc::interface::FILESYSTEM_MAX_PATH_LENGTH); writer.writeU8(1); writer.writeU8(RETAINED_CAPACITY);
         response.bodySize = writer.position(); return finish(Error::None);
@@ -262,13 +289,14 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
     }
     const auto quota = request.operation == Operation::UploadBegin || request.operation == Operation::UploadCommit
         || request.operation == Operation::UploadAbort ? p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+        : request.operation == Operation::List ? p::PRODUCT_PERSISTENCE_QUOTA_RAW_CATALOG
         : p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
     if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) return finish(Error::ResourceExhausted);
     p::ProductPersistenceWorkUsage usage{};
     Error error = Error::Internal;
     {
         auto measured = files_.measurePersistenceWork(usage);
-        if (measured) error = execute(request, nowMs, output + HEADER, response.bodySize);
+        if (measured) error = execute(request, nowMs, output + HEADER, response.bodySize, measured.value());
     }
     if (token_.valid() && !jobs.finishAdvance(token_, usage, session_ == 0)) {
         error = Error::ResourceExhausted;
