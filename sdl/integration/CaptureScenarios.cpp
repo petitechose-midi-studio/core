@@ -69,8 +69,8 @@ void prepareSequencerVariationScenario(core::state::CoreState& state,
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     state.sequencer.activeStepProperty.set(property);
     state.sequencer.setStepDataAt(0, 60, 100, 75, 0);
-    if (!state.sequencer.pattern.isEnabled(0)) {
-        state.sequencer.pattern.toggle(0);
+    if (!state.sequencer.pattern().isEnabled(0)) {
+        state.sequencer.pattern().toggle(0);
     }
 
     oc::note::sequencer::StepSequencerVariationRanges ranges{
@@ -113,8 +113,8 @@ void prepareSequencerScaleScenario(
         core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
     );
     state.sequencer.setStepDataAt(0, 61, 100, 75, 0);
-    if (!state.sequencer.pattern.isEnabled(0)) {
-        state.sequencer.pattern.toggle(0);
+    if (!state.sequencer.pattern().isEnabled(0)) {
+        state.sequencer.pattern().toggle(0);
     }
 
     StepSequencerScaleSettings settings{
@@ -142,19 +142,19 @@ void prepareSequencerScaleScenario(
 }
 
 void enableSequencerStep(core::state::sequencer::SequencerState& sequencer, uint8_t step) {
-    if (!sequencer.pattern.isEnabled(step)) {
-        sequencer.pattern.toggle(step);
+    if (!sequencer.pattern().isEnabled(step)) {
+        sequencer.pattern().toggle(step);
     }
 }
 
 void offsetFirstMicroStep(core::state::sequencer::SequencerState& sequencer,
                           uint16_t sequenceId,
                           int8_t noteOffset) {
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     const auto* sequence = graph ? graph->sequence(sequenceId) : nullptr;
     if (sequence == nullptr) return;
     core::state::sequencer::setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         sequence->firstStepNode,
         noteOffset
     );
@@ -163,11 +163,11 @@ void offsetFirstMicroStep(core::state::sequencer::SequencerState& sequencer,
 void offsetFirstCycleState(core::state::sequencer::SequencerState& sequencer,
                            uint16_t cycleSetId,
                            int8_t noteOffset) {
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern());
     const auto* cycleSet = graph ? graph->cycleSet(cycleSetId) : nullptr;
     if (cycleSet == nullptr) return;
     core::state::sequencer::setNodeNoteOffset(
-        sequencer.pattern,
+        sequencer.pattern(),
         cycleSet->firstStateNode,
         noteOffset
     );
@@ -235,7 +235,7 @@ void prepareMacroPerformanceRailScenario(core::state::CoreState& state) {
 
 void prepareMacroInitialProjectionScenario(core::state::CoreState& state) {
     prepareMacroMultiModulationScenario(state);
-    auto& graph = state.pages.control.authored.modulation;
+    auto& graph = state.pages.control.authored().modulation;
     if (graph.sourceCount < 2U) return;
 
     auto& track0 = state.pages.tracks[0];
@@ -315,7 +315,7 @@ void prepareProjectModulatorsScenario(core::state::CoreState& state) {
     track2Page.values[1] = 0.46f;
     track2Page.setMacroActive(1, true);
 
-    auto& graph = state.pages.control.authored.modulation;
+    auto& graph = state.pages.control.authored().modulation;
     if (graph.sourceCount >= 2U) {
         // The reusable-Macro scenario seeds one remote use. This Project
         // scenario authors its own exact two-destination shared graph.
@@ -405,8 +405,8 @@ void prepareProjectModulatorWorkspaceScenario(core::state::CoreState& state) {
     draft.pointCount = static_cast<uint16_t>(points.size());
     auto& control = state.pages.control;
     const auto created = createRecordedShapeModulator(
-        control.authored.modulation,
-        control.authored.curves,
+        control.authored().modulation,
+        control.authored().curves,
         draft
     );
     if (created.changed()) {
@@ -416,7 +416,7 @@ void prepareProjectModulatorWorkspaceScenario(core::state::CoreState& state) {
         binding.amountQ15 = 6553;
         binding.application = ModulationApplication::NATURAL;
         (void)addProjectModulationBinding(
-            control.authored.modulation,
+            control.authored().modulation,
             binding
         );
         control.markAuthoredMutation();
@@ -435,7 +435,7 @@ void prepareMacroModulationAssignmentCopyScenario(
     page.cc[1] = 71;
     page.values[1] = 0.58f;
     page.setMacroActive(1, true);
-    auto& graph = state.pages.control.authored.modulation;
+    auto& graph = state.pages.control.authored().modulation;
     if (graph.sourceCount == 0U) return;
     const auto binding = bindReusableModulator(
         state,
@@ -718,7 +718,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern().length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
@@ -744,7 +744,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
     }
 
     const auto micro = core::state::sequencer::createMicroSequence(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(2),
         core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
     );
@@ -753,7 +753,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
     }
 
     const auto cycle = core::state::sequencer::createCycleStateSet(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(3),
         core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
     );
@@ -762,7 +762,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
     }
 
     const auto nestedMicro = core::state::sequencer::createMicroSequence(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(4),
         core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
     );
@@ -770,7 +770,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
         offsetFirstMicroStep(state.sequencer, nestedMicro.id, 4);
     }
     const auto nestedCycle = core::state::sequencer::createCycleStateSet(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(4),
         core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT
     );
@@ -786,7 +786,7 @@ void prepareSequencerLocalRandomGridScenario(core::state::CoreState& state) {
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern().length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(StepProperty::NOTE);
@@ -809,25 +809,25 @@ void prepareSequencerLocalRandomGridScenario(core::state::CoreState& state) {
     }
 
     core::state::sequencer::setNodeLocalVariationRange(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(0),
         StepProperty::NOTE,
         5
     );
 
     const auto cycle = core::state::sequencer::createCycleStateSet(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(1),
         2
     );
     if (cycle.ok) {
-        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern);
+        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern());
         const auto* cycleSet = graph ? graph->cycleSet(cycle.id) : nullptr;
         if (cycleSet != nullptr) {
             const auto stateNode = cycleSet->firstStateNode;
-            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern, stateNode, 2);
+            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern(), stateNode, 2);
             core::state::sequencer::setNodeLocalVariationRange(
-                state.sequencer.pattern,
+                state.sequencer.pattern(),
                 stateNode,
                 StepProperty::NOTE,
                 6
@@ -836,18 +836,18 @@ void prepareSequencerLocalRandomGridScenario(core::state::CoreState& state) {
     }
 
     const auto micro = core::state::sequencer::createMicroSequence(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(2),
         core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
     );
     if (micro.ok) {
-        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern);
+        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern());
         const auto* sequence = graph ? graph->sequence(micro.id) : nullptr;
         if (sequence != nullptr) {
             const auto microNode = sequence->firstStepNode;
-            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern, microNode, 3);
+            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern(), microNode, 3);
             core::state::sequencer::setNodeLocalVariationRange(
-                state.sequencer.pattern,
+                state.sequencer.pattern(),
                 microNode,
                 StepProperty::NOTE,
                 4
@@ -901,7 +901,7 @@ void prepareSequencerSummedLocalRandomScenario(
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern().length.set(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(activeProperty);
@@ -930,7 +930,7 @@ void prepareSequencerSummedLocalRandomScenario(
     }
 
     setAllLocalVariationRanges(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(0),
         {
             .pitchSemitones = 4,
@@ -941,21 +941,21 @@ void prepareSequencerSummedLocalRandomScenario(
     );
 
     const auto cycle = core::state::sequencer::createCycleStateSet(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(1),
         2
     );
     if (cycle.ok) {
-        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern);
+        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern());
         const auto* cycleSet = graph ? graph->cycleSet(cycle.id) : nullptr;
         if (cycleSet != nullptr) {
             const auto stateNode = cycleSet->firstStateNode;
-            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern, stateNode, 2);
-            core::state::sequencer::setNodeVelocityOffset(state.sequencer.pattern, stateNode, -8);
-            core::state::sequencer::setNodeGateOffset(state.sequencer.pattern, stateNode, -12);
-            core::state::sequencer::setNodeNudgeOffset(state.sequencer.pattern, stateNode, 5);
+            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern(), stateNode, 2);
+            core::state::sequencer::setNodeVelocityOffset(state.sequencer.pattern(), stateNode, -8);
+            core::state::sequencer::setNodeGateOffset(state.sequencer.pattern(), stateNode, -12);
+            core::state::sequencer::setNodeNudgeOffset(state.sequencer.pattern(), stateNode, 5);
             setAllLocalVariationRanges(
-                state.sequencer.pattern,
+                state.sequencer.pattern(),
                 stateNode,
                 {
                     .pitchSemitones = 5,
@@ -968,21 +968,21 @@ void prepareSequencerSummedLocalRandomScenario(
     }
 
     const auto micro = core::state::sequencer::createMicroSequence(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(2),
         core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH
     );
     if (micro.ok) {
-        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern);
+        const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern());
         const auto* sequence = graph ? graph->sequence(micro.id) : nullptr;
         if (sequence != nullptr) {
             const auto microNode = sequence->firstStepNode;
-            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern, microNode, -3);
-            core::state::sequencer::setNodeVelocityOffset(state.sequencer.pattern, microNode, 10);
-            core::state::sequencer::setNodeGateOffset(state.sequencer.pattern, microNode, 16);
-            core::state::sequencer::setNodeNudgeOffset(state.sequencer.pattern, microNode, -6);
+            core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern(), microNode, -3);
+            core::state::sequencer::setNodeVelocityOffset(state.sequencer.pattern(), microNode, 10);
+            core::state::sequencer::setNodeGateOffset(state.sequencer.pattern(), microNode, 16);
+            core::state::sequencer::setNodeNudgeOffset(state.sequencer.pattern(), microNode, -6);
             setAllLocalVariationRanges(
-                state.sequencer.pattern,
+                state.sequencer.pattern(),
                 microNode,
                 {
                     .pitchSemitones = 3,
@@ -1004,7 +1004,7 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern.length.set(4);
+    state.sequencer.pattern().length.set(4);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(StepProperty::NOTE);
@@ -1031,24 +1031,24 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto cycle = core::state::sequencer::createCycleStateSet(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         rootNode,
         2
     );
     if (!cycle.ok) return;
 
-    core::state::sequencer::setCycleStateSetOffset(state.sequencer.pattern, cycle.id, -1);
-    const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern);
+    core::state::sequencer::setCycleStateSetOffset(state.sequencer.pattern(), cycle.id, -1);
+    const auto* graph = core::state::sequencer::graphView(state.sequencer.pattern());
     const auto* cycleSet = graph ? graph->cycleSet(cycle.id) : nullptr;
     if (cycleSet == nullptr) return;
 
     const auto activeStateNode = static_cast<core::state::sequencer::SequencerGraphNodeId>(
         cycleSet->firstStateNode + 1U
     );
-    core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern, activeStateNode, 1);
-    core::state::sequencer::setNodeVelocityOffset(state.sequencer.pattern, activeStateNode, -6);
+    core::state::sequencer::setNodeNoteOffset(state.sequencer.pattern(), activeStateNode, 1);
+    core::state::sequencer::setNodeVelocityOffset(state.sequencer.pattern(), activeStateNode, -6);
     setAllLocalVariationRanges(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         activeStateNode,
         {
             .pitchSemitones = 6,
@@ -1059,21 +1059,21 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
     );
 
     const auto micro = core::state::sequencer::createMicroSequence(
-        state.sequencer.pattern,
+        state.sequencer.pattern(),
         activeStateNode,
         2
     );
     if (micro.ok) {
-        graph = core::state::sequencer::graphView(state.sequencer.pattern);
+        graph = core::state::sequencer::graphView(state.sequencer.pattern());
         const auto* sequence = graph ? graph->sequence(micro.id) : nullptr;
         if (sequence != nullptr) {
             core::state::sequencer::setNodeNoteOffset(
-                state.sequencer.pattern,
+                state.sequencer.pattern(),
                 sequence->firstStepNode,
                 0
             );
             core::state::sequencer::setNodeNoteOffset(
-                state.sequencer.pattern,
+                state.sequencer.pattern(),
                 static_cast<core::state::sequencer::SequencerGraphNodeId>(
                     sequence->firstStepNode + 1U
                 ),
@@ -1339,7 +1339,7 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     (void)state.setSharedTrackState(0x0001, 0);
     state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
 
-    state.sequencer.pattern.length.set(1);
+    state.sequencer.pattern().length.set(1);
     if (!core::state::project::setProjectTrackMidiChannel(
             state.projectTracks,
             0U,
@@ -1350,19 +1350,19 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     state.sequencer.setStepDataAt(0, 60, 100, 75, 0);
     enableSequencerStep(state.sequencer, 0);
     if (!addSequencerCaptureLane(
-            state.sequencer.pattern,
+            state.sequencer.pattern(),
             0,
             74,
             SequencerCcLaneRoutePolicy::INHERIT_TRACK
         )) {
         return false;
     }
-    auto* lanes = ensureSequencerCcLaneBank(state.sequencer.pattern);
+    auto* lanes = ensureSequencerCcLaneBank(state.sequencer.pattern());
     if (lanes == nullptr ||
         !setSequencerCcLaneEvent(*lanes, 0, 0, 96).changed()) {
         return false;
     }
-    state.sequencer.pattern.bumpCcLaneRevision();
+    state.sequencer.pattern().bumpCcLaneRevision();
 
     auto& macroTrack = state.pages.tracks[0];
     macroTrack.activePage = 0;
@@ -1462,14 +1462,14 @@ bool prepareClipLauncherV3Scenario(core::state::CoreState& state) {
     constexpr std::array<uint8_t, 5> previewSteps{0U, 2U, 3U, 5U, 7U};
     oc::note::sequencer::StepBitMask128 previewMask{};
     for (uint8_t step : previewSteps) {
-        state.sequencer.pattern.note[step] =
+        state.sequencer.pattern().note[step] =
             static_cast<uint8_t>(60U + step / 3U);
-        state.sequencer.pattern.velocity[step] =
+        state.sequencer.pattern().velocity[step] =
             static_cast<uint8_t>(88U + step);
-        state.sequencer.pattern.gate[step] = 75U;
+        state.sequencer.pattern().gate[step] = 75U;
         previewMask.setBit(step);
     }
-    state.sequencer.pattern.enabledMask.set(previewMask);
+    state.sequencer.pattern().enabledMask.set(previewMask);
 
     // Three authored Tracks plus the one sequential Add Track column. The
     // first four Scenes deliberately mix Clip, Stop and Empty cells so one
@@ -1591,13 +1591,13 @@ bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     state.sequencer.setStepDataAt(0, 60, 104, 75, 0);
     enableSequencerStep(state.sequencer, 0);
     if (!addSequencerCaptureLane(
-            state.sequencer.pattern,
+            state.sequencer.pattern(),
             0,
             74,
             SequencerCcLaneRoutePolicy::INHERIT_TRACK
         ) ||
         !addSequencerCaptureLane(
-            state.sequencer.pattern,
+            state.sequencer.pattern(),
             1,
             71,
             SequencerCcLaneRoutePolicy::PINNED,
@@ -1816,8 +1816,8 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     if (std::strcmp(scenario, "seq-step-edit") == 0) {
         state.activeView.set(core::ui::ViewType::CLIPS);
         state.sequencer.setStepDataAt(0, 60, 100, 75);
-        if (!state.sequencer.pattern.isEnabled(0)) {
-            state.sequencer.pattern.toggle(0);
+        if (!state.sequencer.pattern().isEnabled(0)) {
+            state.sequencer.pattern().toggle(0);
         }
         state.overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT, false);
         state.sequencer.stepEdit.stepIndex.set(0);
