@@ -74,7 +74,7 @@ public:
 
     bool active() const;
     bool writeSessionActive() const;
-    ProductPersistenceWorkQuota nextWorkQuota() const;
+    ProjectSaveStage stage() const { return currentStage_(); }
 
 private:
     enum class Phase : uint8_t {

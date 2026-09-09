@@ -95,6 +95,10 @@ bool ProjectSessionStore::saveCurrentWriteSessionActive() const {
     return save_transaction_.writeSessionActive();
 }
 
+ProjectSaveStage ProjectSessionStore::saveCurrentStage() const {
+    return save_transaction_.stage();
+}
+
 FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
     core::state::project::ProjectSnapshot& out,
     core::persistence::project_file::LoadReport* report

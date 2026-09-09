@@ -1152,9 +1152,7 @@ void test_stale_save_waits_for_its_foreground_turn_before_unwind() {
     const auto prepared = updateAutosave(files, autosave, state, dueAt + 193U);
     assert(prepared.status ==
            core::persistence::ProjectSessionAutosaveService::Status::SAVING);
-    const auto encodeQuota = store.saveCurrentWorkQuota();
-    assert(encodeQuota.maxBytes() == core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROJECT_ENCODE.maxBytes());
-    assert(encodeQuota.maxFilesystemCalls() == 0);
+    assert(store.saveCurrentStage() == core::persistence::ProjectSaveStage::ENCODE);
     core::persistence::ProductPersistenceJobSnapshot autosaveBeforePreemption{};
     assert(autosave.inspectPersistenceJob(autosaveBeforePreemption));
     assert(autosaveBeforePreemption.safeYield);

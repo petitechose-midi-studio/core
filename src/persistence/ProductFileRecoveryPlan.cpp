@@ -1,5 +1,6 @@
 #include "persistence/ProductFileRecoveryPlan.hpp"
 
+#include <algorithm>
 
 #include <config/PlatformCompat.hpp>
 
@@ -20,6 +21,11 @@ const char kRecoveryPlanState[] PROGMEM =
     "ordinary recovery continuation is not active";
 const char kLostTopology[] PROGMEM =
     "product file transaction lost old and new";
+const char kRecoveryIntegrityScratch[] PROGMEM =
+    "product file recovery integrity scratch unavailable";
+const char kRecoveryIntegrityShortRead[] PROGMEM =
+    "short product file recovery integrity read";
+
 oc::type::Error recoveryError(ErrorCode code, const char* context) {
     return {code, context};
 }
@@ -368,14 +374,42 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advanceIntegrityCheck_(
     uint8_t* scratch,
     size_t scratchSize
 ) {
-    return transaction::advanceIntegrityRead(
-        files, lease, path, workspace_.expectedSize, integrity_offset_, integrity_crc_state_,
-        scratch, scratchSize);
-}
-
-bool ProductFileRecoveryPlan::nextAdvanceReadsData() const {
-    return (step_ == Step::VERIFY_FINAL || step_ == Step::VERIFY_TMP ||
-            step_ == Step::VERIFY_PROMOTED) && integrity_offset_ < workspace_.expectedSize;
+    if (integrity_offset_ == workspace_.expectedSize) {
+        return oc::type::Result<bool>::ok(true);
+    }
+    if (scratch == nullptr || scratchSize == 0U) {
+        return oc::type::Result<bool>::err(
+            recoveryError(ErrorCode::INVALID_ARGUMENT, kRecoveryIntegrityScratch)
+        );
+    }
+    const size_t remaining = workspace_.expectedSize - integrity_offset_;
+    const size_t requested = std::min(
+        remaining,
+        std::min(scratchSize, PRODUCT_FILE_INTEGRITY_CHUNK_SIZE)
+    );
+    auto read = files.read(
+        lease,
+        path,
+        integrity_offset_,
+        scratch,
+        requested
+    );
+    if (!read) return oc::type::Result<bool>::err(read.error());
+    if (read.value() == 0U || read.value() > requested) {
+        return oc::type::Result<bool>::err(
+            recoveryError(ErrorCode::STORAGE_READ_FAILED,
+                          kRecoveryIntegrityShortRead)
+        );
+    }
+    integrity_crc_state_ = checksum::crc32Update(
+        integrity_crc_state_,
+        scratch,
+        read.value()
+    );
+    integrity_offset_ += static_cast<uint32_t>(read.value());
+    return oc::type::Result<bool>::ok(
+        integrity_offset_ == workspace_.expectedSize
+    );
 }
 
 FLASHMEM oc::type::Result<bool>

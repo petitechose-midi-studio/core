@@ -42,9 +42,7 @@ public:
     void cancelSaveCurrent();
     bool saveCurrentInProgress() const;
     bool saveCurrentWriteSessionActive() const;
-    ProductPersistenceWorkQuota saveCurrentWorkQuota() const {
-        return save_transaction_.nextWorkQuota();
-    }
+    ProjectSaveStage saveCurrentStage() const;
 
     oc::type::Result<ProjectLoadResult> loadCurrent(
         core::state::project::ProjectSnapshot& out,

@@ -31,19 +31,6 @@ FLASHMEM ProjectSaveTransaction::~ProjectSaveTransaction() {
     cancel();
 }
 
-FLASHMEM ProductPersistenceWorkQuota ProjectSaveTransaction::nextWorkQuota() const {
-    if (phase_ == Phase::ENCODE) return PRODUCT_PERSISTENCE_QUOTA_PROJECT_ENCODE;
-    if (currentStage_() == ProjectSaveStage::WRITE) return PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
-    if (phase_ == Phase::COMMIT && commit_plan_started_) {
-        const auto& lease = recovery_lease_ ? *recovery_lease_ : lease_;
-        auto workspace = files_.projectWriteWorkspace(lease);
-        if (workspace && workspace.value()->commitPlan().nextAdvanceReadsData()) {
-            return PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
-        }
-    }
-    return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
-}
-
 FLASHMEM oc::type::Result<void> ProjectSaveTransaction::begin(
     const core::state::project::ProjectSnapshot& snapshot,
     AtomicProductFilePaths paths
