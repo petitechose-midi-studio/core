@@ -10,10 +10,40 @@
 
 namespace core::protocol::filesystem::unified {
 namespace p = core::persistence;
+namespace mutation = p::conditional_mutation;
 using internal::ByteReader;
 using internal::ByteWriter;
 
 namespace {
+FLASHMEM Error conditionalError(mutation::Status status) {
+    switch (status) {
+        case mutation::Status::OK: return Error::None;
+        case mutation::Status::INVALID_ARGUMENT: return Error::InvalidArgument;
+        case mutation::Status::NOT_FOUND: return Error::NotFound;
+        case mutation::Status::BUSY: return Error::ResourceExhausted;
+        case mutation::Status::TOO_LARGE: return Error::TooLarge;
+        case mutation::Status::STORAGE_ERROR: return Error::StorageFailure;
+        case mutation::Status::INVALID_STATE: return Error::PreconditionFailed;
+        case mutation::Status::UNSUPPORTED: return Error::Unsupported;
+        case mutation::Status::PRECONDITION_FAILED: return Error::PreconditionFailed;
+        default: return Error::Internal;
+    }
+}
+
+FLASHMEM bool normalizedConditionalPath(p::ProductFileService& files, char* path, bool staging) {
+    char normalized[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1]{};
+    if (!files.resolvePath(path, normalized, sizeof(normalized)) || std::strchr(normalized, '~')
+        || internal::isProtocolReservedPath(files, normalized)) return false;
+    std::memcpy(path, normalized, sizeof(normalized));
+    if (!staging) return true;
+    constexpr char prefix[] = "/midi-studio/tmp/";
+    for (size_t i = 0; i < sizeof(prefix) - 1; ++i) {
+        const char c = normalized[i] >= 'A' && normalized[i] <= 'Z' ? normalized[i] + ('a' - 'A') : normalized[i];
+        if (c != prefix[i]) return false;
+    }
+    return normalized[sizeof(prefix) - 1] != 0;
+}
+
 FLASHMEM bool readCanonicalPath(ByteReader& reader, char* path, size_t capacity) {
     const auto before = reader.remaining();
     if (!reader.readString(path, capacity, oc::interface::FILESYSTEM_MAX_PATH_LENGTH) || !path[0]) return false;
@@ -61,7 +91,8 @@ FLASHMEM void FileTransfer::retain(const Frame& request, uint32_t nowMs, uint32_
 
 FLASHMEM bool FileTransfer::hasWork() const {
     const auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_);
-    return session_ || (tree && tree->active());
+    const auto* conditional = std::get_if<mutation::ConditionalMutationPlan>(&work_);
+    return session_ || (tree && tree->active()) || (conditional && conditional->active());
 }
 
 FLASHMEM void FileTransfer::expire(uint32_t nowMs) {
@@ -78,7 +109,15 @@ FLASHMEM void FileTransfer::terminal(State state, Error error, uint32_t nowMs) {
     }
 }
 
+FLASHMEM size_t FileTransfer::respond(const Record& record, Frame response, uint8_t* output, size_t capacity) {
+    response.operationId = record.id; response.state = record.state; response.error = record.error;
+    response.delayMs = record.state == State::Pending ? 5 : 0;
+    response.body = record.result; response.bodySize = record.resultSize;
+    return encode(response, output, capacity);
+}
+
 FLASHMEM bool FileTransfer::irreversible() const {
+    if (const auto* conditional = std::get_if<mutation::ConditionalMutationPlan>(&work_)) return conditional->irreversible();
     if (const auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_)) return tree->canonicalHidden();
     const auto& plan = std::get<p::ProductFileCommitPlan>(work_);
     return plan.mapped() || plan.requiresRecoveryOnFailure();
@@ -86,6 +125,10 @@ FLASHMEM bool FileTransfer::irreversible() const {
 
 FLASHMEM bool FileTransfer::release(bool discard, bool completed) {
     bool okay = true;
+    if (auto* conditional = std::get_if<mutation::ConditionalMutationPlan>(&work_)) {
+        if (conditional->active()) conditional->cancel(files_);
+        okay = !conditional->recoveryRequired();
+    }
     if (auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_)) {
         if (tree->active()) tree->cancelDelete(files_);
         okay = tree->completed() || !tree->canonicalHidden();
@@ -160,6 +203,8 @@ FLASHMEM Error FileTransfer::execute(const Frame& r, uint32_t nowMs, uint8_t* bo
     ByteReader reader(r.body, r.bodySize);
     ByteWriter writer(body, MAX_BODY);
     uint16_t count = 0; uint32_t session = 0, offset = 0;
+    if (r.operation == Operation::ConditionalReplace || r.operation == Operation::ConditionalDelete)
+        return beginConditional(r, nowMs);
     if (r.operation == Operation::Mkdir || r.operation == Operation::Rename || r.operation == Operation::Delete)
         return mutate(r, nowMs);
     if (r.operation == Operation::List) {
@@ -272,6 +317,37 @@ FLASHMEM Error FileTransfer::mutate(const Frame& r, uint32_t nowMs) {
     return !result ? storageError(result.error()) : !released ? storageError(released.error()) : Error::None;
 }
 
+FLASHMEM Error FileTransfer::beginConditional(const Frame& r, uint32_t nowMs) {
+    mutation::Journal journal{};
+    journal.kind = r.operation == Operation::ConditionalReplace ? mutation::Kind::REPLACE : mutation::Kind::DELETE;
+    journal.operationId = token_.id();
+    ByteReader reader(r.body, r.bodySize);
+    const uint8_t* expected = nullptr; const uint8_t* replacement = nullptr;
+    if (!reader.readBytes(expected, 32) || (journal.kind == mutation::Kind::REPLACE && !reader.readBytes(replacement, 32))
+        || !readCanonicalPath(reader, journal.currentPath, sizeof(journal.currentPath))
+        || (journal.kind == mutation::Kind::REPLACE && !readCanonicalPath(reader, journal.stagingPath, sizeof(journal.stagingPath)))
+        || reader.remaining() || !normalizedConditionalPath(files_, journal.currentPath, false)
+        || (journal.kind == mutation::Kind::REPLACE && !normalizedConditionalPath(files_, journal.stagingPath, true)))
+        return Error::InvalidArgument;
+    if (journal.kind == mutation::Kind::REPLACE
+        && p::compareProductCatalogNames(journal.currentPath, journal.stagingPath) == 0) return Error::InvalidArgument;
+    mutation::copyDigest(journal.expectedSourceSha256, expected);
+    if (replacement) mutation::copyDigest(journal.replacementSha256, replacement);
+    if (hasWork() || pending() || !available()) return Error::ResourceExhausted;
+    auto acquired = files_.acquireMutation(p::ProductMutationOwner::FILESYSTEM_RPC);
+    if (!acquired) return storageError(acquired.error());
+    auto lease = std::move(acquired.value());
+    auto& plan = work_.emplace<mutation::ConditionalMutationPlan>();
+    const auto begun = plan.begin(files_, std::move(lease), journal);
+    if (!begun) {
+        if (files_.owns(lease)) (void)files_.releaseMutation(lease);
+        work_.emplace<p::ProductFileCommitPlan>();
+        return storageError(begun.error());
+    }
+    retain(r, nowMs, token_.id());
+    return Error::None;
+}
+
 FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t nowMs, bool playing,
                                       uint8_t* output, size_t capacity) {
     Frame request;
@@ -293,13 +369,13 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
     if (request.operation == Operation::Capabilities) {
         if (request.bodySize) return finish(Error::InvalidArgument);
         ByteWriter writer(output + HEADER, MAX_BODY);
-        writer.writeU32(0x67ffU); // Conditional mutations remain reserved.
+        writer.writeU32(0x7fffU); // All operations in this contract are implemented.
         writer.writeU32(30'720); writer.writeU32(524'288); writer.writeU32(RETENTION_MS);
         writer.writeU16(oc::interface::FILESYSTEM_MAX_PATH_LENGTH); writer.writeU8(1); writer.writeU8(RETAINED_CAPACITY);
         response.bodySize = writer.position(); return finish(Error::None);
     }
     const bool query = request.operation == Operation::Poll || request.operation == Operation::Cancel;
-    if (retained(request.operation) && request.bodySize > 386) return finish(Error::InvalidArgument);
+    if (retained(request.operation) && request.bodySize > 450) return finish(Error::InvalidArgument);
     auto* record = find(request.nonce);
     if (query || (retained(request.operation) && record)) {
         if (!record || (query && request.operationId != record->id)) return finish(Error::ResultExpired);
@@ -320,9 +396,7 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
             if (!discard(nowMs, outcome)) return finish(Error::ResourceExhausted);
             terminal(outcome == Error::Cancelled ? State::Cancelled : State::Failed, outcome, nowMs);
         }
-        response.state = record->state; response.error = record->error;
-        response.delayMs = record->state == State::Pending ? 5 : 0;
-        return encode(response, output, capacity);
+        return respond(*record, response, output, capacity);
     }
     if (playing) return finish(Error::BusyPlaying);
     if (session_ && !files_.owns(lease_)) {
@@ -366,6 +440,7 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
                 if (hasWork()) { response.state = State::Pending; response.delayMs = 5; error = Error::None; }
                 else terminal(error == Error::None ? State::Complete : State::Failed, error, nowMs);
             }
+            return respond(*admitted, response, output, capacity);
         }
     }
     return finish(error);
@@ -400,7 +475,12 @@ FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scrat
     }
     auto& jobs = files_.persistenceJobs();
     auto* tree = std::get_if<p::ProductTreeCleanupPlan>(&work_);
-    const auto quota = tree ? p::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP
+    auto* conditional = std::get_if<mutation::ConditionalMutationPlan>(&work_);
+    const auto quota = conditional ? (conditional->nextWorkClass() == mutation::ConditionalPlanWorkClass::METADATA
+        ? p::PRODUCT_PERSISTENCE_QUOTA_ASSET_METADATA
+        : conditional->nextWorkClass() == mutation::ConditionalPlanWorkClass::ORDINARY_IO
+            ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE)
+        : tree ? p::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP
         : std::get<p::ProductFileCommitPlan>(work_).nextAdvanceReadsData()
             ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
     if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) return;
@@ -409,7 +489,19 @@ FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scrat
     {
         auto measured = files_.measurePersistenceWork(usage);
         if (measured) {
-            if (tree) {
+            if (conditional) {
+                done = conditional->advance(files_, scratch, capacity);
+                if (done) {
+                    error = conditionalError(conditional->status());
+                    active_->result[0] = static_cast<uint8_t>(conditional->outcome());
+                    active_->result[1] = static_cast<uint8_t>(conditional->subject());
+                    if (const auto* digest = conditional->observedDigest()) {
+                        active_->result[2] = 1;
+                        std::memcpy(active_->result + 3, digest, 32);
+                    }
+                    active_->resultSize = 35;
+                }
+            } else if (tree) {
                 done = tree->advanceDelete(files_, &measured.value());
                 if (done && !tree->completed()) error = storageError(tree->error());
             } else {

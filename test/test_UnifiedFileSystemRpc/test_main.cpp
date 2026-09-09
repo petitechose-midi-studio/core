@@ -35,7 +35,7 @@ int main(int argc, char**) {
         }
         return 0;
     }
-    constexpr std::array<uint8_t, 28> golden = {0xfc, 3, 6, 0, 0x34, 0x12, 0, 0,
+    constexpr std::array<uint8_t, 28> golden = {0xfc, 4, 6, 0, 0x34, 0x12, 0, 0,
         4, 3, 2, 1, 0, 0, 0, 0, 0x10, 0x27, 0, 0, 4, 0, 0, 0, 7, 0, 0, 0};
     Frame frame;
     assert(decode(golden.data(), golden.size(), frame));

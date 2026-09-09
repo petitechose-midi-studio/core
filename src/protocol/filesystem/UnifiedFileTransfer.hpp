@@ -6,6 +6,7 @@
 #include "persistence/ProductFileService.hpp"
 #include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductTreeCleanupPlan.hpp"
+#include "persistence/ProductConditionalMutationPlan.hpp"
 
 namespace core::protocol::filesystem::unified {
 
@@ -29,6 +30,7 @@ private:
                   core::persistence::ProductPersistenceWorkMeasurement& measurement);
     Error begin(const Frame& request, uint32_t nowMs);
     Error mutate(const Frame& request, uint32_t nowMs);
+    Error beginConditional(const Frame& request, uint32_t nowMs);
     bool release(bool discard, bool completed = false);
     bool discard(uint32_t nowMs, Error& outcome);
     bool irreversible() const;
@@ -38,12 +40,15 @@ private:
         Error error = Error::None;
         Operation operation = Operation::UploadCommit;
         uint8_t fingerprint[32]{};
+        uint8_t result[35]{};
+        uint8_t resultSize = 0;
     };
     Record* find(uint32_t nonce);
     Record* available();
     void retain(const Frame& request, uint32_t nowMs, uint32_t identity);
     void expire(uint32_t nowMs);
     void terminal(State state, Error error, uint32_t nowMs);
+    size_t respond(const Record& record, Frame response, uint8_t* output, size_t capacity);
     bool pending() const { return active_ != nullptr; }
     bool hasWork() const;
     core::persistence::ProductFileService& files_;
@@ -53,7 +58,8 @@ private:
     // Only one continuation can own storage; share its memory rather than
     // retaining a separate plan buffer for each kind of mutation.
     std::variant<core::persistence::ProductFileCommitPlan,
-                 core::persistence::ProductTreeCleanupPlan> work_;
+                 core::persistence::ProductTreeCleanupPlan,
+                 core::persistence::conditional_mutation::ConditionalMutationPlan> work_;
     char final_[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1]{};
     char temporary_[64]{}, backup_[64]{};
     uint32_t session_ = 0;

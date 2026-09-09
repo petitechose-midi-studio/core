@@ -14,7 +14,7 @@ FLASHMEM bool valid(const Frame& f) {
     if (f.requestId == 0 || f.bodySize > MAX_BODY || (f.bodySize != 0 && !f.body)
         || static_cast<uint8_t>(f.operation) > static_cast<uint8_t>(Operation::Cancel)
         || static_cast<uint8_t>(f.state) > static_cast<uint8_t>(State::Cancelled)
-        || static_cast<uint16_t>(f.error) > static_cast<uint16_t>(Error::CancelTooLate)) return false;
+        || static_cast<uint16_t>(f.error) > static_cast<uint16_t>(Error::TooLarge)) return false;
     if (f.replayed && (f.state == State::Request || !retained(f.operation) || f.operationId == 0)) return false;
     if (f.state == State::Request) {
         if (f.error != Error::None) return false;
@@ -33,8 +33,15 @@ FLASHMEM bool valid(const Frame& f) {
         case State::Complete: return f.error == Error::None && f.delayMs == 0;
         case State::Pending: return f.error == Error::None && f.nonce != 0 && f.operationId != 0
             && f.delayMs > 0 && f.delayMs <= MAX_DEADLINE_MS && f.bodySize == 0;
-        case State::Failed: return f.error != Error::None && f.error != Error::Cancelled
-            && f.delayMs == 0 && f.bodySize == 0;
+        case State::Failed: {
+            const bool details = f.operationId != 0 && f.bodySize == 35
+                && (f.operation == Operation::ConditionalReplace || f.operation == Operation::ConditionalDelete
+                    || f.operation == Operation::Poll || f.operation == Operation::Cancel)
+                && f.body[0] <= 2 && f.body[1] <= 2 && f.body[2] <= 1;
+            if (details && !f.body[2]) for (size_t i = 3; i < 35; ++i) if (f.body[i]) return false;
+            return f.error != Error::None && f.error != Error::Cancelled
+                && f.delayMs == 0 && (f.bodySize == 0 || details);
+        }
         case State::Cancelled: return f.error == Error::Cancelled && f.nonce != 0
             && f.operationId != 0 && f.delayMs == 0 && f.bodySize == 0;
         default: return false;

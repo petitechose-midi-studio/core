@@ -8,6 +8,7 @@
 #include <oc/impl/HostFileSystem.hpp>
 #include "protocol/filesystem/UnifiedFileTransfer.hpp"
 #include "protocol/filesystem/FileSystemRpcInternal.hpp"
+#include "persistence/ProductFileRecoveryPlan.hpp"
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -285,6 +286,114 @@ void testTreeMutation(const std::filesystem::path& root) {
     std::cout << "Recursive delete: cancellation/deadline before hide, too-late refusal, retained completion, failure/recovery/media passed\n";
 }
 
+using Digest = std::array<uint8_t, 32>;
+Digest putConditionalFile(Harness& h, const char* path, const std::vector<uint8_t>& bytes) {
+    auto lease = h.files.acquireMutation(core::persistence::ProductMutationOwner::FILESYSTEM_RPC);
+    assert(lease && h.files.beginWrite(lease.value(), path, bytes.size()));
+    assert(h.files.appendWrite(lease.value(), bytes.data(), bytes.size()));
+    assert(h.files.finishWrite(lease.value()) && h.files.releaseMutation(lease.value()));
+    Digest digest{};
+    assert(core::persistence::conditional_mutation::hashBytes(bytes.data(), bytes.size(), digest.data()));
+    return digest;
+}
+
+std::vector<uint8_t> conditionalBody(const char* path, const Digest& expected,
+                                    const char* staging = nullptr, const Digest& replacement = {}) {
+    std::vector<uint8_t> body(450); ByteWriter writer(body.data(), body.size());
+    assert(writer.writeBytes(expected.data(), expected.size()));
+    if (staging) assert(writer.writeBytes(replacement.data(), replacement.size()));
+    assert(writer.writeString(path, 192));
+    if (staging) assert(writer.writeString(staging, 192));
+    body.resize(writer.position()); return body;
+}
+
+void testConditional(const std::filesystem::path& root) {
+    namespace mutation = core::persistence::conditional_mutation;
+    Harness h(root);
+    const auto oldHash = putConditionalFile(h, "projects/conditional", {1, 2, 3});
+    const auto newHash = putConditionalFile(h, "tmp/replacement", {4, 5, 6});
+    const auto replace = conditionalBody("projects/conditional", oldHash, "tmp/replacement", newHash);
+    auto result = h.call(Operation::ConditionalReplace, replace, 801, 0, 10000);
+    assert(result.state == State::Pending); const auto id = result.operationId;
+    assert(h.call(Operation::ConditionalReplace, replace, 801, 0, 10000).replayed);
+    result = finish(h, 801, id);
+    assert(result.state == State::Complete && result.bodySize == 35 && result.body[0] == 1);
+    uint8_t bytes[3]{}; assert(h.files.read("projects/conditional", 0, bytes, sizeof(bytes)));
+    assert(bytes[0] == 4 && bytes[1] == 5 && bytes[2] == 6 && !h.files.stat("tmp/replacement"));
+    result = h.call(Operation::ConditionalReplace, replace, 801, 0, 10000);
+    assert(result.replayed && result.bodySize == 35 && result.body[0] == 1);
+    result = h.call(Operation::ConditionalReplace, replace, 802, 0, 10000);
+    result = finish(h, 802, result.operationId);
+    assert(result.state == State::Complete && result.body[0] == 2);
+    const auto staleDelete = conditionalBody("projects/conditional", oldHash);
+    result = h.call(Operation::ConditionalDelete, staleDelete, 803, 0, 10000);
+    result = finish(h, 803, result.operationId);
+    assert(result.error == Error::PreconditionFailed && result.bodySize == 35);
+    assert(result.body[0] == 0 && result.body[1] == 1 && result.body[2] == 1);
+    assert(std::equal(newHash.begin(), newHash.end(), result.body + 3));
+    assert(h.files.stat("projects/conditional"));
+    result = h.call(Operation::ConditionalDelete, staleDelete, 803, 0, 10000);
+    assert(result.replayed && result.error == Error::PreconditionFailed && result.bodySize == 35);
+    assert(std::equal(newHash.begin(), newHash.end(), result.body + 3));
+    const auto remove = conditionalBody("projects/conditional", newHash);
+    result = h.call(Operation::ConditionalDelete, remove, 804, 0, 10000);
+    assert(h.call(Operation::Cancel, {}, 804, result.operationId).state == State::Cancelled);
+    assert(h.files.stat("projects/conditional"));
+    result = h.call(Operation::ConditionalDelete, remove, 805, 0, 1);
+    assert(finish(h, 805, result.operationId).error == Error::DeadlineExceeded);
+    assert(h.files.stat("projects/conditional"));
+    result = h.call(Operation::ConditionalDelete, remove, 806, 0, 10000);
+    result = finish(h, 806, result.operationId);
+    assert(result.state == State::Complete && result.body[0] == 1 && !h.files.stat("projects/conditional"));
+    result = h.call(Operation::ConditionalDelete, remove, 807, 0, 10000);
+    result = finish(h, 807, result.operationId);
+    assert(result.state == State::Complete && result.body[0] == 2);
+    assert(h.call(Operation::ConditionalReplace,
+        conditionalBody("projects/source", oldHash, "projects/stage", newHash), 808, 0, 10000).error == Error::InvalidArgument);
+    assert(h.call(Operation::ConditionalReplace,
+        conditionalBody("tmp/stage", oldHash, "TMP/STAGE", newHash), 808, 0, 10000).error == Error::InvalidArgument);
+    assert(h.call(Operation::ConditionalDelete,
+        conditionalBody("projects/ALIAS~1", oldHash), 808, 0, 10000).error == Error::InvalidArgument);
+    assert(h.files.persistenceJobs().activeJobId() == 0);
+
+    Harness failed(root.string() + "-recovery");
+    putConditionalFile(failed, "projects/conditional", {1, 2, 3});
+    putConditionalFile(failed, "tmp/replacement", {4, 5, 6});
+    result = failed.call(Operation::ConditionalReplace, replace, 809, 0, 10000);
+    const auto failedId = result.operationId;
+    bool journalPresent = false;
+    for (unsigned turn = 0; turn < 100 && !journalPresent; ++turn) {
+        failed.tick();
+        journalPresent = bool(failed.filesystem.stat("/midi-studio/tmp/rpc-conditional.journal"));
+    }
+    assert(journalPresent);
+    assert(failed.call(Operation::Cancel, {}, 809, failedId).error == Error::CancelTooLate);
+    failed.filesystem.failRename = true;
+    result = finish(failed, 809, failedId);
+    assert(result.error == Error::StorageFailure && result.bodySize == 35);
+    assert(failed.files.persistenceJobs().activeJobId() == 0);
+    failed.filesystem.failRename = false;
+    auto recoveryLease = failed.files.beginRecovery(); assert(recoveryLease);
+    // Preserve ProductStorageRecoveryPlan's order: reconcile the inner ordinary
+    // promotion journal before resuming its enclosing conditional transaction.
+    core::persistence::ProductFileRecoveryPlan ordinary;
+    assert(ordinary.begin(failed.files, recoveryLease.value()));
+    for (unsigned turn = 0; turn < 200 && !ordinary.complete(); ++turn)
+        assert(ordinary.advance(failed.files, recoveryLease.value(), failed.scratch.data(), failed.scratch.size()));
+    assert(ordinary.complete());
+    mutation::Journal journal{}; bool present = false, corrupt = false;
+    assert(mutation::readJournal(failed.files, recoveryLease.value(), journal, present, corrupt) == mutation::Status::OK);
+    assert(present && !corrupt);
+    mutation::ConditionalMutationPlan recovery;
+    assert(recovery.beginRecovery(failed.files, recoveryLease.value(), journal));
+    for (unsigned turn = 0; turn < 200 && !recovery.terminal(); ++turn)
+        recovery.advance(failed.files, failed.scratch.data(), failed.scratch.size());
+    assert(recovery.terminal() && recovery.status() == mutation::Status::OK);
+    assert(failed.files.completeRecovery(recoveryLease.value(), true));
+    assert(failed.files.read("projects/conditional", 0, bytes, sizeof(bytes)) && bytes[0] == 4 && bytes[2] == 6);
+    std::cout << "Conditional: replace/delete/already-applied, retained observed hash, cancellation/deadline, path validation, durable failure recovery passed\n";
+}
+
 int main(int argc, char** argv) {
     const auto root = std::filesystem::temp_directory_path() / ("ms-core-unified-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -312,6 +421,7 @@ int main(int argc, char** argv) {
     testListing(root.string() + "-list");
     testMutations(root.string() + "-mutations");
     testTreeMutation(root.string() + "-tree");
+    testConditional(root.string() + "-conditional");
     auto response = h.call(Operation::Capabilities); assert(response.state == State::Complete && response.bodySize == 20);
     assert(h.call(Operation::UploadBegin, beginBody("projects/rpc.bin", 5), 0, 0, 0, true).error == Error::BusyPlaying);
     assert(h.call(Operation::UploadBegin, beginBody("../outside", 5)).error == Error::InvalidArgument);
