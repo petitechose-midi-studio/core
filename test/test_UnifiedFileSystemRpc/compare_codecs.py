@@ -13,8 +13,8 @@ p.add_argument('rust')
 p.add_argument('--output', required=True)
 args = p.parse_args()
 
-def wire(op=6, state=0, error=0, nonce=1, identity=0, delay=10000, body=b'\x07\0'):
-    return struct.pack('<BBBBHHIIII', 0xfc if state == 0 else 0xfd, 2, op, state, 7,
+def wire(op=6, state=0, error=0, nonce=1, identity=0, delay=10000, body=b'\x07\0\0\0'):
+    return struct.pack('<BBBBHHIIII', 0xfc if state == 0 else 0xfd, 3, op, state, 7,
                        error, nonce, identity, delay, len(body)) + body
 
 # Acceptance and rejection fixtures written independently of either codec.
@@ -29,6 +29,7 @@ known = [(wire(), True), (wire(op=0, nonce=0, delay=0, body=b''), True),
          (wire(state=3, error=0, body=b'', delay=0), False),
          (wire(op=3, state=2, identity=8, body=b'', delay=5), False),
          (wire(state=3, error=7, nonce=0, identity=8, delay=0, body=b''), False)]
+known.append((wire()[:1] + b'\x02' + wire()[2:], False))
 corpus = [x[0] for x in known]
 for seed, _ in known[:7]:
     corpus.extend(seed[:i] for i in range(len(seed)))

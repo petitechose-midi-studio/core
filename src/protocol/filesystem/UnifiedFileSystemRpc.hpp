@@ -5,7 +5,7 @@
 
 namespace core::protocol::filesystem::unified {
 
-inline constexpr uint8_t REQUEST = 0xfc, RESPONSE = 0xfd, VERSION = 2;
+inline constexpr uint8_t REQUEST = 0xfc, RESPONSE = 0xfd, VERSION = 3;
 inline constexpr size_t HEADER = 24, MAX_BODY = 32'512;
 inline constexpr uint32_t MAX_DEADLINE_MS = 10'000;
 

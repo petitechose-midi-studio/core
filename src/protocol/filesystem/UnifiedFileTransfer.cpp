@@ -13,6 +13,13 @@ using internal::ByteReader;
 using internal::ByteWriter;
 
 namespace {
+FLASHMEM bool readCanonicalPath(ByteReader& reader, char* path, size_t capacity) {
+    const auto before = reader.remaining();
+    if (!reader.readString(path, capacity, oc::interface::FILESYSTEM_MAX_PATH_LENGTH) || !path[0]) return false;
+    // Reject embedded NULs: wire length and the path seen by storage must agree.
+    return before - reader.remaining() == std::strlen(path) + 1;
+}
+
 FLASHMEM Error storageError(oc::type::Error error) {
     using E = oc::type::ErrorCode;
     switch (error.code) {
@@ -31,6 +38,30 @@ FLASHMEM Error storageError(oc::type::Error error) {
 }
 
 FileTransfer::~FileTransfer() { release(true); }
+
+FLASHMEM FileTransfer::Record* FileTransfer::find(uint32_t nonce) {
+    if (nonce) for (auto& record : records_) if (record.nonce == nonce) return &record;
+    return nullptr;
+}
+
+FLASHMEM FileTransfer::Record* FileTransfer::available() {
+    for (auto& record : records_) if (!record.nonce) return &record;
+    return nullptr;
+}
+
+FLASHMEM void FileTransfer::expire(uint32_t nowMs) {
+    for (auto& record : records_) {
+        if (record.nonce && &record != active_ && uint32_t(nowMs - record.terminalAt) >= RETENTION_MS)
+            record = {};
+    }
+}
+
+FLASHMEM void FileTransfer::terminal(State state, Error error, uint32_t nowMs) {
+    if (active_) {
+        active_->state = state; active_->error = error; active_->terminalAt = nowMs;
+        active_ = nullptr;
+    }
+}
 
 FLASHMEM bool FileTransfer::irreversible() const {
     return plan_.mapped() || plan_.requiresRecoveryOnFailure();
@@ -54,6 +85,7 @@ FLASHMEM bool FileTransfer::release(bool discard, bool completed) {
         else (void)files_.persistenceJobs().cancelAfterUnwind(token_);
     }
     session_ = 0;
+    deferredError_ = Error::None;
     plan_.reset();
     return okay;
 }
@@ -77,22 +109,23 @@ FLASHMEM bool FileTransfer::discard(uint32_t nowMs, Error& outcome) {
 
 FLASHMEM Error FileTransfer::begin(const Frame& request, uint32_t nowMs) {
     ByteReader reader(request.body, request.bodySize);
-    uint16_t session = 0; uint32_t expected = 0;
+    uint32_t expected = 0;
     char path[sizeof(final_)]{};
     char resolved[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1]{};
-    if (!reader.readU16(session) || session == 0 || !reader.readU32(expected) || expected > 524'288
-        || !internal::readPath(reader, path, sizeof(path)) || reader.remaining() != 0
+    if (!reader.readU32(expected) || expected > 524'288
+        || !readCanonicalPath(reader, path, sizeof(path)) || reader.remaining() != 0
         || !files_.resolvePath(path, resolved, sizeof(resolved))
         || internal::isProtocolReservedPath(files_, path)) return Error::InvalidArgument;
-    // R2 admits exactly one commit per service lifetime; do not open an upload
-    // that the single retained slot could never admit afterwards.
-    if (session_ != 0 || nonce_ != 0) return Error::ResourceExhausted;
+    if (session_ || !available()) return Error::ResourceExhausted;
+    // Coordinator IDs never wrap or repeat during its lifetime. A delayed chunk,
+    // abort or commit cannot address a later upload, even after result expiry.
+    const uint32_t session = token_.id();
     auto lease = files_.acquireMutation(p::ProductMutationOwner::FILESYSTEM_RPC);
     if (!lease) return Error::ResourceExhausted;
     lease_ = std::move(lease.value());
     std::memcpy(final_, path, sizeof(path));
-    std::snprintf(temporary_, sizeof(temporary_), "tmp/rpc-write-%04X.tmp", unsigned(session));
-    std::snprintf(backup_, sizeof(backup_), "tmp/rpc-backup-%04X.tmp", unsigned(session));
+    std::snprintf(temporary_, sizeof(temporary_), "tmp/rpc-write-%08X.tmp", unsigned(session));
+    std::snprintf(backup_, sizeof(backup_), "tmp/rpc-backup-%08X.tmp", unsigned(session));
     if (!p::deleteProductFileIfExists(files_, lease_, temporary_) || !files_.beginWrite(lease_, temporary_, expected)) {
         release(true); return Error::StorageWriteFailed;
     }
@@ -104,40 +137,47 @@ FLASHMEM Error FileTransfer::begin(const Frame& request, uint32_t nowMs) {
 FLASHMEM Error FileTransfer::execute(const Frame& r, uint32_t nowMs, uint8_t* body, size_t& size) {
     ByteReader reader(r.body, r.bodySize);
     ByteWriter writer(body, MAX_BODY);
-    uint16_t session = 0, count = 0; uint32_t offset = 0;
-    if (r.operation == Operation::UploadBegin) return begin(r, nowMs);
+    uint16_t count = 0; uint32_t session = 0, offset = 0;
+    if (r.operation == Operation::UploadBegin) {
+        const auto error = begin(r, nowMs);
+        if (error == Error::None) { writer.writeU32(session_); size = writer.position(); }
+        return error;
+    }
     if (r.operation == Operation::UploadChunk) {
         const uint8_t* data = nullptr;
-        if (!reader.readU16(session) || !reader.readU32(offset) || !reader.readU16(count)
+        if (!reader.readU32(session) || !reader.readU32(offset) || !reader.readU16(count)
             || count > 30'720 || !reader.readBytes(data, count) || reader.remaining()) return Error::InvalidArgument;
-        if (!session_ || session != session_ || result_ == State::Pending) return Error::PreconditionFailed;
+        if (!session_ || session != session_ || pending()) return Error::PreconditionFailed;
         if (offset != written_ || offset > expected_ || count > expected_ - offset) return Error::InvalidArgument;
         const auto appended = files_.appendWrite(lease_, data, count);
-        if (!appended || appended.value() != count) { release(true); return Error::StorageWriteFailed; }
+        if (!appended || appended.value() != count) {
+            deferredError_ = Error::StorageWriteFailed;
+            return deferredError_; // Cleanup gets its own measured promotion turn.
+        }
         crc_ = p::checksum::crc32Update(crc_, data, count); written_ += count;
         writer.writeU32(written_); size = writer.position(); return Error::None;
     }
     if (r.operation == Operation::UploadCommit) {
-        if (!reader.readU16(session) || reader.remaining()) return Error::InvalidArgument;
-        if (!session_ || session != session_ || written_ != expected_) return Error::PreconditionFailed;
-        if (nonce_ != 0) return Error::ResourceExhausted;
-        nonce_ = r.nonce; operationId_ = token_.id(); committedSession_ = session;
-        deadline_ = r.delayMs; commitStarted_ = nowMs; result_ = State::Pending;
+        if (!reader.readU32(session) || reader.remaining()) return Error::InvalidArgument;
+        if (!session_ || session != session_ || written_ != expected_ || pending()) return Error::PreconditionFailed;
+        active_ = available();
+        if (!active_) return Error::ResourceExhausted;
+        *active_ = {r.nonce, session_, r.delayMs, nowMs, 0, files_.storageIdentity().mediaGeneration};
         if (!files_.finishWrite(lease_) || !plan_.begin(files_, lease_, final_, backup_, temporary_,
                 expected_, p::checksum::crc32Finish(crc_))) {
-            release(true); failure_ = Error::StorageWriteFailed; result_ = State::Failed; terminalAt_ = nowMs;
-            return failure_;
+            release(true); terminal(State::Failed, Error::StorageWriteFailed, nowMs);
+            return Error::StorageWriteFailed;
         }
         return Error::None;
     }
     if (r.operation == Operation::UploadAbort) {
-        if (!reader.readU16(session) || reader.remaining()) return Error::InvalidArgument;
-        if (session != session_ || !session_ || result_ == State::Pending) return Error::PreconditionFailed;
+        if (!reader.readU32(session) || reader.remaining()) return Error::InvalidArgument;
+        if (session != session_ || !session_ || pending()) return Error::PreconditionFailed;
         return release(true) ? Error::None : Error::StorageWriteFailed;
     }
     if (r.operation == Operation::Read || r.operation == Operation::Stat) {
         char path[sizeof(final_)]{};
-        if (!internal::readPath(reader, path, sizeof(path))) return Error::InvalidArgument;
+        if (!readCanonicalPath(reader, path, sizeof(path))) return Error::InvalidArgument;
         if (r.operation == Operation::Stat) {
             if (reader.remaining()) return Error::InvalidArgument;
             const auto stat = files_.stat(path);
@@ -157,11 +197,12 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
                                       uint8_t* output, size_t capacity) {
     Frame request;
     if (!output || capacity < HEADER + MAX_BODY || !decode(data, size, request) || request.state != State::Request) return 0;
+    expire(nowMs);
     Frame response = request; response.state = State::Complete; response.delayMs = 0;
     response.body = output + HEADER; response.bodySize = 0;
     auto finish = [&](Error error) {
         response.error = error;
-        if (error != Error::None) { response.state = State::Failed; response.bodySize = 0; }
+        if (error != Error::None) { response.state = State::Failed; response.delayMs = 0; response.bodySize = 0; }
         // The body is already in its final output location; encode header separately.
         const auto bodySize = response.bodySize;
         response.body = nullptr; response.bodySize = 0;
@@ -173,37 +214,41 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
     if (request.operation == Operation::Capabilities) {
         if (request.bodySize) return finish(Error::InvalidArgument);
         ByteWriter writer(output + HEADER, MAX_BODY);
-        writer.writeU32(0x60fbU); // R2 subset: capabilities/stat/read/upload/poll/cancel.
-        writer.writeU32(30'720); writer.writeU32(524'288); writer.writeU32(30'000);
-        writer.writeU16(oc::interface::FILESYSTEM_MAX_PATH_LENGTH); writer.writeU8(1); writer.writeU8(1);
+        writer.writeU32(0x60fbU); // Implemented subset: capabilities/stat/read/upload/poll/cancel.
+        writer.writeU32(30'720); writer.writeU32(524'288); writer.writeU32(RETENTION_MS);
+        writer.writeU16(oc::interface::FILESYSTEM_MAX_PATH_LENGTH); writer.writeU8(1); writer.writeU8(RETAINED_CAPACITY);
         response.bodySize = writer.position(); return finish(Error::None);
     }
     const bool query = request.operation == Operation::Poll || request.operation == Operation::Cancel;
-    if (query || (request.operation == Operation::UploadCommit && nonce_ == request.nonce)) {
-        if (!nonce_ || request.nonce != nonce_ || (query && request.operationId != operationId_)) return finish(Error::ResultExpired);
+    auto* record = find(request.nonce);
+    if (query || (request.operation == Operation::UploadCommit && record)) {
+        if (!record || (query && request.operationId != record->id)) return finish(Error::ResultExpired);
+        response.operationId = record->id;
         if (!query) {
-            ByteReader reader(request.body, request.bodySize); uint16_t session = 0;
-            if (!reader.readU16(session) || reader.remaining() || session != committedSession_ || request.delayMs != deadline_)
+            ByteReader reader(request.body, request.bodySize); uint32_t session = 0;
+            if (!reader.readU32(session) || reader.remaining() || session != record->id || request.delayMs != record->deadline)
                 return finish(Error::Conflict);
             response.replayed = true;
         }
-        response.operationId = operationId_;
-        if (result_ != State::Pending && uint32_t(nowMs - terminalAt_) > 30'000) return finish(Error::ResultExpired);
-        if (request.operation == Operation::Cancel && result_ == State::Pending) {
+        if (record->media != files_.storageIdentity().mediaGeneration) return finish(Error::MediaChanged);
+        if (request.operation == Operation::Cancel && record == active_) {
             if (irreversible()) return finish(Error::CancelTooLate);
             if (playing) return finish(Error::BusyPlaying);
             Error outcome = Error::Cancelled;
             if (!discard(nowMs, outcome)) return finish(Error::ResourceExhausted);
-            result_ = outcome == Error::Cancelled ? State::Cancelled : State::Failed;
-            failure_ = outcome; terminalAt_ = nowMs;
+            terminal(outcome == Error::Cancelled ? State::Cancelled : State::Failed, outcome, nowMs);
         }
-        response.state = result_; response.error = failure_;
-        response.delayMs = result_ == State::Pending ? 5 : 0;
+        response.state = record->state; response.error = record->error;
+        response.delayMs = record->state == State::Pending ? 5 : 0;
         return encode(response, output, capacity);
     }
     if (playing) return finish(Error::BusyPlaying);
-    if (session_ && !files_.owns(lease_)) { release(false); return finish(Error::MediaChanged); }
-    if (session_ && result_ != State::Pending && uint32_t(nowMs - uploadStarted_) > MAX_DEADLINE_MS) {
+    if (session_ && !files_.owns(lease_)) {
+        release(false); terminal(State::Failed, Error::MediaChanged, nowMs);
+        return finish(Error::MediaChanged);
+    }
+    if (deferredError_ != Error::None) return finish(Error::PreconditionFailed);
+    if (session_ && !pending() && uint32_t(nowMs - uploadStarted_) > MAX_DEADLINE_MS) {
         Error outcome = Error::DeadlineExceeded;
         if (!discard(nowMs, outcome)) return finish(Error::ResourceExhausted);
         return finish(outcome);
@@ -226,48 +271,63 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
         if (measured) error = execute(request, nowMs, output + HEADER, response.bodySize);
     }
     if (token_.valid() && !jobs.finishAdvance(token_, usage, session_ == 0)) {
-        release(true); error = Error::ResourceExhausted;
-        if (result_ == State::Pending) { result_ = State::Failed; failure_ = error; terminalAt_ = nowMs; }
+        error = Error::ResourceExhausted;
+        if (session_) deferredError_ = error;
     }
     if (!session_ && token_.valid()) (void)jobs.complete(token_);
-    if (request.operation == Operation::UploadCommit && nonce_ == request.nonce) {
-        response.operationId = operationId_;
-        if (result_ == State::Pending && error == Error::None) { response.state = State::Pending; response.delayMs = 5; }
+    if (request.operation == Operation::UploadCommit) {
+        if (auto* admitted = find(request.nonce)) {
+            response.operationId = admitted->id;
+            if (admitted == active_) { response.state = State::Pending; response.delayMs = 5; error = Error::None; }
+        }
     }
     return finish(error);
 }
 
 FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scratch, size_t capacity) {
+    expire(nowMs);
+    if (session_ && !files_.owns(lease_)) {
+        release(false); terminal(State::Failed, Error::MediaChanged, nowMs); return;
+    }
     if (playing) return;
-    if (result_ != State::Pending) {
-        if (session_ && uint32_t(nowMs - uploadStarted_) > MAX_DEADLINE_MS) {
+    if (deferredError_ != Error::None) {
+        Error outcome = deferredError_;
+        if (discard(nowMs, outcome)) terminal(State::Failed, outcome, nowMs);
+        return;
+    }
+    if (!pending()) {
+        if (session_ && (uint32_t(nowMs - uploadStarted_) > MAX_DEADLINE_MS
+                        || files_.persistenceJobs().deferredAutosaveAged(nowMs))) {
             Error outcome = Error::DeadlineExceeded;
             (void)discard(nowMs, outcome);
         }
         return;
     }
     if (!scratch || capacity < 30'720) return;
-    if (!files_.owns(lease_)) { failure_ = Error::MediaChanged; result_ = State::Failed; terminalAt_ = nowMs; release(false); return; }
-    if (!irreversible() && uint32_t(nowMs - commitStarted_) >= deadline_) {
+    if (!irreversible() && uint32_t(nowMs - active_->started) >= active_->deadline) {
         Error outcome = Error::DeadlineExceeded;
-        if (!discard(nowMs, outcome)) return;
-        failure_ = outcome; result_ = State::Failed; terminalAt_ = nowMs; return;
+        if (discard(nowMs, outcome)) terminal(State::Failed, outcome, nowMs);
+        return;
     }
     auto& jobs = files_.persistenceJobs();
     const auto quota = plan_.nextAdvanceReadsData() ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
     if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) return;
     p::ProductPersistenceWorkUsage usage{};
-    bool done = false; bool success = false;
+    bool done = false; Error error = Error::None;
     {
         auto measured = files_.measurePersistenceWork(usage);
-        if (measured) { auto advanced = plan_.advance(files_, lease_, scratch, capacity); done = !advanced || advanced.value(); success = bool(advanced); }
-        else done = true;
+        if (measured) {
+            auto advanced = plan_.advance(files_, lease_, scratch, capacity);
+            done = advanced && advanced.value();
+            if (!advanced) error = storageError(advanced.error());
+        } else error = Error::Internal;
     }
-    if (!jobs.finishAdvance(token_, usage, done)) { done = true; success = false; }
-    if (done) {
-        success = release(!success, success) && success;
-        failure_ = success ? Error::None : Error::StorageWriteFailed;
-        result_ = success ? State::Complete : State::Failed; terminalAt_ = nowMs;
+    if (!jobs.finishAdvance(token_, usage, done)) error = Error::ResourceExhausted;
+    if (error != Error::None) deferredError_ = error;
+    else if (done) {
+        const bool success = release(false, true);
+        terminal(success ? State::Complete : State::Failed,
+                 success ? Error::None : Error::StorageWriteFailed, nowMs);
     }
 }
 
