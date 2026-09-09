@@ -1,6 +1,5 @@
 #include "persistence/ProductFileCommitPlan.hpp"
 
-#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -40,10 +39,6 @@ const char kCommitPlanTmpIntegrity[] PROGMEM =
     "product file temporary checksum mismatch";
 const char kCommitPlanPromotedIntegrity[] PROGMEM =
     "promoted product file checksum mismatch";
-const char kCommitPlanIntegrityScratch[] PROGMEM =
-    "product file integrity scratch unavailable";
-const char kCommitPlanIntegrityShortRead[] PROGMEM =
-    "short product file integrity read";
 const char kCommitPlanBackupTopology[] PROGMEM =
     "invalid product file backup topology";
 
@@ -478,43 +473,11 @@ FLASHMEM oc::type::Result<bool> ProductFileCommitPlan::advanceIntegrityCheck_(
     bool recoveryRequired,
     const char* mismatchContext
 ) {
-    if (integrity_offset_ < expected_size_) {
-        if (scratch == nullptr || scratchSize == 0U) {
-            return fail_(
-                planError(ErrorCode::INVALID_ARGUMENT, kCommitPlanIntegrityScratch),
-                recoveryRequired
-            );
-        }
-        const size_t remaining = expected_size_ - integrity_offset_;
-        const size_t requested = std::min(
-            remaining,
-            std::min(scratchSize, PRODUCT_FILE_INTEGRITY_CHUNK_SIZE)
-        );
-        auto read = files.read(
-            lease,
-            path,
-            integrity_offset_,
-            scratch,
-            requested
-        );
-        if (!read) return fail_(read.error(), recoveryRequired);
-        if (read.value() == 0U || read.value() > requested) {
-            return fail_(
-                planError(ErrorCode::STORAGE_READ_FAILED,
-                          kCommitPlanIntegrityShortRead),
-                recoveryRequired
-            );
-        }
-        integrity_crc_state_ = checksum::crc32Update(
-            integrity_crc_state_,
-            scratch,
-            read.value()
-        );
-        integrity_offset_ += static_cast<uint32_t>(read.value());
-        if (integrity_offset_ < expected_size_) {
-            return oc::type::Result<bool>::ok(false);
-        }
-    }
+    auto read = transaction::advanceIntegrityRead(
+        files, lease, path, expected_size_, integrity_offset_, integrity_crc_state_,
+        scratch, scratchSize);
+    if (!read) return fail_(read.error(), recoveryRequired);
+    if (!read.value()) return read;
 
     if (checksum::crc32Finish(integrity_crc_state_) != expected_crc32_) {
         return fail_(

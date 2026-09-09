@@ -112,7 +112,13 @@ public:
     uint32_t promotionCount() const { return promotion_count_; }
     uint32_t backupCleanupCount() const { return backup_cleanup_count_; }
     uint32_t flushCount() const { return flush_count_; }
-    void corruptNextPromotion() { corrupt_next_promotion_ = true; }
+    void corruptNextPromotion(uint32_t offset = 0) {
+        corrupt_next_promotion_ = true;
+        corrupt_offset_ = offset;
+    }
+    int fail_integrity_read = -1;
+    int integrity_reads = 0;
+    bool fail_after_read = false;
 
     oc::type::Result<void> init() override {
         if (cut_) return mediaLost<void>();
@@ -172,10 +178,10 @@ public:
             ++promotion_count_;
             if (corrupt_next_promotion_) {
                 uint8_t firstByte = 0U;
-                auto read = delegate_.read(toPath, 0U, &firstByte, 1U);
+                auto read = delegate_.read(toPath, corrupt_offset_, &firstByte, 1U);
                 assert(read && read.value() == 1U);
                 firstByte ^= 0x80U;
-                auto written = delegate_.write(toPath, 0U, &firstByte, 1U);
+                auto written = delegate_.write(toPath, corrupt_offset_, &firstByte, 1U);
                 assert(written && written.value() == 1U);
                 assert(delegate_.flush(toPath));
                 corrupt_next_promotion_ = false;
@@ -192,7 +198,14 @@ public:
         size_t size
     ) override {
         if (cut_) return mediaLost<size_t>();
-        return delegate_.read(path, offset, buffer, size);
+        const bool integrity = std::strcmp(path, RESOLVED_CURRENT) == 0 ||
+                               std::strcmp(path, RESOLVED_TEMPORARY) == 0;
+        const bool fail = integrity && integrity_reads++ == fail_integrity_read;
+        if (!fail || fail_after_read) {
+            auto result = delegate_.read(path, offset, buffer, size);
+            if (!fail) return result;
+        }
+        return oc::type::Result<size_t>::err({ErrorCode::STORAGE_READ_FAILED, "injected integrity read"});
     }
 
     oc::type::Result<size_t> write(
@@ -291,6 +304,7 @@ private:
     bool armed_ = false;
     bool cut_ = false;
     bool corrupt_next_promotion_ = false;
+    uint32_t corrupt_offset_ = 0;
 };
 
 oc::type::Result<void> replace(
@@ -881,7 +895,7 @@ void test_cooperative_commit_uses_one_bounded_durable_phase_per_advance() {
     ));
 
     uint8_t advances = 0U;
-    uint8_t scratch[core::persistence::PRODUCT_FILE_INTEGRITY_CHUNK_SIZE] = {};
+    uint8_t scratch[512U] = {};
     bool complete = false;
     while (!complete && advances < 32U) {
         core::persistence::ProductPersistenceWorkUsage usage{};
@@ -956,7 +970,7 @@ void test_cooperative_recovery_uses_one_bounded_durable_phase_per_advance() {
     core::persistence::ProductFileRecoveryPlan plan;
     assert(plan.begin(files, lease));
     uint8_t advances = 0U;
-    uint8_t scratch[core::persistence::PRODUCT_FILE_INTEGRITY_CHUNK_SIZE] = {};
+    uint8_t scratch[512U] = {};
     bool complete = false;
     while (!complete && advances < 32U) {
         core::persistence::ProductPersistenceWorkUsage usage{};
@@ -1019,7 +1033,7 @@ void test_cooperative_recovery_restores_newly_created_backup_after_bad_promotion
 
     core::persistence::ProductFileRecoveryPlan plan;
     assert(plan.begin(files, lease));
-    uint8_t scratch[core::persistence::PRODUCT_FILE_INTEGRITY_CHUNK_SIZE] = {};
+    uint8_t scratch[512U] = {};
     uint8_t advances = 0U;
     while (plan.active() && advances < 64U) {
         auto advanced = plan.advance(files, lease, scratch, sizeof(scratch));
@@ -1125,7 +1139,7 @@ void test_terminal_recovery_preserves_subsequent_mutations() {
                             auto lease = std::move(acquired.value());
                             core::persistence::ProductFileRecoveryPlan plan;
                             assert(plan.begin(files, lease));
-                            uint8_t scratch[core::persistence::PRODUCT_FILE_INTEGRITY_CHUNK_SIZE]{};
+                            uint8_t scratch[512U]{};
                             auto advanced = plan.advance(files, lease, scratch, sizeof(scratch));
                             assert(advanced && advanced.value() && plan.complete());
                             assert(files.completeRecovery(lease, true));
@@ -1144,6 +1158,115 @@ void test_terminal_recovery_preserves_subsequent_mutations() {
               << scenarios << " scenarios, two reboots each)\n";
 }
 
+
+void test_large_integrity_reads_preserve_checks_and_quotas() {
+    namespace p = core::persistence;
+    constexpr size_t length = 524288;
+    std::vector<uint8_t> data(length);
+    for (size_t i=0; i<length; ++i) data[i]=static_cast<uint8_t>(i*19+7);
+    const auto crc = p::checksum::crc32(data.data(),data.size());
+    auto verifyFile = [&](ProductFileService& files, bool allowOld) {
+        std::vector<uint8_t> actual(length);
+        const auto read = files.read(CURRENT,0,actual.data(),actual.size());
+        assert(read);
+        if (allowOld && read.value() == sizeof(OLD_DATA)) {
+            assert(std::memcmp(actual.data(),OLD_DATA,sizeof(OLD_DATA)) == 0);
+        } else assert(read.value() == length && actual == data);
+    };
+    auto commit = [&](size_t capacity, int corruption, int failRead, bool after) {
+        resetTestRoot();
+        BoundaryFaultFileSystem backend(testRoot().string().c_str());
+        {
+            ProductFileService files(backend); assert(files.init()); seedCurrent(files);
+            auto acquired = files.acquireMutation(ProductMutationOwner::FILESYSTEM_RPC);
+            assert(acquired); auto lease = std::move(acquired.value());
+            assert(p::writeProductFileTemp(files,lease,TEMPORARY,data.data(),length,30720));
+            if (corruption == 1) {
+                const uint8_t bad = data.back() ^ 0x80U;
+                assert(files.write(lease,TEMPORARY,length-1,&bad,1));
+            }
+            if (corruption == 2) backend.corruptNextPromotion(length-1);
+            backend.integrity_reads=0; backend.fail_integrity_read=failRead;
+            backend.fail_after_read=after;
+            p::ProductFileCommitPlan plan;
+            assert(plan.begin(files,lease,CURRENT,BACKUP,TEMPORARY,length,crc));
+            std::vector<uint8_t> scratch(capacity+2,0xD3);
+            uint32_t reads=0; bool completed=false; ErrorCode error=ErrorCode::OK;
+            for (unsigned turn=0; turn<4096 && !completed; ++turn) {
+                const bool reading=plan.nextAdvanceReadsData();
+                const auto quota=reading ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO
+                                         : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
+                p::ProductPersistenceWorkUsage usage{};
+                oc::type::Result<bool> result=oc::type::Result<bool>::ok(false);
+                {
+                    auto measure=files.measurePersistenceWork(usage); assert(measure);
+                    result=plan.advance(files,lease,scratch.data()+1,capacity);
+                }
+                if (reading) { ++reads; assert(usage.filesystemCalls == 1); }
+                assert(usage.bytes <= quota.maxBytes() && usage.filesystemCalls <= quota.maxFilesystemCalls());
+                assert(!usage.allocations && !usage.nodes && !usage.entries);
+                assert(scratch.front() == 0xD3 && scratch.back() == 0xD3);
+                if (!result) { error=result.error().code; break; }
+                completed=result.value();
+            }
+            const size_t chunk=std::min<size_t>(capacity,30720);
+            const size_t passes=corruption == 1 ? 1 : 2;
+            if (failRead < 0) assert(reads == passes*((length+chunk-1)/chunk));
+            else assert(reads == static_cast<unsigned>(failRead+1));
+            if (corruption || failRead >= 0) {
+                assert(!completed);
+                assert(error == (corruption ? ErrorCode::STORAGE_CORRUPT : ErrorCode::STORAGE_READ_FAILED));
+                if (corruption == 1) assert(!plan.mapped());
+                if (plan.mapped()) assert(files.requireRecovery(lease,error));
+            } else { assert(completed && plan.complete()); verifyFile(files,false); }
+            assert(files.releaseMutation(lease));
+            std::cout << "integrity capacity=" << capacity << " corruption=" << corruption
+                      << " failure=" << failRead << " after=" << after << " reads=" << reads << '\n';
+        }
+        backend.fail_integrity_read=-1;
+        ProductFileService restarted(backend); assert(restarted.init());
+        verifyFile(restarted,true);
+    };
+    for (size_t capacity : {511U,512U,4096U,30720U,65536U}) {
+        for (int corruption=0; corruption<3; ++corruption) commit(capacity,corruption,-1,false);
+    }
+    // Each of the two 18-read integrity passes can fail before or after filling scratch.
+    for (bool after : {false,true}) for (int cut=0; cut<36; ++cut) commit(30720,0,cut,after);
+    // Recovery must use the same bound and reject corruption in the last byte.
+    for (size_t capacity : {511U,512U,4096U,30720U,65536U}) for (bool corrupt : {false,true}) {
+        resetTestRoot(); createProductLayout();
+        auto current=data; if (corrupt) current.back() ^= 0x80U;
+        writeRaw(productPath(CURRENT),current.data(),current.size());
+        writeRaw(productPath(BACKUP),OLD_DATA,sizeof(OLD_DATA));
+        const auto journal=journalRecord(ProductFileTransactionPhase::PROMOTED,true,1,length,crc);
+        writeRaw(productPath("tmp/rpc-product-file-a.journal"),journal.data(),journal.size());
+        oc::impl::HostFileSystem backend(testRoot().string().c_str());
+        ProductFileService files(backend); assert(files.initForRecovery());
+        auto acquired=files.beginRecovery(); assert(acquired); auto lease=std::move(acquired.value());
+        p::ProductFileRecoveryPlan plan; assert(plan.begin(files,lease));
+        std::vector<uint8_t> scratch(capacity+2,0xD3); unsigned reads=0;
+        for (unsigned turn=0; turn<4096 && !plan.complete(); ++turn) {
+            const bool reading=plan.nextAdvanceReadsData();
+            const auto quota=reading ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO
+                                     : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
+            p::ProductPersistenceWorkUsage usage{};
+            {
+                auto measure=files.measurePersistenceWork(usage); assert(measure);
+                assert(plan.advance(files,lease,scratch.data()+1,capacity));
+            }
+            if (reading) { ++reads; assert(usage.filesystemCalls == 1); }
+            assert(usage.bytes <= quota.maxBytes() && usage.filesystemCalls <= quota.maxFilesystemCalls());
+            assert(!usage.allocations && !usage.entries && !usage.nodes);
+            assert(scratch.front() == 0xD3 && scratch.back() == 0xD3);
+        }
+        const auto chunk=std::min<size_t>(capacity,30720);
+        assert(plan.complete() && reads == (length+chunk-1)/chunk);
+        assert(files.completeRecovery(lease,true));
+        if (corrupt) assertFileEquals(files,OLD_DATA,sizeof(OLD_DATA)); else verifyFile(files,false);
+    }
+    std::cout << "[PASS] 97 large integrity scenarios: quotas, complete CRC, 72 read faults and recovery\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1151,6 +1274,7 @@ int main() {
     std::cout << "AtomicProductFile tests\n";
     std::cout << "==============================================\n\n";
 
+    test_large_integrity_reads_preserve_checks_and_quotas();
     test_completed_transaction_does_not_own_later_files();
     test_terminal_recovery_preserves_subsequent_mutations();
     test_every_durable_boundary_recovers_old_or_new();

@@ -10,6 +10,14 @@
 
 namespace core::persistence::product_file_transaction {
 
+// One CRC read per advance, bounded by caller-owned scratch and ordinary I/O quota.
+// A complete read is not an integrity verdict: the owner compares the final CRC.
+oc::type::Result<bool> advanceIntegrityRead(
+    ProductFileService& files, const ProductMutationLease& lease, const char* path,
+    uint32_t expectedSize, uint32_t& offset, uint32_t& crcState,
+    uint8_t* scratch, size_t scratchSize
+);
+
 inline constexpr size_t PATH_CAPACITY =
     oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1U;
 inline constexpr uint8_t NO_ACTIVE_SLOT = 0xFFU;
