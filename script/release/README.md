@@ -36,5 +36,5 @@ snapshots: 1180 KiB code, 296 KiB data and 10 KiB headers. Against the
 and 1.9 KiB of headroom respectively. Flash budget overruns are advisory: every
 release reports and archives the exact drift without blocking publication.
 Physical Flash capacity, RAM1, ITCM, RAM2, PSRAM and ELF placement remain strict
-safety gates, including exactly nine ITCM banks. A threshold change requires an
+safety gates, including a maximum of ten ITCM banks in the active product vector. A threshold change requires an
 explicit profile-version and baseline update.
