@@ -16,13 +16,25 @@
 
 namespace core::validation::benchmark {
 namespace {
-constexpr std::array<const char*, 69> names{
+constexpr std::array<const char*, 81> names{
     "app.context",
     "app.input",
     "app.midi-post-drain",
     "app.midi-pre-drain",
     "app.notifications",
     "app.pre-context-hooks",
+    "bench.fs.abort-write",
+    "bench.fs.append-write",
+    "bench.fs.begin-write",
+    "bench.fs.finish-write",
+    "bench.fs.flush",
+    "bench.fs.list",
+    "bench.fs.mkdir",
+    "bench.fs.read",
+    "bench.fs.remove",
+    "bench.fs.rename",
+    "bench.fs.stat",
+    "bench.fs.write",
     "benchmark.foreground-block",
     "display.ili9341.flush-region",
     "display.ili9341.submit-busy",

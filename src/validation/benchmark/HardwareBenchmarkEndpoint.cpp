@@ -263,6 +263,7 @@ void HardwareBenchmarkEndpoint::advance(uint32_t nowUs) {
         memory_ = core::diagnostics::dynamicMemorySnapshot();
         lv_mem_monitor_t monitor{}; lv_mem_monitor(&monitor);
         lvglUsed_ = monitor.total_size - monitor.free_size; lvglLargest_ = monitor.free_biggest_size;
+        lvglPeak_ = monitor.max_used;
 #if defined(ARDUINO_TEENSY41)
         ram2Tail_ = reinterpret_cast<uintptr_t>(&_heap_end) - reinterpret_cast<uintptr_t>(__brkval);
 #endif
@@ -347,11 +348,16 @@ void HardwareBenchmarkEndpoint::result(uint32_t runId, uint8_t section, uint16_t
             std::snprintf(json_, sizeof(json_),
                 "{\"phase\":\"after_cleanup\",\"psram_user_bytes\":%lu,\"psram_free_bytes\":%lu,"
                 "\"psram_largest_bytes\":%lu,\"allocation_failures\":%lu,\"tracker_overflow\":%s,"
-                "\"lvgl_used_bytes\":%lu,\"lvgl_largest_bytes\":%lu,\"ram2_tail_bytes\":%lu}",
+                "\"lvgl_used_bytes\":%lu,\"lvgl_largest_bytes\":%lu,\"ram2_tail_bytes\":%lu,"
+                "\"psram_peak_user_bytes_since_boot\":%lu,\"psram_min_free_bytes_since_boot\":%lu,"
+                "\"lvgl_peak_used_bytes_since_boot\":%lu,\"tracker_ready\":%s}",
                 (unsigned long)memory_.psramUserBytes, (unsigned long)memory_.psramFreeBytes,
                 (unsigned long)memory_.psramLargestBlock, (unsigned long)memory_.psramAllocationFailures,
                 memory_.trackerOverflow ? "true" : "false", (unsigned long)lvglUsed_,
-                (unsigned long)lvglLargest_, (unsigned long)ram2Tail_);
+                (unsigned long)lvglLargest_, (unsigned long)ram2Tail_,
+                (unsigned long)memory_.psramPeakUserBytes,
+                (unsigned long)memory_.psramMinimumFreeBytes,
+                (unsigned long)lvglPeak_, memory_.trackerReady ? "true" : "false");
             reply(request, RpcStatus::OK, json_); return;
     }
     reply(request, RpcStatus::INVALID_ARGUMENT, "{}");

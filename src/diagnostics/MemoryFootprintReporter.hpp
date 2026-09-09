@@ -14,6 +14,9 @@ struct DynamicMemorySnapshot {
     uint32_t psramLargestBlock = 0U;
     uint32_t psramBlocks = 0U;
     uint32_t psramAllocationFailures = 0U;
+    // Tracked since beginMemoryFootprintTracking(), including initialization.
+    uint32_t psramPeakUserBytes = 0U;
+    uint32_t psramMinimumFreeBytes = 0U;
     bool trackerReady = false;
     bool trackerOverflow = false;
     bool psramLargestBlockValid = false;

@@ -327,6 +327,10 @@ void cleanRunAndResults() {
     const auto memory = h.result(21, 4);
     contains(memory, "\"phase\":\"after_cleanup\"");
     contains(memory, "\"psram_user_bytes\":123"); contains(memory, "\"lvgl_used_bytes\":600");
+    contains(memory, "\"psram_peak_user_bytes_since_boot\":234");
+    contains(memory, "\"psram_min_free_bytes_since_boot\":345");
+    contains(memory, "\"lvgl_peak_used_bytes_since_boot\":800");
+    contains(memory, "\"tracker_ready\":true");
     h.result(22, 0, 0, bench::RpcStatus::CONFLICT);
     for (auto bounds : std::vector<std::pair<uint8_t, uint16_t>>{{0,1},{1,8},{2,uint16_t(bench::metricCount())},{3,3},{4,1},{5,0}})
         h.result(21, bounds.first, bounds.second, bench::RpcStatus::INVALID_ARGUMENT);
@@ -614,7 +618,7 @@ void filesystemSharesTransportWithoutHidingControlTraffic() {
 } // namespace
 
 void lv_mem_monitor(lv_mem_monitor_t* monitor) {
-    ++lvglMemoryReads; *monitor = {1000, 400, 300};
+    ++lvglMemoryReads; *monitor = {1000, 400, 300, 800};
 }
 namespace core::diagnostics {
 DynamicMemorySnapshot dynamicMemorySnapshot() {
@@ -622,6 +626,7 @@ DynamicMemorySnapshot dynamicMemorySnapshot() {
     DynamicMemorySnapshot snapshot;
     snapshot.psramUserBytes = 123; snapshot.psramFreeBytes = 456;
     snapshot.psramLargestBlock = 321; snapshot.trackerReady = true;
+    snapshot.psramPeakUserBytes = 234; snapshot.psramMinimumFreeBytes = 345;
     return snapshot;
 }
 } // namespace core::diagnostics

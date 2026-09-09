@@ -23,8 +23,12 @@ before playback, verify BusyPlaying refusals during playback, issue STOP, and
 then perform accepted transfers while UX actions continue. Do not bypass this
 guard to produce concurrent-transfer performance claims. `main.filesystem-rpc`
 records the foreground endpoint/catalog advancement scope; `main.loop`, sequencer
-and MIDI metrics remain available. Memory results are snapshots after cleanup,
-not measured peak allocation.
+and MIDI metrics remain available. Memory results distinguish snapshots after
+cleanup from PSRAM/LVGL allocator high-water values since boot (including fixture
+initialization and file preparation). RAM2 tail space is the heap break margin,
+not live allocated bytes. These counters do not measure the host application's
+peak heap or the Teensy stack peak. PSRAM results require a ready, non-overflowed
+tracker. They expose existing counters without adding work to allocation hooks.
 
 Compare baseline/current/baseline using the same dependency snapshots, platform
 packages, build flags, SD namespace, fixture, UX script and optimized host clients.
@@ -33,3 +37,8 @@ and operation content checks to each result. Keep cold startup and host USB
 reconnection timing separate from steady-state firmware CPU measurements. The
 post-link gate requires the scoped SD backend and still forbids settings SD,
 session restore/autosave and log reporters in this profile.
+
+The `bench.fs.*` scopes distinguish SD calls from endpoint bookkeeping. Their
+wall times include the backend, path mapping and interrupt preemption; nested
+scopes must not be summed with `main.filesystem-rpc`. Compare equally instrumented
+builds. The wrapper resides in Flash to preserve the product ITCM budget.

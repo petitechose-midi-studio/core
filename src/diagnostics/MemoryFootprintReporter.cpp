@@ -331,6 +331,9 @@ FLASHMEM DynamicMemorySnapshot dynamicMemorySnapshot() {
         snapshot.psramLargestBlockValid =
             state.psramPublished.largestBlockValid;
     }
+    // Monotonic foreground counters; keep the published IRQ snapshot lock fixed.
+    snapshot.psramPeakUserBytes = state.maximumPsramUser;
+    snapshot.psramMinimumFreeBytes = snapshot.trackerReady ? state.minimumPsramFree : 0U;
     snapshot.psramFreeBytes = poolBytes >= snapshot.psramAllocatedBytes
         ? poolBytes - snapshot.psramAllocatedBytes
         : 0U;

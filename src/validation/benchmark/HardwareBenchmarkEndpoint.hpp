@@ -58,7 +58,7 @@ private:
     uint32_t physicalInputs_ = 0, midiInputs_ = 0;
     uint32_t filesystemRequests_ = 0;
     size_t notificationOverflows_ = 0;
-    uint32_t lvglUsed_ = 0, lvglLargest_ = 0, ram2Tail_ = 0;
+    uint32_t lvglUsed_ = 0, lvglLargest_ = 0, lvglPeak_ = 0, ram2Tail_ = 0;
     uint16_t traceCount_ = 0, marker_ = 0;
     bool finished_ = false, ready_ = false, cancelRequested_ = false;
     bool injecting_ = false;
