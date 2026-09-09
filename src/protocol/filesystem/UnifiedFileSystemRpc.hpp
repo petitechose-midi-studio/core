@@ -5,8 +5,8 @@
 
 namespace core::protocol::filesystem::unified {
 
-inline constexpr uint8_t REQUEST = 0xfc, RESPONSE = 0xfd, VERSION = 4;
-inline constexpr size_t HEADER = 24, MAX_BODY = 32'512;
+inline constexpr uint8_t REQUEST = 0xfc, RESPONSE = 0xfd, VERSION = 5;
+inline constexpr size_t HEADER = 32, MAX_BODY = 32'512;
 inline constexpr uint32_t MAX_DEADLINE_MS = 10'000;
 
 enum class Operation : uint8_t {
@@ -24,7 +24,7 @@ enum class Error : uint16_t {
 struct Frame {
     Operation operation = Operation::Capabilities;
     State state = State::Request;
-    uint16_t requestId = 0;
+    uint64_t requestId = 0;
     Error error = Error::None;
     uint32_t nonce = 0;
     uint32_t operationId = 0;

@@ -14,8 +14,8 @@ p.add_argument('--output', required=True)
 args = p.parse_args()
 
 def wire(op=6, state=0, error=0, nonce=1, identity=0, delay=10000, body=b'\x07\0\0\0'):
-    return struct.pack('<BBBBHHIIII', 0xfc if state == 0 else 0xfd, 4, op, state, 7,
-                       error, nonce, identity, delay, len(body)) + body
+    return struct.pack('<BBBBHHIIIIQ', 0xfc if state == 0 else 0xfd, 5, op, state, error,
+                       0, nonce, identity, delay, len(body), 0x90efcdab56781234) + body
 
 # Acceptance and rejection fixtures written independently of either codec.
 known = [(wire(), True), (wire(op=0, nonce=0, delay=0, body=b''), True),
@@ -31,6 +31,7 @@ known = [(wire(), True), (wire(op=0, nonce=0, delay=0, body=b''), True),
          (wire(state=3, error=7, nonce=0, identity=8, delay=0, body=b''), False)]
 known.append((wire()[:1] + b'\x02' + wire()[2:], False))
 known.append((wire()[:1] + b'\x03' + wire()[2:], False))
+known.append((wire()[:1] + b'\x04' + wire()[2:], False))
 details = b'\0\1\1' + bytes(range(32))
 for op in [11, 12, 13, 14]:
     known.append((wire(op=op, state=3, error=8, identity=8, delay=0, body=details), True))

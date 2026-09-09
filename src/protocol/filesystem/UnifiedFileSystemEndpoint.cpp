@@ -36,7 +36,7 @@ FLASHMEM void Endpoint::receive(const uint8_t* data, size_t size) {
         if (data[2] <= uint8_t(Operation::Cancel) && data[3] == 0) {
             const auto u32 = [data](size_t i) { return uint32_t(data[i]) | uint32_t(data[i+1]) << 8
                 | uint32_t(data[i+2]) << 16 | uint32_t(data[i+3]) << 24; };
-            request.operation = Operation(data[2]); request.requestId = uint16_t(data[4]) | uint16_t(data[5]) << 8;
+            request.operation = Operation(data[2]); request.requestId = uint64_t(u32(24)) | uint64_t(u32(28)) << 32;
             request.nonce = u32(8); request.operationId = u32(12);
             reject(request, data[1] != VERSION ? Error::Unsupported : Error::InvalidMessage);
         }

@@ -97,7 +97,7 @@ FLASHMEM FileTransfer::Record* FileTransfer::available() {
 }
 
 FLASHMEM void FileTransfer::retain(const Frame& request, uint32_t nowMs, uint32_t identity) {
-    traceRequest_ = request.requestId;
+    traceRequest_ = uint16_t(request.requestId);
     active_ = available(); // Admission checks capacity before acquiring storage.
     *active_ = {};
     active_->nonce = request.nonce; active_->id = identity; active_->deadline = request.delayMs;
@@ -371,7 +371,7 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
                                       uint8_t* output, size_t capacity, bool deferAdmission) {
     Frame request;
     if (!output || capacity < HEADER + MAX_BODY || !decode(data, size, request) || request.state != State::Request) return 0;
-    RequestTrace trace(request.requestId);
+    RequestTrace trace(uint16_t(request.requestId));
     expire(nowMs);
     Frame response = request; response.state = State::Complete; response.delayMs = 0;
     response.body = output + HEADER; response.bodySize = 0;
