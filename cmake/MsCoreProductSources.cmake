@@ -183,6 +183,8 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/persistence/StepPresetFileStore.cpp
     src/persistence/StorageRecoveryMachine.cpp
     src/protocol/filesystem/FileSystemJobRpc.cpp
+    src/protocol/filesystem/UnifiedFileSystemRpc.cpp
+    src/protocol/filesystem/UnifiedFileTransfer.cpp
     src/protocol/filesystem/FileSystemRpcCodec.cpp
     src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp
     src/protocol/filesystem/FileSystemRpcEndpoint.cpp
