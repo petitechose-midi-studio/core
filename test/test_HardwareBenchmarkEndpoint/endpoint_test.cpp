@@ -588,6 +588,29 @@ void foregroundBlockRequiresHardware() {
     assert(bench::metricSamples("benchmark.foreground-block") == 0);
     std::cout << "[PASS] foreground stalls cannot produce simulated hardware evidence\n";
 }
+
+void filesystemSharesTransportWithoutHidingControlTraffic() {
+    Harness h;
+    unsigned delivered = 0;
+    h.endpoint->setOnReceive([&](const uint8_t* bytes, size_t size) {
+        assert(size == 2 && bytes[0] == 0xFC); ++delivered;
+    });
+    contains(h.transport.request(0), "\"ram_only\":false");
+    const auto start = h.start(82);
+    h.advance(start);
+    const uint8_t bytes[] = {0xFC, 6};
+    h.transport.receive(bytes, sizeof(bytes));
+    assert(delivered == 1);
+    h.advance(start + 1000); h.advance(start + 251000);
+    const auto result = h.result(82);
+    contains(result, "\"ok\":true");
+    contains(result, "\"filesystem_requests\":1");
+    contains(result, "\"foreign_requests\":0");
+    h.endpoint->setOnReceive(nullptr);
+    h.transport.receive(bytes, sizeof(bytes));
+    assert(delivered == 1);
+    contains(h.transport.request(0), "\"ram_only\":true");
+}
 } // namespace
 
 void lv_mem_monitor(lv_mem_monitor_t* monitor) {
@@ -613,5 +636,6 @@ int main() {
     contaminationLifecycle();
     startupFailuresAndWrap();
     foregroundBlockRequiresHardware();
+    filesystemSharesTransportWithoutHidingControlTraffic();
     std::cout << "[PASS] HardwareBenchmarkEndpoint native contract (no hardware or filesystem)\n";
 }

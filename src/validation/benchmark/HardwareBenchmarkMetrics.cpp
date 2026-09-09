@@ -16,7 +16,7 @@
 
 namespace core::validation::benchmark {
 namespace {
-constexpr std::array<const char*, 68> names{
+constexpr std::array<const char*, 69> names{
     "app.context",
     "app.input",
     "app.midi-post-drain",
@@ -34,6 +34,7 @@ constexpr std::array<const char*, 68> names{
     "macro.automation-playback",
     "main.app-update",
     "main.core-state",
+    "main.filesystem-rpc",
     "main.loop",
     "midi.cc.global-frame",
     "midi.cc.global-reject",

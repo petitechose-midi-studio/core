@@ -94,14 +94,21 @@ void HardwareBenchmarkEndpoint::reply(uint16_t request, RpcStatus status, const 
 void HardwareBenchmarkEndpoint::describe() {
     const char* state = run_.terminal() && !ready_ ? "finishing" : stateName(run_.state());
     std::snprintf(json_, sizeof(json_),
-        "{\"benchmark\":true,\"protocol\":1,\"ram_only\":true,\"requires_reboot\":true,"
+        "{\"benchmark\":true,\"protocol\":1,\"ram_only\":%s,\"requires_reboot\":true,"
         "\"fixture\":\"%s\",\"fixture_version\":\"%s\",\"build_id\":\"%s\","
-        "\"max_events\":%u,\"state\":\"%s\",\"run_id\":%lu,\"physical_inputs\":%lu,\"midi_inputs\":%lu}", VERSION, VERSION,
+        "\"max_events\":%u,\"state\":\"%s\",\"run_id\":%lu,\"physical_inputs\":%lu,\"midi_inputs\":%lu}",
+        filesystemReceive_ ? "false" : "true", VERSION, VERSION,
         MS_HARDWARE_BENCHMARK_BUILD_ID, unsigned(MAX_EVENTS), state, (unsigned long)run_.id(),
         (unsigned long)physicalInputs_, (unsigned long)midiInputs_);
 }
 
 void HardwareBenchmarkEndpoint::receive(const uint8_t* data, size_t size) {
+    if (data && size && data[0] == 0xFC && filesystemReceive_) {
+        if (run_.state() == RunState::RUNNING && filesystemRequests_ != UINT32_MAX)
+            ++filesystemRequests_;
+        filesystemReceive_(data, size);
+        return;
+    }
     if (run_.state() == RunState::RUNNING) ++foreignRequests_;
     observeMidiInput();
     if (size < 6 || data[0] != REQUEST_ID || data[1] != 0 || data[2] != SCHEMA) return;
@@ -282,7 +289,7 @@ void HardwareBenchmarkEndpoint::result(uint32_t runId, uint8_t section, uint16_t
                 "\"event_count\":%u,\"uploaded_count\":%u,\"metric_count\":%u,\"memory_count\":1,"
                 "\"max_lateness_us\":%lu,\"foreign_requests\":%lu,\"notification_overflows\":%u,"
                 "\"lvgl_errors\":%lu,\"duration_us\":%lu,\"boundary_skipped\":%lu,"
-                "\"physical_inputs\":%lu,\"midi_inputs\":%lu}", stateName(run_.state()),
+                "\"physical_inputs\":%lu,\"midi_inputs\":%lu,\"filesystem_requests\":%lu}", stateName(run_.state()),
                 (unsigned long)run_.id(), run_.state() == RunState::COMPLETED && !foreignRequests_ &&
                 !physicalInputs_ && !midiInputs_ && !notificationOverflows_ && !profiler::snapshot().errors &&
                 !memory_.trackerOverflow ? "true" : "false",
@@ -290,7 +297,8 @@ void HardwareBenchmarkEndpoint::result(uint32_t runId, uint8_t section, uint16_t
                 (unsigned long)run_.maxLatenessUs(), (unsigned long)foreignRequests_,
                 unsigned(notificationOverflows_),
                 (unsigned long)profiler::snapshot().errors, (unsigned long)run_.durationUs(),
-                (unsigned long)boundarySkipped(), (unsigned long)physicalInputs_, (unsigned long)midiInputs_);
+                (unsigned long)boundarySkipped(), (unsigned long)physicalInputs_, (unsigned long)midiInputs_,
+                (unsigned long)filesystemRequests_);
             reply(request, RpcStatus::OK, json_); return;
         case 1:
             if (index >= traceCount_) break;

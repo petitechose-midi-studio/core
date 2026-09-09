@@ -14,6 +14,10 @@
 #include "validation/benchmark/BenchStorage.hpp"
 #include "validation/benchmark/BenchInput.hpp"
 #include "validation/benchmark/HardwareBenchmarkFixture.hpp"
+#if defined(MS_FILESYSTEM_BENCHMARK)
+#include "validation/benchmark/BenchFileSystem.hpp"
+#include <oc/hal/teensy/SDFileSystemBackend.hpp>
+#endif
 #else
 #include <oc/hal/teensy/SDCardBackend.hpp>
 #include <oc/hal/teensy/SDFileSystemBackend.hpp>
@@ -69,7 +73,12 @@ static std::optional<oc::hal::teensy::CD74HC4067> mux;
 #endif
 #if defined(MS_HARDWARE_BENCHMARK)
 static core::validation::benchmark::BenchSettingsStorage deviceSettingsStorage;
+#if defined(MS_FILESYSTEM_BENCHMARK)
+static oc::hal::teensy::SDFileSystemBackend benchmarkSd;
+static core::validation::benchmark::BenchFileSystem productFileSystemBackend(benchmarkSd);
+#else
 static core::validation::benchmark::UnavailableFileSystem productFileSystemBackend;
+#endif
 #else
 static oc::hal::teensy::SDCardBackend deviceSettingsStorage("/core-settings.bin");
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
@@ -665,10 +674,13 @@ static FLASHMEM void initMux() {
 static FLASHMEM bool initStorage() {
 #if defined(MS_HARDWARE_BENCHMARK)
     BENCH_BOOT("ram-storage-begin");
-    // No filesystem initialization or recovery in this image, including when
-    // a card is present. Keep unavailable services only for UI dependencies.
+    // Settings stay in RAM. Only the explicit filesystem profile initializes
+    // SD, through its isolated namespace; the regular UX benchmark has no SD.
     checkOrHalt(deviceSettingsStorage.init(), "Benchmark RAM settings");
     productFileService.emplace(productFileSystemBackend);
+#if defined(MS_FILESYSTEM_BENCHMARK)
+    checkOrHalt(productFileService->init(), "Benchmark SD namespace");
+#endif
     productDirectoryCatalog =
         core::app::makeExtmemUniqueCold<core::persistence::ProductDirectoryCatalog>(
             *productFileService, &millis, &micros);
@@ -1031,7 +1043,17 @@ void loop() {
             coreState->update();
         }
 
-#if !defined(MS_HARDWARE_BENCHMARK)
+#if defined(MS_FILESYSTEM_BENCHMARK)
+        const uint32_t persistenceNowMs = millis();
+        if (productFileService && productFileService->persistenceJobs().beginTurn(persistenceNowMs) &&
+            app && app->contexts().activeId() == static_cast<uint8_t>(Config::ContextID::STANDALONE)) {
+            if (auto* context = app->contexts().active()) {
+                OC_PERF_SCOPE(perfRpc, "main.filesystem-rpc");
+                static_cast<core::context::StandaloneContext*>(context)->advancePersistence(
+                    persistenceNowMs, coreState->statusBar.playing.get());
+            }
+        }
+#elif !defined(MS_HARDWARE_BENCHMARK)
         const uint32_t persistenceNowMs = millis();
         bool persistenceTurnReady = false;
         if (productFileService) {

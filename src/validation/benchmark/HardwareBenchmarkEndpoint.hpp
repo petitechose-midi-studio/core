@@ -5,19 +5,28 @@
 #include "diagnostics/MemoryFootprintReporter.hpp"
 #include <oc/interface/IEventBus.hpp>
 #include <oc/interface/ITransport.hpp>
+#include <utility>
 
 namespace core::state { struct CoreState; }
 namespace core::validation::benchmark {
 
-// PSRAM-owned by StandaloneContext. Control traffic runs outside the measured
-// interval. This endpoint is never compiled into normal/product profiles.
-class HardwareBenchmarkEndpoint {
+// PSRAM-owned by StandaloneContext. UX control traffic stays outside the
+// measured interval; optional filesystem traffic is counted separately.
+// This endpoint is never compiled into normal/product profiles.
+class HardwareBenchmarkEndpoint : public oc::interface::ITransport {
 public:
     HardwareBenchmarkEndpoint(oc::interface::ITransport&, oc::interface::IEventBus&,
                               core::state::CoreState&, uint32_t (*midiInputCount)() = nullptr);
     ~HardwareBenchmarkEndpoint();
     void begin();
     void advance(uint32_t nowUs);
+    // Optional filesystem endpoint shares the physical transport in the SD
+    // qualification profile. App remains the sole physical transport poller.
+    oc::type::Result<void> init() override { return oc::type::Result<void>::ok(); }
+    void update() override {}
+    void send(const uint8_t* data, size_t size) override { transport_.send(data, size); }
+    void setOnReceive(ReceiveCallback callback) override { filesystemReceive_ = std::move(callback); }
+    bool isReady() const override { return transport_.isReady(); }
 
 private:
     struct Trace {
@@ -37,6 +46,7 @@ private:
     void observeMidiInput();
 
     oc::interface::ITransport& transport_;
+    ReceiveCallback filesystemReceive_;
     oc::interface::IEventBus& bus_;
     core::state::CoreState& state_;
     uint32_t (*midiInputCount_)() = nullptr;
@@ -46,6 +56,7 @@ private:
     uint64_t held_ = 0;
     uint32_t cleanupAtUs_ = 0, rebootAtUs_ = 0, foreignRequests_ = 0;
     uint32_t physicalInputs_ = 0, midiInputs_ = 0;
+    uint32_t filesystemRequests_ = 0;
     size_t notificationOverflows_ = 0;
     uint32_t lvglUsed_ = 0, lvglLargest_ = 0, ram2Tail_ = 0;
     uint16_t traceCount_ = 0, marker_ = 0;

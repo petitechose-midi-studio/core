@@ -77,6 +77,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/project/ProjectHandlerValueEditing.cpp
     src/handler/project/ProjectLifecycleDomainServices.cpp
     src/handler/project/ProjectScaleSettingsDomainServices.cpp
+    src/handler/sequencer/ClipWorkspaceHandler.cpp
     src/handler/sequencer/DrumLaneEditorHandler.cpp
     src/handler/sequencer/PatternPitchSettingsDomainServices.cpp
     src/handler/sequencer/PatternPitchSettingsHandler.cpp
@@ -90,7 +91,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/sequencer/SequencerChordPresetDomainServices.cpp
     src/handler/sequencer/SequencerChordPresetLibraryAdapter.cpp
     src/handler/sequencer/SequencerChordProjectionFeedback.cpp
-    src/handler/sequencer/ClipWorkspaceHandler.cpp
     src/handler/sequencer/SequencerContextSelectorWorkflow.cpp
     src/handler/sequencer/SequencerDirectTrackStructureTransaction.cpp
     src/handler/sequencer/SequencerHistoryDomainServices.cpp
@@ -184,9 +184,9 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/persistence/StepPresetFileStore.cpp
     src/persistence/StorageRecoveryMachine.cpp
     src/protocol/filesystem/RpcBody.cpp
+    src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp
     src/protocol/filesystem/UnifiedFileSystemRpc.cpp
     src/protocol/filesystem/UnifiedFileTransfer.cpp
-    src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp
     src/sequencer/ClockSourceSelector.cpp
     src/sequencer/DrumPlaybackEngine.cpp
     src/sequencer/ExternalClockEstimator.cpp
@@ -257,9 +257,9 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/macro/MacroSlotClipboardPlan.cpp
     src/state/macro/MacroUiState.cpp
     src/state/macro/MacroWorkflow.cpp
+    src/state/modulation/ProjectControlHistory.cpp
     src/state/modulation/ProjectControlMacroConversion.cpp
     src/state/modulation/ProjectControlMacroCurveOps.cpp
-    src/state/modulation/ProjectControlHistory.cpp
     src/state/modulation/ProjectControlMacroOps.cpp
     src/state/modulation/ProjectControlMacroOpsInternal.cpp
     src/state/modulation/ProjectControlRuntime.cpp
@@ -305,6 +305,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/sequencer/SequencerChordUiOps.cpp
     src/state/sequencer/SequencerClipGridState.cpp
     src/state/sequencer/SequencerClipLaunchQueue.cpp
+    src/state/sequencer/SequencerClipRegionOps.cpp
     src/state/sequencer/SequencerContentProjectionOps.cpp
     src/state/sequencer/SequencerContentStepOps.cpp
     src/state/sequencer/SequencerContentViewInternal.cpp
@@ -325,7 +326,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/sequencer/SequencerPatternPreset.cpp
     src/state/sequencer/SequencerPatternRandomizeOps.cpp
     src/state/sequencer/SequencerPatternRandomizeSession.cpp
-    src/state/sequencer/SequencerClipRegionOps.cpp
     src/state/sequencer/SequencerPitchEditAuthority.cpp
     src/state/sequencer/SequencerPresetMetadata.cpp
     src/state/sequencer/SequencerProjectScaleOps.cpp
@@ -365,12 +365,12 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/project/ProjectTrackEditorOverlay.cpp
     src/ui/project/ProjectTrackEditorViewModel.cpp
     src/ui/sequencer/DrumOverviewSurface.cpp
-    src/ui/sequencer/SequencerClipLauncherSurface.cpp
     src/ui/sequencer/SequencerBottomActionStripViewModelBuilder.cpp
     src/ui/sequencer/SequencerCcLaneGrid.cpp
     src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.cpp
     src/ui/sequencer/SequencerChordPresetPresentation.cpp
     src/ui/sequencer/SequencerChordVoiceRail.cpp
+    src/ui/sequencer/SequencerClipLauncherSurface.cpp
     src/ui/sequencer/SequencerHeaderBar.cpp
     src/ui/sequencer/SequencerHeaderBarRenderModel.cpp
     src/ui/sequencer/SequencerHeaderViewModelBuilder.cpp
@@ -413,6 +413,10 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/view/RetainedViewRenderPolicy.cpp
     src/ui/view/SequencerView.cpp
     src/ui/widget/MacroKnobWidget.cpp
+    src/validation/benchmark/HardwareBenchmarkEndpoint.cpp
+    src/validation/benchmark/HardwareBenchmarkFixture.cpp
+    src/validation/benchmark/HardwareBenchmarkMetrics.cpp
+    src/validation/benchmark/HardwareBenchmarkRun.cpp
     src/validation/project/ProjectModulationBenchmark.cpp
     src/validation/project/ProjectStoreSmoke.cpp
     src/validation/ux/SemanticUxContext.cpp

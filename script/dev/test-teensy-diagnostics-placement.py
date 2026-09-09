@@ -76,6 +76,15 @@ def main() -> int:
 1879048192 12408 b core::diagnostics::(anonymous namespace)::psramSpanTable
 """
     assert hardware_benchmark_placement_violations(bench) == ()
+    scoped_sd = bench + """
+1610613100 12 T core::validation::benchmark::BenchFileSystem::init()
+1610613200 12 T oc::hal::teensy::SDFileSystemBackend::init()
+"""
+    assert hardware_benchmark_placement_violations(scoped_sd, filesystem=True) == ()
+    assert hardware_benchmark_placement_violations(scoped_sd)
+    assert hardware_benchmark_placement_violations(bench, filesystem=True)
+    assert hardware_benchmark_placement_violations(
+        scoped_sd + "1610613300 12 T oc::hal::teensy::SDCardBackend::init()\n", filesystem=True)
     assert hardware_benchmark_placement_violations("")
     assert normal_build_diagnostics_violations(bench)
     # Missing or misplaced measurements cannot silently turn into a passing

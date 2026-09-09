@@ -131,8 +131,10 @@ def normal_build_diagnostics_violations(nm_output: str) -> tuple[str, ...]:
     return tuple(violations)
 
 
-def hardware_benchmark_placement_violations(nm_output: str) -> tuple[str, ...]:
-    """RAM-only benchmark contract, in addition to product/physical gates."""
+def hardware_benchmark_placement_violations(
+    nm_output: str, *, filesystem: bool = False
+) -> tuple[str, ...]:
+    """Benchmark contract, with explicitly scoped SD for filesystem runs."""
     symbols = _symbols(nm_output)
     violations: list[str] = []
     for marker in (
@@ -174,7 +176,8 @@ def hardware_benchmark_placement_violations(nm_output: str) -> tuple[str, ...]:
     # These checks are deliberately about the linked ELF, not discarded map
     # sections. An unavailable IFileSystem may remain for UI dependencies.
     for marker in (
-        "SDCardBackend", "SDFileSystemBackend", "FatFormatter::",
+        "SDCardBackend",
+        *(("SDFileSystemBackend", "FatFormatter::") if not filesystem else ()),
         "StorageRecoveryRuntimeManager", "storageRecovery",
         "ProjectSessionRestoreService", "ProjectSessionAutosaveService",
         "core::diagnostics::PerformanceReporter",
@@ -183,4 +186,8 @@ def hardware_benchmark_placement_violations(nm_output: str) -> tuple[str, ...]:
     ):
         if any(marker in name for _address, _size, _kind, name in symbols):
             violations.append(f"RAM-only benchmark contains forbidden symbol: {marker}")
+    if filesystem:
+        for marker in ("BenchFileSystem::init(", "SDFileSystemBackend::init("):
+            if not any(marker in name for _address, _size, _kind, name in symbols):
+                violations.append(f"filesystem benchmark missing scoped SD: {marker}")
     return tuple(violations)

@@ -297,11 +297,17 @@ FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
     );
     if (!benchmark_) return false;
     benchmark_->begin();
+#if !defined(MS_FILESYSTEM_BENCHMARK)
     return true;
-#else
+#endif
+#endif
     filesystem_rpc_endpoint_ =
         core::app::makeExtmemUnique<core::protocol::filesystem::unified::Endpoint>(
+#if defined(MS_FILESYSTEM_BENCHMARK)
+            *benchmark_,
+#else
             frames(),
+#endif
             product_files_,
             product_catalog_,
             core::app::createRpcLifetime(),
@@ -314,7 +320,6 @@ FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
     }
     filesystem_rpc_endpoint_->begin();
     return true;
-#endif
 }
 
 FLASHMEM void StandaloneContext::registerMidiRouting() {
@@ -335,10 +340,10 @@ FLASHMEM void StandaloneContext::cleanupGlobalHandlerAssembly() {
 }
 
 FLASHMEM void StandaloneContext::cleanupFileSystemRpcEndpoint() {
+    filesystem_rpc_endpoint_.reset();
 #if defined(MS_HARDWARE_BENCHMARK)
     benchmark_.reset();
 #endif
-    filesystem_rpc_endpoint_.reset();
 }
 
 FLASHMEM void StandaloneContext::cleanupFeatureAssembly() {

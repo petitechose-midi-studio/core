@@ -98,11 +98,14 @@ def elf_placement_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     if result.returncode != 0:
         raise RuntimeError(f"arm-none-eabi-nm failed for {elf_path}:\n{result.stderr}")
     benchmark = project_flag(action_env, "custom_hardware_benchmark_build")
+    filesystem_benchmark = project_flag(action_env, "custom_filesystem_benchmark_build")
     violations = product_placement_violations(
-        result.stdout, ram_only_benchmark=benchmark
+        result.stdout, ram_only_benchmark=benchmark and not filesystem_benchmark
     )
     if benchmark:
-        violations += hardware_benchmark_placement_violations(result.stdout)
+        violations += hardware_benchmark_placement_violations(
+            result.stdout, filesystem=filesystem_benchmark
+        )
     elif project_flag(action_env, "custom_diagnostics_build"):
         violations += diagnostics_placement_violations(result.stdout)
     else:
