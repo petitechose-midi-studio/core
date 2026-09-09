@@ -184,7 +184,7 @@ FLASHMEM void formatSourcePrimary(
         return;
     }
     const auto* curve = findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         source.parameters.recordedCurveId
     );
     const uint32_t ticks = curve ? curve->durationTicks : 0U;
@@ -209,8 +209,8 @@ FLASHMEM void formatBindingDepth(
         core::state::modulation::depth::amountQ15ToPercent(
         binding.amountQ15,
         core::state::modulation::depth::scaleFor(
-            control.authored.modulation,
-            control.authored.curves,
+            control.authored().modulation,
+            control.authored().curves,
             binding
         )
     );
@@ -458,7 +458,7 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     }
 
     const auto& control = pages_.control;
-    const auto& graph = control.authored.modulation;
+    const auto& graph = control.authored().modulation;
     const auto* source = focusedSource(navigation_, graph);
     const auto* binding = focusedBinding(navigation_, graph);
     const auto sourceSession = core::state::modulation::

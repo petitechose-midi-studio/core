@@ -1,0 +1,16 @@
+# Hardware bench: 10-second Macro view with fixture notes, CC lane and shared LFOs.
+# Uses the versioned macro-multi-modulation fixture, without editing user state.
+# Default compiler duration is the final timestamp + 1000 ms = 10000 ms.
+# macro.performance is the benchmark's state-only projection at the Macro root.
+0 scenario bench-macro-v1
+0 marker playback_idle
+20 assert_view MACRO
+40 assert_mode macro.performance
+100 transport start
+3000 assert_view MACRO
+3020 assert_mode macro.performance
+6000 assert_view MACRO
+6020 assert_mode macro.performance
+8800 assert_view MACRO
+8820 assert_mode macro.performance
+9000 transport stop

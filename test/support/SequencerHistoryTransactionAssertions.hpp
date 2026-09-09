@@ -69,25 +69,6 @@ inline bool commitAdmittedPattern(
     );
 }
 
-inline bool commitAdmittedFullBank(
-    core::state::sequencer::SequencerHistoryService& history,
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
-    core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
-) {
-    namespace seq = core::state::sequencer;
-    auto change = core::app::makeExtmemUnique<seq::SequencerHistoryFullBankChange>();
-    if (!change) return false;
-
-    change->descriptor = descriptor;
-    change->before = std::move(before);
-    change->after = std::move(after);
-    if (!history.canRecordFullBank(*change)) return false;
-
-    history.commitAdmittedFullBank(std::move(change));
-    return true;
-}
-
 inline bool commitAdmittedStructure(
     core::state::sequencer::SequencerHistoryService& history,
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
@@ -125,14 +106,6 @@ inline bool commitAdmittedPattern(
         return false;
     }
 
-    const bool synchronized =
-        storage == seq::SequencerHistoryPatternStorage::FlatOnly
-            ? seq::storeActiveTrackPreservingGraph(
-                  state.sequencerTracks,
-                  state.sequencer
-              )
-            : seq::storeActiveTrack(state.sequencerTracks, state.sequencer);
-    assert(synchronized);
     state.markProjectMutated();
     state.refreshSharedTrackStateFromSequencer();
     return true;
@@ -144,29 +117,6 @@ inline bool publishAdmittedPattern(
 ) {
     if (!change || !state.sequencerHistory.canRecordPattern(*change)) return false;
     state.sequencerHistory.recordPreparedPattern(std::move(change));
-    state.publishPreparedSequencerMutation();
-    return true;
-}
-
-inline bool canPublishAdmittedFullBank(
-    const core::state::CoreState& state,
-    const core::state::sequencer::SequencerHistoryFullBankChange& change
-) {
-    return !state.sequencer.stepContentDraft.active.get() &&
-           state.sequencerHistory.canRecordFullBank(change);
-}
-
-inline bool publishAdmittedFullBank(
-    core::state::CoreState& state,
-    core::state::sequencer::SequencerHistoryFullBankChangePtr change
-) {
-    if (!change || !canPublishAdmittedFullBank(state, *change)) return false;
-    const uint16_t enabledMask = change->after.flat.enabledMask;
-    const uint8_t activeTrack = change->after.flat.activeTrack;
-    if (!state.publishPreparedSequencerTrackState(enabledMask, activeTrack)) {
-        return false;
-    }
-    state.sequencerHistory.commitAdmittedFullBank(std::move(change));
     state.publishPreparedSequencerMutation();
     return true;
 }
@@ -199,9 +149,6 @@ inline uint64_t flatPatternFingerprint(
     seq::captureSnapshot(pattern, snapshot);
     uint64_t hash = 1469598103934665603ULL;
     mixFingerprintValue(hash, snapshot.length);
-    mixFingerprintValue(hash, snapshot.playStart);
-    mixFingerprintValue(hash, snapshot.loopStart);
-    mixFingerprintValue(hash, snapshot.loopEnd);
     mixFingerprintValue(hash, snapshot.stepsPerBeat);
     mixFingerprintValue(hash, snapshot.enabledMask.low);
     mixFingerprintValue(hash, snapshot.enabledMask.high);
@@ -276,7 +223,7 @@ struct StateInvariant {
 };
 
 inline StateInvariant captureStateInvariant(const core::state::CoreState& state) {
-    const auto& editor = state.sequencer.pattern;
+    const auto& editor = state.sequencer.pattern();
     const auto& bank = state.sequencerTracks.track(
         state.sequencerTracks.activeTrackIndex()
     );

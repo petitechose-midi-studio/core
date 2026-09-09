@@ -21,8 +21,12 @@ using ScaleSettings =
     oc::note::sequencer::StepSequencerScaleSettings;
 
 struct ProjectionTraversal {
-    SequencerPatternState& pattern;
-    Graph& graph;
+    const std::array<uint8_t, SequencerPatternState::MAX_STEPS>& notes;
+    uint8_t length;
+    const Graph& graph;
+    Graph* destination = nullptr;
+    SequencerProjectedChordVisitor visitor = nullptr;
+    void* visitorContext = nullptr;
     ScaleSettings sourceScale;
     ScaleSettings targetScale;
     SequencerStepChordDraftState* chordDraft = nullptr;
@@ -94,9 +98,7 @@ FLASHMEM bool projectFormula(
             ++stats->directionLimited;
         }
         if (projection.rangeLimited) ++stats->rangeLimited;
-        stats->droppedVoices = static_cast<uint16_t>(
-            stats->droppedVoices + projection.droppedVoiceCount
-        );
+        stats->droppedVoices += projection.droppedVoiceCount;
     }
     if (!projection.changed) return false;
 
@@ -108,7 +110,7 @@ FLASHMEM bool projectFormula(
 FLASHMEM void noteProjection(
     ProjectionTraversal& traversal,
     uint16_t nodeId,
-    Node& node,
+    const Node& node,
     uint8_t sourceRoot,
     uint8_t targetRoot
 ) {
@@ -120,17 +122,19 @@ FLASHMEM void noteProjection(
     if (node.has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL)) {
         // An active draft represents this logical slot in feedback, while the
         // published formula is still projected so Discard remains coherent.
-        traversal.graphChanged =
-            projectFormula(
-            node.chordSpec,
-            traversal.sourceScale,
-            traversal.targetScale,
-            sourceRoot,
-            targetRoot,
-            traversal.sourceUsesScaleDegrees,
-            traversal.targetUsesScaleDegrees,
-            draftOwnsLocalFormula ? nullptr : &traversal.stats
-        ) || traversal.graphChanged;
+        auto projected = node.chordSpec;
+        if (projectFormula(projected, traversal.sourceScale, traversal.targetScale,
+                           sourceRoot, targetRoot, traversal.sourceUsesScaleDegrees,
+                           traversal.targetUsesScaleDegrees,
+                           draftOwnsLocalFormula ? nullptr : &traversal.stats)) {
+            traversal.graphChanged = true;
+            if (traversal.destination != nullptr) {
+                traversal.destination->stepNodes[nodeId].chordSpec = projected;
+            }
+            if (traversal.visitor != nullptr) {
+                traversal.visitor(traversal.visitorContext, nodeId, node.chordSpec, projected);
+            }
+        }
     }
 
     if (draftOwnsLocalFormula) {
@@ -166,7 +170,7 @@ FLASHMEM SequencerChordContextProjectionStats projectDetachedChordDraft(
 
     stats.patternsVisited = 1U;
     const uint8_t rootNote =
-        sequencer.pattern.note[session.ownerStep];
+        sequencer.pattern().note[session.ownerStep];
     const bool changed = projectFormula(
         draft.spec,
         sourceScale,
@@ -299,7 +303,7 @@ FLASHMEM void visitRootSequence(ProjectionTraversal& traversal) {
         SequencerPatternState::MAX_STEPS
     );
     for (uint8_t step = 0; step < count; ++step) {
-        const uint8_t rootNote = traversal.pattern.note[step];
+        const uint8_t rootNote = traversal.notes[step];
         visitNode(
             traversal,
             static_cast<uint16_t>(root->firstStepNode + step),
@@ -312,7 +316,7 @@ FLASHMEM void visitRootSequence(ProjectionTraversal& traversal) {
 
 FLASHMEM void visitOrphans(ProjectionTraversal& traversal) {
     const uint8_t patternLength = std::max<uint8_t>(
-        traversal.pattern.length.get(),
+        traversal.length,
         1U
     );
     for (uint16_t nodeId = 0;
@@ -323,7 +327,7 @@ FLASHMEM void visitOrphans(ProjectionTraversal& traversal) {
         const uint8_t rootIndex = static_cast<uint8_t>(
             nodeId % patternLength
         );
-        const uint8_t rootNote = traversal.pattern.note[rootIndex];
+        const uint8_t rootNote = traversal.notes[rootIndex];
         visitNode(
             traversal,
             nodeId,
@@ -339,28 +343,38 @@ FLASHMEM void visitOrphans(ProjectionTraversal& traversal) {
 FLASHMEM void SequencerChordContextProjectionStats::merge(
     const SequencerChordContextProjectionStats& other
 ) {
-    patternsVisited = static_cast<uint16_t>(
-        patternsVisited + other.patternsVisited
-    );
-    localChordsVisited = static_cast<uint16_t>(
-        localChordsVisited + other.localChordsVisited
-    );
-    projected = static_cast<uint16_t>(projected + other.projected);
-    changed = static_cast<uint16_t>(changed + other.changed);
-    exact = static_cast<uint16_t>(exact + other.exact);
-    adapted = static_cast<uint16_t>(adapted + other.adapted);
-    directionLimited = static_cast<uint16_t>(
-        directionLimited + other.directionLimited
-    );
-    rangeLimited = static_cast<uint16_t>(
-        rangeLimited + other.rangeLimited
-    );
-    failures = static_cast<uint16_t>(
-        failures + other.failures
-    );
-    droppedVoices = static_cast<uint16_t>(
-        droppedVoices + other.droppedVoices
-    );
+    patternsVisited += other.patternsVisited;
+    localChordsVisited += other.localChordsVisited;
+    projected += other.projected;
+    changed += other.changed;
+    exact += other.exact;
+    adapted += other.adapted;
+    directionLimited += other.directionLimited;
+    rangeLimited += other.rangeLimited;
+    failures += other.failures;
+    droppedVoices += other.droppedVoices;
+}
+
+FLASHMEM SequencerChordContextProjectionStats visitProjectedPatternChords(
+    const std::array<uint8_t, SequencerPatternState::MAX_STEPS>& notes,
+    uint8_t length, const Graph* graph, SequencerPitchEditMode mode,
+    ScaleSettings source, ScaleSettings target,
+    SequencerProjectedChordVisitor visitor, void* context
+) {
+    if (graph == nullptr || !graph->enabled) return {};
+    source.clamp();
+    target.clamp();
+    ProjectionTraversal traversal{
+        .notes = notes, .length = length, .graph = *graph,
+        .visitor = visitor, .visitorContext = context,
+        .sourceScale = source, .targetScale = target,
+        .sourceUsesScaleDegrees = pitchContextUsesScaleDegrees(mode, source),
+        .targetUsesScaleDegrees = pitchContextUsesScaleDegrees(mode, target),
+    };
+    traversal.stats.patternsVisited = 1U;
+    visitRootSequence(traversal);
+    visitOrphans(traversal);
+    return traversal.stats;
 }
 
 FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
@@ -391,8 +405,10 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
     if (graph == nullptr || !graph->enabled) return empty;
 
     ProjectionTraversal traversal{
-        .pattern = pattern,
+        .notes = pattern.note,
+        .length = pattern.length.get(),
         .graph = *graph,
+        .destination = graph,
         .sourceScale = sourceScale,
         .targetScale = targetScale,
         .sourceUsesScaleDegrees =
@@ -422,7 +438,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
     // independently; only the authored stats are user-facing.
     if (auto* authored = sequencer.stepContentDraft.pattern()) {
         const auto published = projectPatternChordContext(
-            sequencer.pattern,
+            sequencer.pattern(),
             sourceScale,
             targetScale,
             sourceMode,
@@ -443,7 +459,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
         sequencer.stepContentDraft.kind.get() !=
             SequencerStepContentDraftKind::CHORD) {
         return projectPatternChordContext(
-            sequencer.pattern,
+            sequencer.pattern(),
             sourceScale,
             targetScale,
             sourceMode,
@@ -451,7 +467,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
         );
     }
 
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     if (graph == nullptr || !graph->enabled) {
         return projectDetachedChordDraft(
             sequencer,
@@ -463,8 +479,10 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
     }
 
     ProjectionTraversal traversal{
-        .pattern = sequencer.pattern,
+        .notes = sequencer.pattern().note,
+        .length = sequencer.pattern().length.get(),
         .graph = *graph,
+        .destination = graph,
         .sourceScale = sourceScale,
         .targetScale = targetScale,
         .chordDraft = &sequencer.stepContentDraft.chord,
@@ -488,42 +506,9 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
         detached.patternsVisited = 0U;
         traversal.stats.merge(detached);
     }
-    if (traversal.graphChanged) sequencer.pattern.bumpGraphRevision();
+    if (traversal.graphChanged) sequencer.pattern().bumpGraphRevision();
     if (traversal.draftChanged) sequencer.stepContentDraft.touch();
     return traversal.stats;
-}
-
-FLASHMEM SequencerChordContextProjectionStats projectInheritedChordContexts(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    ScaleSettings sourceScale,
-    ScaleSettings targetScale
-) {
-    SequencerChordContextProjectionStats total{};
-    const uint8_t activeTrack = bank.activeTrackIndex();
-    if (!isPatternScaleOverride(active.pattern.scalePolicy)) {
-        total.merge(projectPatternChordContext(
-            active,
-            sourceScale,
-            targetScale,
-            active.pattern.pitchEditMode,
-            active.pattern.pitchEditMode
-        ));
-    }
-
-    for (uint8_t track = 0;
-         track < SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        if (track == activeTrack) continue;
-        auto& pattern = bank.track(track);
-        if (isPatternScaleOverride(pattern.scalePolicy)) continue;
-        total.merge(projectPatternChordContext(
-            pattern,
-            sourceScale,
-            targetScale
-        ));
-    }
-    return total;
 }
 
 }  // namespace core::state::sequencer

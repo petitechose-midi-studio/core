@@ -30,7 +30,7 @@ FLASHMEM seq::SequencerCcProjectRoutingView
 SequencerCcLaneDomainServices::routingView() const {
     seq::SequencerCcProjectRoutingView project{};
     for (uint8_t track = 0; track < project.size(); ++track) {
-        const auto& pattern = seq::canonicalTrackPattern(tracks_, editor_, track);
+        const auto& pattern = tracks_.track(track);
         project[track] = {
             .lanes = seq::sequencerCcLaneView(pattern),
             .trackRoute = trackRoute(track),

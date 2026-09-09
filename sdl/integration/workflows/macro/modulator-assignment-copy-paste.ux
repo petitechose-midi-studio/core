@@ -14,8 +14,8 @@
 260 tap MACRO_1 60
 1240 tick
 1300 button LEFT_BOTTOM up
-1450 encoder NAV 1
-1570 encoder NAV 1
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
 1690 tap NAV 60
 1910 capture screen source_assignment
 
@@ -32,8 +32,8 @@
 2790 tap MACRO_2 60
 3770 tick
 3830 button LEFT_BOTTOM up
-3950 encoder NAV 1
-4070 encoder NAV 1
+3950 encoder NAV 0.01
+4070 encoder NAV 0.01
 4190 tap NAV 60
 4410 capture screen empty_target_paste_ready
 

@@ -15,6 +15,7 @@ namespace core::state::sequencer {
 
 FLASHMEM bool SequencerQuickControlsDraftSession::begin(
     const SequencerPatternState& published,
+    const SequencerClipState& publishedClip,
     const SequencerPreparedGraphContentPath& openingPath,
     uint8_t openingPage,
     uint8_t openingFocusedStep
@@ -60,6 +61,7 @@ FLASHMEM bool SequencerQuickControlsDraftSession::begin(
     candidate->pattern.graphRevision.set(published.graphRevision.get());
     candidate->pattern.ccLanes = std::move(ccLanes);
     copySequencerCcLaneRevision(candidate->pattern, published);
+    candidate->clip = publishedClip;
 
     auto& opening = candidate->openingView;
     opening.valid = true;
@@ -102,6 +104,28 @@ SequencerQuickControlsDraftSession::previewPattern() const {
         : nullptr;
 }
 
+FLASHMEM SequencerClipState* SequencerQuickControlsDraftSession::clip() {
+    return active() ? &draft_->clip : nullptr;
+}
+
+FLASHMEM const SequencerClipState*
+SequencerQuickControlsDraftSession::clip() const {
+    return active() ? &draft_->clip : nullptr;
+}
+
+FLASHMEM SequencerClipState* SequencerQuickControlsDraftSession::previewClip() {
+    return active() && draft_->openingView.previewEnabled
+        ? &draft_->clip
+        : nullptr;
+}
+
+FLASHMEM const SequencerClipState*
+SequencerQuickControlsDraftSession::previewClip() const {
+    return active() && draft_->openingView.previewEnabled
+        ? &draft_->clip
+        : nullptr;
+}
+
 FLASHMEM void SequencerQuickControlsDraftSession::suspendPreview() {
     if (active()) draft_->openingView.previewEnabled = false;
 }
@@ -112,13 +136,17 @@ FLASHMEM void SequencerQuickControlsDraftSession::resumePreview() {
 
 FLASHMEM SequencerQuickControlsNestedPublishOutcome
 SequencerQuickControlsDraftSession::publishToDetachedParent(
-    SequencerPatternState& parent
+    SequencerPatternState& parent,
+    SequencerClipState& parentClip
 ) {
     auto* candidate = pattern();
     if (candidate == nullptr || candidate == &parent) {
         return SequencerQuickControlsNestedPublishOutcome::Failed;
     }
-    if (sameMusicalPatternState(parent, *candidate)) {
+    const bool sameClip = parentClip.playStartTick == draft_->clip.playStartTick &&
+        parentClip.loopStartTick == draft_->clip.loopStartTick &&
+        parentClip.loopEndTick == draft_->clip.loopEndTick;
+    if (sameMusicalPatternState(parent, *candidate) && sameClip) {
         return SequencerQuickControlsNestedPublishOutcome::NoChange;
     }
 
@@ -127,6 +155,7 @@ SequencerQuickControlsDraftSession::publishToDetachedParent(
     std::swap(parent.graph, candidate->graph);
     std::swap(parent.ccLanes, candidate->ccLanes);
     applySnapshotPreservingGraph(parent, flat);
+    parentClip = draft_->clip;
     copySequencerCcLaneRevision(parent, *candidate);
     return SequencerQuickControlsNestedPublishOutcome::Published;
 }

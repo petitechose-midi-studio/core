@@ -10,6 +10,9 @@
 
 namespace core::persistence {
 
+/** Locale-independent ASCII case-folded order shared by assets and folders. */
+int compareProductCatalogNames(const char* lhs, const char* rhs);
+
 enum class ProductDirectoryAssetEntryKind : uint8_t {
     ASSET = 0,
     FOLDER,
@@ -101,6 +104,8 @@ public:
         const char* directory,
         uint16_t& outCount
     ) const;
+    // Zero means unavailable. A rescan never reuses a previous snapshot identity.
+    uint32_t rawSnapshotId(const char* directory) const;
     const ProductDirectoryAssetEntry* assetEntries(
         const ProductDirectoryAssetQuery& query,
         uint16_t& outCount
@@ -183,6 +188,7 @@ private:
     oc::interface::DirectoryEntry raw_entries_[MAX_ENTRIES] = {};
     ProductDirectoryAssetEntry asset_entries_[MAX_ENTRIES] = {};
     uint16_t raw_count_ = 0U;
+    uint32_t snapshot_id_ = 0U;
     uint16_t enrich_index_ = 0U;
     uint16_t asset_count_ = 0U;
     Stage stage_ = Stage::IDLE;

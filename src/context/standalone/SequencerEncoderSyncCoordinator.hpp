@@ -10,6 +10,7 @@
 #include "state/MacroState.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -40,6 +41,7 @@ public:
         core::state::TrackNavigationState& trackNavigation;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
+        core::state::sequencer::SequencerClipGridState& clips;
     };
 
     SequencerEncoderSyncCoordinator(StateRefs state, oc::api::EncoderAPI& encoders);
@@ -55,6 +57,7 @@ private:
     void ensureOptEncoderConfig(
         const core::handler::sequencer::input_utils::StepPropertyEncoderConfig& config
     );
+    void ensureOptRelativeMode();
     void syncMacroEncoderValues(
         uint8_t page,
         core::state::sequencer::StepProperty property
@@ -68,6 +71,7 @@ private:
     void syncOptPosition(float normalized);
     void syncFocusedStepOptValue(core::state::sequencer::StepProperty property);
     void syncPatternQuickControlOptValue();
+    void syncClipWorkspaceOptValue();
     void syncDrumSequencerValues();
     void syncPositions();
 
@@ -79,8 +83,9 @@ private:
     core::state::TrackNavigationState& track_ui_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
+    core::state::sequencer::SequencerClipGridState& clips_;
     oc::api::EncoderAPI& encoders_;
-    oc::state::StaticWatchGroup<29> watcher_;
+    oc::state::StaticWatchGroup<28> watcher_;
 
     uint8_t macro_steps_configured_ = 0;
     uint16_t macro_ticks_per_step_configured_ = 0;
@@ -93,6 +98,7 @@ private:
     float opt_turns_configured_ = 0.0f;
     float opt_position_cache_ = 0.0f;
     bool opt_position_valid_ = false;
+    bool opt_relative_configured_ = false;
 };
 
 }  // namespace core::context::standalone

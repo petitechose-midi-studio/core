@@ -97,7 +97,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                 address
             );
         focusedBinding = core::state::modulation::findProjectModulationBinding(
-            source.pages.control.authored.modulation,
+            source.pages.control.authored().modulation,
             focusedBindingId
         );
     }
@@ -207,7 +207,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
     if (data.preview.recordedShapeCapture == nullptr &&
         slot != nullptr && focusedBinding != nullptr) {
         const auto* modulator = core::state::modulation::findProjectModulator(
-            source.pages.control.authored.modulation,
+            source.pages.control.authored().modulation,
             focusedBinding->sourceId
         );
         if (modulator != nullptr) {
@@ -217,7 +217,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
             );
             uint16_t position = 1U;
             if (slot->modulationCount > 1U) {
-                const auto& graph = source.pages.control.authored.modulation;
+                const auto& graph = source.pages.control.authored().modulation;
                 for (uint16_t index = 0;
                      index < graph.outputBindingCount;
                      ++index) {
@@ -272,7 +272,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
     } else if (focusedBinding != nullptr) {
         const auto* focusedSource =
             core::state::modulation::findProjectModulator(
-                source.pages.control.authored.modulation,
+                source.pages.control.authored().modulation,
                 focusedBinding->sourceId
             );
         std::snprintf(
@@ -337,7 +337,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
     } else if (contextSelector) {
         const auto destination =
             core::state::modulation::projectControlDestination(address);
-        const auto& graph = source.pages.control.authored.modulation;
+        const auto& graph = source.pages.control.authored().modulation;
         const auto modulationRows = menu::buildMacroModulationRows(
             graph,
             destination

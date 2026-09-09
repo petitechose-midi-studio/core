@@ -82,6 +82,12 @@ struct SequencerCcLaneRouteResolveResult {
 
 /** Resolve without mutating either Track or lane state. */
 SequencerCcLaneRouteResolveResult resolveSequencerCcLaneDestination(
+    const SequencerCcLaneDestination& destination,
+    const SequencerCcTrackRoute& trackRoute
+);
+
+/** Whole-lane boundary: also rejects malformed event data and empty slots. */
+SequencerCcLaneRouteResolveResult resolveSequencerCcLaneDestination(
     const SequencerCcLane& lane,
     const SequencerCcTrackRoute& trackRoute
 );

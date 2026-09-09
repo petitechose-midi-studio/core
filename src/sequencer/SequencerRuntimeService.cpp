@@ -25,10 +25,12 @@ public:
     SequencerRealtimeLane(core::state::sequencer::SequencerState& sequencer,
                           core::state::StatusBarState& statusBar,
                           oc::api::MidiAPI& midi,
-                          SequencerRuntimeSnapshotBank& snapshotBank,
-                          const SequencerRuntimeGraphBank& graphBank,
-                          core::state::sequencer::SequencerTrackActivationQueue&
-                              trackActivations)
+                           SequencerRuntimeSnapshotBank& snapshotBank,
+                           const SequencerRuntimeGraphBank& graphBank,
+                           core::state::sequencer::SequencerTrackActivationQueue&
+                               trackActivations,
+                           core::state::sequencer::SequencerClipLaunchQueue&
+                               clipLaunches)
         : ccLaneRuntime(core::app::makeExtmemUnique<SequencerCcLaneRuntime>())
         , ccPredictiveLaneRuntime(
               core::app::makeExtmemUnique<SequencerCcLaneRuntime>()
@@ -45,7 +47,9 @@ public:
                    &trackActivations,
                    ccLaneRuntime.get(),
                    ccCoordinator.get(),
-                   ccPredictiveLaneRuntime.get())
+                   ccPredictiveLaneRuntime.get(),
+                   &snapshotBank,
+                   &clipLaunches)
         , timer(
               midi,
               midiQueue,
@@ -123,10 +127,12 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     , midi_(midi)
     , sequencer_state_(state.sequencer)
     , track_bank_state_(state.trackBank)
+    , clip_grid_state_(state.clips)
     , project_track_state_(state.projectTracks)
     , status_bar_state_(state.statusBar)
     , midi_sync_state_(state.midiSync)
     , track_activations_(state.trackActivations)
+    , clip_launches_(state.clipLaunches)
     , cc_coordinator_publication_(state.ccCoordinatorPublication)
     , runtime_project_revision_(state.runtimeProjectRevision)
     , consumed_runtime_project_revision_(
@@ -142,7 +148,8 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
           midi,
           snapshot_bank_,
           runtime_graph_bank_,
-          state.trackActivations
+          state.trackActivations,
+          state.clipLaunches
       )) {
     if (!realtime_lane_ || !realtime_lane_->valid()) {
         failSequencerRuntimeAllocation();
@@ -152,8 +159,12 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     }
     // Initial flat state remains useful even if PSRAM is unavailable: root
     // steps can still play and the graph bank will retry on later updates.
-    (void)runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
-    const uint8_t initialSnapshotIndex = snapshot_bank_.refresh();
+    core::state::sequencer::SequencerClipRuntimeSources initialSources{};
+    (void)clip_launches_.captureRuntimeSources(
+        clip_grid_state_, initialSources);
+    (void)runtime_graph_bank_.prepare(
+        sequencer_state_, track_bank_state_, initialSources);
+    const uint8_t initialSnapshotIndex = snapshot_bank_.refresh(initialSources);
     if (snapshot_bank_.lastRefreshSucceeded()) {
         (void)realtime_lane_->projectTrackSnapshots.publish(
             initialSnapshotIndex,
@@ -180,35 +191,93 @@ FLASHMEM SequencerRuntimeService::~SequencerRuntimeService() {
 
 void SequencerRuntimeService::update() {
     OC_PERF_SCOPE(perfRuntime, "sequencer.runtime");
+    runtime_graph_bank_.releaseRetired(
+        clip_launches_.publishRealtimeTelemetry());
     const bool projectRuntimeReset = consumeProjectRuntimeReset_();
     const uint32_t nowUs = core::time_compat::micros();
     const uint32_t nowMs = oc::time::millis();
     const auto clockConfig = captureClockSyncRuntimeConfig_();
-    const auto activationPublication =
-        track_activations_.captureRuntimePublication();
 
     ClockDomainUpdateResult clockDomain{};
     {
         OC_PERF_SCOPE(perfClock, "sequencer.clock-domain");
         clockDomain = updateClockDomainOwnership_(clockConfig, nowMs);
     }
+#ifdef ARDUINO
+    if (clockDomain.timerOwnsTransport) {
+        // Control must not wait for allocation, STAGED content or rollback.
+        realtime_lane_->timer.publishTransportConfig(clockConfig);
+    }
+#endif
+
+    // Follow planning uses transport time, never the cadence of the UI snapshot.
+#ifdef ARDUINO
+    if (clockDomain.timerOwnsTransport) {
+        clip_launches_.updateTransportPosition(
+            realtime_lane_->timer.transportTick(), clockConfig.playing);
+    }
+#endif
+    if (!clockDomain.timerOwnsTransport) {
+        clip_launches_.updateTransportPosition(
+            clockDomain.transport.tick,
+            clockDomain.transport.playing
+        );
+    }
+
+    // A replacement/cancellation may arrive after the next launch generation
+    // has already been staged. Restore the retained graph + flat snapshot pair
+    // atomically, then let the desired request publish as a fresh generation.
+    const auto clipRollback = clip_launches_.captureRollbackPublication();
+    if (!clipRollback.empty()) {
+        runtime_graph_bank_.rollbackRetained(
+            clipRollback.trackMask,
+            [this, &clipRollback]() {
+                snapshot_bank_.commit(clipRollback.previousSnapshotIndex);
+                clip_launches_.applyRollbackPublication(clipRollback);
+            }
+        );
+    }
+
+    clip_launches_.processFollowActions(
+        clip_grid_state_,
+        track_bank_state_.enabledMaskSignal().get(),
+        clockDomain.transport.playing
+    );
+    const auto activationPublication =
+        track_activations_.captureRuntimePublication();
+    const auto clipLaunchPublication =
+        clip_launches_.captureRuntimePublication(
+            clip_grid_state_, clockDomain.transport.playing);
 
     const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
-    bool runtimePublicationDue = true;
+    bool runtimePublicationDue = clip_launches_.stagedTrackMask() == 0U;
 #ifdef ARDUINO
-    runtimePublicationDue = runtimePublicationDue_(
+    runtimePublicationDue = runtimePublicationDue && runtimePublicationDue_(
         nowUs,
-        projectRuntimeReset || resyncRequested || !activationPublication.empty()
+        projectRuntimeReset || resyncRequested || !activationPublication.empty() ||
+            !clipLaunchPublication.empty()
     );
 #endif
+    core::state::sequencer::SequencerClipRuntimeSources runtimeSources{};
+    if (runtimePublicationDue) {
+        runtimePublicationDue = clip_launches_.captureRuntimeSources(
+            clip_grid_state_, runtimeSources);
+    }
     bool graphGenerationReady = false;
     uint8_t snapshotIndex = snapshot_bank_.activeIndex();
+    const uint8_t previousSnapshotIndex = snapshotIndex;
     if (runtimePublicationDue) {
         graphGenerationReady =
-            runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
+            runtime_graph_bank_.prepare(
+                sequencer_state_,
+                track_bank_state_,
+                runtimeSources,
+                clipLaunchPublication.queuedMask);
         // Keep graph and flat data on the same published generation. On a rare
         // PSRAM allocation failure, retain the previous pair and retry later.
-        if (graphGenerationReady) snapshotIndex = snapshot_bank_.refresh();
+        if (graphGenerationReady) {
+            snapshotIndex = snapshot_bank_.refresh(runtimeSources);
+        }
         if (graphGenerationReady && !snapshot_bank_.lastRefreshSucceeded()) {
             runtime_graph_bank_.discardPrepared();
             graphGenerationReady = false;
@@ -231,15 +300,17 @@ void SequencerRuntimeService::update() {
         if (graphGenerationReady) {
             runtime_graph_bank_.publishPrepared([
                 this,
-                &clockConfig,
                 snapshotIndex,
-                &activationPublication
+                previousSnapshotIndex,
+                &activationPublication,
+                &clipLaunchPublication
             ]() {
-                realtime_lane_->timer.publishRealtimeInputs(
-                    clockConfig,
-                    snapshotIndex
-                );
+                snapshot_bank_.commit(snapshotIndex);
                 track_activations_.applyRuntimePublication(activationPublication);
+                clip_launches_.applyRuntimePublication(
+                    clipLaunchPublication,
+                    previousSnapshotIndex,
+                    snapshotIndex);
             });
         }
 
@@ -260,10 +331,16 @@ void SequencerRuntimeService::update() {
             runtime_graph_bank_.publishPrepared([
                 this,
                 snapshotIndex,
-                &activationPublication
+                previousSnapshotIndex,
+                &activationPublication,
+                &clipLaunchPublication
             ]() {
                 snapshot_bank_.commit(snapshotIndex);
                 track_activations_.applyRuntimePublication(activationPublication);
+                clip_launches_.applyRuntimePublication(
+                    clipLaunchPublication,
+                    previousSnapshotIndex,
+                    snapshotIndex);
             });
         }
     }
@@ -274,10 +351,16 @@ void SequencerRuntimeService::update() {
         runtime_graph_bank_.publishPrepared([
             this,
             snapshotIndex,
-            &activationPublication
+            previousSnapshotIndex,
+            &activationPublication,
+            &clipLaunchPublication
         ]() {
             snapshot_bank_.commit(snapshotIndex);
             track_activations_.applyRuntimePublication(activationPublication);
+            clip_launches_.applyRuntimePublication(
+                clipLaunchPublication,
+                previousSnapshotIndex,
+                snapshotIndex);
         });
     }
 #endif
@@ -287,6 +370,8 @@ void SequencerRuntimeService::update() {
         // keep them responsive at the app cadence. The larger telemetry/UI
         // copy cannot be consumed faster than LVGL's service cadence.
         track_activations_.publishRealtimeTelemetry();
+        runtime_graph_bank_.releaseRetired(
+            clip_launches_.publishRealtimeTelemetry());
         if (uiProjectionDue_(nowUs)) {
             OC_PERF_SCOPE(perfTimerUi, "sequencer.timer-ui-projection");
             publishPlaybackUiFromTimerPath_(nowMs);
@@ -313,6 +398,8 @@ void SequencerRuntimeService::update() {
             , snapshot_bank_.drumSnapshot(snapshotIndex)
         );
         track_activations_.publishRealtimeTelemetry();
+        runtime_graph_bank_.releaseRetired(
+            clip_launches_.publishRealtimeTelemetry());
         drainRealtimeMidiQueue_(core::time_compat::micros());
         realtime_lane_->playback.publishUiState(nowMs);
     }
@@ -326,7 +413,9 @@ void SequencerRuntimeService::update() {
     OC_PERF_UNITS(
         perfRuntime,
         runtimePublicationDue ? 1U : 0U,
-        activationPublication.empty() ? 0U : 1U
+        (activationPublication.empty() && clipLaunchPublication.empty())
+            ? 0U
+            : 1U
     );
 }
 
@@ -339,6 +428,8 @@ bool SequencerRuntimeService::consumeProjectRuntimeReset_() {
 #endif
     stopPlayback_();
     realtime_lane_->playback.resetCcProject();
+    runtime_graph_bank_.releaseAllRetired();
+    snapshot_bank_.invalidate();
     consumed_runtime_project_revision_ = revision;
     return true;
 }
@@ -415,8 +506,8 @@ bool SequencerRuntimeService::uiProjectionDue_(uint32_t nowUs) {
     return ui_projection_deadline_.consumeIfDue(nowUs);
 }
 
-// The timer lane has already produced a bounded snapshot under lock. Mapping
-// that snapshot into observable UI signals is main-loop control-plane work.
+// Capture only bounded telemetry/preview inputs under lock. Expand Drum graphs
+// afterwards, before the next foreground snapshot refresh or graph retirement.
 FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
     uint32_t nowMs
 ) {
@@ -426,11 +517,17 @@ FLASHMEM void SequencerRuntimeService::publishPlaybackUiFromTimerPath_(
 
     // Pull the timer-lane projection under lock, then publish it outside the ISR.
     {
+        // Declared first so measurement is recorded after IRQs are restored.
+        OC_PERF_SCOPE(perfUiCapture, "sequencer.timer-ui-capture");
         oc::realtime::InterruptGuard lock;
         uiProjection = realtime_lane_->playback.takeUiProjectionSnapshot();
         runtimeTelemetry = realtime_lane_->playback.copyActiveRuntimeTelemetry();
     }
 
+    clip_launches_.updateTransportPosition(
+        uiProjection.transportTick,
+        uiProjection.transportPlaying
+    );
     publishRuntimeTelemetry(sequencer_state_, runtimeTelemetry);
     realtime_lane_->playback.publishUiProjection(uiProjection, nowMs);
 #else

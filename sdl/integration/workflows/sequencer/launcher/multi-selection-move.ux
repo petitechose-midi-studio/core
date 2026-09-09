@@ -1,0 +1,40 @@
+# UX workflow: move several Clips as one spatial selection.
+# Purpose: proves NAV toggles occupied cells into one selection, held NAV moves
+# its anchor across compatible Track columns, and one validation preserves the
+# complete selection geometry.
+# Expect: capture_changed:first_selected=launcher_ready
+# Expect: capture_changed:multi_selected=first_selected
+# Expect: capture_changed:group_target=multi_selected
+# Expect: capture_changed:group_moved=group_target
+# Expect: semantic:first_selected:effect=enter_clip_selection, semantic:first_selected:projection=selected
+# Expect: semantic:multi_selected:effect=toggle_clip_selection, semantic:multi_selected:projection=selected
+# Expect: semantic:group_target:effect=focus_launcher_row, semantic:group_target:projection=move_destination
+# Expect: semantic:group_moved:effect=move_clip, semantic:group_moved:outcome=applied
+
+0 scenario clip-launcher
+100 capture screen launcher_ready
+
+# Scene rail -> first occupied Clip, then select it. This focused fixture keeps
+# the final compatible Track empty for an unambiguous horizontal group move.
+300 encoder NAV 0.01
+540 button NAV down
+1600 tick
+1680 capture screen first_selected
+1760 button NAV up
+
+# Move to the next row and toggle its occupied Clip into the selection.
+1920 encoder OPT 0.01
+2080 tap NAV 60
+2320 capture screen multi_selected
+
+# Start group placement at the anchor, cross two compatible Tracks, then move
+# two rows down. Every enabled Track owns a resident Clip in row one; the
+# combined X/Y translation therefore lands on two genuinely empty cells.
+2400 tap LEFT_CENTER 60
+2640 encoder NAV 0.01
+2720 encoder NAV 0.01
+2880 encoder OPT 0.01
+2960 encoder OPT 0.01
+3200 capture screen group_target
+3280 tap BOTTOM_RIGHT 60
+3540 capture screen group_moved

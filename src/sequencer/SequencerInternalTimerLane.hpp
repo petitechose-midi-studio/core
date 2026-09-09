@@ -21,7 +21,7 @@ namespace core::sequencer {
  * This lane owns the high-frequency timer callback path: it reads the committed
  * runtime snapshot, advances internal transport clock output, updates playback,
  * and drains due realtime MIDI. Loop/context code publishes inputs through
- * `publishRealtimeInputs`; it should not mutate the timer callback state directly.
+ * `publishTransportConfig`; content banks are published independently.
  */
 class SequencerInternalTimerLane {
 public:
@@ -30,13 +30,16 @@ public:
                                SequencerRuntimeSnapshotBank& snapshotBank,
                                const ProjectTrackRuntimeSnapshotBank& projectTrackSnapshots,
                                SequencerPlaybackService& playback);
+    ~SequencerInternalTimerLane() { stop(); }
 
     bool start();
     void stop();
-    void publishRealtimeInputs(const MidiClockSyncRuntimeConfig& config, uint8_t snapshotIndex);
+    void publishTransportConfig(const MidiClockSyncRuntimeConfig& config);
+    // Single realtime owner; also callable by deterministic native runners.
+    void processRealtime();
+    uint32_t transportTick() const;
 
 private:
-    void onTimer_();
     void drainRealtimeMidiQueue_(uint32_t nowUs);
 
     oc::api::MidiAPI& midi_;
@@ -46,10 +49,14 @@ private:
     SequencerPlaybackService& playback_;
     oc::realtime::PeriodicTimer timer_{};
     InternalTransportClock clock_{};
-    std::array<MidiClockSyncRuntimeConfig, 2> configs_{};
+    MidiClockSyncRuntimeConfig config_{};
     bool running_ = false;
     bool playing_ = false;
     uint32_t last_tick_sent_ = 0;
+#if OC_ENABLE_STATS
+    uint32_t last_entry_us_ = 0;
+    bool entry_seen_ = false;
+#endif
 };
 
 }  // namespace core::sequencer

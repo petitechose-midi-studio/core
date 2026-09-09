@@ -100,7 +100,7 @@ FLASHMEM bool applyMacroProjectHistory(CoreState& state, bool redo,
         state.configRevision.get(), core::state::macro::kMacroConfigDirtyAll));
     if (macroHistoryTouchesProjectGraph(actionKind)) {
         core::state::project::reconcileProjectModulatorNavigationAfterHistory(
-            state.projectNavigation, state.pages.control.authored.modulation);
+            state.projectNavigation, state.pages.control.authored().modulation);
     }
     if (touchesDurableState) state.markProjectMutated();
     return true;
@@ -219,7 +219,7 @@ FLASHMEM bool CoreState::clearProjectHistory() {
     if (!macroHistory.abortPendingModulatorAudition(pages)) return false;
     if (hadModulatorTransaction) {
         core::state::project::reconcileProjectModulatorNavigationAfterHistory(
-            projectNavigation, pages.control.authored.modulation, false);
+            projectNavigation, pages.control.authored().modulation, false);
     }
     if (projectTrackHistory.hasPendingGesture()) {
         (void)project::ProjectTrackDomainServices::fromCoreState(*this).cancelGesture();

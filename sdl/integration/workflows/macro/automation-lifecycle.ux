@@ -28,7 +28,7 @@
 2600 button LEFT_BOTTOM up
 
 # Focus Automation row and enter the Automation lifecycle overlay.
-2800 encoder NAV 1
+2800 encoder NAV 0.01
 3100 tap NAV 60
 3350 capture screen automation_overlay_active
 

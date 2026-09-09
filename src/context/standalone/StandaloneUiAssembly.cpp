@@ -6,6 +6,7 @@
 #include <oc/log/Log.hpp>
 #include <oc/ui/lvgl/Screen.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
+#include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 #include <oc/ui/lvgl/theme/BaseTheme.hpp>
 
@@ -35,9 +36,11 @@ FLASHMEM bool StandaloneUiAssembly::initialize() {
 
     if (!createViewContainer()) return false;
 
-    if (!createGlobalTrackStrip()) return false;
-
     if (!createViews()) return false;
+
+    // LVGL visits newer timers first. Project the shared frame before its
+    // views read geometry, so they settle against the final frame before drawing.
+    if (!createGlobalTrackStrip()) return false;
 
     if (overlay_curtain_) lv_obj_move_foreground(overlay_curtain_);
 
@@ -131,6 +134,7 @@ FLASHMEM core::ui::ContextSoftkeyBar& StandaloneUiAssembly::contextSoftkeyBar() 
 }
 
 FLASHMEM void StandaloneUiAssembly::activateMacroView() const {
+    preparePerformanceViewport();
     core::ui::RetainedViewRenderPolicy::attach(macro_view_->getElement(), views_host_);
     macro_view_->onActivate();
 }
@@ -143,6 +147,7 @@ FLASHMEM void StandaloneUiAssembly::deactivateMacroView() const {
 }
 
 FLASHMEM void StandaloneUiAssembly::activateSequencerView() const {
+    preparePerformanceViewport();
     core::ui::RetainedViewRenderPolicy::attach(
         sequencer_view_->getElement(), views_host_
     );
@@ -236,10 +241,10 @@ FLASHMEM bool StandaloneUiAssembly::createViewContainer() {
     lv_obj_add_flag(full_view_host_, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_remove_flag(full_view_host_, LV_OBJ_FLAG_CLICKABLE);
 
-    // A single opaque object hides the active view below semi-transparent
-    // overlays. Toggling this leaf avoids propagating opacity changes through
-    // the complete active view tree.
-    overlay_curtain_ = lv_obj_create(mainZone);
+    // Cover the same bounds as the overlays, including the opaque bottom bar.
+    // A main-zone-only curtain cannot occlude a full-height invalidation: LVGL
+    // would draw the active view before covering it. The bottom bar stays above.
+    overlay_curtain_ = lv_obj_create(overlayRoot());
     if (!overlay_curtain_) {
         OC_LOG_ERROR("StandaloneUiAssembly: overlay curtain allocation failed");
         return false;
@@ -325,6 +330,8 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
         viewsHost,
         core::ui::SequencerView::StateRefs{
             core_state_.sequencer,
+            core_state_.sequencerClips,
+            core_state_.sequencerClipLaunches,
             core_state_.sequencerTracks,
             core_state_.projectTracks,
             core_state_.trackNavigation,
@@ -417,7 +424,8 @@ FLASHMEM bool StandaloneUiAssembly::bindGlobalTrackStrip() {
     >(*this, 0, "GlobalTrackStrip.context");
     bound = global_track_context_watcher_.watchAll(
         core_state_.activeView,
-        core_state_.structureNavigationFocus
+        core_state_.structureNavigationFocus,
+        core_state_.sequencer.clipWorkspace.revision
     ) && bound;
 
     global_track_structure_watcher_.bind<
@@ -482,21 +490,19 @@ FLASHMEM void StandaloneUiAssembly::applyOverlayExclusivity() {
     overlay_exclusive_mode_ = hasOverlay;
     lv_obj_t* bottomZone = view_container_ ? view_container_->getBottomZone() : nullptr;
 
-    if (hasOverlay) {
-        if (overlay_curtain_) {
-            lv_obj_set_style_bg_opa(overlay_curtain_, LV_OPA_COVER, 0);
-        }
-        if (bottomZone) {
-            lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_move_foreground(bottomZone);
-        }
-        return;
-    }
-
     if (overlay_curtain_) {
-        lv_obj_set_style_bg_opa(overlay_curtain_, LV_OPA_TRANSP, 0);
+        // Fixed, effect-free leaf: only its pixels change, not its geometry.
+        // Keep this scope separate from the bottom bar's visibility callbacks.
+        oc::ui::lvgl::StaticSurfaceInvalidationBatch<1> damage(overlay_curtain_);
+        damage.include(overlay_curtain_);
+        lv_obj_set_style_bg_opa(
+            overlay_curtain_, hasOverlay ? LV_OPA_COVER : LV_OPA_TRANSP, 0
+        );
     }
-    if (bottomZone) lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+    if (bottomZone) {
+        lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
+        if (hasOverlay) lv_obj_move_foreground(bottomZone);
+    }
 }
 
 void StandaloneUiAssembly::scheduleGlobalTrackStripRender(bool ready) {
@@ -506,6 +512,10 @@ void StandaloneUiAssembly::scheduleGlobalTrackStripRender(bool ready) {
 }
 
 void StandaloneUiAssembly::requestGlobalTrackStripRender() {
+    if (core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
+        core_state_.sequencer.clipWorkspace.matrixVisible()) {
+        return;
+    }
     scheduleGlobalTrackStripRender();
 }
 
@@ -513,10 +523,35 @@ void StandaloneUiAssembly::requestGlobalTrackStripRenderReady() {
     scheduleGlobalTrackStripRender(true);
 }
 
+void StandaloneUiAssembly::preparePerformanceViewport() const {
+    const bool launcherMatrixVisible =
+        core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
+        core_state_.sequencer.clipWorkspace.matrixVisible();
+    if (global_track_strip_container_) {
+        const bool viewportChanged = launcherMatrixVisible !=
+            lv_obj_has_flag(global_track_strip_container_, LV_OBJ_FLAG_HIDDEN);
+        if (launcherMatrixVisible) {
+            lv_obj_add_flag(
+                global_track_strip_container_, LV_OBJ_FLAG_HIDDEN
+            );
+        } else {
+            lv_obj_clear_flag(
+                global_track_strip_container_, LV_OBJ_FLAG_HIDDEN
+            );
+        }
+        // Settle the viewport before attaching the next retained view. Otherwise
+        // its children first resize against the previous view's strip height.
+        if (viewportChanged) oc::ui::lvgl::updateLayoutWithFullRedraw(views_host_);
+    }
+}
+
 void StandaloneUiAssembly::renderGlobalTrackStrip() {
     if (!global_track_strip_) return;
 
+    preparePerformanceViewport();
     applyOverlayExclusivity();
+    if (core_state_.activeView.get() == core::ui::ViewType::CLIPS &&
+        core_state_.sequencer.clipWorkspace.matrixVisible()) return;
     if (overlay_exclusive_mode_) {
         return;
     }

@@ -20,9 +20,6 @@ namespace {
 seq::SequencerPatternSnapshot populatedSnapshot(uint8_t length = 32) {
     seq::SequencerPatternSnapshot snapshot{};
     snapshot.length = length;
-    snapshot.playStart = 2;
-    snapshot.loopStart = 5;
-    snapshot.loopEnd = length;
     snapshot.stepsPerBeat = 6;
     snapshot.stepDataRevision = 17;
     snapshot.patternVariationRevision = 18;
@@ -71,9 +68,6 @@ bool sameSnapshot(
     const seq::SequencerPatternSnapshot& rhs
 ) {
     return lhs.length == rhs.length &&
-           lhs.playStart == rhs.playStart &&
-           lhs.loopStart == rhs.loopStart &&
-           lhs.loopEnd == rhs.loopEnd &&
            lhs.stepsPerBeat == rhs.stepsPerBeat &&
            lhs.enabledMask == rhs.enabledMask &&
            lhs.stepDataRevision == rhs.stepDataRevision &&
@@ -418,9 +412,6 @@ void test_only_target_root_property_changes_semantically() {
     assert(summary.changedCount > 0);
 
     assert(target.length == base.length);
-    assert(target.playStart == base.playStart);
-    assert(target.loopStart == base.loopStart);
-    assert(target.loopEnd == base.loopEnd);
     assert(target.stepsPerBeat == base.stepsPerBeat);
     assert(target.enabledMask == base.enabledMask);
     assert(target.stepDataRevision == base.stepDataRevision);

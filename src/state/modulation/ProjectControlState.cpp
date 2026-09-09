@@ -6,10 +6,21 @@
 
 namespace core::state::modulation {
 
-FLASHMEM ProjectControlState::ProjectControlState() = default;
+FLASHMEM ProjectControlState::ProjectControlState()
+    : authored_(core::app::makeExtmemUnique<ProjectControlDomainState>()) {}
+
+FLASHMEM bool ProjectControlState::tryPublishAuthored(core::app::ExtmemUniquePtr<ProjectControlDomainState>& candidate) {
+    if (!authored_ || !candidate ||
+        !validProjectModulationDomain(candidate->modulation, candidate->curves, &candidate->automation)) {
+        return false;
+    }
+    authored_.swap(candidate);
+    markAuthoredMutation();
+    return true;
+}
 
 FLASHMEM void ProjectControlState::clear() {
-    authored.clear();
+    if (authored_) authored().clear();
     plan = {};
     runtime = {};
     timeTelemetry = {};
@@ -28,7 +39,7 @@ FLASHMEM void ProjectControlState::markAuthoredBindingAmountMutation(
 ) {
     const bool planWasCurrent = compiledRevision == authoredRevision;
     const auto* authoredBinding = findProjectModulationBinding(
-        authored.modulation,
+        authored().modulation,
         bindingId
     );
     markAuthoredMutation();
@@ -49,7 +60,7 @@ FLASHMEM void ProjectControlState::markAuthoredDestinationScaleMutation(
     const bool destinationValid = modulationDestinationValid(destination);
     const uint16_t authoredScale = destinationValid
         ? projectModulationDestinationScaleQ15(
-            authored.modulation,
+            authored().modulation,
             destination
         )
         : PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;

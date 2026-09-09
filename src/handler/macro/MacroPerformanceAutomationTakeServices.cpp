@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstring>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -197,7 +199,7 @@ FLASHMEM bool MacroPerformanceDomainServices::beginAutomationTake_(
     {
         OC_PERF_SCOPE(perfCopy, "macro.take.begin.copy-domain");
         staged = core::app::makeExtmemUniqueCopy(
-            pages_->control.authored
+            pages_->control.authored()
         );
         OC_PERF_UNITS(
             perfCopy,
@@ -270,7 +272,7 @@ FLASHMEM bool MacroPerformanceDomainServices::beginAutomationTake_(
     // redundant: this restored snapshot is the transaction's staging base.
     {
         OC_PERF_SCOPE(perfRestore, "macro.take.begin.restore-domain");
-        *staged = pages_->control.authored;
+        *staged = pages_->control.authored();
         OC_PERF_UNITS(perfRestore, sizeof(ProjectControlDomainState), 1U);
     }
     for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
@@ -498,6 +500,10 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
 #endif
     auto& payload = *macro_ui_->automationTakeHistory->automationTake;
     payload.touchedMask = take.touchedMask;
+    // The staging base is an exact authored copy, protected by the revision
+    // guard above. Replacements only mutate automation and the curve arena.
+    // Retain the peak prefix: a later lane may shrink points written earlier.
+    uint16_t pointHighWater = macro_ui_->automationTakeDomain->curves.pointCount;
     for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
         const uint16_t bit = static_cast<uint16_t>(1U << macro);
         if ((take.touchedMask & bit) == 0U) continue;
@@ -542,6 +548,8 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
             resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
             return false;
         }
+        pointHighWater = std::max(
+            pointHighWater, macro_ui_->automationTakeDomain->curves.pointCount);
     }
     bool domainValid = false;
     {
@@ -565,10 +573,21 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
 
     {
         OC_PERF_SCOPE(perfPublish, "macro.take.commit.publish-domain");
-        pages_->control.authored = *macro_ui_->automationTakeDomain;
+        const auto& staged = *macro_ui_->automationTakeDomain;
+        auto& authored = pages_->control.authored();
+        authored.automation = staged.automation;
+        // Records/header are small and copied in full; points beyond the peak
+        // were never touched and already match. Preserve even inactive bytes
+        // inside the peak so this remains equivalent to full-domain assignment.
+        static_assert(std::is_standard_layout_v<ProjectCurveArena>);
+        static_assert(offsetof(ProjectCurveArena, points) +
+            sizeof(ProjectCurveArena::points) == sizeof(ProjectCurveArena));
+        const size_t curveBytes = offsetof(ProjectCurveArena, points) +
+            static_cast<size_t>(pointHighWater) * sizeof(ProjectPackedCurvePoint);
+        std::memcpy(&authored.curves, &staged.curves, curveBytes);
         OC_PERF_UNITS(
             perfPublish,
-            sizeof(ProjectControlDomainState),
+            sizeof(authored.automation) + curveBytes,
             take.touchedMask
         );
     }

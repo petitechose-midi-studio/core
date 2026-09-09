@@ -1,0 +1,29 @@
+# UX workflow: authored Clip Follow action at runtime.
+# Purpose: proves a Clip's two-loop duration shows a compact countdown during
+# its final loop and applies its target on that exact boundary without changing
+# the other Tracks or Scene ownership.
+# Expect: capture_changed:clip_2_queued=clip_2_ready
+# Expect: capture_changed:clip_2_active=clip_2_queued
+# Expect: capture_changed:clip_final_loop=clip_2_active
+# Expect: capture_changed:clip_3_followed=clip_final_loop
+# Expect: semantic:clip_2_queued:operation_origin=manual_clip, semantic:clip_2_queued:operation_status=queued, semantic:clip_2_queued:queued_slot=1, semantic:clip_2_queued:beats_remaining=4
+# Expect: semantic:clip_2_active:operation_origin=manual_clip, semantic:clip_2_active:operation_status=applied, semantic:clip_2_active:active_slot=1
+# Expect: semantic:clip_final_loop:operation_origin=manual_clip, semantic:clip_final_loop:operation_status=applied, semantic:clip_final_loop:active_slot=1
+# Expect: semantic:clip_3_followed:operation_origin=clip_follow, semantic:clip_3_followed:operation_status=applied, semantic:clip_3_followed:active_slot=2
+
+0 scenario clip-launcher-v3
+# Scene 1 -> Scene 2 -> Track 1 Clip 2.
+100 encoder OPT 0.01
+260 encoder NAV 0.01
+420 capture screen clip_2_ready
+
+500 tap BOTTOM_CENTER 60
+660 tap NAV 60
+860 capture screen clip_2_queued
+2600 capture screen clip_2_active
+
+# The last loop exposes the visual deadline; Clip 3 owns T1 immediately after
+# the second loop boundary.
+3500 capture screen clip_final_loop
+4700 capture screen clip_3_followed
+4880 tap BOTTOM_CENTER 60

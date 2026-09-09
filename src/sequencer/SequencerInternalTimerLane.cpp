@@ -32,14 +32,28 @@ bool SequencerInternalTimerLane::start() {
     playing_ = false;
     last_tick_sent_ = 0;
     timer_.setPriority(Config::Timing::SEQUENCER_REALTIME_IRQ_PRIORITY);
+#if OC_ENABLE_STATS
+    entry_seen_ = false;
+#endif
     running_ = timer_.begin(
-        [this]() { onTimer_(); },
+        [this]() { processRealtime(); },
         Config::Timing::SEQUENCER_REALTIME_PERIOD_US
     );
+    if (running_) {
+        midi_.setOutputRefill([](void* context, uint32_t budgetUs) {
+            auto& lane = *static_cast<SequencerInternalTimerLane*>(context);
+            // Output IRQ is below the timer. Serialize just this bounded queue
+            // transaction (including dispatch observers), not SDK submission.
+            oc::realtime::InterruptGuard lock;
+            lane.midi_queue_.drainDue(lane.midi_, core::time_compat::micros(), budgetUs);
+            return lane.midi_queue_.hasDue(core::time_compat::micros());
+        }, this);
+    }
     return running_;
 }
 
 void SequencerInternalTimerLane::stop() {
+    midi_.setOutputRefill(nullptr, nullptr);
     if (running_) {
         timer_.end();
         running_ = false;
@@ -50,18 +64,31 @@ void SequencerInternalTimerLane::stop() {
     last_tick_sent_ = 0;
 }
 
-void SequencerInternalTimerLane::publishRealtimeInputs(const MidiClockSyncRuntimeConfig& config,
-                                                       uint8_t snapshotIndex) {
-    configs_[snapshotIndex] = config;
-    snapshot_bank_.commit(snapshotIndex);
+void SequencerInternalTimerLane::publishTransportConfig(const MidiClockSyncRuntimeConfig& config) {
+    oc::realtime::InterruptGuard lock;
+    config_ = config;
 }
 
-void SequencerInternalTimerLane::onTimer_() {
+uint32_t SequencerInternalTimerLane::transportTick() const {
+    oc::realtime::InterruptGuard lock;
+    return config_.playing && !clock_.isPlaying() ? 0U : clock_.tick();
+}
+
+void SequencerInternalTimerLane::processRealtime() {
     core::diagnostics::storage_qualification::timerPulse();
     OC_PERF_SCOPE(perfTimer, "sequencer.timer");
+#if OC_ENABLE_STATS
+    const uint32_t entryUs = core::time_compat::micros();
+    if (entry_seen_) {
+        OC_PERF_RECORD("sequencer.timer-entry-gap", entryUs - last_entry_us_,
+                       Config::Timing::SEQUENCER_REALTIME_PERIOD_US, 0U);
+    }
+    last_entry_us_ = entryUs;
+    entry_seen_ = true;
+#endif
     const uint8_t inputIndex = snapshot_bank_.activeIndex();
     const auto& snapshot = snapshot_bank_.activeSnapshot();
-    const auto config = configs_[inputIndex];
+    const auto config = config_;
 
     clock_.setBpm(config.tempo);
     clock_.setPlaying(config.playing);

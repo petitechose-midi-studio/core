@@ -20,8 +20,8 @@
 1240 tick
 1300 button LEFT_BOTTOM up
 1450 capture screen macro_editor
-1580 encoder NAV 1
-1710 encoder NAV 1
+1580 encoder NAV 0.01
+1710 encoder NAV 0.01
 1840 tap NAV 60
 2060 capture screen auto_mod_active
 
@@ -38,16 +38,16 @@
 3940 tick
 4000 button LEFT_BOTTOM up
 4140 capture screen manual_macro_editor
-4270 encoder NAV 1
+4270 encoder NAV 0.01
 4400 tap NAV 60
 4620 capture screen manual_automation_detail
-4760 encoder NAV 1
+4760 encoder NAV 0.01
 4900 tap NAV 60
 5120 capture screen automation_resumed
 
 # Return to the top editor, enter Modulation, and stop/restart it explicitly.
 5260 tap LEFT_TOP 60
-5400 encoder NAV 1
+5400 encoder NAV 0.01
 5530 tap NAV 60
 5670 tap BOTTOM_LEFT 60
 5890 capture screen modulation_playback_off

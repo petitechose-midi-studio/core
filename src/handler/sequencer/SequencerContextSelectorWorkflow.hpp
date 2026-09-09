@@ -11,8 +11,8 @@ namespace core::handler {
 enum class SequencerContextSelectorAction : uint8_t {
     NONE = 0,
     APPLY_CONTEXT,
-    OPEN_TRACK_EDITOR,
     OPEN_PATTERN_EDITOR,
+    OPEN_LANE_EDITOR,
     OPEN_STEP_EDITOR,
 };
 
@@ -21,15 +21,15 @@ struct SequencerContextSelectorOutcome {
     core::state::StructureNavigationFocus focus =
         core::state::StructureNavigationFocus::PAGE;
     uint8_t previewTarget = 0U;
-    bool previewAddSlot = false;
 };
 
 /**
  * Allocation-free NAV gesture state machine for Sequencer contexts.
  *
- * Press reveals the current context, rotation previews Track/Pattern/Step at
- * root or Pattern/Step inside child content, and a long-press without rotation
- * transfers ownership to context-local selection.
+ * Press reveals the current context. Rotation previews Pattern/Step for
+ * Instrument and Pattern/Lane/Step for Drum. Track remains owned by the Clips
+ * matrix header. A long-press without rotation transfers ownership to
+ * context-local selection.
  */
 class SequencerContextSelectorWorkflow {
 public:
@@ -38,9 +38,8 @@ public:
     );
 
     void press(core::state::StructureNavigationFocus current,
-               bool includeTrack = true,
                uint8_t previewTarget = 0U,
-               bool previewAddSlot = false);
+               bool includeLane = false);
     /**
      * Claims an unrotated hold for context-local selection.
      *
@@ -49,8 +48,7 @@ public:
      * release. A meaningful rotation permanently keeps selector ownership.
      */
     bool holdForSelection(core::state::StructureNavigationFocus current,
-                          uint8_t previewTarget,
-                          bool previewAddSlot);
+                          uint8_t previewTarget);
     bool turn(float delta);
     SequencerContextSelectorOutcome release();
     void update();
@@ -68,14 +66,14 @@ private:
     static core::state::StructureNavigationFocus adjacent(
         core::state::StructureNavigationFocus current,
         int direction,
-        bool includeTrack
+        bool includeLane
     );
 
     core::state::sequencer::SequencerContextSelectorState& state_;
     PressHoldTurnReleaseGesture gesture_{};
     // Two compact bytes preserve exact press provenance without growing the
-    // ARM workflow: origin focus[0..1], add intent[2], Track availability[3],
-    // plus the complete Track/Page/Step target.
+    // ARM workflow: origin focus[0..1], Lane availability[2], plus the
+    // complete target.
     uint8_t press_context_ = 0U;
     uint8_t press_target_ = 0U;
 };

@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 #include <config/Timing.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
@@ -145,7 +146,7 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
         !menu_ || !menu_->getElement() || !modulator_registry_ ||
         !modulator_registry_->getElement() || !modulator_workspace_ ||
         !modulator_workspace_->valid() || !project_name_keyboard_ ||
-        !project_name_keyboard_->valid()) {
+        !project_name_keyboard_->valid() || !content_parking_host_) {
         return;
     }
     render_scheduler_ =
@@ -177,8 +178,14 @@ FLASHMEM ProjectView::~ProjectView() {
 }
 
 FLASHMEM void ProjectView::onActivate() {
+    OC_PERF_SCOPE(perfActivate, "ui.project.activate");
     if (!container_) return;
 
+    // Bind the first presentation while hidden, not after revealing the tree.
+    // Live changes still use the coalesced scheduler below.
+    RetainedViewRenderPolicy::hide(container_);
+    render();
+    lv_obj_update_layout(container_);
     RetainedViewRenderPolicy::show(container_);
     if (render_scheduler_) {
         render_scheduler_->request(RENDER_CONTENT, true);
@@ -283,6 +290,13 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
     if (!bottom_action_strip_ || !bottom_action_strip_->getElement()) return;
 
     project_name_keyboard_.emplace(center_column_);
+    if (!content_parking_.initialize()) return;
+    content_parking_host_ = content_parking_.createHost();
+}
+
+void ProjectView::selectContent(lv_obj_t* active) {
+    oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+        active, center_column_, content_parking_host_);
 }
 
 FLASHMEM bool ProjectView::bindToState() {
@@ -321,7 +335,7 @@ void ProjectView::requestModulatorCaptureRender() {
 }
 
 void ProjectView::render() {
-    if (!menu_ || !RetainedViewRenderPolicy::visible(container_)) return;
+    if (!menu_) return;
 
     const auto node = state_refs_.navigation.currentNode.get();
     const bool keyboardActive = isProjectNameEditorNode(node);
@@ -354,6 +368,7 @@ void ProjectView::render() {
     renderProjectActionStrips(keyboardActive);
 
     if (keyboardActive) {
+        selectContent(project_name_keyboard_->getElement());
         if (menu_) menu_->hide();
         if (project_name_keyboard_) {
             project_name_keyboard_->render({
@@ -382,6 +397,7 @@ void ProjectView::render() {
         return;
     }
 
+    selectContent(menu_->getElement());
     const auto page = core::state::project::buildProjectMenuPage(
         state_refs_.navigation,
         [this]() {

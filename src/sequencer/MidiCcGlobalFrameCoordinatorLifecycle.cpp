@@ -74,14 +74,22 @@ FLASHMEM void
 MidiCcGlobalFrameCoordinator::discardPendingRetryForTransportStop() {
     // queue.clear() runs before this boundary and reports every removed CC.
     // Preserve the accepted desired set until the first resumed clock.
-    const size_t cancelledLaneTransitions =
-        temporal_spool_.cancelCandidateClass(
+    size_t cancelledLaneTransitions = 0U;
+    {
+        OC_PERF_SCOPE(perfCancel, "midi.cc.stop-cancel");
+        cancelledLaneTransitions = temporal_spool_.cancelCandidateClass(
             core::state::shared::MidiCcCandidateClass::SEQUENCER_CC_LANE
         );
+        OC_PERF_UNITS(perfCancel, cancelledLaneTransitions, temporal_spool_.size());
+    }
     transport_retry_deferred_until_resume_ =
         transport_retry_deferred_until_resume_ || retry_requested_ ||
         !planned_values_valid_ || cancelledLaneTransitions > 0U;
-    synchronizeStoppedLaneLogicalState_();
+    {
+        OC_PERF_SCOPE(perfSync, "midi.cc.stop-sync");
+        synchronizeStoppedLaneLogicalState_();
+        OC_PERF_UNITS(perfSync, logical_active_slot_count_, effective_active_slot_count_);
+    }
     planned_values_valid_ = true;
     retry_requested_ = false;
 }

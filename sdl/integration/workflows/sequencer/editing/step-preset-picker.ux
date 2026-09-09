@@ -1,11 +1,16 @@
 # UX workflow: Step Preset picker from Step Editor.
-# Purpose: validates picker access, file-backed Save/Load, explicit overwrite
-# guard/cancel/commit feedback, free-target Apply feedback, auto-return, and Undo.
-# Expect: capture_changed:step_preset_picker_load_empty=step_preset_picker_save_mode, capture_changed:step_preset_overwrite_ready=step_preset_overwrite_armed, capture_changed:step_2_editor_open=step_preset_applied_to_step_2, capture_changed:step_2_after_apply=step_2_after_preset_undo
+# Purpose: validates non-blocking picker access, catalog convergence,
+# file-backed Save/Load, explicit overwrite guard/cancel/commit feedback,
+# free-target Apply feedback, auto-return, and Undo.
+# Expect: capture_changed:step_preset_picker_load_pending=step_preset_picker_load_empty, capture_changed:step_preset_picker_load_empty=step_preset_picker_save_mode, capture_changed:step_preset_overwrite_ready=step_preset_overwrite_armed, capture_changed:step_2_editor_open=step_preset_applied_to_step_2, capture_changed:step_2_after_apply=step_2_after_preset_undo
+# Expect: semantic:step_preset_picker_load_pending:mode=sequencer.step_preset.load, semantic:step_preset_picker_load_pending:outcome=queued, semantic:step_preset_picker_load_pending:reason=pending
+# Expect: semantic:step_preset_picker_load_empty:mode=sequencer.step_preset.load, semantic:step_preset_picker_load_empty:outcome=blocked, semantic:step_preset_picker_load_empty:reason=no_action, semantic:step_preset_picker_load_empty:source=no_step_preset
 # Expect: semantic:step_preset_picker_saved:effect=save_step_preset, semantic:step_preset_picker_saved:outcome=applied, semantic:step_preset_picker_saved:mode=sequencer.step_preset.save, semantic:step_preset_picker_saved:source=*
 # Expect: semantic:step_preset_overwrite_pressed:outcome=pressed, semantic:step_preset_overwrite_armed:outcome=armed, semantic:step_preset_overwrite_cancelled:outcome=cancelled, semantic:step_preset_overwritten:outcome=applied
 # Expect: semantic:step_preset_overwrite_pressed:effect=save_step_preset, semantic:step_preset_overwrite_pressed:route_policy=preserve_destination, semantic:step_preset_overwrite_pressed:projection=preview, semantic:step_preset_overwrite_pressed:target_step=0
 # Expect: semantic:step_preset_applied_to_step_2:effect=load_step_preset_into_editor, semantic:step_preset_applied_to_step_2:outcome=applied, semantic:step_preset_applied_to_step_2:route_policy=preserve_destination, semantic:step_preset_applied_to_step_2:target_step=1
+# Expect: semantic:selector_preset_undo_ready:mode=view_selector, semantic:selector_preset_redo_ready:effect=undo_project_action, semantic:selector_preset_redo_ready:intent=undo
+# Expect: semantic:step_2_after_preset_undo:mode=sequencer.pattern
 # Expect: semantic:step_preset_queued_for_boundary:effect=load_step_preset_into_editor, semantic:step_preset_queued_for_boundary:outcome=queued, semantic:step_preset_queued_for_boundary:reason=pending, semantic:step_preset_queued_for_boundary:playing=true, semantic:step_preset_queued_for_boundary:target_step=2
 
 0 scenario sequencer
@@ -23,78 +28,86 @@
 # hold. A short NAV press keeps its normal focused-row action.
 1700 button NAV down
 2750 tick
-2800 capture screen step_preset_picker_load_empty
+2800 capture screen step_preset_picker_load_pending
 2850 button NAV up
 
+# The project autosave has foreground priority. The file catalog remains
+# visibly queued, then converges without accepting actions against stale data.
+6150 tick
+6200 capture screen step_preset_picker_load_empty
+
 # Toggle to Save mode and save the focused step as a new file-backed preset.
-2950 tap BOTTOM_LEFT 60
-3150 capture screen step_preset_picker_save_mode
-3250 tap BOTTOM_RIGHT 60
-3550 capture screen step_preset_picker_saved
+6250 tap BOTTOM_LEFT 60
+6450 capture screen step_preset_picker_save_mode
+6550 tap BOTTOM_RIGHT 60
+6850 capture screen step_preset_picker_saved
 
 # Re-enter Save mode, focus the existing preset, then prove that a short hold
 # cancels while a complete hold overwrites and reports success.
-3650 tap BOTTOM_LEFT 60
-3850 encoder NAV 1
-4050 capture screen step_preset_overwrite_ready
-4150 button BOTTOM_RIGHT down
-4300 capture screen step_preset_overwrite_pressed
-4400 tick
-4450 capture screen step_preset_overwrite_armed
-4500 button BOTTOM_RIGHT up
-4700 capture screen step_preset_overwrite_cancelled
+6950 tap BOTTOM_LEFT 60
+7150 encoder NAV 0.01
+7350 capture screen step_preset_overwrite_ready
+7450 button BOTTOM_RIGHT down
+7600 capture screen step_preset_overwrite_pressed
+7700 tick
+7750 capture screen step_preset_overwrite_armed
+7800 button BOTTOM_RIGHT up
+8000 capture screen step_preset_overwrite_cancelled
 
-4750 button BOTTOM_RIGHT down
-4900 capture screen step_preset_overwrite_pressed_again
-5000 tick
-5050 capture screen step_preset_overwrite_armed_again
-5800 tick
-5850 capture screen step_preset_overwritten
-5900 button BOTTOM_RIGHT up
+8050 button BOTTOM_RIGHT down
+8200 capture screen step_preset_overwrite_pressed_again
+8300 tick
+8350 capture screen step_preset_overwrite_armed_again
+9100 tick
+9150 capture screen step_preset_overwritten
+9200 button BOTTOM_RIGHT up
 
 # Return to the Step Editor, close it, then load the preset onto empty step 2.
-6000 tap LEFT_TOP 60
-6200 capture screen returned_to_step_editor
-6300 tap MACRO_1 60
-6500 capture screen step_editor_closed
-6600 button MACRO_2 down
-7650 tick
-7700 capture screen step_2_editor_open
-7750 button MACRO_2 up
-7850 button NAV down
-8900 tick
-8950 capture screen step_preset_picker_load_existing
-9000 button NAV up
-9100 tap BOTTOM_RIGHT 60
-9300 capture screen step_preset_applied_to_step_2
-10500 capture screen returned_after_applied_feedback
+9300 tap LEFT_TOP 60
+9500 capture screen returned_to_step_editor
+9600 tap MACRO_1 60
+9800 capture screen step_editor_closed
+9900 button MACRO_2 down
+10950 tick
+11000 capture screen step_2_editor_open
+11050 button MACRO_2 up
+11150 button NAV down
+12200 tick
+12250 capture screen step_preset_picker_load_existing
+12300 button NAV up
+12400 tap BOTTOM_RIGHT 60
+12600 capture screen step_preset_applied_to_step_2
+13800 capture screen returned_after_applied_feedback
 
-# Close Step Edit and undo the exact preset action from the global View
-# Selector.
-10600 tap MACRO_2 60
-10800 capture screen step_2_after_apply
-10900 tap LEFT_TOP 60
-11900 tick
-11950 capture screen selector_preset_undo_ready
-12000 tap LEFT_CENTER 60
-13500 capture screen selector_preset_redo_ready
-13600 tap LEFT_TOP 60
-13800 capture screen step_2_after_preset_undo
+# Close Step Edit, return through the Clip Launcher, and undo the exact preset
+# action from the global View Selector. Then re-enter the Pattern.
+13900 tap MACRO_2 60
+14100 capture screen step_2_after_apply
+14200 tap LEFT_TOP 60
+14400 tap LEFT_TOP 60
+15200 tick
+15250 capture screen selector_preset_undo_ready
+15300 tap LEFT_CENTER 60
+16800 capture screen selector_preset_redo_ready
+16900 tap LEFT_TOP 60
+17000 tap LEFT_CENTER 60
+17100 tap LEFT_TOP 60
+17300 capture screen step_2_after_preset_undo
 
 # While transport is running, applying to another empty step stays explicit as
 # queued instead of pretending that the audible runtime changed immediately.
-13900 tap BOTTOM_CENTER 60
-14100 button MACRO_3 down
-15150 tick
-15200 capture screen step_3_editor_playing
-15250 button MACRO_3 up
-15350 button NAV down
-16400 tick
-16450 capture screen step_preset_load_while_playing
-16500 button NAV up
-16600 tap BOTTOM_RIGHT 60
-16800 capture screen step_preset_queued_for_boundary
-16900 tap LEFT_TOP 60
-17100 tap MACRO_3 60
-17300 tap BOTTOM_CENTER 60
-17500 capture screen transport_stopped_after_queued_apply
+17400 tap BOTTOM_CENTER 60
+17600 button MACRO_3 down
+18650 tick
+18700 capture screen step_3_editor_playing
+18750 button MACRO_3 up
+18850 button NAV down
+19900 tick
+19950 capture screen step_preset_load_while_playing
+20000 button NAV up
+20100 tap BOTTOM_RIGHT 60
+20300 capture screen step_preset_queued_for_boundary
+20400 tap LEFT_TOP 60
+20600 tap MACRO_3 60
+20800 tap BOTTOM_CENTER 60
+21000 capture screen transport_stopped_after_queued_apply

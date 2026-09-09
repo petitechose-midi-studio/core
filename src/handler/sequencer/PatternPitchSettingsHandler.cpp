@@ -137,7 +137,7 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
     const int selectedIndex = settings_.selector.selectedIndex.get();
     const uint8_t editKey = pitchSettingKey(row, selectedIndex);
     const bool choiceChanged = services_.currentChoiceIndex(row) != selectedIndex;
-    const auto payloadPlan = core::state::sequencer::graphView(sequencer_.pattern) == nullptr
+    const auto payloadPlan = core::state::sequencer::graphView(sequencer_.pattern()) == nullptr
                                  ? PayloadPlan::FlatOnly
                                  : PayloadPlan::FullCurrentPayload;
     const auto descriptor = core::state::sequencer::SequencerHistoryDescriptor{

@@ -9,6 +9,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::sequencer {
@@ -28,7 +29,16 @@ public:
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 
     bool prepare(const core::state::sequencer::SequencerState& sequencer,
-                 const core::state::sequencer::SequencerTrackBankState& trackBank);
+                 const core::state::sequencer::SequencerTrackBankState& trackBank,
+                 const core::state::sequencer::SequencerClipRuntimeSources& sources,
+                 uint16_t retainActiveMask = 0U);
+    bool prepare(
+        const core::state::sequencer::SequencerState& sequencer,
+        const core::state::sequencer::SequencerTrackBankState& trackBank
+    ) {
+        core::state::sequencer::SequencerClipRuntimeSources sources{};
+        return prepare(sequencer, trackBank, sources);
+    }
 
     template <typename CompanionPublisher>
     void publishPrepared(CompanionPublisher&& publishCompanion) {
@@ -50,6 +60,39 @@ public:
     const oc::note::sequencer::StepSequencerGraph* graphForTrack(
         uint8_t trackIndex
     ) const;
+    const oc::note::sequencer::StepSequencerGraph* graphBeforeRetainedLaunch(
+        uint8_t trackIndex
+    ) const;
+    void releaseRetired(uint16_t trackMask);
+    void releaseAllRetired();
+
+    /**
+     * Restores the graph generation retained for a staged Clip/Scene launch.
+     * The companion restores the matching flat snapshot in the same critical
+     * section, so realtime playback never observes a mixed rollback.
+     */
+    template <typename CompanionPublisher>
+    void rollbackRetained(
+        uint16_t trackMask,
+        CompanionPublisher&& publishCompanion
+    ) {
+        const uint16_t rollbackMask = static_cast<uint16_t>(
+            trackMask & retired_valid_mask_);
+        {
+            oc::realtime::InterruptGuard lock;
+            for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+                const uint16_t bit = static_cast<uint16_t>(1U << track);
+                if ((rollbackMask & bit) == 0U) continue;
+                active_graphs_[track].swap(retired_graphs_[track]);
+                std::swap(
+                    source_signatures_[track],
+                    retired_signatures_[track]
+                );
+            }
+            std::forward<CompanionPublisher>(publishCompanion)();
+        }
+        releaseRetired(rollbackMask);
+    }
 
 private:
     using Graph = oc::note::sequencer::StepSequencerGraph;
@@ -59,10 +102,15 @@ private:
         const Graph* source = nullptr;
         uint32_t revision = 0;
         uint32_t draftRevision = 0;
+        uint32_t clipGeneration = 0;
+        uint8_t clipSlot =
+            core::state::sequencer::SequencerClipGridState::INVALID_SLOT;
 
         bool matches(const SourceSignature& other) const {
             return source == other.source && revision == other.revision &&
-                   draftRevision == other.draftRevision;
+                   draftRevision == other.draftRevision &&
+                   clipGeneration == other.clipGeneration &&
+                   clipSlot == other.clipSlot;
         }
     };
 
@@ -73,9 +121,13 @@ private:
     std::array<GraphPtr, TRACK_COUNT> active_graphs_{};
     std::array<SourceSignature, TRACK_COUNT> source_signatures_{};
     std::array<GraphPtr, TRACK_COUNT> prepared_graphs_{};
+    std::array<GraphPtr, TRACK_COUNT> retired_graphs_{};
     std::array<SourceSignature, TRACK_COUNT> prepared_signatures_{};
+    std::array<SourceSignature, TRACK_COUNT> retired_signatures_{};
     GraphPtr staging_graph_{};
     uint16_t prepared_mask_ = 0;
+    uint16_t retain_active_mask_ = 0;
+    uint16_t retired_valid_mask_ = 0;
     bool allocation_failure_reported_ = false;
 };
 

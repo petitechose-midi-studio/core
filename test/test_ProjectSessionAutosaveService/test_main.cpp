@@ -89,9 +89,9 @@ void configureProject(core::state::CoreState& state, const char* id, uint8_t not
     page.values[0] = 0.65f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.setContentLength(8);
+    state.sequencer.pattern().setContentLength(8);
     state.sequencer.setStepDataAt(0, note, 100, 75);
-    state.sequencer.pattern.toggle(0);
+    state.sequencer.pattern().toggle(0);
 }
 
 core::state::modulation::ProjectModulationResult beginLfoAudition(
@@ -145,8 +145,8 @@ void assertCurrentSessionNote(core::persistence::ProductFileService& files, uint
     test_support::CoreStorages storages;
     auto restored = makeCoreState(storages);
     assert(project::applyProjectSnapshot(restored, loaded));
-    assert(restored.sequencer.pattern.note[0] == note);
-    assert(restored.sequencer.pattern.isEnabled(0));
+    assert(restored.sequencer.pattern().note[0] == note);
+    assert(restored.sequencer.pattern().isEnabled(0));
 }
 
 core::persistence::ProjectSessionAutosaveService::Result updateAutosave(
@@ -969,9 +969,9 @@ void test_admitted_autosave_performs_no_extmem_allocation() {
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
     configureProject(state, "p024", 84);
-    assert(core::state::sequencer::ensureGraphRoot(state.sequencer.pattern));
+    assert(core::state::sequencer::ensureGraphRoot(state.sequencer.pattern()));
     auto* ccLanes = core::state::sequencer::ensureSequencerCcLaneBank(
-        state.sequencer.pattern
+        state.sequencer.pattern()
     );
     assert(ccLanes != nullptr);
     core::state::sequencer::SequencerCcLaneDraft ccLane{};
@@ -1152,7 +1152,9 @@ void test_stale_save_waits_for_its_foreground_turn_before_unwind() {
     const auto prepared = updateAutosave(files, autosave, state, dueAt + 193U);
     assert(prepared.status ==
            core::persistence::ProjectSessionAutosaveService::Status::SAVING);
-    assert(store.saveCurrentStage() == core::persistence::ProjectSaveStage::ENCODE);
+    const auto encodeQuota = store.saveCurrentWorkQuota();
+    assert(encodeQuota.maxBytes() == core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROJECT_ENCODE.maxBytes());
+    assert(encodeQuota.maxFilesystemCalls() == 0);
     core::persistence::ProductPersistenceJobSnapshot autosaveBeforePreemption{};
     assert(autosave.inspectPersistenceJob(autosaveBeforePreemption));
     assert(autosaveBeforePreemption.safeYield);

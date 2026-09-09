@@ -15,6 +15,21 @@ namespace {
 namespace mod = core::state::modulation;
 namespace sparkline = core::ui::modulation::sparkline;
 
+void testPhaseMappingMatchesWideReference() {
+    for (int32_t phase = INT16_MIN; phase <= INT16_MAX; ++phase) {
+        const int64_t magnitude = phase < 0 ? -static_cast<int64_t>(phase) : phase;
+        const int64_t scaled = (magnitude * 65535LL + 16383LL) / 32767LL;
+        const int64_t offset = phase < 0 ? -scaled : scaled;
+        for (const uint16_t position : {0U, 1U, 32767U, 32768U, 49152U, 65534U, 65535U}) {
+            const auto shape = mod::projectLfoShapePositionQ16(position, static_cast<int16_t>(phase));
+            assert(shape == static_cast<uint16_t>(position + offset));
+            assert(mod::projectLfoPreviewPositionQ16(position, static_cast<int16_t>(phase)) ==
+                static_cast<uint16_t>(position - offset));
+            assert(mod::projectLfoPreviewPositionQ16(shape, static_cast<int16_t>(phase)) == position);
+        }
+    }
+}
+
 ms::ui::KeyValueSparklineSample sampleAt(
     const ms::ui::KeyValueSparkline& descriptor,
     uint16_t position,
@@ -40,12 +55,12 @@ void testLfoSamplesAtPhysicalColumnsAndUsesSharedPhase() {
     draft.parameters.shape = mod::ModulatorLfoShape::SQUARE;
     draft.parameters.phaseQ15 = 8192;
     const auto created = mod::createLfoModulator(
-        control->authored.modulation,
+        control->authored().modulation,
         draft
     );
     assert(created.changed());
     const auto* source = mod::findProjectModulator(
-        control->authored.modulation,
+        control->authored().modulation,
         created.sourceId
     );
     assert(source != nullptr);
@@ -87,12 +102,12 @@ void testGeometryRevisionExcludesNonGraphicalFacts() {
     draft.name = "Stable";
     draft.parameters.shape = mod::ModulatorLfoShape::TRIANGLE;
     const auto created = mod::createLfoModulator(
-        control->authored.modulation,
+        control->authored().modulation,
         draft
     );
     assert(created.changed());
     auto* source = mod::findProjectModulator(
-        control->authored.modulation,
+        control->authored().modulation,
         created.sourceId
     );
     assert(source != nullptr);
@@ -105,8 +120,8 @@ void testGeometryRevisionExcludesNonGraphicalFacts() {
     source->parameters.lfo.timing = mod::ModulatorTimingMode::FREE;
     source->parameters.lfo.retrigger =
         mod::ModulatorRetriggerPolicy::EXPLICIT_TRIGGER;
-    control->authored.modulation.outputBindingCount = 1U;
-    control->authored.modulation.outputBindings[0].sourceId = source->id;
+    control->authored().modulation.outputBindingCount = 1U;
+    control->authored().modulation.outputBindings[0].sourceId = source->id;
     const auto nonGraphical = sparkline::buildSource(*control, *source);
     assert(nonGraphical.geometryRevision == initial.geometryRevision);
 
@@ -129,12 +144,12 @@ void testAdsrIsPositiveAndDescriptorFailsClosedWhenSourceDisappears() {
     draft.parameters.sustainQ15 = 16384U;
     draft.parameters.release = 64U;
     const auto created = mod::createAdsrModulator(
-        control->authored.modulation,
+        control->authored().modulation,
         draft
     );
     assert(created.changed());
     const auto* source = mod::findProjectModulator(
-        control->authored.modulation,
+        control->authored().modulation,
         created.sourceId
     );
     assert(source != nullptr);
@@ -150,7 +165,7 @@ void testAdsrIsPositiveAndDescriptorFailsClosedWhenSourceDisappears() {
     );
     assert(peak.valueQ16 == 65535U);
 
-    control->authored.modulation.sourceCount = 0U;
+    control->authored().modulation.sourceCount = 0U;
     ms::ui::KeyValueSparklineSample missing{};
     assert(!descriptor.sampleProvider(
         descriptor,
@@ -168,6 +183,7 @@ void testAdsrIsPositiveAndDescriptorFailsClosedWhenSourceDisappears() {
 
 int main() {
     static_assert(sizeof(ms::ui::KeyValueSparkline) <= 40U);
+    testPhaseMappingMatchesWideReference();
     testLfoSamplesAtPhysicalColumnsAndUsesSharedPhase();
     testGeometryRevisionExcludesNonGraphicalFacts();
     testAdsrIsPositiveAndDescriptorFailsClosedWhenSourceDisappears();

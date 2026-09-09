@@ -29,12 +29,13 @@ uint16_t createNestedNode(core::state::sequencer::SequencerPatternState& pattern
 }
 
 void test_prepare_keeps_the_active_graph_until_publication() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
 
-    const uint16_t childNode = createNestedNode(sequencer.pattern, 0, 3);
-    const auto* editorGraph = core::state::sequencer::graphView(sequencer.pattern);
+    const uint16_t childNode = createNestedNode(sequencer.pattern(), 0, 3);
+    const auto* editorGraph = core::state::sequencer::graphView(sequencer.pattern());
     assert(editorGraph != nullptr);
 
     assert(runtimeGraphs.prepare(sequencer, trackBank));
@@ -45,7 +46,7 @@ void test_prepare_keeps_the_active_graph_until_publication() {
     assert(firstRuntimeGraph != editorGraph);
     assert(firstRuntimeGraph->stepNodes[childNode].noteOffset == 3);
 
-    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern, childNode, 7));
+    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern(), childNode, 7));
     assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
 
     assert(runtimeGraphs.prepare(sequencer, trackBank));
@@ -53,7 +54,7 @@ void test_prepare_keeps_the_active_graph_until_publication() {
     runtimeGraphs.publishPrepared();
     assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 7);
 
-    core::state::sequencer::clearGraph(sequencer.pattern);
+    core::state::sequencer::clearGraph(sequencer.pattern());
     assert(runtimeGraphs.prepare(sequencer, trackBank));
     runtimeGraphs.publishPrepared();
     assert(runtimeGraphs.graphForTrack(0) == nullptr);
@@ -62,11 +63,12 @@ void test_prepare_keeps_the_active_graph_until_publication() {
 }
 
 void test_publication_commits_simultaneous_track_changes_together() {
-    core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::sequencer::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
 
-    const uint16_t activeNode = createNestedNode(sequencer.pattern, 0, 2);
+    const uint16_t activeNode = createNestedNode(sequencer.pattern(), 0, 2);
     const uint16_t inactiveNode = createNestedNode(trackBank.track(1), 0, 5);
 
     assert(runtimeGraphs.prepare(sequencer, trackBank));
@@ -74,7 +76,7 @@ void test_publication_commits_simultaneous_track_changes_together() {
     assert(runtimeGraphs.graphForTrack(0)->stepNodes[activeNode].noteOffset == 2);
     assert(runtimeGraphs.graphForTrack(1)->stepNodes[inactiveNode].noteOffset == 5);
 
-    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern, activeNode, 4));
+    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern(), activeNode, 4));
     assert(core::state::sequencer::setNodeNoteOffset(trackBank.track(1), inactiveNode, 9));
     assert(runtimeGraphs.prepare(sequencer, trackBank));
     runtimeGraphs.publishPrepared();
@@ -87,8 +89,9 @@ void test_publication_commits_simultaneous_track_changes_together() {
 
 void test_micro_sequence_draft_is_runtime_only_until_apply_or_cancel() {
     namespace seq = core::state::sequencer;
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState trackBank;
+    seq::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
 
     assert(runtimeGraphs.prepare(sequencer, trackBank));
@@ -107,7 +110,7 @@ void test_micro_sequence_draft_is_runtime_only_until_apply_or_cancel() {
     );
     assert(created.ok);
     seq::notifyStepContentDraftMutation(sequencer);
-    assert(seq::graphView(sequencer.pattern) == nullptr);
+    assert(seq::graphView(sequencer.pattern()) == nullptr);
 
     assert(runtimeGraphs.prepare(sequencer, trackBank));
     runtimeGraphs.publishPrepared();
@@ -127,8 +130,9 @@ void test_micro_sequence_draft_is_runtime_only_until_apply_or_cancel() {
 
 void test_chord_draft_projects_without_mutating_the_published_graph() {
     namespace seq = core::state::sequencer;
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState trackBank;
+    seq::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
     constexpr uint16_t ownerNode = 0;
 
@@ -142,7 +146,7 @@ void test_chord_draft_projects_without_mutating_the_published_graph() {
     chord.voiceCount = 4;
     assert(seq::setAuthoringNodeChordSpec(sequencer, ownerNode, chord));
     seq::notifyStepContentDraftMutation(sequencer);
-    assert(seq::graphView(sequencer.pattern) == nullptr);
+    assert(seq::graphView(sequencer.pattern()) == nullptr);
 
     assert(runtimeGraphs.prepare(sequencer, trackBank));
     runtimeGraphs.publishPrepared();
@@ -155,7 +159,7 @@ void test_chord_draft_projects_without_mutating_the_published_graph() {
     assert(runtimeNode->chordSpec.voiceCount == 4);
 
     assert(seq::publishStepContentDraft(sequencer));
-    const auto* published = seq::graphView(sequencer.pattern);
+    const auto* published = seq::graphView(sequencer.pattern());
     assert(published != nullptr);
     assert(published->stepNode(ownerNode)->chordSpec.voiceCount == 4);
     assert(runtimeGraphs.prepare(sequencer, trackBank));
@@ -168,26 +172,28 @@ void test_chord_draft_projects_without_mutating_the_published_graph() {
 
 void test_quick_controls_draft_publishes_only_immutable_runtime_copies() {
     namespace seq = core::state::sequencer;
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState trackBank;
+    seq::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
 
-    const uint16_t childNode = createNestedNode(sequencer.pattern, 0, 3);
+    const uint16_t childNode = createNestedNode(sequencer.pattern(), 0, 3);
     assert(runtimeGraphs.prepare(sequencer, trackBank));
     runtimeGraphs.publishPrepared();
     assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
 
     const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
     assert(sequencer.quickControlsDraft.begin(
-        sequencer.pattern,
+        sequencer.pattern(),
+        sequencer.clip(),
         openingPath,
         sequencer.page.get(),
         sequencer.focusedStep.get()));
     auto& draft = seq::authoringPattern(sequencer);
-    assert(&draft != &sequencer.pattern);
+    assert(&draft != &sequencer.pattern());
     assert(seq::setNodeNoteOffset(draft, childNode, 9));
     sequencer.patternQuickControls.bumpPreview();
-    assert(seq::graphView(sequencer.pattern)->stepNodes[childNode].noteOffset == 3);
+    assert(seq::graphView(sequencer.pattern())->stepNodes[childNode].noteOffset == 3);
 
     assert(runtimeGraphs.prepare(sequencer, trackBank));
     assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
@@ -210,8 +216,9 @@ void test_quick_controls_draft_publishes_only_immutable_runtime_copies() {
 
 void test_nested_quick_controls_preview_overrides_step_draft_projection() {
     namespace seq = core::state::sequencer;
-    seq::SequencerState sequencer;
     seq::SequencerTrackBankState trackBank;
+    seq::SequencerState sequencer{trackBank.track(trackBank.activeTrackIndex()), trackBank.clip(trackBank.activeTrackIndex())};
+
     core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
 
     assert(seq::beginStepContentDraft(
@@ -228,6 +235,7 @@ void test_nested_quick_controls_preview_overrides_step_draft_projection() {
     const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
     assert(sequencer.quickControlsDraft.begin(
         parent,
+        seq::authoringClip(sequencer),
         openingPath,
         sequencer.page.get(),
         sequencer.focusedStep.get()));

@@ -49,7 +49,8 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     Signal<uint32_t> patternVariationRevision{0};
 
     /// Bumps when pattern scale inheritance or override settings change.
-    Signal<uint32_t, 8> patternScaleRevision{0};
+    // Retained UI observes the editor hub; only that hub and autosave bind here.
+    Signal<uint32_t, 2> patternScaleRevision{0};
 
     /// Bumps when hierarchical step content changes.
     Signal<uint32_t> graphRevision{0};
@@ -58,20 +59,13 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     Signal<uint32_t> ccLaneRevision{0};
 
     /// Signed delta added to the project swing for this pattern.
-    Signal<int8_t, 6> swingOffsetPercent{0};
+    Signal<int8_t, 2> swingOffsetPercent{0};
 
     /// Signed temporal offset applied to every step in this pattern.
-    Signal<int8_t, 6> patternNudgePercent{0};
+    Signal<int8_t, 2> patternNudgePercent{0};
 
     /// Bumps when pattern timing context changes.
     Signal<uint32_t> patternTimingRevision{0};
-
-    // Persistent half-open playback region. Content length remains owned by
-    // StepSequencerState::length; mutations go through SequencerPatternRegionOps
-    // so these three bytes cannot diverge from it.
-    uint8_t playStart = 0;
-    uint8_t loopStart = 0;
-    uint8_t loopEnd = DEFAULT_LENGTH;
 
     SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};

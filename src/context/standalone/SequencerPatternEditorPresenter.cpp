@@ -90,7 +90,7 @@ void formatFieldValue(
                 buffer.size(),
                 "1/%u",
                 static_cast<unsigned>(
-                    4U * sequencer.pattern.stepsPerBeat.get()
+                    4U * sequencer.pattern().stepsPerBeat.get()
                 )
             );
             return;
@@ -179,10 +179,10 @@ FLASHMEM bool SequencerPatternEditorPresenter::bind() {
     );
     bool bound = static_watcher_.watchAll(
         state_.sequencer.patternEditor.active,
-        state_.sequencer.pattern.length,
-        state_.sequencer.pattern.stepDataRevision,
-        state_.sequencer.pattern.patternTimingRevision,
-        state_.sequencer.pattern.ccLaneRevision
+        state_.sequencer.patternChanges.length,
+        state_.sequencer.patternChanges.stepDataRevision,
+        state_.sequencer.patternChanges.patternTimingRevision,
+        state_.sequencer.patternChanges.ccLaneRevision
     );
     playhead_watcher_.bind<&SequencerPatternEditorPresenter::requestPlayheadRender>(
         *this, 1, "PatternEditor.playhead"
@@ -221,7 +221,7 @@ void SequencerPatternEditorPresenter::renderPending(uint32_t flags) {
 FLASHMEM bool SequencerPatternEditorPresenter::ensureGeometry() {
     if (!geometry_) return false;
     const auto& editor = state_.sequencer.patternEditor;
-    const auto& pattern = state_.sequencer.pattern;
+    const auto& pattern = state_.sequencer.pattern();
     const auto* ccLanes = pattern.ccLanes.get();
     const timeline::SequencerPatternTimelineViewport viewport{
         .width = 304U,
@@ -232,14 +232,19 @@ FLASHMEM bool SequencerPatternEditorPresenter::ensureGeometry() {
         .ccLaneMask = 0x0FU,
     };
     const bool preview = state_.randomize.active;
+    const seq::SequencerClipSnapshot clipSnapshot{
+        .playStartTick = state_.sequencer.clip().playStartTick,
+        .loopStartTick = state_.sequencer.clip().loopStartTick,
+        .loopEndTick = state_.sequencer.clip().loopEndTick,
+    };
     const auto previousKey = geometry_->key;
     const bool hadGeometry = geometry_revision_ != 0U;
     const bool rebuilt = preview
         ? timeline::rebuildSequencerPatternTimelineGeometry(
-              state_.randomize.preview, ccLanes, viewport, *geometry_
+              state_.randomize.preview, clipSnapshot, ccLanes, viewport, *geometry_
           )
         : timeline::rebuildSequencerPatternTimelineGeometry(
-              pattern, ccLanes, viewport, *geometry_
+              pattern, state_.sequencer.clip(), ccLanes, viewport, *geometry_
           );
     if (!rebuilt) {
         return false;
@@ -277,39 +282,39 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
 
     const uint8_t length = state_.randomize.active
         ? state_.randomize.preview.length
-        : state_.sequencer.pattern.length.get();
+        : state_.sequencer.pattern().length.get();
     const uint8_t windowEnd = static_cast<uint8_t>(std::min<uint16_t>(
         static_cast<uint16_t>(editor.windowStart) + 8U,
         length
     ));
     std::snprintf(
-        title_.data(), title_.size(), "T%u · Pattern",
+        title_.data(), title_.size(), "T%u Â· Pattern",
         static_cast<unsigned>(editor.ownerTrack + 1U)
     );
     std::snprintf(
         meta_.data(), meta_.size(), "%u steps \xC2\xB7 1/%u",
         static_cast<unsigned>(length),
         static_cast<unsigned>(
-            4U * state_.sequencer.pattern.stepsPerBeat.get()
+            4U * state_.sequencer.pattern().stepsPerBeat.get()
         )
     );
 
-    const auto* bank = state_.sequencer.pattern.ccLanes.get();
-    uint32_t layerColor = theme::color::CONTENT_ACTIVE;
+    const auto* bank = state_.sequencer.pattern().ccLanes.get();
+    uint32_t accentColor = theme::color::CONTENT_ACTIVE;
     if (state_.randomize.active) {
         std::snprintf(
             layer_.data(), layer_.size(), "Preview \xC2\xB7 %s",
             randomizePropertyName(state_.randomize.draft.property)
         );
-        layerColor = randomizePropertyColor(state_.randomize.draft.property);
+        accentColor = randomizePropertyColor(state_.randomize.draft.property);
     } else switch (editor.focusedLayer) {
         case Layer::NOTES:
             std::snprintf(layer_.data(), layer_.size(), "Notes");
-            layerColor = theme::color::STEP_PITCH;
+            accentColor = theme::color::STEP_PITCH;
             break;
         case Layer::REGION:
             std::snprintf(layer_.data(), layer_.size(), "Region");
-            layerColor = theme::color::STEP_LENGTH;
+            accentColor = theme::color::STEP_LENGTH;
             break;
         case Layer::CC1:
         case Layer::CC2:
@@ -323,10 +328,10 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
                     static_cast<unsigned>(lane + 1U),
                     static_cast<unsigned>(bank->lanes[lane].destination.controller)
                 );
-                layerColor = CC_LAYER_COLORS[lane];
+                accentColor = CC_LAYER_COLORS[lane];
             } else {
                 std::snprintf(layer_.data(), layer_.size(), "+ CC lane");
-                layerColor = theme::color::SECONDARY;
+                accentColor = theme::color::SECONDARY;
             }
             break;
         }
@@ -349,12 +354,12 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         );
     } else if (editor.navigationMode == Mode::WINDOWS) {
         std::snprintf(
-            hint_.data(), hint_.size(), "Window · steps %u–%u",
+            hint_.data(), hint_.size(), "Window Â· steps %uâ€“%u",
             static_cast<unsigned>(editor.windowStart + 1U),
             static_cast<unsigned>(windowEnd)
         );
     } else if (editor.navigationMode == Mode::LAYERS) {
-        std::snprintf(hint_.data(), hint_.size(), "Layer · %s", layer_.data());
+        std::snprintf(hint_.data(), hint_.size(), "Layer Â· %s", layer_.data());
     } else {
         const auto field = editor.focusedField;
         const int value = seq::patternEditorFieldValue(state_.sequencer, field);
@@ -363,14 +368,14 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
             : value;
         if (field == Field::DIVISION) {
             std::snprintf(
-                hint_.data(), hint_.size(), "Division · 1/%u",
+                hint_.data(), hint_.size(), "Division Â· 1/%u",
                 static_cast<unsigned>(
-                    4U * state_.sequencer.pattern.stepsPerBeat.get()
+                    4U * state_.sequencer.pattern().stepsPerBeat.get()
                 )
             );
         } else {
             std::snprintf(
-                hint_.data(), hint_.size(), "%s · %d%s%s",
+                hint_.data(), hint_.size(), "%s Â· %d%s%s",
                 fieldName(field), displayed,
                 fieldUnit(field)[0] == '%' ? "" : " ",
                 fieldUnit(field)
@@ -382,9 +387,8 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
     props.visible = true;
     props.title = title_.data();
     props.meta = meta_.data();
-    props.layer = layer_.data();
     props.transientHint = hint_.data();
-    props.layerColor = layerColor;
+    props.accentColor = accentColor;
     props.geometry = geometry_.get();
     props.geometryRevision = geometry_revision_;
     props.playhead = projectPlayhead();
@@ -404,7 +408,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
             static_cast<unsigned>(state_.randomize.draft.amount)
         );
         std::snprintf(
-            field_values_[2].data(), field_values_[2].size(), "±%u",
+            field_values_[2].data(), field_values_[2].size(), "Â±%u",
             static_cast<unsigned>(state_.randomize.draft.range)
         );
         std::snprintf(
@@ -475,7 +479,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         );
         actions.slots[2] = core::ui::makeStandaloneIconStripSlot(
             icons::ACTION_PLACE_TARGET,
-            state_.sequencer.pattern.length.get() < seq::SequencerState::MAX_STEPS
+            state_.sequencer.pattern().length.get() < seq::SequencerState::MAX_STEPS
                 ? core::ui::ContextActionStripVisualState::AVAILABLE
                 : core::ui::ContextActionStripVisualState::DISABLED,
             core::ui::ContextActionStripTone::CONSTRUCTIVE

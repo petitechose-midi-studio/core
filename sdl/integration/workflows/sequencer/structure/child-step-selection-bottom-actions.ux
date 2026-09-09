@@ -13,13 +13,13 @@
 1500 tick
 1550 capture screen root_step_editor_open
 1600 button MACRO_1 up
-1700 encoder NAV 1
-1780 encoder NAV 1
-1860 encoder NAV 1
-1940 encoder NAV 1
-2020 encoder NAV 1
-2100 encoder NAV 1
-2180 encoder NAV 1
+1700 encoder NAV 0.01
+1780 encoder NAV 0.01
+1860 encoder NAV 0.01
+1940 encoder NAV 0.01
+2020 encoder NAV 0.01
+2100 encoder NAV 0.01
+2180 encoder NAV 0.01
 2260 capture screen micro_row_focused
 2360 tap NAV 60
 2660 capture screen child_pattern_focus
@@ -31,7 +31,7 @@
 # Move to child Step context. A newly published micro-sequence already owns two
 # active child steps; do not toggle either one while preparing the selection.
 2760 button NAV down
-2820 encoder NAV 1
+2820 encoder NAV 0.01
 2880 button NAV up
 2960 capture screen child_step_focus
 3660 capture screen child_steps_1_2_enabled
@@ -44,7 +44,7 @@
 5130 capture screen child_step_selection_entered
 5230 tap MACRO_1 60
 5480 capture screen child_step_1_selected
-5580 encoder NAV 1
+5580 encoder NAV 0.01
 5780 capture screen child_selection_cursor_2
 5880 tap MACRO_2 60
 6130 capture screen child_steps_1_2_selected
@@ -59,7 +59,7 @@
 8330 capture screen child_selection_deep_reset_released
 
 # Paste the copied footprint back from cursor step 1.
-8430 encoder NAV -1
+8430 encoder NAV -0.01
 8630 capture screen child_paste_preview_cursor_1
 8730 button BOTTOM_RIGHT down
 9780 tick

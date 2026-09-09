@@ -145,10 +145,10 @@ void configureProject(core::state::CoreState& state,
     page.values[1] = 0.25f + static_cast<float>(modifiedCounter) * 0.01f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.setContentLength(8);
-    state.sequencer.pattern.stepsPerBeat.set(4);
+    state.sequencer.pattern().setContentLength(8);
+    state.sequencer.pattern().stepsPerBeat.set(4);
     state.sequencer.setStepDataAt(1, static_cast<uint8_t>(60U + modifiedCounter), 100, 80);
-    state.sequencer.pattern.toggle(1);
+    state.sequencer.pattern().toggle(1);
     state.sequencer.focusedStep.set(1);
 }
 
@@ -203,8 +203,8 @@ void assertLoadedProject(core::persistence::ProjectFileStore& store,
     assert(runtime.project.metadata.modifiedCounter == expectedCounter);
     assert(std::strcmp(runtime.pages.activePageData().name, expectedName) == 0);
     assert(runtime.pages.activePageData().cc[1] == 70U + expectedCounter);
-    assert(runtime.sequencer.pattern.note[1] == 60U + expectedCounter);
-    assert(runtime.sequencer.pattern.isEnabled(1));
+    assert(runtime.sequencer.pattern().note[1] == 60U + expectedCounter);
+    assert(runtime.sequencer.pattern().isEnabled(1));
 }
 
 void test_save_load_project_snapshot_roundtrip() {
@@ -262,12 +262,12 @@ void test_save_load_nested_drum_content_roundtrip() {
     assert(source.sequencer.setStepDataAt(0U, 64U, 103U, 100U, 0, 100U));
     const auto root = sequencer::rootStepNodeId(0U);
     const auto micro = sequencer::createMicroSequence(
-        source.sequencer.pattern,
+        source.sequencer.pattern(),
         root,
         3U
     );
     assert(micro.ok);
-    const auto* sourceGraph = sequencer::graphView(source.sequencer.pattern);
+    const auto* sourceGraph = sequencer::graphView(source.sequencer.pattern());
     assert(sourceGraph != nullptr);
     const auto* sourceMicro = sourceGraph->sequence(micro.id);
     assert(sourceMicro != nullptr);
@@ -275,17 +275,17 @@ void test_save_load_nested_drum_content_roundtrip() {
         sourceMicro->firstStepNode + 1U
     );
     assert(sequencer::setNodeVelocityOffset(
-        source.sequencer.pattern,
+        source.sequencer.pattern(),
         microNode,
         -23
     ));
     const auto cycle = sequencer::createCycleStateSet(
-        source.sequencer.pattern,
+        source.sequencer.pattern(),
         microNode,
         2U
     );
     assert(cycle.ok);
-    sourceGraph = sequencer::graphView(source.sequencer.pattern);
+    sourceGraph = sequencer::graphView(source.sequencer.pattern());
     assert(sourceGraph != nullptr);
     const auto* sourceCycle = sourceGraph->cycleSet(cycle.id);
     assert(sourceCycle != nullptr);
@@ -293,7 +293,7 @@ void test_save_load_nested_drum_content_roundtrip() {
         sourceCycle->firstStateNode + 1U
     );
     assert(sequencer::setNodeGateOffset(
-        source.sequencer.pattern,
+        source.sequencer.pattern(),
         cycleNode,
         17
     ));
@@ -321,7 +321,7 @@ void test_save_load_nested_drum_content_roundtrip() {
     assert(restoredDrum.pattern.effectiveStepsPerBeat(1U) == 2U);
     assert(restoredDrum.advancedRootSlot(1U, 3U) == 0);
 
-    const auto* graph = sequencer::graphView(restored.sequencer.pattern);
+    const auto* graph = sequencer::graphView(restored.sequencer.pattern());
     assert(graph != nullptr);
     const auto* rootNode = graph->stepNode(root);
     assert(rootNode != nullptr);

@@ -494,34 +494,8 @@ FLASHMEM RecoveryAction decideRecovery(
     bool tmpValid,
     FileState backup
 ) {
-    if (workspace.phase == ProductFileTransactionPhase::ROLLED_BACK) {
-        if (workspace.hadCurrent) {
-            if (backup.exists) {
-                return final.exists
-                    ? RecoveryAction::REMOVE_CURRENT_AND_RESTORE_BACKUP
-                    : RecoveryAction::RESTORE_BACKUP;
-            }
-            return final.exists ? RecoveryAction::FINISH_ROLLED_BACK
-                                : RecoveryAction::FAIL_CORRUPT;
-        }
-        return final.exists ? RecoveryAction::REMOVE_CURRENT_AND_ROLL_BACK
-                            : RecoveryAction::FINISH_ROLLED_BACK;
-    }
-
-    if (workspace.phase == ProductFileTransactionPhase::COMMITTED) {
-        if (finalValid) return RecoveryAction::FINISH_COMMITTED;
-        if (workspace.hadCurrent && backup.exists) {
-            return final.exists
-                ? RecoveryAction::REMOVE_CURRENT_AND_RESTORE_BACKUP
-                : RecoveryAction::RESTORE_BACKUP;
-        }
-        if (!workspace.hadCurrent) {
-            return final.exists ? RecoveryAction::REMOVE_CURRENT_AND_ROLL_BACK
-                                : RecoveryAction::FINISH_ROLLED_BACK;
-        }
-        return RecoveryAction::FAIL_CORRUPT;
-    }
-
+    // Only in-flight transactions reach this decision: terminal records no
+    // longer own their paths and are skipped before any filesystem inspection.
     if (final.exists && tmp.exists) {
         if (workspace.phase == ProductFileTransactionPhase::PREPARED &&
             workspace.hadCurrent && !backup.exists) {

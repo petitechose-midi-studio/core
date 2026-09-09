@@ -6,8 +6,8 @@
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
 
-#include "handler/sequencer/ProjectTrackEditorHandler.hpp"
 #include "handler/sequencer/DrumLaneEditorHandler.hpp"
+#include "handler/sequencer/ClipWorkspaceHandler.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "handler/sequencer/SequencerStepContentDraftWorkflow.hpp"
@@ -170,14 +170,16 @@ FLASHMEM void SequencerStepHandler::attachPatternEditorHandler(
     pattern_editor_handler_ = &handler;
 }
 
-FLASHMEM void SequencerStepHandler::attachTrackEditorHandler(ProjectTrackEditorHandler& handler) {
-    track_editor_handler_ = &handler;
-}
-
 FLASHMEM void SequencerStepHandler::attachDrumLaneEditorHandler(
     DrumLaneEditorHandler& handler
 ) {
     drum_lane_editor_handler_ = &handler;
+}
+
+FLASHMEM void SequencerStepHandler::connectClipWorkspace(
+    ClipWorkspaceHandler& handler
+) {
+    handler.attachTrackNavigationWorkflow(navigation_workflow_);
 }
 
 FLASHMEM void SequencerStepHandler::syncDrumSequencerToActiveTrack() {
@@ -187,6 +189,10 @@ FLASHMEM void SequencerStepHandler::syncDrumSequencerToActiveTrack() {
     const uint8_t activeTrack = tracks_.activeTrackIndex();
     if (!tracks_.isDrumTrack(activeTrack)) {
         drumUi.unbindTrack();
+        if (navigation_focus_.get() ==
+            core::state::StructureNavigationFocus::LANE) {
+            navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
+        }
         return;
     }
 
@@ -196,10 +202,7 @@ FLASHMEM void SequencerStepHandler::syncDrumSequencerToActiveTrack() {
     drumUi.bindTrack(activeTrack, authored, tracks_);
     if (needsEntry) {
         drumUi.enterGrid();
-        if (navigation_focus_.get() !=
-            core::state::StructureNavigationFocus::TRACK) {
-            navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
-        }
+        navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
     }
 }
 
@@ -233,6 +236,13 @@ FLASHMEM void SequencerStepHandler::confirmDrumSequencerType() {
     } else {
         drumUi.unbindTrack();
     }
+    // Track creation always ends in the new Track's first Pattern, whether it
+    // started from an empty Launcher slice or from the legacy Track add slot.
+    // Keep the hierarchy return address aligned with the active editor owner.
+    track_ui_.previewAddSlot.set(false);
+    track_ui_.syncPreviewTrack(createdTrack);
+    navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
+    sequencer_.clipWorkspace.enterPattern(createdTrack, 0U);
 }
 
 FLASHMEM void SequencerStepHandler::handleDrumSequencerNavTurn(
@@ -262,16 +272,16 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavTurn(
         return;
     }
     switch (navigation_focus_.get()) {
-        case core::state::StructureNavigationFocus::TRACK:
-            navigation_workflow_.moveByFocus(delta);
-            syncDrumSequencerToActiveTrack();
-            return;
         case core::state::StructureNavigationFocus::STEP:
             drumUi.moveFocusedStep(delta);
             return;
-        case core::state::StructureNavigationFocus::PAGE:
-        default:
+        case core::state::StructureNavigationFocus::LANE:
             drumUi.moveLane(delta);
+            return;
+        case core::state::StructureNavigationFocus::PAGE:
+            drumUi.movePage(delta > 0.0f ? 1 : -1);
+            return;
+        default:
             return;
     }
 }
@@ -284,19 +294,18 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavPress() {
         return;
     }
     const auto focus = navigation_focus_.get();
-    const bool trackFocus = focus == core::state::StructureNavigationFocus::TRACK;
-    const uint8_t previewTarget = trackFocus
-        ? track_ui_.previewTrackIndex.get()
-        : (focus == core::state::StructureNavigationFocus::STEP
+    const uint8_t previewTarget = focus ==
+            core::state::StructureNavigationFocus::STEP
             ? drumUi.focusedStep
-            : (drumUi.laneAddSlotFocused()
-                ? drumUi.drumTrack->kit.laneCount
-                : drumUi.selectedLane));
+            : focus == core::state::StructureNavigationFocus::LANE
+                ? (drumUi.laneAddSlotFocused()
+                    ? drumUi.drumTrack->kit.laneCount
+                    : drumUi.selectedLane)
+                : drumUi.page;
     context_selector_workflow_.press(
         focus,
-        true,
         previewTarget,
-        trackFocus && track_ui_.previewAddSlot.get()
+        true
     );
 }
 
@@ -319,20 +328,16 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavRelease() {
         return;
     }
     if (outcome.action == SequencerContextSelectorAction::OPEN_PATTERN_EDITOR) {
-        if (drum_lane_editor_handler_ == nullptr) return;
-        (void)drum_lane_editor_handler_->open(drumUi.laneAddSlotFocused());
-        return;
-    }
-    if (outcome.action == SequencerContextSelectorAction::OPEN_TRACK_EDITOR) {
         if (history_.commitCoalescedDrumEditOutcome() ==
             seq::SequencerPatternHistoryCommitOutcome::Failed) {
             return;
         }
-        if (outcome.previewAddSlot) {
-            drumUi.openTypePicker(outcome.previewTarget);
-        } else if (track_editor_handler_ != nullptr) {
-            (void)track_editor_handler_->openActiveTrack();
-        }
+        drumUi.openPatternDefaults();
+        return;
+    }
+    if (outcome.action == SequencerContextSelectorAction::OPEN_LANE_EDITOR) {
+        if (drum_lane_editor_handler_ == nullptr) return;
+        (void)drum_lane_editor_handler_->open(drumUi.laneAddSlotFocused());
         return;
     }
     if (outcome.action != SequencerContextSelectorAction::APPLY_CONTEXT) return;
@@ -347,19 +352,15 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavRelease() {
 FLASHMEM bool SequencerStepHandler::drumBackActionAvailable() const {
     const auto& drumUi = sequencer_.drumSequencer;
     if (!drumUi.active()) return false;
+    // Track creation pickers are launched from the matrix and keep local Back
+    // ownership until they close. Every other Drum context belongs to Pattern.
+    if (drumUi.pickerVisible()) return true;
+    if (!sequencer_.clipWorkspace.patternVisible()) return false;
     if (sequencer_.patternPresetPreview.active()) return true;
     if (core::state::sequencer::isDrumContentView(sequencer_)) return false;
 
-    // Pickers and local transient contexts still own Back. At the Track root,
-    // however, LEFT_TOP belongs to the controller-wide View Selector. Do not
-    // capture the gesture here when the Drum surface has nowhere left to back
-    // into locally.
-    if (!drumUi.gridVisible() || drumUi.selectorVisible() ||
-        context_selector_workflow_.ownsGesture()) {
-        return true;
-    }
-    return navigation_focus_.get() !=
-        core::state::StructureNavigationFocus::TRACK;
+    // Every remaining Drum Pattern context owns one local Back transition.
+    return true;
 }
 
 FLASHMEM void SequencerStepHandler::handleDrumSequencerBack() {
@@ -399,13 +400,23 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerBack() {
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::STEP:
             navigation_workflow_.setNavigationFocus(
+                core::state::StructureNavigationFocus::LANE
+            );
+            break;
+        case core::state::StructureNavigationFocus::LANE:
+            navigation_workflow_.setNavigationFocus(
                 core::state::StructureNavigationFocus::PAGE
             );
             break;
         case core::state::StructureNavigationFocus::PAGE:
-            navigation_workflow_.setNavigationFocus(
-                core::state::StructureNavigationFocus::TRACK
-            );
+            if (sequencer_.clipWorkspace.patternVisible()) {
+                if (history_.commitCoalescedDrumEditOutcome() ==
+                    seq::SequencerPatternHistoryCommitOutcome::Failed) {
+                    return;
+                }
+                (void)sequencer_.clipWorkspace.returnToMatrix();
+                return;
+            }
             break;
         case core::state::StructureNavigationFocus::TRACK:
         default:
@@ -413,6 +424,40 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerBack() {
     }
     (void)history_.commitCoalescedDrumEditOutcome();
     drumUi.bump();
+}
+
+FLASHMEM bool SequencerStepHandler::instrumentPatternBackAvailable() const {
+    if (!sequencer_.clipWorkspace.patternVisible() ||
+        !core::state::sequencer::isRootContentView(sequencer_) ||
+        core::state::sequencer::isDrumOverviewActive(sequencer_) ||
+        sequencer_.ccLaneUi.visible() ||
+        sequencer_.contextSelector.visible ||
+        sequencer_.patternQuickControls.selecting.get() ||
+        sequencer_.stepPropertyInlineSelector.selecting.get() ||
+        sequencer_.stepContentSelector.selecting.get() ||
+        sequencer_.structureUi.pageSelection.active.get() ||
+        sequencer_.structureUi.stepSelection.active.get() ||
+        track_ui_.selection.active.get()) {
+        return false;
+    }
+    const auto focus = navigation_focus_.get();
+    return focus == core::state::StructureNavigationFocus::PAGE ||
+        focus == core::state::StructureNavigationFocus::STEP;
+}
+
+FLASHMEM void SequencerStepHandler::handleInstrumentPatternBack() {
+    if (!instrumentPatternBackAvailable()) return;
+    if (navigation_focus_.get() != core::state::StructureNavigationFocus::PAGE) {
+        navigation_workflow_.setNavigationFocus(
+            core::state::StructureNavigationFocus::PAGE
+        );
+        return;
+    }
+    if (!publishPatternHistoryBarrier(
+            sequencer_, commitPatternHistoryBarrier(sequencer_, history_))) {
+        return;
+    }
+    (void)sequencer_.clipWorkspace.returnToMatrix();
 }
 
 FLASHMEM void SequencerStepHandler::editDrumSequencerStepProperty(
@@ -560,6 +605,10 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
         );
         return;
     }
+    if (navigation_focus_.get() !=
+        core::state::StructureNavigationFocus::LANE) {
+        return;
+    }
 
     switch (drumUi.dimension) {
         case seq::DrumSequencerDimension::MODE: {
@@ -677,7 +726,7 @@ FLASHMEM void SequencerStepHandler::handleContextSelectorRelease() {
                 navigation_focus_.get() !=
                     core::state::StructureNavigationFocus::PAGE ||
                 sequencer_.structureUi.previewPageIndex.get() !=
-                    outcome.previewTarget || outcome.previewAddSlot) {
+                    outcome.previewTarget) {
                 return;
             }
             if (pattern_editor_handler_ != nullptr &&
@@ -685,36 +734,12 @@ FLASHMEM void SequencerStepHandler::handleContextSelectorRelease() {
                 (void)pattern_editor_handler_->openFromCurrentPage();
             }
             return;
-        case SequencerContextSelectorAction::OPEN_TRACK_EDITOR:
-            if (outcome.focus != core::state::StructureNavigationFocus::TRACK ||
-                !trackFocusActive() ||
-                track_ui_.previewTrackIndex.get() != outcome.previewTarget) {
-                return;
-            }
-            if (outcome.previewAddSlot) {
-                if (!track_ui_.previewAddSlot.get() ||
-                    track_ui_.previewTrackIndex.get() !=
-                        outcome.previewTarget) {
-                    return;
-                }
-                sequencer_.drumSequencer.openTypePicker(
-                    outcome.previewTarget
-                );
-                return;
-            }
-            if (track_ui_.previewAddSlot.get()) return;
-            if (track_editor_handler_ != nullptr &&
-                core::state::sequencer::isRootContentView(sequencer_)) {
-                (void)track_editor_handler_->openActiveTrack();
-            }
+        case SequencerContextSelectorAction::OPEN_LANE_EDITOR:
+            // Lane is owned by the Drum-root release path.
             return;
         case SequencerContextSelectorAction::NONE:
         default: return;
     }
-}
-
-FLASHMEM bool SequencerStepHandler::trackFocusActive() const {
-    return navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK;
 }
 
 FLASHMEM void SequencerStepHandler::enterSelectionModeForCurrentFocus() {
@@ -736,9 +761,8 @@ FLASHMEM void SequencerStepHandler::enterSelectionModeForCurrentFocus() {
 }
 
 FLASHMEM void SequencerStepHandler::setupDrumBindings() {
-    // Drum owns its lane navigation and momentary property surfaces. Track and
-    // Step structure actions deliberately fall through to the common workflow
-    // registered below; only Pattern paging remains a prioritized exception.
+    // Drum owns its Pattern/Lane/Step navigation and momentary property
+    // surfaces. Track structure actions still delegate to the common workflow.
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
@@ -820,14 +844,13 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                 !drumUi.laneAddSlotFocused() &&
                 context_selector_workflow_.ownsGesture() &&
                 navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::PAGE;
+                    core::state::StructureNavigationFocus::LANE;
         })
         .then([this]() {
             const auto& drumUi = sequencer_.drumSequencer;
             if (!context_selector_workflow_.holdForSelection(
-                    core::state::StructureNavigationFocus::PAGE,
-                    drumUi.selectedLane,
-                    false)) {
+                    core::state::StructureNavigationFocus::LANE,
+                    drumUi.selectedLane)) {
                 return;
             }
             enterSelectionModeForCurrentFocus();
@@ -865,21 +888,40 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                 core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                 !drumUi.selectorVisible() &&
                 !drumUi.laneSelection.active &&
-                !context_selector_workflow_.ownsGesture();
+                !context_selector_workflow_.ownsGesture() &&
+                navigation_focus_.get() !=
+                    core::state::StructureNavigationFocus::TRACK;
         })
         .then([this]() {
             auto& drumUi = sequencer_.drumSequencer;
             const auto focus = navigation_focus_.get();
             if (focus == core::state::StructureNavigationFocus::STEP) {
                 drumUi.openPropertySelector();
-            } else if (focus == core::state::StructureNavigationFocus::TRACK) {
+            } else if (focus == core::state::StructureNavigationFocus::PAGE) {
                 if (history_.commitCoalescedDrumEditOutcome() ==
                     seq::SequencerPatternHistoryCommitOutcome::Failed) {
                     return;
                 }
                 drumUi.openPatternDefaults();
-            } else {
+            } else if (focus ==
+                       core::state::StructureNavigationFocus::LANE) {
                 drumUi.openDimensionSelector();
+            }
+        });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .priority(120)
+        .when([this]() {
+            return step_edit_handler_ != nullptr &&
+                sequencer_.drumSequencer.selector ==
+                    seq::DrumSequencerSelector::PATTERN_DEFAULTS;
+        })
+        .then([this]() {
+            if (history_.commitCoalescedDrumEditOutcome() !=
+                seq::SequencerPatternHistoryCommitOutcome::Failed) {
+                step_edit_handler_->openPatternPresetLibrary();
             }
         });
 
@@ -910,7 +952,7 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                 !drumUi.laneSelection.active &&
                 !context_selector_workflow_.ownsGesture() &&
                 navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::PAGE;
+                    core::state::StructureNavigationFocus::LANE;
         })
         .then([this]() {
             sequencer_.drumSequencer.openPropertySelector();
@@ -924,7 +966,7 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
             return sequencer_.drumSequencer.selector ==
                     seq::DrumSequencerSelector::PROPERTY &&
                 navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::PAGE;
+                    core::state::StructureNavigationFocus::LANE;
         })
         .then([this]() { applyDrumSelector(); });
 
@@ -1210,20 +1252,13 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         })
         .then([this]() {
             const auto focus = navigation_focus_.get();
-            const bool previewAddSlot =
-                focus == core::state::StructureNavigationFocus::TRACK &&
-                track_ui_.previewAddSlot.get();
             const uint8_t previewTarget =
-                focus == core::state::StructureNavigationFocus::TRACK
-                    ? track_ui_.previewTrackIndex.get()
-                    : focus == core::state::StructureNavigationFocus::STEP
+                focus == core::state::StructureNavigationFocus::STEP
                         ? sequencer_.focusedStep.get()
                         : sequencer_.structureUi.previewPageIndex.get();
             context_selector_workflow_.press(
                 focus,
-                core::state::sequencer::isRootContentView(sequencer_),
-                previewTarget,
-                previewAddSlot
+                previewTarget
             );
         });
 
@@ -1236,19 +1271,13 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         })
         .then([this]() {
             const auto focus = navigation_focus_.get();
-            const bool previewAddSlot =
-                focus == core::state::StructureNavigationFocus::TRACK &&
-                track_ui_.previewAddSlot.get();
             const uint8_t previewTarget =
-                focus == core::state::StructureNavigationFocus::TRACK
-                    ? track_ui_.previewTrackIndex.get()
-                    : focus == core::state::StructureNavigationFocus::STEP
+                focus == core::state::StructureNavigationFocus::STEP
                         ? sequencer_.focusedStep.get()
                         : sequencer_.structureUi.previewPageIndex.get();
             if (!context_selector_workflow_.holdForSelection(
                     focus,
-                    previewTarget,
-                    previewAddSlot
+                    previewTarget
                 )) {
                 return;
             }
@@ -1260,12 +1289,11 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .scope(scope_id_)
         .when([this]() {
             return context_selector_workflow_.ownsGesture() &&
-                   !edit_workflow_.trackPasteNavigationBlocked();
+                !edit_workflow_.trackPasteNavigationBlocked();
         })
         .then([this]() {
             if (context_selector_workflow_.ownsGesture()) {
                 handleContextSelectorRelease();
-                return;
             }
         });
 
@@ -1283,6 +1311,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .scope(scope_id_)
         .when([this]() {
             return sequencer_.patternPresetPreview.active() ||
+                instrumentPatternBackAvailable() ||
                 (navigation_workflow_.allowsMainBindings() &&
                  core::state::sequencer::isChildContentView(sequencer_) &&
                  !edit_workflow_.trackPasteNavigationBlocked());
@@ -1292,6 +1321,10 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
                 if (step_edit_handler_ != nullptr) {
                     step_edit_handler_->cancelPatternPresetPreview();
                 }
+                return;
+            }
+            if (instrumentPatternBackAvailable()) {
+                handleInstrumentPatternBack();
                 return;
             }
             if (core::state::sequencer::isChildContentView(sequencer_)) {
@@ -1413,8 +1446,8 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
         .press()
         .scope(scope_id_)
         .when([this]() {
-            return currentStructureBottomActionsAvailable() &&
-                   !navigation_workflow_.selectionActive();
+            return !navigation_workflow_.selectionActive() &&
+                currentStructureBottomActionsAvailable();
         })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
@@ -1474,7 +1507,7 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
                 return !selectionActive;
             }
             return !selectionActive &&
-                   currentStructureBottomActionsAvailable();
+                currentStructureBottomActionsAvailable();
         })
         .then([this]() {
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
@@ -1495,12 +1528,6 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
             // A physical release always terminates the STEP/PAGE hold, even
             // when the short action is a no-op (for example an empty step).
             edit_workflow_.clearHoldAction();
-            if (trackFocusActive()) {
-                if (!publishPatternHistoryBarrier(sequencer_,
-                                                  commitPatternHistoryBarrier(sequencer_, history_))) {
-                    return;
-                }
-            }
             edit_workflow_.applyCurrentStructureShortPress();
         });
 
@@ -1561,11 +1588,18 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .press()
         .scope(scope_id_)
-        .when([this]() { return currentStructureBottomActionsAvailable(); })
+        .when([this]() {
+            return currentStructureBottomActionsAvailable() ||
+                clipTrackHeaderAvailable();
+        })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
+            if (clipTrackHeaderAvailable() &&
+                !prepareClipTrackHeaderAction(true)) {
+                return;
+            }
             if (edit_workflow_.canPasteCurrentStructure()) {
                 edit_workflow_.beginHoldAction(core::state::StructureHoldAction::PASTE);
             }
@@ -1629,7 +1663,8 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
         .scope(scope_id_)
         .when([this]() {
             return sequencer_.patternPresetPreview.active() ||
-                currentStructureBottomActionsAvailable();
+                currentStructureBottomActionsAvailable() ||
+                clipTrackHeaderAvailable();
         })
         .then([this]() {
             if (sequencer_.patternPresetPreview.active()) {
@@ -1638,10 +1673,12 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
                 }
                 return;
             }
-            if (trackFocusActive()) {
-                const auto release =
-                    edit_workflow_.releaseTrackPasteAction(core::time_compat::millis());
-                if (release == core::state::contextual::GuardedActionRelease::TAP) {
+            if (clipTrackHeaderAvailable()) {
+                const auto release = edit_workflow_.releaseTrackPasteAction(
+                    core::time_compat::millis()
+                );
+                if (release ==
+                    core::state::contextual::GuardedActionRelease::TAP) {
                     edit_workflow_.copyCurrentStructure();
                 }
                 return;
@@ -1694,7 +1731,7 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return currentStructureBottomActionsAvailable() && !trackFocusActive(); })
+        .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
 #if defined(MS_UX_RECORDER)
@@ -1786,19 +1823,56 @@ FLASHMEM bool SequencerStepHandler::currentStructureBottomActionsAvailable() con
     // let hidden structure bindings mutate, copy, or paste behind it.
     if (sequencer_.stepContentDraft.active.get() ||
         sequencer_.patternPresetPreview.active()) return false;
+    // The first-rank matrix owns Clip performance and Clip operations.
+    if (sequencer_.clipWorkspace.matrixVisible()) return false;
+    if (navigation_focus_.get() ==
+        core::state::StructureNavigationFocus::TRACK) {
+        return false;
+    }
     if (core::state::sequencer::isDrumOverviewActive(sequencer_)) {
         return
                !sequencer_.drumSequencer.selectorVisible() &&
                !context_selector_workflow_.ownsGesture() &&
-               (navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::TRACK ||
-                navigation_focus_.get() ==
-                    core::state::StructureNavigationFocus::STEP);
+               navigation_focus_.get() ==
+                   core::state::StructureNavigationFocus::STEP;
     }
     if (!navigation_workflow_.allowsMainBindings()) return false;
     if (core::state::sequencer::isRootContentView(sequencer_)) return true;
     return core::state::sequencer::isChildContentView(sequencer_) &&
            navigation_workflow_.stepFocusActive();
+}
+
+FLASHMEM bool SequencerStepHandler::clipTrackHeaderAvailable() const {
+    const auto& workspace = sequencer_.clipWorkspace;
+    return workspace.matrixVisible() && workspace.trackHeaderFocused() &&
+        workspace.operation ==
+            core::state::sequencer::ClipWorkspaceOperation::BROWSE &&
+        !track_ui_.selection.active.get() &&
+        !sequencer_.drumSequencer.pickerVisible();
+}
+
+FLASHMEM bool SequencerStepHandler::prepareClipTrackHeaderAction(
+    bool allowEmptyTrack
+) {
+    if (!clipTrackHeaderAvailable()) return false;
+
+    const uint8_t track = sequencer_.clipWorkspace.focusedTrack;
+    const bool enabled = tracks_.isTrackEnabled(track);
+    if (!enabled && !allowEmptyTrack) return false;
+
+    if (enabled) {
+        const auto& sharedTracks = edit_workflow_.sharedTrackServices();
+        if (sharedTracks.activeTrack() != track &&
+            !sharedTracks.setState(sharedTracks.enabledMask(), track)) {
+            return false;
+        }
+        if (sharedTracks.activeTrack() != track) return false;
+    }
+
+    track_ui_.syncPreviewTrack(track);
+    track_ui_.previewAddSlot.set(!enabled);
+    navigation_focus_.set(core::state::StructureNavigationFocus::TRACK);
+    return true;
 }
 
 FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {

@@ -1,0 +1,42 @@
+# UX workflow: Pattern Editor layer context remains musically readable.
+# Purpose: proves that Region and CC are overlays on the authored note shape,
+# not replacement screens, while the focused layer still follows the shared
+# held-modifier navigation grammar.
+# Expect: capture_changed:cc_layer_context=region_layer_context
+# Expect: semantic:cc_layer_context:effect=select_pattern_layer, semantic:region_layer_context:effect=select_pattern_layer
+
+0 scenario sequencer
+
+# Author a compact four-note phrase, then return to Pattern scope.
+100 button NAV down
+160 encoder NAV 0.01
+220 button NAV up
+340 tap MACRO_1 60
+440 tap MACRO_2 60
+540 tap MACRO_3 60
+640 tap MACRO_4 60
+760 button NAV down
+820 encoder NAV -0.01
+880 button NAV up
+
+# Create the first CC lane through the existing property selector, author one
+# value, and return without introducing a second creation path.
+1000 button LEFT_BOTTOM down
+1080 encoder NAV 0.01
+1160 encoder NAV 0.01
+1240 encoder NAV 0.01
+1320 encoder NAV 0.01
+1400 button LEFT_BOTTOM up
+1580 tap NAV 60
+1740 tap LEFT_TOP 60
+
+# Open the retained Pattern Editor. The first positive layer step selects CC1;
+# the preceding negative step from Notes wraps to Region.
+1940 tap NAV 60
+2140 button LEFT_BOTTOM down
+2220 encoder NAV 0.01
+2380 capture screen cc_layer_context
+2460 encoder NAV -0.01
+2540 encoder NAV -0.01
+2700 capture screen region_layer_context
+2780 button LEFT_BOTTOM up

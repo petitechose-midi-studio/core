@@ -16,15 +16,15 @@
 
 # Enter the empty first-rank Modulators view from Project Settings.
 100 button LEFT_TOP down
-700 encoder NAV -1
+700 encoder NAV -0.01
 1100 button LEFT_TOP up
 1320 capture screen empty_registry
 
 # Add Source > Recorded Shape creates one durable, unassigned source and opens
 # its complete editor directly on Record.
 1440 tap NAV 60
-1660 encoder NAV 1
-1740 encoder NAV 1
+1660 encoder NAV 0.01
+1740 encoder NAV 0.01
 1880 capture screen recorded_shape_picker
 2000 tap NAV 60
 2240 capture screen shape_ready
@@ -53,6 +53,6 @@
 
 # Length remains the next direct card; six beats time-stretches the same
 # Project source through one history action.
-5240 encoder NAV 1
+5240 encoder NAV 0.01
 5360 encoder OPT 0.111111
 5640 capture screen shape_length_6_beats

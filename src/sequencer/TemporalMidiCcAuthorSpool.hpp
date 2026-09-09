@@ -124,16 +124,16 @@ public:
     [[nodiscard]] bool commitDue();
     [[nodiscard]] bool rollbackDue();
 
-    /** Cold O(capacity + author slots); zero while a transaction is active. */
+    /** O(queued transitions); zero while a transaction is active. */
     size_t cancelTrack(uint8_t trackIndex);
     /**
-     * Cold O(capacity + 64), one-pass cancellation for a set of Lane authors.
+     * O(queued transitions), one-pass cancellation for a set of Lane authors.
      * Bit N addresses Sequencer Lane stable address N. This is the lifecycle
      * restore/paste path: a frame may replace all 64 generations at once and
      * must not rebuild the 8,192-node heap once per Lane.
      */
     size_t cancelLaneAuthors(uint64_t laneAuthorMask);
-    /** Cold O(capacity + author slots); used by the transport Lane boundary. */
+    /** O(queued transitions); used by the transport Lane boundary. */
     size_t cancelCandidateClass(
         core::state::shared::MidiCcCandidateClass candidateClass
     );
@@ -184,6 +184,8 @@ private:
     void linkAuthorTail_(uint16_t nodeIndex);
     void unlinkAuthorNode_(uint16_t nodeIndex);
     void restoreReservedNode_(uint16_t nodeIndex);
+    template <typename Predicate>
+    size_t cancelAuthorsIf_(Predicate matches);
     void heapPushNoFail_(uint16_t nodeIndex);
     uint16_t heapPopMinNoFail_();
     void siftUp_(size_t heapPosition);

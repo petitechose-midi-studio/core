@@ -1,9 +1,8 @@
 #include "ui/common/CompactMetricRow.hpp"
 
-#include <cstring>
-
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -17,12 +16,9 @@ FLASHMEM void setMetricText(
     std::array<char, N>& cache,
     const char* text
 ) {
-    if (!label) return;
-    const char* next = text ? text : "";
-    if (std::strncmp(cache.data(), next, N) == 0) return;
-    std::strncpy(cache.data(), next, N - 1U);
-    cache[N - 1U] = '\0';
-    lv_label_set_text_static(label, cache.data());
+    if (label && ms::ui::text::copyTruncatedIfChanged(cache.data(), N, text)) {
+        lv_label_set_text_static(label, cache.data());
+    }
 }
 
 }  // namespace

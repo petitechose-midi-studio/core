@@ -1,0 +1,21 @@
+# RAM-only: play Clips, perform in Macros, then return to the running matrix.
+# No content edits or SD writes; the retained matrix must stay idle offscreen.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_mode sequencer.clip_launcher
+1200 marker clips_playing
+2500 button LEFT_TOP down
+2700 encoder_value NAV -0.010
+2900 button LEFT_TOP up
+3300 assert_view MACRO
+3500 marker hidden_clips
+6500 button LEFT_TOP down
+6700 encoder_value NAV 0.010
+6900 button LEFT_TOP up
+7300 assert_mode sequencer.clip_launcher
+7500 marker clips_return
+9500 transport stop
+9700 marker done

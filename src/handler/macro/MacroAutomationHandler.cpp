@@ -97,7 +97,7 @@ FLASHMEM menu::MacroModulationRows modulationRows(
         .macro = macroIndex,
     });
     return menu::buildMacroModulationRows(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         destination
     );
 }
@@ -108,7 +108,7 @@ FLASHMEM menu::MacroModulationRowDescriptor modulationRowAt(
     int row
 ) {
     return menu::macroModulationRowAt(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         rows,
         row
     );
@@ -121,7 +121,7 @@ bindingAtModulationRow(
     int row
 ) {
     return menu::macroModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         modulationRowAt(pages, rows, row)
     );
 }
@@ -257,7 +257,7 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
     services_.endDepthGesture();
     if (modulatorPickerActive()) {
         const int count = static_cast<int>(
-            pages_.control.authored.modulation.sourceCount
+            pages_.control.authored().modulation.sourceCount
         );
         if (count <= 0) return;
         const int current = macro_edit_.modulatorPickerIndex.get();
@@ -324,13 +324,13 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
             return;
         }
         const auto* binding = menu::macroModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             row
         );
         if (binding == nullptr) return;
         const auto scale = depth_parameter::scaleFor(
-            pages_.control.authored.modulation,
-            pages_.control.authored.curves,
+            pages_.control.authored().modulation,
+            pages_.control.authored().curves,
             *binding
         );
         const int16_t amount = depth_parameter::amountQ15AtNormalized(
@@ -401,14 +401,14 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
             return;
         }
         const auto* binding = menu::macroModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             row
         );
         if (binding != nullptr) {
             (void)services_.focusModulationBinding(macroIndex(), binding->id);
             const auto scale = depth_parameter::scaleFor(
-                pages_.control.authored.modulation,
-                pages_.control.authored.curves,
+                pages_.control.authored().modulation,
+                pages_.control.authored().curves,
                 *binding
             );
             position =
@@ -518,7 +518,7 @@ FLASHMEM void MacroAutomationHandler::toggleFocusedPlayback() {
             );
         } else {
             const auto* binding = menu::macroModulationBinding(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 descriptor
             );
             if (binding != nullptr) {
@@ -580,7 +580,7 @@ FLASHMEM void MacroAutomationHandler::beginBottomLeftAction() {
         } else if (descriptor.kind ==
                    menu::MacroModulationRowKind::ASSIGNMENT) {
             const auto* binding = menu::macroModulationBinding(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 descriptor
             );
             if (binding != nullptr) {
@@ -656,7 +656,7 @@ FLASHMEM void MacroAutomationHandler::beginBottomRightAction() {
             if (pasteContext && descriptor.kind ==
                     menu::MacroModulationRowKind::ASSIGNMENT) {
                 const auto* binding = menu::macroModulationBinding(
-                    pages_.control.authored.modulation,
+                    pages_.control.authored().modulation,
                     descriptor
                 );
                 if (binding == nullptr) {
@@ -771,7 +771,7 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
         if (descriptor.kind != menu::MacroModulationRowKind::ASSIGNMENT ||
             descriptor.bindingId != macro_edit_.guardedModulationBinding ||
             menu::macroModulationBinding(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 descriptor
             ) == nullptr) {
             complete(false);
@@ -804,7 +804,7 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
         const int row = macro_edit_.modulationFocusedRow.get();
         const auto selectedRow = modulationRowAt(pages_, beforeRows, row);
         const auto* selected = menu::macroModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             selectedRow
         );
         auto nextRow = modulationRowAt(pages_, beforeRows, row + 1);
@@ -812,7 +812,7 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
             nextRow = modulationRowAt(pages_, beforeRows, row - 1);
         }
         const auto* next = menu::macroModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             nextRow
         );
         const auto nextId = next != nullptr
@@ -828,7 +828,7 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
                 (void)services_.focusModulationBinding(index, nextId);
                 macro_edit_.modulationFocusedRow.set(static_cast<uint8_t>(
                     menu::macroModulationRowForBinding(
-                        pages_.control.authored.modulation,
+                        pages_.control.authored().modulation,
                         afterRows,
                         nextId
                     )
@@ -861,7 +861,7 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
                         macro_edit_.modulationFocusedRow.set(
                             static_cast<uint8_t>(
                                 menu::macroModulationRowForBinding(
-                                    pages_.control.authored.modulation,
+                                    pages_.control.authored().modulation,
                                     rows,
                                     focused
                                 )
@@ -970,7 +970,7 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
             const int row = macro_edit_.modulationFocusedRow.get();
             const auto descriptor = modulationRowAt(pages_, rows, row);
             const auto* binding = menu::macroModulationBinding(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 descriptor
             );
             if (binding != nullptr) {
@@ -1140,7 +1140,7 @@ FLASHMEM bool MacroAutomationHandler::startAdsrAudition() {
 
 FLASHMEM bool MacroAutomationHandler::openModulatorPicker() {
     const int count = static_cast<int>(
-        pages_.control.authored.modulation.sourceCount
+        pages_.control.authored().modulation.sourceCount
     );
     if (count <= 0) return false;
     const int selected = std::clamp(
@@ -1155,7 +1155,7 @@ FLASHMEM bool MacroAutomationHandler::openModulatorPicker() {
 
 FLASHMEM bool MacroAutomationHandler::startExistingModulatorAudition() {
     if (!modulatorPickerActive()) return false;
-    const auto& graph = pages_.control.authored.modulation;
+    const auto& graph = pages_.control.authored().modulation;
     const int selected = macro_edit_.modulatorPickerIndex.get();
     if (selected < 0 || selected >= static_cast<int>(graph.sourceCount)) {
         return false;

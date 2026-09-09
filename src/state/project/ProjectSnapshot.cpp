@@ -124,6 +124,7 @@ FLASHMEM bool ProjectSnapshotCapture::begin_(const core::state::CoreState& state
         .authoredRevision = state.pages.control.authoredRevision,
         .projectTrackRevision = state.projectTracks.revision.get(),
         .drumRevision = state.sequencerTracks.drumRevisionSignal().get(),
+        .clipRevision = state.sequencerClips.revision(),
     };
     frozen_active_track_ = state.sequencerTracks.activeTrackIndex();
     frozen_drum_track_mask_ = static_cast<uint16_t>(
@@ -143,6 +144,25 @@ FLASHMEM bool ProjectSnapshotCapture::begin_(const core::state::CoreState& state
     } else {
         snapshot.drumTracks.reset();
     }
+    snapshot.clips.reset();
+    for (uint8_t track = 0U;
+         track < core::state::sequencer::SequencerClipGridState::TRACK_COUNT;
+         ++track) {
+        snapshot.clips.residentSlots[track] =
+            state.sequencerClips.residentSlot(track);
+    }
+    for (uint16_t index = 0U;
+         index < core::state::sequencer::SequencerClipGridState::CELL_COUNT;
+         ++index) {
+        snapshot.clips.generations[index] = state.sequencerClips.generation({
+            static_cast<uint8_t>(
+                index / core::state::sequencer::SequencerClipGridState::SLOT_COUNT
+            ),
+            static_cast<uint8_t>(
+                index % core::state::sequencer::SequencerClipGridState::SLOT_COUNT
+            ),
+        });
+    }
     frozen_focused_step_ = state.sequencer.focusedStep.get();
     frozen_active_step_property_ = state.sequencer.activeStepProperty.get();
     if (!core::state::sequencer::reserveHistoryTrackBankSnapshotStorage(
@@ -156,6 +176,7 @@ FLASHMEM bool ProjectSnapshotCapture::begin_(const core::state::CoreState& state
         state.projectTracks.revision.get() != guard_.projectTrackRevision ||
         state.sequencerTracks.drumRevisionSignal().get() !=
             guard_.drumRevision ||
+        state.sequencerClips.revision() != guard_.clipRevision ||
         state.sequencerTracks.activeTrackIndex() != frozen_active_track_) {
         cancel();
         return false;
@@ -217,7 +238,7 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
             std::memcpy(
                 reinterpret_cast<uint8_t*>(snapshot_->projectControl.get()) +
                     automation_offset_,
-                reinterpret_cast<const uint8_t*>(&state_->pages.control.authored) +
+                reinterpret_cast<const uint8_t*>(&state_->pages.control.authored()) +
                     automation_offset_,
                 workBytes
             );
@@ -294,11 +315,58 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
                 }
                 // Conservative accounting for the small bank/focus metadata.
                 workBytes += 64U;
-                phase_ = Phase::COMPLETE;
+                phase_ = Phase::SEQUENCER_CLIPS;
             } else {
                 phase_ = Phase::SEQUENCER_GRAPH;
             }
             break;
+
+        case Phase::SEQUENCER_CLIPS: {
+            while (sequencer_clip_cell_ <
+                   core::state::sequencer::SequencerClipGridState::CELL_COUNT) {
+                const uint16_t index = sequencer_clip_cell_++;
+                const core::state::sequencer::SequencerClipAddress address{
+                    static_cast<uint8_t>(
+                        index /
+                        core::state::sequencer::SequencerClipGridState::SLOT_COUNT
+                    ),
+                    static_cast<uint8_t>(
+                        index %
+                        core::state::sequencer::SequencerClipGridState::SLOT_COUNT
+                    ),
+                };
+                const auto* document =
+                    state_->sequencerClips.inactiveDocument(address);
+                if (document == nullptr) continue;
+                if (!core::state::sequencer::cloneSequencerClipDocument(
+                        *document,
+                        snapshot_->clips.documents[index]
+                    )) {
+                    const uint32_t modifiedCounter = guard_.token.modifiedCounter;
+                    cancel();
+                    return {
+                        .status = Status::FAILED,
+                        .modifiedCounter = modifiedCounter,
+                    };
+                }
+                workBytes = sizeof(*document);
+                if (document->graph != nullptr) {
+                    workBytes += sizeof(*document->graph);
+                }
+                if (document->ccLanes != nullptr) {
+                    workBytes += sizeof(*document->ccLanes);
+                }
+                if (document->drum != nullptr) {
+                    workBytes += sizeof(*document->drum);
+                }
+                break;
+            }
+            if (sequencer_clip_cell_ ==
+                core::state::sequencer::SequencerClipGridState::CELL_COUNT) {
+                phase_ = Phase::COMPLETE;
+            }
+            break;
+        }
 
         case Phase::COMPLETE:
         case Phase::IDLE:
@@ -335,6 +403,7 @@ FLASHMEM void ProjectSnapshotCapture::cancel() {
     automation_offset_ = 0U;
     macro_track_ = 0U;
     sequencer_track_ = 0U;
+    sequencer_clip_cell_ = 0U;
     frozen_active_track_ = 0U;
     frozen_drum_track_mask_ = 0U;
     frozen_focused_step_ = 0U;
@@ -356,7 +425,8 @@ FLASHMEM const ProjectCaptureGuard* ProjectSnapshotCapture::guard() const {
 FLASHMEM ProjectSnapshotCapture::SliceKind
 ProjectSnapshotCapture::nextSliceKind() const {
     return phase_ == Phase::SEQUENCER_GRAPH ||
-                   phase_ == Phase::SEQUENCER_DATA
+                   phase_ == Phase::SEQUENCER_DATA ||
+                   phase_ == Phase::SEQUENCER_CLIPS
         ? SliceKind::SEQUENCER
         : SliceKind::SMALL;
 }
@@ -369,6 +439,7 @@ FLASHMEM bool ProjectSnapshotCapture::guardMatches_() const {
            state_->projectTracks.revision.get() == guard_.projectTrackRevision &&
            state_->sequencerTracks.drumRevisionSignal().get() ==
                guard_.drumRevision &&
+           state_->sequencerClips.revision() == guard_.clipRevision &&
            state_->sequencerTracks.activeTrackIndex() == frozen_active_track_;
 }
 
@@ -418,6 +489,10 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         );
         return false;
     }
+    const uint16_t snapshotDrumMask = snapshot.drumTracks != nullptr
+        ? snapshot.drumTracks->drumTrackMask
+        : 0U;
+    core::state::sequencer::SequencerClipGridSnapshot preparedClips;
     if (state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) ||
         state.projectTrackHistory.hasPendingGesture() ||
         !snapshot.projectControl ||
@@ -429,6 +504,15 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
             snapshot.projectControl->modulation,
             snapshot.projectControl->curves,
             &snapshot.projectControl->automation
+        ) ||
+        !core::state::sequencer::validSequencerClipGridSnapshot(
+            snapshot.clips,
+            snapshot.sequencer.flat.enabledMask,
+            snapshotDrumMask
+        ) ||
+        !core::state::sequencer::cloneSequencerClipGridSnapshot(
+            snapshot.clips,
+            preparedClips
         )) {
         return false;
     }
@@ -449,6 +533,13 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     } else {
         state.sequencerTracks.clearDrumTrackBank();
     }
+    if (!core::state::sequencer::restoreSequencerClipGridSnapshot(
+            state.sequencerClips,
+            std::move(preparedClips),
+            state.sequencerTracks.currentEnabledMask()
+        )) {
+        return false;
+    }
 
     state.project = snapshot.project;
     applyProjectTransport(state, state.project.transport);
@@ -460,7 +551,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         snapshot.sharedTrackEnabledMask,
         snapshot.sharedTrackActive
     );
-    state.pages.control.authored = *snapshot.projectControl;
+    state.pages.control.authored() = *snapshot.projectControl;
     state.pages.control.plan = {};
     state.pages.control.runtime = {};
     state.pages.control.timeTelemetry = {};
@@ -487,7 +578,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     if (!state.clearProjectHistory()) return false;
     core::state::project::reconcileProjectModulatorNavigationAfterHistory(
         state.projectNavigation,
-        state.pages.control.authored.modulation,
+        state.pages.control.authored().modulation,
         false
     );
     // Manual is Project-scoped runtime intent: it survives navigation and UI

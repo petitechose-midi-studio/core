@@ -127,7 +127,7 @@ FLASHMEM bool openSourceFromMacro(
         .macro = macroIndex,
     };
     const auto destination = projectControlDestination(address);
-    const auto& graph = state.pages.control.authored.modulation;
+    const auto& graph = state.pages.control.authored().modulation;
     const auto* binding = findProjectModulationBinding(graph, bindingId);
     if (binding == nullptr || binding->destination != destination) return false;
     const auto* source = findProjectModulator(graph, binding->sourceId);
@@ -182,7 +182,7 @@ FLASHMEM bool openAuditionSourceFromMacro(StateRefs state, uint8_t macroIndex) {
     };
     const auto& audition = state.pages.control.audition;
     const auto destination = projectControlDestination(address);
-    const auto& graph = state.pages.control.authored.modulation;
+    const auto& graph = state.pages.control.authored().modulation;
     const auto session = resolveProjectModulatorSourceSession(
         state.pages.control,
         audition.sourceId
@@ -310,7 +310,7 @@ FLASHMEM bool returnToMacro(StateRefs state, uint32_t nowMs) {
         returnContext.macroAddress
     );
     const auto destination = projectControlDestination(currentAddress);
-    auto& graph = state.pages.control.authored.modulation;
+    auto& graph = state.pages.control.authored().modulation;
     const auto* source = findProjectModulator(graph, returnContext.sourceId);
     const auto* binding = findProjectModulationBinding(
         graph,
@@ -418,7 +418,7 @@ FLASHMEM bool returnToMacroFromAudition(
         } else if (contextUnchanged && returnContext.target ==
                        core::state::project::
                            ModulatorMacroReturnTarget::MODULATOR_PICKER) {
-            const auto& graph = state.pages.control.authored.modulation;
+            const auto& graph = state.pages.control.authored().modulation;
             int selected = -1;
             for (uint16_t index = 0U; index < graph.sourceCount; ++index) {
                 if (graph.sources[index].id == returnContext.sourceId) {

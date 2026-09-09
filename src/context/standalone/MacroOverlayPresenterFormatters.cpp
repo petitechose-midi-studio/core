@@ -67,8 +67,8 @@ FLASHMEM int bindingDepthPercent(
     return depth_parameter::amountQ15ToPercent(
         binding.amountQ15,
         depth_parameter::scaleFor(
-            control.authored.modulation,
-            control.authored.curves,
+            control.authored().modulation,
+            control.authored().curves,
             binding
         )
     );
@@ -170,7 +170,7 @@ FLASHMEM void provideModulatorPickerRow(
 ) {
     auto* source = static_cast<Source*>(context);
     if (source == nullptr || index < 0) return;
-    const auto& graph = source->pages.control.authored.modulation;
+    const auto& graph = source->pages.control.authored().modulation;
     if (index >= static_cast<int>(graph.sourceCount)) return;
     const auto& modulator = graph.sources[static_cast<uint16_t>(index)];
     const auto address = core::state::macro::MacroAutomationSlotAddress{
@@ -247,7 +247,7 @@ FLASHMEM void provideModulationAssignmentRow(
     };
     const auto destination =
         core::state::modulation::projectControlDestination(address);
-    const auto& graph = source->pages.control.authored.modulation;
+    const auto& graph = source->pages.control.authored().modulation;
     const auto rows = menu::buildMacroModulationRows(graph, destination);
     uint16_t enabledCount = 0;
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
@@ -399,7 +399,7 @@ FLASHMEM uint32_t macroModulationGeometryRevision(
     const auto& control = *preview.control;
     const auto destination = core::state::modulation::
         projectControlDestination(preview.address);
-    const auto& graph = control.authored.modulation;
+    const auto& graph = control.authored().modulation;
     uint32_t revision = mixRevision(
         0x4D4F4455UL,
         static_cast<uint32_t>(

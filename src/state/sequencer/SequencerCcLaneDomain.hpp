@@ -231,12 +231,6 @@ SequencerCcLaneMutationResult deleteSequencerCcLane(
 
 /** Bulk Pattern transformations. Each operation bumps bank.revision at most once. */
 bool trimSequencerCcLaneBank(SequencerCcLaneBank& bank, uint8_t contentLength);
-bool duplicateSequencerCcLaneBankRange(
-    SequencerCcLaneBank& bank,
-    uint8_t sourceStart,
-    uint8_t targetStart,
-    uint8_t count
-);
 bool rotateSequencerCcLaneBank(
     SequencerCcLaneBank& bank,
     uint8_t contentLength,

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "../../src/config/InputIDs.hpp"
@@ -138,6 +139,29 @@ public:
     mutable int calls = 0;
 };
 
+class TransitioningCancelProvider : public core::validation::ux::SemanticUxContextProvider {
+public:
+    void captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent&,
+        core::validation::ux::SemanticUxContext& out
+    ) const override {
+        ++calls;
+        const bool cancelling = calls == 1;
+        out.intent = cancelling
+            ? core::state::interaction::ControllerIntent::CANCEL
+            : core::state::interaction::ControllerIntent::NONE;
+        out.mode = cancelling
+            ? "sequencer.pattern_preset.preview"
+            : "sequencer.pattern";
+        out.effect = cancelling
+            ? "cancel_pattern_preset_preview"
+            : "browse_pattern";
+        out.outcome = cancelling ? "cancelled" : "applied";
+    }
+
+    mutable int calls = 0;
+};
+
 oc::core::input::InputBindingTraceEvent dispatchedButton() {
     oc::core::input::InputBindingTraceEvent event{};
     event.stage = oc::core::input::InputBindingTraceStage::Dispatch;
@@ -191,7 +215,7 @@ oc::core::input::InputBindingTraceEvent inputEncoder() {
 
 core::validation::ux::SemanticUxSnapshot sequencerSnapshot() {
     return core::validation::ux::SemanticUxSnapshot{
-        .view = core::ui::ViewType::SEQUENCER,
+        .view = core::ui::ViewType::CLIPS,
         .overlay = core::ui::OverlayType::SEQ_STEP_EDIT,
         .playing = true,
         .playheadStep = 5,
@@ -308,7 +332,7 @@ void test_writes_button_semantics_with_snapshot() {
     assert(contains(sink.lines[0], "\"button\":\"MACRO_1\""));
     assert(contains(sink.lines[0], "\"pre_view\":\"macro\""));
     assert(contains(sink.lines[0], "\"pre_overlay\":\"none\""));
-    assert(contains(sink.lines[0], "\"view\":\"sequencer\""));
+    assert(contains(sink.lines[0], "\"view\":\"clips\""));
     assert(contains(sink.lines[0], "\"overlay\":\"seq_step_edit\""));
     assert(contains(sink.lines[0], "\"playing\":1"));
     assert(contains(sink.lines[0], "\"playhead\":5"));
@@ -495,7 +519,7 @@ void test_associates_capture_with_live_surface_context() {
     assert(contains(capture, "\"label\":\"cc_lane_live\""));
     assert(contains(capture, "\"surface_context\":true"));
     assert(contains(capture, "\"source_seq\":1"));
-    assert(contains(capture, "\"view\":\"sequencer\""));
+    assert(contains(capture, "\"view\":\"clips\""));
     assert(contains(capture, "\"playing\":true"));
     assert(contains(capture, "\"mode\":\"sequencer.step_grid\""));
     assert(contains(capture, "\"projection\":\"live\""));
@@ -505,6 +529,64 @@ void test_associates_capture_with_live_surface_context() {
     assert(contains(capture, "\"resolved_value\":96"));
     assert(provider.calls == 3);
     std::cout << "[PASS] test_associates_capture_with_live_surface_context\n";
+}
+
+void test_queued_properties_own_their_captured_text() {
+    class Provider : public core::validation::ux::SemanticUxContextProvider {
+    public:
+        void captureSemanticUxContext(
+            const oc::core::input::InputBindingTraceEvent&,
+            core::validation::ux::SemanticUxContext& out
+        ) const override {
+            out.mode = "macro.edit.modulation";
+            out.property = label;
+        }
+
+        char label[32] = "Record new shape";
+    } provider;
+
+    CapturingSink sink;
+    core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
+    core::validation::ux::setCurrentSemanticUxContextProvider(&provider);
+    recorder.onBindingTrace(dispatchedEncoder());
+    std::snprintf(provider.label, sizeof(provider.label), "%s", "Source depth");
+    recorder.onBindingTrace(dispatchedEncoder());
+    std::snprintf(provider.label, sizeof(provider.label), "%s", "Playback");
+    recorder.flush(2000, sequencerSnapshot());
+    core::validation::ux::clearCurrentSemanticUxContextProvider(&provider);
+
+    assert(sink.lines.size() == 2);
+    assert(contains(sink.lines[0], "\"pre_property\":\"Record new shape\""));
+    assert(contains(sink.lines[1], "\"pre_property\":\"Source depth\""));
+    assert(contains(sink.lines[0], "\"property\":\"Playback\""));
+    assert(contains(sink.lines[1], "\"property\":\"Playback\""));
+    std::cout << "[PASS] queued properties retain their own pre-dispatch labels\n";
+}
+
+void test_property_label_bounds_and_copy() {
+    using core::validation::ux::SemanticUxProperty;
+    static_assert(std::is_trivially_copyable_v<SemanticUxProperty>);
+    static_assert(sizeof(SemanticUxProperty) == 32);
+
+    SemanticUxProperty property;
+    assert(property == nullptr);
+    const std::string longest(31, 'x');
+    property = longest.c_str();
+    const auto copy = property;
+    property = nullptr;
+    assert(property == nullptr);
+    assert(std::strcmp(copy, longest.c_str()) == 0);
+
+    // The last UTF-8 glyph would straddle the fixed buffer's terminator.
+    const std::string oversized = std::string(30, 'x') + "\xc3\xa9";
+    property = oversized.c_str();
+    assert(property == nullptr);
+    property = "Velocit\xc3\xa9";
+    property = static_cast<const char*>(property);
+    assert(std::strcmp(property, "Velocit\xc3\xa9") == 0);
+    property = "";
+    assert(property == nullptr);
+    std::cout << "[PASS] property copies own complete, bounded UTF-8 labels\n";
 }
 
 void test_capture_keeps_causal_effect_with_live_surface_state() {
@@ -534,6 +616,29 @@ void test_capture_keeps_causal_effect_with_live_surface_state() {
     assert(!contains(capture, "\"intent\":\"enter_selection\""));
     assert(provider.calls == 3);
     std::cout << "[PASS] test_capture_keeps_causal_effect_with_live_surface_state\n";
+}
+
+void test_capture_keeps_terminal_cancel_outcome_after_surface_exit() {
+    CapturingSink sink;
+    TransitioningCancelProvider provider;
+    core::validation::ux::setCurrentSemanticUxContextProvider(&provider);
+    core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
+
+    recorder.onBindingTrace(dispatchedButton());
+    recorder.flush(2000, sequencerSnapshot());
+    recorder.capture(2100, "preset_cancelled", sequencerSnapshot());
+    core::validation::ux::clearCurrentSemanticUxContextProvider(&provider);
+
+    assert(sink.lines.size() == 2);
+    const auto& capture = sink.lines[1];
+    assert(contains(capture, "\"intent\":\"cancel\""));
+    assert(contains(capture, "\"mode\":\"sequencer.pattern\""));
+    assert(contains(capture, "\"effect\":\"cancel_pattern_preset_preview\""));
+    assert(contains(capture, "\"outcome\":\"cancelled\""));
+    assert(!contains(capture, "\"outcome\":\"applied\""));
+    assert(provider.calls == 3);
+    std::cout
+        << "[PASS] terminal cancel outcome survives the post-cancel surface\n";
 }
 
 void test_capture_context_reset_prevents_cross_scenario_claims() {
@@ -657,7 +762,10 @@ int main() {
     test_non_finite_and_oversized_encoder_values_are_serialized_safely();
     test_writes_native_context_provider_fields();
     test_associates_capture_with_live_surface_context();
+    test_queued_properties_own_their_captured_text();
+    test_property_label_bounds_and_copy();
     test_capture_keeps_causal_effect_with_live_surface_state();
+    test_capture_keeps_terminal_cancel_outcome_after_surface_exit();
     test_capture_context_reset_prevents_cross_scenario_claims();
     test_explicit_state_projection_capture_has_no_binding_source();
     test_reports_dropped_records();

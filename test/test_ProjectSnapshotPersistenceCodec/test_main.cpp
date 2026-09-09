@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -17,6 +18,7 @@
 #include "state/project/ProjectSnapshot.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace {
@@ -91,6 +93,17 @@ project::ProjectSnapshot makeSnapshot() {
 
     snapshot.sequencer.flat.enabledMask = snapshot.sharedTrackEnabledMask;
     snapshot.sequencer.flat.activeTrack = snapshot.sharedTrackActive;
+    for (uint8_t track = 0U;
+         track < sequencer::SequencerClipGridState::TRACK_COUNT;
+         ++track) {
+        if ((snapshot.sharedTrackEnabledMask & static_cast<uint16_t>(1U << track)) != 0U) {
+            snapshot.clips.residentSlots[track] = 0U;
+        }
+    }
+    // Enabled routing and Clip occupancy are independent: Track 12 is an
+    // intentionally empty launcher column and must survive persistence.
+    snapshot.clips.residentSlots[12U] =
+        sequencer::SequencerClipGridState::INVALID_SLOT;
     snapshot.sequencer.flat.tracks[6].note[0] = 64U;
     snapshot.sequencer.flat.tracks[6].velocity[0] = 103U;
     snapshot.drumTracks = core::app::makeExtmemUnique<
@@ -106,16 +119,16 @@ project::ProjectSnapshot makeSnapshot() {
     // One Drum hit owns Graph root slot 0. Persist a nested Micro -> Cycle
     // payload so the Project round-trip covers both the cold lane mapping and
     // the Graph owned by the active sequencer Track.
-    sequencer::SequencerState advanced{};
+    core::state::sequencer::SequencerDetachedEditor advanced;
     assert(advanced.setStepDataAt(0U, 64U, 103U, 100U, 0, 100U));
     const auto root = sequencer::rootStepNodeId(0U);
     const auto micro = sequencer::createMicroSequence(
-        advanced.pattern,
+        advanced.pattern(),
         root,
         3U
     );
     assert(micro.ok);
-    const auto* graph = sequencer::graphView(advanced.pattern);
+    const auto* graph = sequencer::graphView(advanced.pattern());
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
@@ -123,17 +136,17 @@ project::ProjectSnapshot makeSnapshot() {
         sequence->firstStepNode + 1U
     );
     assert(sequencer::setNodeVelocityOffset(
-        advanced.pattern,
+        advanced.pattern(),
         microNode,
         -23
     ));
     const auto cycle = sequencer::createCycleStateSet(
-        advanced.pattern,
+        advanced.pattern(),
         microNode,
         2U
     );
     assert(cycle.ok);
-    graph = sequencer::graphView(advanced.pattern);
+    graph = sequencer::graphView(advanced.pattern());
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr);
@@ -141,16 +154,70 @@ project::ProjectSnapshot makeSnapshot() {
         cycleSet->firstStateNode + 1U
     );
     assert(sequencer::setNodeGateOffset(
-        advanced.pattern,
+        advanced.pattern(),
         cycleNode,
         17
     ));
     assert(drum.bindAdvancedRootSlot(0U, 1U, 3U));
     sequencer::captureSnapshot(
-        advanced.pattern,
+        advanced.pattern(),
         snapshot.sequencer.flat.tracks[6U]
     );
-    snapshot.sequencer.editorGraph = std::move(advanced.pattern.graph);
+    snapshot.sequencer.bankGraphs[snapshot.sequencer.flat.activeTrack] = std::move(advanced.pattern().graph);
+
+    sequencer::SequencerPatternState inactiveInstrument{};
+    inactiveInstrument.reset();
+    assert(inactiveInstrument.setStepNoteAt(0U, 71U));
+    inactiveInstrument.setEnabled(0U, true);
+    assert(sequencer::createMicroSequence(
+        inactiveInstrument,
+        sequencer::rootStepNodeId(0U),
+        2U
+    ).ok);
+    sequencer::SequencerClipState inactiveInstrumentClip{};
+    sequencer::SequencerClipDocumentPtr inactiveInstrumentDocument;
+    assert(sequencer::captureSequencerClipDocument(
+        inactiveInstrument,
+        inactiveInstrumentClip,
+        sequencer::SequencerTrackKind::INSTRUMENT,
+        nullptr,
+        inactiveInstrumentDocument
+    ));
+    snapshot.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ] = std::move(inactiveInstrumentDocument);
+
+    sequencer::SequencerPatternState inactiveDrumPattern{};
+    inactiveDrumPattern.reset();
+    sequencer::DrumTrackState inactiveDrum{};
+    inactiveDrum.reset();
+    assert(inactiveDrum.pattern.setStepEnabled(0U, 2U, true));
+    assert(inactiveDrum.pattern.setStepVelocity(0U, 2U, 117U));
+    sequencer::SequencerClipState inactiveDrumClip{};
+    sequencer::SequencerClipDocumentPtr inactiveDrumDocument;
+    assert(sequencer::captureSequencerClipDocument(
+        inactiveDrumPattern,
+        inactiveDrumClip,
+        sequencer::SequencerTrackKind::DRUM,
+        &inactiveDrum,
+        inactiveDrumDocument
+    ));
+    snapshot.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({6U, 2U})
+    ] = std::move(inactiveDrumDocument);
+    snapshot.clips.stopMasks[3U] = static_cast<uint16_t>(1U << 6U);
+    snapshot.clips.clipBehaviors[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ] = {
+        .length = 2U,
+        .follow = sequencer::sequencerLauncherFollowTarget(2U),
+        .quantization = sequencer::SequencerLauncherFollowQuantization::BEAT,
+    };
+    snapshot.clips.sceneBehaviors[1U] = {
+        .length = 4U,
+        .follow = sequencer::sequencerLauncherFollowTarget(2U),
+        .quantization = sequencer::SequencerLauncherFollowQuantization::BAR,
+    };
     return snapshot;
 }
 
@@ -295,36 +362,61 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     assert(loaded.drumTracks->tracks[6U].pattern.lanes[1U].velocity[3U] == 111U);
     assert(loaded.drumTracks->tracks[6U].pattern.effectiveLength(1U) == 7U);
     assert(loaded.drumTracks->tracks[6U].advancedRootSlot(1U, 3U) == 0);
-    assert(loaded.sequencer.editorGraph);
-    const auto* rootNode = loaded.sequencer.editorGraph->stepNode(
+    assert(loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]);
+    const auto* rootNode = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->stepNode(
         sequencer::rootStepNodeId(0U)
     );
     assert(rootNode != nullptr);
-    const auto* microSequence = loaded.sequencer.editorGraph->sequence(
+    const auto* microSequence = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->sequence(
         rootNode->childSequenceId
     );
     assert(microSequence != nullptr);
     assert(microSequence->length == 3U);
-    const auto* microNode = loaded.sequencer.editorGraph->stepNode(
+    const auto* microNode = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->stepNode(
         static_cast<sequencer::SequencerGraphNodeId>(
             microSequence->firstStepNode + 1U
         )
     );
     assert(microNode != nullptr);
     assert(microNode->velocityOffset == -23);
-    const auto* cycleSet = loaded.sequencer.editorGraph->cycleSet(
+    const auto* cycleSet = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->cycleSet(
         microNode->cycleSetId
     );
     assert(cycleSet != nullptr);
     assert(cycleSet->length == 2U);
-    const auto* cycleNode = loaded.sequencer.editorGraph->stepNode(
+    const auto* cycleNode = loaded.sequencer.bankGraphs[loaded.sequencer.flat.activeTrack]->stepNode(
         static_cast<sequencer::SequencerGraphNodeId>(
             cycleSet->firstStateNode + 1U
         )
     );
     assert(cycleNode != nullptr);
     assert(cycleNode->gateOffset == 17);
+    assert(loaded.clips.residentSlots[6U] == 0U);
+    assert(loaded.clips.residentSlots[12U] ==
+           sequencer::SequencerClipGridState::INVALID_SLOT);
+    const auto* loadedInstrumentClip = loaded.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ].get();
+    assert(loadedInstrumentClip != nullptr);
+    assert(loadedInstrumentClip->pattern.note[0U] == 71U);
+    assert(loadedInstrumentClip->graph != nullptr);
+    const auto* loadedDrumClip = loaded.clips.documents[
+        sequencer::SequencerClipGridState::cellIndex({6U, 2U})
+    ].get();
+    assert(loadedDrumClip != nullptr && loadedDrumClip->drum != nullptr);
+    assert(loadedDrumClip->drum->pattern.stepEnabled(0U, 2U));
+    assert(loadedDrumClip->drum->pattern.lanes[0U].velocity[2U] == 117U);
+    assert(loaded.clips.stopMasks[3U] == source.clips.stopMasks[3U]);
+    assert(loaded.clips.clipBehaviors[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})
+    ] == source.clips.clipBehaviors[
+        sequencer::SequencerClipGridState::cellIndex({0U, 1U})]);
+    assert(loaded.clips.sceneBehaviors[1U] == source.clips.sceneBehaviors[1U]);
     assert(sameTracks(loaded.projectTracks, source.projectTracks));
+
+    // Revisions and ownership may change across load, but authored bytes must not.
+    assert(encodeSnapshot(loaded, *second) == firstSize);
+    assert(std::equal(first->begin(), first->begin() + firstSize, second->begin()));
 
     std::cout << "[PASS] current snapshot round-trip is deterministic\n";
 }
@@ -555,12 +647,61 @@ void testStaleCurrentChunkVersionsAreRejectedStrictly() {
 
 }  // namespace
 
+void testEveryDecodeAllocationFailurePreservesOutput() {
+    auto source = makeSnapshot();
+    source.sequencer.bankCcLanes[1U] =
+        core::app::makeExtmemUnique<sequencer::SequencerCcLaneBank>();
+    assert(source.sequencer.bankCcLanes[1U]);
+    assert(sequencer::createSequencerCcLane(
+        *source.sequencer.bankCcLanes[1U], 0U, {}).changed());
+    assert(sequencer::setSequencerCcLaneEvent(
+        *source.sequencer.bankCcLanes[1U], 0U, 0U, 91U).changed());
+    auto encoded = std::make_unique<ProjectBytes>();
+    auto before = std::make_unique<ProjectBytes>();
+    auto after = std::make_unique<ProjectBytes>();
+    const auto size = encodeSnapshot(source, *encoded);
+    std::size_t attempts = 0U;
+    {
+        project::ProjectSnapshot decoded;
+        core::app::testing::ScopedExtmemAllocationFailure trace(10000U);
+        assert(snapshot_codec::decodeProjectSnapshot(encoded->data(), size, decoded).ok);
+        attempts = core::app::testing::extmemAllocationAttempt;
+        assert(attempts > 0U && attempts < 10000U);
+        assert(decoded.sequencer.bankCcLanes[1U]->lanes[0U].values[0U] == 91U);
+    }
+    auto target = makeSnapshot();
+    target.project.transport.tempoBpm = 87.0F;
+    const auto beforeSize = encodeSnapshot(target, *before);
+    const auto* graph = target.sequencer.bankGraphs[target.sequencer.flat.activeTrack].get();
+    const auto* drums = target.drumTracks.get();
+    const auto* control = target.projectControl.get();
+    const auto* clip = target.clips.documents[1U].get();
+    for (std::size_t ordinal = 1U; ordinal <= attempts; ++ordinal) {
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result = snapshot_codec::decodeProjectSnapshot(
+                encoded->data(), size, target);
+            assert(!result.ok && !result.overwriteSafe);
+            assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+        }
+        assert(target.sequencer.bankGraphs[target.sequencer.flat.activeTrack].get() == graph);
+        assert(target.drumTracks.get() == drums);
+        assert(target.projectControl.get() == control);
+        assert(target.clips.documents[1U].get() == clip);
+        assert(encodeSnapshot(target, *after) == beforeSize);
+        assert(std::equal(before->begin(), before->begin() + beforeSize, after->begin()));
+    }
+    std::cout << "[PASS] Project decode fail-1.." << attempts
+              << " preserves output bytes and owners\n";
+}
+
 int main() {
     testCurrentSnapshotRoundTripAndDeterminism();
     testMissingCurrentTrackChunkIsRejected();
     testMissingMacroAndSequencerChunksAreRejectedAtomically();
     testCurrentProjectChunkSetIsExact();
     testStaleCurrentChunkVersionsAreRejectedStrictly();
+    testEveryDecodeAllocationFailurePreservesOutput();
     std::cout << "All ProjectSnapshotPersistenceCodec tests passed\n";
     return 0;
 }

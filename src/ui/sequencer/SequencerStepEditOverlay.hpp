@@ -169,12 +169,12 @@ private:
                                   const lv_font_t* iconFont,
                                   uint32_t iconColor,
                                   const lv_font_t* valueFont);
+    static void updateChipHeight(ChipWidgets& widgets);
     void renderChip(ChipWidgets& widgets,
                     ChipRenderCache& cache,
                     const SequencerStepEditPropertyChip& chip,
                     bool selected,
-                    bool active,
-                    standalone::icons::Size iconSize);
+                    bool active);
     void renderAction(size_t index,
                       const SequencerStepEditActionChip& chip,
                       bool selected);
@@ -217,7 +217,6 @@ private:
         uint32_t valueColor = UINT32_MAX;
         int16_t iconOpa = -1;
         int16_t valueOpa = -1;
-        standalone::icons::Size iconSize = standalone::icons::Size::M;
         bool selected = false;
         bool active = false;
         bool valid = false;

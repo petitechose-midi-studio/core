@@ -40,24 +40,20 @@ FLASHMEM SequencerCcLane laneFromDraft(const SequencerCcLaneDraft& draft) {
 }  // namespace
 
 FLASHMEM SequencerCcLaneRouteResolveResult resolveSequencerCcLaneDestination(
-    const SequencerCcLane& lane,
+    const SequencerCcLaneDestination& destination,
     const SequencerCcTrackRoute& trackRoute
 ) {
     SequencerCcLaneRouteResolveResult result{};
-    if (!lane.occupied) {
-        result.status = SequencerCcLaneRouteResolveStatus::EMPTY_LANE;
-        return result;
-    }
-    if (!validSequencerCcLane(lane) || !validTrackRoute(trackRoute)) {
+    if (!validSequencerCcLaneDestination(destination) || !validTrackRoute(trackRoute)) {
         result.status = SequencerCcLaneRouteResolveStatus::INVALID_LANE;
         return result;
     }
 
     auto& identity = result.destination.identity;
-    identity.controller = lane.destination.controller;
-    if (lane.destination.routePolicy == SequencerCcLaneRoutePolicy::PINNED) {
-        identity.port = lane.destination.pinnedPort;
-        identity.channel = lane.destination.pinnedChannel;
+    identity.controller = destination.controller;
+    if (destination.routePolicy == SequencerCcLaneRoutePolicy::PINNED) {
+        identity.port = destination.pinnedPort;
+        identity.channel = destination.pinnedChannel;
         result.destination.routeValidity = MidiCcRouteValidity::VALID;
     } else {
         identity.port = trackRoute.port;
@@ -66,6 +62,15 @@ FLASHMEM SequencerCcLaneRouteResolveResult resolveSequencerCcLaneDestination(
     }
     result.status = SequencerCcLaneRouteResolveStatus::OK;
     return result;
+}
+
+FLASHMEM SequencerCcLaneRouteResolveResult resolveSequencerCcLaneDestination(
+    const SequencerCcLane& lane,
+    const SequencerCcTrackRoute& trackRoute
+) {
+    if (!lane.occupied) return {SequencerCcLaneRouteResolveStatus::EMPTY_LANE};
+    if (!validSequencerCcLane(lane)) return {};
+    return resolveSequencerCcLaneDestination(lane.destination, trackRoute);
 }
 
 FLASHMEM bool sequencerCcLaneDestinationsConflict(

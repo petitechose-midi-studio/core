@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -52,32 +53,32 @@ void resetTestRoot() {
 }
 
 void prepareSource(SequencerState& source) {
-    source.pattern.setContentLength(8);
+    source.pattern().setContentLength(8);
     source.focusedStep.set(3);
-    source.pattern.setEnabled(3, true);
+    source.pattern().setEnabled(3, true);
     assert(source.setStepDataAt(3, 66, 93, 144, -4, 82));
 
-    const auto micro = createMicroSequence(source.pattern, rootStepNodeId(3), 3);
+    const auto micro = createMicroSequence(source.pattern(), rootStepNodeId(3), 3);
     assert(micro.ok);
-    const auto* graph = graphView(source.pattern);
+    const auto* graph = graphView(source.pattern());
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const auto child = static_cast<uint16_t>(sequence->firstStepNode + 2U);
-    assert(setNodeNoteOffset(source.pattern, child, 8));
-    assert(setNodeVelocityOffset(source.pattern, child, -13));
-    assert(setNodeLocalVariationRange(source.pattern, child, StepProperty::NOTE, 4));
+    assert(setNodeNoteOffset(source.pattern(), child, 8));
+    assert(setNodeVelocityOffset(source.pattern(), child, -13));
+    assert(setNodeLocalVariationRange(source.pattern(), child, StepProperty::NOTE, 4));
 }
 
 void assertLoadedIntoTarget(const SequencerState& target) {
-    assert(target.pattern.isEnabled(6));
-    assert(target.pattern.note[6] == 66);
-    assert(target.pattern.velocity[6] == 93);
-    assert(target.pattern.gate[6] == 144);
-    assert(target.pattern.nudge[6] == -4);
-    assert(target.pattern.probability[6] == 82);
+    assert(target.pattern().isEnabled(6));
+    assert(target.pattern().note[6] == 66);
+    assert(target.pattern().velocity[6] == 93);
+    assert(target.pattern().gate[6] == 144);
+    assert(target.pattern().nudge[6] == -4);
+    assert(target.pattern().probability[6] == 82);
 
-    const auto* graph = graphView(target.pattern);
+    const auto* graph = graphView(target.pattern());
     assert(graph != nullptr);
     const auto* root = graph->stepNode(rootStepNodeId(6));
     assert(root != nullptr);
@@ -160,7 +161,7 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     ProductDirectoryCatalog catalog(productFiles);
     StepPresetFileStore store(productFiles, catalog);
 
-    SequencerState source;
+    core::state::sequencer::SequencerDetachedEditor source;
     prepareSource(source);
 
     std::array<uint8_t, StepPresetFileStore::MAX_FILE_SIZE> payload{};
@@ -205,10 +206,10 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     assert(loaded);
     assert(loadedSize == encoded.bytesWritten);
 
-    SequencerState target;
-    target.pattern.setContentLength(8);
+    core::state::sequencer::SequencerDetachedEditor target;
+    target.pattern().setContentLength(8);
     target.focusedStep.set(6);
-    target.pattern.setEnabled(6, false);
+    target.pattern().setEnabled(6, false);
     assert(target.setStepDataAt(6, 41, 11, 32, 5, 100));
     applyFocusedPreset(target, loadedPayload.data(), loadedSize);
     assertLoadedIntoTarget(target);
@@ -248,7 +249,7 @@ void test_remove_is_exact_and_cleans_atomic_sidecars() {
     ProductDirectoryCatalog catalog(productFiles);
     StepPresetFileStore store(productFiles, catalog);
 
-    SequencerState source;
+    core::state::sequencer::SequencerDetachedEditor source;
     prepareSource(source);
     std::array<uint8_t, StepPresetFileStore::MAX_FILE_SIZE> payload{};
     const auto encoded = encodeFocusedPreset(

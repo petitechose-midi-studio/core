@@ -330,39 +330,9 @@ void drawMetadata(
     lv_layer_t* layer,
     const lv_area_t& area,
     lv_coord_t y,
-    const seq::SequencerPatternPresetDescriptor& descriptor
+    const char* timing,
+    const char* content
 ) {
-    const auto& visual = descriptor.visual;
-    char timing[48]{};
-    char content[48]{};
-    const unsigned division = 4U * descriptor.stepsPerBeat;
-    if (descriptor.metadata.trackKind == seq::SequencerTrackKind::DRUM) {
-        std::snprintf(
-            timing,
-            sizeof(timing),
-            "%u lanes · %u steps · 1/%u",
-            static_cast<unsigned>(descriptor.drumLaneCount),
-            static_cast<unsigned>(descriptor.patternLength),
-            division
-        );
-    } else {
-        std::snprintf(
-            timing,
-            sizeof(timing),
-            "Instrument · %u steps · 1/%u",
-            static_cast<unsigned>(descriptor.patternLength),
-            division
-        );
-    }
-    std::snprintf(
-        content,
-        sizeof(content),
-        "Micro %u · Cycle %u · CC %u",
-        static_cast<unsigned>(visual.microSequenceCount),
-        static_cast<unsigned>(visual.cycleStateCount),
-        static_cast<unsigned>(visual.ccLaneCount)
-    );
-
     constexpr lv_coord_t LINE_HEIGHT = 15;
     const lv_coord_t left = static_cast<lv_coord_t>(area.x1 + PAD);
     const lv_coord_t right = static_cast<lv_coord_t>(area.x2 - PAD);
@@ -420,7 +390,30 @@ FLASHMEM void SequencerPatternPresetPreview::render(
 
     const bool changed = !visible_ || revision_ != props.revision;
     if (changed) {
-        descriptor_ = *props.descriptor;
+        const auto& descriptor = *props.descriptor;
+        visual_ = descriptor.visual;
+        drum_ = descriptor.metadata.trackKind == seq::SequencerTrackKind::DRUM;
+        // Format on projection changes, never on a paint/playhead invalidation.
+        // Both strings outlive the LVGL draw tasks without per-draw allocation.
+        const unsigned division = 4U * descriptor.stepsPerBeat;
+        if (drum_) {
+            std::snprintf(
+                timing_.data(), timing_.size(), "%u lanes · %u steps · 1/%u",
+                static_cast<unsigned>(descriptor.drumLaneCount),
+                static_cast<unsigned>(descriptor.patternLength), division
+            );
+        } else {
+            std::snprintf(
+                timing_.data(), timing_.size(), "Instrument · %u steps · 1/%u",
+                static_cast<unsigned>(descriptor.patternLength), division
+            );
+        }
+        std::snprintf(
+            content_.data(), content_.size(), "Micro %u · Cycle %u · CC %u",
+            static_cast<unsigned>(visual_.microSequenceCount),
+            static_cast<unsigned>(visual_.cycleStateCount),
+            static_cast<unsigned>(visual_.ccLaneCount)
+        );
         revision_ = props.revision;
     }
     if (!visible_) {
@@ -432,14 +425,13 @@ FLASHMEM void SequencerPatternPresetPreview::render(
 }
 
 FLASHMEM void SequencerPatternPresetPreview::draw(lv_layer_t* layer) const {
-    if (!layer || !surface_ || !descriptor_.visual.valid) return;
+    if (!layer || !surface_ || !visual_.valid) return;
     lv_area_t area{};
     lv_obj_get_coords(surface_, &area);
     const lv_coord_t metadataY =
-        descriptor_.metadata.trackKind == seq::SequencerTrackKind::DRUM
-        ? drawDrumPreview(layer, area, descriptor_.visual)
-        : drawMelodicPreview(layer, area, descriptor_.visual);
-    drawMetadata(layer, area, metadataY, descriptor_);
+        drum_ ? drawDrumPreview(layer, area, visual_)
+              : drawMelodicPreview(layer, area, visual_);
+    drawMetadata(layer, area, metadataY, timing_.data(), content_.data());
 }
 
 FLASHMEM void SequencerPatternPresetPreview::onDraw(lv_event_t* event) {

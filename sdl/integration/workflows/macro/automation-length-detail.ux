@@ -14,13 +14,13 @@
 1460 button LEFT_BOTTOM up
 
 # Open Automation detail from the Automation row.
-1620 encoder NAV 1
+1620 encoder NAV 0.01
 1780 tap NAV 60
 2020 capture screen macro_2_automation_detail
 
 # Edit Length from 8.0 beats to the highest table value.
-2100 encoder NAV 1
-2180 encoder NAV 1
+2100 encoder NAV 0.01
+2180 encoder NAV 0.01
 2340 encoder OPT 1.00
 2500 encoder OPT 1.00
 2740 capture screen macro_2_automation_length_edited

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "state/modulation/ProjectControlHistory.hpp"
+
 #include <array>
 #include <cstdint>
 
@@ -131,28 +133,37 @@ struct MacroManualOverrideHistoryPayload {
     bool valid = false;
 };
 
-/** Canonical Project Track side of a combined Channel + Macro CC edit. */
-struct MacroTrackRoutingHistoryPayload {
-    core::state::project::ProjectTrackSnapshot before{};
-    core::state::project::ProjectTrackSnapshot after{};
-    bool valid = false;
-};
-
-/** One all-eight-Macro routing import on one physical Page. */
+/** Routing delta for selected Macros on one Page, optionally including Channel. */
 struct MacroTrackConfigHistoryPayload {
-    core::state::project::ProjectTrackSnapshot beforeTracks{};
-    core::state::project::ProjectTrackSnapshot afterTracks{};
     std::array<uint8_t, MACRO_COUNT> beforeCc{};
     std::array<uint8_t, MACRO_COUNT> afterCc{};
+    uint8_t beforeMidiChannel = 0U;
+    uint8_t afterMidiChannel = 0U;
     uint8_t track = 0U;
     uint8_t page = 0U;
+    uint8_t ccMask = 0xFFU;
+    bool includeChannel = true;
     bool valid = false;
+
+    bool matchesCc(const std::array<uint8_t, MACRO_COUNT>& live,
+                   const std::array<uint8_t, MACRO_COUNT>& expected) const {
+        for (uint8_t i = 0U; i < MACRO_COUNT; ++i) {
+            if ((ccMask & (1U << i)) != 0U && live[i] != expected[i]) return false;
+        }
+        return true;
+    }
+
+    void applyCc(std::array<uint8_t, MACRO_COUNT>& live,
+                 const std::array<uint8_t, MACRO_COUNT>& target) const {
+        for (uint8_t i = 0U; i < MACRO_COUNT; ++i) {
+            if ((ccMask & (1U << i)) != 0U) live[i] = target[i];
+        }
+    }
 };
 
 /** Rare cross-runtime/cross-domain payload kept out of the hot entry body. */
 struct MacroAuxiliaryHistoryPayload {
     MacroManualOverrideHistoryPayload manualOverride{};
-    MacroTrackRoutingHistoryPayload trackRouting{};
     MacroTrackConfigHistoryPayload trackConfig{};
 };
 
@@ -340,31 +351,16 @@ struct MacroSlotDeletionHistoryPayload {
 };
 
 /**
- * One compacted Macro Page transaction.
- *
- * Redo deterministically reapplies retainedPageMask, so only the exact before
- * Project domain is retained. Eight worst-case entries consume about 1.22 MiB
- * of PSRAM instead of retaining before/after copies of the 156 KiB domain.
+ * One reversible Page edit. Preparation reserves the complete before-domain;
+ * commit exchanges it with the live domain, or releases it when only Track
+ * metadata changed. Replay exchanges the retained and live domains.
+ * This in-memory representation never crosses a persistence/firmware boundary.
  */
-enum class MacroPageStructureHistoryOperation : uint8_t {
-    COMPACT = 0,
-    SNAPSHOT,
-};
-
 struct MacroPageStructureHistoryPayload {
-    uint16_t retainedPageMask = 0U;
     uint8_t track = 0U;
-    MacroPageStructureHistoryOperation operation =
-        MacroPageStructureHistoryOperation::COMPACT;
-    uint64_t afterControlHash = 0U;
     MacroTrackData beforeTrack{};
     MacroTrackData afterTrack{};
-    core::app::ExtmemUniquePtr<
-        core::state::modulation::ProjectControlDomainState
-    > beforeControl{};
-    core::app::ExtmemUniquePtr<
-        core::state::modulation::ProjectControlDomainState
-    > afterControl{};
+    core::state::modulation::ProjectControlHistory control{};
 };
 
 /** Compact destination-wide Depth delta; no binding array is retained. */

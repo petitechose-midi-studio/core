@@ -260,6 +260,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::fl
     Result result{.status = Status::SAVING};
     if (!inProgress_()) {
         if (!beginCapture_(state)) {
+            cancelInFlight_();
             state.requestProjectSessionSave();
             return Result{
                 .status = Status::CAPTURE_FAILED,
@@ -334,7 +335,7 @@ ProjectSessionAutosaveService::beginRecovery(
     if (!state.hasPendingProjectSessionSave() ||
         !state.projectSessionSaveTokenMatches(requestedToken) ||
         !beginCapture_(state)) {
-        capture_.cancel();
+        cancelInFlight_();
         return Result{
             .status = Status::CAPTURE_FAILED,
             .modifiedCounter = requestedToken.modifiedCounter,
@@ -425,19 +426,7 @@ ProjectSessionAutosaveService::recoveryWorkQuota() const {
             ? PRODUCT_PERSISTENCE_QUOTA_AUTOSAVE_SEQUENCER
             : PRODUCT_PERSISTENCE_QUOTA_AUTOSAVE_AUTOMATION;
     }
-    if (!store_.saveCurrentInProgress()) {
-        return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
-    }
-    switch (store_.saveCurrentStage()) {
-        case ProjectSaveStage::ENCODE:
-            return PRODUCT_PERSISTENCE_QUOTA_PROJECT_ENCODE;
-        case ProjectSaveStage::WRITE:
-            return PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
-        case ProjectSaveStage::PREPARE:
-        case ProjectSaveStage::COMMIT:
-        default:
-            return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
-    }
+    return store_.saveCurrentWorkQuota();
 }
 
 FLASHMEM ProjectSessionAutosaveService::Result
@@ -569,6 +558,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::st
         };
     }
     if (!beginCapture_(state)) {
+        cancelInFlight_();
         state.requestProjectSessionSave();
         OC_LOG_WARN("[ProjectSessionAutosave] capture failed");
         return Result{
@@ -592,7 +582,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::st
     core::diagnostics::storage_qualification::clearRequestId();
     if (!admitted) {
         const auto error = admitted.error();
-        capture_.cancel();
+        cancelInFlight_();
         return Result{
             .status = Status::BLOCKED,
             .error = error.code,
@@ -798,7 +788,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
     );
     if (!started) {
         const auto error = started.error();
-        capture_.cancel();
+        cancelInFlight_();
         state.requestProjectSessionSave();
         OC_LOG_WARN("[ProjectSessionAutosave] save start failed");
         return Result{
@@ -853,8 +843,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
             recovery_in_progress_
         );
         state.requestProjectSessionSave();
-        capture_.cancel();
-        recovery_in_progress_ = false;
+        cancelInFlight_();
         OC_LOG_WARN("[ProjectSessionAutosave] save failed");
         return Result{
             .status = Status::SAVE_FAILED,
@@ -910,8 +899,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         FailureStage::ACKNOWLEDGE,
         recovery_in_progress_
     );
-    capture_.cancel();
-    recovery_in_progress_ = false;
+    cancelInFlight_();
     return Result{
         .status = Status::SAVED,
         .bytes = bytesWritten,
@@ -945,6 +933,7 @@ FLASHMEM void ProjectSessionAutosaveService::cancelInFlight_() {
     if (store_.saveCurrentInProgress()) {
         store_.cancelSaveCurrent();
     }
+    if (snapshot_) snapshot_->clips.reset();
     recovery_in_progress_ = false;
 }
 

@@ -15,7 +15,14 @@ encodeProjectSequencerSnapshot(
     using TrackBank = core::state::sequencer::SequencerTrackBankState;
 
     codec::ProjectSequencerSnapshotEncodeSource source{};
+    core::state::sequencer::SequencerClipGridSnapshot clips{};
+    for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
+        if ((snapshot.flat.enabledMask & static_cast<uint16_t>(1U << track)) != 0U) {
+            clips.residentSlots[track] = 0U;
+        }
+    }
     source.flat = &snapshot.flat;
+    source.clips = &clips;
     source.focusedStep = snapshot.focusedStep;
     source.activeStepProperty = snapshot.activeStepProperty;
     const uint8_t activeTrack = TrackBank::sanitizeActiveTrack(
@@ -23,12 +30,8 @@ encodeProjectSequencerSnapshot(
         snapshot.flat.activeTrack
     );
     for (uint8_t i = 0; i < codec::PERSISTED_TRACK_COUNT; ++i) {
-        source.graphs[i] = (i == activeTrack)
-            ? snapshot.editorGraph.get()
-            : snapshot.bankGraphs[i].get();
-        source.ccLanes[i] = (i == activeTrack)
-            ? snapshot.editorCcLanes.get()
-            : snapshot.bankCcLanes[i].get();
+        source.graphs[i] = snapshot.bankGraphs[i].get();
+        source.ccLanes[i] = snapshot.bankCcLanes[i].get();
     }
     return codec::fillProjectSequencerEnvelope(source, out, capacity);
 }

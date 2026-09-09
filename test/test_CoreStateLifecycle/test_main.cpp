@@ -24,6 +24,23 @@ uint32_t mockTimeMs() {
 
 using test_support::CoreStorages;
 
+void test_factory_reset_rebinds_editor_to_canonical_track_zero() {
+    CoreStorages storage;
+    storage.initAll();
+    core::state::CoreState state(storage.settings);
+    assert(state.setSharedTrackState(0x0009U, 3U));
+    assert(&state.sequencer.pattern() == &state.sequencerTracks.track(3U));
+    state.sequencer.pattern().note[0U] = 91U;
+    state.factoryReset();
+    assert(state.sequencerTracks.activeTrackIndex() == 0U);
+    assert(&state.sequencer.pattern() == &state.sequencerTracks.track(0U));
+    assert(&state.sequencer.clip() == &state.sequencerTracks.clip(0U));
+    assert(state.sequencer.setStepNoteAt(0U, 75U));
+    assert(state.sequencerTracks.track(0U).note[0U] == 75U);
+    assert(state.sequencerTracks.track(3U).note[0U] != 75U);
+    std::cout << "[PASS] reset from Track 3 rebinds canonical Track 0\n";
+}
+
 void test_overlay_registration_supports_stacking_and_restore() {
     CoreStorages storage;
 
@@ -62,7 +79,7 @@ void test_factory_reset_clears_transient_state_and_overlays() {
 
     core::state::CoreState state(storage.settings);
 
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.macroEdit.openEditor(1, 2, 10, 1000);
     state.macroEdit.openValueSelector(0, 2);
     state.deviceSettings.openView();
@@ -223,7 +240,7 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.macroUi.automationTake.previousManualValues[0] = 0.61f;
     assert(state.macroUi.manualOverrides.resume(manualAddress));
     core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.93f);
-    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.activeView.set(core::ui::ViewType::CLIPS);
     state.activeView.set(core::ui::ViewType::MACRO);
 
     const uint32_t beforeRuntimeOwnerRevision = state.macroRuntimeOwnerRevision.get();
@@ -267,7 +284,7 @@ void test_standalone_teardown_abandons_unpublished_step_draft() {
     storage.initAll();
     core::state::CoreState state(storage.settings);
 
-    const uint8_t publishedNote = state.sequencer.pattern.note[0];
+    const uint8_t publishedNote = state.sequencer.pattern().note[0];
     const auto beforeSaveToken = state.projectSessionSaveToken();
     assert(seq::beginStepContentDraft(
         state.sequencer,
@@ -283,7 +300,7 @@ void test_standalone_teardown_abandons_unpublished_step_draft() {
     state.resetStandaloneTransientUi();
 
     assert(!state.sequencer.stepContentDraft.active.get());
-    assert(state.sequencer.pattern.note[0] == publishedNote);
+    assert(state.sequencer.pattern().note[0] == publishedNote);
     assert(state.projectNavigation.currentNode.get() ==
            core::state::project::ProjectNodeId::OVERVIEW_ROOT);
     assert(state.projectNavigation.focusedRow.get() == 0U);
@@ -327,7 +344,7 @@ void test_standalone_teardown_discards_only_invalid_pending_pattern_owner() {
     state.resetStandaloneTransientUi();
 
     assert(!state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(state.sequencer.pattern.note[0] == 72U);
+    assert(state.sequencer.pattern().note[0] == 72U);
     assert(state.sequencerHistory.undoCount() == committedUndoCount);
     assert(state.projectSessionSaveToken() == beforeSaveToken);
     std::cout << "[PASS] Standalone teardown discards only invalid Pattern owner\n";
@@ -341,7 +358,7 @@ void test_musical_project_reset_rejects_active_step_draft() {
     core::state::CoreState state(storage.settings);
 
     state.statusBar.tempo.set(147.0f);
-    const uint8_t publishedNote = state.sequencer.pattern.note[0];
+    const uint8_t publishedNote = state.sequencer.pattern().note[0];
     const auto beforeSaveToken = state.projectSessionSaveToken();
     assert(seq::beginStepContentDraft(
         state.sequencer,
@@ -355,7 +372,7 @@ void test_musical_project_reset_rejects_active_step_draft() {
     assert(state.sequencer.stepContentDraft.active.get());
     assert(state.sequencer.stepContentDraft.blockedTransition ==
            seq::SequencerStepContentDraftBlockedTransition::RESET);
-    assert(state.sequencer.pattern.note[0] == publishedNote);
+    assert(state.sequencer.pattern().note[0] == publishedNote);
     assert(state.statusBar.tempo.get() == 147.0f);
     assert(state.projectSessionSaveToken() == beforeSaveToken);
     std::cout << "[PASS] musical Project reset rejects active Step draft\n";
@@ -383,7 +400,7 @@ void test_musical_project_reset_reports_unavailable_pattern_history() {
     assert(state.resetMusicalProject() ==
            core::state::ProjectResetOutcome::HistoryUnavailable);
     assert(state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(state.sequencer.pattern.note[0] == 71U);
+    assert(state.sequencer.pattern().note[0] == 71U);
     assert(state.statusBar.tempo.get() == 153.0f);
     assert(state.projectSessionSaveToken() == beforeSaveToken);
     std::cout << "[PASS] musical Project reset reports unavailable Pattern history\n";
@@ -437,6 +454,7 @@ void test_macro_runtime_owner_revision_skips_zero_on_wrap() {
 }  // namespace
 
 int main() {
+    test_factory_reset_rebinds_editor_to_canonical_track_zero();
     oc::time::setProvider(mockTimeMs);
     test_overlay_registration_supports_stacking_and_restore();
     test_factory_reset_clears_transient_state_and_overlays();

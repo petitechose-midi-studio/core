@@ -69,10 +69,6 @@ FLASHMEM lv_opa_t contentOpacity(ContextActionStripVisualState state) {
     }
 }
 
-FLASHMEM lv_opa_t backgroundOpacity(ContextActionStripVisualState /*state*/) {
-    return LV_OPA_TRANSP;
-}
-
 FLASHMEM lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     switch (state) {
         case ContextActionStripVisualState::PRESSED:
@@ -210,8 +206,15 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
         lv_obj_set_style_pad_all(slot.container, SLOT_PAD, 0);
         lv_obj_set_style_bg_opa(slot.container, LV_OPA_TRANSP, 0);
         lv_obj_set_layout(slot.container, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(slot.container, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_flow(
+            slot.container,
+            orientation_ == ContextActionStripOrientation::HORIZONTAL
+                ? LV_FLEX_FLOW_ROW
+                : LV_FLEX_FLOW_COLUMN
+        );
         lv_obj_set_flex_align(slot.container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(slot.container, CONTENT_GAP, 0);
+        lv_obj_set_style_pad_column(slot.container, HORIZONTAL_CONTENT_GAP, 0);
 
         if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
             lv_obj_set_width(slot.container, 0);
@@ -245,27 +248,11 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
             lv_obj_align(slot.indicator, LV_ALIGN_LEFT_MID, 0, 0);
         }
 
-        slot.content = lv_obj_create(slot.container);
-        lv_obj_remove_style_all(slot.content);
-        lv_obj_clear_flag(slot.content, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_style_pad_all(slot.content, 0, 0);
-        lv_obj_set_style_pad_row(slot.content, CONTENT_GAP, 0);
-        lv_obj_set_style_pad_column(slot.content, HORIZONTAL_CONTENT_GAP, 0);
-        lv_obj_set_style_bg_opa(slot.content, LV_OPA_TRANSP, 0);
-        lv_obj_set_layout(slot.content, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(
-            slot.content,
-            orientation_ == ContextActionStripOrientation::HORIZONTAL
-                ? LV_FLEX_FLOW_ROW
-                : LV_FLEX_FLOW_COLUMN
-        );
-        lv_obj_set_flex_align(slot.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-        slot.icon = lv_label_create(slot.content);
+        slot.icon = lv_label_create(slot.container);
         lv_obj_set_style_text_color(slot.icon, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
         lv_obj_add_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
 
-        slot.label = lv_label_create(slot.content);
+        slot.label = lv_label_create(slot.container);
         lv_obj_set_style_text_font(slot.label, fonts.compact_label(), 0);
         lv_obj_set_style_text_color(slot.label, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
         lv_label_set_long_mode(slot.label, LV_LABEL_LONG_CLIP);
@@ -343,9 +330,9 @@ FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
         return;
     }
 
-    if (!has_rendered_ || !rendered_props_.visible) {
+    const bool opening = !has_rendered_ || !rendered_props_.visible;
+    if (opening) {
         lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
     }
 
     for (size_t i = 0; i < slots_.size(); ++i) {
@@ -357,6 +344,8 @@ FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
     rendered_props_ = props;
     has_rendered_ = true;
     refreshHoldIndicators();
+    // Prepare the strip while hidden; one reveal invalidates its final content.
+    if (opening) lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
     updateHoldTimer();
 }
 
@@ -364,17 +353,14 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
     if (index >= slots_.size()) return;
 
     auto& slot = slots_[index];
-    if (!slot.container || !slot.indicator || !slot.icon || !slot.label || !slot.content) return;
+    if (!slot.container || !slot.indicator || !slot.icon || !slot.label) return;
 
     const uint32_t colorHex = toneColor(props.tone);
     const lv_color_t color = lv_color_hex(colorHex);
     const lv_opa_t textOpa = contentOpacity(props.visualState);
-    const lv_opa_t bgOpa = backgroundOpacity(props.visualState);
     const lv_opa_t accentOpa = indicatorOpacity(props.visualState);
     const bool showContent = contentVisible(props);
 
-    lv_obj_set_style_bg_color(slot.container, color, 0);
-    lv_obj_set_style_bg_opa(slot.container, bgOpa, 0);
     lv_obj_set_style_bg_color(slot.indicator, color, 0);
     lv_obj_set_style_bg_color(slot.indicator, color, LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(

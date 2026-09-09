@@ -38,10 +38,10 @@ private:
     [[nodiscard]] bool mainGridOwnsInput() const;
     [[nodiscard]] bool ccOverlayOwnsInput() const;
     void syncOverlayVisibility();
-    void syncOptEncoderContract();
-    void syncMacroEncoderContract();
-    void updateMacroButtonGestures(uint32_t nowMs);
-    void updateNavButtonGesture(uint32_t nowMs);
+    void syncOptEncoderContract(bool ownsOpt);
+    void syncMacroEncoderContract(bool ownsGrid);
+    void updateMacroButtonGestures(uint32_t nowMs, bool ownsInput);
+    void updateNavButtonGesture(uint32_t nowMs, bool ownsInput);
     void beginNavButtonTracking(uint32_t nowMs);
     void resetNavButtonTracking();
     void beginMacroButtonTracking(uint8_t indexInWindow, uint32_t nowMs);

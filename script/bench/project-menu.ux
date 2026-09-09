@@ -1,0 +1,31 @@
+# RAM-only: enter Project, inspect Scale, return, then edit Tempo and restore it.
+# Based on project/navigation/root-tabs-folders and transport-values native UX.
+0 scenario bench-macro-v1
+20 assert_view MACRO
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.01
+500 encoder_value NAV 0.01
+600 encoder_value NAV 0.01
+800 button LEFT_TOP up
+1100 assert_view PROJECT
+1200 marker music
+1300 button LEFT_CENTER down
+1450 encoder_value NAV 0.01
+1700 button LEFT_CENTER up
+1900 tap NAV 60
+2200 assert_view PROJECT
+2300 tap LEFT_TOP 60
+2600 marker transport
+2700 button LEFT_CENTER down
+2850 encoder_value NAV 0.01
+3100 button LEFT_CENTER up
+3300 assert_view PROJECT
+3500 encoder_value OPT 1
+3800 encoder_value OPT -1
+4100 encoder_value NAV 0.01
+4400 encoder_value NAV 0.01
+4700 encoder_value NAV -0.01
+5000 encoder_value NAV -0.01
+5300 assert_view PROJECT
+5500 transport stop

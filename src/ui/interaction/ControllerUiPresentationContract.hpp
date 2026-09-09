@@ -30,7 +30,7 @@ constexpr SurfacePresentationContract presentationFor(core::ui::ViewType view) {
     switch (view) {
         case core::ui::ViewType::MACRO:
             return {Archetype::PERFORMANCE, Transaction::LIVE, SurfaceChrome::ROOT, true};
-        case core::ui::ViewType::SEQUENCER:
+        case core::ui::ViewType::CLIPS:
             return {Archetype::HIERARCHICAL, Transaction::LIVE, SurfaceChrome::ROOT, true};
         case core::ui::ViewType::PROJECT:
         case core::ui::ViewType::DEVICE_SETTINGS:

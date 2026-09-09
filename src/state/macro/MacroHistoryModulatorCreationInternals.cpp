@@ -23,8 +23,8 @@ FLASHMEM bool creationIdentityMatches(
     bool exactAfter
 ) {
     const auto& control = pages.control;
-    const auto& graph = control.authored.modulation;
-    if (!historyDomainValid(control.authored)) return false;
+    const auto& graph = control.authored().modulation;
+    if (!historyDomainValid(control.authored())) return false;
     if (payload.beforeSourceCount > graph.sources.size() ||
         payload.beforeBindingCount > graph.outputBindings.size() ||
         payload.beforeTriggerCount > graph.triggerBindings.size() ||
@@ -111,7 +111,7 @@ FLASHMEM bool creationIdentityMatches(
     }
     if (payload.sharedCurveReferenceCreated) {
         const auto* record = core::state::modulation::findProjectCurve(
-            control.authored.curves,
+            control.authored().curves,
             payload.sharedCurveId
         );
         if (record == nullptr ||
@@ -137,8 +137,8 @@ FLASHMEM bool creationBeforeMatches(
     const MacroModulatorCreationHistoryPayload& payload
 ) {
     const auto& control = pages.control;
-    const auto& graph = control.authored.modulation;
-    if (!historyDomainValid(control.authored) ||
+    const auto& graph = control.authored().modulation;
+    if (!historyDomainValid(control.authored()) ||
         graph.sourceCount != payload.beforeSourceCount ||
         graph.outputBindingCount != payload.beforeBindingCount ||
         graph.triggerBindingCount != payload.beforeTriggerCount ||
@@ -175,7 +175,7 @@ FLASHMEM bool creationBeforeMatches(
         }
         if (payload.sharedCurveReferenceCreated) {
             const auto* record = core::state::modulation::findProjectCurve(
-                control.authored.curves,
+                control.authored().curves,
                 payload.sharedCurveId
             );
             return record != nullptr &&
@@ -205,7 +205,7 @@ FLASHMEM void restoreCreationBefore(
     bool exactCancel
 ) {
     auto& control = pages.control;
-    auto& graph = control.authored.modulation;
+    auto& graph = control.authored().modulation;
     if (payload.sourceCreated) {
         graph.sources[payload.beforeSourceCount] = payload.beforeSourceTail;
         graph.sourceCount = payload.beforeSourceCount;
@@ -220,7 +220,7 @@ FLASHMEM void restoreCreationBefore(
     if (payload.sharedCurveReferenceCreated) {
         auto* record = const_cast<core::state::modulation::ProjectCurveRecord*>(
             core::state::modulation::findProjectCurve(
-                control.authored.curves,
+                control.authored().curves,
                 payload.sharedCurveId
             )
         );
@@ -257,7 +257,7 @@ FLASHMEM void restoreCreationAfter(
     const MacroModulatorCreationHistoryPayload& payload
 ) {
     auto& control = pages.control;
-    auto& graph = control.authored.modulation;
+    auto& graph = control.authored().modulation;
     if (payload.sourceCreated) {
         if (payload.recordedShape != nullptr) {
             restoreRecordedCreation(control, *payload.recordedShape, true);
@@ -266,7 +266,7 @@ FLASHMEM void restoreCreationAfter(
             auto* record = const_cast<
                 core::state::modulation::ProjectCurveRecord*
             >(core::state::modulation::findProjectCurve(
-                control.authored.curves,
+                control.authored().curves,
                 payload.sharedCurveId
             ));
             if (record != nullptr) ++record->referenceCount;
@@ -314,7 +314,7 @@ FLASHMEM bool splitCurveReferenceMatches(
 ) {
     if (!payload.sharedCurveReferenceCreated) return true;
     const auto* record = core::state::modulation::findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         payload.sharedCurveId
     );
     return record != nullptr &&
@@ -328,7 +328,7 @@ FLASHMEM bool splitBeforeMatches(
     const ProjectModulatorSplitHistoryPayload& payload
 ) {
     if (!splitPayloadStorageValid(payload)) return false;
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     if (graph.sourceCount != payload.beforeSourceCount ||
         graph.outputBindingCount != payload.beforeBindingCount ||
         graph.triggerBindingCount != payload.beforeTriggerCount ||
@@ -372,7 +372,7 @@ FLASHMEM bool splitAfterMatches(
     const ProjectModulatorSplitHistoryPayload& payload
 ) {
     if (!splitPayloadStorageValid(payload)) return false;
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     const uint16_t expectedTriggerCount = static_cast<uint16_t>(
         payload.beforeTriggerCount + (payload.triggerCreated ? 1U : 0U)
     );
@@ -417,7 +417,7 @@ FLASHMEM bool restoreSplitBefore(
     const ProjectModulatorSplitHistoryPayload& payload
 ) {
     if (!splitAfterMatches(pages, payload)) return false;
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     for (uint16_t index = 0; index < payload.movedBindingCount; ++index) {
         const auto& entry = payload.movedBindings[index];
         graph.outputBindings[entry.globalIndex] = entry.before;
@@ -435,7 +435,7 @@ FLASHMEM bool restoreSplitBefore(
     if (payload.sharedCurveReferenceCreated) {
         auto* record = const_cast<core::state::modulation::ProjectCurveRecord*>(
             core::state::modulation::findProjectCurve(
-                pages.control.authored.curves,
+                pages.control.authored().curves,
                 payload.sharedCurveId
             )
         );
@@ -451,11 +451,11 @@ FLASHMEM bool restoreSplitAfter(
     const ProjectModulatorSplitHistoryPayload& payload
 ) {
     if (!splitBeforeMatches(pages, payload)) return false;
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     if (payload.sharedCurveReferenceCreated) {
         auto* record = const_cast<core::state::modulation::ProjectCurveRecord*>(
             core::state::modulation::findProjectCurve(
-                pages.control.authored.curves,
+                pages.control.authored().curves,
                 payload.sharedCurveId
             )
         );

@@ -23,6 +23,7 @@
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
+#include "handler/sequencer/ClipWorkspaceHandler.hpp"
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
@@ -30,6 +31,7 @@
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepContentHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
+#include "state/CoreState.hpp"
 #include "ui/sequencer/SequencerPatternEditorOverlay.hpp"
 #include "ui/sequencer/SequencerChordVoiceRail.hpp"
 #include "ui/sequencer/SequencerPatternPresetPreview.hpp"
@@ -80,6 +82,15 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
           stateRefs.midiCcCoordinator
       ),
       quick_controls_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
+      clip_launcher_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.structureNavigationFocus,
+          stateRefs.sequencer,
+          stateRefs.sequencerTracks,
+          stateRefs.core.sequencerClips,
+          stateRefs.core.sequencerClipLaunches,
+          buttons
+      ),
       structure_ux_surface_(
           stateRefs.activeView,
           stateRefs.structureNavigationFocus,
@@ -142,6 +153,10 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             core::context::standalone::ux::priority::SEQUENCER_QUICK_CONTROLS
         ) ||
          !uxRegistry->add(
+            clip_launcher_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_CLIP_LAUNCHER
+        ) ||
+         !uxRegistry->add(
             structure_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_STRUCTURE
         ) ||
@@ -162,6 +177,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.trackNavigation,
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
+            stateRefs.core.sequencerClips,
         },
         encoders
     );
@@ -208,6 +224,11 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     track_editor_overlay_ = core::app::makeExtmemUnique<
         core::ui::project::ProjectTrackEditorOverlay>(overlayRoot);
     if (!track_editor_overlay_ || !track_editor_overlay_->getElement()) return;
+    track_name_keyboard_ = core::app::makeExtmemUnique<
+        core::ui::interaction::TextKeyboardView>(
+            track_editor_overlay_->getElement()
+        );
+    if (!track_name_keyboard_ || !track_name_keyboard_->valid()) return;
     track_editor_action_strip_ =
         core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
             track_editor_overlay_->getElement(),
@@ -418,6 +439,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.sharedTrackActive,
             },
             *track_editor_overlay_,
+            *track_name_keyboard_,
             *track_editor_action_strip_
         );
     if (!track_editor_presenter_ || !track_editor_presenter_->bind()) return;
@@ -483,6 +505,17 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         &structure_ux_trace_state_
 #endif
     );
+    clip_workspace_handler_ = core::app::makeExtmemUnique<
+        core::handler::ClipWorkspaceHandler>(
+            core::handler::ClipWorkspaceHandler::StateRefs{
+                stateRefs.core,
+                stateRefs.structureNavigationFocus,
+                stateRefs.overlays,
+            },
+            encoders,
+            buttons,
+            sequencerViewScopeId
+        );
     quick_controls_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerPatternQuickControlsHandler>(
             core::handler::SequencerPatternQuickControlsHandler::StateRefs{
@@ -515,6 +548,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.projectTrackEditor,
                 stateRefs.projectTracks,
                 stateRefs.sequencerTracks,
+                stateRefs.core.sequencerClips,
                 sharedTracks,
                 trackDomain,
                 stateRefs.history,
@@ -562,13 +596,13 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 : core::handler::DrumLaneAuditionServices{}
         );
     if (!drum_lane_editor_handler_) return;
-    if (!step_handler_ || !step_edit_handler_ || !pattern_editor_handler_ ||
-        !track_editor_handler_) return;
+    if (!step_handler_ || !clip_workspace_handler_ || !step_edit_handler_ ||
+        !pattern_editor_handler_ || !track_editor_handler_) return;
     pattern_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
-    drum_lane_editor_handler_->attachPresetLibraryHandler(*step_edit_handler_);
+    clip_workspace_handler_->attachTrackEditorHandler(*track_editor_handler_);
+    step_handler_->connectClipWorkspace(*clip_workspace_handler_);
     step_handler_->attachStepEditHandler(*step_edit_handler_);
     step_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
-    step_handler_->attachTrackEditorHandler(*track_editor_handler_);
     step_handler_->attachDrumLaneEditorHandler(*drum_lane_editor_handler_);
     step_content_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerStepContentHandler>(
@@ -666,7 +700,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId,
             oc::time::millis
         );
-    valid_ = step_handler_ && quick_controls_handler_ && pattern_editor_handler_ &&
+    valid_ = step_handler_ && clip_workspace_handler_ &&
+             quick_controls_handler_ && pattern_editor_handler_ &&
              track_editor_handler_ && track_editor_presenter_ &&
              drum_lane_editor_handler_ && drum_lane_editor_presenter_ &&
              step_edit_handler_ &&
@@ -681,6 +716,9 @@ FLASHMEM SequencerFeatureModule::~SequencerFeatureModule() = default;
 void SequencerFeatureModule::update(uint32_t nowMs) {
     if (step_handler_) {
         step_handler_->update(nowMs);
+    }
+    if (clip_workspace_handler_) {
+        clip_workspace_handler_->update();
     }
     if (step_edit_handler_) {
         step_edit_handler_->update(nowMs);

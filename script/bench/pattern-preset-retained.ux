@@ -1,0 +1,26 @@
+# RAM-only Factory browsing while music runs; never apply or save a preset.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.01
+600 button LEFT_TOP up
+1000 assert_view CLIPS
+1200 encoder_value NAV 0.01
+1500 tap LEFT_BOTTOM 60
+1800 assert_mode sequencer.pattern
+2000 tap NAV 60
+2300 button NAV down
+3400 marker library_hold
+3500 button NAV up
+3700 assert_mode sequencer.pattern_preset.load
+3900 tap NAV 60
+4200 marker factory_category
+4400 tap NAV 60
+4700 assert_mode sequencer.pattern_preset.load.detail
+4900 tap LEFT_TOP 60
+5200 tap NAV 60
+5500 assert_mode sequencer.pattern_preset.load.detail
+5700 tap LEFT_TOP 60
+6000 tap LEFT_TOP 60
+6300 tap LEFT_TOP 60
+6600 transport stop

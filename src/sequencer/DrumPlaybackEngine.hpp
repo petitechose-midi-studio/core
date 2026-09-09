@@ -103,17 +103,18 @@ public:
     }
 
     /**
-     * Capture/build are main-loop authoring-preview operations. They never run
-     * in the timer update path and allocate no memory.
+     * Capture under the timer lock; build in the foreground with IRQs enabled.
+     * The immutable pattern/graph must remain alive until build completes.
+     * Build reads no engine state and allocates no memory.
      */
     [[nodiscard]] DrumResolvedPageSignature captureResolvedPageSignature(
         uint8_t page,
         uint8_t laneWindowStart
     ) const;
-    void buildResolvedPageProjection(
+    static void buildResolvedPageProjection(
         const DrumResolvedPageSignature& signature,
         core::state::sequencer::DrumResolvedPageProjection& out
-    ) const;
+    );
 
 private:
     static constexpr uint32_t MAX_CATCH_UP_TICKS = 48U;

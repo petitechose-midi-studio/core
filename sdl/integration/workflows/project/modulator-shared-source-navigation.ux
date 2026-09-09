@@ -10,16 +10,16 @@
 0 scenario project-modulators
 
 100 button LEFT_TOP down
-700 encoder NAV -1
+700 encoder NAV -0.01
 1100 button LEFT_TOP up
 1320 tap NAV 60
 1540 capture screen source_workspace
 
 # Slow Tide serves T1 and T2; Destinations is the last direct card.
-1660 encoder NAV 1
-1720 encoder NAV 1
-1780 encoder NAV 1
-1840 encoder NAV 1
+1660 encoder NAV 0.01
+1720 encoder NAV 0.01
+1780 encoder NAV 0.01
+1840 encoder NAV 0.01
 1960 tap NAV 60
 2180 capture screen shared_destinations
 
@@ -32,10 +32,10 @@
 2860 capture screen source_from_macro
 
 # Reopen Destinations while retaining the Macro return address.
-2980 encoder NAV 1
-3040 encoder NAV 1
-3100 encoder NAV 1
-3160 encoder NAV 1
+2980 encoder NAV 0.01
+3040 encoder NAV 0.01
+3100 encoder NAV 0.01
+3160 encoder NAV 0.01
 3280 tap NAV 60
 3500 capture screen destinations_from_macro
 

@@ -279,7 +279,7 @@ FLASHMEM bool recordedCreationMatches(
 ) {
     using namespace core::state::modulation;
     if (!recordedCreationStorageValid(payload)) return false;
-    const auto& domain = control.authored;
+    const auto& domain = control.authored();
     const auto& arena = domain.curves;
     if (!historyDomainValid(domain)) return false;
     const auto curveHash = unrelatedCurveHash(domain, payload.curve.id);
@@ -322,7 +322,7 @@ FLASHMEM void restoreRecordedCreation(
     const ProjectRecordedShapeCreationHistoryPayload& payload,
     bool after
 ) {
-    auto& arena = control.authored.curves;
+    auto& arena = control.authored().curves;
     if (after) {
         arena.records[payload.beforeRecordCount] = payload.curve;
         std::memcpy(

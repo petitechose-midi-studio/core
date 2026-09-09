@@ -59,7 +59,7 @@ FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::apply(
                 sanitizedActive
             )) {
             state.sequencerTracks.enabledMaskSignal().set(previousSequencerMask);
-            OC_LOG_ERROR("[SharedTrack] Track switch failed: graph allocation unavailable");
+            OC_LOG_ERROR("[SharedTrack] Track switch blocked by the active draft");
             return Result{previousMask, previousActive, false, false};
         }
     }
@@ -92,6 +92,9 @@ FLASHMEM SharedTrackCoordinator::Result SharedTrackCoordinator::publishPreparedS
     const uint16_t previousMask = state.enabledMask.get();
     const uint8_t previousActive = state.activeTrack.get();
 
+    state.sequencer.selectPattern(
+        state.sequencerTracks.track(sanitizedActive),
+        state.sequencerTracks.clip(sanitizedActive));
     state.sequencerTracks.syncSharedTrackState(sanitizedMask, sanitizedActive);
     if (previousMask != sanitizedMask) {
         state.enabledMask.set(sanitizedMask);

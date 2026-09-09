@@ -9,8 +9,10 @@
 namespace core::state::sequencer {
 
 enum class SequencerInteractionScope : uint8_t {
+    CLIP_LAUNCHER,
     PATTERN,
     TRACK,
+    LANE,
     STEP,
     CHILD_PATTERN,
     PATTERN_DIMENSION_SELECTOR,
@@ -24,8 +26,12 @@ enum class SequencerInteractionScope : uint8_t {
 
 enum class SequencerInteractionAction : uint8_t {
     NONE,
+    MOVE_CLIP,
+    OPEN_CLIP,
+    LAUNCH_CLIP,
     MOVE_TRACK,
     MOVE_PATTERN,
+    MOVE_LANE,
     MOVE_STEP,
     MOVE_SELECTION_CURSOR,
     SELECT_PATTERN_DIMENSION,
@@ -35,6 +41,8 @@ enum class SequencerInteractionAction : uint8_t {
     ENTER_SELECTION,
     TOGGLE_SELECTION,
     OPEN_PATTERN_DIMENSION_SELECTOR,
+    OPEN_LANE_DIMENSION_SELECTOR,
+    OPEN_LANE_PROPERTY_SELECTOR,
     OPEN_MUSICAL_PROPERTY_SELECTOR,
     OPEN_STEP_CONTENT_SELECTOR,
     APPLY_PATTERN_DIMENSION_SELECTOR,
@@ -43,6 +51,7 @@ enum class SequencerInteractionAction : uint8_t {
     APPLY_STEP_EDITOR,
     CANCEL_TRANSIENT_CONTEXT,
     EDIT_PATTERN_DIMENSION,
+    EDIT_LANE_DIMENSION,
     EDIT_MUSICAL_PROPERTY_VARIATION,
     EDIT_STEP_PROPERTY,
     EDIT_STEP_LOCAL_RANDOM,
@@ -51,6 +60,7 @@ enum class SequencerInteractionAction : uint8_t {
     RETARGET_STEP_EDITOR_LANE,
     OPEN_TRACK_EDITOR,
     OPEN_PATTERN_EDITOR,
+    OPEN_LANE_EDITOR,
     OPEN_STEP_EDITOR,
     TOGGLE_VISIBLE_STEP,
     EDIT_VISIBLE_STEP_PROPERTY,
@@ -89,6 +99,7 @@ enum class SequencerInteractionVisibility : uint8_t {
 
 struct SequencerInteractionContext {
     StructureNavigationFocus navigationFocus = StructureNavigationFocus::PAGE;
+    bool clipWorkspaceActive = false;
     bool childContentView = false;
     bool overlayVisible = false;
     bool previewingAddSlot = false;

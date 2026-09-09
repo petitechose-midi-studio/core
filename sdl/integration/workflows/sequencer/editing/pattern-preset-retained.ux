@@ -1,0 +1,27 @@
+# Purpose: inspect immutable Factory content during playback, return and reopen.
+# Never load, audition, modify or save a preset.
+# Expect: semantic:detail:mode=sequencer.pattern_preset.load.detail, semantic:reopened:mode=sequencer.pattern_preset.load.detail
+0 scenario macro-performance-rail
+100 tap BOTTOM_CENTER 60
+200 button LEFT_TOP down
+400 encoder NAV 0.01
+600 button LEFT_TOP up
+1200 encoder NAV 0.01
+1500 tap LEFT_BOTTOM 60
+1800 capture screen pattern
+2000 tap NAV 60
+2300 button NAV down
+3400 tick
+3500 button NAV up
+3700 capture screen library
+3900 tap NAV 60
+4200 capture screen category
+4400 tap NAV 60
+4700 capture screen detail
+4900 tap LEFT_TOP 60
+5200 tap NAV 60
+5500 capture screen reopened
+5700 tap LEFT_TOP 60
+6000 tap LEFT_TOP 60
+6300 tap LEFT_TOP 60
+6600 tap BOTTOM_CENTER 60

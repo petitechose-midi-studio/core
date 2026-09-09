@@ -118,6 +118,9 @@ def normal_build_diagnostics_violations(nm_output: str) -> tuple[str, ...]:
         "memoryHighWaterStorage",
         "psramSpanTable",
         "core::diagnostics::detail::PsramSpanTracker",
+        "core::validation::benchmark::HardwareBenchmarkEndpoint",
+        "core::validation::benchmark::beginMetrics(",
+        "oc::ui::lvgl::benchmark::beginRun(",
     )
     violations: list[str] = []
     for marker in forbidden_markers:
@@ -125,4 +128,66 @@ def normal_build_diagnostics_violations(nm_output: str) -> tuple[str, ...]:
             violations.append(
                 f"normal firmware contains opt-in diagnostics symbol: {marker}"
             )
+    return tuple(violations)
+
+
+def hardware_benchmark_placement_violations(
+    nm_output: str, *, filesystem: bool = False
+) -> tuple[str, ...]:
+    """Benchmark contract, with explicitly scoped SD for filesystem runs."""
+    symbols = _symbols(nm_output)
+    violations: list[str] = []
+    for marker in (
+        "core::validation::benchmark::HardwareBenchmarkEndpoint::begin(",
+        "core::validation::benchmark::HardwareBenchmarkEndpoint::advance(",
+        "core::validation::benchmark::beginMetrics(",
+        "core::diagnostics::beginMemoryFootprintTracking(",
+        "core::diagnostics::dynamicMemorySnapshot(",
+        "oc::ui::lvgl::benchmark::beginFrame(",
+        "oc::ui::lvgl::benchmark::endFrame(",
+    ):
+        if not any(kind in "TtWw" and marker in name
+                   for _address, _size, kind, name in symbols):
+            violations.append(f"required benchmark code is missing: {marker}")
+
+    for marker in (
+        "core::validation::benchmark::(anonymous namespace)::metrics",
+        "core::diagnostics::(anonymous namespace)::memoryHighWaterStorage",
+    ):
+        matches = tuple((address, size) for address, size, kind, name in symbols
+                        if kind in "BbDd" and name == marker)
+        if len(matches) != 1:
+            violations.append(f"benchmark requires one RAM2 storage: {marker}")
+        elif any(size == 0 or address < RAM2_START or address + size > RAM2_END
+                 for address, size in matches):
+            violations.append(f"benchmark storage must fit wholly in RAM2: {marker}")
+
+    spans = tuple((address, size) for address, size, kind, name in symbols
+                  if kind in "BbDd" and "psramSpanTable" in name)
+    if len(spans) != 1:
+        violations.append("benchmark requires one authoritative PSRAM span table")
+    else:
+        address, size = spans[0]
+        if address < EXTRAM_START or address + size > EXTRAM_END:
+            violations.append("benchmark PSRAM span table must fit wholly in EXTRAM")
+        if size != PSRAM_SPAN_TABLE_BYTES:
+            violations.append("benchmark PSRAM span table must be exactly 12408 bytes")
+
+    # These checks are deliberately about the linked ELF, not discarded map
+    # sections. An unavailable IFileSystem may remain for UI dependencies.
+    for marker in (
+        "SDCardBackend",
+        *(("SDFileSystemBackend", "FatFormatter::") if not filesystem else ()),
+        "StorageRecoveryRuntimeManager", "storageRecovery",
+        "ProjectSessionRestoreService", "ProjectSessionAutosaveService",
+        "core::diagnostics::PerformanceReporter",
+        "core::diagnostics::performanceReporter(", "reporterStorage",
+        "oc::log::detail::log<", "oc::log::detail::formatImpl", "oc::log::ScopeTimer",
+    ):
+        if any(marker in name for _address, _size, _kind, name in symbols):
+            violations.append(f"RAM-only benchmark contains forbidden symbol: {marker}")
+    if filesystem:
+        for marker in ("BenchFileSystem::init(", "SDFileSystemBackend::init("):
+            if not any(marker in name for _address, _size, _kind, name in symbols):
+                violations.append(f"filesystem benchmark missing scoped SD: {marker}")
     return tuple(violations)

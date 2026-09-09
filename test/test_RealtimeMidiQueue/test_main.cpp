@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -502,6 +503,54 @@ void test_note_off_replacement_is_atomic_on_failure() {
     assert(queue.cancelPendingEvents(3) == 1);
 }
 
+void test_note_off_replacement_preserves_sparse_channels_and_empty_cancellation() {
+    using EventType = core::sequencer::RealtimeMidiEventType;
+    core::sequencer::RealtimeMidiQueue queue;
+    std::array<oc::note::sequencer::StepBitMask128, 16> active{};
+    constexpr std::array<uint8_t, 3> channels{0U, 7U, 15U};
+    constexpr std::array<uint8_t, 4> notes{0U, 63U, 64U, 127U};
+    for (const auto channel : channels) {
+        for (const auto note : notes) active[channel].setBit(note);
+    }
+    assert(queue.push(event(EventType::NoteOn, 1000U, 60U, 3U)));
+    assert(queue.push(ccEvent(1000U, 74U, 90U, 2U)));
+    const auto result = queue.replaceTrackEventsWithNoteOffBatch(
+        3U, 1000U, active.data(), active.size());
+    assert(result.ok());
+    assert(result.requestedCount == channels.size() * notes.size());
+    assert(result.cancelledCount == 1U);
+    assert(result.displacedNoteOnCount == 0U);
+    assert(result.displacedControlChangeCount == 0U);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, 1000U, UINT32_MAX);
+    assert(transport.messages.size() == result.requestedCount + 1U);
+    size_t index = 0U;
+    for (const auto channel : channels) {
+        for (const auto note : notes) {
+            const auto& message = transport.messages[index++];
+            assert(message.type == EventType::NoteOff);
+            assert(message.channel == channel && message.note == note);
+            assert(message.velocity == 0U);
+        }
+    }
+    assert(transport.messages.back().type == EventType::ControlChange);
+
+    active = {};
+    assert(queue.push(event(EventType::NoteOn, 2000U, 61U, 3U)));
+    assert(queue.push(event(EventType::NoteOn, 2000U, 62U, 2U)));
+    const auto empty = queue.replaceTrackEventsWithNoteOffBatch(
+        3U, 2000U, active.data(), active.size());
+    assert(empty.ok() && empty.requestedCount == 0U);
+    assert(empty.cancelledCount == 1U && queue.size() == 1U);
+    testClock.freezeAt(2000U);
+    queue.drainDue(midi, 2000U, UINT32_MAX);
+    assert(transport.messages.size() == result.requestedCount + 2U);
+    assert(transport.messages.back().type == EventType::NoteOn);
+    assert(transport.messages.back().note == 62U);
+}
+
 class LifecycleObserver final
     : public core::sequencer::RealtimeMidiQueueLifecycleObserver {
 public:
@@ -532,6 +581,49 @@ public:
     std::vector<Removal> removed;
     std::vector<core::sequencer::RealtimeMidiEvent> dispatched;
 };
+
+void test_full_queue_compaction_preserves_callbacks_and_partial_drain_order() {
+    core::sequencer::RealtimeMidiQueue queue;
+    LifecycleObserver observer;
+    queue.attachLifecycleObserver(observer);
+    std::vector<core::sequencer::RealtimeMidiEvent> kept;
+    std::vector<core::sequencer::RealtimeMidiEvent> removed;
+    for (size_t i = 0; i < queue.capacity(); ++i) {
+        auto value = event(static_cast<core::sequencer::RealtimeMidiEventType>(i % 3U),
+            1000U + static_cast<uint32_t>(i), static_cast<uint8_t>(i % 128U),
+            static_cast<uint8_t>(i % 4U));
+        assert(queue.push(value));
+        if (value.trackIndex == 1U &&
+            value.type != core::sequencer::RealtimeMidiEventType::ControlChange) {
+            removed.push_back(value);
+        } else kept.push_back(value);
+    }
+    assert(queue.cancelPendingNoteEvents(1U) == removed.size());
+    assert(observer.removed.size() == removed.size());
+    for (size_t i = 0; i < removed.size(); ++i) {
+        assert(observer.removed[i].event.deadlineUs == removed[i].deadlineUs);
+        assert(observer.removed[i].reason ==
+            core::sequencer::RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
+    }
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    testClock.freezeAt(5000U);
+    queue.drainDue(midi, 5000U, 0U);
+    assert(queue.size() == kept.size() - 1U);
+    transport.acceptOutput = false;
+    queue.drainDue(midi, 5000U, UINT32_MAX);
+    assert(queue.size() == kept.size() - 1U);
+    transport.acceptOutput = true;
+    queue.drainDue(midi, 5000U, UINT32_MAX);
+    assert(queue.size() == 0U);
+    assert(observer.dispatched.size() == kept.size());
+    for (size_t i = 0; i < kept.size(); ++i) {
+        assert(observer.dispatched[i].deadlineUs == kept[i].deadlineUs);
+        assert(observer.dispatched[i].type == kept[i].type);
+        assert(observer.dispatched[i].trackIndex == kept[i].trackIndex);
+    }
+    queue.detachLifecycleObserver(observer);
+}
 
 void test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal() {
     core::sequencer::RealtimeMidiQueue queue;
@@ -787,10 +879,46 @@ void test_packed_event_preserves_invalid_metadata_for_validation() {
     std::cout << "[PASS] packed metadata keeps invalid values rejectable\n";
 }
 
+void test_admission_with_headroom_preserves_existing_events() {
+    using Queue = core::sequencer::RealtimeMidiQueue;
+    using Type = core::sequencer::RealtimeMidiEventType;
+    std::array<core::sequencer::RealtimeMidiEvent, Queue::MAX_QUEUE_DEPTH> batch{};
+    for (size_t i = 0; i < batch.size(); ++i) {
+        batch[i] = event(static_cast<Type>(i % 3U), 1000U + uint32_t(i), uint8_t(i % 128U));
+    }
+    for (const size_t depth : {0U, 128U, 512U, 1024U}) {
+        std::chrono::nanoseconds elapsed{};
+        Queue queue;
+        for (unsigned repetition = 0; repetition < 256; ++repetition) {
+            queue.clear();
+            assert(queue.pushBatch(batch.data(), depth).ok());
+            const auto start = std::chrono::steady_clock::now();
+            const auto accepted = queue.pushBatch(&batch[depth], 1);
+            elapsed += std::chrono::steady_clock::now() - start;
+            assert(accepted.ok());
+            assert(accepted.displacedNoteOnCount == 0 && accepted.displacedControlChangeCount == 0);
+            assert(queue.size() == depth + 1U);
+        }
+        MockMidiTransport transport;
+        oc::api::MidiAPI midi{transport};
+        testClock.freezeAt(3000U);
+        queue.drainDue(midi, 3000U, UINT32_MAX);
+        assert(transport.messages.size() == depth + 1U);
+        for (size_t i = 0; i <= depth; ++i) {
+            assert(transport.messages[i].type == batch[i].type);
+            assert(transport.messages[i].note == batch[i].note);
+        }
+        std::cout << "[MEASURE] admission depth=" << depth
+                  << " mean_ns=" << elapsed.count() / 256 << '\n';
+    }
+}
+
 }  // namespace
 
 int main() {
     installTimeProvider();
+    test_admission_with_headroom_preserves_existing_events();
+    test_full_queue_compaction_preserves_callbacks_and_partial_drain_order();
     test_zero_budget_completes_one_due_event();
     test_500us_budget_stops_on_exact_advancing_sample();
     test_lateness_boundaries_are_exact();
@@ -809,6 +937,7 @@ int main() {
     test_capacity_retains_full_envelope_and_one_safety_phase();
     test_note_off_batch_displaces_note_on_then_cc_never_note_off();
     test_note_off_replacement_is_atomic_on_failure();
+    test_note_off_replacement_preserves_sparse_channels_and_empty_cancellation();
     test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal();
     test_transport_rejection_retains_ownership_until_retry();
     test_saturating_diagnostic_counter();

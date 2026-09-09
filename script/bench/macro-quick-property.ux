@@ -1,0 +1,22 @@
+# Hardware: open/close Macro quick properties without editing musical content.
+# Tight counterpart of macro/editor-clipping-retained.ux, using the shared RAM fixture.
+0 scenario bench-macro-v1
+20 assert_view MACRO
+100 transport start
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1300 button LEFT_BOTTOM up
+1450 assert_mode macro.edit
+1500 marker quick_before
+1800 button LEFT_CENTER down
+2000 marker quick_open
+2200 button LEFT_CENTER up
+2450 marker quick_closed
+2500 assert_mode macro.edit
+2800 button LEFT_CENTER down
+3000 marker quick_reopen
+3200 button LEFT_CENTER up
+3450 assert_mode macro.edit
+3700 tap LEFT_TOP 60
+3900 assert_mode macro.performance
+4100 transport stop

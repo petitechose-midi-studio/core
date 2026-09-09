@@ -101,7 +101,7 @@ DrumPlaybackEngine::captureResolvedPageSignature(
 FLASHMEM void DrumPlaybackEngine::buildResolvedPageProjection(
     const DrumResolvedPageSignature& signature,
     drum::DrumResolvedPageProjection& out
-) const {
+) {
     out.reset();
     out.contextKey = static_cast<uint16_t>(
         (static_cast<uint16_t>(signature.page) << 8U) |
@@ -295,6 +295,8 @@ void DrumPlaybackEngine::setPattern(
 }
 
 FLASHMEM void DrumPlaybackEngine::reset() {
+    // Close dispatched notes before discarding their scheduled NoteOff edges.
+    if (playing_) (void)emitAllNotesOff_(last_tick_);
     clearPendingNotes_();
     last_triggered_ordinals_.fill(UINT32_MAX);
     telemetry_.reset();

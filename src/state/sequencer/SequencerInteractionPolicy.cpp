@@ -135,7 +135,9 @@ SequencerInteractionPolicy buildStepContentSelectorPolicy() {
     return policy;
 }
 
-SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContext& context) {
+FLASHMEM SequencerInteractionPolicy buildSelectionPolicy(
+    const SequencerInteractionContext& context
+) {
     SequencerInteractionPolicy policy{};
     const auto shared = core::state::buildStructureSelectionInteractionPolicy({
         .entryAvailable = false,
@@ -327,6 +329,25 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
             policy.bottomLeftTap = Action::MUTE_CURRENT_TRACK;
             break;
 
+        case Focus::LANE:
+            policy.scope = Scope::LANE;
+            policy.navTurn = Action::MOVE_LANE;
+            policy.navTap = Action::OPEN_LANE_EDITOR;
+            policy.navLongPress = Action::ENTER_SELECTION;
+            policy.optTurn = Action::EDIT_LANE_DIMENSION;
+            policy.leftTopTap = Action::NONE;
+            policy.leftCenterPress = Action::OPEN_LANE_DIMENSION_SELECTOR;
+            policy.leftBottomPress = Action::OPEN_LANE_PROPERTY_SELECTOR;
+            policy.leftCenterVisibility = Visibility::ACTIVE;
+            policy.leftBottomVisibility = Visibility::ACTIVE;
+            policy.bottomLeftTap = Action::NONE;
+            policy.bottomLeftHold = Action::NONE;
+            policy.bottomRightTap = Action::NONE;
+            policy.bottomRightHold = Action::NONE;
+            policy.bottomLeftVisibility = Visibility::HIDDEN;
+            policy.bottomRightVisibility = Visibility::HIDDEN;
+            break;
+
         case Focus::PAGE:
         default:
             policy.scope = childContentView ? Scope::CHILD_PATTERN : Scope::PATTERN;
@@ -359,6 +380,30 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
     return policy;
 }
 
+FLASHMEM SequencerInteractionPolicy buildClipLauncherPolicy(
+    const SequencerInteractionContext& context
+) {
+    SequencerInteractionPolicy policy{};
+    disableMainEditing(policy);
+    hideLeftSelectors(policy);
+    const bool trackHeader = context.navigationFocus == Focus::TRACK;
+    policy.scope = trackHeader ? Scope::TRACK : Scope::CLIP_LAUNCHER;
+    if (context.overlayVisible) {
+        policy.navTurn = Action::NONE;
+        return policy;
+    }
+    policy.navTurn = Action::MOVE_CLIP;
+    policy.navTap = trackHeader ? Action::OPEN_TRACK_EDITOR : Action::OPEN_CLIP;
+    policy.navLongPress = Action::ENTER_SELECTION;
+    if (trackHeader) {
+        applyStructureBottomActions(policy, context);
+        policy.bottomLeftTap = Action::MUTE_CURRENT_TRACK;
+    } else {
+        policy.macroTap = Action::LAUNCH_CLIP;
+    }
+    return policy;
+}
+
 }  // namespace
 
 FLASHMEM bool sequencerInteractionSelectionActive(const SequencerInteractionContext& context) {
@@ -375,12 +420,20 @@ FLASHMEM bool sequencerInteractionTransientActive(const SequencerInteractionCont
 }
 
 FLASHMEM bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractionContext& context) {
-    return !sequencerInteractionSelectionActive(context) && !sequencerInteractionTransientActive(context);
+    return !context.clipWorkspaceActive &&
+        !sequencerInteractionSelectionActive(context) &&
+        !sequencerInteractionTransientActive(context);
 }
 
 FLASHMEM SequencerInteractionPolicy buildSequencerInteractionPolicy(
     const SequencerInteractionContext& context
 ) {
+    if (context.clipWorkspaceActive && context.trackSelectionActive) {
+        return buildSelectionPolicy(context);
+    }
+    if (context.clipWorkspaceActive) {
+        return buildClipLauncherPolicy(context);
+    }
     if (context.stepEditorVisible) {
         return buildStepEditorPolicy(context);
     }
@@ -406,8 +459,14 @@ FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
     switch (action) {
         case SequencerInteractionAction::NONE:
             return Intent::NONE;
+        case SequencerInteractionAction::MOVE_CLIP:
+            return Intent::MOVE_FOCUS;
+        case SequencerInteractionAction::OPEN_CLIP:
+        case SequencerInteractionAction::LAUNCH_CLIP:
+            return Intent::ACTIVATE;
         case SequencerInteractionAction::MOVE_TRACK:
         case SequencerInteractionAction::MOVE_PATTERN:
+        case SequencerInteractionAction::MOVE_LANE:
         case SequencerInteractionAction::MOVE_STEP:
         case SequencerInteractionAction::MOVE_SELECTION_CURSOR:
         case SequencerInteractionAction::SELECT_PATTERN_DIMENSION:
@@ -421,10 +480,13 @@ FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
         case SequencerInteractionAction::APPLY_STEP_EDITOR:
         case SequencerInteractionAction::OPEN_TRACK_EDITOR:
         case SequencerInteractionAction::OPEN_PATTERN_EDITOR:
+        case SequencerInteractionAction::OPEN_LANE_EDITOR:
         case SequencerInteractionAction::OPEN_STEP_EDITOR:
         case SequencerInteractionAction::TOGGLE_VISIBLE_STEP:
             return Intent::ACTIVATE;
         case SequencerInteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR:
+        case SequencerInteractionAction::OPEN_LANE_DIMENSION_SELECTOR:
+        case SequencerInteractionAction::OPEN_LANE_PROPERTY_SELECTOR:
         case SequencerInteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
         case SequencerInteractionAction::OPEN_STEP_CONTENT_SELECTOR:
             return Intent::OPEN_ADVANCED;
@@ -435,6 +497,7 @@ FLASHMEM core::state::interaction::ControllerIntent controllerIntentFor(
         case SequencerInteractionAction::CANCEL_TRANSIENT_CONTEXT:
             return Intent::CANCEL;
         case SequencerInteractionAction::EDIT_PATTERN_DIMENSION:
+        case SequencerInteractionAction::EDIT_LANE_DIMENSION:
         case SequencerInteractionAction::EDIT_MUSICAL_PROPERTY_VARIATION:
         case SequencerInteractionAction::EDIT_STEP_PROPERTY:
         case SequencerInteractionAction::EDIT_STEP_LOCAL_RANDOM:

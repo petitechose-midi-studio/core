@@ -1,12 +1,11 @@
 #include "SequencerHeaderBar.hpp"
 
-#include <cstring>
-
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/interaction/StructureSelectionVisual.hpp"
@@ -50,16 +49,9 @@ constexpr uint32_t PAGE_DUPLICATE_BLOCKED_COLOR = selection_visual::structureSel
 
 template <size_t N>
 FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
-    if (!label) return;
-
-    const char* next = (text && text[0]) ? text : "";
-    if (std::strncmp(cache.data(), next, N) == 0) {
-        return;
+    if (label && ms::ui::text::copyTruncatedIfChanged(cache.data(), N, text)) {
+        lv_label_set_text(label, cache.data());
     }
-
-    std::strncpy(cache.data(), next, N - 1);
-    cache[N - 1] = '\0';
-    lv_label_set_text(label, cache.data());
 }
 
 FLASHMEM void drawStripRect(lv_layer_t* layer,

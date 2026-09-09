@@ -133,9 +133,13 @@ FLASHMEM void SequencerStructureNavigationWorkflow::moveByFocus(float delta) {
         case core::state::StructureNavigationFocus::STEP:
             moveStep(delta);
             return;
+        case core::state::StructureNavigationFocus::LANE:
+            moveLane(delta);
+            return;
         case core::state::StructureNavigationFocus::PAGE:
-        default:
             movePage(delta);
+            return;
+        default:
             return;
     }
 }
@@ -161,7 +165,7 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
             selection.active.set(true);
             return;
         }
-        case core::state::StructureNavigationFocus::PAGE: {
+        case core::state::StructureNavigationFocus::LANE: {
             auto& drumUi = sequencer_.drumSequencer;
             if (core::state::sequencer::isDrumOverviewActive(sequencer_) &&
                 drumUi.drumTrack != nullptr &&
@@ -173,6 +177,9 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
                 drumUi.bump();
                 return;
             }
+            return;
+        }
+        case core::state::StructureNavigationFocus::PAGE: {
             auto& selection = sequencer_.structureUi.pageSelection;
             const uint8_t cursor = currentActiveContentPage(sequencer_);
             selection.reset(core::state::StructureSelectionScope::PAGE, cursor);
@@ -446,15 +453,9 @@ FLASHMEM void SequencerStructureNavigationWorkflow::navigateSelection(float delt
         auto& selection = sequencer_.structureUi.stepSelection;
         const uint8_t current = selection.cursorStep.get();
         const uint8_t maxCursor = maxStepCursor();
-        const int next = static_cast<int>(current) + direction;
-        uint8_t wrapped = 0;
-        if (next < 0) {
-            wrapped = maxCursor;
-        } else if (next > static_cast<int>(maxCursor)) {
-            wrapped = 0;
-        } else {
-            wrapped = static_cast<uint8_t>(next);
-        }
+        const auto wrapped = static_cast<uint8_t>(oc::util::wrapIndex(
+            static_cast<int>(current) + nav::turnSteps(delta),
+            static_cast<int>(maxCursor) + 1));
         selection.cursorStep.set(wrapped);
         sequencer_.focusedStep.set(wrapped);
         sequencer_.page.set(
@@ -499,6 +500,11 @@ FLASHMEM void SequencerStructureNavigationWorkflow::movePage(float delta) {
     setPagePreview(next);
 }
 
+FLASHMEM void SequencerStructureNavigationWorkflow::moveLane(float delta) {
+    if (!core::state::sequencer::isDrumOverviewActive(sequencer_)) return;
+    sequencer_.drumSequencer.moveLane(delta);
+}
+
 FLASHMEM void SequencerStructureNavigationWorkflow::moveTrack(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
     const uint16_t enabledMask = currentTrackEnabledMask();
@@ -524,15 +530,8 @@ FLASHMEM void SequencerStructureNavigationWorkflow::moveStep(float delta) {
         sequencer_.focusedStep.get(),
         static_cast<uint8_t>(length - 1U)
     );
-    const int next = static_cast<int>(current) + nav::turnStep(delta);
-    uint8_t wrapped = 0;
-    if (next < 0) {
-        wrapped = static_cast<uint8_t>(length - 1U);
-    } else if (next >= length) {
-        wrapped = 0;
-    } else {
-        wrapped = static_cast<uint8_t>(next);
-    }
+    const auto wrapped = static_cast<uint8_t>(oc::util::wrapIndex(
+        static_cast<int>(current) + nav::turnSteps(delta), length));
 
     sequencer_.focusedStep.set(wrapped);
     sequencer_.page.set(core::state::sequencer::activeContentPageForStep(wrapped));

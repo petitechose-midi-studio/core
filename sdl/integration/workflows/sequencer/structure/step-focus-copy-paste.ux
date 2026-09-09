@@ -2,16 +2,22 @@
 # Purpose: validates that a user can copy the focused step directly, move the
 # step cursor, then paste with a bottom-right hold without entering selection.
 # Expect: capture_changed:step_4_focus_paste_target=step_4_pasted
+# Expect: semantic:step_2_pitch_edited:target_step=1, semantic:step_2_pitch_edited:step_on=1, semantic:step_2_pitch_edited:resolved_note=53
+# Expect: semantic:step_2_copied:target_step=1, semantic:step_2_copied:step_on=1, semantic:step_2_copied:resolved_note=53
+# Expect: semantic:step_4_focus_paste_target:target_step=3
+# Expect: semantic:step_4_pasted:target_step=3, semantic:step_4_pasted:step_on=1, semantic:step_4_pasted:resolved_note=53
 
 0 scenario sequencer
 50 capture screen pattern_focus
 
 # Move directly to Step focus and create an edited source step.
 150 button NAV down
-210 encoder NAV 1
+210 encoder NAV 0.01
 270 button NAV up
 350 capture screen step_focus
 750 tap MACRO_2 60
+# The fixture already enables step 2: the first tap focuses and disables it.
+850 tap MACRO_2 60
 950 capture screen step_2_enabled
 1050 encoder OPT 0.58
 1250 capture screen step_2_pitch_edited
@@ -21,7 +27,7 @@
 1600 capture screen step_2_copied
 
 # Move focus to step 4 and paste the complete step payload.
-1700 encoder NAV 2
+1700 encoder NAV 0.02
 1900 capture screen step_4_focus_paste_target
 2000 button BOTTOM_RIGHT down
 2200 capture screen step_4_paste_hold_started

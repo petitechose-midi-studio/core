@@ -1,0 +1,75 @@
+# Hardware bench: 20 seconds, repeated absolute signed Depth edits on Pulse Lift.
+# Based on sdl/integration/workflows/macro/modulator-multi-assignment.ux.
+# The existing assignment stays selected; no add/delete, route change or source toggle.
+# OPT is normalized in MacroAutomationHandler::editFocusedValue; NAV uses delta sign.
+0 scenario bench-macro-v1
+0 marker macro_root
+20 assert_view MACRO
+40 assert_mode macro.performance
+100 transport start
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1300 button LEFT_BOTTOM up
+1400 assert_view MACRO
+1420 assert_mode macro.edit
+1450 encoder_value NAV 0.010
+1570 encoder_value NAV 0.010
+1650 marker assignment_open
+1690 tap NAV 60
+1910 assert_view MACRO
+1930 assert_mode macro.modulation_editor
+
+# Alternating endpoints force authored depth and overlay preview updates.
+2200 marker depth_edit_1
+2300 encoder_value OPT 0.250
+2800 encoder_value OPT 0.750
+3300 encoder_value OPT 0.250
+3800 encoder_value OPT 0.750
+4300 encoder_value OPT 0.250
+4800 encoder_value OPT 0.750
+5300 encoder_value OPT 0.250
+5500 assert_view MACRO
+5520 assert_mode macro.modulation_editor
+
+6000 marker depth_edit_2
+6300 encoder_value OPT 0.750
+6800 encoder_value OPT 0.250
+7300 encoder_value OPT 0.750
+7800 encoder_value OPT 0.250
+8300 encoder_value OPT 0.750
+8800 encoder_value OPT 0.250
+9300 encoder_value OPT 0.750
+9500 assert_view MACRO
+9520 assert_mode macro.modulation_editor
+
+10000 marker depth_edit_3
+10300 encoder_value OPT 0.250
+10800 encoder_value OPT 0.750
+11300 encoder_value OPT 0.250
+11800 encoder_value OPT 0.750
+12300 encoder_value OPT 0.250
+12800 encoder_value OPT 0.750
+13300 encoder_value OPT 0.250
+13500 assert_view MACRO
+13520 assert_mode macro.modulation_editor
+
+14000 marker depth_edit_4
+14300 encoder_value OPT 0.750
+14800 encoder_value OPT 0.250
+15300 encoder_value OPT 0.750
+15800 encoder_value OPT 0.250
+16300 encoder_value OPT 0.750
+16800 encoder_value OPT 0.250
+17100 assert_view MACRO
+17120 assert_mode macro.modulation_editor
+
+# Close through the existing local Back grammar, then stop fixture playback.
+17500 marker editor_parent
+17530 tap LEFT_TOP 60
+17900 assert_view MACRO
+17920 assert_mode macro.edit
+18200 marker performance_return
+18230 tap LEFT_TOP 60
+18600 assert_view MACRO
+18620 assert_mode macro.performance
+19000 transport stop

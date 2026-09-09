@@ -37,7 +37,7 @@ using test_support::TestEncoderHardware;
 
 struct ViewSwitcherHarness {
     static constexpr oc::type::ScopeID MACRO_VIEW_SCOPE = 801;
-    static constexpr oc::type::ScopeID SEQUENCER_VIEW_SCOPE = 802;
+    static constexpr oc::type::ScopeID CLIPS_VIEW_SCOPE = 802;
     static constexpr oc::type::ScopeID PROJECT_VIEW_SCOPE = 803;
     static constexpr oc::type::ScopeID DEVICE_SETTINGS_VIEW_SCOPE = 804;
     static constexpr oc::type::ScopeID VIEW_SELECTOR_SCOPE = 805;
@@ -66,7 +66,7 @@ struct ViewSwitcherHarness {
                   buttons,
                    core::handler::ViewSwitcherHandler::ViewScopes{
                        MACRO_VIEW_SCOPE,
-                       SEQUENCER_VIEW_SCOPE,
+                       CLIPS_VIEW_SCOPE,
                        PROJECT_VIEW_SCOPE,
                        DEVICE_SETTINGS_VIEW_SCOPE,
                        PROJECT_VIEW_SCOPE,
@@ -75,8 +75,8 @@ struct ViewSwitcherHarness {
         overlays.registerCleanup(core::ui::OverlayType::VIEW_SELECTOR, VIEW_SELECTOR_SCOPE);
         overlays.setActiveViewProvider([this]() {
             switch (state.activeView.get()) {
-                case core::ui::ViewType::SEQUENCER:
-                    return SEQUENCER_VIEW_SCOPE;
+                case core::ui::ViewType::CLIPS:
+                    return CLIPS_VIEW_SCOPE;
                 case core::ui::ViewType::PROJECT:
                 case core::ui::ViewType::MODULATORS:
                     return PROJECT_VIEW_SCOPE;
@@ -131,6 +131,10 @@ void assertSelectorStaysClosed(ViewSwitcherHarness& h) {
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
 }
 
+void enterPatternRoute(ViewSwitcherHarness& h) {
+    h.state.sequencer.clipWorkspace.enterPattern(0U, 0U);
+}
+
 void recordMacroDestination(ViewSwitcherHarness& h, uint8_t cc) {
     const core::state::macro::MacroAutomationSlotAddress address{
         .track = 0,
@@ -164,12 +168,12 @@ void authorPendingCcLaneEvent(ViewSwitcherHarness& h) {
     draft.destination.routePolicy = seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK;
     draft.initialValue = 64U;
     assert(seq::createSequencerCcLane(*bank, 0U, draft).changed());
-    seq::installSequencerCcLaneBank(h.state.sequencer.pattern, std::move(bank));
+    seq::installSequencerCcLaneBank(h.state.sequencer.pattern(), std::move(bank));
     assert(h.state.clearProjectHistory());
 
     assert(seq::cloneSequencerCcLaneBank(
         bank,
-        seq::sequencerCcLaneView(h.state.sequencer.pattern)
+        seq::sequencerCcLaneView(h.state.sequencer.pattern())
     ));
     assert(seq::setSequencerCcLaneEvent(*bank, 0U, 0U, 64U).changed());
     assert(seq::sequencerHistoryOpenAccepted(
@@ -180,7 +184,7 @@ void authorPendingCcLaneEvent(ViewSwitcherHarness& h) {
         64,
         bank.get(),
         100U)));
-    seq::installSequencerCcLaneBank(h.state.sequencer.pattern, std::move(bank));
+    seq::installSequencerCcLaneBank(h.state.sequencer.pattern(), std::move(bank));
 }
 
 void test_view_selector_opens_navigates_and_confirms_on_close() {
@@ -197,14 +201,15 @@ void test_view_selector_opens_navigates_and_confirms_on_close() {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.viewSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
-    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+    assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
 
     std::cout << "[PASS] test_view_selector_opens_navigates_and_confirms_on_close\n";
 }
 
-void test_view_selector_refuses_to_hide_an_active_step_draft() {
+void test_pattern_route_owns_back_during_an_active_step_draft() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
+    enterPatternRoute(h);
     assert(core::state::sequencer::beginStepContentDraft(
         h.state.sequencer,
         core::state::sequencer::SequencerStepContentDraftKind::MICRO_SEQUENCE,
@@ -214,21 +219,15 @@ void test_view_selector_refuses_to_hide_an_active_step_draft() {
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.viewSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
-    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+    assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
     assert(h.state.sequencer.stepContentDraft.active.get());
-    assert(h.state.sequencer.stepContentDraft.failure ==
-           core::state::sequencer::
-               SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
-    assert(h.state.sequencer.stepContentDraft.blockedTransition ==
-           core::state::sequencer::
-               SequencerStepContentDraftBlockedTransition::VIEW);
     std::cout
-        << "[PASS] test_view_selector_refuses_to_hide_an_active_step_draft\n";
+        << "[PASS] Pattern route owns Back during an active Step draft\n";
 }
 
 void test_open_selector_cannot_commit_a_view_change_after_draft_begins() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
     openSelector(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(core::state::sequencer::beginStepContentDraft(
@@ -238,7 +237,7 @@ void test_open_selector_cannot_commit_a_view_change_after_draft_begins() {
     ));
 
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+    assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
     assert(h.state.sequencer.stepContentDraft.active.get());
     assert(h.state.sequencer.stepContentDraft.blockedTransition ==
            core::state::sequencer::
@@ -256,7 +255,7 @@ void test_nav_release_confirms_and_closes_selector() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.tap(Config::ButtonID::NAV);
 
-    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+    assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
     assert(!h.state.viewSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
 
@@ -286,7 +285,7 @@ void test_modulators_item_routes_to_project_modulators() {
 
 void test_selector_uses_active_view_scope() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
 
     openSelector(h);
     assert(h.state.viewSelector.selectedIndex.get() == 1);
@@ -300,22 +299,22 @@ void test_selector_uses_active_view_scope() {
     std::cout << "[PASS] test_selector_uses_active_view_scope\n";
 }
 
-void test_sequencer_short_left_top_opens_selector_at_root() {
+void test_clips_short_left_top_opens_selector_at_matrix_root() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
 
     h.tap(Config::ButtonID::LEFT_TOP);
 
     assert(h.state.viewSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::VIEW_SELECTOR);
-    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+    assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
 
-    std::cout << "[PASS] Sequencer root short LEFT_TOP opens View Selector\n";
+    std::cout << "[PASS] Clips matrix short LEFT_TOP opens View Selector\n";
 }
 
-void test_sequencer_left_top_hold_navigates_and_applies_on_release() {
+void test_clips_left_top_hold_navigates_and_applies_on_release() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
 
     h.press(Config::ButtonID::LEFT_TOP);
     assert(h.state.viewSelector.visible.get());
@@ -330,7 +329,7 @@ void test_sequencer_left_top_hold_navigates_and_applies_on_release() {
     assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
 
     std::cout
-        << "[PASS] Sequencer LEFT_TOP hold applies View Selector on release\n";
+        << "[PASS] Clips LEFT_TOP hold applies View Selector on release\n";
 }
 
 void test_selector_uses_project_active_view_scope() {
@@ -345,7 +344,7 @@ void test_selector_uses_project_active_view_scope() {
     assert(h.state.viewSelector.selectedIndex.get() == 1);
 
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+    assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
 
     std::cout << "[PASS] test_selector_uses_project_active_view_scope\n";
 }
@@ -495,8 +494,8 @@ void test_selector_physically_restores_project_settings_history() {
 
 void test_selector_commits_pending_step_edit_before_global_undo() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
-    const uint8_t initial = h.state.sequencer.pattern.note[0];
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
+    const uint8_t initial = h.state.sequencer.pattern().note[0];
     assert(core::state::sequencer::sequencerHistoryOpenAccepted(
         h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         0,
@@ -513,14 +512,14 @@ void test_selector_commits_pending_step_edit_before_global_undo() {
     assert(h.state.projectHistory.canUndo());
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.viewSelector.visible.get());
-    assert(h.state.sequencer.pattern.note[0] == initial);
+    assert(h.state.sequencer.pattern().note[0] == initial);
 
     std::cout << "[PASS] selector commits a pending Step edit before global Undo\n";
 }
 
 void test_selector_commits_pending_cc_edit_before_global_undo() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
     authorPendingCcLaneEvent(h);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(!h.state.projectHistory.canUndo());
@@ -531,12 +530,12 @@ void test_selector_commits_pending_cc_edit_before_global_undo() {
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.viewSelector.visible.get());
     const auto* bank = core::state::sequencer::sequencerCcLaneView(
-        h.state.sequencer.pattern
+        h.state.sequencer.pattern()
     );
     assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
 
     h.tap(Config::ButtonID::LEFT_BOTTOM);
-    bank = core::state::sequencer::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = core::state::sequencer::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
     assert(bank->lanes[0].values[0] == 64U);
 
@@ -566,7 +565,7 @@ void test_selector_does_not_open_when_overlay_or_structure_selection_is_active()
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
         h.state.sequencer.structureUi.stepSelection.active.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
@@ -574,7 +573,7 @@ void test_selector_does_not_open_when_overlay_or_structure_selection_is_active()
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
         h.state.sequencer.structureUi.pageSelection.active.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
@@ -582,7 +581,7 @@ void test_selector_does_not_open_when_overlay_or_structure_selection_is_active()
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
         h.state.trackNavigation.selection.active.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
@@ -618,7 +617,8 @@ void test_selector_does_not_open_when_overlay_or_structure_selection_is_active()
 void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
+        enterPatternRoute(h);
         h.state.sequencer.patternQuickControls.selecting.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
@@ -626,7 +626,8 @@ void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
+        enterPatternRoute(h);
         h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
@@ -634,7 +635,8 @@ void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
+        enterPatternRoute(h);
         h.state.sequencer.stepContentSelector.selecting.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
@@ -642,7 +644,8 @@ void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
+        enterPatternRoute(h);
         h.state.sequencer.ccLaneUi.mode =
             core::state::sequencer::SequencerCcLaneUiMode::LANE_SETTINGS;
         h.tap(Config::ButtonID::LEFT_TOP);
@@ -654,7 +657,8 @@ void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
 
 void test_selector_waits_until_sequencer_child_has_backed_to_root() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
+    enterPatternRoute(h);
     h.state.sequencer.contentView.kind.set(
         core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE
     );
@@ -670,7 +674,7 @@ void test_selector_waits_until_sequencer_child_has_backed_to_root() {
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::LEFT_TOP);
     assert(!h.state.viewSelector.visible.get());
-    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+    assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
     assert(h.state.sequencer.contentView.kind.get() ==
            core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE);
     assert(h.state.sequencer.contentView.depth.get() == 1U);
@@ -733,7 +737,8 @@ void test_selector_does_not_open_during_project_modulator_audition() {
 
 void test_selector_waits_until_cc_lane_has_backed_to_root() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
+    enterPatternRoute(h);
     h.state.sequencer.ccLaneUi.mode =
         core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID;
 
@@ -778,14 +783,16 @@ void test_selector_defers_to_local_transient_owners() {
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
+        enterPatternRoute(h);
         h.state.sequencer.contextSelector.visible = true;
         assertSelectorStaysClosed(h);
     }
 
     {
         ViewSwitcherHarness h;
-        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.activeView.set(core::ui::ViewType::CLIPS);
+        enterPatternRoute(h);
         h.state.sequencer.structureUi.trackPaste.buttonOwned = true;
         assertSelectorStaysClosed(h);
     }
@@ -809,7 +816,7 @@ void test_selector_defers_to_local_transient_owners() {
 
 void test_selector_is_not_a_chord_and_recovers_after_release() {
     ViewSwitcherHarness h;
-    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
 
     h.press(Config::ButtonID::NAV);
     assertSelectorStaysClosed(h);
@@ -823,13 +830,13 @@ void test_selector_is_not_a_chord_and_recovers_after_release() {
 
 int main() {
     test_view_selector_opens_navigates_and_confirms_on_close();
-    test_view_selector_refuses_to_hide_an_active_step_draft();
+    test_pattern_route_owns_back_during_an_active_step_draft();
     test_open_selector_cannot_commit_a_view_change_after_draft_begins();
     test_nav_release_confirms_and_closes_selector();
     test_modulators_item_routes_to_project_modulators();
     test_selector_uses_active_view_scope();
-    test_sequencer_short_left_top_opens_selector_at_root();
-    test_sequencer_left_top_hold_navigates_and_applies_on_release();
+    test_clips_short_left_top_opens_selector_at_matrix_root();
+    test_clips_left_top_hold_navigates_and_applies_on_release();
     test_selector_uses_project_active_view_scope();
     test_modulators_route_applies_while_project_view_is_already_active();
     test_device_settings_item_switches_to_device_settings_view();

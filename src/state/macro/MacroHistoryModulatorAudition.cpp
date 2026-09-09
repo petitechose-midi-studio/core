@@ -91,7 +91,7 @@ FLASHMEM bool MacroHistoryService::commitProjectSourceEdit_(
         return false;
     }
     const auto* live = core::state::modulation::findProjectModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         change->sourceEdit.after.id
     );
     if (live == nullptr ||
@@ -160,7 +160,7 @@ MacroHistoryService::beginNewModulatorAudition_(
     change->kind = MacroHistoryActionKind::CREATE_MODULATOR_ASSIGNMENT;
     change->address = address;
     auto& payload = change->modulator;
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY ||
         graph.outputBindingCount >= PROJECT_MODULATION_BINDING_CAPACITY ||
         (triggerDraft != nullptr &&
@@ -316,7 +316,7 @@ MacroHistoryService::createUnassignedModulator_(
     if (pendingModulatorSlot_() != nullptr || pages.control.audition.active()) {
         return failure;
     }
-    auto& graph = pages.control.authored.modulation;
+    auto& graph = pages.control.authored().modulation;
     if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY ||
         (triggerDraft != nullptr &&
          graph.triggerBindingCount >= PROJECT_MODULATION_TRIGGER_CAPACITY)) {

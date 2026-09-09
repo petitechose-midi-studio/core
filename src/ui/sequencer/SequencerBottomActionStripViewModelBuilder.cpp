@@ -8,6 +8,7 @@
 
 #include "config/Timing.hpp"
 #include "state/project/ProjectDomainRules.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
@@ -492,16 +493,14 @@ FLASHMEM bool projectDrumBottomActionStrip(
         applyHoldProgress(props.slots[2], hold, pasteHold);
         return true;
     }
+    if (focus == core::state::StructureNavigationFocus::LANE) {
+        // Lane structure actions are deliberately entered through NAV hold so
+        // the same selection grammar owns copy, move and clear.
+        return true;
+    }
+    if (focus != core::state::StructureNavigationFocus::PAGE) return true;
 
-    const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(
-        drumUi.selectedLane
-    );
-    const uint8_t pageCount = std::max<uint8_t>(
-        1U,
-        static_cast<uint8_t>(
-            (length + drumUi.STEPS_PER_PAGE - 1U) / drumUi.STEPS_PER_PAGE
-        )
-    );
+    const uint8_t pageCount = drumUi.overviewPageCount();
     const Visual pagingVisual = pageCount > 1U
         ? Visual::ACTIVE
         : Visual::DISABLED;
@@ -728,6 +727,108 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
 ) {
     StripProps props;
     props.visible = true;
+    if (source.sequencer.clipWorkspace.matrixVisible()) {
+        if (source.trackNavigation.selection.active.get() &&
+            projectSelectionBottomActionStrip(source, props)) {
+            return props;
+        }
+        const auto& launcher = source.sequencer.clipWorkspace;
+        for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
+        if (!launcher.selectionActive()) {
+            if (launcher.editorActive()) {
+                return props;
+            }
+            return props;
+        }
+
+        const core::state::sequencer::SequencerClipAddress sourceAddress{
+            launcher.sourceTrack,
+            launcher.sourceSlot,
+        };
+        const uint8_t selectedCount = launcher.selectedCount();
+        const bool singleSelected = selectedCount == 1U;
+        if (launcher.removePending()) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_REMOVE,
+                Visual::ARMED,
+                Tone::DESTRUCTIVE
+            );
+            props.slots[1] =
+                core::ui::makeStructureSelectionCountStripSlot(selectedCount);
+            return props;
+        }
+        const bool removable = singleSelected && !launcher.placementActive() &&
+            core::state::sequencer::canRequestSequencerClipDelete(
+                source.clips,
+                source.clipLaunches,
+                sourceAddress,
+                source.statusBar.playing.get());
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_REMOVE,
+            launcher.removeHoldActive
+                ? Visual::ARMED
+                : removable ? Visual::ACTIVE : Visual::DISABLED,
+            Tone::DESTRUCTIVE
+        );
+        props.slots[0].holdActive = launcher.removeHoldActive;
+        props.slots[0].holdStartedAtMs = launcher.removeHoldStartedAtMs;
+        props.slots[0].holdDurationMs =
+            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        props.slots[1] =
+            core::ui::makeStructureSelectionCountStripSlot(selectedCount);
+
+        const bool placement = launcher.placementActive();
+        core::state::sequencer::SequencerClipAddress firstDestination{};
+        const bool hasDuplicateDestination = singleSelected &&
+            core::state::sequencer::firstSequencerClipTransferDestination(
+                source.clips,
+                source.tracks,
+                sourceAddress,
+                core::state::sequencer::
+                    SequencerClipStructureAction::DUPLICATE_CLIP,
+                firstDestination);
+        const core::state::sequencer::SequencerClipAddress destination{
+            launcher.focusedTrack,
+            launcher.focusedSlot,
+        };
+        const bool moving = launcher.operation ==
+            core::state::sequencer::ClipWorkspaceOperation::MOVE_DESTINATION;
+        const bool destinationAvailable = placement && (moving
+            ? core::state::sequencer::canMoveSequencerClipSelectionNow(
+                  source.clips,
+                  source.clipLaunches,
+                  launcher.selectedClipMasks,
+                  source.statusBar.playing.get()) &&
+                core::state::sequencer::canMoveSequencerClipSelection(
+                  source.clips,
+                  source.tracks,
+                  source.sequencer,
+                  launcher.selectedClipMasks,
+                  static_cast<int8_t>(
+                      static_cast<int>(destination.track) -
+                      sourceAddress.track),
+                  static_cast<int8_t>(
+                      static_cast<int>(destination.slot) -
+                      sourceAddress.slot))
+            : singleSelected &&
+                core::state::sequencer::canTransferSequencerClip(
+                    source.clips,
+                    source.tracks,
+                    sourceAddress,
+                    destination,
+                    core::state::sequencer::
+                        SequencerClipStructureAction::DUPLICATE_CLIP));
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            placement
+                ? standalone::icons::ACTION_PLACE_TARGET
+                : standalone::icons::ACTION_COPY,
+            placement
+                ? destinationAvailable ? Visual::ACTIVE : Visual::DISABLED
+                : hasDuplicateDestination ? Visual::ACTIVE : Visual::DISABLED,
+            placement ? Tone::POSITIVE : Tone::NEUTRAL
+        );
+        return props;
+    }
     if (source.sequencer.patternPresetPreview.active()) {
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_VALIDATE,

@@ -4,9 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "persistence/AtomicProductFile.hpp"
 #include "persistence/PersistenceChecksum.hpp"
-#include "persistence/ProductConditionalMutationDigest.hpp"
 #include "persistence/PersistenceBinaryCodec.hpp"
 
 namespace core::persistence::conditional_mutation {
@@ -54,165 +52,6 @@ FLASHMEM bool readPath(
     }
     path[length] = '\0';
     return true;
-}
-
-FLASHMEM Status removeJournalLast(
-    ProductFileService& files,
-    const ProductMutationLease& lease
-) {
-    const auto stagingCleanup = removeIfExists(files, lease, JOURNAL_STAGING_PATH);
-    if (stagingCleanup != Status::OK) return stagingCleanup;
-    return removeIfExists(files, lease, JOURNAL_PATH);
-}
-
-FLASHMEM ExecutionResult executeReplace(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    const Journal& journal
-) {
-    auto current = readDigest(files, lease, journal.currentPath);
-    if (current.status == Status::OK &&
-        digestEquals(current.sha256, journal.replacementSha256)) {
-        if (removeIfExists(files, lease, journal.stagingPath) != Status::OK ||
-            removeIfExists(files, lease, BACKUP_PATH) != Status::OK ||
-            removeJournalLast(files, lease) != Status::OK) {
-            return {Status::STORAGE_ERROR, true};
-        }
-        return {Status::OK, true};
-    }
-
-    if (current.status == Status::OK) {
-        if (!digestEquals(current.sha256, journal.expectedSourceSha256)) {
-            return {Status::PRECONDITION_FAILED, false};
-        }
-        auto staging = readDigest(files, lease, journal.stagingPath);
-        if (staging.status != Status::OK ||
-            !digestEquals(staging.sha256, journal.replacementSha256)) {
-            return {
-                staging.status == Status::OK
-                    ? Status::PRECONDITION_FAILED
-                    : staging.status,
-                false,
-            };
-        }
-        auto stagingInfo = files.stat(lease, journal.stagingPath);
-        if (!stagingInfo || stagingInfo.value().type != oc::interface::FileType::FILE) {
-            return {
-                stagingInfo ? Status::INVALID_STATE
-                            : statusFromError(stagingInfo.error()),
-                false,
-            };
-        }
-        auto promoted = commitProductFileTemp(
-            files,
-            lease,
-            journal.currentPath,
-            BACKUP_PATH,
-            journal.stagingPath,
-            stagingInfo.value().sizeBytes,
-            staging.crc32
-        );
-        if (!promoted) return {statusFromError(promoted.error()), false};
-
-        auto committed = readDigest(files, lease, journal.currentPath);
-        if (committed.status != Status::OK ||
-            !digestEquals(committed.sha256, journal.replacementSha256)) {
-            return {Status::STORAGE_ERROR, false};
-        }
-        if (removeJournalLast(files, lease) != Status::OK) {
-            return {Status::STORAGE_ERROR, true};
-        }
-        return {Status::OK, true};
-    }
-
-    if (current.status != Status::NOT_FOUND) {
-        return {current.status, false};
-    }
-
-    auto backup = readDigest(files, lease, BACKUP_PATH);
-    if (backup.status == Status::NOT_FOUND) {
-        return {Status::STORAGE_ERROR, false};
-    }
-    if (backup.status != Status::OK ||
-        !digestEquals(backup.sha256, journal.expectedSourceSha256)) {
-        return {
-            backup.status == Status::OK
-                ? Status::PRECONDITION_FAILED
-                : backup.status,
-            false,
-        };
-    }
-
-    auto staging = readDigest(files, lease, journal.stagingPath);
-    if (staging.status == Status::OK &&
-        digestEquals(staging.sha256, journal.replacementSha256)) {
-        auto stagingInfo = files.stat(lease, journal.stagingPath);
-        if (!stagingInfo || stagingInfo.value().type != oc::interface::FileType::FILE) {
-            return {
-                stagingInfo ? Status::INVALID_STATE
-                            : statusFromError(stagingInfo.error()),
-                false,
-            };
-        }
-        auto promoted = commitProductFileTemp(
-            files,
-            lease,
-            journal.currentPath,
-            BACKUP_PATH,
-            journal.stagingPath,
-            stagingInfo.value().sizeBytes,
-            staging.crc32
-        );
-        if (!promoted) return {statusFromError(promoted.error()), false};
-        if (removeJournalLast(files, lease) != Status::OK) {
-            return {Status::STORAGE_ERROR, true};
-        }
-        return {Status::OK, true};
-    }
-
-    auto restored = files.rename(lease, BACKUP_PATH, journal.currentPath);
-    if (!restored) return {statusFromError(restored.error()), false};
-    if (removeJournalLast(files, lease) != Status::OK) {
-        return {Status::STORAGE_ERROR, false};
-    }
-    return {Status::STORAGE_ERROR, false};
-}
-
-FLASHMEM ExecutionResult executeDelete(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    const Journal& journal
-) {
-    auto current = readDigest(files, lease, journal.currentPath);
-    if (current.status == Status::OK) {
-        if (!digestEquals(current.sha256, journal.expectedSourceSha256)) {
-            return {Status::PRECONDITION_FAILED, false};
-        }
-        auto backup = files.stat(lease, BACKUP_PATH);
-        if (backup || backup.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
-            return {Status::INVALID_STATE, false};
-        }
-        auto moved = files.rename(lease, journal.currentPath, BACKUP_PATH);
-        if (!moved) return {statusFromError(moved.error()), false};
-    } else if (current.status != Status::NOT_FOUND) {
-        return {current.status, false};
-    }
-
-    auto backup = readDigest(files, lease, BACKUP_PATH);
-    if (backup.status == Status::OK) {
-        if (!digestEquals(backup.sha256, journal.expectedSourceSha256)) {
-            return {Status::PRECONDITION_FAILED, false};
-        }
-        auto removed = files.remove(lease, BACKUP_PATH);
-        if (!removed) return {statusFromError(removed.error()), false};
-    } else if (backup.status != Status::NOT_FOUND) {
-        return {backup.status, false};
-    }
-
-    if (removeJournalLast(files, lease) != Status::OK) {
-        return {Status::STORAGE_ERROR, true};
-    }
-    return {Status::OK, true};
 }
 
 }  // namespace
@@ -428,39 +267,6 @@ FLASHMEM Status quarantineCorruptJournal(
     if (staleCleanup != Status::OK) return staleCleanup;
     auto quarantined = files.rename(lease, JOURNAL_PATH, JOURNAL_QUARANTINE_PATH);
     return quarantined ? Status::OK : statusFromError(quarantined.error());
-}
-
-FLASHMEM ExecutionResult executeJournal(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    const Journal& journal
-) {
-    return journal.kind == Kind::REPLACE
-        ? executeReplace(files, lease, journal)
-        : executeDelete(files, lease, journal);
-}
-
-FLASHMEM Status recoverPendingMutation(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    bool& quarantined
-) {
-    quarantined = false;
-    Journal journal{};
-    bool present = false;
-    bool corrupt = false;
-    const auto loaded = readJournal(files, lease, journal, present, corrupt);
-    if (loaded != Status::OK) {
-        if (!corrupt) return loaded;
-        const auto quarantine = quarantineCorruptJournal(files, lease);
-        if (quarantine != Status::OK) return quarantine;
-        quarantined = true;
-        return removeIfExists(files, lease, JOURNAL_STAGING_PATH);
-    }
-    const auto stagingCleanup = removeIfExists(files, lease, JOURNAL_STAGING_PATH);
-    if (stagingCleanup != Status::OK) return stagingCleanup;
-    if (!present) return Status::OK;
-    return executeJournal(files, lease, journal).status;
 }
 
 }  // namespace core::persistence::conditional_mutation

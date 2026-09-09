@@ -1,0 +1,29 @@
+# RAM-only: inspect five live source traces, scroll, edit the focused rate,
+# bypass/restore it, then return to Macros. No source creation or SD writes.
+0 scenario bench-macro-v1
+20 assert_view MACRO
+100 transport start
+180 button LEFT_TOP down
+300 encoder_value NAV 0.010
+450 encoder_value NAV 0.010
+650 button LEFT_TOP up
+1100 assert_mode project.modulators
+1200 marker registry_live
+2500 encoder_value NAV 0.010
+2800 encoder_value NAV 0.010
+3100 encoder_value NAV -0.010
+3400 encoder_value OPT 0.250
+3700 encoder_value OPT 0.750
+4100 tap BOTTOM_LEFT 60
+4400 tap BOTTOM_LEFT 60
+4700 assert_mode project.modulators
+4800 marker registry_edited
+5400 button LEFT_TOP down
+5550 encoder_value NAV -0.010
+5700 encoder_value NAV -0.010
+5900 button LEFT_TOP up
+6300 assert_view MACRO
+# Keep performing after leaving: hidden registry work must not follow us.
+6500 marker macro_return
+9500 transport stop
+9700 marker done

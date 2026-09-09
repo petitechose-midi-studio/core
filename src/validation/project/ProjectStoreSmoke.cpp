@@ -12,6 +12,7 @@
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectSnapshot.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 
 namespace core::validation::project {
 namespace {
@@ -49,11 +50,14 @@ FLASHMEM void configureProjectStoreSmokeState(core::state::CoreState& state,
     page.values[2] = 0.42f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.setContentLength(12);
-    state.sequencer.pattern.stepsPerBeat.set(4);
+    (void)core::state::sequencer::resizeClipPatternContent(
+        state.sequencer,
+        12U
+    );
+    state.sequencer.pattern().stepsPerBeat.set(4);
     state.sequencer.setStepDataAt(3, 65, 111, 72);
-    if (!state.sequencer.pattern.isEnabled(3)) {
-        state.sequencer.pattern.toggle(3);
+    if (!state.sequencer.pattern().isEnabled(3)) {
+        state.sequencer.pattern().toggle(3);
     }
     state.sequencer.focusedStep.set(3);
 }
@@ -74,8 +78,8 @@ FLASHMEM void mutateProjectStoreSmokeState(core::state::CoreState& state) {
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
     state.sequencer.setStepDataAt(3, 40, 1, 1);
-    if (state.sequencer.pattern.isEnabled(3)) {
-        state.sequencer.pattern.toggle(3);
+    if (state.sequencer.pattern().isEnabled(3)) {
+        state.sequencer.pattern().toggle(3);
     }
     state.sequencer.focusedStep.set(0);
 }
@@ -89,11 +93,11 @@ FLASHMEM bool verifyProjectStoreSmokeState(const core::state::CoreState& state) 
            state.projectNavigation.transportSwingPercent == 17U &&
            std::strcmp(page.name, PROJECT_STORE_SMOKE_NAME) == 0 &&
            page.cc[2] == 74U &&
-           state.sequencer.pattern.length.get() == 12U &&
-           state.sequencer.pattern.note[3] == 65U &&
-           state.sequencer.pattern.velocity[3] == 111U &&
-           state.sequencer.pattern.gate[3] == 72U &&
-           state.sequencer.pattern.isEnabled(3) &&
+           state.sequencer.pattern().length.get() == 12U &&
+           state.sequencer.pattern().note[3] == 65U &&
+           state.sequencer.pattern().velocity[3] == 111U &&
+           state.sequencer.pattern().gate[3] == 72U &&
+           state.sequencer.pattern().isEnabled(3) &&
            state.sequencer.focusedStep.get() == 3U;
 }
 

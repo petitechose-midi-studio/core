@@ -1,0 +1,107 @@
+# Hardware bench: 20 seconds, repeat the existing Macro assignment/source deep link.
+# Based on sdl/integration/workflows/macro/modulator-source-deep-link.ux.
+# The stable fixture selection is Macro 1 / Pulse Lift (assignment 2 of 3).
+# NAV's handler uses the sign of each nonzero event; +0.010 advances exactly one row.
+# No source edit: repeated transitions exercise the same existing source and return route.
+0 scenario bench-macro-v1
+0 marker macro_root
+20 assert_view MACRO
+40 assert_mode macro.performance
+100 transport start
+
+# Existing Edit chord, then Destination -> Automation -> Modulation.
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1300 button LEFT_BOTTOM up
+1400 assert_view MACRO
+1420 assert_mode macro.edit
+1450 encoder_value NAV 0.010
+1570 encoder_value NAV 0.010
+1650 marker assignment_open
+1690 tap NAV 60
+1910 assert_view MACRO
+1930 assert_mode macro.modulation_editor
+
+# Each marker precedes the transition whose cost it labels.
+2000 marker source_enter_1
+2030 tap NAV 60
+2350 assert_view MODULATORS
+2370 assert_mode project.modulator_detail
+2700 marker source_return_1
+2730 tap LEFT_TOP 60
+3100 assert_view MACRO
+3120 assert_mode macro.modulation_editor
+
+4000 marker source_enter_2
+4030 tap NAV 60
+4350 assert_view MODULATORS
+4370 assert_mode project.modulator_detail
+4700 marker source_return_2
+4730 tap LEFT_TOP 60
+5100 assert_view MACRO
+5120 assert_mode macro.modulation_editor
+
+6000 marker source_enter_3
+6030 tap NAV 60
+6350 assert_view MODULATORS
+6370 assert_mode project.modulator_detail
+6700 marker source_return_3
+6730 tap LEFT_TOP 60
+7100 assert_view MACRO
+7120 assert_mode macro.modulation_editor
+
+8000 marker source_enter_4
+8030 tap NAV 60
+8350 assert_view MODULATORS
+8370 assert_mode project.modulator_detail
+8700 marker source_return_4
+8730 tap LEFT_TOP 60
+9100 assert_view MACRO
+9120 assert_mode macro.modulation_editor
+
+10000 marker source_enter_5
+10030 tap NAV 60
+10350 assert_view MODULATORS
+10370 assert_mode project.modulator_detail
+10700 marker source_return_5
+10730 tap LEFT_TOP 60
+11100 assert_view MACRO
+11120 assert_mode macro.modulation_editor
+
+12000 marker source_enter_6
+12030 tap NAV 60
+12350 assert_view MODULATORS
+12370 assert_mode project.modulator_detail
+12700 marker source_return_6
+12730 tap LEFT_TOP 60
+13100 assert_view MACRO
+13120 assert_mode macro.modulation_editor
+
+14000 marker source_enter_7
+14030 tap NAV 60
+14350 assert_view MODULATORS
+14370 assert_mode project.modulator_detail
+14700 marker source_return_7
+14730 tap LEFT_TOP 60
+15100 assert_view MACRO
+15120 assert_mode macro.modulation_editor
+
+16000 marker source_enter_8
+16030 tap NAV 60
+16350 assert_view MODULATORS
+16370 assert_mode project.modulator_detail
+16700 marker source_return_8
+16730 tap LEFT_TOP 60
+17100 assert_view MACRO
+17120 assert_mode macro.modulation_editor
+
+# Back materializes the Macro editor parent, then returns to performance.
+17500 marker editor_parent
+17530 tap LEFT_TOP 60
+17900 assert_view MACRO
+17920 assert_mode macro.edit
+18200 marker performance_return
+18230 tap LEFT_TOP 60
+18600 assert_view MACRO
+18620 assert_mode macro.performance
+19000 transport stop

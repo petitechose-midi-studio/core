@@ -728,6 +728,233 @@ struct SequencerStepSelectionState {
     }
 };
 
+enum class ClipWorkspaceRoute : uint8_t {
+    MATRIX = 0,
+    PATTERN,
+};
+
+enum class ClipWorkspaceFeedback : uint8_t {
+    NONE = 0,
+    MOVED,
+    DUPLICATED,
+    REMOVED,
+    FAILED,
+};
+
+enum class ClipWorkspaceOperation : uint8_t {
+    BROWSE = 0,
+    SELECT,
+    REMOVE_PENDING,
+    MOVE_DESTINATION,
+    DUPLICATE_DESTINATION,
+};
+
+enum class ClipWorkspaceFocus : uint8_t {
+    CLIP = 0,
+    SCENE,
+    TRACK_HEADER,
+};
+
+enum class ClipWorkspaceEditor : uint8_t {
+    NONE = 0,
+    SLOT_ACTION,
+    CLIP_BEHAVIOR,
+    SCENE_BEHAVIOR,
+};
+
+enum class ClipWorkspaceBehaviorField : uint8_t {
+    LENGTH = 0,
+    FOLLOW,
+    QUANTIZE,
+    COUNT,
+};
+
+enum class ClipWorkspaceQuickAction : uint8_t {
+    EDIT = 0,
+    LENGTH,
+    FOLLOW,
+    QUANTIZE,
+    COUNT,
+};
+
+constexpr ClipWorkspaceQuickAction clipWorkspaceQuickActionFor(
+    ClipWorkspaceBehaviorField field
+) noexcept {
+    switch (field) {
+        case ClipWorkspaceBehaviorField::LENGTH:
+            return ClipWorkspaceQuickAction::LENGTH;
+        case ClipWorkspaceBehaviorField::FOLLOW:
+            return ClipWorkspaceQuickAction::FOLLOW;
+        case ClipWorkspaceBehaviorField::QUANTIZE:
+            return ClipWorkspaceQuickAction::QUANTIZE;
+        case ClipWorkspaceBehaviorField::COUNT:
+            return ClipWorkspaceQuickAction::COUNT;
+    }
+    return ClipWorkspaceQuickAction::COUNT;
+}
+
+enum class ClipWorkspaceSlotAction : uint8_t {
+    CREATE_CLIP = 0,
+    SET_STOP,
+    CLEAR,
+    COUNT,
+};
+
+struct ClipWorkspaceMacroTarget {
+    ClipWorkspaceFocus focus = ClipWorkspaceFocus::SCENE;
+    uint8_t track = 0U;
+    uint8_t slot = 0U;
+};
+
+/** Session-only focus and return path for the sparse Clip launcher. */
+struct ClipWorkspaceUiState {
+    static constexpr uint8_t VISIBLE_TRACKS = 3U;
+    static constexpr uint8_t VISIBLE_ROWS = 4U;
+    static constexpr uint8_t MACRO_ROWS = 2U;
+    static constexpr uint8_t MACRO_COLUMNS = VISIBLE_TRACKS + 1U;
+    static constexpr uint8_t MACRO_TARGET_COUNT = MACRO_COLUMNS * MACRO_ROWS;
+    static constexpr uint8_t TRACK_COUNT = 16U;
+    static constexpr uint8_t SLOT_COUNT = 8U;
+    static constexpr uint8_t INVALID_TRACK = 0xFFU;
+    static constexpr uint8_t TRACK_VIEWPORT_COUNT =
+        (TRACK_COUNT + VISIBLE_TRACKS - 1U) / VISIBLE_TRACKS;
+    static constexpr uint8_t SLOT_VIEWPORT_COUNT =
+        SLOT_COUNT / VISIBLE_ROWS;
+    static constexpr uint8_t VIEWPORT_COUNT =
+        TRACK_VIEWPORT_COUNT * SLOT_VIEWPORT_COUNT;
+
+    Signal<uint32_t, 8> revision{0U};
+    ClipWorkspaceRoute route = ClipWorkspaceRoute::MATRIX;
+    ClipWorkspaceFeedback feedback =
+        ClipWorkspaceFeedback::NONE;
+    ClipWorkspaceOperation operation =
+        ClipWorkspaceOperation::BROWSE;
+    ClipWorkspaceFocus focusArea = ClipWorkspaceFocus::SCENE;
+    ClipWorkspaceQuickAction quickAction = ClipWorkspaceQuickAction::EDIT;
+    bool quickSelectorVisible = false;
+    bool quickPropertyArmed = false;
+    bool quickFeedbackVisible = false;
+    ClipWorkspaceFocus quickTargetFocus = ClipWorkspaceFocus::CLIP;
+    uint8_t quickTargetTrack = 0U;
+    uint8_t quickTargetSlot = 0U;
+    uint32_t quickFeedbackHideAtMs = 0U;
+    uint32_t feedbackHideAtMs = 0U;
+    ClipWorkspaceEditor editor = ClipWorkspaceEditor::NONE;
+    ClipWorkspaceBehaviorField editorField =
+        ClipWorkspaceBehaviorField::LENGTH;
+    ClipWorkspaceSlotAction slotAction =
+        ClipWorkspaceSlotAction::CREATE_CLIP;
+    uint8_t editorLength = 0U;
+    uint8_t editorFollowChoice = 0xFFU;
+    uint8_t editorQuantization = 0U;
+    uint8_t focusedTrack = 0U;
+    uint8_t focusedSlot = 0U;
+    uint8_t firstVisibleTrack = 0U;
+    uint8_t firstVisibleSlot = 0U;
+    uint8_t returnTrack = 0U;
+    uint8_t returnSlot = 0U;
+    uint8_t sourceTrack = 0U;
+    uint8_t sourceSlot = 0U;
+    std::array<uint8_t, TRACK_COUNT> selectedClipMasks{};
+    uint32_t removeHoldStartedAtMs = 0U;
+    bool removeHoldActive = false;
+    bool stopLayerActive = false;
+
+    [[nodiscard]] bool matrixVisible() const {
+        return route == ClipWorkspaceRoute::MATRIX;
+    }
+    [[nodiscard]] bool patternVisible() const {
+        return route == ClipWorkspaceRoute::PATTERN;
+    }
+    [[nodiscard]] bool selectionActive() const {
+        return operation != ClipWorkspaceOperation::BROWSE;
+    }
+    [[nodiscard]] bool placementActive() const {
+        return operation == ClipWorkspaceOperation::MOVE_DESTINATION ||
+            operation ==
+                ClipWorkspaceOperation::DUPLICATE_DESTINATION;
+    }
+    [[nodiscard]] bool removePending() const {
+        return operation == ClipWorkspaceOperation::REMOVE_PENDING;
+    }
+    [[nodiscard]] bool clipFocused() const {
+        return focusArea == ClipWorkspaceFocus::CLIP;
+    }
+    [[nodiscard]] bool trackHeaderFocused() const {
+        return focusArea == ClipWorkspaceFocus::TRACK_HEADER;
+    }
+    [[nodiscard]] bool sceneFocused() const {
+        return focusArea == ClipWorkspaceFocus::SCENE;
+    }
+    [[nodiscard]] bool editorActive() const {
+        return editor != ClipWorkspaceEditor::NONE;
+    }
+    [[nodiscard]] static uint8_t addTrackIndex(uint16_t enabledTrackMask);
+    [[nodiscard]] static bool trackNavigable(
+        uint8_t track,
+        uint16_t enabledTrackMask
+    );
+    [[nodiscard]] uint8_t macroBankFirstSlot() const;
+    [[nodiscard]] ClipWorkspaceMacroTarget macroTarget(uint8_t macroIndex) const;
+    void reset(uint8_t activeTrack = 0U);
+    void focus(uint8_t track, uint8_t slot);
+    void focusScene(uint8_t slot);
+    void focusTrackHeader(uint8_t track);
+    void showQuickSelector();
+    void moveQuickAction(int direction);
+    void armQuickProperty(uint32_t nowMs);
+    void showQuickFeedback(uint32_t nowMs);
+    void clearQuickControl();
+    void updateQuickFeedback(uint32_t nowMs);
+    void moveVertical(int direction, uint8_t lastSlot = SLOT_COUNT - 1U);
+    void moveHorizontal(int direction, uint16_t enabledTrackMask);
+    void moveViewport(int direction);
+    [[nodiscard]] uint8_t viewportIndex() const;
+    void openEditor(
+        ClipWorkspaceEditor next,
+        uint8_t length = 0U,
+        uint8_t followChoice = 0xFFU,
+        uint8_t quantization = 0U
+    );
+    bool closeEditor();
+    void moveEditorField(int direction);
+    void moveSlotAction(int direction);
+    void setEditorValues(
+        uint8_t length,
+        uint8_t followChoice,
+        uint8_t quantization
+    );
+    void beginSelection(uint8_t track, uint8_t slot);
+    void toggleSelection(uint8_t track, uint8_t slot);
+    [[nodiscard]] bool selected(uint8_t track, uint8_t slot) const;
+    [[nodiscard]] uint8_t selectedCount() const;
+    [[nodiscard]] bool moveDestinationContains(
+        uint8_t track,
+        uint8_t slot
+    ) const;
+    void beginPlacement(
+        ClipWorkspaceOperation next,
+        uint8_t destinationTrack,
+        uint8_t destinationSlot
+    );
+    bool backOperation();
+    void completeOperation(
+        uint8_t track,
+        uint8_t slot,
+        ClipWorkspaceFeedback result,
+        uint32_t nowMs
+    );
+    void beginRemoveHold(uint32_t nowMs);
+    void beginPendingRemoval();
+    void clearRemoveHold();
+    void setStopLayer(bool active);
+    void enterPattern(uint8_t track, uint8_t slot);
+    bool returnToMatrix();
+    void setFeedback(ClipWorkspaceFeedback next, uint32_t nowMs);
+    void updateFeedback(uint32_t nowMs);
+    void bump();
+};
+
 /**
  * One bounded Track-paste interaction snapshot.
  *

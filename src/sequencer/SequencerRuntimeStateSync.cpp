@@ -5,6 +5,8 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
+#include "state/sequencer/SequencerClipRegionOps.hpp"
+
 namespace core::sequencer {
 namespace {
 
@@ -103,27 +105,20 @@ FLASHMEM uint8_t projectPlaybackPhaseQ8(
     ));
 }
 
-FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
-    const core::state::sequencer::SequencerState& source,
-    oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
-    ProjectTimingContext projectTiming
-) {
-    return captureRuntimeStateSignature(source.pattern, projectScaleSettings, projectTiming);
-}
-
 // Mutable authoring-state inspection is control-plane work. Keep the snapshot
 // overload below in ITCM because playback uses that one from the timer lane.
 FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternState& source,
+    const core::state::sequencer::SequencerClipState& clip,
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
     ProjectTimingContext projectTiming
 ) {
     return {
         .length = source.length.get(),
-        .playStart = source.playStart,
-        .loopStart = source.loopStart,
-        .loopEnd = source.loopEnd,
         .stepsPerBeat = source.stepsPerBeat.get(),
+        .playStartTick = clip.playStartTick,
+        .loopStartTick = clip.loopStartTick,
+        .loopEndTick = clip.loopEndTick,
         .enabledMask = source.enabledMask.get(),
         .stepDataRevision = source.stepDataRevision.get(),
         .patternVariationRevision = source.patternVariationRevision.get(),
@@ -144,14 +139,15 @@ FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
 }
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
-    const core::state::sequencer::SequencerPatternSnapshot& source
+    const core::state::sequencer::SequencerPatternSnapshot& source,
+    const core::state::sequencer::SequencerClipSnapshot& clip
 ) {
     return {
         .length = source.length,
-        .playStart = source.playStart,
-        .loopStart = source.loopStart,
-        .loopEnd = source.loopEnd,
         .stepsPerBeat = source.stepsPerBeat,
+        .playStartTick = clip.playStartTick,
+        .loopStartTick = clip.loopStartTick,
+        .loopEndTick = clip.loopEndTick,
         .enabledMask = source.enabledMask,
         .stepDataRevision = source.stepDataRevision,
         .patternVariationRevision = source.patternVariationRevision,
@@ -168,18 +164,25 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
 }
 
 oc::note::sequencer::StepSequencerPlaybackRegion runtimePlaybackRegion(
-    const core::state::sequencer::SequencerPatternSnapshot& source
+    const core::state::sequencer::SequencerPatternSnapshot& source,
+    const core::state::sequencer::SequencerClipSnapshot& clip
 ) {
     const uint8_t length = std::clamp<uint8_t>(
         source.length,
         oc::note::sequencer::StepSequencerPlaybackRegion::MIN_CONTENT_LENGTH,
         oc::note::sequencer::StepSequencerPlaybackRegion::MAX_CONTENT_LENGTH
     );
+    const uint16_t ticksPerStep = core::state::sequencer::sequencerTicksPerStep(
+        source.stepsPerBeat
+    );
+    if (ticksPerStep == 0U) {
+        return oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(length);
+    }
     const oc::note::sequencer::StepSequencerPlaybackRegion region{
         length,
-        source.playStart,
-        source.loopStart,
-        source.loopEnd,
+        static_cast<uint8_t>(clip.playStartTick / ticksPerStep),
+        static_cast<uint8_t>(clip.loopStartTick / ticksPerStep),
+        static_cast<uint8_t>(clip.loopEndTick / ticksPerStep),
     };
     return region.isValid()
         ? region

@@ -108,7 +108,9 @@ public:
         const MacroPagesState& pages,
         const core::state::project::ProjectTrackState& projectTracks,
         uint8_t track,
-        uint8_t page
+        uint8_t page,
+        uint8_t ccMask = 0xFFU,
+        bool includeChannel = true
     ) const;
     [[nodiscard]] bool commitPreparedTrackConfig(
         MacroPagesState& pages,
@@ -123,12 +125,12 @@ public:
         uint16_t retainedPageMask
     );
 
-    /** Reserves exact before/after storage for any non-compacting Page edit. */
-    [[nodiscard]] MacroHistoryChangePtr preparePageStructureSnapshot(
+    /** Edit pageStructure.afterTrack and control.candidate() off-line; commit publishes both. */
+    [[nodiscard]] MacroHistoryChangePtr preparePageStructure(
         const MacroPagesState& pages,
         uint8_t track
     ) const;
-    [[nodiscard]] bool commitPreparedPageStructureSnapshot(
+    [[nodiscard]] bool commitPreparedPageStructure(
         MacroPagesState& pages,
         MacroHistoryChangePtr change
     );

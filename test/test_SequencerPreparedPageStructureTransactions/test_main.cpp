@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -135,15 +136,15 @@ constexpr std::size_t kArmCcBankBytes = 840U;
 
 static_assert(
     kArmPatternChangeBytes +
-            3U * (kArmGraphBytes + kArmCcBankBytes) +
-            7U * kArmAllocationHeaderBytes ==
-        48744U,
+            2U * (kArmGraphBytes + kArmCcBankBytes) +
+            5U * kArmAllocationHeaderBytes ==
+        33080U,
     "LOCK-P maximum Page transaction peak changed"
 );
 static_assert(
-    kArmPatternChangeBytes + 2U * kArmGraphBytes +
-            3U * kArmCcBankBytes + 6U * kArmAllocationHeaderBytes ==
-        33936U,
+    kArmPatternChangeBytes + kArmGraphBytes +
+            2U * kArmCcBankBytes + 4U * kArmAllocationHeaderBytes ==
+        18272U,
     "LOCK-P disabled-to-enabled Graph plus CC peak changed"
 );
 static_assert(
@@ -164,22 +165,18 @@ static_assert(
 static_assert(sizeof(seq::SequencerCcLaneBank) == kArmCcBankBytes);
 #endif
 
-// Native request-size oracles for the frozen H,C,G,C,G,C disabled-Graph
-// variant and the H,G,C,G,C,G,C maximal enabled-Graph variant.
-constexpr std::array<std::size_t, 6U>
+// Native request-size oracles for the frozen H,C,G,C disabled-Graph
+// variant and the H,G,C,G,C maximal enabled-Graph variant.
+constexpr std::array<std::size_t, 4U>
     kDisabledGraphToEnabledWithCcRequests{
         sizeof(seq::SequencerHistoryPatternChange),
         sizeof(seq::SequencerCcLaneBank),
         sizeof(oc::note::sequencer::StepSequencerGraph),
         sizeof(seq::SequencerCcLaneBank),
-        sizeof(oc::note::sequencer::StepSequencerGraph),
-        sizeof(seq::SequencerCcLaneBank),
     };
 
-constexpr std::array<std::size_t, 7U> kEnabledGraphWithCcRequests{
+constexpr std::array<std::size_t, 5U> kEnabledGraphWithCcRequests{
     sizeof(seq::SequencerHistoryPatternChange),
-    sizeof(oc::note::sequencer::StepSequencerGraph),
-    sizeof(seq::SequencerCcLaneBank),
     sizeof(oc::note::sequencer::StepSequencerGraph),
     sizeof(seq::SequencerCcLaneBank),
     sizeof(oc::note::sequencer::StepSequencerGraph),
@@ -385,7 +382,7 @@ Services services(LifecycleScript& script) {
 }
 
 struct Harness {
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     LifecycleScript script;
     Services history;
 
@@ -873,12 +870,8 @@ struct CoreHarness {
     CoreHarness()
         : state(storages.settings),
           history(Services::fromCoreState(state)) {
-        state.sequencer.pattern.setContentLength(8U);
-        state.sequencer.pattern.note[0] = 60U;
-        assert(seq::initializeTrackBankFromActive(
-            state.sequencerTracks,
-            state.sequencer
-        ));
+        state.sequencer.pattern().setContentLength(8U);
+        state.sequencer.pattern().note[0] = 60U;
         test_support::drainNotifications();
         state.flushProjectMutationCoalescing();
         test_support::drainNotifications();
@@ -888,7 +881,7 @@ struct CoreHarness {
 };
 
 void authorCoreFullPayload(CoreHarness& h, bool nonemptyCc) {
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     assert(seq::ensureGraphRoot(pattern));
     assert(seq::setNodeNoteOffset(
         pattern, seq::rootStepNodeId(0U), 5));
@@ -901,8 +894,6 @@ void authorCoreFullPayload(CoreHarness& h, bool nonemptyCc) {
         assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 0U, 99U).changed());
         pattern.bumpCcLaneRevision();
     }
-    assert(seq::storeActiveTrack(
-        h.state.sequencerTracks, h.state.sequencer));
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
@@ -911,7 +902,7 @@ void authorCoreFullPayload(CoreHarness& h, bool nonemptyCc) {
 }
 
 void authorCoreDisabledGraphAndCc(CoreHarness& h) {
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     pattern.graph = core::app::makeExtmemUnique<
         oc::note::sequencer::StepSequencerGraph>();
     assert(pattern.graph != nullptr);
@@ -925,8 +916,6 @@ void authorCoreDisabledGraphAndCc(CoreHarness& h) {
     assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 0U, 99U).changed());
     pattern.bumpCcLaneRevision();
 
-    assert(seq::storeActiveTrack(
-        h.state.sequencerTracks, h.state.sequencer));
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
@@ -934,7 +923,7 @@ void authorCoreDisabledGraphAndCc(CoreHarness& h) {
     h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
 
     const auto& bankPattern = h.state.sequencerTracks.track(0U);
-    assert(bankPattern.graph == nullptr);
+    assert(bankPattern.graph.get() == pattern.graph.get());
     assert(bankPattern.ccLanes != nullptr);
     assert(seq::sequencerCcLaneCount(*pattern.ccLanes) == 1U);
     assert(seq::sequencerCcLaneCount(*bankPattern.ccLanes) == 1U);
@@ -969,13 +958,13 @@ struct CoreMutation {
         ++self.callCount;
         if (self.installReplacementGraph) {
             if (!self.replacementGraph) return MutationOutcome::Failed;
-            sequencer.pattern.graph = std::move(self.replacementGraph);
+            sequencer.pattern().graph = std::move(self.replacementGraph);
         } else if (self.activateGraph) {
-            if (!seq::ensureGraphRoot(sequencer.pattern)) {
+            if (!seq::ensureGraphRoot(sequencer.pattern())) {
                 return MutationOutcome::Failed;
             }
             if (!seq::setNodeNoteOffset(
-                    sequencer.pattern,
+                    sequencer.pattern(),
                     seq::rootStepNodeId(0U),
                     7)) {
                 return MutationOutcome::Failed;
@@ -1159,12 +1148,12 @@ void test_core_boundary_and_page_commit_are_two_exact_transactions() {
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 2U);
     assert(h.state.projectHistory.undoCount() == 2U);
-    assert(h.state.sequencer.pattern.note[0] == 62U);
+    assert(h.state.sequencer.pattern().note[0] == 62U);
     assert(h.state.sequencerTracks.track(0U).note[0] == 62U);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[0] == 61U);
+    assert(h.state.sequencer.pattern().note[0] == 61U);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[0] == 60U);
+    assert(h.state.sequencer.pattern().note[0] == 60U);
 
     std::cout << "[PASS] prior boundary and Page commit publish separately once\n";
 }
@@ -1248,7 +1237,7 @@ void test_core_no_change_and_raii_abort_leave_no_page_owner() {
     }
     tx::assertFailureInjectionReset();
     tx::assertStateInvariant(h.state, before);
-    assert(h.state.sequencer.pattern.note[0] == 60U);
+    assert(h.state.sequencer.pattern().note[0] == 60U);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
     std::cout << "[PASS] Core no-change and failed mutation consume the Page owner\n";
@@ -1256,7 +1245,7 @@ void test_core_no_change_and_raii_abort_leave_no_page_owner() {
 
 void test_core_flat_rollback_preserves_disabled_graph_and_empty_cc_owners() {
     CoreHarness h;
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     pattern.graph = core::app::makeExtmemUnique<
         oc::note::sequencer::StepSequencerGraph>();
     pattern.ccLanes = core::app::makeExtmemUnique<seq::SequencerCcLaneBank>();
@@ -1330,7 +1319,7 @@ void test_core_disabled_graph_to_enabled_with_cc_lock_p_is_exact() {
          ++ordinal) {
         CoreHarness h;
         authorCoreDisabledGraphAndCc(h);
-        auto& editor = h.state.sequencer.pattern;
+        auto& editor = h.state.sequencer.pattern();
         auto& bank = h.state.sequencerTracks.track(0U);
         auto* const editorGraphOwner = editor.graph.get();
         auto* const editorCcOwner = editor.ccLanes.get();
@@ -1387,7 +1376,7 @@ void test_core_disabled_graph_to_enabled_with_cc_lock_p_is_exact() {
         assert(byteHash(editorCcOwner, sizeof(*editorCcOwner)) == editorCcHash);
         assert(byteHash(bankCcOwner, sizeof(*bankCcOwner)) == bankCcHash);
         assert(seq::isCanonicalDisabledSequencerGraph(*editorGraphOwner));
-        assert(bankGraphOwner == nullptr);
+        assert(bankGraphOwner == editorGraphOwner);
     }
 
     CoreHarness h;
@@ -1426,16 +1415,15 @@ void test_core_disabled_graph_to_enabled_with_cc_lock_p_is_exact() {
     const auto after = tx::captureStateInvariant(h.state);
     assert(mutation.callCount == 1U);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
-    assert(seq::graphView(h.state.sequencerTracks.track(0U)) != nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) != nullptr);
+    assert(seq::graphView(h.state.sequencerTracks.track(0U)) == seq::graphView(h.state.sequencer.pattern()));
     assert(after.editorGraphOwner == before.editorGraphOwner);
     assert(after.editorCcOwner == before.editorCcOwner);
-    assert(after.bankGraphOwner != nullptr);
-    assert(after.bankGraphOwner != before.bankGraphOwner);
-    assert(after.bankGraphOwner != after.editorGraphOwner);
+    assert(after.bankGraphOwner == before.bankGraphOwner);
+    assert(after.bankGraphOwner == after.editorGraphOwner);
     assert(after.bankCcOwner != nullptr);
-    assert(after.bankCcOwner != before.bankCcOwner);
-    assert(after.bankCcOwner != after.editorCcOwner);
+    assert(after.bankCcOwner == before.bankCcOwner);
+    assert(after.bankCcOwner == after.editorCcOwner);
     assert(after.sequencerUndoCount == before.sequencerUndoCount + 1U);
     assert(after.projectUndoCount == before.projectUndoCount + 1U);
     assert(after.sequencerUndoIdentity != 0U);
@@ -1443,21 +1431,8 @@ void test_core_disabled_graph_to_enabled_with_cc_lock_p_is_exact() {
     assert(after.modifiedCounter == before.modifiedCounter + 1U);
     assert(after.dirty);
     assert(after.sessionSavePending);
-    assert(byteHash(
-               h.state.sequencer.pattern.graph.get(),
-               sizeof(*h.state.sequencer.pattern.graph)) ==
-           byteHash(
-               h.state.sequencerTracks.track(0U).graph.get(),
-               sizeof(*h.state.sequencerTracks.track(0U).graph)));
-    assert(byteHash(
-               h.state.sequencer.pattern.ccLanes.get(),
-               sizeof(*h.state.sequencer.pattern.ccLanes)) ==
-           byteHash(
-               h.state.sequencerTracks.track(0U).ccLanes.get(),
-               sizeof(*h.state.sequencerTracks.track(0U).ccLanes)));
-
     std::cout <<
-        "[PASS] disabled Graph to enabled plus CC LOCK-P is exact at 1..6 and max+1\n";
+        "[PASS] disabled Graph to enabled plus CC LOCK-P is exact at 1..4 and max+1\n";
 }
 
 void commitMaximalPageHistoryEntry(CoreHarness& h, uint8_t note) {
@@ -1477,7 +1452,7 @@ void commitMaximalPageHistoryEntry(CoreHarness& h, uint8_t note) {
                1,
                Action::PageClear)) == Result::Committed);
     assert(mutation.callCount == 1U);
-    assert(h.state.sequencer.pattern.note[0U] == note);
+    assert(h.state.sequencer.pattern().note[0U] == note);
     assert(h.state.sequencerTracks.track(0U).note[0U] == note);
     test_support::drainNotifications();
 }
@@ -1543,7 +1518,7 @@ void test_core_near_budget_page_reservation_is_pre_live_and_prunes_exactly() {
                    1,
                    1,
                    Action::PageClear)) == Result::Failed);
-        // The seventh attempt is intercepted before operator new.
+        // The fifth attempt is intercepted before operator new.
         assertAllocationRequestPrefix(
             kEnabledGraphWithCcRequests,
             kEnabledGraphWithCcRequests.size() - 1U
@@ -1609,7 +1584,7 @@ void test_core_near_budget_page_reservation_is_pre_live_and_prunes_exactly() {
         assert(h.state.undoSequencerHistory());
     }
     assert(!h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[0U] == firstCommittedNote);
+    assert(h.state.sequencer.pattern().note[0U] == firstCommittedNote);
     assert(h.state.sequencerTracks.track(0U).note[0U] == firstCommittedNote);
 
     std::cout <<
@@ -1619,10 +1594,10 @@ void test_core_near_budget_page_reservation_is_pre_live_and_prunes_exactly() {
 void test_core_track_drift_revalidation_restores_inactive_owner() {
     CoreHarness h;
     authorCoreFullPayload(h, true);
-    auto* const graphOwner = h.state.sequencer.pattern.graph.get();
-    auto* const ccOwner = h.state.sequencer.pattern.ccLanes.get();
-    const uint32_t graphRevision = h.state.sequencer.pattern.graphRevision.get();
-    const uint32_t ccRevision = h.state.sequencer.pattern.ccLaneRevision.get();
+    auto* const graphOwner = h.state.sequencer.pattern().graph.get();
+    auto* const ccOwner = h.state.sequencer.pattern().ccLanes.get();
+    const uint32_t graphRevision = h.state.sequencer.pattern().graphRevision.get();
+    const uint32_t ccRevision = h.state.sequencer.pattern().ccLaneRevision.get();
     h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
     h.state.sequencerTracks.track(1U).note[0] = 41U;
     CoreLifecycleProbe probe{
@@ -1668,7 +1643,7 @@ void test_core_track_drift_revalidation_restores_inactive_owner() {
     assert(seq::graphView(h.state.sequencerTracks.track(0U)) != nullptr);
     assert(seq::sequencerCcLaneCount(
                *h.state.sequencerTracks.track(0U).ccLanes) == 1U);
-    assert(h.state.sequencer.pattern.note[0] == 41U);
+    assert(h.state.sequencer.pattern().note[0] == 41U);
     assert(h.state.abortSequencerPreparedPatternEdit(
                Owner::PageStructure,
                static_cast<uint8_t>(Action::PageClear)) == AbortOutcome::NoPending);
@@ -1679,8 +1654,8 @@ void test_core_track_drift_revalidation_restores_inactive_owner() {
 void test_core_track_drift_preserves_full_payload_owner_identity() {
     CoreHarness h;
     authorCoreFullPayload(h, false);
-    auto* const graphOwner = h.state.sequencer.pattern.graph.get();
-    auto* const ccOwner = h.state.sequencer.pattern.ccLanes.get();
+    auto* const graphOwner = h.state.sequencer.pattern().graph.get();
+    auto* const ccOwner = h.state.sequencer.pattern().ccLanes.get();
     assert(graphOwner != nullptr);
     assert(ccOwner != nullptr);
     h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
@@ -1696,7 +1671,7 @@ void test_core_track_drift_preserves_full_payload_owner_identity() {
     Transaction transaction(h.state.sequencer, history, Action::PageDelete);
     assert(transaction.openBoundary());
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         allocation_trace::Scope allocationTrace;
         assert(transaction.execute(coreExecution(
                    mutation,
@@ -1706,8 +1681,8 @@ void test_core_track_drift_preserves_full_payload_owner_identity() {
                    1,
                    1,
                    Action::PageDelete)) == Result::Failed);
-        assertAllocationCount(4U);
-        tx::assertMaxPlusOneStillArmed(4U);
+        assertAllocationCount(3U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     tx::assertFailureInjectionReset();
 
@@ -1718,7 +1693,7 @@ void test_core_track_drift_preserves_full_payload_owner_identity() {
     assert(mutation.callCount == 0U);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
-    assert(h.state.sequencer.pattern.note[0] == 42U);
+    assert(h.state.sequencer.pattern().note[0] == 42U);
     assert(h.state.sequencerTracks.track(0U).note[0] == 60U);
     assert(h.state.sequencerTracks.track(0U).graph.get() == graphOwner);
     assert(h.state.sequencerTracks.track(0U).ccLanes.get() == ccOwner);
@@ -1747,7 +1722,7 @@ void test_core_track_drift_removes_prospective_graph_exactly() {
     );
     assert(transaction.openBoundary());
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         allocation_trace::Scope allocationTrace;
         assert(transaction.execute(coreExecution(
                    mutation,
@@ -1757,8 +1732,8 @@ void test_core_track_drift_removes_prospective_graph_exactly() {
                    1,
                    1,
                    Action::PageSelectionPaste)) == Result::Failed);
-        assertAllocationCount(4U);
-        tx::assertMaxPlusOneStillArmed(4U);
+        assertAllocationCount(3U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     tx::assertFailureInjectionReset();
 
@@ -1772,7 +1747,7 @@ void test_core_track_drift_removes_prospective_graph_exactly() {
     assert(h.state.sequencerTracks.track(0U).note[0] == 60U);
     assert(h.state.sequencerTracks.track(0U).graph == nullptr);
     assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
-    assert(h.state.sequencer.pattern.note[0] == 43U);
+    assert(h.state.sequencer.pattern().note[0] == 43U);
 
     std::cout << "[PASS] Track drift removes a prospective Graph exactly\n";
 }
@@ -1793,7 +1768,7 @@ void test_core_released_prospective_graph_can_fail_closed() {
     );
     assert(transaction.openBoundary());
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(5U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(4U);
         allocation_trace::Scope allocationTrace;
         assert(transaction.execute(coreExecution(
                    mutation,
@@ -1803,8 +1778,8 @@ void test_core_released_prospective_graph_can_fail_closed() {
                    1,
                    1,
                    Action::PageSelectionDeleteOrDeepReset)) == Result::Failed);
-        assertAllocationCount(4U);
-        tx::assertMaxPlusOneStillArmed(4U);
+        assertAllocationCount(3U);
+        tx::assertMaxPlusOneStillArmed(3U);
     }
     tx::assertFailureInjectionReset();
 
@@ -1816,7 +1791,7 @@ void test_core_released_prospective_graph_can_fail_closed() {
     assert(probe.abortCount == 0U);
     assert(mutation.callCount == 1U);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.graph == nullptr);
+    assert(h.state.sequencer.pattern().graph == nullptr);
     tx::assertMusicalSnapshot(h.state, musicalBefore);
     tx::assertStateInvariant(h.state, before);
 

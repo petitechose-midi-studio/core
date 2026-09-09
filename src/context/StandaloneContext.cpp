@@ -1,3 +1,4 @@
+#include "app/RpcLifetime.hpp"
 #include "StandaloneContext.hpp"
 
 #include <oc/log/Log.hpp>
@@ -19,7 +20,7 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
-#include "protocol/filesystem/FileSystemRpc.hpp"
+#include "protocol/filesystem/UnifiedFileSystemEndpoint.hpp"
 #include "config/TimeCompat.hpp"
 #include "state/CoreState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
@@ -27,6 +28,12 @@
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
+#if defined(MS_HARDWARE_BENCHMARK)
+#include "validation/benchmark/HardwareBenchmarkEndpoint.hpp"
+#if defined(ARDUINO_TEENSY41)
+#include <oc/hal/teensy/UsbMidi.hpp>
+#endif
+#endif
 
 namespace core::context {
 
@@ -113,6 +120,9 @@ FLASHMEM oc::type::Result<void> StandaloneContext::init() {
 }
 
 void StandaloneContext::update() {
+#if defined(MS_HARDWARE_BENCHMARK)
+    if (benchmark_) benchmark_->advance(core::time_compat::micros());
+#endif
     if (feature_assembly_) {
         feature_assembly_->update(core::time_compat::millis());
     }
@@ -278,13 +288,30 @@ FLASHMEM bool StandaloneContext::createGlobalHandlerAssembly() {
 }
 
 FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
+#if defined(MS_HARDWARE_BENCHMARK)
+    benchmark_ = core::app::makeExtmemUniqueCold<core::validation::benchmark::HardwareBenchmarkEndpoint>(
+        frames(), rawEvents(), core_state_
+#if defined(ARDUINO_TEENSY41)
+        , &oc::hal::teensy::UsbMidi::receivedMessageCount
+#endif
+    );
+    if (!benchmark_) return false;
+    benchmark_->begin();
+#if !defined(MS_FILESYSTEM_BENCHMARK)
+    return true;
+#endif
+#endif
     filesystem_rpc_endpoint_ =
-        core::app::makeExtmemUnique<core::protocol::filesystem::FileSystemRpcEndpoint>(
+        core::app::makeExtmemUnique<core::protocol::filesystem::unified::Endpoint>(
+#if defined(MS_FILESYSTEM_BENCHMARK)
+            *benchmark_,
+#else
             frames(),
+#endif
             product_files_,
             product_catalog_,
+            core::app::createRpcLifetime(),
             &core::time_compat::millis,
-            core::protocol::filesystem::FileSystemRpcHandler::Config{},
             &core::time_compat::micros
         );
     if (!filesystem_rpc_endpoint_) {
@@ -314,6 +341,9 @@ FLASHMEM void StandaloneContext::cleanupGlobalHandlerAssembly() {
 
 FLASHMEM void StandaloneContext::cleanupFileSystemRpcEndpoint() {
     filesystem_rpc_endpoint_.reset();
+#if defined(MS_HARDWARE_BENCHMARK)
+    benchmark_.reset();
+#endif
 }
 
 FLASHMEM void StandaloneContext::cleanupFeatureAssembly() {
@@ -428,7 +458,7 @@ FLASHMEM oc::type::ScopeID StandaloneContext::activeViewScopeId() const {
     if (!ui_assembly_) return 0;
 
     switch (core_state_.activeView.get()) {
-        case core::ui::ViewType::SEQUENCER:
+        case core::ui::ViewType::CLIPS:
             return ui_assembly_->sequencerViewScope();
         case core::ui::ViewType::PROJECT:
         case core::ui::ViewType::MODULATORS:
@@ -450,7 +480,7 @@ FLASHMEM void StandaloneContext::applyActiveView() {
             case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_MACRO:
                 if (ui_assembly_) ui_assembly_->deactivateMacroView();
                 break;
-            case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER:
+            case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_CLIPS:
                 if (ui_assembly_) ui_assembly_->deactivateSequencerView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::DEACTIVATE_PROJECT:
@@ -463,7 +493,7 @@ FLASHMEM void StandaloneContext::applyActiveView() {
                 core::context::standalone::prepareMacroViewActivation(core_state_);
                 if (ui_assembly_) ui_assembly_->activateMacroView();
                 break;
-            case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_SEQUENCER:
+            case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_CLIPS:
                 if (ui_assembly_) ui_assembly_->activateSequencerView();
                 break;
             case core::context::standalone::ActiveViewLifecycleStep::ACTIVATE_PROJECT:
@@ -475,7 +505,7 @@ FLASHMEM void StandaloneContext::applyActiveView() {
             case core::context::standalone::ActiveViewLifecycleStep::SYNC_MACRO_ENCODERS:
                 syncEncodersFromState();
                 break;
-            case core::context::standalone::ActiveViewLifecycleStep::SYNC_SEQUENCER_ENCODERS:
+            case core::context::standalone::ActiveViewLifecycleStep::SYNC_CLIP_EDITOR_ENCODERS:
                 if (feature_assembly_) {
                     feature_assembly_->syncSequencerEncodersNow();
                 }

@@ -8,6 +8,8 @@
 
 #if OC_ENABLE_STATS
 #include <oc/diagnostics/Performance.hpp>
+#include "app/ExtmemAllocator.hpp"
+#include "diagnostics/MemoryFootprintReporter.hpp"
 #endif
 
 namespace core::diagnostics {
@@ -15,7 +17,7 @@ namespace core::diagnostics {
 #if OC_ENABLE_STATS
 
 /**
- * Allocation-free aggregation for opt-in performance samples.
+ * Allocation-free steady-state aggregation for opt-in performance samples.
  *
  * Producers only enqueue compact samples through the framework diagnostics
  * sink. Aggregation and logging happen later from the application loop so
@@ -25,7 +27,7 @@ class PerformanceReporter {
 public:
     void begin();
     void end();
-    void update(uint32_t nowMs);
+    void update(uint32_t nowMs, bool playbackActive = false);
 
 private:
     static constexpr size_t SAMPLE_CAPACITY = 256;
@@ -55,6 +57,7 @@ private:
 
     static void receive_(void* context, const oc::diagnostics::PerformanceSample& sample);
     void enqueue_(const oc::diagnostics::PerformanceSample& sample);
+    void retainDroppedPeak_(const oc::diagnostics::PerformanceSample& sample);
     bool dequeue_(oc::diagnostics::PerformanceSample& sample);
     uint32_t takeDroppedSamples_();
     void drain_();
@@ -66,13 +69,39 @@ private:
         uint32_t percentile
     );
     static bool alwaysReport_(const char* label);
-    static void reportMetric_(const MetricWindow& metric);
-    void report_(uint32_t nowMs);
+    static void reportMetric_(const MetricWindow& metric, uint32_t windowEndMs);
+    void freezeWindow_(uint32_t nowMs);
+    void reportNext_();
+    bool hasPendingDroppedPeaks_() const;
     void resetAll_();
     void resetMetrics_();
 
     std::array<oc::diagnostics::PerformanceSample, SAMPLE_CAPACITY> samples_{};
-    std::array<MetricWindow, METRIC_CAPACITY> metrics_{};
+    using Metrics = std::array<MetricWindow, METRIC_CAPACITY>;
+    // Foreground-only histograms need no fast-RAM residency. The producer
+    // ring and its IRQ-protected indices remain in the RAM2 reporter.
+    core::app::ExtmemUniquePtr<Metrics> metrics_;
+    // Swap windows instead of copying histograms or pausing collection while
+    // logging. Only one pending window is retained, in strict PSRAM.
+    core::app::ExtmemUniquePtr<Metrics> reportingMetrics_;
+    // Compact lookup stays in RAM2; histogram payload remains in PSRAM.
+    std::array<const char*, METRIC_CAPACITY> metricLabels_{};
+    std::array<uint8_t, METRIC_CAPACITY> reportIndices_{};
+    size_t reportCount_ = 0;
+    size_t reportPosition_ = 0;
+    uint32_t reportWindowEndMs_ = 0;
+    uint32_t reportDroppedSamples_ = 0;
+    uint32_t reportDroppedMetrics_ = 0;
+    // Preserve child domains separately: main.loop must not erase evidence of
+    // a blocked refresh/state update, nor timer erase its CC phase. No histograms
+    // or per-event logs on overflow; these remain explicitly incomplete peaks.
+    enum class PeakDomain : uint8_t {
+        OTHER, USB_INTERVAL, REPORTER, DISPLAY_WORK, FOREGROUND, TIMER, CC, COUNT
+    };
+    static constexpr size_t PEAK_DOMAIN_COUNT = static_cast<size_t>(PeakDomain::COUNT);
+    std::array<oc::diagnostics::PerformanceSample, PEAK_DOMAIN_COUNT> droppedPeaks_{};
+    std::array<oc::diagnostics::PerformanceSample, PEAK_DOMAIN_COUNT> reportDroppedPeaks_{};
+    uint8_t pendingMemorySections_ = 0;
     size_t sampleHead_ = 0;
     size_t sampleTail_ = 0;
     size_t sampleCount_ = 0;
@@ -83,7 +112,7 @@ private:
     uint32_t lastMemoryReportAtMs_ = 0;
 };
 
-/** Returns the RAM2-backed diagnostics reporter singleton. */
+/** Returns the RAM2 collector with PSRAM-backed foreground histograms. */
 PerformanceReporter& performanceReporter();
 
 #endif

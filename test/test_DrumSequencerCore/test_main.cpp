@@ -322,6 +322,50 @@ void test_lane_nudge_is_scheduled_on_the_shared_timeline() {
     std::cout << "[PASS] Lane-local nudge keeps the common transport phase\n";
 }
 
+void test_reset_closes_playing_notes_once_and_discards_pending_edges() {
+    drum::DrumTrackState track;
+    track.reset();
+    assert(track.kit.setLaneCount(1U));
+    assert(track.pattern.setStepEnabled(0U, 0U, true));
+    assert(track.pattern.setStepGate(0U, 0U, 400U));
+    drum::DrumPatternRuntimeSnapshot snapshot{};
+    drum::captureDrumRuntimeSnapshot(track, snapshot);
+    RecordingSink sink;
+    DrumPlaybackEngine engine{sink};
+    engine.setPattern(&snapshot, nullptr, 9U);
+    engine.reset();
+    assert(sink.count == 0U); // Construction/idle reset must not panic.
+
+    engine.update(0U, true);
+    engine.update(1U, true);
+    assert(sink.hasNoteOn(36U, 0U, 9U));
+    assert(sink.eventCount(SequencerEventType::NoteOff) == 0U);
+    engine.reset();
+    assert(sink.eventCount(SequencerEventType::AllNotesOff) == 1U);
+    assert(sink.events[sink.count - 1U].tick == 1U);
+    assert(!engine.isPlaying());
+    assert(!engine.telemetry().playing);
+    assert(engine.telemetry().laneValidMask == 0U);
+
+    const size_t stoppedCount = sink.count;
+    engine.reset();
+    engine.update(24U, false);
+    assert(sink.count == stoppedCount);
+    // Resume on a silent step, crossing the old note's deadline. No stale
+    // edge may survive reset, nor may the old root be replayed on restart.
+    engine.update(18U, true);
+    for (uint32_t tick = 19U; tick <= 24U; ++tick) {
+        engine.update(tick, true);
+    }
+    assert(sink.count == stoppedCount);
+    engine.update(25U, false);
+    assert(sink.eventCount(SequencerEventType::AllNotesOff) == 2U);
+    engine.reset();
+    assert(sink.eventCount(SequencerEventType::AllNotesOff) == 2U);
+
+    std::cout << "[PASS] Drum reset closes playing notes without stale edges\n";
+}
+
 void test_duplicate_note_retrigger_replaces_the_stale_note_off() {
     drum::DrumTrackState track;
     track.reset();
@@ -545,13 +589,8 @@ void test_advanced_cycle_states_follow_lane_loop_cycles() {
     engine.update(0U, true);
     const auto firstCycleSignature =
         engine.captureResolvedPageSignature(0U, 0U);
-    drum::DrumResolvedPageProjection firstCycle{};
-    engine.buildResolvedPageProjection(firstCycleSignature, firstCycle);
     const uint64_t firstCell =
         drum::DrumResolvedPageProjection::cellBit(0U, 0U);
-    assert((firstCycle.cyclePresentMask & firstCell) != 0U);
-    assert((firstCycle.validMask & firstCell) != 0U);
-    assert((firstCycle.playedMask & firstCell) == 0U);
 
     for (uint32_t tick = 1U; tick <= 6U; ++tick) {
         engine.update(tick, true);
@@ -559,6 +598,14 @@ void test_advanced_cycle_states_follow_lane_loop_cycles() {
     const auto secondCycleSignature =
         engine.captureResolvedPageSignature(0U, 0U);
     assert(!firstCycleSignature.matches(secondCycleSignature));
+    // Timer advancement between capture and expansion must not change the
+    // captured cycle's preview, including an inactive cycle state.
+    drum::DrumResolvedPageProjection firstCycle{};
+    DrumPlaybackEngine::buildResolvedPageProjection(
+        firstCycleSignature, firstCycle);
+    assert((firstCycle.cyclePresentMask & firstCell) != 0U);
+    assert((firstCycle.validMask & firstCell) != 0U);
+    assert((firstCycle.playedMask & firstCell) == 0U);
     drum::DrumResolvedPageProjection secondCycle{};
     engine.buildResolvedPageProjection(secondCycleSignature, secondCycle);
     assert((secondCycle.validMask & firstCell) != 0U);
@@ -709,6 +756,7 @@ int main() {
     test_empty_kit_lane_lifecycle_keeps_mapping_and_rhythm_aligned();
     test_three_lane_polymeter_uses_one_channel();
     test_lane_nudge_is_scheduled_on_the_shared_timeline();
+    test_reset_closes_playing_notes_once_and_discards_pending_edges();
     test_duplicate_note_retrigger_replaces_the_stale_note_off();
     test_long_gates_remain_bounded_across_all_sixteen_lanes();
     test_pattern_generation_change_panics_once_and_rephases();

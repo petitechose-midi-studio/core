@@ -138,8 +138,6 @@ FLASHMEM const char* sequencerActionLabel(uint8_t rawKind) {
             return "Remove CC Lane";
         case Kind::CcLaneTransitionEdit:
             return "CC Lane Curve";
-        case Kind::FullBank:
-            return "Sequencer Set";
         case Kind::PatternRandomize:
             return "Pattern Randomize";
         case Kind::DrumStepToggle:
@@ -156,6 +154,18 @@ FLASHMEM const char* sequencerActionLabel(uint8_t rawKind) {
             return "Track Type";
         case Kind::DrumAdvancedContent:
             return "Drum Step Content";
+        case Kind::DrumLaneContent:
+            return "Drum Lane Content";
+        case Kind::PatternPreset:
+            return "Pattern Preset";
+        case Kind::ClipCreate:
+            return "Create Clip";
+        case Kind::ClipDelete:
+            return "Remove Clip";
+        case Kind::ClipMove:
+            return "Move Clip";
+        case Kind::ClipDuplicate:
+            return "Duplicate Clip";
         case Kind::PatternEdit:
         default:
             return "Pattern Edit";
@@ -173,6 +183,8 @@ FLASHMEM const char* trackActionLabel(uint8_t rawKind) {
             return "Track Mute";
         case Kind::Solo:
             return "Track Solo";
+        case Kind::Name:
+            return "Track Name";
         default:
             return "Track Edit";
     }

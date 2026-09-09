@@ -63,6 +63,9 @@ FLASHMEM bool OverlayPresentationRegistry::registerOverlay(core::ui::OverlayType
 
     entry.presented = false;
     lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);
+    // Registration follows assembly, including hidden keyboards/action strips.
+    // Resolve their geometry before parking, not on the musician's first edit.
+    lv_obj_update_layout(root);
     oc::ui::lvgl::RetainedSurfaceParkingLot::park(entry.root, parking_host_);
     return lv_obj_get_parent(root) == parking_host_;
 }

@@ -59,9 +59,47 @@ RETIRED_RAW_API_IDENTIFIERS = (
     "canRecordFullBankFromCoreState",
     "recordPreparedFullBankFromCoreState",
     "recordStructureFromCoreState",
+    "SequencerHistoryFullBankChange",
+    "SequencerHistoryFullBankChangePtr",
+    "SequencerPreparedFullBankEditOwner",
+    "SequencerPreparedFullBankEditOutcome",
+    "SequencerPreparedFullBankEditResult",
+    "prepareHistoryFullBankChangeBefore",
+    "reservePreparedHistoryFullBankAfter",
+    "capturePreparedHistoryFullBankAfterUsingReservedStorage",
+    "populatePreparedHistoryFullBankStaging",
+    "canRecordFullBank",
+    "commitAdmittedFullBank",
+    "projectInheritedChordContexts",
+    "applyProjectScaleTransition",
+    "validateSetPayload",
+    "fillSetPayload",
+    "applySetPayload",
+    "fillSetEnvelope",
+    "applySetEnvelope",
+    "applyProjectSequencerPayload",
+    "applyProjectSequencerEnvelope",
+    "preparePageStructureSnapshot",
+    "commitPreparedPageStructureSnapshot",
+    "MacroPageStructureHistoryOperation",
+    "pageStructureBeforeMatches",
+    "pageStructureAfterMatches",
+    "compactProjectControlPages",
+    "normalizeEqualMacroAfterControl",
+    "pageStructureControlHash",
+    "xorPageStructureControl",
+    "clearAutomationForPage",
+    "replacePageFromClipboard",
+    "replaceTrackFromClipboard",
+    "mutateProjectControl",
+    "clearMacroSlot",
+    "clearTracks",
+    "clearPages",
 )
 RETIRED_RAW_API_ROOTS = ("src", "test")
 RETIRED_RAW_API_TARGETED_IDENTIFIERS = (
+    ("src/state/sequencer/SequencerStructureHistory.hpp", "beforeControl"),
+    ("src/state/sequencer/SequencerStructureHistory.hpp", "afterControl"),
     (
         "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
         "canRecordFullBank",
@@ -72,6 +110,8 @@ RETIRED_RAW_API_TARGETED_IDENTIFIERS = (
     ),
 )
 RETIRED_RAW_API_MUTATION_LAYERS = (
+    ("track-control-before", "src/state/sequencer/SequencerStructureHistory.hpp", "beforeControl"),
+    ("track-control-after", "src/state/sequencer/SequencerStructureHistory.hpp", "afterControl"),
     (
         "domain-facade",
         "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
@@ -93,6 +133,8 @@ RETIRED_RAW_API_MUTATION_LAYERS = (
         "recordSequencerTrackStructureHistoryChange",
     ),
     ("test-clients", "test/Regression.cpp", "recordPattern"),
+    ("macro-page-history", "src/state/macro/MacroHistory.cpp", "preparePageStructureSnapshot"),
+    ("macro-page-tests", "test/Regression.cpp", "compactProjectControlPages"),
 )
 ENTRY_RECORDING_CALL_TOTAL = 45
 EXPECTED_MIGRATED_REMOVAL_TOTAL = 38
@@ -144,7 +186,7 @@ D_OOM_SURFACE_IDENTIFIER_COUNTS = {
     ("src/handler/sequencer/SequencerStepEditHandler.cpp", "showRejection"): 6,
     ("src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "showRejection"): 2,
     ("src/handler/sequencer/SequencerStepHandler.cpp", "showRejection"): 10,
-    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "ALLOCATION_UNAVAILABLE"): 8,
+    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "ALLOCATION_UNAVAILABLE"): 7,
     ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "HISTORY_UNAVAILABLE"): 4,
     ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "ALLOCATION_UNAVAILABLE"): 2,
     ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "HISTORY_UNAVAILABLE"): 2,
@@ -162,7 +204,7 @@ D_OOM_STRING_LITERAL_COUNTS = {
 D_OOM_FORBIDDEN_IDENTIFIERS = (
     "SequencerHistoryOpenOutcome::Failed",
     "SequencerPreparedPatternEditBeginOutcome::Failed",
-    "SequencerPreparedFullBankEditOutcome::Failed",
+    "SequencerProjectScaleEditOutcome::Failed",
 )
 D_OOM_QUICK_CONTROLS_BOOL_MEMBERS = (
     "history_retry_required_",
@@ -241,29 +283,29 @@ EXPECTED_PREPARED_CALL_TOTALS = {
     "abortPreparedPatternEdit": 3,
     "applyPreparedQuickControlsEdit": 2,
 }
-PREPARED_FULL_BANK_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
-PREPARED_FULL_BANK_OWNER_ENUM = "SequencerPreparedFullBankEditOwner"
-PREPARED_FULL_BANK_OWNERS = (
+PREPARED_PROJECT_SCALE_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
+PREPARED_PROJECT_SCALE_OWNER_ENUM = "SequencerProjectScaleEditOwner"
+PREPARED_PROJECT_SCALE_OWNERS = (
     "ProjectScale",
 )
-PREPARED_FULL_BANK_METHOD = "applyPreparedProjectScaleChoice"
-PREPARED_FULL_BANK_CENTRAL_PATH = "src/state/CoreStateSequencerHistoryRecording.cpp"
-PREPARED_FULL_BANK_CENTRAL_QUALIFIER = "CoreState"
-PREPARED_FULL_BANK_ADAPTER_PATH = (
+PREPARED_PROJECT_SCALE_METHOD = "applyPreparedProjectScaleChoice"
+PREPARED_PROJECT_SCALE_CENTRAL_PATH = "src/state/CoreStateSequencerHistoryRecording.cpp"
+PREPARED_PROJECT_SCALE_CENTRAL_QUALIFIER = "CoreState"
+PREPARED_PROJECT_SCALE_ADAPTER_PATH = (
     "src/handler/sequencer/SequencerHistoryDomainServices.cpp"
 )
-PREPARED_FULL_BANK_ADAPTER_QUALIFIER = "SequencerHistoryDomainServices"
-PREPARED_FULL_BANK_TRUSTED_COMMIT_METHOD = "commitAdmittedFullBank"
-PREPARED_FULL_BANK_TRUSTED_COMMIT_QUALIFIER = "SequencerHistoryService"
-PREPARED_FULL_BANK_TRUSTED_COMMIT_FORWARD = "recordPreparedFullBank"
-PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_ROOT = "src"
-PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_CALL_TOTAL = 1
-PREPARED_FULL_BANK_TRUSTED_COMMIT_HANDLER_ROOT = "src/handler"
-PREPARED_FULL_BANK_SURFACE_FILES = (
+PREPARED_PROJECT_SCALE_ADAPTER_QUALIFIER = "SequencerHistoryDomainServices"
+PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_METHOD = "commitAdmittedProjectScale"
+PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_QUALIFIER = "SequencerHistoryService"
+PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_FORWARD = "recordPreparedFullBank"
+PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_SOURCE_ROOT = "src"
+PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_SOURCE_CALL_TOTAL = 1
+PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_HANDLER_ROOT = "src/handler"
+PREPARED_PROJECT_SCALE_SURFACE_FILES = (
     "src/handler/project/ProjectHandlerValueEditing.cpp",
 )
-PREPARED_FULL_BANK_SURFACE_COUNT = 2
-PREPARED_FULL_BANK_FORBIDDEN_RAW_METHODS = (
+PREPARED_PROJECT_SCALE_SURFACE_COUNT = 2
+PREPARED_PROJECT_SCALE_FORBIDDEN_RAW_METHODS = (
     "captureSequencerFullBankHistoryBefore",
     "captureSequencerFullBankHistoryAfter",
     "recordSequencerFullBankHistoryChange",
@@ -271,26 +313,26 @@ PREPARED_FULL_BANK_FORBIDDEN_RAW_METHODS = (
     "recordFullBank",
     "recordPreparedFullBank",
 )
-PREPARED_FULL_BANK_PROVIDER_PATH = "src/state/sequencer/SequencerHistory.cpp"
-PREPARED_FULL_BANK_PROVIDERS = (
+PREPARED_PROJECT_SCALE_PROVIDER_PATH = "src/state/sequencer/SequencerHistory.cpp"
+PREPARED_PROJECT_SCALE_PROVIDERS = (
     "reserveHistoryTrackBankSnapshotStorage",
     "captureHistoryTrackBankGraphUsingReservedStorage",
     "captureHistoryTrackBankDataUsingReservedStorage",
     "captureHistoryTrackBankSnapshotUsingReservedStorage",
     "applyHistorySnapshot",
 )
-PREPARED_FULL_BANK_PROVIDER_SIGNATURE_TOKENS = {
-    # applyHistorySnapshot is overloaded for Pattern and FullBank snapshots;
-    # only the FullBank body carries the active-spare contract.
+PREPARED_PROJECT_SCALE_PROVIDER_SIGNATURE_TOKENS = {
+    # applyHistorySnapshot is overloaded for Pattern and bank snapshots;
+    # only the bank-snapshot body carries the canonical-bank contract.
     "applyHistorySnapshot": "SequencerHistoryTrackBankSnapshot",
 }
-PREPARED_FULL_BANK_PROVIDER_ANCHORS = {
+PREPARED_PROJECT_SCALE_PROVIDER_ANCHORS = {
     "expectedActiveTrackBindingCount": (
         "active-track-binding",
         re.compile(r"\b(?:const\s+)?(?:std\s*::\s*)?uint8_t\s+activeTrack\s*="),
     ),
     "expectedSkipGuardCount": (
-        "active-spare-skip-guard",
+        "canonical-bank-skip-guard",
         re.compile(r"\bif\s*\(\s*i\s*==\s*activeTrack\s*\)"),
     ),
     "expectedGraphResetCount": (
@@ -326,21 +368,13 @@ PREPARED_FULL_BANK_PROVIDER_ANCHORS = {
             r"\bout\s*\.\s*flat\s*\.\s*activeTrack\s*!=\s*activeTrack"
         ),
     ),
-    "expectedEditorGraphRouteCount": (
-        "active-editor-graph-route",
-        re.compile(
-            r"\bauto\s*&\s*targetGraph\s*=\s*trackIndex\s*==\s*activeTrack"
-            r"\s*\?\s*out\s*\.\s*editorGraph\s*:\s*out\s*\.\s*bankGraphs"
-            r"\s*\[\s*trackIndex\s*\]"
-        ),
+    "expectedIndexedGraphRouteCount": (
+        "indexed-graph-route",
+        re.compile(r"\bauto\s*&\s*targetGraph\s*=\s*out\s*\.\s*bankGraphs\s*\[\s*trackIndex\s*\]"),
     ),
-    "expectedEditorCcRouteCount": (
-        "active-editor-cc-route",
-        re.compile(
-            r"\bauto\s*&\s*targetCcLanes\s*=\s*trackIndex\s*==\s*activeTrack"
-            r"\s*\?\s*out\s*\.\s*editorCcLanes\s*:\s*out\s*\.\s*bankCcLanes"
-            r"\s*\[\s*trackIndex\s*\]"
-        ),
+    "expectedIndexedCcRouteCount": (
+        "indexed-cc-route",
+        re.compile(r"\bauto\s*&\s*targetCcLanes\s*=\s*out\s*\.\s*bankCcLanes\s*\[\s*trackIndex\s*\]"),
     ),
     "expectedGraphCaptureCallCount": (
         "graph-slice-call",
@@ -624,8 +658,8 @@ def expected_prepared_central_counter(manifest) -> Counter:
     return Counter(central["definitions"])
 
 
-def expected_prepared_full_bank_surface_call_counter(manifest) -> Counter:
-    lifecycle = manifest["preparedFullBankLifecycle"]
+def expected_prepared_project_scale_surface_call_counter(manifest) -> Counter:
+    lifecycle = manifest["preparedProjectScaleLifecycle"]
     method = lifecycle["method"]
     return Counter(
         {
@@ -635,27 +669,27 @@ def expected_prepared_full_bank_surface_call_counter(manifest) -> Counter:
     )
 
 
-def expected_prepared_full_bank_owner_reference_counter(manifest) -> Counter:
+def expected_prepared_project_scale_owner_reference_counter(manifest) -> Counter:
     expected = Counter()
-    for surface in manifest["preparedFullBankLifecycle"]["surfaces"]:
+    for surface in manifest["preparedProjectScaleLifecycle"]["surfaces"]:
         for owner, count in surface["ownerReferences"].items():
             expected[(surface["path"], owner)] = count
     return expected
 
 
-def expected_prepared_full_bank_provider_anchor_counter(manifest) -> Counter:
+def expected_prepared_project_scale_provider_anchor_counter(manifest) -> Counter:
     expected = Counter()
-    providers = manifest["preparedFullBankLifecycle"]["activeSpareProviders"]
+    providers = manifest["preparedProjectScaleLifecycle"]["canonicalBankProviders"]
     for provider in providers["providers"]:
         function = provider["function"]
         expected[(function, "definition")] = 1
-        for field, (label, _) in PREPARED_FULL_BANK_PROVIDER_ANCHORS.items():
+        for field, (label, _) in PREPARED_PROJECT_SCALE_PROVIDER_ANCHORS.items():
             expected[(function, label)] = provider[field]
     return expected
 
 
-def expected_prepared_full_bank_trusted_commit_counter(manifest) -> Counter:
-    trusted = manifest["preparedFullBankLifecycle"]["trustedCommit"]
+def expected_prepared_project_scale_trusted_commit_counter(manifest) -> Counter:
+    trusted = manifest["preparedProjectScaleLifecycle"]["trustedCommit"]
     declaration = trusted["declaration"]
     implementation = trusted["implementation"]
     central = trusted["centralCall"]
@@ -1268,102 +1302,102 @@ def manifest_errors(manifest) -> list[str]:
         if sum(raw_exemption_counter.values()) != expected_raw_exemption_total:
             errors.append("prepared Pattern raw-call exemption total differs from its declaration")
 
-    full_bank = manifest.get("preparedFullBankLifecycle")
-    if not isinstance(full_bank, dict):
-        errors.append("manifest is missing the prepared FullBank lifecycle ratchet")
+    project_scale = manifest.get("preparedProjectScaleLifecycle")
+    if not isinstance(project_scale, dict):
+        errors.append("manifest is missing the prepared Project Scale lifecycle ratchet")
     else:
-        declaration = full_bank.get("ownerDeclaration", {})
-        if declaration.get("path") != PREPARED_FULL_BANK_OWNER_PATH:
-            errors.append("prepared FullBank owner declaration path must remain canonical")
-        if declaration.get("enum") != PREPARED_FULL_BANK_OWNER_ENUM:
-            errors.append("prepared FullBank owner enum name must remain canonical")
+        declaration = project_scale.get("ownerDeclaration", {})
+        if declaration.get("path") != PREPARED_PROJECT_SCALE_OWNER_PATH:
+            errors.append("prepared Project Scale owner declaration path must remain canonical")
+        if declaration.get("enum") != PREPARED_PROJECT_SCALE_OWNER_ENUM:
+            errors.append("prepared Project Scale owner enum name must remain canonical")
         declared_owners = tuple(declaration.get("owners", []))
-        if declared_owners != PREPARED_FULL_BANK_OWNERS:
-            errors.append("prepared FullBank owners must enumerate the canonical two")
-        if declaration.get("expectedCount") != len(PREPARED_FULL_BANK_OWNERS):
-            errors.append("prepared FullBank owner count must remain 2")
+        if declared_owners != PREPARED_PROJECT_SCALE_OWNERS:
+            errors.append("prepared Project Scale owners must enumerate the canonical Project owner")
+        if declaration.get("expectedCount") != len(PREPARED_PROJECT_SCALE_OWNERS):
+            errors.append("prepared Project Scale owner count must remain 1")
 
-        method = full_bank.get("method")
-        if method != PREPARED_FULL_BANK_METHOD:
-            errors.append("prepared FullBank method must remain applyPreparedProjectScaleChoice")
+        method = project_scale.get("method")
+        if method != PREPARED_PROJECT_SCALE_METHOD:
+            errors.append("prepared Project Scale method must remain applyPreparedProjectScaleChoice")
 
-        central = full_bank.get("centralAuthority", {})
-        if central.get("path") != PREPARED_FULL_BANK_CENTRAL_PATH:
-            errors.append("prepared FullBank transaction must remain CoreState-owned")
-        if central.get("qualifier") != PREPARED_FULL_BANK_CENTRAL_QUALIFIER:
-            errors.append("prepared FullBank central qualifier must remain CoreState")
+        central = project_scale.get("centralAuthority", {})
+        if central.get("path") != PREPARED_PROJECT_SCALE_CENTRAL_PATH:
+            errors.append("prepared Project Scale transaction must remain CoreState-owned")
+        if central.get("qualifier") != PREPARED_PROJECT_SCALE_CENTRAL_QUALIFIER:
+            errors.append("prepared Project Scale central qualifier must remain CoreState")
         if central.get("expectedDefinitionCount") != 1:
-            errors.append("prepared FullBank central authority must be unique")
+            errors.append("prepared Project Scale central authority must be unique")
 
-        adapter = full_bank.get("serviceAdapter", {})
-        if adapter.get("path") != PREPARED_FULL_BANK_ADAPTER_PATH:
-            errors.append("prepared FullBank service adapter path must remain canonical")
-        if adapter.get("qualifier") != PREPARED_FULL_BANK_ADAPTER_QUALIFIER:
+        adapter = project_scale.get("serviceAdapter", {})
+        if adapter.get("path") != PREPARED_PROJECT_SCALE_ADAPTER_PATH:
+            errors.append("prepared Project Scale service adapter path must remain canonical")
+        if adapter.get("qualifier") != PREPARED_PROJECT_SCALE_ADAPTER_QUALIFIER:
             errors.append(
-                "prepared FullBank adapter qualifier must remain "
+                "prepared Project Scale adapter qualifier must remain "
                 "SequencerHistoryDomainServices"
             )
         if adapter.get("expectedDefinitionCount") != 1:
-            errors.append("prepared FullBank service adapter must be unique")
+            errors.append("prepared Project Scale service adapter must be unique")
 
-        trusted = full_bank.get("trustedCommit", {})
-        if trusted.get("method") != PREPARED_FULL_BANK_TRUSTED_COMMIT_METHOD:
-            errors.append("prepared FullBank trusted commit method must remain canonical")
+        trusted = project_scale.get("trustedCommit", {})
+        if trusted.get("method") != PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_METHOD:
+            errors.append("prepared Project Scale trusted commit method must remain canonical")
         declaration = trusted.get("declaration", {})
         if declaration.get("path") != "src/state/sequencer/SequencerHistory.hpp":
-            errors.append("prepared FullBank trusted commit declaration path must remain canonical")
+            errors.append("prepared Project Scale trusted commit declaration path must remain canonical")
         if declaration.get("expectedCount") != 1:
-            errors.append("prepared FullBank trusted commit declaration must remain unique")
+            errors.append("prepared Project Scale trusted commit declaration must remain unique")
         implementation = trusted.get("implementation", {})
-        if implementation.get("path") != PREPARED_FULL_BANK_PROVIDER_PATH:
-            errors.append("prepared FullBank trusted commit implementation path must remain canonical")
-        if implementation.get("qualifier") != PREPARED_FULL_BANK_TRUSTED_COMMIT_QUALIFIER:
-            errors.append("prepared FullBank trusted commit qualifier must remain canonical")
+        if implementation.get("path") != PREPARED_PROJECT_SCALE_PROVIDER_PATH:
+            errors.append("prepared Project Scale trusted commit implementation path must remain canonical")
+        if implementation.get("qualifier") != PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_QUALIFIER:
+            errors.append("prepared Project Scale trusted commit qualifier must remain canonical")
         if implementation.get("expectedDefinitionCount") != 1:
-            errors.append("prepared FullBank trusted commit definition must remain unique")
+            errors.append("prepared Project Scale trusted commit definition must remain unique")
         central_call = trusted.get("centralCall", {})
-        if central_call.get("path") != PREPARED_FULL_BANK_CENTRAL_PATH:
-            errors.append("prepared FullBank trusted central-call path must remain canonical")
-        if central_call.get("function") != PREPARED_FULL_BANK_METHOD:
-            errors.append("prepared FullBank trusted central-call function must remain canonical")
+        if central_call.get("path") != PREPARED_PROJECT_SCALE_CENTRAL_PATH:
+            errors.append("prepared Project Scale trusted central-call path must remain canonical")
+        if central_call.get("function") != PREPARED_PROJECT_SCALE_METHOD:
+            errors.append("prepared Project Scale trusted central-call function must remain canonical")
         if central_call.get("expectedCallCount") != 1:
-            errors.append("prepared FullBank trusted central call count must remain 1")
+            errors.append("prepared Project Scale trusted central call count must remain 1")
         defensive = trusted.get("defensiveForward", {})
-        if defensive.get("path") != PREPARED_FULL_BANK_PROVIDER_PATH:
-            errors.append("prepared FullBank defensive-forward path must remain canonical")
-        if defensive.get("function") != PREPARED_FULL_BANK_TRUSTED_COMMIT_FORWARD:
-            errors.append("prepared FullBank defensive-forward function must remain canonical")
+        if defensive.get("path") != PREPARED_PROJECT_SCALE_PROVIDER_PATH:
+            errors.append("prepared Project Scale defensive-forward path must remain canonical")
+        if defensive.get("function") != PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_FORWARD:
+            errors.append("prepared Project Scale defensive-forward function must remain canonical")
         if defensive.get("expectedCallCount") != 0:
-            errors.append("prepared FullBank defensive forward count must remain 0")
+            errors.append("prepared Project Scale defensive forward count must remain 0")
         global_source = trusted.get("globalSourceCalls", {})
-        if global_source.get("path") != PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_ROOT:
-            errors.append("prepared FullBank trusted commit source root must remain canonical")
+        if global_source.get("path") != PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_SOURCE_ROOT:
+            errors.append("prepared Project Scale trusted commit source root must remain canonical")
         if (global_source.get("expectedCallCount") !=
-                PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_CALL_TOTAL):
-            errors.append("prepared FullBank trusted source call total must remain 1")
+                PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_SOURCE_CALL_TOTAL):
+            errors.append("prepared Project Scale trusted source call total must remain 1")
         handler_root = trusted.get("forbiddenHandlerRoot", {})
-        if handler_root.get("path") != PREPARED_FULL_BANK_TRUSTED_COMMIT_HANDLER_ROOT:
-            errors.append("prepared FullBank trusted commit handler root must remain canonical")
+        if handler_root.get("path") != PREPARED_PROJECT_SCALE_TRUSTED_COMMIT_HANDLER_ROOT:
+            errors.append("prepared Project Scale trusted commit handler root must remain canonical")
         if handler_root.get("expectedCallCount") != 0:
-            errors.append("prepared FullBank handlers must retain zero trusted commit calls")
+            errors.append("prepared Project Scale handlers must retain zero trusted commit calls")
 
-        surfaces = full_bank.get("surfaces", [])
+        surfaces = project_scale.get("surfaces", [])
         surface_paths = tuple(
             surface.get("path") for surface in surfaces if isinstance(surface, dict)
         )
-        if full_bank.get("expectedSurfaceFileCount") != len(
-            PREPARED_FULL_BANK_SURFACE_FILES
+        if project_scale.get("expectedSurfaceFileCount") != len(
+            PREPARED_PROJECT_SCALE_SURFACE_FILES
         ):
-            errors.append("prepared FullBank surface file count must remain 2")
-        if surface_paths != PREPARED_FULL_BANK_SURFACE_FILES:
-            errors.append("prepared FullBank lifecycle must enumerate the canonical two files")
+            errors.append("prepared Project Scale surface file count must remain 2")
+        if surface_paths != PREPARED_PROJECT_SCALE_SURFACE_FILES:
+            errors.append("prepared Project Scale lifecycle must enumerate the canonical Project owner files")
 
         surface_total = 0
         call_total = 0
         manifest_owner_set = set()
         for surface in surfaces:
             if not isinstance(surface, dict):
-                errors.append("prepared FullBank surface entries must be objects")
+                errors.append("prepared Project Scale surface entries must be objects")
                 continue
             path = surface.get("path")
             surface_count = surface.get("surfaceCount")
@@ -1373,7 +1407,7 @@ def manifest_errors(manifest) -> list[str]:
             else:
                 surface_total += surface_count
             if type(call_count) is not int or call_count <= 0:
-                errors.append(f"{path}: prepared FullBank call count must be positive")
+                errors.append(f"{path}: prepared Project Scale call count must be positive")
             else:
                 call_total += call_count
             if (type(surface_count) is int and type(call_count) is int and
@@ -1383,11 +1417,11 @@ def manifest_errors(manifest) -> list[str]:
             owner_references = surface.get("ownerReferences", {})
             owner_total = 0
             if not owner_references:
-                errors.append(f"{path}: prepared FullBank surface must name an owner")
+                errors.append(f"{path}: prepared Project Scale surface must name an owner")
             for owner, count in owner_references.items():
                 manifest_owner_set.add(owner)
-                if owner not in PREPARED_FULL_BANK_OWNERS:
-                    errors.append(f"{path}: unknown prepared FullBank owner {owner}")
+                if owner not in PREPARED_PROJECT_SCALE_OWNERS:
+                    errors.append(f"{path}: unknown prepared Project Scale owner {owner}")
                 if type(count) is not int or count <= 0:
                     errors.append(f"{path}:{owner} owner reference count must be positive")
                 else:
@@ -1395,44 +1429,44 @@ def manifest_errors(manifest) -> list[str]:
             if type(call_count) is int and owner_total != call_count:
                 errors.append(f"{path}: FullBank owner references must match typed calls")
 
-        if full_bank.get("expectedSurfaceCount") != PREPARED_FULL_BANK_SURFACE_COUNT:
-            errors.append("prepared FullBank migrated surface count must match the contract")
-        if surface_total != full_bank.get("expectedSurfaceCount"):
+        if project_scale.get("expectedSurfaceCount") != PREPARED_PROJECT_SCALE_SURFACE_COUNT:
+            errors.append("prepared Project Scale migrated surface count must match the contract")
+        if surface_total != project_scale.get("expectedSurfaceCount"):
             errors.append(
-                f"prepared FullBank surface total is {surface_total}, "
-                f"expected {full_bank.get('expectedSurfaceCount')}"
+                f"prepared Project Scale surface total is {surface_total}, "
+                f"expected {project_scale.get('expectedSurfaceCount')}"
             )
-        if full_bank.get("expectedSurfaceCallTotal") != PREPARED_FULL_BANK_SURFACE_COUNT:
-            errors.append("prepared FullBank surface call total must match the contract")
-        if call_total != full_bank.get("expectedSurfaceCallTotal"):
+        if project_scale.get("expectedSurfaceCallTotal") != PREPARED_PROJECT_SCALE_SURFACE_COUNT:
+            errors.append("prepared Project Scale surface call total must match the contract")
+        if call_total != project_scale.get("expectedSurfaceCallTotal"):
             errors.append(
-                f"prepared FullBank call total is {call_total}, "
-                f"expected {full_bank.get('expectedSurfaceCallTotal')}"
+                f"prepared Project Scale call total is {call_total}, "
+                f"expected {project_scale.get('expectedSurfaceCallTotal')}"
             )
-        if manifest_owner_set != set(PREPARED_FULL_BANK_OWNERS):
-            errors.append("prepared FullBank surfaces must cover every declared owner")
+        if manifest_owner_set != set(PREPARED_PROJECT_SCALE_OWNERS):
+            errors.append("prepared Project Scale surfaces must cover every declared owner")
 
-        forbidden_methods = tuple(full_bank.get("forbiddenRawMethods", []))
-        if forbidden_methods != PREPARED_FULL_BANK_FORBIDDEN_RAW_METHODS:
-            errors.append("prepared FullBank raw helper denylist must remain exact")
-        if full_bank.get("expectedForbiddenRawCallTotal") != 0:
-            errors.append("prepared FullBank surfaces must retain zero raw helper calls")
+        forbidden_methods = tuple(project_scale.get("forbiddenRawMethods", []))
+        if forbidden_methods != PREPARED_PROJECT_SCALE_FORBIDDEN_RAW_METHODS:
+            errors.append("prepared Project Scale raw helper denylist must remain exact")
+        if project_scale.get("expectedForbiddenRawCallTotal") != 0:
+            errors.append("prepared Project Scale surfaces must retain zero raw helper calls")
 
-        provider_section = full_bank.get("activeSpareProviders", {})
-        if provider_section.get("path") != PREPARED_FULL_BANK_PROVIDER_PATH:
-            errors.append("prepared FullBank active-spare provider path must remain canonical")
+        provider_section = project_scale.get("canonicalBankProviders", {})
+        if provider_section.get("path") != PREPARED_PROJECT_SCALE_PROVIDER_PATH:
+            errors.append("prepared Project Scale canonical-bank provider path must remain canonical")
         providers = provider_section.get("providers", [])
         provider_names = tuple(
             provider.get("function") for provider in providers if isinstance(provider, dict)
         )
-        if provider_names != PREPARED_FULL_BANK_PROVIDERS:
-            errors.append("prepared FullBank active-spare providers must remain exact")
+        if provider_names != PREPARED_PROJECT_SCALE_PROVIDERS:
+            errors.append("prepared Project Scale canonical-bank providers must remain exact")
         for provider in providers:
             if not isinstance(provider, dict):
-                errors.append("prepared FullBank provider entries must be objects")
+                errors.append("prepared Project Scale provider entries must be objects")
                 continue
             function = provider.get("function")
-            for field in PREPARED_FULL_BANK_PROVIDER_ANCHORS:
+            for field in PREPARED_PROJECT_SCALE_PROVIDER_ANCHORS:
                 count = provider.get(field)
                 if type(count) is not int or count < 0:
                     errors.append(f"{function}:{field} must be a non-negative integer")
@@ -1901,34 +1935,34 @@ def collect_observation(root: Path, manifest):
         for method, count in forbidden_counts.items():
             prepared_forbidden_raw_calls[(surface["path"], method)] = count
 
-    full_bank = manifest["preparedFullBankLifecycle"]
-    full_bank_declaration = full_bank["ownerDeclaration"]
-    full_bank_central = full_bank["centralAuthority"]
-    full_bank_adapter = full_bank["serviceAdapter"]
-    full_bank_surface_calls = Counter()
-    full_bank_owner_references = Counter()
-    full_bank_forbidden_raw_calls = Counter()
-    for surface in full_bank["surfaces"]:
+    project_scale = manifest["preparedProjectScaleLifecycle"]
+    project_scale_declaration = project_scale["ownerDeclaration"]
+    project_scale_central = project_scale["centralAuthority"]
+    project_scale_adapter = project_scale["serviceAdapter"]
+    project_scale_surface_calls = Counter()
+    project_scale_owner_references = Counter()
+    project_scale_forbidden_raw_calls = Counter()
+    for surface in project_scale["surfaces"]:
         surface_path = root / surface["path"]
-        full_bank_surface_calls[(surface["path"], full_bank["method"])] = (
-            count_member_method(surface_path, full_bank["method"])
+        project_scale_surface_calls[(surface["path"], project_scale["method"])] = (
+            count_member_method(surface_path, project_scale["method"])
         )
         owner_counts = count_prepared_owner_references(
             surface_path,
-            full_bank_declaration["enum"],
-            full_bank_declaration["owners"],
+            project_scale_declaration["enum"],
+            project_scale_declaration["owners"],
         )
         for owner, count in owner_counts.items():
-            full_bank_owner_references[(surface["path"], owner)] = count
+            project_scale_owner_references[(surface["path"], owner)] = count
         forbidden_counts = count_any_calls(
             surface_path,
-            full_bank["forbiddenRawMethods"],
+            project_scale["forbiddenRawMethods"],
         )
         for method, count in forbidden_counts.items():
-            full_bank_forbidden_raw_calls[(surface["path"], method)] = count
+            project_scale_forbidden_raw_calls[(surface["path"], method)] = count
 
-    provider_section = full_bank["activeSpareProviders"]
-    trusted = full_bank["trustedCommit"]
+    provider_section = project_scale["canonicalBankProviders"]
+    trusted = project_scale["trustedCommit"]
     trusted_method = trusted["method"]
     trusted_declaration = trusted["declaration"]
     trusted_implementation = trusted["implementation"]
@@ -2022,29 +2056,29 @@ def collect_observation(root: Path, manifest):
         ),
         "preparedOwnerReferences": prepared_owner_references,
         "preparedForbiddenRawCalls": prepared_forbidden_raw_calls,
-        "preparedFullBankOwners": enum_members(
-            root / full_bank_declaration["path"],
-            full_bank_declaration["enum"],
+        "preparedProjectScaleOwners": enum_members(
+            root / project_scale_declaration["path"],
+            project_scale_declaration["enum"],
         ),
-        "preparedFullBankSurfaceCalls": full_bank_surface_calls,
-        "preparedFullBankCentralDefinitions": count_qualified_calls(
-            root / full_bank_central["path"],
-            full_bank_central["qualifier"],
-            (full_bank["method"],),
+        "preparedProjectScaleSurfaceCalls": project_scale_surface_calls,
+        "preparedProjectScaleCentralDefinitions": count_qualified_calls(
+            root / project_scale_central["path"],
+            project_scale_central["qualifier"],
+            (project_scale["method"],),
         ),
-        "preparedFullBankAdapterDefinitions": count_qualified_calls(
-            root / full_bank_adapter["path"],
-            full_bank_adapter["qualifier"],
-            (full_bank["method"],),
+        "preparedProjectScaleAdapterDefinitions": count_qualified_calls(
+            root / project_scale_adapter["path"],
+            project_scale_adapter["qualifier"],
+            (project_scale["method"],),
         ),
-        "preparedFullBankOwnerReferences": full_bank_owner_references,
-        "preparedFullBankForbiddenRawCalls": full_bank_forbidden_raw_calls,
-        "preparedFullBankProviderAnchors": count_prepared_full_bank_provider_anchors(
+        "preparedProjectScaleOwnerReferences": project_scale_owner_references,
+        "preparedProjectScaleForbiddenRawCalls": project_scale_forbidden_raw_calls,
+        "preparedProjectScaleProviderAnchors": count_prepared_project_scale_provider_anchors(
             root / provider_section["path"],
             provider_section["providers"],
         ),
-        "preparedFullBankTrustedCommit": trusted_commit,
-        "preparedFullBankTrustedCommitHandlerCalls": count_calls_under(
+        "preparedProjectScaleTrustedCommit": trusted_commit,
+        "preparedProjectScaleTrustedCommitHandlerCalls": count_calls_under(
             root,
             trusted["forbiddenHandlerRoot"]["path"],
             (trusted_method,),
@@ -2154,63 +2188,63 @@ def observation_errors(manifest, observed) -> list[str]:
         observed["preparedForbiddenRawCalls"],
     )
 
-    full_bank = manifest["preparedFullBankLifecycle"]
-    expected_full_bank_owners = tuple(full_bank["ownerDeclaration"]["owners"])
-    if observed["preparedFullBankOwners"] != expected_full_bank_owners:
+    project_scale = manifest["preparedProjectScaleLifecycle"]
+    expected_project_scale_owners = tuple(project_scale["ownerDeclaration"]["owners"])
+    if observed["preparedProjectScaleOwners"] != expected_project_scale_owners:
         errors.append(
-            "prepared FullBank owner declaration mismatch: "
-            f"expected {expected_full_bank_owners}, "
-            f"observed {observed['preparedFullBankOwners']}"
+            "prepared Project Scale owner declaration mismatch: "
+            f"expected {expected_project_scale_owners}, "
+            f"observed {observed['preparedProjectScaleOwners']}"
         )
     errors += counter_errors(
-        "prepared FullBank surface call",
-        expected_prepared_full_bank_surface_call_counter(manifest),
-        observed["preparedFullBankSurfaceCalls"],
+        "prepared Project Scale surface call",
+        expected_prepared_project_scale_surface_call_counter(manifest),
+        observed["preparedProjectScaleSurfaceCalls"],
     )
     errors += counter_errors(
-        "prepared FullBank central definition",
+        "prepared Project Scale central definition",
         Counter(
             {
-                full_bank["method"]:
-                    full_bank["centralAuthority"]["expectedDefinitionCount"]
+                project_scale["method"]:
+                    project_scale["centralAuthority"]["expectedDefinitionCount"]
             }
         ),
-        observed["preparedFullBankCentralDefinitions"],
+        observed["preparedProjectScaleCentralDefinitions"],
     )
     errors += counter_errors(
-        "prepared FullBank adapter definition",
+        "prepared Project Scale adapter definition",
         Counter(
             {
-                full_bank["method"]:
-                    full_bank["serviceAdapter"]["expectedDefinitionCount"]
+                project_scale["method"]:
+                    project_scale["serviceAdapter"]["expectedDefinitionCount"]
             }
         ),
-        observed["preparedFullBankAdapterDefinitions"],
+        observed["preparedProjectScaleAdapterDefinitions"],
     )
     errors += counter_errors(
-        "prepared FullBank owner reference",
-        expected_prepared_full_bank_owner_reference_counter(manifest),
-        observed["preparedFullBankOwnerReferences"],
+        "prepared Project Scale owner reference",
+        expected_prepared_project_scale_owner_reference_counter(manifest),
+        observed["preparedProjectScaleOwnerReferences"],
     )
     errors += counter_errors(
-        "forbidden prepared FullBank raw call",
+        "forbidden prepared Project Scale raw call",
         Counter(),
-        observed["preparedFullBankForbiddenRawCalls"],
+        observed["preparedProjectScaleForbiddenRawCalls"],
     )
     errors += counter_errors(
-        "prepared FullBank active-spare provider anchor",
-        expected_prepared_full_bank_provider_anchor_counter(manifest),
-        observed["preparedFullBankProviderAnchors"],
+        "prepared Project Scale canonical-bank provider anchor",
+        expected_prepared_project_scale_provider_anchor_counter(manifest),
+        observed["preparedProjectScaleProviderAnchors"],
     )
     errors += counter_errors(
-        "prepared FullBank trusted commit",
-        expected_prepared_full_bank_trusted_commit_counter(manifest),
-        observed["preparedFullBankTrustedCommit"],
+        "prepared Project Scale trusted commit",
+        expected_prepared_project_scale_trusted_commit_counter(manifest),
+        observed["preparedProjectScaleTrustedCommit"],
     )
     errors += counter_errors(
         "forbidden handler trusted commit call",
         Counter(),
-        observed["preparedFullBankTrustedCommitHandlerCalls"],
+        observed["preparedProjectScaleTrustedCommitHandlerCalls"],
     )
     errors += counter_errors(
         "prepared Track Structure admission gate",
@@ -2497,7 +2531,7 @@ def count_invocations_under(root: Path, relative_root: str, methods) -> Counter:
     return observed
 
 
-def count_prepared_full_bank_provider_anchors(path: Path, providers) -> Counter:
+def count_prepared_project_scale_provider_anchors(path: Path, providers) -> Counter:
     text = sanitize_cpp(path.read_text(encoding="utf-8"))
     observed = Counter()
     for provider in providers:
@@ -2505,11 +2539,11 @@ def count_prepared_full_bank_provider_anchors(path: Path, providers) -> Counter:
         bodies = helper_bodies(
             text,
             function,
-            PREPARED_FULL_BANK_PROVIDER_SIGNATURE_TOKENS.get(function),
+            PREPARED_PROJECT_SCALE_PROVIDER_SIGNATURE_TOKENS.get(function),
         )
         observed[(function, "definition")] = len(bodies)
         body = "\n".join(bodies)
-        for _, (label, pattern) in PREPARED_FULL_BANK_PROVIDER_ANCHORS.items():
+        for _, (label, pattern) in PREPARED_PROJECT_SCALE_PROVIDER_ANCHORS.items():
             observed[(function, label)] = len(pattern.findall(body))
     return observed
 
@@ -2541,6 +2575,7 @@ def seam_errors(root: Path, manifest) -> list[str]:
         seam["cmakePath"]: 1,
         seam["platformioPath"]: 1,
     })
+    expected_build_uses.update(seam.get("additionalTestBuildUses", {}))
     errors += counter_errors("build macro use", expected_build_uses, build_uses)
 
     cmake = (root / seam["cmakePath"]).read_text(encoding="utf-8")
@@ -2655,7 +2690,7 @@ def synthetic_observation(manifest):
     boundary = manifest["recordingBoundary"]
     adapter = boundary["coreStateAdapter"]
     lifecycle = manifest["preparedPatternLifecycle"]
-    full_bank = manifest["preparedFullBankLifecycle"]
+    project_scale = manifest["preparedProjectScaleLifecycle"]
     return {
         "members": expected_member_counter(manifest),
         "forwards": expected_forward_counter(manifest),
@@ -2682,33 +2717,33 @@ def synthetic_observation(manifest):
         "preparedCentralDefinitions": expected_prepared_central_counter(manifest),
         "preparedOwnerReferences": expected_prepared_owner_reference_counter(manifest),
         "preparedForbiddenRawCalls": expected_prepared_raw_call_counter(manifest),
-        "preparedFullBankOwners": tuple(full_bank["ownerDeclaration"]["owners"]),
-        "preparedFullBankSurfaceCalls": (
-            expected_prepared_full_bank_surface_call_counter(manifest)
+        "preparedProjectScaleOwners": tuple(project_scale["ownerDeclaration"]["owners"]),
+        "preparedProjectScaleSurfaceCalls": (
+            expected_prepared_project_scale_surface_call_counter(manifest)
         ),
-        "preparedFullBankCentralDefinitions": Counter(
+        "preparedProjectScaleCentralDefinitions": Counter(
             {
-                full_bank["method"]:
-                    full_bank["centralAuthority"]["expectedDefinitionCount"]
+                project_scale["method"]:
+                    project_scale["centralAuthority"]["expectedDefinitionCount"]
             }
         ),
-        "preparedFullBankAdapterDefinitions": Counter(
+        "preparedProjectScaleAdapterDefinitions": Counter(
             {
-                full_bank["method"]:
-                    full_bank["serviceAdapter"]["expectedDefinitionCount"]
+                project_scale["method"]:
+                    project_scale["serviceAdapter"]["expectedDefinitionCount"]
             }
         ),
-        "preparedFullBankOwnerReferences": (
-            expected_prepared_full_bank_owner_reference_counter(manifest)
+        "preparedProjectScaleOwnerReferences": (
+            expected_prepared_project_scale_owner_reference_counter(manifest)
         ),
-        "preparedFullBankForbiddenRawCalls": Counter(),
-        "preparedFullBankProviderAnchors": (
-            expected_prepared_full_bank_provider_anchor_counter(manifest)
+        "preparedProjectScaleForbiddenRawCalls": Counter(),
+        "preparedProjectScaleProviderAnchors": (
+            expected_prepared_project_scale_provider_anchor_counter(manifest)
         ),
-        "preparedFullBankTrustedCommit": (
-            expected_prepared_full_bank_trusted_commit_counter(manifest)
+        "preparedProjectScaleTrustedCommit": (
+            expected_prepared_project_scale_trusted_commit_counter(manifest)
         ),
-        "preparedFullBankTrustedCommitHandlerCalls": Counter(),
+        "preparedProjectScaleTrustedCommitHandlerCalls": Counter(),
         "preparedTrackStructureAdmissionGate": (
             expected_prepared_track_structure_admission_counter(manifest)
         ),
@@ -2912,8 +2947,8 @@ def prepared_lifecycle_self_test(manifest) -> bool:
     return all(any(label in error for error in errors) for label in labels)
 
 
-def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
-    lifecycle = manifest["preparedFullBankLifecycle"]
+def prepared_project_scale_lifecycle_self_test(manifest) -> bool:
+    lifecycle = manifest["preparedProjectScaleLifecycle"]
     declaration = lifecycle["ownerDeclaration"]
     method = lifecycle["method"]
     trusted = lifecycle["trustedCommit"]
@@ -2922,21 +2957,21 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         root = Path(directory)
         owner_path = root / "Owner.hpp"
         owner_path.write_text(
-            "enum class SequencerPreparedFullBankEditOwner : unsigned char {\n"
+            "enum class SequencerProjectScaleEditOwner : unsigned char {\n"
             "  ProjectScale = 0,\n"
             "};\n",
             encoding="utf-8",
         )
         project_path = root / "Project.cpp"
         project_path.write_text(
-            "using FullBankOwner = ns::SequencerPreparedFullBankEditOwner;\n"
+            "using ProjectScaleOwner = ns::SequencerProjectScaleEditOwner;\n"
             "void step() {\n"
             "  history.applyPreparedProjectScaleChoice(\n"
-            "      FullBankOwner::ProjectScale);\n"
+            "      ProjectScaleOwner::ProjectScale);\n"
             "}\n"
             "void normalized() {\n"
             "  history.applyPreparedProjectScaleChoice(\n"
-            "      FullBankOwner::ProjectScale);\n"
+            "      ProjectScaleOwner::ProjectScale);\n"
             "}\n"
             "// captureSequencerFullBankHistoryBefore();\n"
             "const char* raw = \"recordFullBank(\";\n",
@@ -2945,7 +2980,7 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         central_path = root / "Central.cpp"
         central_path.write_text(
             "void CoreState::applyPreparedProjectScaleChoice() {\n"
-            "  history.commitAdmittedFullBank();\n"
+            "  history.commitAdmittedProjectScale();\n"
             "}\n",
             encoding="utf-8",
         )
@@ -2958,9 +2993,9 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         provider_path = root / "History.cpp"
         provider_path.write_text(
             "void SequencerHistoryService::recordPreparedFullBank() {\n"
-            "  commitAdmittedFullBank();\n"
+            "  commitAdmittedProjectScale();\n"
             "}\n"
-            "void SequencerHistoryService::commitAdmittedFullBank() {}\n",
+            "void SequencerHistoryService::commitAdmittedProjectScale() {}\n",
             encoding="utf-8",
         )
         handler_root = root / trusted["forbiddenHandlerRoot"]["path"]
@@ -2970,20 +3005,20 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         global_source_root = root / trusted["globalSourceCalls"]["path"] / "state"
         global_source_root.mkdir(parents=True)
         (global_source_root / "Trusted.hpp").write_text(
-            "void commitAdmittedFullBank();\n",
+            "void commitAdmittedProjectScale();\n",
             encoding="utf-8",
         )
         (global_source_root / "Central.cpp").write_text(
-            "void central() { history.commitAdmittedFullBank(); }\n",
+            "void central() { history.commitAdmittedProjectScale(); }\n",
             encoding="utf-8",
         )
         (global_source_root / "History.cpp").write_text(
-            "void prepared() { commitAdmittedFullBank(); }\n"
-            "void Service::commitAdmittedFullBank() {}\n",
+            "void prepared() { commitAdmittedProjectScale(); }\n"
+            "void Service::commitAdmittedProjectScale() {}\n",
             encoding="utf-8",
         )
 
-        if enum_members(owner_path, declaration["enum"]) != PREPARED_FULL_BANK_OWNERS:
+        if enum_members(owner_path, declaration["enum"]) != PREPARED_PROJECT_SCALE_OWNERS:
             return False
         if count_member_method(project_path, method) != 2:
             return False
@@ -3039,7 +3074,7 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
         if raw_global_invocations - trusted["declaration"]["expectedCount"] != 2:
             return False
         (global_source_root / "Regression.cpp").write_text(
-            "void regression() { history.commitAdmittedFullBank(); }\n",
+            "void regression() { history.commitAdmittedProjectScale(); }\n",
             encoding="utf-8",
         )
         regressed_global_invocations = count_invocations_under(
@@ -3062,7 +3097,7 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
             return False
 
         handler_path.write_text(
-            "void regression() { history.commitAdmittedFullBank(); }\n",
+            "void regression() { history.commitAdmittedProjectScale(); }\n",
             encoding="utf-8",
         )
         if count_calls_under(
@@ -3075,69 +3110,63 @@ def prepared_full_bank_lifecycle_self_test(manifest) -> bool:
             return False
 
     drift = synthetic_observation(manifest)
-    drift["preparedFullBankOwners"] = drift["preparedFullBankOwners"][:-1]
-    call_key = next(iter(drift["preparedFullBankSurfaceCalls"]))
-    drift["preparedFullBankSurfaceCalls"][call_key] -= 1
-    drift["preparedFullBankCentralDefinitions"][method] -= 1
-    drift["preparedFullBankAdapterDefinitions"][method] -= 1
-    owner_key = next(iter(drift["preparedFullBankOwnerReferences"]))
-    drift["preparedFullBankOwnerReferences"][owner_key] -= 1
-    drift["preparedFullBankForbiddenRawCalls"][
-        (PREPARED_FULL_BANK_SURFACE_FILES[0], "recordFullBank")
+    drift["preparedProjectScaleOwners"] = drift["preparedProjectScaleOwners"][:-1]
+    call_key = next(iter(drift["preparedProjectScaleSurfaceCalls"]))
+    drift["preparedProjectScaleSurfaceCalls"][call_key] -= 1
+    drift["preparedProjectScaleCentralDefinitions"][method] -= 1
+    drift["preparedProjectScaleAdapterDefinitions"][method] -= 1
+    owner_key = next(iter(drift["preparedProjectScaleOwnerReferences"]))
+    drift["preparedProjectScaleOwnerReferences"][owner_key] -= 1
+    drift["preparedProjectScaleForbiddenRawCalls"][
+        (PREPARED_PROJECT_SCALE_SURFACE_FILES[0], "recordFullBank")
     ] += 1
     trusted_keys = {
-        key[0]: key for key in drift["preparedFullBankTrustedCommit"]
+        key[0]: key for key in drift["preparedProjectScaleTrustedCommit"]
     }
-    drift["preparedFullBankTrustedCommit"][trusted_keys["declaration"]] -= 1
-    drift["preparedFullBankTrustedCommit"][trusted_keys["definition"]] -= 1
-    drift["preparedFullBankTrustedCommit"][trusted_keys["central-call"]] -= 1
-    drift["preparedFullBankTrustedCommit"][trusted_keys["defensive-forward"]] -= 1
-    drift["preparedFullBankTrustedCommit"][trusted_keys["source-call-total"]] -= 1
-    drift["preparedFullBankTrustedCommitHandlerCalls"][
+    drift["preparedProjectScaleTrustedCommit"][trusted_keys["declaration"]] -= 1
+    drift["preparedProjectScaleTrustedCommit"][trusted_keys["definition"]] -= 1
+    drift["preparedProjectScaleTrustedCommit"][trusted_keys["central-call"]] -= 1
+    drift["preparedProjectScaleTrustedCommit"][trusted_keys["defensive-forward"]] -= 1
+    drift["preparedProjectScaleTrustedCommit"][trusted_keys["source-call-total"]] -= 1
+    drift["preparedProjectScaleTrustedCommitHandlerCalls"][
         ("src/handler/Regression.cpp", trusted_method)
     ] += 1
     errors = observation_errors(manifest, drift)
     labels = (
-        "prepared FullBank owner declaration mismatch",
-        "prepared FullBank surface call mismatch",
-        "prepared FullBank central definition mismatch",
-        "prepared FullBank adapter definition mismatch",
-        "prepared FullBank owner reference mismatch",
-        "forbidden prepared FullBank raw call mismatch",
-        "prepared FullBank trusted commit mismatch for ('definition',",
-        "prepared FullBank trusted commit mismatch for ('declaration',",
-        "prepared FullBank trusted commit mismatch for ('central-call',",
-        "prepared FullBank trusted commit mismatch for ('defensive-forward',",
-        "prepared FullBank trusted commit mismatch for ('source-call-total',",
+        "prepared Project Scale owner declaration mismatch",
+        "prepared Project Scale surface call mismatch",
+        "prepared Project Scale central definition mismatch",
+        "prepared Project Scale adapter definition mismatch",
+        "prepared Project Scale owner reference mismatch",
+        "forbidden prepared Project Scale raw call mismatch",
+        "prepared Project Scale trusted commit mismatch for ('definition',",
+        "prepared Project Scale trusted commit mismatch for ('declaration',",
+        "prepared Project Scale trusted commit mismatch for ('central-call',",
+        "prepared Project Scale trusted commit mismatch for ('defensive-forward',",
+        "prepared Project Scale trusted commit mismatch for ('source-call-total',",
         "forbidden handler trusted commit call mismatch",
     )
     return all(any(label in error for error in errors) for label in labels)
 
 
-def prepared_full_bank_provider_self_test(manifest) -> bool:
-    lifecycle = manifest["preparedFullBankLifecycle"]
-    provider_section = lifecycle["activeSpareProviders"]
+def prepared_project_scale_provider_self_test(manifest) -> bool:
+    lifecycle = manifest["preparedProjectScaleLifecycle"]
+    provider_section = lifecycle["canonicalBankProviders"]
     fixture = (
         "bool reserveHistoryTrackBankSnapshotStorage() {\n"
         "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
-        "  if (i == activeTrack) {\n"
-        "    snapshot.bankGraphs[i].reset();\n"
-        "    snapshot.bankCcLanes[i].reset();\n"
-        "  }\n"
         "  return true;\n"
         "}\n"
         "bool captureHistoryTrackBankGraphUsingReservedStorage() {\n"
         "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
         "  if (out.flat.activeTrack != activeTrack) return false;\n"
-        "  auto& targetGraph = trackIndex == activeTrack\n"
-        "    ? out.editorGraph : out.bankGraphs[trackIndex];\n"
+        "  auto& targetGraph = out.bankGraphs[trackIndex];\n"
         "  return true;\n"
         "}\n"
         "bool captureHistoryTrackBankDataUsingReservedStorage() {\n"
         "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
         "  if (out.flat.activeTrack != activeTrack) return false;\n"
-        "  auto& targetCcLanes = trackIndex == activeTrack\n"
-        "    ? out.editorCcLanes : out.bankCcLanes[trackIndex];\n"
+        "  auto& targetCcLanes = out.bankCcLanes[trackIndex];\n"
         "  return true;\n"
         "}\n"
         "bool captureHistoryTrackBankSnapshotUsingReservedStorage() {\n"
@@ -3148,42 +3177,38 @@ def prepared_full_bank_provider_self_test(manifest) -> bool:
         "  return true;\n"
         "}\n"
         "bool applyHistorySnapshot(const SequencerHistoryTrackBankSnapshot& snapshot) {\n"
-        "  const uint8_t activeTrack = snapshot.flat.activeTrack;\n"
-        "  if (i == activeTrack) continue;\n"
-        "  if (i == activeTrack) continue;\n"
-        "  bank.track(activeTrack).graph.reset();\n"
-        "  bank.track(activeTrack).ccLanes.reset();\n"
+        "  if (active.stepContentDraft.active.get()) return false;\n"
         "  return true;\n"
         "}\n"
     )
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "Provider.cpp"
         path.write_text(fixture, encoding="utf-8")
-        if count_prepared_full_bank_provider_anchors(
+        if count_prepared_project_scale_provider_anchors(
             path,
             provider_section["providers"],
-        ) != expected_prepared_full_bank_provider_anchor_counter(manifest):
+        ) != expected_prepared_project_scale_provider_anchor_counter(manifest):
             return False
         path.write_text(
-            fixture.replace("if (i == activeTrack) {", "if (false) {", 1),
+            fixture.replace("return true;", "if (i == activeTrack) continue; return true;", 1),
             encoding="utf-8",
         )
-        drifted = count_prepared_full_bank_provider_anchors(
+        drifted = count_prepared_project_scale_provider_anchors(
             path,
             provider_section["providers"],
         )
-        if drifted == expected_prepared_full_bank_provider_anchor_counter(manifest):
+        if drifted == expected_prepared_project_scale_provider_anchor_counter(manifest):
             return False
 
     drift = synthetic_observation(manifest)
     key = (
-        PREPARED_FULL_BANK_PROVIDERS[0],
-        "active-spare-skip-guard",
+        PREPARED_PROJECT_SCALE_PROVIDERS[0],
+        "canonical-bank-skip-guard",
     )
-    drift["preparedFullBankProviderAnchors"][key] -= 1
+    drift["preparedProjectScaleProviderAnchors"][key] += 1
     errors = observation_errors(manifest, drift)
     return any(
-        "prepared FullBank active-spare provider anchor mismatch" in error
+        "prepared Project Scale canonical-bank provider anchor mismatch" in error
         for error in errors
     )
 
@@ -3359,6 +3384,11 @@ def seam_self_test(manifest) -> bool:
         allocator_path.write_text(allocator, encoding="utf-8")
         (root / seam["cmakePath"]).write_text(cmake, encoding="utf-8")
         (root / seam["platformioPath"]).write_text(platformio, encoding="utf-8")
+        for rel, count in seam.get("additionalTestBuildUses", {}).items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"target_compile_definitions(test PRIVATE {macro}=1)\n" * count,
+                            encoding="utf-8")
         for rel, expected_count in seam["allowedTestUses"].items():
             path = root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -3470,10 +3500,10 @@ def run_self_tests(manifest) -> list[str]:
         failures.append("forward/adapter/exclusion/begin drift was not rejected")
     if not prepared_lifecycle_self_test(manifest):
         failures.append("prepared lifecycle scanner or topology drift was not rejected")
-    if not prepared_full_bank_lifecycle_self_test(manifest):
-        failures.append("prepared FullBank lifecycle scanner or topology drift was not rejected")
-    if not prepared_full_bank_provider_self_test(manifest):
-        failures.append("prepared FullBank active-spare provider drift was not rejected")
+    if not prepared_project_scale_lifecycle_self_test(manifest):
+        failures.append("prepared Project Scale lifecycle scanner or topology drift was not rejected")
+    if not prepared_project_scale_provider_self_test(manifest):
+        failures.append("prepared Project Scale canonical-bank provider drift was not rejected")
     if not prepared_track_structure_lifecycle_self_test(manifest):
         failures.append("prepared Track Structure lifecycle drift was not rejected")
     if not seam_self_test(manifest):
@@ -3571,16 +3601,16 @@ def main() -> int:
         f"{lifecycle['expectedSurfaceCount']} lifecycle surfaces; "
         "zero retained R-09 raw captures; zero raw record calls"
     )
-    full_bank = manifest["preparedFullBankLifecycle"]
+    project_scale = manifest["preparedProjectScaleLifecycle"]
     print(
-        "  prepared FullBank lifecycle: "
-        f"{full_bank['ownerDeclaration']['expectedCount']} owners / "
-        f"{full_bank['expectedSurfaceCount']} migrated surfaces; "
+        "  prepared Project Scale lifecycle: "
+        f"{project_scale['ownerDeclaration']['expectedCount']} owners / "
+        f"{project_scale['expectedSurfaceCount']} migrated surfaces; "
         "one Core authority + one adapter; zero raw helper calls"
     )
-    trusted = full_bank["trustedCommit"]
+    trusted = project_scale["trustedCommit"]
     print(
-        "  FullBank trusted commit: "
+        "  Project Scale trusted commit: "
         f"{trusted['implementation']['expectedDefinitionCount']} definition / "
         f"{trusted['centralCall']['expectedCallCount']} central call / "
         f"{trusted['defensiveForward']['expectedCallCount']} defensive forward; "
@@ -3596,10 +3626,10 @@ def main() -> int:
         f"{track_trusted['memberDispatch']['expectedTotal']} trusted edges; "
         "zero raw recording calls"
     )
-    providers = full_bank["activeSpareProviders"]["providers"]
+    providers = project_scale["canonicalBankProviders"]["providers"]
     print(
-        "  FullBank active spare: "
-        f"{len(providers)}/{len(PREPARED_FULL_BANK_PROVIDERS)} "
+        "  Bank snapshot canonical owners: "
+        f"{len(providers)}/{len(PREPARED_PROJECT_SCALE_PROVIDERS)} "
         "reserve/capture/restore providers ratcheted"
     )
     print(

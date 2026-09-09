@@ -75,7 +75,7 @@ resolveProjectModulatorSourceSession(
     ProjectModulatorSourceSessionDescriptor out{};
     out.sourceId = requestedSource;
 
-    const auto& graph = control.authored.modulation;
+    const auto& graph = control.authored().modulation;
     const auto* source = findProjectModulator(graph, requestedSource);
     const auto& audition = control.audition;
     if (!audition.active()) {

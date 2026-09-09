@@ -29,9 +29,8 @@ struct SequencerPatternEditorOverlayProps {
     bool visible = false;
     const char* title = "";
     const char* meta = "";
-    const char* layer = "";
     const char* transientHint = "";
-    uint32_t layerColor = 0U;
+    uint32_t accentColor = 0U;
     uint8_t fieldCount = static_cast<uint8_t>(FIELD_COUNT);
     std::array<SequencerPatternEditorFieldChip, FIELD_COUNT> fields{};
     const core::ui::sequencer::SequencerPatternTimelineGeometry* geometry = nullptr;
@@ -90,7 +89,6 @@ private:
     lv_obj_t* root_ = nullptr;
     lv_obj_t* title_ = nullptr;
     lv_obj_t* meta_ = nullptr;
-    lv_obj_t* layer_ = nullptr;
     lv_obj_t* timeline_ = nullptr;
     lv_obj_t* playhead_surface_ = nullptr;
     lv_obj_t* transient_hint_ = nullptr;
@@ -105,7 +103,7 @@ private:
     oc::note::sequencer::StepBitMask128 randomize_changed_steps_{};
     core::state::sequencer::SequencerPatternRandomizeProperty randomize_property_ =
         core::state::sequencer::SequencerPatternRandomizeProperty::NOTE;
-    uint32_t layer_color_ = 0U;
+    uint32_t accent_color_ = 0U;
     bool randomize_preview_ = false;
     std::array<CachedField, SequencerPatternEditorOverlayProps::FIELD_COUNT>
         field_cache_{};
@@ -114,7 +112,6 @@ private:
         curve_points_{};
     std::array<char, 48> title_text_{};
     std::array<char, 40> meta_text_{};
-    std::array<char, 24> layer_text_{};
     std::array<char, 64> hint_text_{};
     uint32_t geometry_revision_ = 0U;
     uint8_t field_count_ = static_cast<uint8_t>(

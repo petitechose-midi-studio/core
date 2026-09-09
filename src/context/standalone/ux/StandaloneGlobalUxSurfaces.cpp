@@ -111,12 +111,14 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
             oc::core::input::ButtonBindingType::LONG_PRESS
         );
     const bool visible = view_selector_.visible.get();
-    if (!opening && !visible) {
+    // A LEFT_TOP press is only a View Selector action once the handler has
+    // actually opened it. Local Back owners use the same physical button and
+    // must not be mislabeled merely because they share the gesture.
+    if (!visible) {
         return false;
     }
 
-    int selected = visible ? view_selector_.selectedIndex.get()
-                           : static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()));
+    int selected = view_selector_.selectedIndex.get();
     if (selected < 0 || selected >= core::state::VIEW_SELECTOR_ITEM_COUNT) {
         selected = static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()));
     }

@@ -1,5 +1,5 @@
-# Drum Pattern content-selection acceptance path.
-# Purpose: proves that Pattern selection targets musical Lane content, supports
+# Drum Lane content-selection acceptance path.
+# Purpose: proves that Lane selection targets musical Lane content, supports
 # sparse source selection and contiguous placement, and never exposes Lane
 # creation/reorder semantics inside the selection workflow.
 # Expect: capture_changed:lane_selection_entered=lanes_2_4_selected, capture_changed:lanes_2_4_selected=lane_selection_placing
@@ -12,36 +12,40 @@
 0 scenario drum-sequencer
 80 capture screen instrument_grid_before_create
 
-# Create a General MIDI Drum Track through the real Track-kind workflow.
-150 button NAV down
-210 encoder NAV -1
-270 button NAV up
-330 tap LEFT_CENTER 60
-1280 capture screen structure_tracks_open
-1530 encoder NAV 1
-1730 capture screen track_2_add_preview
-1830 tap NAV 60
-2150 capture screen type_instrument
-2300 encoder NAV 1
-2500 capture screen type_drum
-2650 tap NAV 60
-2950 capture screen kit_empty
-3100 encoder NAV 1
+# Create a General MIDI Drum Track from the Clip Launcher's sole +T2 header.
+150 tap LEFT_TOP 60
+500 encoder NAV -0.01
+620 button LEFT_CENTER down
+700 encoder NAV 0.01
+780 button LEFT_CENTER up
+1280 capture screen launcher_track_add
+1530 tap NAV 60
+1730 capture screen type_instrument
+1830 encoder NAV 0.01
+2150 capture screen type_drum
+2300 tap NAV 60
+2500 capture screen kit_empty
+2650 encoder NAV 0.01
 3300 capture screen kit_general_midi
 3450 tap NAV 60
-4200 capture screen pattern_overview
+3900 capture screen pattern_overview
+
+# Pattern owns the Pattern as a whole; Lane owns Lane movement and selection.
+4050 button NAV down
+4110 encoder NAV 0.01
+4170 button NAV up
 
 # Author distinct source rhythms on Lane 2 and Lane 4.
-4350 encoder NAV 1
+4350 encoder NAV 0.01
 4500 tap MACRO_1 60
 4650 tap MACRO_5 60
-4800 encoder NAV 2
+4800 encoder NAV 0.02
 4950 tap MACRO_3 60
 5100 tap MACRO_7 60
-5250 encoder NAV -2
+5250 encoder NAV -0.02
 5500 capture screen source_lanes_programmed
 
-# A stationary NAV hold enters selection at Lane 2. The paired release must
+# A stationary NAV hold in Lane scope enters selection at Lane 2. The paired release must
 # not select anything; the following short press is the first real toggle.
 5600 button NAV down
 6680 tick
@@ -51,15 +55,15 @@
 7300 capture screen lane_2_selected
 
 # Sparse selection: move to Lane 4 and add it without touching Lane identity.
-7400 encoder NAV 1
-7500 encoder NAV 1
+7400 encoder NAV 0.01
+7500 encoder NAV 0.01
 7650 tap NAV 60
 7850 capture screen lanes_2_4_selected
 
 # Copy maps the two selected source payloads to a contiguous destination.
 7950 tap BOTTOM_RIGHT 60
 8200 capture screen lane_selection_placing
-8300 encoder NAV 1
+8300 encoder NAV 0.01
 8550 capture screen lane_selection_destination
 8650 button BOTTOM_RIGHT down
 9730 tick

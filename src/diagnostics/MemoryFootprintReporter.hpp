@@ -14,6 +14,9 @@ struct DynamicMemorySnapshot {
     uint32_t psramLargestBlock = 0U;
     uint32_t psramBlocks = 0U;
     uint32_t psramAllocationFailures = 0U;
+    // Tracked since beginMemoryFootprintTracking(), including initialization.
+    uint32_t psramPeakUserBytes = 0U;
+    uint32_t psramMinimumFreeBytes = 0U;
     bool trackerReady = false;
     bool trackerOverflow = false;
     bool psramLargestBlockValid = false;
@@ -32,6 +35,11 @@ void trackExtmemAllocationFailure();
 DynamicMemorySnapshot dynamicMemorySnapshot();
 /** Emits one allocation-free PSRAM free/largest-block sample. */
 void recordDynamicMemorySample(const char* label);
+enum class MemoryReportSection : uint8_t {
+    LVGL, PSRAM, RAM2_HEAP, RAM2_ALLOCATOR, RAM1_STACK, COUNT
+};
+/** Foreground-only: inspect and log one section, yielding between runtime calls. */
+void logMemoryFootprintSection(const char* phase, MemoryReportSection section);
 void logMemoryFootprint(const char* phase);
 #endif
 

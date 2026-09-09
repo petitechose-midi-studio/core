@@ -77,7 +77,7 @@ FLASHMEM bool captureModulationAssignments(
     out = {};
     const auto destination =
         core::state::modulation::projectControlDestination(address);
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     out.destination = destination;
     out.nextBindingId = graph.nextBindingId;
     out.globalBindingCount = graph.outputBindingCount;
@@ -128,7 +128,7 @@ FLASHMEM bool liveModulationAssignmentsMatch(
     const MacroPagesState& pages,
     const MacroModulationAssignmentSnapshot& expected
 ) {
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     if (graph.outputBindingCount != expected.globalBindingCount ||
         graph.nextBindingId != expected.nextBindingId ||
         unrelatedBindingHash(graph, expected.destination) !=
@@ -161,7 +161,9 @@ FLASHMEM bool applyModulationAssignmentsToGraph(
     const MacroModulationAssignmentSnapshot& target
 ) {
     using namespace core::state::modulation;
-    if (target.assignmentCount > target.assignments.size() ||
+    if (graph.outputBindingCount > graph.outputBindings.size() ||
+        graph.destinationScaleCount > graph.destinationScales.size() ||
+        target.assignmentCount > target.assignments.size() ||
         target.globalBindingCount > graph.outputBindings.size() ||
         (target.assignmentCount == 0U &&
          target.destinationScaleQ15 !=
@@ -267,7 +269,7 @@ FLASHMEM bool applyModulationAssignments(
     const MacroModulationAssignmentSnapshot& target
 ) {
     if (!applyModulationAssignmentsToGraph(
-            pages.control.authored.modulation,
+            pages.control.authored().modulation,
             target
         )) {
         return false;

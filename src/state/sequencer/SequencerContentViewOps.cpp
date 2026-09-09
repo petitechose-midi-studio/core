@@ -29,7 +29,8 @@ FLASHMEM bool isChildContentView(const SequencerState& sequencer) {
 }
 
 FLASHMEM bool isDrumOverviewActive(const SequencerState& sequencer) {
-    return sequencer.drumSequencer.gridVisible() && isRootContentView(sequencer);
+    return sequencer.clipWorkspace.patternVisible() &&
+        sequencer.drumSequencer.gridVisible() && isRootContentView(sequencer);
 }
 
 FLASHMEM bool isDrumContentView(const SequencerState& sequencer) {
@@ -532,7 +533,7 @@ FLASHMEM uint8_t preparedSequencerContentLength(
     const SequencerPreparedGraphContentPath& path
 ) {
     if (!path.valid || path.stackDepth > path.frames.size()) return 0U;
-    if (path.stackDepth == 0U) return sequencer.pattern.length.get();
+    if (path.stackDepth == 0U) return sequencer.pattern().length.get();
     return path.frames[path.stackDepth - 1U].length;
 }
 

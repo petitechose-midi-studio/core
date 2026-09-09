@@ -22,13 +22,40 @@ using product_file_transaction::phaseTerminal;
 using product_file_transaction::selectLatest;
 using product_file_transaction::TMP_PATH;
 
+FLASHMEM oc::type::Result<bool> product_file_transaction::advanceIntegrityRead(
+    ProductFileService& files, const ProductMutationLease& lease, const char* path,
+    uint32_t expectedSize, uint32_t& offset, uint32_t& crcState,
+    uint8_t* scratch, size_t scratchSize
+) {
+    if (offset > expectedSize) {
+        return oc::type::Result<bool>::err(
+            {ErrorCode::INVALID_STATE, "invalid integrity read offset"});
+    }
+    if (offset == expectedSize) return oc::type::Result<bool>::ok(true);
+    if (!scratch || !scratchSize) {
+        return oc::type::Result<bool>::err(
+            {ErrorCode::INVALID_ARGUMENT, "product file integrity scratch unavailable"});
+    }
+    const size_t requested = std::min<size_t>(expectedSize - offset,
+        std::min<size_t>(scratchSize, PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO.maxBytes()));
+    auto read = files.read(lease, path, offset, scratch, requested);
+    if (!read) return oc::type::Result<bool>::err(read.error());
+    if (read.value() == 0U || read.value() > requested) {
+        return oc::type::Result<bool>::err(
+            {ErrorCode::STORAGE_READ_FAILED, "short product file integrity read"});
+    }
+    crcState = checksum::crc32Update(crcState, scratch, read.value());
+    offset += static_cast<uint32_t>(read.value());
+    return oc::type::Result<bool>::ok(offset == expectedSize);
+}
+
 namespace {
 
 // Synchronous asset and boot recovery share the global mutation lease,
 // so one cold PSRAM scratch is sufficient and avoids a 512-byte RAM1 stack
 // spike. Cooperative Project/RPC/recovery paths retain and supply their own
 // PSRAM scratch instead.
-EXTMEM uint8_t synchronousIntegrityScratch[PRODUCT_FILE_INTEGRITY_CHUNK_SIZE] = {};
+EXTMEM uint8_t synchronousIntegrityScratch[512U] = {};
 static_assert(sizeof(synchronousIntegrityScratch) == 512U);
 
 FLASHMEM oc::type::Result<bool> payloadMatches(
@@ -41,30 +68,10 @@ FLASHMEM oc::type::Result<bool> payloadMatches(
     uint32_t state = checksum::CRC32_INITIAL_STATE;
     uint32_t offset = 0U;
     while (offset < expectedSize) {
-        const size_t requested = std::min<size_t>(
-            expectedSize - offset,
-            sizeof(synchronousIntegrityScratch)
-        );
-        auto read = files.read(
-            lease,
-            path,
-            offset,
-            synchronousIntegrityScratch,
-            requested
-        );
-        if (!read) return oc::type::Result<bool>::err(read.error());
-        if (read.value() == 0U || read.value() > requested) {
-            return oc::type::Result<bool>::err(
-                {ErrorCode::STORAGE_READ_FAILED,
-                 "short product file integrity read"}
-            );
-        }
-        state = checksum::crc32Update(
-            state,
-            synchronousIntegrityScratch,
-            read.value()
-        );
-        offset += static_cast<uint32_t>(read.value());
+        auto read = product_file_transaction::advanceIntegrityRead(
+            files, lease, path, expectedSize, offset, state,
+            synchronousIntegrityScratch, sizeof(synchronousIntegrityScratch));
+        if (!read) return read;
     }
     return oc::type::Result<bool>::ok(
         checksum::crc32Finish(state) == expectedCrc32
@@ -88,20 +95,7 @@ FLASHMEM oc::type::Result<void> finishCommitted(
             backupCleanup.error()
         );
     }
-    if (workspace.phase != ProductFileTransactionPhase::COMMITTED) {
-        auto persisted = persistPhase(
-            files,
-            lease,
-            workspace,
-            ProductFileTransactionPhase::COMMITTED
-        );
-        if (!persisted) {
-            return oc::type::Result<void>::err(
-                persisted.error()
-            );
-        }
-    }
-    return oc::type::Result<void>::ok();
+    return persistPhase(files, lease, workspace, ProductFileTransactionPhase::COMMITTED);
 }
 
 FLASHMEM oc::type::Result<void> finishRolledBack(
@@ -121,20 +115,7 @@ FLASHMEM oc::type::Result<void> finishRolledBack(
             backupCleanup.error()
         );
     }
-    if (workspace.phase != ProductFileTransactionPhase::ROLLED_BACK) {
-        auto persisted = persistPhase(
-            files,
-            lease,
-            workspace,
-            ProductFileTransactionPhase::ROLLED_BACK
-        );
-        if (!persisted) {
-            return oc::type::Result<void>::err(
-                persisted.error()
-            );
-        }
-    }
-    return oc::type::Result<void>::ok();
+    return persistPhase(files, lease, workspace, ProductFileTransactionPhase::ROLLED_BACK);
 }
 
 FLASHMEM oc::type::Result<void> restoreBackup(
@@ -514,7 +495,9 @@ static FLASHMEM oc::type::Result<void> recoverWithWorkspace(
     if (!selected) {
         return oc::type::Result<void>::err(selected.error());
     }
-    if (!selected.value().present) {
+    // A durable terminal record releases all three paths to later mutations.
+    // Retain its sequence, but never inspect or clean those paths on reboot.
+    if (!selected.value().present || phaseTerminal(workspace.phase)) {
         return oc::type::Result<void>::ok();
     }
     return recoverSelected(files, recoveryLease, workspace);

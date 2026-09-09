@@ -339,6 +339,50 @@ void test_encode_reports_required_size_when_buffer_too_small() {
     std::cout << "[PASS] test_encode_reports_required_size_when_buffer_too_small\n";
 }
 
+void test_encode_accepts_a_payload_staged_at_its_final_offset() {
+    ContainerBytes encoded{};
+    const uint8_t first[] = {1U, 2U, 3U};
+    const uint8_t staged[] = {9U, 8U, 7U, 6U};
+    ChunkView chunks[] = {
+        {
+            .id = chunkIdValue(ChunkId::PROJECT_META),
+            .data = first,
+            .size = sizeof(first),
+        },
+        {
+            .id = chunkIdValue(ChunkId::SEQUENCER_STATE),
+        },
+    };
+    const uint32_t stagedOffset = encodedSize(chunks, 2U);
+    assert(stagedOffset + sizeof(staged) <= encoded.size());
+    std::memcpy(encoded.data() + stagedOffset, staged, sizeof(staged));
+    chunks[1].data = encoded.data() + stagedOffset;
+    chunks[1].size = sizeof(staged);
+
+    const auto result = encode(
+        chunks,
+        2U,
+        7U,
+        encoded.data(),
+        static_cast<uint32_t>(encoded.size())
+    );
+    assert(result.status == Status::OK);
+
+    DecodedChunkView decoded[2]{};
+    const auto scanned = scan(
+        encoded.data(),
+        result.bytesWritten,
+        decoded,
+        2U
+    );
+    assert(scanned.status == Status::OK);
+    assert(scanned.chunkCount == 2U);
+    assert(decoded[1].size == sizeof(staged));
+    assert(std::memcmp(decoded[1].data, staged, sizeof(staged)) == 0);
+
+    std::cout << "[PASS] project payload can use final output storage\n";
+}
+
 void test_noncanonical_byte_regions_are_rejected_before_chunk_publication() {
     ContainerBytes canonical{};
     const uint32_t canonicalSize = encodeCanonicalTwoChunkFixture(canonical);
@@ -418,6 +462,7 @@ int main() {
     test_invalid_magic_fails();
     test_noncurrent_container_versions_can_be_scanned_for_inspection_only();
     test_encode_reports_required_size_when_buffer_too_small();
+    test_encode_accepts_a_payload_staged_at_its_final_offset();
     test_noncanonical_byte_regions_are_rejected_before_chunk_publication();
 
     std::cout << "\n==============================================\n";

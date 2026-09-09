@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -8,6 +9,7 @@
 #include <iostream>
 
 #include "persistence/PatternPresetFactoryLibrary.hpp"
+#include "state/sequencer/SequencerState.hpp"
 
 namespace {
 
@@ -68,11 +70,11 @@ void testCatalogIsSmallSortedAndTyped() {
 
 void testInstrumentAndDrumEncodeThroughCanonicalCodec() {
     std::array<uint8_t, codec::MAX_ENCODED_SIZE> bytes{};
-    seq::SequencerState scratch{};
+    core::state::sequencer::SequencerDetachedEditor scratch;
     seq::SequencerPatternPresetMetadata metadata{};
     auto encoded = factory::PatternPresetFactoryLibrary::encode(
         "factory-instrument-rising",
-        scratch.pattern,
+        scratch.pattern(),
         nullptr,
         metadata,
         bytes.data(),
@@ -81,24 +83,24 @@ void testInstrumentAndDrumEncodeThroughCanonicalCodec() {
     assert(encoded.ok());
     assert(metadata.trackKind == seq::SequencerTrackKind::INSTRUMENT);
 
-    seq::SequencerState decoded{};
+    core::state::sequencer::SequencerDetachedEditor decoded;
     seq::SequencerPatternPresetMetadata decodedMetadata{};
     assert(codec::decode(
         bytes.data(),
         encoded.bytesWritten,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         nullptr
     ));
-    assert(decoded.pattern.length.get() == 16U);
-    assert(decoded.pattern.enabledMask.get().test(0U));
-    assert(decoded.pattern.note[0U] == 60U);
-    assert(decoded.pattern.note[7U] == 72U);
+    assert(decoded.pattern().length.get() == 16U);
+    assert(decoded.pattern().enabledMask.get().test(0U));
+    assert(decoded.pattern().note[0U] == 60U);
+    assert(decoded.pattern().note[7U] == 72U);
 
     seq::DrumTrackState drumScratch{};
     encoded = factory::PatternPresetFactoryLibrary::encode(
         "factory-drum-polymeter",
-        scratch.pattern,
+        scratch.pattern(),
         &drumScratch,
         metadata,
         bytes.data(),
@@ -112,7 +114,7 @@ void testInstrumentAndDrumEncodeThroughCanonicalCodec() {
         bytes.data(),
         encoded.bytesWritten,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         &decodedDrum
     ));
     assert(decodedDrum.pattern.effectiveLength(0U) == 7U);

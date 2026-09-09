@@ -29,17 +29,17 @@ void test_core_state_owns_only_settings_storage() {
             state.projectTracks.authored.midiChannels[0],
             nextCc
         ));
-        state.sequencer.pattern.setContentLength(8U);
+        state.sequencer.pattern().setContentLength(8U);
         assert(state.sequencer.setStepDataAt(0U, 72U, 111U, 75U));
-        state.sequencer.pattern.setEnabled(0U, true);
+        state.sequencer.pattern().setEnabled(0U, true);
         state.flush();
     }
 
     core::state::CoreState restored(storage.settings);
-    assert(restored.sequencer.pattern.note[0] != 72U ||
-           restored.sequencer.pattern.velocity[0] != 111U ||
-           restored.sequencer.pattern.gate[0] != 75U ||
-           !restored.sequencer.pattern.isEnabled(0U));
+    assert(restored.sequencer.pattern().note[0] != 72U ||
+           restored.sequencer.pattern().velocity[0] != 111U ||
+           restored.sequencer.pattern().gate[0] != 75U ||
+           !restored.sequencer.pattern().isEnabled(0U));
 
     drainNotifications();
     std::cout << "[PASS] CoreState persists settings only; projects/presets are file based\n";
@@ -137,6 +137,40 @@ void test_new_project_boundary_resets_runtime_activation() {
     std::cout << "[PASS] new Project remains a clean runtime boundary\n";
 }
 
+void test_queued_project_changes_survive_pattern_selection() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    auto& queue = oc::state::NotificationQueue::instance();
+    queue.setDeferredMode(true);
+    drainNotifications();
+    state.flushProjectMutationCoalescing();
+    drainNotifications();
+
+    // Select directly to isolate rebinding from navigation's own mutations.
+    // Every stable source must retain an already queued save notification.
+    for (unsigned source = 0; source < 8; ++source) {
+        const auto before = state.project.metadata.modifiedCounter;
+        switch (source) {
+        case 0: state.sequencer.page.notify(); break;
+        case 1: state.sequencer.focusedStep.notify(); break;
+        case 2: state.sequencer.activeStepProperty.notify(); break;
+        case 3: state.sequencerTracks.activeTrackSignal().notify(); break;
+        case 4: state.sequencerTracks.enabledMaskSignal().notify(); break;
+        case 5: state.sequencerTracks.projectScaleRevisionSignal().notify(); break;
+        case 6: state.sequencerTracks.drumRevisionSignal().notify(); break;
+        case 7: state.sequencerClips.revisionSignal().notify(); break;
+        }
+        const uint8_t track = static_cast<uint8_t>((source + 1) % 2);
+        state.sequencer.selectPattern(
+            state.sequencerTracks.track(track), state.sequencerTracks.clip(track));
+        drainNotifications();
+        state.flushProjectMutationCoalescing();
+        drainNotifications();
+        assert(state.project.metadata.modifiedCounter == before + 1);
+    }
+    std::cout << "[PASS] all stable autosave sources survive selection while queued\n";
+}
+
 }  // namespace
 
 int main() {
@@ -144,5 +178,6 @@ int main() {
     test_macro_config_change_marks_project_and_revision();
     test_device_settings_recovery_does_not_persist_project_track_state();
     test_new_project_boundary_resets_runtime_activation();
+    test_queued_project_changes_survive_pattern_selection();
     return 0;
 }

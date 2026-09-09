@@ -38,15 +38,11 @@ public:
                cc_value_ && cc_value_->getElement();
     }
 
-    void setValue(float value);
     void setResolvedComponents(float baseValue,
-                               float modulationDelta,
-                               float modulationDepth,
                                float resolvedValue,
                                bool clippedLow,
                                bool clippedHigh);
     void setConfig(uint8_t cc);
-    void setAutomationActive(bool active);
     void setAutomationRecording(bool active);
     void setAutomationManualOverride(bool active);
     void setSourceIndicators(bool automationStored,
@@ -80,7 +76,8 @@ private:
     bool buildArcGeometry(ArcGeometry& geometry) const;
     void invalidateValueArc();
     void invalidateArcRange(lv_value_precise_t startAngle, lv_value_precise_t endAngle);
-    void invalidateArcRangeAt(lv_value_precise_t startAngle,
+    void invalidateArcRangeAt(const ArcGeometry& geometry,
+                              lv_value_precise_t startAngle,
                               lv_value_precise_t endAngle,
                               uint16_t radius,
                               lv_coord_t width);
@@ -119,8 +116,6 @@ private:
     bool config_labels_visible_ = true;
     float current_value_ = 0.0f;
     float base_value_ = 0.0f;
-    float modulation_delta_ = 0.0f;
-    float modulation_depth_ = 0.0f;
     bool clipped_low_ = false;
     bool clipped_high_ = false;
 };

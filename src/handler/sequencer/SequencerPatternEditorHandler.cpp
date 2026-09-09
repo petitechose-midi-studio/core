@@ -47,7 +47,7 @@ FLASHMEM core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPla
     const core::state::sequencer::SequencerState& sequencer, Field field) {
     using Plan = core::state::sequencer::SequencerCoalescedPatternPayloadPlan;
     if (field != Field::LENGTH) return Plan::FlatOnly;
-    const auto* lanes = core::state::sequencer::sequencerCcLaneView(sequencer.pattern);
+    const auto* lanes = core::state::sequencer::sequencerCcLaneView(sequencer.pattern());
     return lanes != nullptr && core::state::sequencer::sequencerCcLaneCount(*lanes) != 0U
                ? Plan::FullCurrentPayload
                : Plan::FlatOnly;
@@ -184,7 +184,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
                    ((randomize_.active && randomize_.summary.changedCount > 0U) ||
                     (!randomize_.active &&
                      sequencer_.patternEditor.navigationMode == Mode::FIELDS &&
-                     sequencer_.pattern.length.get() <
+                     sequencer_.pattern().length.get() <
                          core::state::sequencer::SequencerState::MAX_STEPS));
         })
         .then([this]() {
@@ -203,6 +203,18 @@ FLASHMEM bool SequencerPatternEditorHandler::openFromCurrentPage() {
         return false;
     }
     overlays_.show(core::ui::OverlayType::SEQ_PATTERN_EDIT);
+    configureOptForFocusedField();
+    return true;
+}
+
+FLASHMEM bool SequencerPatternEditorHandler::openRegionFromCurrentPage() {
+    if (!openFromCurrentPage()) return false;
+    auto& editor = sequencer_.patternEditor;
+    editor.focusedLayer =
+        core::state::sequencer::SequencerPatternEditorLayer::REGION;
+    editor.focusedField =
+        core::state::sequencer::patternEditorVisibleFieldAt(sequencer_, 0U);
+    editor.bump();
     configureOptForFocusedField();
     return true;
 }
@@ -362,7 +374,7 @@ FLASHMEM void SequencerPatternEditorHandler::configureOptForFocusedField() {
 FLASHMEM void SequencerPatternEditorHandler::openRandomize() {
     if (randomize_.active || !ownsActiveTrack()) return;
     if (!commitPendingEdit()) return;
-    randomize_.begin(sequencer_.pattern, sequencer_.focusedStep.get());
+    randomize_.begin(sequencer_.pattern(), sequencer_.focusedStep.get());
     sequencer_.patternEditor.bump();
     configureOptForFocusedField();
 }
@@ -420,7 +432,6 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
     }
 
     core::state::sequencer::applySnapshotToEditorPreservingGraph(sequencer_, randomize_.preview);
-    core::state::sequencer::applySnapshotPreservingGraph(tracks_.track(owner), randomize_.preview);
     sequencer_.invalidateVariationTelemetry();
     history_.recordPreparedPattern(std::move(change));
 
@@ -431,7 +442,7 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
 
 FLASHMEM void SequencerPatternEditorHandler::addPage() {
     if (!commitPendingEdit()) return;
-    const uint8_t current = sequencer_.pattern.length.get();
+    const uint8_t current = sequencer_.pattern().length.get();
     const uint8_t next = static_cast<uint8_t>(
         std::min<unsigned>(core::state::sequencer::SequencerState::MAX_STEPS,
                            ((static_cast<unsigned>(current) +

@@ -54,7 +54,7 @@ FLASHMEM bool PatternPitchSettingsOverlayPresenter::bind() {
     bound = overlay_watcher_.watchAll(
         state_refs_.settings.visible,
         state_refs_.settings.focusedRow,
-        state_refs_.sequencer.pattern.patternScaleRevision,
+        state_refs_.sequencer.patternChanges.patternScaleRevision,
         state_refs_.trackBank.projectScaleRevisionSignal()
     ) && bound;
 
@@ -97,7 +97,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
         return;
     }
 
-    const auto& pattern = state_refs_.sequencer.pattern;
+    const auto& pattern = state_refs_.sequencer.pattern();
     const bool override =
         core::state::sequencer::isPatternScaleOverride(pattern.scalePolicy);
     auto effectiveScale = override ? pattern.scaleOverride
@@ -131,14 +131,14 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
 
     overlay_.render({
         .title = PITCH_CONTEXT_LABEL,
-        .meta = core::state::viewSelectorItemLabel(core::state::ViewSelectorItem::SEQUENCER),
+        .meta = core::state::viewSelectorItemLabel(core::state::ViewSelectorItem::CLIPS),
         .rows = rows.data(),
         .rowCount = static_cast<int>(rows.size()),
         .selectedIndex = state_refs_.settings.focusedRow.get(),
         .visible = true,
         .dataRevision = 1U |
             (static_cast<uint32_t>(selectedRow) << 4) |
-            (static_cast<uint32_t>(state_refs_.sequencer.pattern.patternScaleRevision.get()) << 8) |
+            (static_cast<uint32_t>(state_refs_.sequencer.pattern().patternScaleRevision.get()) << 8) |
             (static_cast<uint32_t>(state_refs_.trackBank.projectScaleRevisionSignal().get()) << 16),
         .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,
     });

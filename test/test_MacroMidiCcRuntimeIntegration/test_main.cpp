@@ -326,7 +326,7 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
         mod::ModulatorAdsrCurve::LINEAR
     );
     const auto created = mod::createAdsrModulator(
-        h.pages.control.authored.modulation,
+        h.pages.control.authored().modulation,
         source
     );
     assert(created.changed());
@@ -342,7 +342,7 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
     binding.amountQ15 = 32767;
     binding.application = mod::ModulationApplication::NATURAL;
     assert(mod::addProjectModulationBinding(
-        h.pages.control.authored.modulation,
+        h.pages.control.authored().modulation,
         binding
     ).changed());
 
@@ -357,7 +357,7 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
     trigger.velocityMin = 0U;
     trigger.velocityMax = 127U;
     assert(mod::addProjectModulationTrigger(
-        h.pages.control.authored.modulation,
+        h.pages.control.authored().modulation,
         trigger
     ).changed());
     h.pages.control.markAuthoredMutation();

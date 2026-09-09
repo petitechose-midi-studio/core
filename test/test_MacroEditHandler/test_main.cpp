@@ -517,7 +517,7 @@ void test_contextual_recorded_shape_depth_uses_continuous_full_range() {
     MacroEditHarness h;
     h.state.pages.setMacroSlotActive(0U, true);
     auto& control = h.state.pages.control;
-    auto& graph = control.authored.modulation;
+    auto& graph = control.authored().modulation;
 
     const ProjectPackedCurvePoint points[]{
         {0U, -32767},
@@ -534,7 +534,7 @@ void test_contextual_recorded_shape_depth_uses_continuous_full_range() {
     sourceDraft.pointCount = 2U;
     const auto source = createRecordedShapeModulator(
         graph,
-        control.authored.curves,
+        control.authored().curves,
         sourceDraft
     );
     assert(source.changed());
@@ -582,9 +582,9 @@ void test_contextual_recorded_shape_capture_commits_once_and_restores_opt() {
     MacroEditHarness h;
     h.state.pages.setMacroSlotActive(0U, true);
     auto& control = h.state.pages.control;
-    const uint16_t sourceBefore = control.authored.modulation.sourceCount;
+    const uint16_t sourceBefore = control.authored().modulation.sourceCount;
     const uint16_t bindingBefore =
-        control.authored.modulation.outputBindingCount;
+        control.authored().modulation.outputBindingCount;
     const uint8_t undoBefore = h.state.macroHistory.undoCount();
 
     openMacroEdit(
@@ -604,8 +604,8 @@ void test_contextual_recorded_shape_capture_commits_once_and_restores_opt() {
     g_now_ms = 1000U;
     h.turn(Config::EncoderID::OPT, 60.0f);
     assert(h.state.macroUi.recordedShapeCapture.active());
-    assert(control.authored.modulation.sourceCount == sourceBefore);
-    assert(control.authored.modulation.outputBindingCount == bindingBefore);
+    assert(control.authored().modulation.sourceCount == sourceBefore);
+    assert(control.authored().modulation.outputBindingCount == bindingBefore);
     h.handler.update(1250U);
     g_now_ms = 1250U;
     h.release(Config::ButtonID::LEFT_BOTTOM);
@@ -613,15 +613,15 @@ void test_contextual_recorded_shape_capture_commits_once_and_restores_opt() {
     assert(!h.state.macroUi.recordedShapeCapture.active());
     assert(h.state.macroUi.recordedShapeCapture.status ==
            mod::ProjectRecordedShapeCaptureStatus::COMMITTED);
-    assert(control.authored.modulation.sourceCount == sourceBefore + 1U);
-    assert(control.authored.modulation.outputBindingCount == bindingBefore + 1U);
+    assert(control.authored().modulation.sourceCount == sourceBefore + 1U);
+    assert(control.authored().modulation.outputBindingCount == bindingBefore + 1U);
     assert(h.state.macroHistory.undoCount() == undoBefore + 1U);
     assert(h.encoderHw.getMode(OPT_ID) ==
            oc::interface::EncoderMode::NORMALIZED);
 
-    const auto& source = control.authored.modulation.sources[sourceBefore];
+    const auto& source = control.authored().modulation.sources[sourceBefore];
     const auto& binding =
-        control.authored.modulation.outputBindings[bindingBefore];
+        control.authored().modulation.outputBindings[bindingBefore];
     assert(source.kind == mod::ModulatorKind::RECORDED_SHAPE);
     assert(binding.sourceId == source.id);
     assert(binding.destination == mod::projectControlDestination({0U, 0U, 0U}));
@@ -629,7 +629,7 @@ void test_contextual_recorded_shape_capture_commits_once_and_restores_opt() {
            core::handler::ProjectRecordedShapeCaptureWorkflow::
                DEPTH_100_PERCENT_Q15);
     const auto* curve = mod::findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         source.parameters.recordedCurveId
     );
     assert(curve != nullptr);
@@ -653,7 +653,7 @@ void test_contextual_recorded_shape_capture_no_move_and_close_are_atomic() {
         h.turn(Config::EncoderID::NAV, 1.0f);
         h.press(Config::ButtonID::LEFT_BOTTOM);
         h.release(Config::ButtonID::LEFT_BOTTOM);
-        assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
+        assert(h.state.pages.control.authored().modulation.sourceCount == 0U);
         assert(h.state.macroHistory.undoCount() == 0U);
     }
     {
@@ -675,7 +675,7 @@ void test_contextual_recorded_shape_capture_no_move_and_close_are_atomic() {
         assert(h.state.macroUi.recordedShapeCapture.status ==
                core::state::modulation::
                    ProjectRecordedShapeCaptureStatus::CANCELLED);
-        assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
+        assert(h.state.pages.control.authored().modulation.sourceCount == 0U);
         assert(h.state.macroHistory.undoCount() == 0U);
     }
     std::cout << "[PASS] Macro Recorded Shape no-op/cancel stay atomic\n";

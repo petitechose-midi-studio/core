@@ -115,7 +115,7 @@ constexpr bool hasCc(PayloadKind kind) {
 }
 
 constexpr std::size_t expectedOpenAllocationCount(PayloadKind kind) {
-    return 2U + (hasGraph(kind) ? 4U : 0U) + (hasCc(kind) ? 4U : 0U);
+    return 2U + (hasGraph(kind) ? 3U : 0U) + (hasCc(kind) ? 3U : 0U);
 }
 
 struct ExpectedAllocationRequests {
@@ -136,7 +136,7 @@ ExpectedAllocationRequests expectedOpenAllocationRequests(PayloadKind kind) {
     }
     if (hasCc(kind)) expected.push(sizeof(seq::SequencerCcLaneBank));
     expected.push(sizeof(seq::SequencerHistoryPatternChange));
-    for (uint8_t copy = 0U; copy < 3U; ++copy) {
+    for (uint8_t copy = 0U; copy < 2U; ++copy) {
         if (hasGraph(kind)) {
             expected.push(sizeof(oc::note::sequencer::StepSequencerGraph));
         }
@@ -200,6 +200,7 @@ struct Harness {
           ) {
         overlayManager.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
         g_now_ms = 0U;
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
 
     void press(Config::ButtonID id) {
@@ -235,7 +236,7 @@ using RejectionInvariant =
     test_support::sequencer_transaction::StateInvariant;
 
 void preparePayload(Harness& h, PayloadKind kind) {
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     pattern.setContentLength(8U);
     for (uint8_t step = 0U; step < 8U; ++step) pattern.setEnabled(step, false);
     assert(pattern.setStepDataAt(
@@ -286,7 +287,8 @@ void assertLivePatternMatchesWithoutAllocation(
     const seq::SequencerHistoryPatternSnapshot& expected
 ) {
     assert(seq::liveHistoryPatternSnapshotMatches(
-        h.state.sequencer.pattern,
+        h.state.sequencer.pattern(),
+        h.state.sequencer.clip(),
         expected));
 }
 
@@ -389,8 +391,7 @@ void assertHistoryRejection(
 void test_direct_failure_is_atomic() {
     Harness h;
     preparePayload(h, PayloadKind::FlatOnly);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+
     h.state.sequencer.patternQuickControls.focusedItem.set(
         seq::PatternQuickControlItem::SWING);
 
@@ -416,28 +417,27 @@ void test_direct_failure_is_atomic() {
 void test_direct_graph_cc_offset_is_undoable() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+
     h.state.sequencer.patternQuickControls.focusedItem.set(
         seq::PatternQuickControlItem::OFFSET);
 
     {
-        core::app::testing::ScopedExtmemAllocationFailure failure(8U);
+        core::app::testing::ScopedExtmemAllocationFailure failure(6U);
         h.turn(Config::EncoderID::OPT, normalizedOffset(1));
-        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(7U);
+        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(5U);
         assert(h.state.commitSequencerPatternHistoryCoalescing());
-        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(7U);
+        test_support::sequencer_transaction::assertMaxPlusOneStillArmed(5U);
     }
 
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assertPatternPayloadAtOffset(
-        h.state.sequencer.pattern, PayloadKind::GraphAndCc, 1U);
+        h.state.sequencer.pattern(), PayloadKind::GraphAndCc, 1U);
     assert(h.state.undoSequencerHistory());
     assertPatternPayloadAtOffset(
-        h.state.sequencer.pattern, PayloadKind::GraphAndCc, 0U);
+        h.state.sequencer.pattern(), PayloadKind::GraphAndCc, 0U);
     assert(h.state.redoSequencerHistory());
     assertPatternPayloadAtOffset(
-        h.state.sequencer.pattern, PayloadKind::GraphAndCc, 1U);
+        h.state.sequencer.pattern(), PayloadKind::GraphAndCc, 1U);
     std::cout << "[PASS] direct Graph+CC Offset remains undoable\n";
 }
 
@@ -495,14 +495,13 @@ void test_open_allocation_contract_and_failure_matrix() {
         assert(h.state.sequencerHistory.undoCount() == 0U);
     }
     std::cout
-        << "[PASS] Open allocation sequence is D/raw owners/Change/Before/After/sync\n";
+        << "[PASS] Open allocation sequence is D/raw owners/Change/Before/After\n";
 }
 
-void test_restored_project_opens_quick_controls_with_active_scratch_empty() {
+void test_restored_project_opens_quick_controls_with_canonical_owner_empty() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+
     settlePreparedFixture(h);
 
     auto snapshot = core::state::project::captureProjectSnapshotOwned(h.state);
@@ -510,10 +509,10 @@ void test_restored_project_opens_quick_controls_with_active_scratch_empty() {
     assert(core::state::project::applyProjectSnapshot(h.state, *snapshot));
     settlePreparedFixture(h);
 
-    assert(h.state.sequencer.pattern.graph != nullptr);
-    assert(h.state.sequencer.pattern.ccLanes != nullptr);
-    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
-    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    assert(h.state.sequencer.pattern().graph != nullptr);
+    assert(h.state.sequencer.pattern().ccLanes != nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph.get() == h.state.sequencer.pattern().graph.get());
+    assert(h.state.sequencerTracks.track(0U).ccLanes.get() == h.state.sequencer.pattern().ccLanes.get());
     const uint32_t feedbackRevision =
         h.state.sequencer.historyFeedback.revision.get();
 
@@ -535,15 +534,14 @@ void test_restored_project_opens_quick_controls_with_active_scratch_empty() {
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0U);
 
-    std::cout << "[PASS] restored Project opens Quick Controls with empty active scratch\n";
+    std::cout << "[PASS] restored Project opens Quick Controls with empty canonical owner\n";
 }
 
 void test_open_then_release_without_edit_is_a_clean_no_change() {
     for (const auto kind : {PayloadKind::FlatOnly, PayloadKind::GraphAndCc}) {
         Harness h;
         preparePayload(h, kind);
-        assert(seq::initializeTrackBankFromActive(
-            h.state.sequencerTracks, h.state.sequencer));
+
         settlePreparedFixture(h);
         const uint32_t feedbackRevision =
             h.state.sequencer.historyFeedback.revision.get();
@@ -572,12 +570,12 @@ void test_preview_offset_keeps_live_immutable_then_cancel_is_no_write() {
         preparePayload(h, kind);
         seq::SequencerHistoryPatternSnapshot before;
         captureMusical(h, before);
-        const auto* liveGraph = h.state.sequencer.pattern.graph.get();
-        const auto* liveCc = h.state.sequencer.pattern.ccLanes.get();
+        const auto* liveGraph = h.state.sequencer.pattern().graph.get();
+        const auto* liveCc = h.state.sequencer.pattern().ccLanes.get();
         const uint32_t graphRevision =
-            h.state.sequencer.pattern.graphRevision.get();
+            h.state.sequencer.pattern().graphRevision.get();
         const uint32_t ccRevision =
-            h.state.sequencer.pattern.ccLaneRevision.get();
+            h.state.sequencer.pattern().ccLaneRevision.get();
         h.state.sequencer.page.set(3U);
         h.state.sequencer.focusedStep.set(7U);
 
@@ -596,13 +594,13 @@ void test_preview_offset_keeps_live_immutable_then_cancel_is_no_write() {
                     static_cast<uint8_t>((offset + 8) % 8);
                 assertPatternPayloadAtOffset(previewPattern(h), kind, wrapped);
                 assertLivePatternMatchesWithoutAllocation(h, before);
-                assert(h.state.sequencer.pattern.graph.get() == liveGraph);
-                assert(h.state.sequencer.pattern.ccLanes.get() == liveCc);
+                assert(h.state.sequencer.pattern().graph.get() == liveGraph);
+                assert(h.state.sequencer.pattern().ccLanes.get() == liveCc);
                 assert(
-                    h.state.sequencer.pattern.graphRevision.get() ==
+                    h.state.sequencer.pattern().graphRevision.get() ==
                     graphRevision);
                 assert(
-                    h.state.sequencer.pattern.ccLaneRevision.get() ==
+                    h.state.sequencer.pattern().ccLaneRevision.get() ==
                     ccRevision);
             }
             h.tap(Config::ButtonID::LEFT_TOP);
@@ -625,16 +623,15 @@ void test_preview_offset_keeps_live_immutable_then_cancel_is_no_write() {
 void test_graph_cc_apply_is_allocation_free_and_undoable() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+
     settlePreparedFixture(h);
 
     seq::SequencerHistoryPatternSnapshot before;
     captureMusical(h, before);
     const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
     const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
-    const auto* oldLiveGraph = h.state.sequencer.pattern.graph.get();
-    const auto* oldLiveCc = h.state.sequencer.pattern.ccLanes.get();
+    const auto* oldLiveGraph = h.state.sequencer.pattern().graph.get();
+    const auto* oldLiveCc = h.state.sequencer.pattern().ccLanes.get();
 
     holdOpen(h);
     navigateToOffset(h);
@@ -659,10 +656,10 @@ void test_graph_cc_apply_is_allocation_free_and_undoable() {
     }
 
     assert(!h.state.sequencer.quickControlsDraft.active());
-    assert(h.state.sequencer.pattern.graph.get() == draftGraph);
-    assert(h.state.sequencer.pattern.ccLanes.get() == draftCc);
+    assert(h.state.sequencer.pattern().graph.get() == draftGraph);
+    assert(h.state.sequencer.pattern().ccLanes.get() == draftCc);
     assertPatternPayloadAtOffset(
-        h.state.sequencer.pattern, PayloadKind::GraphAndCc, 2U);
+        h.state.sequencer.pattern(), PayloadKind::GraphAndCc, 2U);
     assertPatternPayloadAtOffset(
         h.state.sequencerTracks.track(0U), PayloadKind::GraphAndCc, 2U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
@@ -693,23 +690,22 @@ void test_flat_dimensions_preview_and_apply_once() {
     for (const auto& testCase : cases) {
         Harness h;
         preparePayload(h, PayloadKind::GraphAndCc);
-        assert(seq::initializeTrackBankFromActive(
-            h.state.sequencerTracks, h.state.sequencer));
+
         settlePreparedFixture(h);
         seq::SequencerHistoryPatternSnapshot before;
         captureMusical(h, before);
-        const uint8_t liveLength = h.state.sequencer.pattern.length.get();
+        const uint8_t liveLength = h.state.sequencer.pattern().length.get();
         const uint8_t liveDivision =
-            h.state.sequencer.pattern.stepsPerBeat.get();
+            h.state.sequencer.pattern().stepsPerBeat.get();
 
         holdOpen(h);
         if (testCase.item == seq::PatternQuickControlItem::DIVISION) {
             navigateToDivision(h);
         }
         h.turn(Config::EncoderID::OPT, testCase.value);
-        assert(h.state.sequencer.pattern.length.get() == liveLength);
+        assert(h.state.sequencer.pattern().length.get() == liveLength);
         assert(
-            h.state.sequencer.pattern.stepsPerBeat.get() == liveDivision);
+            h.state.sequencer.pattern().stepsPerBeat.get() == liveDivision);
         if (testCase.item == seq::PatternQuickControlItem::LENGTH) {
             assert(previewPattern(h).length.get() == 4U);
         } else {
@@ -733,8 +729,7 @@ void test_flat_dimensions_preview_and_apply_once() {
 void test_no_change_apply_restores_opening_view_and_publishes_nothing() {
     Harness h;
     preparePayload(h, PayloadKind::GraphAndCc);
-    assert(seq::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+
     settlePreparedFixture(h);
     h.state.sequencer.page.set(3U);
     h.state.sequencer.focusedStep.set(7U);
@@ -779,7 +774,7 @@ void test_failed_apply_rearms_without_losing_draft() {
     holdOpen(h);
     h.turn(Config::EncoderID::OPT, normalizedRootLength(4U));
     assert(previewPattern(h).length.get() == 4U);
-    assert(h.state.sequencer.pattern.length.get() == 8U);
+    assert(h.state.sequencer.pattern().length.get() == 8U);
     assert(
         h.state.abortSequencerPreparedPatternEdit(
             seq::SequencerPreparedPatternEditOwner::QuickControls,
@@ -802,7 +797,7 @@ void test_failed_apply_rearms_without_losing_draft() {
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
     assert(!h.state.sequencer.quickControlsDraft.active());
-    assert(h.state.sequencer.pattern.length.get() == 4U);
+    assert(h.state.sequencer.pattern().length.get() == 4U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.undoSequencerHistory());
     assertMusicalEquals(h, before);
@@ -904,18 +899,18 @@ void test_nested_step_draft_is_transactional_without_live_history() {
 void test_raw_disabled_graph_and_empty_cc_owners_are_preserved() {
     Harness h;
     preparePayload(h, PayloadKind::FlatOnly);
-    h.state.sequencer.pattern.graph =
+    h.state.sequencer.pattern().graph =
         core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
-    h.state.sequencer.pattern.ccLanes =
+    h.state.sequencer.pattern().ccLanes =
         core::app::makeExtmemUnique<seq::SequencerCcLaneBank>();
-    assert(h.state.sequencer.pattern.graph != nullptr);
+    assert(h.state.sequencer.pattern().graph != nullptr);
     assert(seq::isCanonicalDisabledSequencerGraph(
-        *h.state.sequencer.pattern.graph));
-    assert(h.state.sequencer.pattern.ccLanes != nullptr);
+        *h.state.sequencer.pattern().graph));
+    assert(h.state.sequencer.pattern().ccLanes != nullptr);
     assert(seq::sequencerCcLaneCount(
-        *h.state.sequencer.pattern.ccLanes) == 0U);
-    const auto* liveGraph = h.state.sequencer.pattern.graph.get();
-    const auto* liveCc = h.state.sequencer.pattern.ccLanes.get();
+        *h.state.sequencer.pattern().ccLanes) == 0U);
+    const auto* liveGraph = h.state.sequencer.pattern().graph.get();
+    const auto* liveCc = h.state.sequencer.pattern().ccLanes.get();
     const uint32_t feedbackRevision =
         h.state.sequencer.historyFeedback.revision.get();
 
@@ -925,8 +920,8 @@ void test_raw_disabled_graph_and_empty_cc_owners_are_preserved() {
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
     assert(!h.state.sequencer.quickControlsDraft.active());
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.graph.get() == liveGraph);
-    assert(h.state.sequencer.pattern.ccLanes.get() == liveCc);
+    assert(h.state.sequencer.pattern().graph.get() == liveGraph);
+    assert(h.state.sequencer.pattern().ccLanes.get() == liveCc);
     assert(h.state.sequencerHistory.undoCount() == 0U);
     assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
 
@@ -938,12 +933,12 @@ void test_raw_disabled_graph_and_empty_cc_owners_are_preserved() {
     assert(seq::sequencerCcLaneCount(*previewPattern(h).ccLanes) == 0U);
     h.tap(Config::ButtonID::LEFT_TOP);
 
-    assert(h.state.sequencer.pattern.graph.get() == liveGraph);
-    assert(h.state.sequencer.pattern.ccLanes.get() == liveCc);
+    assert(h.state.sequencer.pattern().graph.get() == liveGraph);
+    assert(h.state.sequencer.pattern().ccLanes.get() == liveCc);
     assert(seq::isCanonicalDisabledSequencerGraph(
-        *h.state.sequencer.pattern.graph));
+        *h.state.sequencer.pattern().graph));
     assert(seq::sequencerCcLaneCount(
-        *h.state.sequencer.pattern.ccLanes) == 0U);
+        *h.state.sequencer.pattern().ccLanes) == 0U);
     assert(h.state.sequencerHistory.undoCount() == 0U);
     std::cout
         << "[PASS] raw disabled Graph and empty CC owners survive NoChange and Cancel\n";
@@ -959,7 +954,7 @@ int main() {
     test_direct_failure_is_atomic();
     test_direct_graph_cc_offset_is_undoable();
     test_open_allocation_contract_and_failure_matrix();
-    test_restored_project_opens_quick_controls_with_active_scratch_empty();
+    test_restored_project_opens_quick_controls_with_canonical_owner_empty();
     test_open_then_release_without_edit_is_a_clean_no_change();
     test_preview_offset_keeps_live_immutable_then_cancel_is_no_write();
     test_graph_cc_apply_is_allocation_free_and_undoable();

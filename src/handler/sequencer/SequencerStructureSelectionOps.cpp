@@ -94,8 +94,8 @@ FLASHMEM uint16_t activeContentPageSelectionMask(
 FLASHMEM core::app::ExtmemUniquePtr<
     core::state::SequencerTrackSelectionClipboard
 > captureTrackSelectionClipboard(
-    core::state::sequencer::SequencerTrackBankState& tracks,
-    core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::sequencer::SequencerState& sequencer,
     const core::state::macro::MacroPagesState& pages,
     uint16_t selectedMask
 ) {
@@ -115,39 +115,40 @@ FLASHMEM core::app::ExtmemUniquePtr<
         core::state::SequencerTrackSelectionClipboard
     >();
     if (!clipboard) return nullptr;
-    clipboard->projectControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >(pages.control.authored);
+    clipboard->projectControl = core::app::makeExtmemUniqueCopy(pages.control.authored());
     if (!clipboard->projectControl) return nullptr;
     clipboard->valid = true;
 
-    if (!core::state::sequencer::storeActiveTrack(tracks, sequencer)) {
-        return nullptr;
-    }
     for (uint8_t track = firstTrack;
          track < TrackBank::TRACK_COUNT;
          ++track) {
         if ((mask & structure_slots::slotBit(track)) == 0U) continue;
         if (clipboard->count >= clipboard->tracks.size()) return nullptr;
 
+        const auto& pattern = tracks.track(track);
+        const auto& clip = tracks.clip(track);
         auto& entry = clipboard->tracks[clipboard->count++];
         entry.valid = true;
         entry.sourceTrack = track;
         entry.macroTrack = pages.tracks[track];
         core::state::sequencer::captureSnapshot(
-            tracks.track(track),
+            pattern,
             entry.snapshot
+        );
+        core::state::sequencer::captureSnapshot(
+            clip,
+            entry.clip
         );
         if (!core::state::cloneSequencerGraph(
                 entry.graph,
                 core::state::sequencer::graphView(
-                    tracks.track(track)
+                    pattern
                 )
             ) ||
             !core::state::sequencer::cloneSequencerCcLaneBank(
                 entry.ccLanes,
                 core::state::sequencer::sequencerCcLaneView(
-                    tracks.track(track)
+                    pattern
                 )
             )) {
             return nullptr;

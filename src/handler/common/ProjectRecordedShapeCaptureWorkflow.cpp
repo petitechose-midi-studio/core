@@ -101,8 +101,8 @@ FLASHMEM bool ProjectRecordedShapeCaptureWorkflow::armCreate_(
 ) const {
     auto& session = macro_ui_->recordedShapeCapture;
     auto& control = pages_->control;
-    auto& graph = control.authored.modulation;
-    auto& arena = control.authored.curves;
+    auto& graph = control.authored().modulation;
+    auto& arena = control.authored().curves;
     if (session.active()) return false;
     if (durationTicks == 0U || name == nullptr ||
         name[0] == '\0' ||
@@ -265,8 +265,8 @@ FLASHMEM bool ProjectRecordedShapeCaptureWorkflow::armReplaceExisting(
 ) const {
     auto& session = macro_ui_->recordedShapeCapture;
     auto& control = pages_->control;
-    const auto& graph = control.authored.modulation;
-    const auto& arena = control.authored.curves;
+    const auto& graph = control.authored().modulation;
+    const auto& arena = control.authored().curves;
     if (session.active()) return false;
     if (!valid(sourceId) ||
         macro_ui_->automationTake.phase !=
@@ -418,8 +418,8 @@ FLASHMEM bool ProjectRecordedShapeCaptureWorkflow::validSession_(
             ProjectRecordedShapeCaptureMode::CREATE_UNASSIGNED;
     }
 
-    const auto& graph = control.authored.modulation;
-    const auto& arena = control.authored.curves;
+    const auto& graph = control.authored().modulation;
+    const auto& arena = control.authored().curves;
     if (session.expectedSourceIndex >= graph.sourceCount ||
         session.expectedCurveIndex >= arena.recordCount) {
         return false;

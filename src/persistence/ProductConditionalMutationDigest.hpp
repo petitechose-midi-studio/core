@@ -7,12 +7,6 @@
 
 namespace core::persistence::conditional_mutation {
 
-struct DigestReadResult {
-    Status status = Status::STORAGE_ERROR;
-    uint8_t sha256[SHA256_SIZE] = {};
-    uint32_t crc32 = 0U;
-};
-
 /** Allocation-free SHA-256 continuation for one product file. */
 class DigestReadPlan final {
 public:
@@ -72,11 +66,5 @@ static_assert(
 bool digestEquals(const uint8_t* lhs, const uint8_t* rhs);
 void copyDigest(uint8_t* destination, const uint8_t* source);
 bool hashBytes(const uint8_t* data, size_t size, uint8_t output[SHA256_SIZE]);
-
-DigestReadResult readDigest(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    const char* path
-);
 
 }  // namespace core::persistence::conditional_mutation

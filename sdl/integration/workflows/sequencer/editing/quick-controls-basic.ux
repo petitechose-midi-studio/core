@@ -11,9 +11,9 @@
 260 capture screen quick_controls_open
 
 # Navigate through Offset to Division and change its value.
-330 encoder NAV 1
+330 encoder NAV 0.01
 400 capture screen quick_controls_offset
-450 encoder NAV 1
+450 encoder NAV 0.01
 520 encoder OPT 0.70
 600 capture screen quick_controls_adjusted
 

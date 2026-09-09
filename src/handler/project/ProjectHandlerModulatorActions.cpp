@@ -50,7 +50,7 @@ FLASHMEM void ProjectHandler::clearRecordedShapeAudition(void* context) {
 
 FLASHMEM core::state::modulation::ModulatorSourceState*
 ProjectHandler::focusedModulator() {
-    auto& graph = pages_.control.authored.modulation;
+    auto& graph = pages_.control.authored().modulation;
     const auto node = navigation_.currentNode.get();
     if (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
@@ -85,7 +85,7 @@ ProjectHandler::focusedModulationBinding() {
         return nullptr;
     }
     return core::state::project::modulators::sourceBindingAtOrdinal(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         navigation_.selectedModulator,
         navigation_.focusedRow.get()
     );
@@ -126,7 +126,7 @@ FLASHMEM uint16_t ProjectHandler::focusedModulatorDetailRowCount() const {
         core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS) {
         return static_cast<uint16_t>(
             core::state::project::modulators::sourceDestinationCount(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 source->id
             ) + 1U
         );
@@ -263,7 +263,7 @@ FLASHMEM bool ProjectHandler::createDefaultRecordedShape() {
     }};
     char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
     formatNextProjectModulatorName(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         ModulatorKind::RECORDED_SHAPE,
         name,
         sizeof(name)
@@ -291,7 +291,7 @@ FLASHMEM bool ProjectHandler::createDefaultRecordedShape() {
     while (navigation_.depth.get() > 0U) {
         (void)core::state::project::backProjectNavigation(navigation_);
     }
-    auto& graph = pages_.control.authored.modulation;
+    auto& graph = pages_.control.authored().modulation;
     for (uint16_t index = 0U; index < graph.sourceCount; ++index) {
         if (graph.sources[index].id != created.sourceId) continue;
         navigation_.focusedRow.set(static_cast<uint8_t>(index));
@@ -314,7 +314,7 @@ FLASHMEM bool ProjectHandler::resizeFocusedRecordedShape(uint8_t beats) {
         beats == 0U || beats > 64U || recorded_shape_capture_.active()) {
         return false;
     }
-    auto& arena = pages_.control.authored.curves;
+    auto& arena = pages_.control.authored().curves;
     const auto* curve = findProjectCurve(
         arena, source->parameters.recordedCurveId
     );
@@ -509,7 +509,7 @@ FLASHMEM void ProjectHandler::beginModulatorBottomRight() {
         node != core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS &&
         clipboard_.hasProjectModulatorSource() &&
         core::state::modulation::findProjectModulator(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             clipboard_.projectModulatorSource.sourceId
         ) != nullptr;
     navigation_.modulatorClipboardGuard.set(guard);
@@ -523,7 +523,7 @@ FLASHMEM void ProjectHandler::copyFocusedModulator() {
         return;
     }
     const auto* source = core::state::modulation::findProjectModulator(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         id
     );
     char feedback[48]{};
@@ -544,7 +544,7 @@ FLASHMEM void ProjectHandler::pasteProjectModulatorSource() {
     }
     const auto sourceId = clipboard_.projectModulatorSource.sourceId;
     const auto* source = findProjectModulator(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         sourceId
     );
     if (!source) {
@@ -553,7 +553,7 @@ FLASHMEM void ProjectHandler::pasteProjectModulatorSource() {
     }
     char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
     formatNextProjectModulatorName(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         source->kind,
         name,
         sizeof(name)
@@ -570,7 +570,7 @@ FLASHMEM void ProjectHandler::pasteProjectModulatorSource() {
     while (navigation_.depth.get() > 0U) {
         (void)core::state::project::backProjectNavigation(navigation_);
     }
-    auto& graph = pages_.control.authored.modulation;
+    auto& graph = pages_.control.authored().modulation;
     for (uint16_t index = 0; index < graph.sourceCount; ++index) {
         if (graph.sources[index].id == duplicate.sourceId) {
             navigation_.focusedRow.set(static_cast<uint8_t>(index));
@@ -586,7 +586,7 @@ FLASHMEM void ProjectHandler::pasteProjectModulatorSource() {
 
 FLASHMEM void ProjectHandler::makeFocusedModulatorIndependent() {
     using namespace core::state::modulation;
-    auto& graph = pages_.control.authored.modulation;
+    auto& graph = pages_.control.authored().modulation;
     const auto* binding = focusedModulationBinding();
     const auto* source = binding
         ? findProjectModulator(graph, binding->sourceId)
@@ -677,7 +677,7 @@ FLASHMEM void ProjectHandler::releaseModulatorBottomRight() {
 
 FLASHMEM void ProjectHandler::deleteGuardedModulator() {
     using namespace core::state::modulation;
-    auto& graph = pages_.control.authored.modulation;
+    auto& graph = pages_.control.authored().modulation;
     const ModulationBindingId guardedBinding =
         navigation_.guardedModulationBinding;
     if (valid(guardedBinding)) {

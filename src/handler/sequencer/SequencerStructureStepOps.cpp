@@ -36,8 +36,8 @@ FLASHMEM oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings(
 ) {
     return core::state::sequencer::resolveEffectiveScaleSettings(
         tracks.projectScaleSettings(),
-        sequencer.pattern.scalePolicy,
-        sequencer.pattern.scaleOverride
+        sequencer.pattern().scalePolicy,
+        sequencer.pattern().scaleOverride
     );
 }
 

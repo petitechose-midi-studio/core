@@ -6,6 +6,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/SequencerClipState.hpp"
 
 namespace core::state::sequencer {
 
@@ -92,6 +93,7 @@ struct SequencerStepContentDraftOwnedState {
     SequencerStepContentDraftValue<uint32_t> revision{0};
 
     core::app::ExtmemUniquePtr<SequencerPatternState> scratch;
+    SequencerClipState scratchClip{};
     uint32_t pristineGraphRevision = 0;
     uint32_t pristineGraphFingerprint = 0;
     uint8_t ownerStep = 0;
@@ -103,7 +105,7 @@ struct SequencerStepContentDraftOwnedState {
 };
 
 static_assert(
-    sizeof(SequencerStepContentDraftOwnedState) <= 56,
+    sizeof(SequencerStepContentDraftOwnedState) <= 64,
     "Step draft owned hot state must remain one PSRAM handle, one Chord POD, "
     "and bounded scalar metadata"
 );
@@ -127,6 +129,7 @@ struct SequencerStepContentDraftSession
 
     [[nodiscard]] bool begin(
         const SequencerPatternState& published,
+        const SequencerClipState& publishedClip,
         SequencerStepContentDraftKind nextKind,
         uint8_t nextOwnerStep,
         uint16_t nextOwnerNodeId = SequencerStepChordDraftState::INVALID_NODE
@@ -135,6 +138,8 @@ struct SequencerStepContentDraftSession
     [[nodiscard]] bool modified() const;
     [[nodiscard]] SequencerPatternState* pattern();
     [[nodiscard]] const SequencerPatternState* pattern() const;
+    [[nodiscard]] SequencerClipState* clip();
+    [[nodiscard]] const SequencerClipState* clip() const;
 
     void markPristine();
     void touch();

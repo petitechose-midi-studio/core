@@ -76,7 +76,6 @@ FLASHMEM void createTile(uint8_t tileIndex,
                          lv_obj_t*& noteLabel,
                          lv_obj_t*& secondaryLabel,
                          lv_obj_t*& stepInlineIcon,
-                         lv_obj_t*& stepButton,
                          lv_coord_t& inlineIconWidth,
                          lv_coord_t& inlineIconHeight,
                          lv_event_cb_t geometryEvent,
@@ -85,7 +84,7 @@ FLASHMEM void createTile(uint8_t tileIndex,
     const uint8_t row = tileIndex / 4;
 
     tile = lv_obj_create(grid);
-    style::apply(tile).transparent().noBorder().pad(0).noScroll();
+    lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(tile, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_set_grid_cell(
         tile,
@@ -93,35 +92,14 @@ FLASHMEM void createTile(uint8_t tileIndex,
         LV_GRID_ALIGN_STRETCH, row, 1
     );
 
-    lv_obj_set_layout(tile, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(tile, 0, 0);
-
-    lv_obj_t* buttonWrap = lv_obj_create(tile);
-    lv_obj_remove_style_all(buttonWrap);
-    lv_obj_clear_flag(buttonWrap, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_width(buttonWrap, LV_PCT(100));
-    lv_obj_set_flex_grow(buttonWrap, 1);
-    lv_obj_set_layout(buttonWrap, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(buttonWrap, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(buttonWrap, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
-    lv_obj_add_flag(buttonWrap, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-
-    stepButton = lv_obj_create(buttonWrap);
-    lv_obj_clear_flag(stepButton, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(stepButton, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-    lv_obj_set_width(stepButton, LV_PCT(100));
-    lv_obj_set_height(stepButton, LV_PCT(100));
-    lv_obj_set_flex_grow(stepButton, 1);
-    lv_obj_set_style_radius(stepButton, 10, 0);
-    lv_obj_set_style_border_width(stepButton, 1, 0);
-    lv_obj_set_style_border_color(stepButton, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_border_opa(stepButton, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_opa(stepButton, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_color(stepButton, lv_color_hex(theme::color::INACTIVE), 0);
-    lv_obj_set_style_pad_all(stepButton, 0, 0);
-    lv_obj_add_event_cb(stepButton, geometryEvent, LV_EVENT_SIZE_CHANGED, geometryUserData);
+    lv_obj_set_style_radius(tile, 10, 0);
+    lv_obj_set_style_border_width(tile, 1, 0);
+    lv_obj_set_style_border_color(tile, lv_color_hex(theme::color::TEXT_PRIMARY), 0);
+    lv_obj_set_style_border_opa(tile, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(tile, lv_color_hex(theme::color::INACTIVE), 0);
+    lv_obj_set_style_pad_all(tile, 0, 0);
+    lv_obj_add_event_cb(tile, geometryEvent, LV_EVENT_SIZE_CHANGED, geometryUserData);
 
     noteLabel = lv_label_create(noteLayer);
     lv_label_set_text(noteLabel, "");

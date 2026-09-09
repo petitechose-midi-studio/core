@@ -17,7 +17,13 @@ void storeSingleTrackClipboard(
     uint8_t sourceTrack
 ) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    assert(clipboard.storeSequencerTrack(snapshot, nullptr, sourceTrack));
+    core::state::sequencer::SequencerClipSnapshot clip;
+    assert(clipboard.storeSequencerTrack(
+        snapshot,
+        clip,
+        nullptr,
+        sourceTrack
+    ));
 }
 
 void test_single_track_plan_exposes_source_and_destination_owned_bindings() {
@@ -101,7 +107,7 @@ void test_track_plan_reads_only_canonical_destination_route() {
     core::state::StructureClipboardState clipboard;
     storeSingleTrackClipboard(clipboard, 0);
     core::state::sequencer::SequencerTrackBankState tracks;
-    core::state::sequencer::SequencerState editor;
+    core::state::sequencer::SequencerState editor{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
     core::state::project::ProjectTrackState projectTracks;
     tracks.reset();
     tracks.syncSharedTrackState(0x0003, 1);

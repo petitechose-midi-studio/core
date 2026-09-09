@@ -54,6 +54,8 @@
 #include "state/project/ProjectTrackHistory.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
@@ -134,6 +136,7 @@ struct MacroDomainState {
 
 /** Owns the editable sequencer state, per-track bank, and history. */
 struct SequencerDomainState {
+    static constexpr size_t MUTATION_COALESCER_SUBSCRIPTION_COUNT = 17U;
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_JOIN_MS = 32;
     static constexpr uint32_t COALESCED_CC_LANE_HISTORY_IDLE_MS = 320;
@@ -177,7 +180,6 @@ struct SequencerDomainState {
         // Fits existing pointer-alignment padding on both supported ABIs.
         GraphCompactionState graphCompaction = GraphCompactionState::Disabled;
         sequencer::SequencerHistoryPatternChangePtr preparedPatternChange;
-        sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
         sequencer::SequencerHistoryPatternChangePtr preparedCcLaneChange;
 
         bool joinsStepProperty(uint8_t nextActiveTrack, uint8_t nextStep,
@@ -231,6 +233,7 @@ struct SequencerDomainState {
                 key.kind == sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit;
             return pending && key.kind == next.kind &&
                 key.trackIndex == next.trackIndex &&
+                key.clipIndex == next.clipIndex &&
                 key.laneIndex == next.laneIndex &&
                 sameGestureStep && key.property == next.property;
         }
@@ -245,14 +248,17 @@ struct SequencerDomainState {
         }
     };
 
-    core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
+    core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
+    core::app::ExtmemUniquePtr<sequencer::SequencerClipGridState> clips;
     core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;
+    sequencer::SequencerClipLaunchQueue clipLaunches;
     oc::state::Signal<uint32_t> runtimeProjectRevision{1};
     CoalescedPatternHistory coalescedPatternHistory;
     CoalescedDrumHistory coalescedDrumHistory;
-    std::unique_ptr<oc::state::ChangeCoalescer<16>> mutationCoalescer;
+    std::unique_ptr<oc::state::ChangeCoalescer<MUTATION_COALESCER_SUBSCRIPTION_COUNT>>
+        mutationCoalescer;
 
     SequencerDomainState();
     ~SequencerDomainState();
@@ -334,8 +340,10 @@ public:
     /// Sequencer domain aliases
     sequencer::SequencerState& sequencer;
     sequencer::SequencerTrackBankState& sequencerTracks;
+    sequencer::SequencerClipGridState& sequencerClips;
     sequencer::SequencerHistoryService& sequencerHistory;
     sequencer::SequencerTrackActivationQueue& sequencerTrackActivations;
+    sequencer::SequencerClipLaunchQueue& sequencerClipLaunches;
     oc::state::Signal<uint32_t>& sequencerRuntimeProjectRevision;
     // Published by the singular SequencerRuntimeService. Feature modules may
     // produce immutable CC author frames through this non-owning handle, but
@@ -424,21 +432,21 @@ public:
     bool hasPendingProjectTransaction() const;
 
     void markSequencerProjectMutated();
-    // Prepared transactions have already synchronized editor and bank. Consume
+    // Prepared transactions have already installed canonical content. Consume
     // only this coalescer's watched notifications, then publish dirty/save once
     // without cloning a cold payload or draining unrelated callbacks.
     void publishPreparedSequencerMutation(
         bool notifyProjectNavigation = true
     );
     /**
-     * Publishes an already-synchronized provisional Sequencer state without
+     * Publishes the provisional canonical Sequencer state without
      * advancing the durable Project revision. The owning interaction must
      * later either commit through publishPreparedSequencerMutation() or
      * restore its captured Before state through the same provisional sink.
      */
     void publishPreparedSequencerPreview();
-    sequencer::SequencerPreparedFullBankEditResult applyPreparedProjectScaleChoice(
-        sequencer::SequencerPreparedFullBankEditOwner owner,
+    sequencer::SequencerProjectScaleEditResult applyPreparedProjectScaleChoice(
+        sequencer::SequencerProjectScaleEditOwner owner,
         uint8_t row,
         int choiceIndex
     );
@@ -516,6 +524,49 @@ public:
     bool undoSequencerHistory();
     bool redoSequencerHistory();
     [[nodiscard]] bool clearSequencerHistory();
+    /** Cold authoring selection; performance launch uses its own runtime queue. */
+    [[nodiscard]] bool switchSequencerClipForEditing(
+        sequencer::SequencerClipAddress target);
+    [[nodiscard]] bool requestSequencerClipLaunch(
+        sequencer::SequencerClipAddress target,
+        sequencer::SequencerClipLaunchQuantization quantization =
+            sequencer::SequencerClipLaunchQuantization::BAR);
+    [[nodiscard]] bool requestSequencerTrackStop(
+        uint8_t track,
+        sequencer::SequencerClipLaunchQuantization quantization =
+            sequencer::SequencerClipLaunchQuantization::IMMEDIATE);
+    [[nodiscard]] bool requestSequencerSceneLaunch(
+        uint8_t slot,
+        sequencer::SequencerClipLaunchQuantization quantization =
+            sequencer::SequencerClipLaunchQuantization::BAR);
+    [[nodiscard]] bool setSequencerStopSlot(
+        sequencer::SequencerClipAddress target,
+        bool stop);
+    [[nodiscard]] bool setSequencerClipBehavior(
+        sequencer::SequencerClipAddress target,
+        sequencer::SequencerLauncherBehavior behavior);
+    [[nodiscard]] bool setSequencerSceneBehavior(
+        uint8_t slot,
+        sequencer::SequencerLauncherBehavior behavior);
+    [[nodiscard]] bool createSequencerClip(
+        sequencer::SequencerClipAddress target);
+    [[nodiscard]] bool installSequencerClip(
+        sequencer::SequencerClipAddress target,
+        sequencer::SequencerClipDocumentPtr document,
+        bool duplicate,
+        sequencer::SequencerLauncherBehavior behavior = {});
+    [[nodiscard]] bool deleteSequencerClip(
+        sequencer::SequencerClipAddress target);
+    [[nodiscard]] bool moveSequencerClip(
+        sequencer::SequencerClipAddress source,
+        sequencer::SequencerClipAddress destination);
+    [[nodiscard]] bool moveSequencerClips(
+        const sequencer::SequencerClipSelectionMask& selection,
+        int8_t trackOffset,
+        int8_t slotOffset);
+    [[nodiscard]] bool duplicateSequencerClip(
+        sequencer::SequencerClipAddress source,
+        sequencer::SequencerClipAddress destination);
     [[nodiscard]] bool prepareProjectHistoryInteraction();
     bool undoProjectHistory();
     bool redoProjectHistory();
@@ -558,7 +609,6 @@ private:
     bool advanceProjectSessionIdentity_();
     void publishProjectSessionReplacement_();
     void markProjectDurableMutation_();
-    void markSequencerProjectMutated_();
     bool refreshSharedTrackStateFromMacroPages_();
     bool refreshSharedTrackStateFromSequencer_();
     bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack);

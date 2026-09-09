@@ -56,9 +56,9 @@ void configureSession(core::state::CoreState& state,
     page.values[0] = macroValue;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.setContentLength(12);
+    state.sequencer.pattern().setContentLength(12);
     state.sequencer.setStepDataAt(0, sequencerNote, 110, 75);
-    state.sequencer.pattern.toggle(0);
+    state.sequencer.pattern().toggle(0);
     state.sequencer.focusedStep.set(0);
 }
 
@@ -94,8 +94,8 @@ void assertLoadedSession(core::persistence::ProjectSessionStore& store,
     assert(runtime.project.metadata.dirty);
     assert(std::strcmp(runtime.pages.activePageData().name, expectedName) == 0);
     assert(runtime.pages.activePageData().cc[0] == 40U + expectedCounter);
-    assert(runtime.sequencer.pattern.note[0] == expectedNote);
-    assert(runtime.sequencer.pattern.isEnabled(0));
+    assert(runtime.sequencer.pattern().note[0] == expectedNote);
+    assert(runtime.sequencer.pattern().isEnabled(0));
 }
 
 void test_current_session_roundtrip_uses_session_path() {

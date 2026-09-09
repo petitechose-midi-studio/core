@@ -50,10 +50,10 @@ struct RepresentativeSequencerObservers {
     oc::state::StaticWatchGroup<5> header;
     oc::state::StaticWatchGroup<7> headerStrip;
     oc::state::StaticWatchGroup<14> grid;
-    oc::state::StaticWatchGroup<11> selector;
+    oc::state::StaticWatchGroup<8> selector;
     oc::state::StaticWatchGroup<2> leftStrip;
     oc::state::StaticWatchGroup<4> bottomStrip;
-    oc::state::StaticWatchGroup<15> encoderSync;
+    oc::state::StaticWatchGroup<12> encoderSync;
     oc::state::StaticWatchGroup<6> overlayPresenter;
     oc::state::StaticWatchGroup<1> trackSwitchReady;
     oc::state::StaticWatchGroup<2> retainedMacroView;
@@ -108,22 +108,22 @@ struct RepresentativeSequencerObservers {
         const bool headerStripBound = headerStrip.watchAll(
             state.sharedTrackActive,
             state.sharedTrackEnabledMask,
-            state.sequencer.pattern.length,
+            state.sequencer.patternChanges.length,
             state.sequencer.page,
             state.sequencer.contentView.kind,
             state.sequencer.contentView.length,
             state.sequencer.contentView.revision
         );
         const bool gridBound = grid.watchAll(
-            state.sequencer.pattern.length,
+            state.sequencer.patternChanges.length,
             state.sequencer.page,
             state.sequencer.focusedStep,
-            state.sequencer.pattern.enabledMask,
+            state.sequencer.patternChanges.enabledMask,
             state.sequencer.playheadStep,
-            state.sequencer.pattern.stepDataRevision,
+            state.sequencer.patternChanges.stepDataRevision,
             state.sequencer.variationTelemetryRevision,
-            state.sequencer.pattern.patternVariationRevision,
-            state.sequencer.pattern.patternScaleRevision,
+            state.sequencer.patternChanges.patternVariationRevision,
+            state.sequencer.patternChanges.patternScaleRevision,
             state.sequencerTracks.projectScaleRevisionSignal(),
             state.sequencer.activeStepProperty,
             state.sequencer.contentView.kind,
@@ -132,12 +132,9 @@ struct RepresentativeSequencerObservers {
         );
         const bool selectorBound = selector.watchAll(
             state.sequencer.activeStepProperty,
-            state.sequencer.pattern.graphRevision,
-            state.sequencer.pattern.stepsPerBeat,
-            state.sequencer.pattern.swingOffsetPercent,
-            state.sequencer.pattern.patternNudgePercent,
-            state.sequencer.pattern.patternTimingRevision,
-            state.sequencer.pattern.length,
+            state.sequencer.patternChanges.graphRevision,
+            state.sequencer.patternChanges.patternTimingRevision,
+            state.sequencer.patternChanges.length,
             state.sequencer.contentView.kind,
             state.sequencer.contentView.length,
             state.sequencer.contentView.revision,
@@ -149,32 +146,29 @@ struct RepresentativeSequencerObservers {
         );
         const bool bottomStripBound = bottomStrip.watchAll(
             state.sequencer.activeStepProperty,
-            state.sequencer.pattern.patternVariationRevision,
+            state.sequencer.patternChanges.patternVariationRevision,
             state.sequencer.contentView.kind,
             state.sequencer.contentView.revision
         );
         const bool encoderSyncBound = encoderSync.watchAll(
             state.sequencer.page,
-            state.sequencer.pattern.length,
-            state.sequencer.pattern.graphRevision,
+            state.sequencer.patternChanges.length,
+            state.sequencer.patternChanges.graphRevision,
             state.sequencer.focusedStep,
             state.sequencer.activeStepProperty,
             state.sequencer.contentView.kind,
             state.sequencer.contentView.length,
             state.sequencer.contentView.revision,
-            state.sequencer.pattern.patternScaleRevision,
+            state.sequencer.patternChanges.patternScaleRevision,
             state.sequencerTracks.projectScaleRevisionSignal(),
-            state.sequencer.pattern.stepsPerBeat,
-            state.sequencer.pattern.swingOffsetPercent,
-            state.sequencer.pattern.patternNudgePercent,
-            state.sequencer.pattern.patternTimingRevision,
+            state.sequencer.patternChanges.patternTimingRevision,
             state.sequencer.patternQuickControls.focusedItem
         );
         const bool overlayBound = overlayPresenter.watchAll(
-            state.sequencer.pattern.enabledMask,
-            state.sequencer.pattern.stepDataRevision,
-            state.sequencer.pattern.patternScaleRevision,
-            state.sequencer.pattern.graphRevision,
+            state.sequencer.patternChanges.enabledMask,
+            state.sequencer.patternChanges.stepDataRevision,
+            state.sequencer.patternChanges.patternScaleRevision,
+            state.sequencer.patternChanges.graphRevision,
             state.sequencer.contentView.revision,
             state.sequencerTracks.projectScaleRevisionSignal()
         );
@@ -224,10 +218,10 @@ void configurePattern(SequencerPatternState& pattern, uint8_t track) {
     pattern.setPatternNudgePercent(8 - static_cast<int>(track));
 }
 
-void prepareStoredFullBank(CoreState& state) {
+void prepareStoredProjectBank(CoreState& state) {
     state.sequencerTracks.syncSharedTrackState(0xFFFFU, 0);
 
-    configurePattern(state.sequencer.pattern, 0);
+    configurePattern(state.sequencer.pattern(), 0);
     for (uint8_t track = 1; track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
         configurePattern(state.sequencerTracks.track(track), track);
@@ -246,11 +240,11 @@ void prepareDifferentLiveBank(CoreState& state) {
     assert(state.currentSharedTrackEnabledMask() == 0x0001U);
     assert(state.currentSharedActiveTrack() == 0U);
 
-    state.sequencer.pattern.setContentLength(64);
-    state.sequencer.pattern.stepsPerBeat.set(8);
-    state.sequencer.pattern.enabledMask.set({});
+    state.sequencer.pattern().setContentLength(64);
+    state.sequencer.pattern().stepsPerBeat.set(8);
+    state.sequencer.pattern().enabledMask.set({});
     state.sequencer.setStepDataAt(63, 12, 34, 150, -12, 42);
-    state.sequencer.pattern.setEnabled(63, true);
+    state.sequencer.pattern().setEnabled(63, true);
     state.sequencer.setPatternSwingOffsetPercent(25);
     state.sequencer.setPatternNudgePercent(-25);
     state.sequencer.page.set(7);
@@ -269,7 +263,7 @@ void sampleQueue(oc::state::NotificationQueue& queue, size_t& peakPending) {
     assert(queue.pendingCount() <= oc::state::NotificationQueue::maxPending());
 }
 
-void test_full_bank_project_apply_stays_within_notification_capacity() {
+void test_project_snapshot_apply_stays_within_notification_capacity() {
     static_assert(
         oc::state::NotificationQueue::maxPending() == 96,
         "MIDI Studio requires headroom above its measured 64-entry atomic wave"
@@ -291,7 +285,7 @@ void test_full_bank_project_apply_stays_within_notification_capacity() {
         stagedStorage.settings
     );
 
-    prepareStoredFullBank(staged);
+    prepareStoredProjectBank(staged);
     prepareDifferentLiveBank(state);
 
     core::state::project::ProjectSnapshot snapshot;
@@ -310,9 +304,9 @@ void test_full_bank_project_apply_stays_within_notification_capacity() {
     assert(core::state::project::applyProjectSnapshot(state, snapshot));
     sampleQueue(queue, peakPending);
 
-    // Fourteen generic mutation-coalescer subscriptions are consumed by the
-    // Project replacement owner. All independent UI/runtime observers remain.
-    constexpr size_t EXPECTED_PROJECT_APPLY_PEAK = 62;
+    // Project replacement consumes generic mutation callbacks. Independent
+    // UI/runtime observers, including the selected-Pattern relay, remain.
+    constexpr size_t EXPECTED_PROJECT_APPLY_PEAK = 60;
     if (peakPending != EXPECTED_PROJECT_APPLY_PEAK) {
         std::cerr << "Unexpected synchronous Project apply peak: " << peakPending
                   << "/" << oc::state::NotificationQueue::maxPending() << "\n";
@@ -324,10 +318,10 @@ void test_full_bank_project_apply_stays_within_notification_capacity() {
     assert(state.sequencerTracks.currentEnabledMask() == 0xFFFFU);
     assert(state.currentSharedTrackEnabledMask() == 0xFFFFU);
     assert(state.currentSharedActiveTrack() == 5);
-    assert(state.sequencer.pattern.length.get() == 13);
-    assert(state.sequencer.pattern.note[5] == 53);
-    assert(state.sequencer.pattern.velocity[5] == 85);
-    assert(state.sequencer.pattern.gate[5] == 95);
+    assert(state.sequencer.pattern().length.get() == 13);
+    assert(state.sequencer.pattern().note[5] == 53);
+    assert(state.sequencer.pattern().velocity[5] == 85);
+    assert(state.sequencer.pattern().gate[5] == 95);
 
     // flush() also exercises any callbacks that enqueue a later reactive wave.
     queue.flush();
@@ -350,11 +344,46 @@ void test_full_bank_project_apply_stays_within_notification_capacity() {
               << " callbacks=" << observers.callbackCount << "\n";
 }
 
+void test_musical_project_reset_stays_within_notification_capacity() {
+    CoreStorages storage;
+    storage.initAll();
+
+#if OC_ENABLE_STATS
+    oc::log::setOutput(diagnosticOutput);
+#endif
+
+    CoreState state(storage.settings);
+    prepareDifferentLiveBank(state);
+    drainNotifications();
+
+    RepresentativeSequencerObservers observers;
+    assert(observers.bind(state));
+
+    auto& queue = oc::state::NotificationQueue::instance();
+    queue.setDeferredMode(true);
+    queue.resetOverflowCount();
+    size_t peakPending = queue.pendingCount();
+
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
+    sampleQueue(queue, peakPending);
+    queue.flush();
+    sampleQueue(queue, peakPending);
+
+    assert(!queue.hasPending());
+    assert(queue.overflowCount() == 0U);
+    assert(observers.callbackCount > 0U);
+    std::cout << "[PASS] musical Project reset notification peak="
+              << peakPending << "/" << oc::state::NotificationQueue::maxPending()
+              << " callbacks=" << observers.callbackCount << "\n";
+}
+
 }  // namespace
 
 int main() {
     std::cout.setf(std::ios::unitbuf);
-    test_full_bank_project_apply_stays_within_notification_capacity();
+    test_project_snapshot_apply_stays_within_notification_capacity();
+    test_musical_project_reset_stays_within_notification_capacity();
     std::cout << "All CoreState notification queue tests passed.\n";
     return 0;
 }

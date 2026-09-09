@@ -1,0 +1,23 @@
+# RAM-only fixture: inspect its existing CC curve while music plays.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.01
+600 button LEFT_TOP up
+1000 assert_view CLIPS
+1200 encoder_value NAV 0.01
+1500 tap LEFT_BOTTOM 60
+1800 assert_mode sequencer.pattern
+2000 button LEFT_BOTTOM down
+2120 encoder_value NAV 0.01
+2200 encoder_value NAV 0.01
+2280 encoder_value NAV 0.01
+2360 encoder_value NAV 0.01
+2800 button LEFT_BOTTOM up
+3100 assert_mode sequencer.cc_lane.grid
+3300 marker cc_playback
+5000 encoder_value NAV 0.01
+5500 encoder_value NAV 0.01
+7000 assert_mode sequencer.cc_lane.grid
+7200 tap LEFT_TOP 60
+7500 transport stop

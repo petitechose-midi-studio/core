@@ -10,7 +10,7 @@
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerStepPastePlan.hpp"
 
@@ -68,7 +68,7 @@ struct MutationAccumulator {
         domains.stepData = domains.stepData || addition.stepData;
         domains.graph = domains.graph || addition.graph;
         domains.ccLanes = domains.ccLanes || addition.ccLanes;
-        domains.timing = domains.timing || addition.timing;
+        domains.clip = domains.clip || addition.clip;
         graphChanged = graphChanged || addition.graph;
     }
 
@@ -228,16 +228,16 @@ FLASHMEM bool validLiveGraph(const seq::SequencerPatternState& pattern) noexcept
 }
 
 FLASHMEM bool validPattern(const seq::SequencerState& sequencer) noexcept {
-    const uint8_t length = sequencer.pattern.length.get();
+    const uint8_t length = sequencer.pattern().length.get();
     if (length == 0U || length > seq::SequencerState::MAX_STEPS ||
-        !seq::patternPlaybackRegion(sequencer.pattern).isValid() ||
-        (sequencer.pattern.enabledMask.get() & ~seq::lengthMask(length)) !=
+        !seq::validClipRegion(sequencer.pattern(), sequencer.clip()) ||
+        (sequencer.pattern().enabledMask.get() & ~seq::lengthMask(length)) !=
             oc::note::sequencer::StepBitMask128{} ||
-        !validLiveGraph(sequencer.pattern)) {
+        !validLiveGraph(sequencer.pattern())) {
         return false;
     }
-    return !sequencer.pattern.ccLanes ||
-           seq::validSequencerCcLaneBank(*sequencer.pattern.ccLanes);
+    return !sequencer.pattern().ccLanes ||
+           seq::validSequencerCcLaneBank(*sequencer.pattern().ccLanes);
 }
 
 FLASHMEM bool beginPlan(
@@ -264,7 +264,7 @@ FLASHMEM bool beginPlan(
     const auto context = contentContextFor(out.contentPath);
     if (context == ContentContext::Invalid) return false;
 
-    out.patternLength = sequencer.pattern.length.get();
+    out.patternLength = sequencer.pattern().length.get();
     out.contentLength = seq::preparedSequencerContentLength(
         sequencer, out.contentPath);
     if (out.contentLength == 0U) return false;
@@ -276,13 +276,13 @@ FLASHMEM bool beginPlan(
         return false;
     }
     out.finalFocus = out.initialFocus;
-    out.stepDataRevision = sequencer.pattern.stepDataRevision.get();
-    out.graphRevision = sequencer.pattern.graphRevision.get();
-    out.ccLaneRevision = sequencer.pattern.ccLaneRevision.get();
-    out.timingRevision = sequencer.pattern.patternTimingRevision.get();
-    if (sequencer.pattern.graph) out.flags |= kFlagLiveGraphOwnerPresent;
+    out.stepDataRevision = sequencer.pattern().stepDataRevision.get();
+    out.graphRevision = sequencer.pattern().graphRevision.get();
+    out.ccLaneRevision = sequencer.pattern().ccLaneRevision.get();
+    out.timingRevision = sequencer.pattern().patternTimingRevision.get();
+    if (sequencer.pattern().graph) out.flags |= kFlagLiveGraphOwnerPresent;
     if (context == ContentContext::Root) out.flags |= kFlagRootContext;
-    if (seq::graphView(sequencer.pattern) != nullptr) {
+    if (seq::graphView(sequencer.pattern()) != nullptr) {
         out.flags |= kFlagLiveGraphActive;
     }
     return true;
@@ -357,7 +357,7 @@ FLASHMEM seq::SequencerGraphNodeId projectedTargetNodeIdAtLength(
         return GraphLimits::INVALID_ID;
     }
 
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     if (graph == nullptr) return GraphLimits::INVALID_ID;
     const auto& frame =
         plan.contentPath.frames[plan.contentPath.stackDepth - 1U];
@@ -684,7 +684,7 @@ FLASHMEM bool analyzePhysicalRootExtension(
         return true;
     }
 
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     if (graph == nullptr) return true;
     const GraphNode canonical{};
     for (uint16_t step = plan.contentLength;
@@ -719,7 +719,7 @@ FLASHMEM bool analyzePhysicalChildExtension(
         return true;
     }
 
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     if (graph == nullptr) return false;
     const auto& frame =
         plan.contentPath.frames[plan.contentPath.stackDepth - 1U];
@@ -766,7 +766,7 @@ FLASHMEM GraphAnalysis analyzeMappedGraphTargets(
     const seq::SequencerState& sequencer
 ) noexcept {
     GraphAnalysis analysis;
-    const auto* targetGraph = seq::graphView(sequencer.pattern);
+    const auto* targetGraph = seq::graphView(sequencer.pattern());
     if (!analyzePhysicalRootExtension(plan, sequencer, analysis) ||
         !analyzePhysicalChildExtension(plan, sequencer, analysis)) {
         analysis.valid = false;
@@ -936,12 +936,12 @@ FLASHMEM bool sameFlatTarget(
         }
     }
 
-    return sequencer.pattern.isEnabled(target) == enabled &&
-           sequencer.pattern.note[target] == note &&
-           sequencer.pattern.velocity[target] == velocity &&
-           sequencer.pattern.gate[target] == gate &&
-           sequencer.pattern.nudge[target] == nudge &&
-           sequencer.pattern.probability[target] == probability;
+    return sequencer.pattern().isEnabled(target) == enabled &&
+           sequencer.pattern().note[target] == note &&
+           sequencer.pattern().velocity[target] == velocity &&
+           sequencer.pattern().gate[target] == gate &&
+           sequencer.pattern().nudge[target] == nudge &&
+           sequencer.pattern().probability[target] == probability;
 }
 
 FLASHMEM bool mappedFlatDelta(
@@ -997,7 +997,7 @@ FLASHMEM Preflight finishMappedPlan(
 ) noexcept {
     if (!sourceClipboardIdentityValid(plan)) return plan.outcome;
     if (plan.sourceGraphIdentity != nullptr &&
-        plan.sourceGraphIdentity == sequencer.pattern.graph.get()) {
+        plan.sourceGraphIdentity == sequencer.pattern().graph.get()) {
         return plan.outcome;
     }
     bool flatValid = true;
@@ -1013,7 +1013,7 @@ FLASHMEM Preflight finishMappedPlan(
     if (graph.requiresCompaction) plan.flags |= kFlagRequiresCompaction;
     const bool needsGraphOwner =
         graph.sourcePayloadPresent &&
-        seq::graphView(sequencer.pattern) == nullptr;
+        seq::graphView(sequencer.pattern()) == nullptr;
     if (needsGraphOwner) plan.flags |= kFlagNeedsGraphOwner;
 
     if (needsGraphOwner) {
@@ -1097,7 +1097,7 @@ FLASHMEM GraphAnalysis analyzeDeleteGraph(
     const seq::SequencerState& sequencer
 ) noexcept {
     GraphAnalysis analysis;
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     if (graph == nullptr) return analysis;
 
     const uint8_t oldLength = plan.patternLength;
@@ -1157,8 +1157,8 @@ FLASHMEM Preflight finishDeletePlan(
     if (!graph.valid) return plan.outcome;
     if (graph.changed) plan.flags |= kFlagGraphDelta;
     if (graph.requiresCompaction) plan.flags |= kFlagRequiresCompaction;
-    const bool ccPayload = sequencer.pattern.ccLanes != nullptr &&
-        seq::sequencerCcLaneCount(*sequencer.pattern.ccLanes) != 0U;
+    const bool ccPayload = sequencer.pattern().ccLanes != nullptr &&
+        seq::sequencerCcLaneCount(*sequencer.pattern().ccLanes) != 0U;
     plan.payloadPlan = graph.changed || ccPayload
         ? seq::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload
         : seq::SequencerCoalescedPatternPayloadPlan::FlatOnly;
@@ -1171,14 +1171,17 @@ FLASHMEM bool validatePlanShape(
     const Plan& plan,
     const seq::SequencerState& sequencer
 ) noexcept {
+    // A Clip-only playback-window edit commutes with this Pattern-content
+    // plan. Root resizes transform the live Clip at commit time; Pattern
+    // length and timing revisions guard every value the plan actually reads.
     if (!plan.ready() ||
         plan.expectedTrack >= seq::SequencerTrackBankState::TRACK_COUNT ||
         !validPattern(sequencer) ||
-        sequencer.pattern.length.get() != plan.patternLength ||
-        sequencer.pattern.stepDataRevision.get() != plan.stepDataRevision ||
-        sequencer.pattern.graphRevision.get() != plan.graphRevision ||
-        sequencer.pattern.ccLaneRevision.get() != plan.ccLaneRevision ||
-        sequencer.pattern.patternTimingRevision.get() != plan.timingRevision ||
+        sequencer.pattern().length.get() != plan.patternLength ||
+        sequencer.pattern().stepDataRevision.get() != plan.stepDataRevision ||
+        sequencer.pattern().graphRevision.get() != plan.graphRevision ||
+        sequencer.pattern().ccLaneRevision.get() != plan.ccLaneRevision ||
+        sequencer.pattern().patternTimingRevision.get() != plan.timingRevision ||
         sequencer.page.get() != plan.initialPage ||
         sequencer.focusedStep.get() != plan.initialFocus) {
         return false;
@@ -1189,17 +1192,17 @@ FLASHMEM bool validatePlanShape(
             FullWithProspectiveGraph &&
         !flag(plan, kFlagLiveGraphOwnerPresent);
     if (prospectiveInstalled) {
-        if (!sequencer.pattern.graph ||
+        if (!sequencer.pattern().graph ||
             !seq::isCanonicalDisabledSequencerGraph(
-                *sequencer.pattern.graph)) {
+                *sequencer.pattern().graph)) {
             return false;
         }
-    } else if ((sequencer.pattern.graph != nullptr) !=
+    } else if ((sequencer.pattern().graph != nullptr) !=
                flag(plan, kFlagLiveGraphOwnerPresent)) {
         return false;
     }
 
-    const bool liveGraphActive = seq::graphView(sequencer.pattern) != nullptr;
+    const bool liveGraphActive = seq::graphView(sequencer.pattern()) != nullptr;
     if (!prospectiveInstalled &&
         liveGraphActive != flag(plan, kFlagLiveGraphActive)) {
         return false;
@@ -1238,7 +1241,7 @@ FLASHMEM bool reanalyzePlan(
                flag(plan, kFlagRequiresCompaction) &&
            sameBudget(plan.graphBudget, graph.budget) &&
            (graph.sourcePayloadPresent &&
-                seq::graphView(sequencer.pattern) == nullptr) ==
+                seq::graphView(sequencer.pattern()) == nullptr) ==
                flag(plan, kFlagNeedsGraphOwner);
 }
 
@@ -1258,10 +1261,10 @@ FLASHMEM bool initializeProspectiveGraph(
     MutationAccumulator& mutation
 ) noexcept {
     if (!flag(plan, kFlagNeedsGraphOwner)) return true;
-    if (!sequencer.pattern.graph ||
-        !seq::isCanonicalDisabledSequencerGraph(*sequencer.pattern.graph) ||
+    if (!sequencer.pattern().graph ||
+        !seq::isCanonicalDisabledSequencerGraph(*sequencer.pattern().graph) ||
         !seq::initializeSequencerGraphRootUnversioned(
-            *sequencer.pattern.graph)) {
+            *sequencer.pattern().graph)) {
         return false;
     }
     mutation.graphChanged = true;
@@ -1278,7 +1281,7 @@ FLASHMEM bool extendChildPreservingLogicalContent(
         plan.contentPath.stackDepth > plan.contentPath.frames.size()) {
         return false;
     }
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     if (graph == nullptr || !graph->enabled) return false;
     auto& frame = plan.contentPath.frames[plan.contentPath.stackDepth - 1U];
     bool resized = false;
@@ -1300,7 +1303,7 @@ FLASHMEM bool releaseMappedGraphTargets(
     seq::SequencerState& sequencer,
     MutationAccumulator& mutation
 ) noexcept {
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     if (graph == nullptr || !graph->enabled) {
         return !flag(plan, kFlagGraphDelta);
     }
@@ -1394,7 +1397,7 @@ FLASHMEM bool graphCapacityAvailable(
         budget.cycleSets == 0U) {
         return true;
     }
-    const auto* graph = seq::graphView(sequencer.pattern);
+    const auto* graph = seq::graphView(sequencer.pattern());
     return graph != nullptr &&
            seq::sequencerGraphHasCopyCapacity(*graph, budget);
 }
@@ -1404,7 +1407,7 @@ FLASHMEM bool appendMappedGraphPayloads(
     seq::SequencerState& sequencer,
     MutationAccumulator& mutation
 ) noexcept {
-    auto* graph = sequencer.pattern.graph.get();
+    auto* graph = sequencer.pattern().graph.get();
     for (uint16_t target = 0U; target < plan.targetToSource.size(); ++target) {
         const uint8_t encoded = plan.targetToSource[target];
         if (encoded >= Plan::TARGET_DEFAULT) continue;
@@ -1452,7 +1455,7 @@ FLASHMEM bool writeMappedFlatTargets(
     MutationAccumulator& mutation
 ) noexcept {
     if (!flag(plan, kFlagRootContext)) return true;
-    auto enabledMask = sequencer.pattern.enabledMask.get();
+    auto enabledMask = sequencer.pattern().enabledMask.get();
     bool changed = false;
     for (uint16_t target = 0U; target < plan.targetToSource.size(); ++target) {
         const uint8_t encoded = plan.targetToSource[target];
@@ -1488,23 +1491,23 @@ FLASHMEM bool writeMappedFlatTargets(
         }
 
         const auto step = static_cast<uint8_t>(target);
-        if (sequencer.pattern.note[step] != note ||
-            sequencer.pattern.velocity[step] != velocity ||
-            sequencer.pattern.gate[step] != gate ||
-            sequencer.pattern.nudge[step] != nudge ||
-            sequencer.pattern.probability[step] != probability ||
+        if (sequencer.pattern().note[step] != note ||
+            sequencer.pattern().velocity[step] != velocity ||
+            sequencer.pattern().gate[step] != gate ||
+            sequencer.pattern().nudge[step] != nudge ||
+            sequencer.pattern().probability[step] != probability ||
             enabledMask.test(step) != enabled) {
-            sequencer.pattern.note[step] = note;
-            sequencer.pattern.velocity[step] = velocity;
-            sequencer.pattern.gate[step] = gate;
-            sequencer.pattern.nudge[step] = nudge;
-            sequencer.pattern.probability[step] = probability;
+            sequencer.pattern().note[step] = note;
+            sequencer.pattern().velocity[step] = velocity;
+            sequencer.pattern().gate[step] = gate;
+            sequencer.pattern().nudge[step] = nudge;
+            sequencer.pattern().probability[step] = probability;
             enabledMask.setBit(step, enabled);
             changed = true;
         }
     }
     if (changed) {
-        sequencer.pattern.enabledMask.set(enabledMask);
+        sequencer.pattern().enabledMask.set(enabledMask);
         mutation.domains.stepData = true;
     }
     return true;
@@ -1532,10 +1535,9 @@ FLASHMEM void publishMutationRevisions(
 ) noexcept {
     mutation.graphChanged = mutation.graphChanged || mutation.domains.graph;
     mutation.domains.graph = false;
-    seq::publishSequencerSnapshotBatchRevisions(
-        sequencer.pattern, mutation.domains);
+    seq::publishSequencerSnapshotBatchRevisions(sequencer, mutation.domains);
     if (mutation.graphChanged && !mutation.graphRevisionPublished) {
-        sequencer.pattern.bumpGraphRevision();
+        sequencer.pattern().bumpGraphRevision();
         mutation.graphRevisionPublished = true;
     }
 }

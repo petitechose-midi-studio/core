@@ -159,7 +159,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
     if (modulation && modulationStored) {
         const auto destination =
             core::state::modulation::projectControlDestination(address);
-        const auto& graph = source.pages.control.authored.modulation;
+        const auto& graph = source.pages.control.authored().modulation;
         const auto rows = menu::buildMacroModulationRows(graph, destination);
         const int row = std::clamp(
             static_cast<int>(source.macroEdit.modulationFocusedRow.get()),

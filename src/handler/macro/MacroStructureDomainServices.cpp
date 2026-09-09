@@ -70,18 +70,6 @@ FLASHMEM void persistConfigChange(StateRefs state, Operations operations) {
     markProjectMutated(operations);
 }
 
-FLASHMEM bool clearAutomationForPage(
-    core::state::modulation::ProjectControlState& control,
-    uint8_t track,
-    uint8_t page
-) {
-    return structure_automation_ops::clearPages(
-        control,
-        track,
-        structure_slots::slotBit(page)
-    );
-}
-
 FLASHMEM void clearManualForPage(StateRefs state, uint8_t track, uint8_t page) {
     (void)state.macroUi.manualOverrides.clearPage(track, page);
 }
@@ -100,16 +88,16 @@ FLASHMEM bool hasActiveProjectModulation(
     const auto destination =
         core::state::modulation::projectControlDestination(address);
     for (uint16_t index = 0;
-         index < control.authored.modulation.outputBindingCount;
+         index < control.authored().modulation.outputBindingCount;
          ++index) {
-        const auto& binding = control.authored.modulation.outputBindings[index];
+        const auto& binding = control.authored().modulation.outputBindings[index];
         if (binding.destination != destination ||
             (binding.flags &
              core::state::modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U) {
             continue;
         }
         const auto* source = core::state::modulation::findProjectModulator(
-            control.authored.modulation,
+            control.authored().modulation,
             binding.sourceId
         );
         if (source != nullptr &&
@@ -275,31 +263,30 @@ FLASHMEM bool MacroStructureDomainServices::resetPageContent(uint8_t pageIndex) 
     }
     if (!pages_->activeTrackData().isPageEnabled(pageIndex)) return false;
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         pages_->currentActiveTrack()
     );
     if (!historyChange) return false;
 
-    flushMutationCoalescing(operations_);
-    if (!clearAutomationForPage(
-            pages_->control,
+    auto& candidate = *historyChange->pageStructure;
+    if (!structure_automation_ops::clearPagesInDomain(
+            *candidate.control.candidate(),
             pages_->currentActiveTrack(),
-            pageIndex
+            structure_slots::slotBit(pageIndex)
         )) {
         return false;
     }
-    pages_->activeTrackData().pages[pageIndex].initDefault(pageIndex);
+    candidate.afterTrack.pages[pageIndex].initDefault(pageIndex);
+    if (!history_->commitPreparedPageStructure(*pages_, std::move(historyChange))) return false;
+    flushMutationCoalescing(operations_);
     clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), pageIndex);
     if (pages_->currentActivePage() == pageIndex) {
         pages_->setActivePage(pageIndex);
         syncActivePagePresentation(stateRefs_());
     }
     persistConfigChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
-        *pages_,
-        std::move(historyChange)
-    );
+    return true;
 }
 
 FLASHMEM bool MacroStructureDomainServices::resetTrackContent(uint8_t trackIndex) const {
@@ -320,31 +307,29 @@ FLASHMEM bool MacroStructureDomainServices::pastePage(
         return false;
     }
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         pages_->currentActiveTrack()
     );
     if (!historyChange) return false;
 
-    flushMutationCoalescing(operations_);
-    if (!structure_automation_ops::replacePageFromClipboard(
-        pages_->control,
+    auto& candidate = *historyChange->pageStructure;
+    if (!structure_automation_ops::replacePageFromClipboardInDomain(
+        *candidate.control.candidate(),
         pages_->currentActiveTrack(),
         pageIndex,
         automation
     )) {
         return false;
     }
+    candidate.afterTrack.pages[pageIndex] = pageData;
+    candidate.afterTrack.setPageEnabled(pageIndex, true);
+    candidate.afterTrack.activePage = pageIndex;
+    if (!history_->commitPreparedPageStructure(*pages_, std::move(historyChange))) return false;
+    flushMutationCoalescing(operations_);
     clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), pageIndex);
-    pages_->activeTrackData().pages[pageIndex] = pageData;
-    pages_->activeTrackData().setPageEnabled(pageIndex, true);
-    pages_->syncActiveTrackCache();
-    pages_->setActivePage(pageIndex);
     finalizeStructureChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
-        *pages_,
-        std::move(historyChange)
-    );
+    return true;
 }
 
 FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
@@ -352,7 +337,9 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
     const core::state::MacroPageSelectionPastePlan& plan
 ) const {
     if (history_ == nullptr || !plan.canCommit() ||
-        !clipboard.hasMacroPageSelection()) {
+        !clipboard.hasMacroPageSelection() ||
+        plan.count > plan.entries.size() ||
+        plan.firstDestinationPage >= plan.requiredPageCount) {
         return false;
     }
     const auto& source = *clipboard.macroPageSelection;
@@ -364,14 +351,12 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
         return false;
     }
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         track
     );
-    auto pendingControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >(pages_->control.authored);
-    if (!historyChange || !pendingControl) return false;
+    if (!historyChange) return false;
+    auto* pendingControl = historyChange->pageStructure->control.candidate();
 
     const uint8_t previousPageCount = static_cast<uint8_t>(
         structure_slots::countEnabled(
@@ -426,7 +411,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
         return false;
     }
 
-    auto pendingTrack = pages_->tracks[track];
+    auto& pendingTrack = historyChange->pageStructure->afterTrack;
     for (uint8_t page = previousPageCount;
          page < plan.requiredPageCount;
          ++page) {
@@ -441,12 +426,8 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
         structure_slots::prefixMask(plan.requiredPageCount);
     pendingTrack.activePage = plan.firstDestinationPage;
 
+    if (!history_->commitPreparedPageStructure(*pages_, std::move(historyChange))) return false;
     flushMutationCoalescing(operations_);
-    pages_->control.authored = *pendingControl;
-    pages_->control.markAuthoredMutation();
-    pages_->tracks[track] = pendingTrack;
-    pages_->syncActiveTrackCache();
-    pages_->setActivePage(plan.firstDestinationPage);
     for (uint8_t page = previousPageCount;
          page < plan.requiredPageCount;
          ++page) {
@@ -460,10 +441,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
         );
     }
     finalizeStructureChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
-        *pages_,
-        std::move(historyChange)
-    );
+    return true;
 }
 
 FLASHMEM bool MacroStructureDomainServices::copyTrackSelection(
@@ -548,31 +526,27 @@ FLASHMEM bool MacroStructureDomainServices::createNextPage() const {
     if (nextPage < 0) return false;
 
     const uint8_t index = static_cast<uint8_t>(nextPage);
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         pages_->currentActiveTrack()
     );
     if (!historyChange) return false;
-    flushMutationCoalescing(operations_);
-    if (!clearAutomationForPage(
-            pages_->control,
+    auto& candidate = *historyChange->pageStructure;
+    if (!structure_automation_ops::clearPagesInDomain(
+            *candidate.control.candidate(),
             pages_->currentActiveTrack(),
-            index
+            structure_slots::slotBit(index)
         )) {
         return false;
     }
-    pages_->activeTrackData().pages[index].initEmpty(index);
+    candidate.afterTrack.pages[index].initEmpty(index);
+    candidate.afterTrack.setPageEnabled(index, true);
+    candidate.afterTrack.activePage = index;
+    if (!history_->commitPreparedPageStructure(*pages_, std::move(historyChange))) return false;
+    flushMutationCoalescing(operations_);
     clearManualForPage(stateRefs_(), pages_->currentActiveTrack(), index);
-    applyPageStructureMutation(
-        stateRefs_(),
-        operations_,
-        static_cast<uint16_t>(enabledMask | structure_slots::slotBit(index)),
-        index
-    );
-    return history_->commitPreparedPageStructureSnapshot(
-        *pages_,
-        std::move(historyChange)
-    );
+    finalizeStructureChange(stateRefs_(), operations_);
+    return true;
 }
 
 FLASHMEM bool MacroStructureDomainServices::createTrack(uint8_t trackIndex) const {
@@ -791,21 +765,14 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
         return false;
     }
 
-    auto historyChange = history_->preparePageStructureSnapshot(
+    auto historyChange = history_->preparePageStructure(
         *pages_,
         plan.targetTrack
     );
-    if (!historyChange || !historyChange->pageStructure ||
-        !historyChange->pageStructure->beforeControl ||
-        !historyChange->pageStructure->afterControl) {
-        return false;
-    }
-    auto& historyPayload = *historyChange->pageStructure;
-    auto pendingTrack = pages_->tracks[plan.targetTrack];
-    auto& pendingDomain = *historyPayload.afterControl;
-    pendingDomain = pages_->control.authored;
+    if (!historyChange) return false;
+    auto& pendingTrack = historyChange->pageStructure->afterTrack;
+    auto& pendingDomain = *historyChange->pageStructure->control.candidate();
 
-    flushMutationCoalescing(operations_);
     if (plan.createPageMask != 0U) {
         if (!structure_automation_ops::clearPagesInDomain(
                 pendingDomain,
@@ -854,23 +821,20 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
     );
     const bool trackChanged =
         std::memcmp(
-            &historyPayload.beforeTrack,
+            &pages_->tracks[plan.targetTrack],
             &pendingTrack,
             sizeof(pendingTrack)
         ) != 0;
     const bool controlChanged =
         std::memcmp(
-            historyPayload.beforeControl.get(),
+            &pages_->control.authored(),
             &pendingDomain,
             sizeof(pendingDomain)
         ) != 0;
     if (!trackChanged && !controlChanged) return true;
 
-    pages_->control.authored = pendingDomain;
-    pages_->control.markAuthoredMutation();
-    pages_->tracks[plan.targetTrack] = pendingTrack;
-    pages_->syncActiveTrackCache();
-    pages_->setActivePage(pendingTrack.activePage);
+    if (!history_->commitPreparedPageStructure(*pages_, std::move(historyChange))) return false;
+    flushMutationCoalescing(operations_);
 
     for (uint8_t page = plan.existingPageCount;
          page < plan.requiredPageCount;
@@ -889,10 +853,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
         );
     }
     finalizeStructureChange(stateRefs_(), operations_);
-    return history_->commitPreparedPageStructureSnapshot(
-        *pages_,
-        std::move(historyChange)
-    );
+    return true;
 }
 
 }  // namespace core::handler

@@ -1,0 +1,33 @@
+# UX workflow: remove the last Clip without removing its Track.
+# Purpose: proves an enabled Track may remain empty and immediately accept a
+# new Clip after the resident Clip has been removed through the guarded action.
+# Expect: capture_changed:last_clip=launcher_ready
+# Expect: capture_changed:clip_selected=last_clip
+# Expect: capture_changed:clip_removed=clip_selected
+# Expect: capture_changed:create_action=clip_removed
+# Expect: semantic:clip_removed:effect=remove_clip, semantic:clip_removed:outcome=applied
+# Expect: semantic:create_action:effect=open_slot_actions, semantic:create_action:value_label=create_clip
+
+0 scenario clip-launcher
+100 capture screen launcher_ready
+
+# Enter row 1, then traverse to Track 4 in one coalesced horizontal event.
+220 button NAV down
+300 encoder NAV 0.01
+380 encoder NAV 0.03
+460 button NAV up
+580 capture screen last_clip
+
+# Select and confirm the guarded destructive action.
+680 button NAV down
+1740 tick
+1800 capture screen clip_selected
+1880 button NAV up
+1980 button BOTTOM_LEFT down
+3040 tick
+3120 capture screen clip_removed
+3200 button BOTTOM_LEFT up
+
+# The same cell is now an active empty destination, not a removed Track.
+3300 tap NAV 60
+3500 capture screen create_action

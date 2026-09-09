@@ -1709,7 +1709,7 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
     constexpr auto owner = core::state::sequencer::SequencerPreparedPatternEditOwner::StepContent;
     const auto descriptor = stepEditDescriptor(step);
     const auto payloadPlan =
-        core::state::sequencer::graphView(sequencer_.pattern) == nullptr
+        core::state::sequencer::graphView(sequencer_.pattern()) == nullptr
             ? core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullWithProspectiveGraph
             : core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload;
     if (!beginPreparedPatternMutation(owner, step, payloadPlan, descriptor, true)) { return; }

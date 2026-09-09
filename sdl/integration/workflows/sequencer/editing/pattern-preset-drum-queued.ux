@@ -9,24 +9,33 @@
 
 0 scenario drum-sequencer
 
-# Create Track 2 as a General MIDI Drum Track and author a visible phrase.
-150 button NAV down
-210 encoder NAV -1
-270 button NAV up
-330 tap LEFT_CENTER 60
-1530 encoder NAV 1
-1830 tap NAV 60
-2300 encoder NAV 1
-2650 tap NAV 60
-3100 encoder NAV 1
+# Create Track 2 as a General MIDI Drum Track from the Clip Launcher's add
+# header, then author a visible phrase.
+150 tap LEFT_TOP 60
+500 encoder NAV -0.01
+620 button LEFT_CENTER down
+700 encoder NAV 0.01
+780 button LEFT_CENTER up
+1530 tap NAV 60
+1830 encoder NAV 0.01
+2300 tap NAV 60
+3100 encoder NAV 0.01
 3450 tap NAV 60
+
+# Lane scope owns authoring and Lane movement.
+4100 button NAV down
+4160 encoder NAV 0.01
+4220 button NAV up
 4350 tap MACRO_1 60
 4550 tap MACRO_5 60
-5000 encoder NAV 1
+5000 encoder NAV 0.01
 5150 tap MACRO_3 60
 5350 tap MACRO_7 60
 
-# Open Factory > House > Four on the floor through the Lane Editor hold path.
+# Return to Pattern and open Factory > House > Four on the floor through its editor.
+5450 button NAV down
+5510 encoder NAV -0.01
+5570 button NAV up
 5650 tap NAV 60
 5900 button NAV down
 7000 tick

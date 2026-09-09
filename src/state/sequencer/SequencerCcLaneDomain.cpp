@@ -505,35 +505,6 @@ FLASHMEM bool trimSequencerCcLaneBank(
     return changed;
 }
 
-FLASHMEM bool duplicateSequencerCcLaneBankRange(
-    SequencerCcLaneBank& bank,
-    uint8_t sourceStart,
-    uint8_t targetStart,
-    uint8_t count
-) {
-    if (count == 0U ||
-        static_cast<uint16_t>(sourceStart) + count > SequencerCcLaneBank::MAX_STEPS ||
-        static_cast<uint16_t>(targetStart) + count > SequencerCcLaneBank::MAX_STEPS) {
-        return false;
-    }
-
-    bool changed = false;
-    for (auto& lane : bank.lanes) {
-        if (!lane.occupied) continue;
-        const SequencerCcLane source = lane;
-        for (uint16_t offset = 0; offset < count; ++offset) {
-            changed = assignLaneStepFrom(
-                lane,
-                static_cast<uint8_t>(targetStart + offset),
-                source,
-                static_cast<uint8_t>(sourceStart + offset)
-            ) || changed;
-        }
-    }
-    if (changed) ++bank.revision;
-    return changed;
-}
-
 FLASHMEM bool rotateSequencerCcLaneBank(
     SequencerCcLaneBank& bank,
     uint8_t contentLength,

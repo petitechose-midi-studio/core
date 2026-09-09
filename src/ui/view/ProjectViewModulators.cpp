@@ -62,7 +62,7 @@ void ProjectView::populateModulatorRow(
         return;
     }
     const auto* source = core::state::modulation::findProjectModulator(
-        self->state_refs_.pages.control.authored.modulation,
+        self->state_refs_.pages.control.authored().modulation,
         self->state_refs_.navigation.selectedModulator
     );
     if (source) {
@@ -80,7 +80,7 @@ void ProjectView::renderModulators() {
     using core::state::project::ProjectNodeId;
     const auto node = state_refs_.navigation.currentNode.get();
     const auto& control = state_refs_.pages.control;
-    const auto& graph = control.authored.modulation;
+    const auto& graph = control.authored().modulation;
     const bool pickerCreating =
         node == ProjectNodeId::MODULATOR_DESTINATION_PICKER &&
         state_refs_.navigation.creatingModulatorSource;
@@ -110,6 +110,7 @@ void ProjectView::renderModulators() {
         : core::state::modulation::
               ProjectModulatorSourceSessionDescriptor{};
     if (sourceWorkspace) {
+        selectContent(modulator_workspace_->getElement());
         modulator_registry_->render({.visible = false});
         core::ui::project::ProjectModulatorWorkspaceProps workspaceProps{};
         if (source != nullptr && sourceSession.valid()) {
@@ -134,11 +135,14 @@ void ProjectView::renderModulators() {
                 .selectedIndex = state_refs_.navigation.focusedRow.get(),
             };
         }
-        modulator_workspace_->render(workspaceProps);
+        // Strips participate in the parent's flex layout. Set their visibility
+        // before the workspace reads its viewport, as for the other Project pages.
         renderModulatorActionStrips(workspaceProps.source);
+        modulator_workspace_->render(workspaceProps);
         return;
     }
     modulator_workspace_->render({.visible = false});
+    selectContent(modulator_registry_->getElement());
 
     char meta[48]{};
     const auto guard = state_refs_.navigation.modulatorGuard.get();
@@ -412,7 +416,7 @@ void ProjectView::renderModulatorActionStrips(
              core::state::project::ProjectNodeId::MODULATOR_TRIGGER);
     const auto* binding = destinations && source
         ? core::state::project::modulators::sourceBindingAtOrdinal(
-              state_refs_.pages.control.authored.modulation,
+              state_refs_.pages.control.authored().modulation,
               source->id,
               state_refs_.navigation.focusedRow.get()
           )
@@ -467,7 +471,7 @@ void ProjectView::renderModulatorActionStrips(
                 ContextActionStripTone::NEUTRAL
             );
         } else if (core::ui::project::modulators::sourceDestinationCount(
-                       state_refs_.pages.control.authored.modulation,
+                       state_refs_.pages.control.authored().modulation,
                        source->id
                    ) > 1U) {
             bottom.slots[2] = makeStandaloneIconStripSlot(

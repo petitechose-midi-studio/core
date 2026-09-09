@@ -17,7 +17,7 @@ FLASHMEM bool capturePageClipboard(
     const uint8_t start = static_cast<uint8_t>(
         page * core::state::sequencer::SequencerState::STEPS_PER_PAGE
     );
-    const uint8_t len = sequencer.pattern.length.get();
+    const uint8_t len = sequencer.pattern().length.get();
     const uint8_t count = (start >= len)
         ? 0
         : static_cast<uint8_t>(std::min<uint16_t>(
@@ -31,12 +31,12 @@ FLASHMEM bool capturePageClipboard(
     clipboard.count = count;
     for (uint8_t i = 0; i < count; ++i) {
         const uint8_t step = static_cast<uint8_t>(start + i);
-        clipboard.note[i] = sequencer.pattern.note[step];
-        clipboard.velocity[i] = sequencer.pattern.velocity[step];
-        clipboard.gate[i] = sequencer.pattern.gate[step];
-        clipboard.nudge[i] = sequencer.pattern.nudge[step];
-        clipboard.probability[i] = sequencer.pattern.probability[step];
-        if (sequencer.pattern.isEnabled(step)) {
+        clipboard.note[i] = sequencer.pattern().note[step];
+        clipboard.velocity[i] = sequencer.pattern().velocity[step];
+        clipboard.gate[i] = sequencer.pattern().gate[step];
+        clipboard.nudge[i] = sequencer.pattern().nudge[step];
+        clipboard.probability[i] = sequencer.pattern().probability[step];
+        if (sequencer.pattern().isEnabled(step)) {
             clipboard.enabledMask |= static_cast<uint8_t>(1U << i);
         }
     }

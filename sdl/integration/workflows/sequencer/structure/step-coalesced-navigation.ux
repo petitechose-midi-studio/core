@@ -1,0 +1,40 @@
+# Purpose: preserve page selection identity and apply grouped step detents.
+# A grouped turn must move all detents without publishing intermediate focuses.
+# Expect: semantic:page_selected:mode=sequencer.pattern_selection, semantic:page_selected:target=pattern, semantic:page_selected:target_index=1, semantic:page_selected:target_mask=2
+# Expect: semantic:wrapped_back:target_step=14, semantic:wrapped_back:target_page=1
+# Expect: semantic:wrapped_forward:target_step=0, semantic:wrapped_forward:target_page=0
+# Expect: semantic:selection_forward:mode=sequencer.step_selection, semantic:selection_forward:target_step=3
+# Expect: semantic:selection_wrapped_back:mode=sequencer.step_selection, semantic:selection_wrapped_back:target_step=1, semantic:selection_wrapped_back:target_page=0
+
+0 scenario sequencer
+# Author the two-page fixture explicitly; the default Pattern has only 8 steps.
+100 button LEFT_CENTER down
+200 encoder_value OPT 0.11811024
+400 button LEFT_CENTER up
+750 button NAV down
+1800 tick
+1850 button NAV up
+2000 encoder NAV 0.01
+2150 tap NAV 60
+2350 capture screen page_selected
+2450 tap LEFT_TOP 60
+2650 tap LEFT_TOP 60
+
+# Return to the first page, then enter Step focus.
+2850 encoder NAV -0.01
+3000 button NAV down
+3060 encoder NAV 0.01
+3120 button NAV up
+3300 encoder NAV -0.18
+3500 capture screen wrapped_back
+3600 encoder NAV 0.02
+3800 capture screen wrapped_forward
+
+# Selection can target all 128 slots; test a negative turn larger than the bank.
+3900 button NAV down
+4950 tick
+5000 button NAV up
+5150 encoder NAV 0.03
+5350 capture screen selection_forward
+5450 encoder NAV -1.30
+5650 capture screen selection_wrapped_back

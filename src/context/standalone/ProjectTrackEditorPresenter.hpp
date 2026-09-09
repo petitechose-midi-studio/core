@@ -8,6 +8,7 @@
 #include "state/project/ProjectTrackEditorState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
+#include "ui/interaction/TextKeyboardView.hpp"
 #include "ui/project/ProjectTrackEditorOverlay.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 
@@ -26,6 +27,7 @@ public:
     ProjectTrackEditorPresenter(
         StateRefs state,
         core::ui::project::ProjectTrackEditorOverlay& overlay,
+        core::ui::interaction::TextKeyboardView& keyboard,
         core::ui::ContextActionStrip& actionStrip
     );
 
@@ -46,6 +48,7 @@ private:
 
     StateRefs state_;
     core::ui::project::ProjectTrackEditorOverlay& overlay_;
+    core::ui::interaction::TextKeyboardView& keyboard_;
     core::ui::ContextActionStrip& action_strip_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
     std::array<char, 24> route_{};

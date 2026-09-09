@@ -88,7 +88,7 @@ FLASHMEM void MacroStructureWorkflow::setNavigationFocus(
 }
 
 FLASHMEM void MacroStructureWorkflow::moveByFocus(float delta) {
-    switch (navigation_focus_.get()) {
+    switch (effectiveFocus()) {
         case core::state::StructureNavigationFocus::TRACK:
             moveTrack(delta);
             return;

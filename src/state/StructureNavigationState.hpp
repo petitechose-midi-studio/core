@@ -12,7 +12,8 @@ enum class StructureNavigationFocus : uint8_t {
     PAGE = 0,
     TRACK = 1,
     STEP = 2,
-    COUNT = 3,
+    LANE = 3,
+    COUNT = 4,
 };
 
 enum class StructureHoldAction : uint8_t {

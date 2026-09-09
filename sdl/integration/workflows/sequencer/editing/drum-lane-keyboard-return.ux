@@ -1,0 +1,34 @@
+# Purpose: the hidden lane keyboard still opens from the shared editor and
+# returns through Identity to the lane overview after assembled-layout warmup.
+# Expect: semantic:lane_root:mode=sequencer.drum_lane_edit
+# Expect: semantic:identity:effect=enter_drum_lane_identity
+# Expect: semantic:keyboard:effect=enter_drum_lane_text_edit
+# Expect: semantic:overview:effect=apply_drum_lane_draft
+# Expect: capture_changed:identity=keyboard, capture_changed:keyboard=overview
+
+0 scenario drum-sequencer
+150 tap LEFT_TOP 60
+500 encoder OPT -0.01
+700 encoder NAV 0.01
+1530 tap NAV 60
+1830 encoder NAV 0.01
+2300 tap NAV 60
+2650 encoder NAV 0.01
+3450 tap NAV 60
+
+# Pattern -> Lane; open the editor, then Identity -> Name.
+4250 button NAV down
+4310 encoder NAV 0.01
+4370 button NAV up
+5000 encoder NAV 0.01
+5800 tap NAV 60
+6150 capture screen lane_root
+6300 encoder NAV 0.01
+6450 encoder NAV 0.01
+6600 tap NAV 60
+6900 capture screen identity
+7050 tap NAV 60
+7350 capture screen keyboard
+7500 tap LEFT_TOP 60
+8000 tap BOTTOM_RIGHT 60
+8500 capture screen overview

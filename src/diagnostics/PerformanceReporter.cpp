@@ -29,6 +29,12 @@ PerformanceReporter& performanceReporter() {
 }
 
 void PerformanceReporter::begin() {
+    if (!metrics_) metrics_ = core::app::makeExtmemUniqueCold<Metrics>();
+    if (!reportingMetrics_) reportingMetrics_ = core::app::makeExtmemUniqueCold<Metrics>();
+    if (!metrics_ || !reportingMetrics_) {
+        OC_LOG_WARN("[Perf] disabled: PSRAM histogram allocation failed");
+        return;
+    }
     resetAll_();
     oc::diagnostics::setPerformanceSink(this, receive_);
 }
@@ -38,15 +44,19 @@ void PerformanceReporter::end() {
     resetAll_();
 }
 
-void PerformanceReporter::update(uint32_t nowMs) {
+void PerformanceReporter::update(uint32_t nowMs, bool playbackActive) {
+    if (!metrics_ || !reportingMetrics_) return;
+    OC_PERF_SCOPE(perfUpdate, "diagnostics.update");
     drain_();
     if (windowStartedAtMs_ == 0) {
         windowStartedAtMs_ = nowMs;
     } else if (
         static_cast<uint32_t>(nowMs - windowStartedAtMs_) >=
-        REPORT_INTERVAL_MS
+        REPORT_INTERVAL_MS && reportPosition_ == reportCount_ &&
+        reportDroppedSamples_ == 0U && reportDroppedMetrics_ == 0U &&
+        !hasPendingDroppedPeaks_()
     ) {
-        report_(nowMs);
+        freezeWindow_(nowMs);
     }
     if (lastMemoryReportAtMs_ == 0U) {
         lastMemoryReportAtMs_ = nowMs;
@@ -54,11 +64,26 @@ void PerformanceReporter::update(uint32_t nowMs) {
         static_cast<uint32_t>(nowMs - lastMemoryReportAtMs_) >=
         MEMORY_REPORT_INTERVAL_MS
     ) {
-        // This deliberately slow snapshot is kept outside measured scopes and
-        // infrequent enough not to dominate interaction profiling.
-        logMemoryFootprint("runtime-window");
+        pendingMemorySections_ =
+            (1U << static_cast<uint8_t>(MemoryReportSection::COUNT)) - 1U;
         lastMemoryReportAtMs_ = nowMs;
     }
+    // Return to the application (and USB service) after at most one log line.
+    // Memory sections are also spread out, never added to a performance line.
+    for (uint8_t index = 0; index < static_cast<uint8_t>(MemoryReportSection::COUNT); ++index) {
+        const auto section = static_cast<MemoryReportSection>(index);
+        const uint8_t bit = 1U << index;
+        if ((pendingMemorySections_ & bit) == 0U) continue;
+        // lv_mem_monitor walks every LVGL allocation; its report reached 7.65 ms.
+        // Defer this request until stopped; other memory sections stay live.
+        // Never present a stale LVGL snapshot as current.
+        if (playbackActive && section == MemoryReportSection::LVGL) continue;
+        pendingMemorySections_ &= static_cast<uint8_t>(~bit);
+        OC_PERF_SCOPE(perfMemory, "diagnostics.memory-line");
+        logMemoryFootprintSection("runtime-window", section);
+        return;
+    }
+    reportNext_();
 }
 
 void PerformanceReporter::receive_(
@@ -72,12 +97,44 @@ void PerformanceReporter::enqueue_(const oc::diagnostics::PerformanceSample& sam
     oc::realtime::InterruptGuard lock;
     if (sampleCount_ >= samples_.size()) {
         ++droppedSamples_;
+        retainDroppedPeak_(sample);
         return;
     }
 
     samples_[sampleTail_] = sample;
     sampleTail_ = (sampleTail_ + 1U) % samples_.size();
     ++sampleCount_;
+}
+
+// Caller holds the producer lock. No logging, allocation or histogram work.
+// Separate intervals from durations so USB starvation does not hide the
+// execution span that may explain it.
+void PerformanceReporter::retainDroppedPeak_(const oc::diagnostics::PerformanceSample& sample) {
+    const char* label = sample.label ? sample.label : "<unnamed>";
+    PeakDomain domain = PeakDomain::OTHER;
+    if (std::strcmp(label, "midi.usb-service-gap") == 0 ||
+        std::strcmp(label, "midi.usb-queue-age") == 0) {
+        domain = PeakDomain::USB_INTERVAL;
+    } else if (std::strncmp(label, "diagnostics.", 12U) == 0 &&
+               std::strcmp(label, "diagnostics.update") != 0) {
+        domain = PeakDomain::REPORTER;
+    } else if (std::strncmp(label, "display.", 8U) == 0) {
+        domain = PeakDomain::DISPLAY_WORK;
+    } else if ((std::strncmp(label, "main.", 5U) == 0 &&
+                std::strcmp(label, "main.loop") != 0) ||
+               std::strncmp(label, "app.", 4U) == 0) {
+        domain = PeakDomain::FOREGROUND;
+    } else if (std::strcmp(label, "sequencer.playback-cc") == 0) {
+        domain = PeakDomain::CC;
+    } else if (std::strncmp(label, "sequencer.timer", 15U) == 0 ||
+               std::strncmp(label, "sequencer.playback", 18U) == 0) {
+        domain = PeakDomain::TIMER;
+    }
+    auto& peak = droppedPeaks_[static_cast<size_t>(domain)];
+    if (!peak.label || sample.elapsedUs > peak.elapsedUs) {
+        peak = sample;
+        peak.label = label;
+    }
 }
 
 bool PerformanceReporter::dequeue_(oc::diagnostics::PerformanceSample& sample) {
@@ -94,16 +151,23 @@ uint32_t PerformanceReporter::takeDroppedSamples_() {
     oc::realtime::InterruptGuard lock;
     const uint32_t dropped = droppedSamples_;
     droppedSamples_ = 0;
+    reportDroppedPeaks_ = droppedPeaks_;
+    droppedPeaks_ = {};
     return dropped;
 }
 
 void PerformanceReporter::drain_() {
+    OC_PERF_SCOPE(perfDrain, "diagnostics.drain");
     oc::diagnostics::PerformanceSample sample{};
     size_t drained = 0;
     while (drained < MAX_DRAIN_PER_UPDATE && dequeue_(sample)) {
         ++drained;
         auto* metric = findOrCreateMetric_(sample.label);
-        if (metric == nullptr) continue;
+        if (metric == nullptr) {
+            oc::realtime::InterruptGuard lock;
+            retainDroppedPeak_(sample);
+            continue;
+        }
 
         const bool first = metric->samples == 0U;
         ++metric->samples;
@@ -130,19 +194,24 @@ PerformanceReporter::MetricWindow* PerformanceReporter::findOrCreateMetric_(
     const char* label
 ) {
     const char* effectiveLabel = label != nullptr ? label : "<unnamed>";
+    // Most producers reuse a static label pointer. Do not walk PSRAM histogram
+    // headers and strcmp every preceding label for every incoming sample.
     for (size_t index = 0; index < metricCount_; ++index) {
-        auto& metric = metrics_[index];
-        if (metric.label == effectiveLabel || std::strcmp(metric.label, effectiveLabel) == 0) {
-            return &metric;
-        }
+        if (metricLabels_[index] == effectiveLabel) return &(*metrics_)[index];
+    }
+    // Equal labels from distinct translation units still share one histogram.
+    for (size_t index = 0; index < metricCount_; ++index) {
+        if (std::strcmp(metricLabels_[index], effectiveLabel) == 0)
+            return &(*metrics_)[index];
     }
 
-    if (metricCount_ >= metrics_.size()) {
+    if (metricCount_ >= metrics_->size()) {
         ++droppedMetrics_;
         return nullptr;
     }
 
-    auto& metric = metrics_[metricCount_++];
+    metricLabels_[metricCount_] = effectiveLabel;
+    auto& metric = (*metrics_)[metricCount_++];
     metric = {};
     metric.label = effectiveLabel;
     return &metric;
@@ -201,6 +270,8 @@ uint32_t PerformanceReporter::percentileUs_(
 bool PerformanceReporter::alwaysReport_(const char* label) {
     if (label == nullptr) return false;
     return std::strncmp(label, "memory.", 7U) == 0 ||
+        std::strncmp(label, "diagnostics.", 12U) == 0 ||
+        std::strcmp(label, "display.lvgl.frame-deferred") == 0 ||
         std::strncmp(label, "display.ili9341.", 16U) == 0 ||
         std::strncmp(label, "midi.cc.global", 14U) == 0 ||
         std::strncmp(label, "midi.queue.", 11U) == 0 ||
@@ -208,14 +279,17 @@ bool PerformanceReporter::alwaysReport_(const char* label) {
         std::strncmp(label, "macro.take.commit.", 18U) == 0 ||
         std::strncmp(label, "persistence.project-codec.", 26U) == 0 ||
         std::strncmp(label, "persistence.project-control.", 28U) == 0 ||
-        std::strcmp(label, "sequencer.timer") == 0 ||
+        std::strncmp(label, "sequencer.timer", 15U) == 0 ||
+        std::strncmp(label, "sequencer.playback", 18U) == 0 ||
+        std::strcmp(label, "sequencer.clip-apply") == 0 ||
+        std::strncmp(label, "midi.usb-", 9U) == 0 ||
         std::strstr(label, "reject") != nullptr ||
         std::strstr(label, "overflow") != nullptr;
 }
 
-void PerformanceReporter::reportMetric_(const MetricWindow& metric) {
+void PerformanceReporter::reportMetric_(const MetricWindow& metric, uint32_t windowEndMs) {
     OC_LOG_INFO(
-        "[Perf] {} samples={} avg={}us p50<={}us p95<={}us p99<={}us max={}us unitA(avg/min/max)={}/{}/{} unitB(avg/min/max)={}/{}/{}",
+        "[Perf] {} samples={} avg={}us p50<={}us p95<={}us p99<={}us max={}us unitA(avg/min/max)={}/{}/{} unitB(avg/min/max)={}/{}/{} windowEnd={}ms",
         metric.label,
         metric.samples,
         static_cast<uint32_t>(metric.totalUs / metric.samples),
@@ -228,41 +302,74 @@ void PerformanceReporter::reportMetric_(const MetricWindow& metric) {
         metric.maxUnitA,
         static_cast<uint32_t>(metric.totalUnitB / metric.samples),
         metric.minUnitB,
-        metric.maxUnitB
+        metric.maxUnitB,
+        windowEndMs
     );
 }
 
-void PerformanceReporter::report_(uint32_t nowMs) {
-    const uint32_t droppedSamples = takeDroppedSamples_();
-    std::array<size_t, METRIC_CAPACITY> indices{};
+void PerformanceReporter::freezeWindow_(uint32_t nowMs) {
+    OC_PERF_SCOPE(perfFreeze, "diagnostics.freeze");
+    reportDroppedSamples_ = takeDroppedSamples_();
+    reportDroppedMetrics_ = droppedMetrics_;
+    reportWindowEndMs_ = nowMs;
     size_t activeCount = 0;
     for (size_t index = 0; index < metricCount_; ++index) {
-        if (metrics_[index].samples > 0) indices[activeCount++] = index;
+        if ((*metrics_)[index].samples > 0) {
+            reportIndices_[activeCount++] = static_cast<uint8_t>(index);
+        }
     }
 
-    std::sort(indices.begin(), indices.begin() + activeCount, [this](size_t lhs, size_t rhs) {
-        return metrics_[lhs].maxUs > metrics_[rhs].maxUs;
+    std::sort(reportIndices_.begin(), reportIndices_.begin() + activeCount, [this](size_t lhs, size_t rhs) {
+        return (*metrics_)[lhs].maxUs > (*metrics_)[rhs].maxUs;
     });
 
-    const size_t reportCount = std::min(activeCount, MAX_REPORTED_METRICS);
-    for (size_t order = 0; order < reportCount; ++order) {
-        reportMetric_(metrics_[indices[order]]);
+    reportCount_ = std::min(activeCount, MAX_REPORTED_METRICS);
+    for (size_t order = reportCount_; order < activeCount; ++order) {
+        const auto index = reportIndices_[order];
+        if (alwaysReport_((*metrics_)[index].label)) {
+            reportIndices_[reportCount_++] = index;
+        }
     }
-    for (size_t order = reportCount; order < activeCount; ++order) {
-        const auto& metric = metrics_[indices[order]];
-        if (alwaysReport_(metric.label)) reportMetric_(metric);
-    }
-
-    if (droppedSamples > 0 || droppedMetrics_ > 0) {
-        OC_LOG_WARN(
-            "[Perf] diagnostics overflow samples={} metrics={}",
-            droppedSamples,
-            droppedMetrics_
-        );
-    }
-
+    reportPosition_ = 0;
+    metrics_.swap(reportingMetrics_);
     resetMetrics_();
     windowStartedAtMs_ = nowMs;
+}
+
+bool PerformanceReporter::hasPendingDroppedPeaks_() const {
+    return std::any_of(reportDroppedPeaks_.begin(), reportDroppedPeaks_.end(),
+        [](const auto& peak) { return peak.label != nullptr; });
+}
+
+void PerformanceReporter::reportNext_() {
+    if (reportPosition_ == reportCount_ && reportDroppedSamples_ == 0 &&
+        reportDroppedMetrics_ == 0 && !hasPendingDroppedPeaks_()) return;
+    // Include overflow/peak warning writes, not just ordinary metric lines.
+    OC_PERF_SCOPE(perfReport, "diagnostics.report-line");
+    if (reportPosition_ < reportCount_) {
+        reportMetric_((*reportingMetrics_)[reportIndices_[reportPosition_++]], reportWindowEndMs_);
+        return;
+    }
+    if (reportDroppedSamples_ > 0 || reportDroppedMetrics_ > 0) {
+        OC_LOG_WARN(
+            "[Perf] diagnostics overflow samples={} metrics={} windowEnd={}ms",
+            reportDroppedSamples_,
+            reportDroppedMetrics_,
+            reportWindowEndMs_
+        );
+        reportDroppedSamples_ = 0;
+        reportDroppedMetrics_ = 0;
+        return;
+    }
+    for (auto& peak : reportDroppedPeaks_) {
+        if (!peak.label) continue;
+        OC_LOG_WARN(
+            "[Perf] diagnostics dropped-peak label={} elapsed={}us unitA={} unitB={} windowEnd={}ms",
+            peak.label, peak.elapsedUs, peak.unitA, peak.unitB, reportWindowEndMs_
+        );
+        peak = {};
+        return;
+    }
 }
 
 void PerformanceReporter::resetAll_() {
@@ -276,12 +383,19 @@ void PerformanceReporter::resetAll_() {
     resetMetrics_();
     windowStartedAtMs_ = 0;
     lastMemoryReportAtMs_ = 0;
+    reportCount_ = 0;
+    reportPosition_ = 0;
+    reportDroppedSamples_ = 0;
+    reportDroppedMetrics_ = 0;
+    reportWindowEndMs_ = 0;
+    droppedPeaks_ = {};
+    reportDroppedPeaks_ = {};
+    pendingMemorySections_ = 0;
 }
 
 void PerformanceReporter::resetMetrics_() {
-    for (size_t index = 0; index < metricCount_; ++index) {
-        metrics_[index] = {};
-    }
+    // findOrCreateMetric_ initializes each slot before reuse. Inactive slots
+    // need no second full histogram clear at the end of every window.
     metricCount_ = 0;
     droppedMetrics_ = 0;
 }

@@ -13,7 +13,7 @@
 # Move to Step focus, enable step 1, and open the Step Editor.
 150 capture screen pattern_focus
 450 button NAV down
-510 encoder NAV 1
+510 encoder NAV 0.01
 570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
@@ -24,12 +24,12 @@
 2200 button MACRO_1 up
 
 # Focus Chord and create a readable three-voice local chord.
-2300 encoder NAV 1
-2380 encoder NAV 1
-2460 encoder NAV 1
-2540 encoder NAV 1
-2620 encoder NAV 1
-2700 encoder NAV 1
+2300 encoder NAV 0.01
+2380 encoder NAV 0.01
+2460 encoder NAV 0.01
+2540 encoder NAV 0.01
+2620 encoder NAV 0.01
+2700 encoder NAV 0.01
 2900 capture screen chord_row_single
 # NAV opens the transactional semantic editor on Shape. Choose a scale-aware
 # Sus 4 shape, inspect its Formula, then set first inversion and Wide voicing.
@@ -38,17 +38,17 @@
 3400 capture screen shape_triad
 3500 encoder OPT 1.0
 3750 capture screen shape_sus4
-3850 encoder NAV 1
+3850 encoder NAV 0.01
 4050 capture screen formula_readable
 # Formula uses the same full editor grammar and must remain legible at 320x240.
 4100 tap NAV 60
 4300 capture screen formula_editor
 4400 tap LEFT_TOP 60
-4550 encoder NAV 1
+4550 encoder NAV 0.01
 4750 capture screen inversion_root
 4850 encoder OPT 1.0
 5050 capture screen inversion_first
-5150 encoder NAV 1
+5150 encoder NAV 0.01
 5350 capture screen voicing_close
 5450 encoder OPT 2.0
 5650 capture screen voicing_wide

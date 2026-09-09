@@ -14,6 +14,7 @@
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
 #include "state/sequencer/SequencerPresetLibraryActionSpec.hpp"
+#include "state/sequencer/SequencerPatternPreset.hpp"
 
 namespace core::handler {
 namespace {
@@ -59,11 +60,10 @@ FLASHMEM void managedCatalogId(
     if (out == nullptr || outSize == 0U) return;
     if (pattern.managedEntryKind == core::state::sequencer::
             SequencerPresetLibraryEntryKind::FOLDER) {
-        std::snprintf(
+        (void)core::state::sequencer::formatSequencerPatternPresetFolderId(
+            pattern.managedEntryId.data(),
             out,
-            outSize,
-            "@%s",
-            pattern.managedEntryId.data()
+            outSize
         );
     } else {
         std::snprintf(
@@ -1021,7 +1021,13 @@ SequencerPresetLibraryWorkflow::confirmTextEditing(uint32_t nowMs) {
         core::state::sequencer::
             SequencerPatternPresetLocation::MAX_FOLDER_NAME_SIZE + 2U
     ]{};
-    std::snprintf(entryId, sizeof(entryId), "@%s", editedName);
+    if (!core::state::sequencer::formatSequencerPatternPresetFolderId(
+            editedName,
+            entryId,
+            sizeof(entryId)
+        )) {
+        return blockedResult(contextual::ContextActionReason::FAILED);
+    }
     if (adapter_.enterFolder == nullptr ||
         !adapter_.enterFolder(adapter_.context, entryId)) {
         return blockedResult(contextual::ContextActionReason::FAILED);

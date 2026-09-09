@@ -17,15 +17,15 @@ namespace core::context::standalone {
 enum class ActiveViewLifecycleStep : uint8_t {
     NONE = 0,
     DEACTIVATE_MACRO,
-    DEACTIVATE_SEQUENCER,
+    DEACTIVATE_CLIPS,
     DEACTIVATE_PROJECT,
     DEACTIVATE_DEVICE_SETTINGS,
     ACTIVATE_MACRO,
-    ACTIVATE_SEQUENCER,
+    ACTIVATE_CLIPS,
     ACTIVATE_PROJECT,
     ACTIVATE_DEVICE_SETTINGS,
     SYNC_MACRO_ENCODERS,
-    SYNC_SEQUENCER_ENCODERS,
+    SYNC_CLIP_EDITOR_ENCODERS,
     SYNC_PROJECT_ENCODER,
 };
 
@@ -33,20 +33,20 @@ using ActiveViewLifecyclePlan = std::array<ActiveViewLifecycleStep, 6>;
 
 constexpr ActiveViewLifecyclePlan makeActiveViewLifecyclePlan(core::ui::ViewType activeView) {
     switch (activeView) {
-        case core::ui::ViewType::SEQUENCER:
+        case core::ui::ViewType::CLIPS:
             return {
                 ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-                ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+                ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
                 ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
                 ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
-                ActiveViewLifecycleStep::ACTIVATE_SEQUENCER,
-                ActiveViewLifecycleStep::SYNC_SEQUENCER_ENCODERS,
+                ActiveViewLifecycleStep::ACTIVATE_CLIPS,
+                ActiveViewLifecycleStep::SYNC_CLIP_EDITOR_ENCODERS,
             };
         case core::ui::ViewType::MODULATORS:
         case core::ui::ViewType::PROJECT:
             return {
                 ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-                ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+                ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
                 ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
                 ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
                 ActiveViewLifecycleStep::ACTIVATE_PROJECT,
@@ -55,7 +55,7 @@ constexpr ActiveViewLifecyclePlan makeActiveViewLifecyclePlan(core::ui::ViewType
         case core::ui::ViewType::DEVICE_SETTINGS:
             return {
                 ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-                ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+                ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
                 ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
                 ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
                 ActiveViewLifecycleStep::ACTIVATE_DEVICE_SETTINGS,
@@ -65,7 +65,7 @@ constexpr ActiveViewLifecyclePlan makeActiveViewLifecyclePlan(core::ui::ViewType
         default:
             return {
                 ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-                ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+                ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
                 ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
                 ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
                 ActiveViewLifecycleStep::ACTIVATE_MACRO,

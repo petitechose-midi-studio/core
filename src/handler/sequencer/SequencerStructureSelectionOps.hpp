@@ -30,8 +30,8 @@ uint16_t activeContentPageSelectionMask(
 core::app::ExtmemUniquePtr<
     core::state::SequencerTrackSelectionClipboard
 > captureTrackSelectionClipboard(
-    core::state::sequencer::SequencerTrackBankState& tracks,
-    core::state::sequencer::SequencerState& sequencer,
+    const core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::sequencer::SequencerState& sequencer,
     const core::state::macro::MacroPagesState& pages,
     uint16_t selectedMask
 );

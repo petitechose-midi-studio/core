@@ -213,6 +213,17 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py")
     set_tests_properties(check_ArchitectureContracts PROPERTIES LABELS core)
 
+    add_test(NAME check_CppContractMask
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-cpp-contract-mask.py")
+    set_tests_properties(check_CppContractMask PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_ExtmemLifetimeContracts
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-extmem-lifetime-contracts.py")
+    set_tests_properties(check_ExtmemLifetimeContracts PROPERTIES LABELS core)
+
     add_test(
         NAME check_SequencerHistoryInventory
         COMMAND "${Python3_EXECUTABLE}"
@@ -249,6 +260,8 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         test_ModulatorEnvelopeParameterMapping
         test_ModulatorEnvelopeTiming
         test_ModulatorLfoParameterMapping
+        test_PerformanceReporter
+        test_HardwareBenchmarkMetrics
         test_PsramSpanTracker
         test_StandaloneSequencerRuntimeGate
         test_StorageQualificationProbe
@@ -257,6 +270,7 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
 
     # Each listed contract needs only the same-named implementation below.
     set(MS_CORE_ISOLATED_TEST_SOURCES
+        src/validation/benchmark/HardwareBenchmarkRun.cpp
         src/persistence/StorageRecoveryMachine.cpp
         src/sequencer/ClockSourceSelector.cpp
         src/sequencer/ExternalClockEstimator.cpp
@@ -331,7 +345,8 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     set(MS_CORE_PERSISTENCE_IO_TESTS
         test_AtomicProductFile
         test_CoreStatePersistence
-        test_FileSystemRpc
+        test_UnifiedFileTransfer
+        test_UnifiedFileSystemRecovery
         test_ProductFileService
         test_ProjectFileStore
         test_ProjectHandler
@@ -343,7 +358,8 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
 
     set(MS_CORE_SANITIZER_BOUNDARY_TESTS
         test_AtomicProductFile
-        test_FileSystemRpc
+        test_UnifiedFileTransfer
+        test_UnifiedFileSystemRecovery
         test_SequencerCcLanePersistence)
 
     foreach(test_source IN LISTS MS_CORE_NATIVE_TESTS)
@@ -371,12 +387,34 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        if(test_name STREQUAL test_HardwareBenchmarkFixture)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/validation/benchmark/HardwareBenchmarkFixture.cpp")
+        endif()
         if(test_name STREQUAL test_StorageQualificationProbe)
             target_sources("${test_name}" PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/StorageQualificationProbe.cpp")
             target_compile_definitions("${test_name}" PRIVATE
                 MS_STORAGE_QUALIFICATION=1
                 OC_ENABLE_STATS=1)
+        endif()
+        if(test_name STREQUAL test_PerformanceReporter)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/PerformanceReporter.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/diagnostics/Performance.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/log/Log.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/time/Time.cpp")
+            target_compile_definitions("${test_name}" PRIVATE
+                OC_ENABLE_STATS=1
+                "$<TARGET_PROPERTY:midi_studio_core_native,INTERFACE_COMPILE_DEFINITIONS>")
+            target_link_libraries("${test_name}" PRIVATE ms_core_compile_warnings)
+        endif()
+        if(test_name STREQUAL test_HardwareBenchmarkMetrics)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/validation/benchmark/HardwareBenchmarkMetrics.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/diagnostics/Performance.cpp"
+                "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/time/Time.cpp")
+            target_compile_definitions("${test_name}" PRIVATE MS_HARDWARE_BENCHMARK=1 OC_ENABLE_STATS=1)
         endif()
         if(test_name STREQUAL test_ModulatorSparklineModel)
             target_include_directories("${test_name}"

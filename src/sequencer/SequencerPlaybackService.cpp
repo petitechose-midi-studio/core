@@ -124,9 +124,6 @@ void SequencerPlaybackService::handleActiveTrackSwitch_() {
 
     last_playhead_ = activeRuntimeState_().playheadStep;
     last_active_track_ = activeTrack;
-    if (drum_resolved_projection_cache_) {
-        drum_resolved_projection_cache_->invalidate();
-    }
 }
 
 FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
@@ -137,13 +134,17 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     core::state::sequencer::SequencerTrackActivationQueue* trackActivations,
     SequencerCcLaneRuntime* ccLaneRuntime,
     MidiCcGlobalFrameCoordinator* ccCoordinator,
-    SequencerCcLaneRuntime* ccPredictiveLaneRuntime
+    SequencerCcLaneRuntime* ccPredictiveLaneRuntime,
+    const SequencerRuntimeSnapshotBank* runtimeSnapshotBank,
+    core::state::sequencer::SequencerClipLaunchQueue* clipLaunches
 )
     : sequencer_(sequencer)
     , status_bar_(statusBar)
     , midi_queue_(midiQueue)
     , runtime_graph_bank_(runtimeGraphBank)
+    , runtime_snapshot_bank_(runtimeSnapshotBank)
     , track_activations_(trackActivations)
+    , clip_launches_(clipLaunches)
     , cc_lane_runtime_(ccLaneRuntime)
     , cc_predictive_lane_runtime_(ccPredictiveLaneRuntime)
     , cc_coordinator_(ccCoordinator)
@@ -229,6 +230,12 @@ void SequencerPlaybackService::update(
 ) {
     OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
     OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
+    if (clip_launches_ != nullptr && playing &&
+        ((!runtime_transport_playing_ && tick == 0U) ||
+         static_cast<int32_t>(tick - runtime_transport_tick_) < 0)) {
+        clip_launches_->resetPlaybackOriginsFromRealtime();
+    }
+    runtime_transport_playing_ = playing;
     const bool phaseClockValid = playing && tickPeriodUs != 0U && nowUs != 0U;
     if (phaseClockValid) {
         if (!runtime_tick_anchor_valid_ ||
@@ -236,11 +243,11 @@ void SequencerPlaybackService::update(
             runtime_tick_period_us_ != tickPeriodUs) {
             runtime_tick_anchor_us_ = nowUs;
         }
-        runtime_transport_tick_ = tick;
         runtime_tick_anchor_valid_ = true;
     } else {
         runtime_tick_anchor_valid_ = false;
     }
+    runtime_transport_tick_ = tick;
     for (uint8_t track = 0U; track < track_event_sinks_.size(); ++track) {
         auto& sink = track_event_sinks_[track];
         if (sink) {
@@ -257,12 +264,22 @@ void SequencerPlaybackService::update(
             );
         }
     }
-    runtime_drum_mask_ = drumSnapshot != nullptr
-        ? drumSnapshot->presentMask
-        : 0U;
+    runtime_drum_mask_ = 0U;
     for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
         const uint16_t trackBit = static_cast<uint16_t>(1U << track);
-        const bool drum = (runtime_drum_mask_ & trackBit) != 0U;
+        const auto launch = clip_launches_ != nullptr
+            ? clip_launches_->realtimeView(track)
+            : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+        using Disposition = core::state::sequencer::SequencerClipLaunchRealtimeView::Disposition;
+        const bool retained = launch.disposition == Disposition::FROZEN ||
+            (launch.disposition == Disposition::STAGED &&
+             !isClipLaunchBoundary_(launch.dueTick, tick, playing));
+        const auto* effectiveDrum = retained && runtime_snapshot_bank_ != nullptr
+            ? runtime_snapshot_bank_->drumSnapshot(launch.previousSnapshotIndex)
+            : drumSnapshot;
+        const bool drum = effectiveDrum != nullptr &&
+            (effectiveDrum->presentMask & trackBit) != 0U;
+        if (drum) runtime_drum_mask_ |= trackBit;
         if (selectTrackEngine_(track, drum) && playing && !drum) {
             runtime_resync_mask_ = static_cast<uint16_t>(
                 runtime_resync_mask_ | trackBit
@@ -314,23 +331,51 @@ void SequencerPlaybackService::update(
         return;
     }
 
+    OC_PERF_SCOPE(perfEngines, "sequencer.playback-engines");
     for (uint8_t i = 0; i < track_engines_.size(); ++i) {
+        const uint32_t localTick = playbackTick_(i, tick);
+        // Engines schedule in clip time; deadlines remain physical microseconds.
+        if (track_event_sinks_[i]) {
+            track_event_sinks_[i]->setTimeline(localTick, nowUs, tickPeriodUs,
+                projectTrackDeadlineOffsetUs(projectTracks, i, tickPeriodUs,
+                    allowPredictiveLookahead));
+        }
         auto* const trackEngine = melodicEngine_(i);
         auto* const drumEngine = drumEngine_(i);
         const uint16_t trackBit = static_cast<uint16_t>(1U << i);
         const bool trackPlaying =
             (runtime_audible_mask_ & trackBit) != 0 &&
-            track_runtime_states_[i].midiChannel <= 15U;
-        const auto* drumPattern = drumSnapshot != nullptr
-            ? drumSnapshot->patternForTrack(i)
+            track_runtime_states_[i].midiChannel <= 15U &&
+            (clip_launches_ == nullptr || !clip_launches_->stopped(i));
+        const auto clipLaunch = clip_launches_ != nullptr
+            ? clip_launches_->realtimeView(i)
+            : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+        const bool clipFrozen = clipLaunch.disposition !=
+            core::state::sequencer::SequencerClipLaunchRealtimeView::
+                Disposition::NORMAL;
+        if (clip_launches_ != nullptr && !clipFrozen) {
+            const auto& region = track_playback_regions_[i];
+            const uint16_t ticksPerStep = ccTicksPerStep_(snapshot.tracks[i]);
+            clip_launches_->setPlaybackSpanFromRealtime(i,
+                region.loopLength() * ticksPerStep,
+                region.preludeLength() * ticksPerStep);
+        }
+        const auto* trackDrumSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+            ? runtime_snapshot_bank_->drumSnapshot(
+                  clipLaunch.previousSnapshotIndex)
+            : drumSnapshot;
+        const auto* drumPattern = trackDrumSnapshot != nullptr
+            ? trackDrumSnapshot->patternForTrack(i)
             : nullptr;
         if (drumPattern != nullptr && drumEngine != nullptr) {
             drumEngine->setPattern(
                 drumPattern,
-                runtime_graph_bank_.graphForTrack(i),
+                clipFrozen
+                    ? runtime_graph_bank_.graphBeforeRetainedLaunch(i)
+                    : runtime_graph_bank_.graphForTrack(i),
                 projectTrackChannel(projectTracks, i)
             );
-            drumEngine->update(tick, trackPlaying, nowUs, tickPeriodUs);
+            drumEngine->update(localTick, trackPlaying, nowUs, tickPeriodUs);
             continue;
         }
         if (trackEngine == nullptr) continue;
@@ -341,16 +386,16 @@ void SequencerPlaybackService::update(
             allowPredictiveLookahead
         );
         if (!trackPlaying || deadlineOffsetUs >= 0) {
-            trackEngine->update(tick, trackPlaying);
+            trackEngine->update(localTick, trackPlaying);
             continue;
         }
 
         const uint32_t horizon = emissionHorizonTick(
-            tick,
+            localTick,
             deadlineOffsetUs,
             tickPeriodUs
         );
-        if (horizon < tick) {
+        if (horizon < localTick) {
             // The note engine's public horizon is still an ordered uint32_t
             // interval and cannot encode a future point across rollover. Leave
             // its already-planned Note edges untouched for this bounded lead
@@ -360,7 +405,7 @@ void SequencerPlaybackService::update(
             continue;
         }
         if (trackEngine->updateWithEmissionHorizon(
-                tick,
+                localTick,
                 horizon,
                 true
             )) {
@@ -374,9 +419,9 @@ void SequencerPlaybackService::update(
         // published the same scheduler tick, so cancelling the whole Track
         // would remove a valid predictive CC and request a spurious retry.
         midi_queue_.cancelPendingNoteEvents(i);
-        trackEngine->resyncToTick(tick);
+        trackEngine->resyncToTick(localTick);
         (void)trackEngine->updateWithEmissionHorizon(
-            tick,
+            localTick,
             horizon,
             true
         );
@@ -399,20 +444,14 @@ void SequencerPlaybackService::update(
 
 FLASHMEM void SequencerPlaybackService::stopTrack(uint8_t trackIndex) {
     resetTrackEngine_(trackIndex);
-    if (trackIndex == runtime_active_track_ &&
-        drum_resolved_projection_cache_) {
-        drum_resolved_projection_cache_->invalidate();
-    }
 }
 
 FLASHMEM void SequencerPlaybackService::completeStop() {
+    runtime_transport_playing_ = false;
     runtime_tick_anchor_valid_ = false;
     publishRuntimeTelemetry(sequencer_, copyActiveRuntimeTelemetry());
     last_playhead_ = -1;
     pending_ui_projection_.reset();
-    if (drum_resolved_projection_cache_) {
-        drum_resolved_projection_cache_->invalidate();
-    }
 }
 
 void SequencerPlaybackService::markCcTransportStopped() {
@@ -465,6 +504,7 @@ void SequencerPlaybackService::processCcRuntime_(
 ) {
     if (cc_lane_runtime_ == nullptr || cc_coordinator_ == nullptr ||
         cc_temporal_scratch_ == nullptr) return;
+    OC_PERF_SCOPE(perfCc, "sequencer.playback-cc");
 
     const bool musicalTickAdvanced = playing &&
         (!cc_transport_playing_ || tick != last_cc_tick_);
@@ -477,18 +517,35 @@ void SequencerPlaybackService::processCcRuntime_(
     }
     if (musicalTickAdvanced) {
         auto& scratch = *cc_temporal_scratch_;
-        scratch.currentInputs = {};
         auto& inputs = scratch.currentInputs;
-        if (playing) {
+        {
+            OC_PERF_SCOPE(perfInputs, "sequencer.cc.inputs");
             for (uint8_t track = 0; track < inputs.size(); ++track) {
-                const auto& pattern = snapshot.tracks[track];
+                const auto clipLaunch = clip_launches_ != nullptr
+                    ? clip_launches_->realtimeView(track)
+                    : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+                const bool clipFrozen = clipLaunch.disposition !=
+                    core::state::sequencer::SequencerClipLaunchRealtimeView::
+                        Disposition::NORMAL;
+                const auto& trackSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+                    ? runtime_snapshot_bank_->snapshot(
+                          clipLaunch.previousSnapshotIndex)
+                    : snapshot;
+                const auto* trackLaneSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+                    ? runtime_snapshot_bank_->laneSnapshot(
+                          clipLaunch.previousSnapshotIndex)
+                    : laneSnapshot;
+                const auto& pattern = trackSnapshot.tracks[track];
                 const uint8_t ticksPerStep = ccTicksPerStep_(pattern);
-                const auto region = runtimePlaybackRegion(pattern);
+                const auto region = runtimePlaybackRegion(
+                    pattern,
+                    trackSnapshot.clips[track]
+                );
                 oc::note::sequencer::StepSequencerPlaybackTickPosition position{};
                 const bool positionValid =
                     oc::note::sequencer::tryResolvePlaybackTick(
                         region,
-                        tick,
+                        playbackTick_(track, tick),
                         ticksPerStep,
                         position
                     );
@@ -496,7 +553,9 @@ void SequencerPlaybackService::processCcRuntime_(
                     ? track_activations_->realtimeView(track)
                     : core::state::sequencer::SequencerTrackActivationRealtimeView{};
                 inputs[track] = {
-                    .lanes = laneSnapshot ? laneSnapshot->lanesForTrack(track) : nullptr,
+                    .lanes = trackLaneSnapshot
+                        ? trackLaneSnapshot->lanesForTrack(track)
+                        : nullptr,
                     .route = core::state::sequencer::makeSequencerCcTrackRoute(
                         MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
                         projectTrackChannel(projectTracks, track)
@@ -512,35 +571,32 @@ void SequencerPlaybackService::processCcRuntime_(
                     .playbackOrdinal = positionValid ? position.playback.ordinal : 0,
                     .playbackRegion = region,
                     .enabled = (projectTrackEnabledMask(projectTracks) &
-                                static_cast<uint16_t>(1U << track)) != 0,
+                                static_cast<uint16_t>(1U << track)) != 0 &&
+                        (clip_launches_ == nullptr ||
+                         !clip_launches_->stopped(track)),
                     .muted = (projectTrackAudibleMask(projectTracks) &
-                              static_cast<uint16_t>(1U << track)) == 0,
+                              static_cast<uint16_t>(1U << track)) == 0 ||
+                        (clip_launches_ != nullptr &&
+                         clip_launches_->stopped(track)),
                     .stepTriggered = positionValid && position.atStepBoundary,
-                    .frozen = activation.disposition !=
+                    .frozen = clipFrozen || activation.disposition !=
                         core::state::sequencer::SequencerTrackActivationRealtimeView::
                             Disposition::NORMAL,
                 };
             }
         }
 
-        scratch.currentFrame = {};
         auto& currentFrame = scratch.currentFrame;
         if (cc_lane_runtime_->buildMusicalTickFrame(
                 inputs,
                 playing,
                 currentFrame
             ) == SequencerCcLaneRuntimeStatus::OK) {
-            scratch.temporalFrame = {};
-            auto& temporalFrame = scratch.temporalFrame;
-            temporalFrame.lifecycleGenerations =
-                currentFrame.lifecycleGenerations;
-
+            OC_PERF_SCOPE(perfCompose, "sequencer.cc.compose");
             // Prepare every eligible negative-delay Track first, then seed and
-            // evaluate the predictive runtime exactly once. Previously this
-            // copied/reset the complete PSRAM runtime and rebuilt all 16 Tracks
-            // once per negative Track (up to 16 full passes per scheduler tick).
+            // evaluate the predictive runtime exactly once. No scratch copy is
+            // needed when all Tracks use their current musical position.
             uint16_t preparedPredictiveTracks = 0U;
-            scratch.predictiveInputs = inputs;
             auto& predictiveInputs = scratch.predictiveInputs;
             if (allowPredictiveLookahead && tickPeriodUs > 0U &&
                 cc_predictive_lane_runtime_ != nullptr) {
@@ -558,9 +614,22 @@ void SequencerPlaybackService::processCcRuntime_(
                         (static_cast<uint64_t>(advanceUs) + tickPeriodUs - 1U) /
                         tickPeriodUs
                     );
-                    const auto& pattern = snapshot.tracks[track];
+                    const auto clipLaunch = clip_launches_ != nullptr
+                        ? clip_launches_->realtimeView(track)
+                        : core::state::sequencer::SequencerClipLaunchRealtimeView{};
+                    const bool clipFrozen = clipLaunch.disposition !=
+                        core::state::sequencer::SequencerClipLaunchRealtimeView::
+                            Disposition::NORMAL;
+                    const auto& trackSnapshot = clipFrozen && runtime_snapshot_bank_ != nullptr
+                        ? runtime_snapshot_bank_->snapshot(
+                              clipLaunch.previousSnapshotIndex)
+                        : snapshot;
+                    const auto& pattern = trackSnapshot.tracks[track];
                     const uint8_t ticksPerStep = ccTicksPerStep_(pattern);
-                    const auto region = runtimePlaybackRegion(pattern);
+                    const auto region = runtimePlaybackRegion(
+                        pattern,
+                        trackSnapshot.clips[track]
+                    );
                     const uint64_t futurePhaseTicks =
                         static_cast<uint64_t>(inputs[track].tickInStep) +
                         leadTicks;
@@ -582,6 +651,7 @@ void SequencerPlaybackService::processCcRuntime_(
                         continue;
                     }
 
+                    if (preparedPredictiveTracks == 0U) predictiveInputs = inputs;
                     auto& projected = predictiveInputs[track];
                     projected.step = future.stepIndex;
                     projected.tickInStep = static_cast<uint8_t>(
@@ -600,7 +670,6 @@ void SequencerPlaybackService::processCcRuntime_(
                 }
             }
 
-            scratch.projectedFrame = {};
             auto& projectedFrame = scratch.projectedFrame;
             uint16_t projectedTracks = 0U;
             if (preparedPredictiveTracks != 0U &&
@@ -613,40 +682,46 @@ void SequencerPlaybackService::processCcRuntime_(
                 projectedTracks = preparedPredictiveTracks;
             }
 
-            for (uint8_t track = 0U; track < inputs.size(); ++track) {
-                const bool projected =
-                    (projectedTracks & static_cast<uint16_t>(1U << track)) != 0U;
-                const auto& sourceFrame = projected ? projectedFrame : currentFrame;
-                if (projected) {
-                    temporalFrame.predictiveAuthorMask |=
-                        UINT64_C(0x0F) <<
-                        static_cast<uint8_t>(
-                            track * SequencerCcLaneRuntime::LANE_COUNT
-                        );
-                }
-                for (uint8_t index = 0U;
-                     index < sourceFrame.candidateCount;
-                     ++index) {
-                    const auto& candidate = sourceFrame.candidates[index];
-                    if (candidate.author.stableAddress /
-                            SequencerCcLaneRuntime::LANE_COUNT != track) {
-                        continue;
+            auto& temporalFrame = scratch.temporalFrame;
+            if (projectedTracks != 0U) {
+                temporalFrame = {};
+                temporalFrame.lifecycleGenerations = currentFrame.lifecycleGenerations;
+                for (uint8_t track = 0U; track < inputs.size(); ++track) {
+                    const bool projected =
+                        (projectedTracks & static_cast<uint16_t>(1U << track)) != 0U;
+                    const auto& sourceFrame = projected ? projectedFrame : currentFrame;
+                    if (projected) {
+                        temporalFrame.predictiveAuthorMask |=
+                            UINT64_C(0x0F) <<
+                            static_cast<uint8_t>(
+                                track * SequencerCcLaneRuntime::LANE_COUNT
+                            );
                     }
-                    if (temporalFrame.candidateCount >=
-                        temporalFrame.candidates.size()) {
-                        temporalFrame.status =
-                            SequencerCcLaneRuntimeStatus::CAPACITY_EXCEEDED;
-                        break;
+                    for (uint8_t index = 0U;
+                         index < sourceFrame.candidateCount;
+                         ++index) {
+                        const auto& candidate = sourceFrame.candidates[index];
+                        if (candidate.author.stableAddress /
+                                SequencerCcLaneRuntime::LANE_COUNT != track) {
+                            continue;
+                        }
+                        if (temporalFrame.candidateCount >=
+                            temporalFrame.candidates.size()) {
+                            temporalFrame.status =
+                                SequencerCcLaneRuntimeStatus::CAPACITY_EXCEEDED;
+                            break;
+                        }
+                        const uint8_t output = temporalFrame.candidateCount++;
+                        temporalFrame.candidates[output] = candidate;
+                        temporalFrame.contributions[output] =
+                            sourceFrame.contributions[index];
                     }
-                    const uint8_t output = temporalFrame.candidateCount++;
-                    temporalFrame.candidates[output] = candidate;
-                    temporalFrame.contributions[output] =
-                        sourceFrame.contributions[index];
+                    if (!temporalFrame.ok()) break;
                 }
-                if (!temporalFrame.ok()) break;
             }
-            if (temporalFrame.ok()) {
-                (void)cc_coordinator_->publishSequencerLanes(temporalFrame);
+            const auto& publication = projectedTracks != 0U ? temporalFrame : currentFrame;
+            if (publication.ok()) {
+                (void)cc_coordinator_->publishSequencerLanes(publication);
             }
         }
         last_cc_tick_ = tick;
@@ -674,6 +749,7 @@ void SequencerPlaybackService::syncRuntimeStates_(
     uint32_t tick,
     bool playing
 ) {
+    OC_PERF_SCOPE(perfSync, "sequencer.playback-sync");
     runtime_active_track_ =
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
             snapshot.activeTrack
@@ -704,6 +780,31 @@ void SequencerPlaybackService::syncRuntimeStates_(
                 continue;
             }
         }
+        if (clip_launches_ != nullptr) {
+            const auto launch = clip_launches_->realtimeView(i);
+            if (launch.disposition ==
+                core::state::sequencer::SequencerClipLaunchRealtimeView::
+                    Disposition::FROZEN) {
+                continue;
+            }
+            if (launch.disposition ==
+                core::state::sequencer::SequencerClipLaunchRealtimeView::
+                    Disposition::STAGED) {
+                if (!isClipLaunchBoundary_(
+                        launch.dueTick, tick, playing)) {
+                    continue;
+                }
+                applyStagedClip_(
+                    snapshot,
+                    projectTracks,
+                    i,
+                    launch.generation,
+                    tick,
+                    playing
+                );
+                continue;
+            }
+        }
 
         syncRuntimeMasksForTrack_(projectTracks, i);
         auto* const trackEngine = melodicEngine_(i);
@@ -711,9 +812,15 @@ void SequencerPlaybackService::syncRuntimeStates_(
             trackEngine->setGraph(runtime_graph_bank_.graphForTrack(i));
         }
 
-        const auto trackSignature = captureRuntimeStateSignature(snapshot.tracks[i]);
+        const auto trackSignature = captureRuntimeStateSignature(
+            snapshot.tracks[i],
+            snapshot.clips[i]
+        );
         if (!track_runtime_signatures_[i].matches(trackSignature)) {
-            const auto region = runtimePlaybackRegion(snapshot.tracks[i]);
+            const auto region = runtimePlaybackRegion(
+                snapshot.tracks[i],
+                snapshot.clips[i]
+            );
             if (!region.isValid() ||
                 (trackEngine != nullptr &&
                  !trackEngine->setPlaybackRegion(region))) {
@@ -728,8 +835,9 @@ void SequencerPlaybackService::syncRuntimeStates_(
 
         const uint16_t bit = static_cast<uint16_t>(1U << i);
         if ((runtime_resync_mask_ & bit) != 0U) {
-            if (playing && tick > 0U && trackEngine != nullptr) {
-                trackEngine->resyncToTick(tick - 1U);
+            const uint32_t localTick = playbackTick_(i, tick);
+            if (playing && localTick > 0U && trackEngine != nullptr) {
+                trackEngine->resyncToTick(localTick - 1U);
             }
             runtime_resync_mask_ = static_cast<uint16_t>(
                 runtime_resync_mask_ & static_cast<uint16_t>(~bit)
@@ -746,6 +854,7 @@ void SequencerPlaybackService::reconcileProjectTracks_(
     uint32_t tickPeriodUs,
     bool allowPredictiveLookahead
 ) {
+    OC_PERF_SCOPE(perfReconcile, "sequencer.playback-reconcile");
     const uint16_t nextEnabled = projectTrackEnabledMask(projectTracks);
     const uint16_t nextAudible = projectTrackAudibleMask(projectTracks);
 
@@ -804,6 +913,10 @@ void SequencerPlaybackService::reconcileProjectTracks_(
     (void)nowUs;
 }
 
+uint32_t SequencerPlaybackService::playbackTick_(uint8_t trackIndex, uint32_t tick) const {
+    return clip_launches_ != nullptr ? clip_launches_->playbackTick(trackIndex, tick) : tick;
+}
+
 bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
                                                      uint32_t tick) const {
     if (trackIndex >= TRACK_COUNT) return true;
@@ -826,7 +939,7 @@ bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
     oc::note::sequencer::StepSequencerPlaybackTickPosition position{};
     if (!oc::note::sequencer::tryResolvePlaybackTick(
             region,
-            tick,
+            playbackTick_(trackIndex, tick),
             ticksPerStep,
             position
         )) {
@@ -835,6 +948,14 @@ bool SequencerPlaybackService::isLocalLoopBoundary_(uint8_t trackIndex,
     return position.atStepBoundary &&
            !position.playback.inPrelude &&
            position.playback.atLoopStart;
+}
+
+bool SequencerPlaybackService::isClipLaunchBoundary_(
+    uint32_t dueTick,
+    uint32_t tick,
+    bool playing
+) {
+    return !playing || static_cast<int32_t>(tick - dueTick) >= 0;
 }
 
 void SequencerPlaybackService::syncRuntimeMasksForTrack_(
@@ -858,10 +979,54 @@ void SequencerPlaybackService::applyStagedTrack_(
     uint32_t tick,
     bool playing
 ) {
-    if (trackIndex >= TRACK_COUNT || track_activations_ == nullptr ||
+    if (track_activations_ == nullptr ||
+        !applyStagedTrackContent_(
+            snapshot, projectTracks, trackIndex, playbackTick_(trackIndex, tick), playing)) return;
+    track_activations_->markAppliedFromRealtime(trackIndex, generation);
+}
+
+void SequencerPlaybackService::applyStagedClip_(
+    const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+    const ProjectTrackRuntimeSnapshot& projectTracks,
+    uint8_t trackIndex,
+    uint32_t generation,
+    uint32_t tick,
+    bool playing
+) {
+    if (clip_launches_ == nullptr) return;
+    const auto launch = clip_launches_->realtimeView(trackIndex);
+    if (launch.generation != generation) return;
+    const uint32_t originTick = playing ? launch.dueTick : tick;
+    OC_PERF_RECORD("sequencer.clip-apply", 0, tick - originTick, trackIndex);
+    if (launch.action ==
+        core::state::sequencer::SequencerClipLaunchAction::STOP) {
+        if (trackIndex >= TRACK_COUNT) return;
+        midi_queue_.cancelPendingEvents(trackIndex);
+        if (cc_coordinator_ != nullptr) {
+            cc_coordinator_->invalidateTrack(trackIndex);
+        }
+        stopTrack(trackIndex);
+        (void)clip_launches_->markAppliedFromRealtime(
+            trackIndex, generation, originTick);
+        return;
+    }
+    if (!applyStagedTrackContent_(
+            snapshot, projectTracks, trackIndex, tick - originTick, playing)) return;
+    (void)clip_launches_->markAppliedFromRealtime(
+        trackIndex, generation, originTick);
+}
+
+bool SequencerPlaybackService::applyStagedTrackContent_(
+    const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+    const ProjectTrackRuntimeSnapshot& projectTracks,
+    uint8_t trackIndex,
+    uint32_t tick,
+    bool playing
+) {
+    if (trackIndex >= TRACK_COUNT ||
         (melodicEngine_(trackIndex) == nullptr &&
          drumEngine_(trackIndex) == nullptr)) {
-        return;
+        return false;
     }
 
     auto* const engine = melodicEngine_(trackIndex);
@@ -869,10 +1034,13 @@ void SequencerPlaybackService::applyStagedTrack_(
     resetTrackEngine_(trackIndex);
 
     syncRuntimeMasksForTrack_(projectTracks, trackIndex);
-    const auto region = runtimePlaybackRegion(snapshot.tracks[trackIndex]);
+    const auto region = runtimePlaybackRegion(
+        snapshot.tracks[trackIndex],
+        snapshot.clips[trackIndex]
+    );
     if (!region.isValid() ||
         (engine != nullptr && !engine->setPlaybackRegion(region))) {
-        return;
+        return false;
     }
     syncRuntimeState(track_runtime_states_[trackIndex], snapshot.tracks[trackIndex]);
     track_playback_regions_[trackIndex] = region;
@@ -882,7 +1050,10 @@ void SequencerPlaybackService::applyStagedTrack_(
         engine->setGraph(runtime_graph_bank_.graphForTrack(trackIndex));
     }
     track_runtime_signatures_[trackIndex] =
-        captureRuntimeStateSignature(snapshot.tracks[trackIndex]);
+        captureRuntimeStateSignature(
+            snapshot.tracks[trackIndex],
+            snapshot.clips[trackIndex]
+        );
     runtime_resync_mask_ = static_cast<uint16_t>(
         runtime_resync_mask_ &
         static_cast<uint16_t>(~static_cast<uint16_t>(1U << trackIndex))
@@ -892,16 +1063,11 @@ void SequencerPlaybackService::applyStagedTrack_(
     const bool trackPlaying = playing &&
         (runtime_audible_mask_ & bit) != 0 &&
         track_runtime_states_[trackIndex].midiChannel <= 15U;
-    if (trackPlaying && engine != nullptr) {
-        if (tick == 0) {
-            engine->update(0, true);
-        } else {
-            // Seed one tick before the exact boundary so the new generation's
-            // first boundary step is scheduled, without replaying past events.
-            engine->resyncToTick(tick - 1U);
-        }
+    if (trackPlaying && engine != nullptr && tick != 0U) {
+        // The normal engine pass emits after the sink is anchored in clip time.
+        engine->resyncToTick(tick - 1U);
     }
-    track_activations_->markAppliedFromRealtime(trackIndex, generation);
+    return true;
 }
 
 FLASHMEM void SequencerPlaybackService::publishUiState(uint32_t nowMs) {
@@ -909,6 +1075,27 @@ FLASHMEM void SequencerPlaybackService::publishUiState(uint32_t nowMs) {
 }
 
 FLASHMEM void SequencerPlaybackService::publishUiProjection(const UiProjectionSnapshot& projection, uint32_t nowMs) {
+    // Only the foreground owns this cache. A timer-side stop/switch can replace
+    // an engine during expansion, but not the borrowed immutable graph/data.
+    const auto& signature = projection.drumPreview;
+    if (drum_resolved_projection_cache_) {
+        auto& cache = *drum_resolved_projection_cache_;
+        if (!cache.valid || !cache.signature.matches(signature)) {
+            OC_PERF_SCOPE(perfDrumPreview, "sequencer.drum-ui-preview");
+            if (signature.pattern != nullptr) {
+                DrumPlaybackEngine::buildResolvedPageProjection(
+                    signature, cache.projection);
+            } else {
+                cache.projection.reset();
+            }
+            cache.signature = signature;
+            cache.valid = true;
+        }
+    }
+    const core::state::sequencer::DrumResolvedPageProjection emptyPreview{};
+    const auto& drumPreview = drum_resolved_projection_cache_
+        ? drum_resolved_projection_cache_->projection : emptyPreview;
+
     if (projection.noteOutPulse) {
         status_bar_.pulseNoteOut(nowMs);
     }
@@ -933,13 +1120,15 @@ FLASHMEM void SequencerPlaybackService::publishUiProjection(const UiProjectionSn
         projection.drumLaneDecisionSteps,
         projection.drumLaneDecisionValidMask,
         projection.drumLaneDecisionPlayedMask,
-        projection.drumResolvedPage,
+        drumPreview,
         projection.drumPlaying
     );
 }
 
 FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService::takeUiProjectionSnapshot() {
     UiProjectionSnapshot snapshot{
+        .transportTick = runtime_transport_tick_,
+        .transportPlaying = runtime_transport_playing_,
         .noteOutPulse = pending_ui_projection_.noteOutPulse,
         .ccOutPulse = pending_ui_projection_.ccOutPulse,
         .beatPulse = pending_ui_projection_.beatPulse,
@@ -967,24 +1156,12 @@ FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService
         const auto& drumUi = sequencer_.drumSequencer;
         const bool previewRequested = drumUi.gridVisible() &&
             drumUi.targetTrack == runtime_active_track_;
-        if (drum_resolved_projection_cache_ && previewRequested) {
-            auto& cache = *drum_resolved_projection_cache_;
-            const auto signature =
+        if (previewRequested) {
+            snapshot.drumPreview =
                 activeDrumEngine->captureResolvedPageSignature(
                     drumUi.page,
                     drumUi.laneWindowStart
                 );
-            if (!cache.valid || !cache.signature.matches(signature)) {
-                activeDrumEngine->buildResolvedPageProjection(
-                    signature,
-                    cache.projection
-                );
-                cache.signature = signature;
-                cache.valid = true;
-            }
-            snapshot.drumResolvedPage = cache.projection;
-        } else if (drum_resolved_projection_cache_) {
-            drum_resolved_projection_cache_->invalidate();
         }
         snapshot.drumPlaying = telemetry.playing;
     }

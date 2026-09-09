@@ -43,6 +43,7 @@ public:
     ProjectTrackEditorOverlay& operator=(const ProjectTrackEditorOverlay&) = delete;
 
     void render(const ProjectTrackEditorOverlayProps& props);
+    void setContentVisible(bool visible);
 
     lv_obj_t* getElement() const override { return root_; }
 
@@ -81,6 +82,7 @@ private:
     lv_obj_t* surface_ = nullptr;
     RenderCache cache_{};
     bool visible_ = false;
+    bool content_visible_ = true;
     bool rendered_ = false;
 };
 

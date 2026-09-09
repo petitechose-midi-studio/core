@@ -364,7 +364,7 @@ FLASHMEM bool captureStepGraphPreset(
     }
 
     const bool rootContext = isRootContentView(sequencer);
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(sequencer.pattern());
     const SequencerGraphNodeId sourceNodeId =
         activeContentStepNodeId(sequencer, step);
     if (sourceNodeId == StepSequencerGraphLimits::INVALID_ID) {
@@ -406,12 +406,12 @@ FLASHMEM bool captureStepGraphPreset(
         return false;
     }
     if (rootContext) {
-        out.enabled = sequencer.pattern.isEnabled(step);
-        out.note = sequencer.pattern.note[step];
-        out.velocity = sequencer.pattern.velocity[step];
-        out.gate = sequencer.pattern.gate[step];
-        out.nudge = sequencer.pattern.nudge[step];
-        out.probability = sequencer.pattern.probability[step];
+        out.enabled = sequencer.pattern().isEnabled(step);
+        out.note = sequencer.pattern().note[step];
+        out.velocity = sequencer.pattern().velocity[step];
+        out.gate = sequencer.pattern().gate[step];
+        out.nudge = sequencer.pattern().nudge[step];
+        out.probability = sequencer.pattern().probability[step];
         if (report != nullptr) {
             report->flags = static_cast<uint16_t>(
                 report->flags | SEQUENCER_GRAPH_ASSET_REPORT_ROOT_VALUES
@@ -497,18 +497,18 @@ FLASHMEM bool applyStepGraphPreset(
     const bool rootValuesExisted =
         preset.rootContext &&
         preset.rootValuesValid &&
-        (sequencer.pattern.isEnabled(step) ||
-         sequencer.pattern.note[step] != SequencerState::DEFAULT_NOTE ||
-         sequencer.pattern.velocity[step] !=
+        (sequencer.pattern().isEnabled(step) ||
+         sequencer.pattern().note[step] != SequencerState::DEFAULT_NOTE ||
+         sequencer.pattern().velocity[step] !=
              SequencerState::DEFAULT_VELOCITY ||
-         sequencer.pattern.gate[step] !=
+         sequencer.pattern().gate[step] !=
              SequencerState::DEFAULT_GATE_PERCENT ||
-         sequencer.pattern.nudge[step] != 0 ||
-         sequencer.pattern.probability[step] !=
+         sequencer.pattern().nudge[step] != 0 ||
+         sequencer.pattern().probability[step] !=
              SequencerState::DEFAULT_PROBABILITY);
 
     if (!copyStepNodePayloadFromGraph(
-            sequencer.pattern,
+            sequencer.pattern(),
             targetNodeId,
             preset.graph,
             kAssetRootNodeId
@@ -524,7 +524,7 @@ FLASHMEM bool applyStepGraphPreset(
                 report->flags | SEQUENCER_GRAPH_ASSET_REPORT_OVERWRITE
             );
         }
-        sequencer.pattern.setEnabled(step, preset.enabled);
+        sequencer.pattern().setEnabled(step, preset.enabled);
         (void)sequencer.setStepDataAt(
             step,
             preset.note,

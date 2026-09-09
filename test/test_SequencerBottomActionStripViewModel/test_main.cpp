@@ -21,10 +21,16 @@ using core::ui::ContextActionStripVisualState;
 using test_support::CoreStorages;
 
 core::ui::sequencer::SequencerViewModelSource sourceFor(
-    core::state::CoreState& state
+    core::state::CoreState& state,
+    bool patternWorkspace = true
 ) {
+    if (patternWorkspace && state.sequencer.clipWorkspace.matrixVisible()) {
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
+    }
     return {
         .sequencer = state.sequencer,
+        .clips = state.sequencerClips,
+        .clipLaunches = state.sequencerClipLaunches,
         .tracks = state.sequencerTracks,
         .projectTracks = state.projectTracks,
         .trackNavigation = state.trackNavigation,
@@ -36,6 +42,120 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
         .projectNavigation = state.projectNavigation,
         .trackActivations = state.sequencerTrackActivations,
     };
+}
+
+void test_clip_launcher_selection_strip_reuses_structure_grammar() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    auto& launcher = state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+
+    launcher.beginSelection(0U, 0U);
+    auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(std::strcmp(props.slots[1].labelText.data(), "1 selected") == 0);
+    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    state.statusBar.playing.set(true);
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    state.statusBar.playing.set(false);
+
+    launcher.beginPlacement(
+        core::state::sequencer::
+            ClipWorkspaceOperation::DUPLICATE_DESTINATION,
+        0U,
+        1U
+    );
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::DISABLED);
+    assert(props.slots[2].icon == standalone::icons::ACTION_PLACE_TARGET);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    std::cout << "[PASS] Clip Launcher strip reuses selection grammar\n";
+}
+
+void test_clip_workspace_browse_strip_stays_clear_for_spatial_navigation() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    state.sequencer.clipWorkspace.reset(0U);
+    state.sequencer.clipWorkspace.focus(0U, 0U);
+
+    const auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
+}
+
+void test_clip_launcher_multi_selection_exposes_one_group_move() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    assert(state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
+    auto& launcher = state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+    launcher.beginSelection(0U, 0U);
+    launcher.toggleSelection(0U, 1U);
+
+    auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(std::strcmp(props.slots[1].labelText.data(), "2 selected") == 0);
+    assert(props.slots[0].visualState ==
+           ContextActionStripVisualState::DISABLED);
+    assert(props.slots[2].visualState ==
+           ContextActionStripVisualState::DISABLED);
+
+    launcher.beginPlacement(
+        core::state::sequencer::ClipWorkspaceOperation::MOVE_DESTINATION,
+        0U,
+        1U
+    );
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[2].icon == standalone::icons::ACTION_PLACE_TARGET);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    std::cout << "[PASS] Clip Launcher exposes one group move action\n";
+}
+
+void test_clip_launcher_copy_uses_a_compatible_track_when_source_is_full() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    assert(state.setSharedTrackState(0x0003U, 0U));
+    for (uint8_t slot = 1U;
+         slot < core::state::sequencer::SequencerClipGridState::SLOT_COUNT;
+         ++slot) {
+        assert(state.createSequencerClip({0U, slot}));
+    }
+    state.sequencer.clipWorkspace.beginSelection(0U, 1U);
+
+    auto props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+
+    assert(state.sequencerTracks.setTrackKind(
+        1U,
+        core::state::sequencer::SequencerTrackKind::DRUM,
+        true,
+        core::state::sequencer::DrumKitPreset::GENERAL_MIDI
+    ));
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[2].visualState == ContextActionStripVisualState::DISABLED);
 }
 
 void expectPlacementStrip(
@@ -125,12 +245,32 @@ void test_selection_strip_projection_contract() {
     assert(!props.slots[2].holdActive);
 
     drum.laneSelection.reset();
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::LANE);
     props = core::ui::sequencer::buildSequencerBottomActionStripProps(sourceFor(state));
-    assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(props.slots[0].icon == standalone::icons::TRACK_MUTE);
-    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
+
+    assert(state.setSharedTrackState(0x0003U, 0U));
+    state.sequencer.clipWorkspace.reset(0U);
+    state.sequencer.clipWorkspace.focusTrackHeader(0U);
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
+
+    state.trackNavigation.hold.begin(
+        core::state::StructureHoldAction::REMOVE,
+        42U
+    );
+    props = core::ui::sequencer::buildSequencerBottomActionStripProps(
+        sourceFor(state, false)
+    );
+    assert(props.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
 
     std::cout << "[PASS] Selection strip projection contract\n";
 }
@@ -139,6 +279,10 @@ void test_selection_strip_projection_contract() {
 
 int main() {
     test_selection_strip_projection_contract();
+    test_clip_workspace_browse_strip_stays_clear_for_spatial_navigation();
+    test_clip_launcher_selection_strip_reuses_structure_grammar();
+    test_clip_launcher_multi_selection_exposes_one_group_move();
+    test_clip_launcher_copy_uses_a_compatible_track_when_source_is_full();
     std::cout << "\nAll Sequencer bottom-action-strip tests passed.\n";
     return 0;
 }

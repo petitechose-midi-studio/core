@@ -32,7 +32,7 @@ using Owner = seq::SequencerPreparedPatternEditOwner;
 using Plan = seq::SequencerCoalescedPatternPayloadPlan;
 
 static_assert(sizeof(core::state::SequencerDomainState::CoalescedPatternHistory) ==
-                  (sizeof(void*) == 8U ? 64U : 40U),
+                  (sizeof(void*) == 8U ? 40U : 28U),
               "Prepared-family scalar identity must not increase the existing RAM1 bundle");
 
 constexpr uint8_t kStep = 0U;
@@ -43,9 +43,8 @@ struct Harness {
     core::state::CoreState state;
 
     Harness() : state(storages.settings) {
-        state.sequencer.pattern.setContentLength(8U);
-        state.sequencer.pattern.note[kStep] = kInitialNote;
-        assert(seq::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer));
+        state.sequencer.pattern().setContentLength(8U);
+        state.sequencer.pattern().note[kStep] = kInitialNote;
         settle();
     }
 
@@ -77,7 +76,7 @@ SealOutcome mutateAndSeal(Harness& h, Owner owner, uint8_t key, uint8_t note) {
 }
 
 void authorFullPayload(Harness& h) {
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     assert(seq::ensureGraphRoot(pattern));
     assert(seq::setNodeNoteOffset(pattern, seq::rootStepNodeId(kStep), 5));
     auto* lanes = seq::ensureSequencerCcLaneBank(pattern);
@@ -87,12 +86,11 @@ void authorFullPayload(Harness& h) {
     assert(seq::createSequencerCcLane(*lanes, 0U, draft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0U, kStep, 99U).changed());
     pattern.bumpCcLaneRevision();
-    assert(seq::storeActiveTrack(h.state.sequencerTracks, h.state.sequencer));
     h.settle();
 }
 
 void assertEditorRevisionVector(const Harness& h, const tx::StateInvariant& expected) {
-    const auto& pattern = h.state.sequencer.pattern;
+    const auto& pattern = h.state.sequencer.pattern();
     assert(pattern.stepDataRevision.get() == expected.editorStepDataRevision);
     assert(pattern.patternVariationRevision.get() == expected.editorPatternVariationRevision);
     assert(pattern.patternScaleRevision.get() == expected.editorPatternScaleRevision);
@@ -117,12 +115,12 @@ void test_all_eight_owners_publish_one_exact_undo() {
         assert(mutateAndSeal(h, owner, key, note) == SealOutcome::Sealed);
         assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
         assert(h.state.sequencerHistory.undoCount() == 1U);
-        assert(h.state.sequencer.pattern.note[kStep] == note);
+        assert(h.state.sequencer.pattern().note[kStep] == note);
         assert(h.state.sequencerTracks.track(0U).note[kStep] == note);
         assert(h.state.undoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+        assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
         assert(h.state.redoSequencerHistory());
-        assert(h.state.sequencer.pattern.note[kStep] == note);
+        assert(h.state.sequencer.pattern().note[kStep] == note);
     }
 
     std::cout << "[PASS] all eight prepared owners publish one exact Undo\n";
@@ -223,11 +221,11 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         constexpr uint8_t key = 51U;
         assert(begin(h, owner, key, plan) == BeginOutcome::Started);
         assert(h.state.sequencer.setStepNoteAt(kStep, 77U));
-        auto originalGraph = std::move(h.state.sequencer.pattern.graph);
-        h.state.sequencer.pattern.graph = std::move(replacementGraph);
-        const auto* replacementOwner = h.state.sequencer.pattern.graph.get();
+        auto originalGraph = std::move(h.state.sequencer.pattern().graph);
+        h.state.sequencer.pattern().graph = std::move(replacementGraph);
+        const auto* replacementOwner = h.state.sequencer.pattern().graph.get();
         const uint32_t liveStepRevision =
-            h.state.sequencer.pattern.stepDataRevision.get();
+            h.state.sequencer.pattern().stepDataRevision.get();
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -237,12 +235,12 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         }
         tx::assertFailureInjectionReset();
         assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
-        assert(h.state.sequencer.pattern.graph.get() == replacementOwner);
-        assert(h.state.sequencer.pattern.note[kStep] == 77U);
-        assert(h.state.sequencer.pattern.stepDataRevision.get() == liveStepRevision);
+        assert(h.state.sequencer.pattern().graph.get() == replacementOwner);
+        assert(h.state.sequencer.pattern().note[kStep] == 77U);
+        assert(h.state.sequencer.pattern().stepDataRevision.get() == liveStepRevision);
 
-        replacementGraph = std::move(h.state.sequencer.pattern.graph);
-        h.state.sequencer.pattern.graph = std::move(originalGraph);
+        replacementGraph = std::move(h.state.sequencer.pattern().graph);
+        h.state.sequencer.pattern().graph = std::move(originalGraph);
         assert(h.state.abortSequencerPreparedPatternEdit(owner, key) ==
                AbortOutcome::Aborted);
         tx::assertMusicalSnapshot(h.state, musicalBefore);
@@ -263,14 +261,14 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         assert(begin(h, owner, key, plan) == BeginOutcome::Started);
         assert(h.state.sequencer.setStepNoteAt(kStep, 78U));
         assert(seq::setNodeNoteOffset(
-            h.state.sequencer.pattern, seq::rootStepNodeId(kStep), 11));
-        auto originalCc = std::move(h.state.sequencer.pattern.ccLanes);
-        h.state.sequencer.pattern.ccLanes = std::move(replacementCc);
-        const auto* replacementOwner = h.state.sequencer.pattern.ccLanes.get();
+            h.state.sequencer.pattern(), seq::rootStepNodeId(kStep), 11));
+        auto originalCc = std::move(h.state.sequencer.pattern().ccLanes);
+        h.state.sequencer.pattern().ccLanes = std::move(replacementCc);
+        const auto* replacementOwner = h.state.sequencer.pattern().ccLanes.get();
         const uint32_t liveStepRevision =
-            h.state.sequencer.pattern.stepDataRevision.get();
+            h.state.sequencer.pattern().stepDataRevision.get();
         const uint32_t liveGraphRevision =
-            h.state.sequencer.pattern.graphRevision.get();
+            h.state.sequencer.pattern().graphRevision.get();
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -280,16 +278,16 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         }
         tx::assertFailureInjectionReset();
         assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
-        assert(h.state.sequencer.pattern.ccLanes.get() == replacementOwner);
-        assert(h.state.sequencer.pattern.note[kStep] == 78U);
-        assert(h.state.sequencer.pattern.stepDataRevision.get() == liveStepRevision);
-        assert(h.state.sequencer.pattern.graphRevision.get() == liveGraphRevision);
-        assert(seq::graphView(h.state.sequencer.pattern)
+        assert(h.state.sequencer.pattern().ccLanes.get() == replacementOwner);
+        assert(h.state.sequencer.pattern().note[kStep] == 78U);
+        assert(h.state.sequencer.pattern().stepDataRevision.get() == liveStepRevision);
+        assert(h.state.sequencer.pattern().graphRevision.get() == liveGraphRevision);
+        assert(seq::graphView(h.state.sequencer.pattern())
                    ->stepNodes[seq::rootStepNodeId(kStep)]
                    .noteOffset == 11);
 
-        replacementCc = std::move(h.state.sequencer.pattern.ccLanes);
-        h.state.sequencer.pattern.ccLanes = std::move(originalCc);
+        replacementCc = std::move(h.state.sequencer.pattern().ccLanes);
+        h.state.sequencer.pattern().ccLanes = std::move(originalCc);
         assert(h.state.abortSequencerPreparedPatternEdit(owner, key) ==
                AbortOutcome::Aborted);
         tx::assertMusicalSnapshot(h.state, musicalBefore);
@@ -305,14 +303,14 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         assert(replacementCc);
         seq::SequencerHistoryPatternSnapshot musicalBefore;
         tx::captureMusicalSnapshot(h.state, musicalBefore);
-        const auto* graphOwner = h.state.sequencer.pattern.graph.get();
-        const auto* ccOwner = h.state.sequencer.pattern.ccLanes.get();
+        const auto* graphOwner = h.state.sequencer.pattern().graph.get();
+        const auto* ccOwner = h.state.sequencer.pattern().ccLanes.get();
 
         constexpr uint8_t key = 53U;
         assert(begin(h, owner, key, plan) == BeginOutcome::Started);
         assert(h.state.sequencer.setStepNoteAt(kStep, 79U));
         assert(seq::setNodeNoteOffset(
-            h.state.sequencer.pattern, seq::rootStepNodeId(kStep), 12));
+            h.state.sequencer.pattern(), seq::rootStepNodeId(kStep), 12));
         assert(seq::switchActiveTrack(
             h.state.sequencerTracks, h.state.sequencer, 1U));
         auto& frozenTrack = h.state.sequencerTracks.track(0U);
@@ -372,7 +370,7 @@ void test_typed_abort_rearms_preexisting_generic_mutation() {
     tx::assertFailureInjectionReset();
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
     assert(h.state.sequencer.focusedStep.get() == 1U);
     assert(h.state.sequencerHistory.undoCount() == before.sequencerUndoCount);
     assert(h.state.projectHistory.undoCount() == before.projectUndoCount);
@@ -407,9 +405,9 @@ void test_stable_continuation_seal_and_commit_allocate_zero() {
 
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 74U);
+    assert(h.state.sequencer.pattern().note[kStep] == 74U);
 
     std::cout << "[PASS] stable continuation, seal and commit allocate zero\n";
 }
@@ -433,11 +431,11 @@ void test_full_payload_continuation_seal_and_commit_allocate_zero() {
 
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
-    assert(seq::graphView(h.state.sequencer.pattern) != nullptr);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) != nullptr);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
+    assert(seq::graphView(h.state.sequencer.pattern()) != nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) != nullptr);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 75U);
+    assert(h.state.sequencer.pattern().note[kStep] == 75U);
 
     std::cout << "[PASS] Full Graph+CC continuation, seal and commit allocate zero\n";
 }
@@ -447,27 +445,27 @@ void test_flat_edit_preserves_existing_cold_payload_owners() {
     authorFullPayload(h);
     constexpr auto owner = Owner::StepEditSession;
     constexpr uint8_t key = 12U;
-    const auto* editorGraph = h.state.sequencer.pattern.graph.get();
-    const auto* editorCc = h.state.sequencer.pattern.ccLanes.get();
+    const auto* editorGraph = h.state.sequencer.pattern().graph.get();
+    const auto* editorCc = h.state.sequencer.pattern().ccLanes.get();
     const auto* bankGraph = h.state.sequencerTracks.track(0U).graph.get();
     const auto* bankCc = h.state.sequencerTracks.track(0U).ccLanes.get();
 
     assert(begin(h, owner, key, Plan::FlatOnly) == BeginOutcome::Started);
     assert(mutateAndSeal(h, owner, key, 73U) == SealOutcome::Sealed);
     assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
-    assert(h.state.sequencer.pattern.graph.get() == editorGraph);
-    assert(h.state.sequencer.pattern.ccLanes.get() == editorCc);
+    assert(h.state.sequencer.pattern().graph.get() == editorGraph);
+    assert(h.state.sequencer.pattern().ccLanes.get() == editorCc);
     assert(h.state.sequencerTracks.track(0U).graph.get() == bankGraph);
     assert(h.state.sequencerTracks.track(0U).ccLanes.get() == bankCc);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.graph.get() == editorGraph);
-    assert(h.state.sequencer.pattern.ccLanes.get() == editorCc);
+    assert(h.state.sequencer.pattern().graph.get() == editorGraph);
+    assert(h.state.sequencer.pattern().ccLanes.get() == editorCc);
     assert(h.state.sequencerTracks.track(0U).graph.get() == bankGraph);
     assert(h.state.sequencerTracks.track(0U).ccLanes.get() == bankCc);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.graph.get() == editorGraph);
-    assert(h.state.sequencer.pattern.ccLanes.get() == editorCc);
+    assert(h.state.sequencer.pattern().graph.get() == editorGraph);
+    assert(h.state.sequencer.pattern().ccLanes.get() == editorCc);
 
     std::cout << "[PASS] Flat edit preserves existing Graph+CC owners\n";
 }
@@ -497,7 +495,7 @@ void test_virgin_no_op_and_exact_net_return_publish_nothing() {
 void test_first_begin_failure_is_atomic() {
     Harness h;
     const auto before = tx::captureStateInvariant(h.state);
-    const auto editorNote = h.state.sequencer.pattern.note[kStep];
+    const auto editorNote = h.state.sequencer.pattern().note[kStep];
     const auto bankNote = h.state.sequencerTracks.track(0U).note[kStep];
 
     {
@@ -508,7 +506,7 @@ void test_first_begin_failure_is_atomic() {
     tx::assertFailureInjectionReset();
 
     tx::assertStateInvariant(h.state, before);
-    assert(h.state.sequencer.pattern.note[kStep] == editorNote);
+    assert(h.state.sequencer.pattern().note[kStep] == editorNote);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == bankNote);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
@@ -530,10 +528,10 @@ void test_failed_transition_keeps_exact_prior_entry_only() {
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
-    assert(h.state.sequencer.pattern.note[kStep] == 72U);
+    assert(h.state.sequencer.pattern().note[kStep] == 72U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 72U);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+    assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
 
     std::cout << "[PASS] failed transition retains only the prior entry\n";
 }
@@ -547,14 +545,14 @@ void test_pattern_editor_inactive_owner_commits_old_bank_track() {
     assert(mutateAndSeal(h, owner, 1U, 79U) == SealOutcome::Sealed);
 
     assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 1U));
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 79U);
     assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 79U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 79U);
@@ -579,14 +577,14 @@ void assertPatternEditorTrackTransitionResult(Harness& h) {
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 79U);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == 79U);
 }
 
@@ -635,8 +633,8 @@ void test_pattern_editor_inactive_full_payload_keeps_exact_owner() {
     Harness h;
     prepareTwoTrackFullPayloadPatternEditorHarness(h);
     constexpr auto owner = Owner::PatternEditor;
-    const auto* graphOwner = h.state.sequencer.pattern.graph.get();
-    const auto* ccOwner = h.state.sequencer.pattern.ccLanes.get();
+    const auto* graphOwner = h.state.sequencer.pattern().graph.get();
+    const auto* ccOwner = h.state.sequencer.pattern().ccLanes.get();
     assert(graphOwner != nullptr);
     assert(ccOwner != nullptr);
 
@@ -653,11 +651,11 @@ void test_pattern_editor_inactive_full_payload_keeps_exact_owner() {
     }
     tx::assertFailureInjectionReset();
 
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
-    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
+    assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.note[kStep] == 48U);
+    assert(h.state.sequencer.pattern().note[kStep] == 48U);
     assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
     assert(seq::graphView(h.state.sequencerTracks.track(0U)) != nullptr);
     assert(seq::sequencerCcLaneView(h.state.sequencerTracks.track(0U)) != nullptr);
@@ -679,9 +677,13 @@ void test_inactive_commit_preserves_new_track_generic_obligation() {
 
     assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
     assert(h.state.hasPendingProjectMutationCoalescing());
-    assert(h.state.sequencerTracks.track(1U).note[kStep] == 48U);
+    assert(h.state.sequencerTracks.track(1U).note[kStep] == 55U);
+    const auto beforeFlush = h.state.project.metadata.modifiedCounter;
     h.state.flushProjectMutationCoalescing();
     assert(h.state.sequencerTracks.track(1U).note[kStep] == 55U);
+    assert(h.state.sequencer.pattern().note[kStep] == 55U);
+    assert(h.state.project.metadata.modifiedCounter == beforeFlush + 1U);
+    assert(!h.state.hasPendingProjectMutationCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
 
     std::cout << "[PASS] inactive commit preserves the new Track obligation\n";
@@ -717,18 +719,18 @@ void test_pattern_editor_track_index_aba_requires_exact_payload_owner() {
     Harness h;
     prepareTwoTrackFullPayloadPatternEditorHarness(h);
     constexpr auto owner = Owner::PatternEditor;
-    const auto* graphOwner = h.state.sequencer.pattern.graph.get();
-    const auto* ccOwner = h.state.sequencer.pattern.ccLanes.get();
+    const auto* graphOwner = h.state.sequencer.pattern().graph.get();
+    const auto* ccOwner = h.state.sequencer.pattern().ccLanes.get();
     assert(begin(h, owner, 1U, Plan::FullCurrentPayload) == BeginOutcome::Started);
     assert(mutateAndSeal(h, owner, 1U, 79U) == SealOutcome::Sealed);
 
     assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 1U));
     assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 0U));
-    assert(h.state.sequencer.pattern.graph.get() == graphOwner);
-    assert(h.state.sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(h.state.sequencer.pattern().graph.get() == graphOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == ccOwner);
     assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
     assert(h.state.sequencerHistory.undoCount() == 1U);
-    assert(h.state.sequencer.pattern.note[kStep] == 79U);
+    assert(h.state.sequencer.pattern().note[kStep] == 79U);
     assert(h.state.sequencerTracks.track(1U).note[kStep] == 48U);
 
     std::cout << "[PASS] Track index ABA retains exact payload identity\n";
@@ -741,13 +743,13 @@ void test_quick_controls_owner_replacement_keeps_identity_guards_strict() {
     {
         Harness h;
         assert(begin(h, owner, key, Plan::FullCurrentPayload) == BeginOutcome::Started);
-        assert(seq::ensureGraphRoot(h.state.sequencer.pattern));
+        assert(seq::ensureGraphRoot(h.state.sequencer.pattern()));
         assert(h.state.sequencer.setStepNoteAt(kStep, 79U));
         assert(h.state.sealSequencerPreparedPatternEdit(
                    owner, key, true, descriptor()) == SealOutcome::FailedClosed);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-        assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
-        assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+        assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
+        assert(h.state.sequencer.pattern().note[kStep] == kInitialNote);
         assert(h.state.sequencerHistory.undoCount() == 0U);
     }
 
@@ -760,7 +762,7 @@ void test_quick_controls_owner_replacement_keeps_identity_guards_strict() {
         assert(h.state.sealSequencerPreparedPatternEdit(
                    owner, key, true, descriptor()) == SealOutcome::FailedClosed);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-        assert(h.state.sequencer.pattern.note[kStep] == 48U);
+        assert(h.state.sequencer.pattern().note[kStep] == 48U);
         assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
         assert(h.state.sequencerHistory.undoCount() == 0U);
     }
@@ -774,10 +776,10 @@ void test_post_write_plan_failure_rolls_back_and_unwedges_owner() {
     constexpr uint8_t key = 7U;
     const auto before = tx::captureStateInvariant(h.state);
     assert(begin(h, owner, key, Plan::FlatOnly) == BeginOutcome::Started);
-    assert(seq::ensureGraphRoot(h.state.sequencer.pattern));
+    assert(seq::ensureGraphRoot(h.state.sequencer.pattern()));
     assert(h.state.sealSequencerPreparedPatternEdit(owner, key, true, descriptor()) ==
            SealOutcome::FailedClosed);
-    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0U);
     tx::assertStateInvariant(h.state, before);
@@ -785,7 +787,7 @@ void test_post_write_plan_failure_rolls_back_and_unwedges_owner() {
     assert(begin(h, owner, key, Plan::FlatOnly) == BeginOutcome::Started);
     assert(mutateAndSeal(h, owner, key, 76U) == SealOutcome::Sealed);
     assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
-    assert(h.state.sequencer.pattern.note[kStep] == 76U);
+    assert(h.state.sequencer.pattern().note[kStep] == 76U);
 
     std::cout << "[PASS] post-write plan failure rolls back and unwedges owner\n";
 }
@@ -799,8 +801,8 @@ void test_full_post_write_failure_rolls_back_without_allocation() {
     tx::captureMusicalSnapshot(h.state, musicalBefore);
     const auto invariantBefore = tx::captureStateInvariant(h.state);
     h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
-    const auto* graphOwner = h.state.sequencer.pattern.graph.get();
-    const auto* ccOwner = h.state.sequencer.pattern.ccLanes.get();
+    const auto* graphOwner = h.state.sequencer.pattern().graph.get();
+    const auto* ccOwner = h.state.sequencer.pattern().ccLanes.get();
 
     assert(begin(h, owner, key, Plan::FullCurrentPayload) == BeginOutcome::Started);
     {
@@ -836,8 +838,8 @@ void test_full_post_write_failure_rolls_back_without_allocation() {
     assert(seq::switchActiveTrack(
         h.state.sequencerTracks, h.state.sequencer, 0U));
     tx::assertMusicalSnapshot(h.state, musicalBefore);
-    assert(h.state.sequencer.pattern.graph.get() == graphOwner);
-    assert(h.state.sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(h.state.sequencer.pattern().graph.get() == graphOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == ccOwner);
 
     assert(begin(h, owner, key, Plan::FullCurrentPayload) == BeginOutcome::Started);
     assert(mutateAndSeal(h, owner, key, 76U) == SealOutcome::Sealed);
@@ -855,8 +857,8 @@ void test_full_continuation_failure_rolls_back_whole_transaction() {
     tx::captureMusicalSnapshot(h.state, musicalBefore);
     const auto invariantBefore = tx::captureStateInvariant(h.state);
     h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
-    const auto* graphOwner = h.state.sequencer.pattern.graph.get();
-    const auto* ccOwner = h.state.sequencer.pattern.ccLanes.get();
+    const auto* graphOwner = h.state.sequencer.pattern().graph.get();
+    const auto* ccOwner = h.state.sequencer.pattern().ccLanes.get();
 
     assert(begin(h, owner, key, Plan::FullCurrentPayload) == BeginOutcome::Started);
     assert(mutateAndSeal(h, owner, key, 68U) == SealOutcome::Sealed);
@@ -894,8 +896,8 @@ void test_full_continuation_failure_rolls_back_whole_transaction() {
     assert(seq::switchActiveTrack(
         h.state.sequencerTracks, h.state.sequencer, 0U));
     tx::assertMusicalSnapshot(h.state, musicalBefore);
-    assert(h.state.sequencer.pattern.graph.get() == graphOwner);
-    assert(h.state.sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(h.state.sequencer.pattern().graph.get() == graphOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == ccOwner);
 
     std::cout << "[PASS] Full continuation failure rolls back the transaction\n";
 }
@@ -907,16 +909,16 @@ void test_prospective_graph_partial_no_op_rolls_back_exactly() {
     const auto before = tx::captureStateInvariant(h.state);
 
     assert(begin(h, owner, key, Plan::FullWithProspectiveGraph) == BeginOutcome::Started);
-    assert(h.state.sequencer.pattern.graph != nullptr);
-    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(h.state.sequencer.pattern().graph != nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         // Model a mutator that initializes the reserved Graph, then discovers
         // that its requested local-variation value is already the default.
-        assert(seq::ensureGraphRoot(h.state.sequencer.pattern));
+        assert(seq::ensureGraphRoot(h.state.sequencer.pattern()));
         assert(!seq::setNodeLocalVariationRange(
-            h.state.sequencer.pattern, seq::rootStepNodeId(kStep), seq::StepProperty::NOTE, 0U));
+            h.state.sequencer.pattern(), seq::rootStepNodeId(kStep), seq::StepProperty::NOTE, 0U));
         assert(h.state.sealSequencerPreparedPatternEdit(owner, key, false, descriptor()) ==
                SealOutcome::Cleared);
         tx::assertMaxPlusOneStillArmed(0U);
@@ -924,7 +926,7 @@ void test_prospective_graph_partial_no_op_rolls_back_exactly() {
     tx::assertFailureInjectionReset();
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.graph == nullptr);
+    assert(h.state.sequencer.pattern().graph == nullptr);
     tx::assertStateInvariant(h.state, before);
 
     std::cout << "[PASS] prospective Graph partial no-op rolls back exactly\n";
@@ -939,8 +941,8 @@ void test_malformed_compaction_rolls_back_preserving_payload_owners() {
     tx::captureMusicalSnapshot(h.state, musicalBefore);
     const auto before = tx::captureStateInvariant(h.state);
 
-    const auto* graphOwner = h.state.sequencer.pattern.graph.get();
-    const auto* ccOwner = h.state.sequencer.pattern.ccLanes.get();
+    const auto* graphOwner = h.state.sequencer.pattern().graph.get();
+    const auto* ccOwner = h.state.sequencer.pattern().ccLanes.get();
     assert(graphOwner != nullptr);
     assert(ccOwner != nullptr);
     assert(h.state.beginOrContinueSequencerPreparedPatternEdit(
@@ -949,12 +951,12 @@ void test_malformed_compaction_rolls_back_preserving_payload_owners() {
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         assert(h.state.sequencer.setStepNoteAt(kStep, 76U));
-        auto& graph = *h.state.sequencer.pattern.graph;
+        auto& graph = *h.state.sequencer.pattern().graph;
         auto& root = graph.stepNodes[seq::rootStepNodeId(kStep)];
         root.flags =
             static_cast<uint16_t>(root.flags | oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE);
         root.childSequenceId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
-        h.state.sequencer.pattern.bumpGraphRevision();
+        h.state.sequencer.pattern().bumpGraphRevision();
 
         assert(h.state.sealSequencerPreparedPatternEdit(owner, key, true, descriptor()) ==
                SealOutcome::FailedClosed);
@@ -963,8 +965,8 @@ void test_malformed_compaction_rolls_back_preserving_payload_owners() {
     tx::assertFailureInjectionReset();
 
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.graph.get() == graphOwner);
-    assert(h.state.sequencer.pattern.ccLanes.get() == ccOwner);
+    assert(h.state.sequencer.pattern().graph.get() == graphOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == ccOwner);
     tx::assertMusicalSnapshot(h.state, musicalBefore);
     tx::assertStateInvariant(h.state, before);
 
@@ -976,13 +978,13 @@ void test_unused_prospective_graph_is_released_before_publication() {
     constexpr auto owner = Owner::StepContent;
     constexpr uint8_t key = 8U;
     assert(begin(h, owner, key, Plan::FullWithProspectiveGraph) == BeginOutcome::Started);
-    assert(h.state.sequencer.pattern.graph != nullptr);
-    assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+    assert(h.state.sequencer.pattern().graph != nullptr);
+    assert(seq::graphView(h.state.sequencer.pattern()) == nullptr);
 
     assert(mutateAndSeal(h, owner, key, 77U) == SealOutcome::Sealed);
-    assert(h.state.sequencer.pattern.graph == nullptr);
+    assert(h.state.sequencer.pattern().graph == nullptr);
     assert(h.state.commitSequencerPreparedPatternEdit(owner) == CommitOutcome::Committed);
-    assert(h.state.sequencer.pattern.graph == nullptr);
+    assert(h.state.sequencer.pattern().graph == nullptr);
     assert(h.state.sequencerTracks.track(0U).graph == nullptr);
 
     std::cout << "[PASS] unused prospective Graph is released before publish\n";

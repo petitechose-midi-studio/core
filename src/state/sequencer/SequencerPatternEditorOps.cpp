@@ -6,7 +6,7 @@
 #include <oc/util/Index.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
@@ -16,7 +16,7 @@ namespace {
 constexpr uint8_t kWindowSize = SequencerState::STEPS_PER_PAGE;
 
 FLASHMEM uint8_t windowCount(const SequencerState& sequencer) {
-    const uint8_t length = sequencer.pattern.length.get();
+    const uint8_t length = sequencer.pattern().length.get();
     return static_cast<uint8_t>(
         (static_cast<uint16_t>(length) + kWindowSize - 1U) / kWindowSize
     );
@@ -36,12 +36,12 @@ FLASHMEM uint8_t normalizedWindowStart(
 }
 
 FLASHMEM bool launchStartDistinct(const SequencerState& sequencer) {
-    const auto region = patternPlaybackRegion(sequencer.pattern);
+    const auto region = clipPlaybackRegion(sequencer.pattern(), sequencer.clip());
     return region.playStart != region.loopStart;
 }
 
 FLASHMEM bool laneOccupied(const SequencerState& sequencer, uint8_t lane) {
-    const auto* bank = sequencer.pattern.ccLanes.get();
+    const auto* bank = sequencer.pattern().ccLanes.get();
     return bank != nullptr && lane < bank->lanes.size() &&
            bank->lanes[lane].occupied;
 }
@@ -56,11 +56,11 @@ FLASHMEM Enum wrappedEnum(Enum current, int direction, uint8_t count) {
 }
 
 FLASHMEM bool setRegionValue(
-    SequencerPatternState& pattern,
+    SequencerState& sequencer,
     SequencerPatternEditorField field,
     int16_t value
 ) {
-    auto region = patternPlaybackRegion(pattern);
+    auto region = clipPlaybackRegion(sequencer.pattern(), sequencer.clip());
     switch (field) {
         case SequencerPatternEditorField::PLAY_START:
             region.playStart = static_cast<uint8_t>(std::clamp<int>(
@@ -86,7 +86,7 @@ FLASHMEM bool setRegionValue(
         default:
             return false;
     }
-    return setPatternPlaybackRegion(pattern, region);
+    return setClipPlaybackRegion(sequencer, region);
 }
 
 }  // namespace
@@ -105,7 +105,7 @@ FLASHMEM bool openPatternEditor(
     sequencer.patternEditor.open(ownerTrack, start);
     sequencer.page.set(static_cast<uint8_t>(start / kWindowSize));
     const uint8_t windowEnd = static_cast<uint8_t>(std::min<uint16_t>(
-        sequencer.pattern.length.get(),
+        sequencer.pattern().length.get(),
         static_cast<uint16_t>(start) + kWindowSize
     ));
     if (sequencer.focusedStep.get() < start ||
@@ -298,7 +298,7 @@ FLASHMEM SequencerPatternEditorValueRange patternEditorValueRange(
     const SequencerState& sequencer,
     SequencerPatternEditorField field
 ) {
-    const auto region = patternPlaybackRegion(sequencer.pattern);
+    const auto region = clipPlaybackRegion(sequencer.pattern(), sequencer.clip());
     switch (field) {
         case SequencerPatternEditorField::LENGTH:
             return {1, SequencerState::MAX_STEPS};
@@ -339,7 +339,7 @@ FLASHMEM int16_t patternEditorFieldValue(
     const SequencerState& sequencer,
     SequencerPatternEditorField field
 ) {
-    const auto region = patternPlaybackRegion(sequencer.pattern);
+    const auto region = clipPlaybackRegion(sequencer.pattern(), sequencer.clip());
     switch (field) {
         case SequencerPatternEditorField::LENGTH:
             return region.contentLength;
@@ -348,15 +348,15 @@ FLASHMEM int16_t patternEditorFieldValue(
                  index < PATTERN_STEPS_PER_BEAT_CHOICES.size();
                  ++index) {
                 if (PATTERN_STEPS_PER_BEAT_CHOICES[index] ==
-                    sequencer.pattern.stepsPerBeat.get()) {
+                    sequencer.pattern().stepsPerBeat.get()) {
                     return index;
                 }
             }
             return 1;
         case SequencerPatternEditorField::SWING:
-            return sequencer.pattern.swingOffsetPercent.get();
+            return sequencer.pattern().swingOffsetPercent.get();
         case SequencerPatternEditorField::NUDGE:
-            return sequencer.pattern.patternNudgePercent.get();
+            return sequencer.pattern().patternNudgePercent.get();
         case SequencerPatternEditorField::PLAY_START:
             return region.playStart;
         case SequencerPatternEditorField::LOOP_START:
@@ -384,8 +384,8 @@ FLASHMEM bool setPatternEditorFieldValue(
 
     switch (field) {
         case SequencerPatternEditorField::LENGTH:
-            changed = resizePatternContent(
-                sequencer.pattern,
+            changed = resizeClipPatternContent(
+                sequencer,
                 static_cast<uint8_t>(clamped)
             );
             if (changed) {
@@ -396,7 +396,7 @@ FLASHMEM bool setPatternEditorFieldValue(
                 sequencer.page.set(static_cast<uint8_t>(
                     editor.windowStart / kWindowSize
                 ));
-                if (sequencer.focusedStep.get() >= sequencer.pattern.length.get()) {
+                if (sequencer.focusedStep.get() >= sequencer.pattern().length.get()) {
                     sequencer.focusedStep.set(editor.windowStart);
                 }
             }
@@ -405,10 +405,7 @@ FLASHMEM bool setPatternEditorFieldValue(
             const uint8_t next = PATTERN_STEPS_PER_BEAT_CHOICES[
                 static_cast<uint8_t>(clamped)
             ];
-            if (sequencer.pattern.stepsPerBeat.get() != next) {
-                sequencer.pattern.stepsPerBeat.set(next);
-                changed = true;
-            }
+            changed = setClipPatternStepsPerBeat(sequencer, next);
             break;
         }
         case SequencerPatternEditorField::SWING:
@@ -420,7 +417,7 @@ FLASHMEM bool setPatternEditorFieldValue(
         case SequencerPatternEditorField::PLAY_START:
         case SequencerPatternEditorField::LOOP_START:
         case SequencerPatternEditorField::LOOP_END:
-            changed = setRegionValue(sequencer.pattern, field, clamped);
+            changed = setRegionValue(sequencer, field, clamped);
             break;
         case SequencerPatternEditorField::COUNT:
         default:

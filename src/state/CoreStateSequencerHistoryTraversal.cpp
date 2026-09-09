@@ -54,7 +54,6 @@ FLASHMEM const char* historyActionLabel(sequencer::SequencerHistoryActionKind ki
         case sequencer::SequencerHistoryActionKind::ProjectScaleSettings: return "Project Scale";
         case sequencer::SequencerHistoryActionKind::PageStructure: return "Page Structure";
         case sequencer::SequencerHistoryActionKind::TrackStructure: return "Track Structure";
-        case sequencer::SequencerHistoryActionKind::FullBank: return "Sequencer Set";
         case sequencer::SequencerHistoryActionKind::PatternRandomize: return "Pattern Randomize";
         case sequencer::SequencerHistoryActionKind::DrumStepToggle: return "Drum Step State";
         case sequencer::SequencerHistoryActionKind::DrumStepPropertyEdit:
@@ -69,6 +68,13 @@ FLASHMEM const char* historyActionLabel(sequencer::SequencerHistoryActionKind ki
             return "Drum Step Content";
         case sequencer::SequencerHistoryActionKind::DrumLaneContent:
             return "Drum Lane Content";
+        case sequencer::SequencerHistoryActionKind::PatternPreset:
+            return "Pattern Preset";
+        case sequencer::SequencerHistoryActionKind::ClipCreate: return "Create Clip";
+        case sequencer::SequencerHistoryActionKind::ClipDelete: return "Remove Clip";
+        case sequencer::SequencerHistoryActionKind::ClipMove: return "Move Clip";
+        case sequencer::SequencerHistoryActionKind::ClipDuplicate:
+            return "Duplicate Clip";
         case sequencer::SequencerHistoryActionKind::PatternEdit:
         default: return "Pattern Edit";
     }
@@ -228,7 +234,7 @@ FLASHMEM void reconcileSequencerCcLaneUiFromRestoredHistory(sequencer::Sequencer
         ccLaneUi.mode == sequencer::SequencerCcLaneUiMode::LANE_SETTINGS;
     if (!laneScopedMode) return;
 
-    const auto* bank = sequencer::sequencerCcLaneView(editor.pattern);
+    const auto* bank = sequencer::sequencerCcLaneView(editor.pattern());
     const bool focusedLaneExists = bank != nullptr && ccLaneUi.focusedLane < bank->lanes.size() &&
                                    bank->lanes[ccLaneUi.focusedLane].occupied;
     if (!focusedLaneExists) {
@@ -265,7 +271,7 @@ FLASHMEM void reconcileMacroTrackStructureFromRestoredHistory(
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(
         state.configRevision.get(), core::state::macro::kMacroConfigDirtyAll));
     core::state::project::reconcileProjectModulatorNavigationAfterHistory(
-        state.projectNavigation, state.pages.control.authored.modulation);
+        state.projectNavigation, state.pages.control.authored().modulation);
 }
 
 }  // namespace
@@ -342,6 +348,9 @@ FLASHMEM bool CoreState::traversePreparedSequencerStructureHistory_(
         sequencer,
         pages,
         std::move(prepared));
+    sequencerClips.synchronizeEnabledTracks(sequencerTracks.currentEnabledMask());
+    sequencerClipLaunches.synchronizeEnabledTracks(
+        sequencerClips, sequencerTracks.currentEnabledMask());
     if (hasActivation) {
         sequencerTrackActivations.commitHistoryTransition(transition);
     }
@@ -378,14 +387,18 @@ FLASHMEM bool CoreState::traverseGenericSequencerHistory_(
 
     const uint8_t activeTrackBefore = sequencerTracks.activeTrackIndex();
     const auto result = direction == sequencer::SequencerHistoryDirection::Undo
-        ? sequencerHistory.undoWithResult(sequencerTracks, sequencer)
-        : sequencerHistory.redoWithResult(sequencerTracks, sequencer);
+        ? sequencerHistory.undoWithResult(sequencerTracks, sequencer, sequencerClips)
+        : sequencerHistory.redoWithResult(sequencerTracks, sequencer, sequencerClips);
     if (!result.applied) {
         if (hasActivation) {
             sequencerTrackActivations.rollbackHistoryTransition(transition);
         }
         return false;
     }
+    sequencerClips.synchronizeEnabledTracks(
+        sequencerTracks.currentEnabledMask());
+    sequencerClipLaunches.synchronizeEnabledTracks(
+        sequencerClips, sequencerTracks.currentEnabledMask());
     if (hasActivation) {
         sequencerTrackActivations.commitHistoryTransition(transition);
     }
@@ -407,7 +420,7 @@ FLASHMEM void CoreState::publishSequencerHistoryTraversal_(
     bool hasActivation,
     uint8_t activeTrackBefore
 ) {
-    // History application has already restored editor and bank atomically.
+    // History application has already restored the canonical owner atomically.
     // Consume its deferred watched-signal notifications at the same prepared
     // boundary so traversal publishes dirty/save exactly once without recloning.
     publishPreparedSequencerMutation();

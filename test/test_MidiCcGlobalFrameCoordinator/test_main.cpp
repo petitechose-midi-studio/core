@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -942,6 +943,76 @@ void test_route_and_delay_change_cancel_old_plan_and_rebuild() {
     std::cout << "[PASS] route/Delay invalidation cancels and rebuilds generation\n";
 }
 
+void test_track_invalidation_preserves_other_sparse_future_authors() {
+    // Exercise low, middle and last Track, including the highest Macro/Lane slots.
+    for (const uint8_t muted : {0U, 7U, 15U}) {
+        RealtimeMidiQueue queue;
+        MidiCcGlobalFrameCoordinator coordinator{queue};
+        MockMidiTransport transport;
+        oc::api::MidiAPI midi{transport};
+        auto tracks = projectTracks();
+        tracks.delayMs.fill(50);
+        constexpr std::array<uint8_t, 3> trackIds{15U, 0U, 7U};
+        std::array<MidiCcCandidate, 6> persistent{};
+        std::array<MidiCcCandidate, 3> laneCandidates{};
+        for (size_t i = 0U; i < trackIds.size(); ++i) {
+            const uint8_t track = trackIds[i];
+            const uint16_t lastMacro = static_cast<uint16_t>(track * 128U + 127U);
+            persistent[i * 2U] = candidate(MidiCcCandidateClass::MACRO_STATIC,
+                lastMacro - 2U, 40U, track, 10U);
+            persistent[i * 2U + 1U] = candidate(MidiCcCandidateClass::LIVE_MANUAL,
+                lastMacro, 50U, track, 11U);
+            laneCandidates[i] = candidate(MidiCcCandidateClass::SEQUENCER_CC_LANE,
+                static_cast<uint16_t>(track * 4U + 2U), 60U, track, 12U);
+        }
+        assert(coordinator.publishPersistentAuthors(persistent.data(), persistent.size()));
+        assert(coordinator.publishSequencerLanes(laneFrame(laneCandidates.data(), 3U)));
+        assert(coordinator.resolveLive(1000U, tracks).queuedEmissionCount == 0U);
+        assert(coordinator.resolveLive(51000U, tracks).queuedEmissionCount == 9U);
+        drain(queue, midi, 51000U);
+
+        // Some authors exist only in the effective holds, others only in the
+        // future logical frame. Both sets must be cleared for the muted Track.
+        for (size_t i = 0U; i < trackIds.size(); ++i) {
+            ++persistent[i * 2U].author.stableAddress;
+            persistent[i * 2U].destination.identity.controller = 13U;
+            persistent[i * 2U].localValue = 41U;
+            persistent[i * 2U + 1U].localValue = 51U;
+            ++laneCandidates[i].author.stableAddress;
+            laneCandidates[i].destination.identity.controller = 14U;
+            laneCandidates[i].localValue = 61U;
+        }
+        assert(coordinator.publishPersistentAuthors(persistent.data(), persistent.size()));
+        assert(coordinator.publishSequencerLanes(laneFrame(laneCandidates.data(), 3U)));
+        assert(coordinator.resolveLive(52000U, tracks).queuedEmissionCount == 0U);
+        tracks.audibleMask &= static_cast<uint16_t>(~(1U << muted));
+        coordinator.invalidateTrack(muted);
+        coordinator.invalidateTrack(muted); // Idempotent; no duplicate active slots.
+        assert(coordinator.resolveLive(53000U, tracks).ok());
+        {
+            const auto telemetry = coordinator.readTelemetry();
+            assert(telemetry && telemetry->candidateCount == 6U);
+        }
+        assert(coordinator.resolveLive(101999U, tracks).queuedEmissionCount == 0U);
+        assert(coordinator.resolveLive(102000U, tracks).queuedEmissionCount == 6U);
+        drain(queue, midi, 102000U);
+        assert(transport.messages.size() == 15U);
+        for (size_t i = 9U; i < transport.messages.size(); ++i) {
+            const auto& message = transport.messages[i];
+            assert(message.channel != muted);
+            assert((message.data1 == 13U && message.data2 == 41U) ||
+                   (message.data1 == 11U && message.data2 == 51U) ||
+                   (message.data1 == 14U && message.data2 == 61U));
+        }
+        assert(coordinator.resolveLive(103000U, tracks).status == MidiCcGlobalFrameStatus::NO_CHANGE);
+        tracks.audibleMask |= static_cast<uint16_t>(1U << muted);
+        coordinator.invalidateTrack(muted);
+        assert(coordinator.resolveLive(104000U, tracks).queuedEmissionCount == 0U);
+        assert(coordinator.resolveLive(154000U, tracks).queuedEmissionCount == 3U);
+    }
+    std::cout << "[PASS] Track invalidation preserves sparse holds and other deadlines\n";
+}
+
 void test_pinned_lane_channel_survives_project_track_snapshot_and_delay() {
     RealtimeMidiQueue queue;
     MidiCcGlobalFrameCoordinator coordinator{queue};
@@ -1101,6 +1172,73 @@ void test_transport_resume_retries_cleared_due_cc_exactly_once() {
     std::cout << "[PASS] resume retries cleared due CC exactly once\n";
 }
 
+void test_stop_preserves_sparse_holds_and_full_persistent_frame() {
+    RealtimeMidiQueue queue;
+    MidiCcGlobalFrameCoordinator coordinator{queue};
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    auto tracks = projectTracks();
+    tracks.delayMs.fill(100);
+    std::array<MidiCcCandidate, 256> persistent{};
+    for (uint16_t i = 0; i < persistent.size(); ++i) {
+        persistent[i] = candidate(
+            i < 128U ? MidiCcCandidateClass::LIVE_MANUAL : MidiCcCandidateClass::MACRO_STATIC,
+            static_cast<uint16_t>(1792U + i), 20U,
+            static_cast<uint8_t>(i / 128U), static_cast<uint8_t>(i % 128U));
+    }
+    std::array<MidiCcCandidate, 64> laneCandidates{};
+    for (uint8_t i = 0; i < laneCandidates.size(); ++i) {
+        laneCandidates[i] = candidate(MidiCcCandidateClass::SEQUENCER_CC_LANE, i, 40U, 2U, i);
+    }
+    auto lanes = laneFrame(laneCandidates.data(), 32U);
+    assert(coordinator.publishPersistentAuthors(persistent.data(), persistent.size()));
+    assert(coordinator.publishSequencerLanes(lanes));
+    assert(coordinator.resolveLive(1000U, tracks).queuedEmissionCount == 0U);
+    assert(coordinator.resolveLive(101000U, tracks).queuedEmissionCount == 288U);
+    drain(queue, midi, 101000U);
+
+    // Future frame: remove 16 held lanes, update 16 and add 32. The remaining
+    // persistent slots are near both upper address bounds, not a dense prefix.
+    for (auto& value : persistent) value.localValue = 21U;
+    for (auto& value : laneCandidates) value.localValue = 41U;
+    lanes = laneFrame(laneCandidates.data() + 16U, 48U);
+    assert(coordinator.publishPersistentAuthors(persistent.data(), persistent.size()));
+    assert(coordinator.publishSequencerLanes(lanes));
+    assert(coordinator.resolveLive(102000U, tracks).queuedEmissionCount == 0U);
+    coordinator.publishProjectControlClock(1U, false, 103000U, 1000U);
+    coordinator.discardPendingRetryForTransportStop();
+    coordinator.discardPendingRetryForTransportStop(); // idempotent, no duplicate slots
+    assert(coordinator.resolveLive(201999U, tracks).queuedEmissionCount == 0U);
+    assert(coordinator.resolveLive(202000U, tracks).queuedEmissionCount == 256U);
+    drain(queue, midi, 202000U);
+    assert(transport.messages.size() == 544U);
+    for (size_t i = 288U; i < transport.messages.size(); ++i) {
+        assert(transport.messages[i].channel < 2U);
+        assert(transport.messages[i].data2 == 21U);
+    }
+    {
+        auto telemetry = coordinator.readTelemetry();
+        assert(telemetry && telemetry->candidateCount == 288U);
+    }
+
+    // Resume re-stages only cancelled lane intents. Persistent future values
+    // must not be replayed, and cancelled REMOVE tombstones must be restored.
+    coordinator.publishProjectControlClock(2U, true, 203000U, 1000U);
+    assert(coordinator.resolveLive(203000U, tracks).queuedEmissionCount == 0U);
+    assert(coordinator.resolveLive(303000U, tracks).queuedEmissionCount == 48U);
+    drain(queue, midi, 303000U);
+    assert(transport.messages.size() == 592U);
+    for (size_t i = 544U; i < transport.messages.size(); ++i) {
+        assert(transport.messages[i].channel == 2U);
+        assert(transport.messages[i].data1 >= 16U);
+        assert(transport.messages[i].data2 == 41U);
+    }
+    assert(coordinator.resolveLive(304000U, tracks).status == MidiCcGlobalFrameStatus::NO_CHANGE);
+    auto telemetry = coordinator.readTelemetry();
+    assert(telemetry && telemetry->candidateCount == 304U);
+    std::cout << "[PASS] Stop retains sparse lane holds and 256 persistent authors\n";
+}
+
 void test_nine_due_deadline_groups_drain_across_bounded_resolve_calls() {
     RealtimeMidiQueue queue;
     MidiCcGlobalFrameCoordinator coordinator{queue};
@@ -1231,9 +1369,11 @@ int main() {
     test_lane_lifecycle_generation_cancels_old_future_mutation();
     test_track_invalidation_removes_audibility_immediately();
     test_route_and_delay_change_cancel_old_plan_and_rebuild();
+    test_track_invalidation_preserves_other_sparse_future_authors();
     test_pinned_lane_channel_survives_project_track_snapshot_and_delay();
     test_transport_stop_cancels_future_lane_without_fallback_reemit();
     test_transport_resume_retries_cleared_due_cc_exactly_once();
+    test_stop_preserves_sparse_holds_and_full_persistent_frame();
     test_nine_due_deadline_groups_drain_across_bounded_resolve_calls();
     test_full_temporal_spool_drains_due_before_retrying_source_revision();
 

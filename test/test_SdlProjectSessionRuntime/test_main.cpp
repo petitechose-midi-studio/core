@@ -83,9 +83,9 @@ void configureProject(core::state::CoreState& state, uint8_t note) {
                  "SDL parity",
                  state.project.metadata.name.size() - 1U);
     state.project.metadata.hasSavedIdentity = true;
-    state.sequencer.pattern.setContentLength(8);
+    state.sequencer.pattern().setContentLength(8);
     state.sequencer.setStepDataAt(0, note, 100, 75);
-    state.sequencer.pattern.toggle(0);
+    state.sequencer.pattern().toggle(0);
     state.markProjectMutated();
 }
 
@@ -165,9 +165,9 @@ void test_restore_and_firmware_ordered_autosave() {
         ms::entry::SdlProjectSessionRuntime runtime(productFiles, state, 1);
         assert(runtime.restoreResult().restored());
         assert(std::strcmp(state.project.metadata.id.data(), "sdl-parity") == 0);
-        assert(state.sequencer.pattern.length.get() == 8);
-        assert(state.sequencer.pattern.isEnabled(0));
-        assert(state.sequencer.pattern.note[0] == 67);
+        assert(state.sequencer.pattern().length.get() == 8);
+        assert(state.sequencer.pattern().isEnabled(0));
+        assert(state.sequencer.pattern().note[0] == 67);
     }
 
     resetTestRoot();
@@ -273,7 +273,7 @@ void test_boot_and_hotswap_share_one_retryable_recovery_lease() {
     auto restoredState = makeCoreState(restoredStorages);
     const auto restored = restore.restore(restoredState);
     assert(restored.restored());
-    assert(restoredState.sequencer.pattern.note[0] == 71);
+    assert(restoredState.sequencer.pattern().note[0] == 71);
 
     resetTestRoot();
     std::cout

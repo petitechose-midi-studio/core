@@ -169,6 +169,7 @@ FLASHMEM void populateTileNoteEvents(
     const core::state::sequencer::SequencerPatternState& pattern,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
     bool childContext,
+    bool runtimeProjectionActive,
     uint8_t absoluteStep,
     bool inlineEditActive,
     TileRenderState& tile
@@ -197,7 +198,7 @@ FLASHMEM void populateTileNoteEvents(
         );
         return;
     }
-    if (!childContext &&
+    if (runtimeProjectionActive && !childContext &&
         sequencer.expandedVariationTelemetry.valid &&
         sequencer.expandedVariationTelemetry.rootStepIndex == absoluteStep) {
         projectExactTelemetry(
@@ -245,7 +246,9 @@ FLASHMEM void populateTileNoteEvents(
                     },
                     *graph,
                     absoluteStep,
-                    sequencer.probabilityCycleIndex,
+                    runtimeProjectionActive
+                        ? sequencer.probabilityCycleIndex
+                        : 0U,
                     rootTicksPerStep,
                     0U,
                     true
@@ -319,7 +322,8 @@ FLASHMEM void applyResolvedStepToTile(
 FLASHMEM StepGridFrameState buildStepGridFrameState(
     const core::state::sequencer::SequencerState& sequencer,
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings,
-    bool stepFocusActive
+    bool stepFocusActive,
+    bool runtimeProjectionActive
 ) {
     StepGridFrameState frame;
     frame.activeProperty = sequencer.activeStepProperty.get();
@@ -327,12 +331,17 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
     frame.feedbackTouchedMask = sequencer.stepInlineFeedback.touchedMask.get();
     frame.feedbackProperty = sequencer.stepInlineFeedback.property.get();
 
-    const auto context =
+    auto context =
         core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
             sequencer,
             projectScaleSettings,
             frame.activeProperty
         );
+    context.runtimeProjectionActive = runtimeProjectionActive;
+    if (!runtimeProjectionActive) {
+        context.probabilityCycleMaskActive = false;
+        context.contentPlayback = {};
+    }
     const auto& pattern =
         core::state::sequencer::authoringPattern(sequencer);
     frame.scaleSettings = context.scaleSettings;
@@ -419,7 +428,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
             pattern,
             resolved.nodeId
         );
-        if (!context.childContext) {
+        if (runtimeProjectionActive && !context.childContext) {
             applyCycleStatePlaybackProjection(
                 tile.contentBadges,
                 pattern,
@@ -427,7 +436,8 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
                 sequencer.probabilityCycleIndex
             );
         }
-        if (!sequencer.contentView.isChildContent() &&
+        if (runtimeProjectionActive &&
+            !sequencer.contentView.isChildContent() &&
             tile.contentBadges.microLength > 0U &&
             resolved.playheadVisible) {
             applyMicroSequencePlaybackProjection(
@@ -440,14 +450,17 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
                 absoluteStep
             );
         }
-        mergeExpandedTelemetryChordBadgeForNode(
-            tile.contentBadges,
-            sequencer.expandedVariationTelemetry,
-            resolved.runtimeNodeId,
-            sequencer.playheadStep.get(),
-            sequencer.playheadStepTickOffset.get()
-        );
-        if (!sequencer.contentView.isChildContent() &&
+        if (runtimeProjectionActive) {
+            mergeExpandedTelemetryChordBadgeForNode(
+                tile.contentBadges,
+                sequencer.expandedVariationTelemetry,
+                resolved.runtimeNodeId,
+                sequencer.playheadStep.get(),
+                sequencer.playheadStepTickOffset.get()
+            );
+        }
+        if (runtimeProjectionActive &&
+            !sequencer.contentView.isChildContent() &&
             sequencer.expandedVariationTelemetry.valid &&
             sequencer.expandedVariationTelemetry.noteBudgetExceeded &&
             sequencer.expandedVariationTelemetry.rootStepIndex == absoluteStep) {
@@ -458,6 +471,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
             pattern,
             context.scaleSettings,
             context.childContext,
+            runtimeProjectionActive,
             absoluteStep,
             stepInlineEditActive,
             tile

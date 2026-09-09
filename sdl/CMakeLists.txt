@@ -283,10 +283,9 @@ target_compile_definitions(${APP_EXE_NAME} PRIVATE
     OC_LOG=1
     # Match the firmware capacity for the measured 66-entry full-bank apply.
     OC_MAX_PENDING_NOTIFICATIONS=96
-    # Keep SDL/native/wasm binding capacity aligned with the Teensy firmware.
-    # A smaller desktop registry silently drops later bindings, which mostly
-    # affects the standalone LEFT/BOTTOM button handlers.
-    OC_MAX_BUTTON_BINDINGS=256
+    # The complete controller grammar measures 268 bindings on native and
+    # firmware. Keep four bounded slots free on both targets.
+    OC_MAX_BUTTON_BINDINGS=272
     OC_MAX_ENCODER_BINDINGS=96)
 
 # Native Core workflows persist semantic facts beside real LVGL captures.

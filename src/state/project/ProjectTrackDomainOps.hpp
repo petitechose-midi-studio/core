@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "state/project/ProjectTrackState.hpp"
@@ -12,6 +13,7 @@ enum class ProjectTrackMutationStatus : uint8_t {
     INVALID_TRACK,
     INVALID_MIDI_CHANNEL,
     INVALID_DELAY,
+    INVALID_NAME,
     INVALID_SNAPSHOT,
 };
 
@@ -41,9 +43,32 @@ struct ProjectTrackMutationResult {
            delayMs <= PROJECT_TRACK_DELAY_MAX_MS;
 }
 
-[[nodiscard]] bool validProjectTrackSnapshot(
+[[nodiscard]] inline bool validProjectTrackName(const char* name) {
+    if (name == nullptr) return false;
+    for (uint8_t index = 0U; index <= PROJECT_TRACK_NAME_MAX_LENGTH; ++index) {
+        const unsigned char character =
+            static_cast<unsigned char>(name[index]);
+        if (character == '\0') return true;
+        if (index == PROJECT_TRACK_NAME_MAX_LENGTH ||
+            character < 32U || character > 126U) {
+            return false;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] inline bool validProjectTrackSnapshot(
     const ProjectTrackSnapshot& snapshot
-);
+) {
+    for (uint8_t track = 0U; track < PROJECT_TRACK_COUNT; ++track) {
+        if (!validProjectTrackMidiChannel(snapshot.midiChannels[track]) ||
+            !validProjectTrackDelayMs(snapshot.delayMs[track]) ||
+            !validProjectTrackName(snapshot.names[track].data())) {
+            return false;
+        }
+    }
+    return true;
+}
 [[nodiscard]] bool sameProjectTrackSnapshot(
     const ProjectTrackSnapshot& lhs,
     const ProjectTrackSnapshot& rhs
@@ -65,6 +90,16 @@ struct ProjectTrackMutationResult {
     const ProjectTrackState& state,
     uint8_t track
 );
+[[nodiscard]] const char* projectTrackCustomName(
+    const ProjectTrackState& state,
+    uint8_t track
+);
+void formatProjectTrackName(
+    const ProjectTrackState& state,
+    uint8_t track,
+    char* out,
+    size_t capacity
+);
 
 ProjectTrackMutationResult setProjectTrackMidiChannel(
     ProjectTrackState& state,
@@ -85,6 +120,11 @@ ProjectTrackMutationResult setProjectTrackSoloed(
     ProjectTrackState& state,
     uint8_t track,
     bool soloed
+);
+ProjectTrackMutationResult setProjectTrackName(
+    ProjectTrackState& state,
+    uint8_t track,
+    const char* name
 );
 ProjectTrackMutationResult setProjectTrackMutedMask(
     ProjectTrackState& state,

@@ -1,0 +1,47 @@
+# Purpose: validates that Empty Clip -> Create -> Pattern -> Pattern Presets
+# uses the existing Pattern-owned editor and exact one-level Back grammar; the
+# Launcher adds no second browser.
+# Expect: capture_changed:slot_action=launcher_empty
+# Expect: capture_changed:empty_drum_created=slot_action
+# Expect: capture_changed:empty_drum_created=pattern_content
+# Expect: capture_changed:pattern_content=pattern_editor
+# Expect: capture_changed:pattern_editor=pattern_library
+# Expect: capture_match:pattern_editor=pattern_editor_returned
+# Expect: capture_changed:pattern_editor_returned=pattern_returned
+# Expect: capture_changed:pattern_returned=launcher_returned
+# Expect: semantic:empty_drum_created:effect=apply_slot_action, semantic:empty_drum_created:outcome=applied, semantic:empty_drum_created:target_track=1, semantic:empty_drum_created:target_index=1
+# Expect: semantic:slot_action:mode=sequencer.clip_launcher.editor, semantic:slot_action:target=slot_action, semantic:slot_action:value_label=create_clip
+# Expect: semantic:pattern_content:mode=sequencer.pattern, semantic:pattern_content:effect=open_clip_pattern, semantic:pattern_content:target_index=1
+# Expect: semantic:pattern_editor:effect=open_pattern_editor, semantic:pattern_editor:target=pattern
+# Expect: semantic:pattern_library:mode=sequencer.pattern_preset.load, semantic:pattern_library:target=pattern
+# Expect: semantic:launcher_returned:effect=return_to_clip_launcher, semantic:launcher_returned:target_track=1, semantic:launcher_returned:target_index=1
+
+0 scenario clip-launcher
+100 tap MACRO_7 60
+260 capture screen launcher_empty
+
+# Empty cells never create content from a performance tap. NAV opens the
+# explicit Create action; LEFT_BOTTOM then enters its Pattern.
+360 tap NAV 60
+1500 capture screen slot_action
+1740 tap NAV 60
+1980 capture screen empty_drum_created
+2060 tap LEFT_BOTTOM 60
+2410 capture screen pattern_content
+
+# Pattern owns its existing editor; NAV enters it and held NAV opens the shared
+# Pattern library.
+2510 tap NAV 60
+2810 capture screen pattern_editor
+2910 button NAV down
+3970 tick
+4030 capture screen pattern_library
+4090 button NAV up
+
+# Back unwinds Library -> Pattern editor -> Pattern -> exact Launcher cell.
+4200 tap LEFT_TOP 60
+4510 capture screen pattern_editor_returned
+4610 tap LEFT_TOP 60
+4920 capture screen pattern_returned
+5020 tap LEFT_TOP 60
+5360 capture screen launcher_returned

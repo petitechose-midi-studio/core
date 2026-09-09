@@ -5,6 +5,7 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/SequencerClipState.hpp"
 #include "state/sequencer/SequencerUiState.hpp"
 
 namespace core::state::sequencer {
@@ -39,18 +40,19 @@ static_assert(
 /** One complete mutable Pattern plus the opening UI location, owned in PSRAM. */
 struct SequencerQuickControlsDraft {
     SequencerPatternState pattern;
+    SequencerClipState clip;
     SequencerQuickControlsOpeningView openingView{};
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 #if OC_ENABLE_STATS
 static_assert(
-    sizeof(SequencerQuickControlsDraft) == 2048U,
+    sizeof(SequencerQuickControlsDraft) == 1832U,
     "diagnostic ARM detached Quick Controls root changed"
 );
 #else
 static_assert(
-    sizeof(SequencerQuickControlsDraft) == 2000U,
+    sizeof(SequencerQuickControlsDraft) == 1784U,
     "LOCK-P: ARM detached Quick Controls root changed"
 );
 #endif
@@ -61,6 +63,7 @@ class SequencerQuickControlsDraftSession {
 public:
     [[nodiscard]] bool begin(
         const SequencerPatternState& published,
+        const SequencerClipState& publishedClip,
         const SequencerPreparedGraphContentPath& openingPath,
         uint8_t openingPage,
         uint8_t openingFocusedStep
@@ -71,13 +74,20 @@ public:
     [[nodiscard]] const SequencerPatternState* pattern() const;
     [[nodiscard]] SequencerPatternState* previewPattern();
     [[nodiscard]] const SequencerPatternState* previewPattern() const;
+    [[nodiscard]] SequencerClipState* clip();
+    [[nodiscard]] const SequencerClipState* clip() const;
+    [[nodiscard]] SequencerClipState* previewClip();
+    [[nodiscard]] const SequencerClipState* previewClip() const;
 
     void suspendPreview();
     void resumePreview();
     // Allocation-free nested publication into an existing detached Step draft.
     // The obsolete parent Graph/CC owners are retained by this session until reset.
     [[nodiscard]] SequencerQuickControlsNestedPublishOutcome
-    publishToDetachedParent(SequencerPatternState& parent);
+    publishToDetachedParent(
+        SequencerPatternState& parent,
+        SequencerClipState& parentClip
+    );
     [[nodiscard]] bool restoreOpeningView(SequencerState& sequencer) const;
     void reset();
 

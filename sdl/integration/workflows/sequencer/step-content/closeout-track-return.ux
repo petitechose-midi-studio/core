@@ -14,13 +14,13 @@
 1480 tick
 1540 capture screen t01_step_edit_open
 1600 button MACRO_1 up
-1700 encoder NAV 1
-1780 encoder NAV 1
-1860 encoder NAV 1
-1940 encoder NAV 1
-2020 encoder NAV 1
-2100 encoder NAV 1
-2180 encoder NAV 1
+1700 encoder NAV 0.01
+1780 encoder NAV 0.01
+1860 encoder NAV 0.01
+1940 encoder NAV 0.01
+2020 encoder NAV 0.01
+2100 encoder NAV 0.01
+2180 encoder NAV 0.01
 2260 capture screen t01_micro_row_focused
 2360 tap NAV 60
 2660 capture screen t01_micro_context_open
@@ -30,7 +30,7 @@
 3820 tick
 3880 capture screen t01_micro_step_edit_open
 3940 button MACRO_1 up
-4040 encoder NAV 1
+4040 encoder NAV 0.01
 4140 encoder OPT 0.72
 4360 capture screen t01_micro_step_note_offset
 4460 tap NAV 60
@@ -43,32 +43,40 @@
 5240 tap LEFT_TOP 60
 5580 capture screen t01_root_badge_before_track_switch
 
-# Switch navigation focus from page to track, create/select Track 2, then come
-# back to Track 1.
-5680 button NAV down
-5740 encoder NAV -1
-5800 button NAV up
-5880 capture screen track_navigation_focus
-5980 encoder NAV 1
+# Track switching now goes through the Clip Launcher hierarchy. Return to the
+# matrix, move from the T1 header to the T2 add header, create an Instrument
+# Track, then move back from T2/C1 to T1/C1 and reopen it.
+5680 tap LEFT_TOP 60
+5900 encoder NAV -0.01
+5980 button LEFT_CENTER down
+6060 encoder NAV 0.01
+6140 button LEFT_CENTER up
 6180 capture screen t02_add_preview
 6280 tap NAV 60
-6580 capture screen t02_created
-6680 encoder NAV -1
-6980 capture screen t01_returned_after_track_switch
+6580 capture screen t02_type_instrument
+6680 tap NAV 60
+7080 capture screen t02_created
+7180 tap LEFT_TOP 60
+7380 button LEFT_CENTER down
+7460 encoder NAV -0.01
+7540 button LEFT_CENTER up
+7640 tap LEFT_CENTER 60
+7800 tap LEFT_TOP 60
+7980 capture screen t01_returned_after_track_switch
 
 # Re-open Track 1 step 1. The micro-sequence row must still be present and
 # openable; the user should not have to recreate child content.
-7080 button MACRO_1 down
-8140 tick
-8200 capture screen t01_step_edit_after_return
-8260 button MACRO_1 up
-8360 encoder NAV 1
-8440 encoder NAV 1
-8520 encoder NAV 1
-8600 encoder NAV 1
-8680 encoder NAV 1
-8760 encoder NAV 1
-8840 encoder NAV 1
-8920 capture screen t01_micro_row_still_present
-9020 tap NAV 60
-9320 capture screen t01_micro_context_reopened_after_return
+8180 button MACRO_1 down
+9240 tick
+9300 capture screen t01_step_edit_after_return
+9360 button MACRO_1 up
+9460 encoder NAV 0.01
+9540 encoder NAV 0.01
+9620 encoder NAV 0.01
+9700 encoder NAV 0.01
+9780 encoder NAV 0.01
+9860 encoder NAV 0.01
+9940 encoder NAV 0.01
+10020 capture screen t01_micro_row_still_present
+10120 tap NAV 60
+10420 capture screen t01_micro_context_reopened_after_return

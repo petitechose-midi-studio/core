@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -15,7 +16,7 @@
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
-#include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
+#include "../../src/state/sequencer/SequencerClipRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../../src/state/sequencer/SequencerStructureHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
@@ -31,7 +32,7 @@ using core::state::sequencer::SequencerHistoryService;
 using core::state::sequencer::SequencerHistoryTrackBankSnapshot;
 using core::state::sequencer::SequencerHistoryTrackStructureChange;
 using core::state::sequencer::SequencerHistoryActionKind;
-using core::state::sequencer::SequencerHistoryFullBankChange;
+using core::state::sequencer::SequencerHistoryProjectScaleChange;
 using core::state::sequencer::SequencerHistoryMacroTrackStructurePayload;
 using core::state::sequencer::SequencerHistoryPatternChange;
 using core::state::sequencer::SequencerHistoryDescriptor;
@@ -79,7 +80,7 @@ void assertActiveDraftBlocksDirectHistory(
     const uint8_t redoCount = history.redoCount();
     const uintptr_t undoIdentity = history.projectHistoryUndoIdentity();
     const uintptr_t redoIdentity = history.projectHistoryRedoIdentity();
-    const uint8_t note = active.pattern.note[0];
+    const uint8_t note = active.pattern().note[0];
     const uint8_t focusedStep = active.focusedStep.get();
     const uint8_t page = active.page.get();
     const StepProperty activeStepProperty = active.activeStepProperty.get();
@@ -104,7 +105,7 @@ void assertActiveDraftBlocksDirectHistory(
     assert(history.redoCount() == redoCount);
     assert(history.projectHistoryUndoIdentity() == undoIdentity);
     assert(history.projectHistoryRedoIdentity() == redoIdentity);
-    assert(active.pattern.note[0] == note);
+    assert(active.pattern().note[0] == note);
     assert(active.focusedStep.get() == focusedStep);
     assert(active.page.get() == page);
     assert(active.activeStepProperty.get() == activeStepProperty);
@@ -161,27 +162,6 @@ void allocateFullPatternPayload(SequencerHistoryPatternSnapshot& snapshot) {
     assert(snapshot.graph && snapshot.ccLanes);
 }
 
-void allocateCanonicalFullBankPayload(
-    SequencerHistoryTrackBankSnapshot& snapshot
-) {
-    snapshot.flat.activeTrack = 0U;
-    snapshot.editorGraph =
-        core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
-    snapshot.editorCcLanes =
-        core::app::makeExtmemUnique<SequencerCcLaneBank>();
-    assert(snapshot.editorGraph && snapshot.editorCcLanes);
-    for (uint8_t track = 1U; track < SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        snapshot.bankGraphs[track] = core::app::makeExtmemUnique<
-            oc::note::sequencer::StepSequencerGraph
-        >();
-        snapshot.bankCcLanes[track] =
-            core::app::makeExtmemUnique<SequencerCcLaneBank>();
-        assert(snapshot.bankGraphs[track]);
-        assert(snapshot.bankCcLanes[track]);
-    }
-}
-
 void test_retained_span_accounting_matches_owner_topology() {
     SequencerHistoryService history;
 
@@ -215,38 +195,32 @@ void test_retained_span_accounting_matches_owner_topology() {
         SequencerHistoryMacroTrackStructurePayload
     >();
     assert(structure->macroStructure);
-    structure->macroStructure->beforeControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    structure->macroStructure->afterControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    assert(structure->macroStructure->beforeControl);
-    assert(structure->macroStructure->afterControl);
+    auto controlBefore = std::make_unique<
+        core::state::modulation::ProjectControlDomainState>();
+    auto& control = structure->macroStructure->control;
+    assert(control.prepare(*controlBefore));
+    ++control.candidate()->modulation.nextSourceId;
+    assert(control.sealCandidate(*controlBefore));
     structure->macroStructure->capturedTrackMask = 0xFFFFU;
-    structure->macroStructure->afterCaptured = true;
     assert(history.canRecordStructure(*structure));
     assert(tx::commitAdmittedStructure(history, std::move(structure)));
-    assert(history.retainedSpans() == 68U);
+    assert(history.retainedSpans() == 67U);
 
     history.clear();
-    auto fullBank = core::app::makeExtmemUnique<
-        SequencerHistoryFullBankChange
-    >();
-    assert(fullBank);
-    fullBank->before.flat.tracks[0].note[0] = 64U;
-    fullBank->after.flat.tracks[0].note[0] = 65U;
-    allocateCanonicalFullBankPayload(fullBank->before);
-    allocateCanonicalFullBankPayload(fullBank->after);
-    assert(history.canRecordFullBank(*fullBank));
-    history.commitAdmittedFullBank(std::move(fullBank));
-    assert(history.retainedSpans() == 65U);
+    auto scale = core::app::makeExtmemUnique<SequencerHistoryProjectScaleChange>();
+    scale->after.root = static_cast<uint8_t>((scale->before.root + 1U) % 12U);
+    scale->chordCount = 1U;
+    scale->chords = core::app::makeExtmemUniqueArrayForOverwrite<
+        core::state::sequencer::SequencerProjectScaleChordChange>(1U);
+    assert(history.canRecordProjectScale(*scale));
+    history.commitAdmittedProjectScale(std::move(scale));
+    assert(history.retainedSpans() == 2U);
     assert(
         SequencerHistoryService::RETAINED_SPAN_BUDGET == 511U
     );
 
     std::cout
-        << "[PASS] retained spans match Pattern, Structure and FullBank owners\n";
+        << "[PASS] retained spans match Pattern, Structure and Project Scale owners\n";
 }
 
 bool hasMicroSequence(const SequencerPatternState& pattern, uint8_t step) {
@@ -296,17 +270,16 @@ bool hasNestedCycleStateSetWithOffset(
 
 void test_pattern_snapshot_can_capture_inactive_track() {
     SequencerTrackBankState bank;
-    SequencerState active;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
     bank.syncSharedTrackState(0x0003, 0);
 
-    setStep(active.pattern, 0, 60);
-    active.pattern.velocity[0] = 72;
-    assert(core::state::sequencer::storeActiveTrack(bank, active));
+    setStep(active.pattern(), 0, 60);
+    active.pattern().velocity[0] = 72;
     assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
 
-    setStep(active.pattern, 0, 84);
-    active.pattern.velocity[0] = 99;
+    setStep(active.pattern(), 0, 84);
+    active.pattern().velocity[0] = 99;
     bank.track(0).velocity[0] = 77;
 
     SequencerHistoryPatternSnapshot snapshot;
@@ -319,18 +292,18 @@ void test_pattern_snapshot_can_capture_inactive_track() {
 
 void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
-    state.pattern.setContentLength(16);
-    setStep(state.pattern, 0, 60);
+    assert(core::state::sequencer::resizeClipPatternContent(state, 16));
+    setStep(state.pattern(), 0, 60);
     state.focusedStep.set(0);
     state.page.set(0);
 
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
 
-    setStep(state.pattern, 0, 72);
+    setStep(state.pattern(), 0, 72);
     state.focusedStep.set(9);
     state.page.set(1);
 
@@ -343,13 +316,13 @@ void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
 
     assertActiveDraftBlocksDirectHistory(history, bank, state, false);
     assert(history.undo(bank, state));
-    assert(state.pattern.note[0] == 60);
+    assert(state.pattern().note[0] == 60);
     assert(state.focusedStep.get() == 0);
     assert(bank.track(bank.activeTrackIndex()).note[0] == 60);
 
     assertActiveDraftBlocksDirectHistory(history, bank, state, true);
     assert(history.redo(bank, state));
-    assert(state.pattern.note[0] == 72);
+    assert(state.pattern().note[0] == 72);
     assert(state.focusedStep.get() == 9);
     assert(state.page.get() == 1);
     assert(bank.track(bank.activeTrackIndex()).note[0] == 72);
@@ -359,13 +332,13 @@ void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
 
 void test_flat_pattern_history_restores_region_only_edit() {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
     SequencerHistoryPatternSnapshot before;
     core::state::sequencer::captureFlatHistorySnapshot(state, before);
-    assert(core::state::sequencer::setPatternPlaybackRegion(
-        state.pattern,
+    assert(core::state::sequencer::setClipPlaybackRegion(
+        state,
         {8, 1, 2, 6}
     ));
     SequencerHistoryPatternSnapshot after;
@@ -380,14 +353,20 @@ void test_flat_pattern_history_restores_region_only_edit() {
         core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly
     ));
     assert(history.undo(bank, state));
-    auto region = core::state::sequencer::patternPlaybackRegion(state.pattern);
+    auto region = core::state::sequencer::clipPlaybackRegion(
+        state.pattern(),
+        state.clip()
+    );
     assert(region.contentLength == 8);
     assert(region.playStart == 0);
     assert(region.loopStart == 0);
     assert(region.loopEnd == 8);
 
     assert(history.redo(bank, state));
-    region = core::state::sequencer::patternPlaybackRegion(state.pattern);
+    region = core::state::sequencer::clipPlaybackRegion(
+        state.pattern(),
+        state.clip()
+    );
     assert(region.contentLength == 8);
     assert(region.playStart == 1);
     assert(region.loopStart == 2);
@@ -398,20 +377,20 @@ void test_flat_pattern_history_restores_region_only_edit() {
 
 void test_pattern_history_restores_graph_payload() {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
+        state.pattern(),
         rootNode,
         3
     );
     assert(sequence.ok);
-    assert(hasMicroSequence(state.pattern, 0));
+    assert(hasMicroSequence(state.pattern(), 0));
     auto chord = oc::note::sequencer::StepSequencerChordSpec::semantic(
         oc::note::sequencer::StepSequencerChordHarmony::Custom,
         8U,
@@ -426,7 +405,7 @@ void test_pattern_history_restores_graph_payload() {
         chord.setCustomInterval(voice, intervals[voice]);
     }
     assert(core::state::sequencer::setNodeChordSpec(
-        state.pattern,
+        state.pattern(),
         rootNode,
         chord
     ));
@@ -438,13 +417,13 @@ void test_pattern_history_restores_graph_payload() {
     assert(tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
 
     assert(history.undo(bank, state));
-    assert(core::state::sequencer::graphView(state.pattern) == nullptr);
+    assert(core::state::sequencer::graphView(state.pattern()) == nullptr);
     assert(!hasMicroSequence(bank.track(bank.activeTrackIndex()), 0));
 
     assert(history.redo(bank, state));
-    const auto* graph = core::state::sequencer::graphView(state.pattern);
+    const auto* graph = core::state::sequencer::graphView(state.pattern());
     assert(graph != nullptr);
-    assert(hasMicroSequence(state.pattern, 0));
+    assert(hasMicroSequence(state.pattern(), 0));
     const auto childSequenceId = graph->stepNodes[rootNode].childSequenceId;
     const auto* child = graph->sequence(childSequenceId);
     assert(child != nullptr);
@@ -460,28 +439,27 @@ void test_pattern_history_restores_graph_payload() {
 
 void test_flat_pattern_history_preserves_graph_payload() {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
-    state.pattern.setContentLength(8);
+    state.pattern().setContentLength(8);
     state.focusedStep.set(3);
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
+        state.pattern(),
         rootNode,
         3
     );
     assert(sequence.ok);
-    assert(core::state::sequencer::storeActiveTrack(bank, state));
 
-    const auto* editorGraph = core::state::sequencer::graphView(state.pattern);
+    const auto* editorGraph = core::state::sequencer::graphView(state.pattern());
     const auto* bankGraph = core::state::sequencer::graphView(bank.track(0));
     assert(editorGraph != nullptr);
     assert(bankGraph != nullptr);
 
     SequencerHistoryPatternSnapshot before;
     core::state::sequencer::captureFlatHistorySnapshot(state, before);
-    state.pattern.setEnabled(0, true);
+    state.pattern().setEnabled(0, true);
     state.focusedStep.set(0);
     SequencerHistoryPatternSnapshot after;
     core::state::sequencer::captureFlatHistorySnapshot(state, after);
@@ -496,19 +474,19 @@ void test_flat_pattern_history_preserves_graph_payload() {
     ));
 
     assert(history.undo(bank, state));
-    assert(!state.pattern.isEnabled(0));
+    assert(!state.pattern().isEnabled(0));
     assert(state.focusedStep.get() == 3);
-    assert(core::state::sequencer::graphView(state.pattern) == editorGraph);
+    assert(core::state::sequencer::graphView(state.pattern()) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0)) == bankGraph);
-    assert(hasMicroSequence(state.pattern, 0));
+    assert(hasMicroSequence(state.pattern(), 0));
     assert(hasMicroSequence(bank.track(0), 0));
 
     assert(history.redo(bank, state));
-    assert(state.pattern.isEnabled(0));
+    assert(state.pattern().isEnabled(0));
     assert(state.focusedStep.get() == 0);
-    assert(core::state::sequencer::graphView(state.pattern) == editorGraph);
+    assert(core::state::sequencer::graphView(state.pattern()) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0)) == bankGraph);
-    assert(hasMicroSequence(state.pattern, 0));
+    assert(hasMicroSequence(state.pattern(), 0));
     assert(hasMicroSequence(bank.track(0), 0));
 
     std::cout << "[PASS] test_flat_pattern_history_preserves_graph_payload\n";
@@ -516,15 +494,15 @@ void test_flat_pattern_history_preserves_graph_payload() {
 
 size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane) {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
-    assert(core::state::sequencer::ensureGraphRoot(state.pattern));
-    if (state.pattern.length.get() != 8U) {
-        assert(state.pattern.setContentLength(8U));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
+    assert(core::state::sequencer::ensureGraphRoot(state.pattern()));
+    if (state.pattern().length.get() != 8U) {
+        assert(state.pattern().setContentLength(8U));
     }
 
     if (withCcLane) {
-        auto* ccLanes = core::state::sequencer::ensureSequencerCcLaneBank(state.pattern);
+        auto* ccLanes = core::state::sequencer::ensureSequencerCcLaneBank(state.pattern());
         assert(ccLanes != nullptr);
         core::state::sequencer::SequencerCcLaneDraft draft{};
         draft.destination.controller = 74U;
@@ -546,12 +524,11 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
             37U
         ).changed());
     }
-    assert(core::state::sequencer::storeActiveTrack(bank, state));
 
-    const auto* editorGraph = core::state::sequencer::graphView(state.pattern);
+    const auto* editorGraph = core::state::sequencer::graphView(state.pattern());
     const auto* bankGraph = core::state::sequencer::graphView(bank.track(0U));
     const auto* editorCcLanes =
-        core::state::sequencer::sequencerCcLaneView(state.pattern);
+        core::state::sequencer::sequencerCcLaneView(state.pattern());
     const auto* bankCcLanes =
         core::state::sequencer::sequencerCcLaneView(bank.track(0U));
     assert(editorGraph != nullptr && bankGraph != nullptr);
@@ -563,16 +540,16 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     const uint64_t bankCcHash = withCcLane
         ? byteHash(bankCcLanes, sizeof(*bankCcLanes))
         : 0U;
-    const uint32_t editorCcRevision = state.pattern.ccLaneRevision.get();
+    const uint32_t editorCcRevision = state.pattern().ccLaneRevision.get();
     const uint32_t bankCcRevision = bank.track(0U).ccLaneRevision.get();
 
     // This reproduces the central Step coalescer shape: a complete `before`
     // snapshot followed by a FlatOnly `after` snapshot.
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
-    assert(state.pattern.length.get() == 8U);
-    assert(state.pattern.setContentLength(16U));
-    state.pattern.setEnabled(0U, true);
+    assert(state.pattern().length.get() == 8U);
+    assert(core::state::sequencer::resizeClipPatternContent(state, 16U));
+    state.pattern().setEnabled(0U, true);
     SequencerHistoryPatternSnapshot after;
     core::state::sequencer::captureFlatHistorySnapshot(state, after);
 
@@ -588,15 +565,15 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     assert(retainedBytes > 0U);
 
     assert(history.undo(bank, state));
-    assert(state.pattern.length.get() == 8U);
-    assert(!state.pattern.isEnabled(0U));
-    assert(core::state::sequencer::graphView(state.pattern) == editorGraph);
+    assert(state.pattern().length.get() == 8U);
+    assert(!state.pattern().isEnabled(0U));
+    assert(core::state::sequencer::graphView(state.pattern()) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0U)) == bankGraph);
-    assert(core::state::sequencer::sequencerCcLaneView(state.pattern) ==
+    assert(core::state::sequencer::sequencerCcLaneView(state.pattern()) ==
            editorCcLanes);
     assert(core::state::sequencer::sequencerCcLaneView(bank.track(0U)) ==
            bankCcLanes);
-    assert(state.pattern.ccLaneRevision.get() == editorCcRevision);
+    assert(state.pattern().ccLaneRevision.get() == editorCcRevision);
     assert(bank.track(0U).ccLaneRevision.get() == bankCcRevision);
     if (withCcLane) {
         assert(byteHash(editorCcLanes, sizeof(*editorCcLanes)) == editorCcHash);
@@ -604,11 +581,11 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     }
 
     assert(history.redo(bank, state));
-    assert(state.pattern.length.get() == 16U);
-    assert(state.pattern.isEnabled(0U));
-    assert(core::state::sequencer::graphView(state.pattern) == editorGraph);
+    assert(state.pattern().length.get() == 16U);
+    assert(state.pattern().isEnabled(0U));
+    assert(core::state::sequencer::graphView(state.pattern()) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0U)) == bankGraph);
-    assert(core::state::sequencer::sequencerCcLaneView(state.pattern) ==
+    assert(core::state::sequencer::sequencerCcLaneView(state.pattern()) ==
            editorCcLanes);
     assert(core::state::sequencer::sequencerCcLaneView(bank.track(0U)) ==
            bankCcLanes);
@@ -646,12 +623,12 @@ void test_flat_pattern_history_discards_unretained_payloads_and_preserves_live_c
 }
 
 void test_flat_pattern_history_rejects_graph_revision_change() {
-    SequencerState state;
+    core::state::sequencer::SequencerDetachedEditor state;
     SequencerHistoryPatternSnapshot before;
     core::state::sequencer::captureFlatHistorySnapshot(state, before);
 
     const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
+        state.pattern(),
         core::state::sequencer::rootStepNodeId(0),
         2
     );
@@ -673,10 +650,10 @@ void test_flat_pattern_history_rejects_graph_revision_change() {
 }
 
 void test_pattern_noop_ignores_unused_graph_capacity() {
-    SequencerState state;
+    core::state::sequencer::SequencerDetachedEditor state;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
+        state.pattern(),
         rootNode,
         3
     );
@@ -714,7 +691,7 @@ void test_pattern_noop_ignores_unused_graph_capacity() {
 }
 
 void test_pattern_noop_ignores_focus_only_change() {
-    SequencerState state;
+    core::state::sequencer::SequencerDetachedEditor state;
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
 
@@ -733,13 +710,13 @@ void test_pattern_noop_ignores_focus_only_change() {
 
 void test_redo_clears_after_new_record() {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
     SequencerHistoryService history;
     SequencerHistoryPatternSnapshot firstBefore;
     assert(core::state::sequencer::captureHistorySnapshot(state, firstBefore));
-    setStep(state.pattern, 0, 61);
+    setStep(state.pattern(), 0, 61);
     SequencerHistoryPatternSnapshot firstAfter;
     assert(core::state::sequencer::captureHistorySnapshot(state, firstAfter));
     assert(tx::commitAdmittedPattern(
@@ -753,7 +730,7 @@ void test_redo_clears_after_new_record() {
 
     SequencerHistoryPatternSnapshot secondBefore;
     assert(core::state::sequencer::captureHistorySnapshot(state, secondBefore));
-    setStep(state.pattern, 0, 62);
+    setStep(state.pattern(), 0, 62);
     SequencerHistoryPatternSnapshot secondAfter;
     assert(core::state::sequencer::captureHistorySnapshot(state, secondAfter));
     assert(tx::commitAdmittedPattern(
@@ -770,14 +747,14 @@ void test_redo_clears_after_new_record() {
 
 void test_pattern_history_undoes_previous_track_without_switching_active_track() {
     SequencerTrackBankState bank;
-    SequencerState active;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
     bank.syncSharedTrackState(0x0003, 0);
 
-    setStep(active.pattern, 0, 60);
+    setStep(active.pattern(), 0, 60);
     SequencerHistoryPatternSnapshot track0Before;
     assert(core::state::sequencer::captureHistorySnapshot(active, track0Before));
-    setStep(active.pattern, 0, 61);
+    setStep(active.pattern(), 0, 61);
     SequencerHistoryPatternSnapshot track0After;
     assert(core::state::sequencer::captureHistorySnapshot(active, track0After));
 
@@ -799,10 +776,10 @@ void test_pattern_history_undoes_previous_track_without_switching_active_track()
     ));
 
     assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
-    setStep(active.pattern, 0, 72);
+    setStep(active.pattern(), 0, 72);
     SequencerHistoryPatternSnapshot track1Before;
     assert(core::state::sequencer::captureHistorySnapshot(active, track1Before));
-    setStep(active.pattern, 0, 73);
+    setStep(active.pattern(), 0, 73);
     SequencerHistoryPatternSnapshot track1After;
     assert(core::state::sequencer::captureHistorySnapshot(active, track1After));
     assert(tx::commitAdmittedPattern(
@@ -814,8 +791,8 @@ void test_pattern_history_undoes_previous_track_without_switching_active_track()
 
     assert(history.undo(bank, active));
     assert(bank.activeTrackIndex() == 1);
-    assert(active.pattern.note[0] == 72);
-    assert(bank.track(1).note[0] == 72);
+    assert(active.pattern().note[0] == 72);
+    assert(bank.track(1U).note[0] == 72);
     assert(bank.track(0).note[0] == 61);
 
     const auto result = history.undoWithResult(bank, active);
@@ -826,80 +803,23 @@ void test_pattern_history_undoes_previous_track_without_switching_active_track()
     assert(result.descriptor.beforeValue == 60);
     assert(result.descriptor.afterValue == 61);
     assert(bank.activeTrackIndex() == 1);
-    assert(active.pattern.note[0] == 72);
-    assert(bank.track(1).note[0] == 72);
+    assert(active.pattern().note[0] == 72);
+    assert(bank.track(1U).note[0] == 72);
     assert(bank.track(0).note[0] == 60);
 
     std::cout << "[PASS] test_pattern_history_undoes_previous_track_without_switching_active_track\n";
 }
 
-void test_full_bank_history_restores_active_track_and_graphs() {
-    SequencerTrackBankState bank;
-    SequencerState active;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
-    bank.syncSharedTrackState(0x0003, 0);
-
-    setStep(active.pattern, 0, 60);
-    assert(core::state::sequencer::createMicroSequence(
-        active.pattern,
-        core::state::sequencer::rootStepNodeId(0),
-        2
-    ).ok);
-
-    setStep(bank.track(1), 0, 72);
-    assert(core::state::sequencer::createCycleStateSet(
-        bank.track(1),
-        core::state::sequencer::rootStepNodeId(0),
-        3
-    ).ok);
-
-    SequencerHistoryTrackBankSnapshot before;
-    assert(core::state::sequencer::captureHistorySnapshot(bank, active, before));
-
-    assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
-    bank.syncSharedTrackState(0x0002, 1);
-    setStep(active.pattern, 0, 80);
-    assert(core::state::sequencer::createMicroSequence(
-        active.pattern,
-        core::state::sequencer::rootStepNodeId(2),
-        4
-    ).ok);
-
-    SequencerHistoryTrackBankSnapshot after;
-    assert(core::state::sequencer::captureHistorySnapshot(bank, active, after));
-
-    SequencerHistoryService history;
-    assert(tx::commitAdmittedFullBank(history, std::move(before), std::move(after)));
-
-    assertActiveDraftBlocksDirectHistory(history, bank, active, false);
-    assert(history.undo(bank, active));
-    assert(bank.activeTrackIndex() == 0);
-    assert(bank.currentEnabledMask() == 0x0003);
-    assert(active.pattern.note[0] == 60);
-    assert(hasMicroSequence(active.pattern, 0));
-    assert(bank.track(1).note[0] == 72);
-    assert(hasCycleStateSet(bank.track(1), 0));
-
-    assertActiveDraftBlocksDirectHistory(history, bank, active, true);
-    assert(history.redo(bank, active));
-    assert(bank.activeTrackIndex() == 1);
-    assert(bank.currentEnabledMask() == 0x0002);
-    assert(active.pattern.note[0] == 80);
-    assert(hasMicroSequence(active.pattern, 2));
-
-    std::cout << "[PASS] test_full_bank_history_restores_active_track_and_graphs\n";
-}
-
 void test_structure_history_restores_track_mask_active_track_and_graphs() {
     SequencerTrackBankState bank;
-    SequencerState active;
+    SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
     core::state::macro::MacroPagesState pages;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    bank.reset();
     bank.syncSharedTrackState(0x0003, 0);
 
-    setStep(active.pattern, 0, 60);
+    setStep(active.pattern(), 0, 60);
     assert(core::state::sequencer::createMicroSequence(
-        active.pattern,
+        active.pattern(),
         core::state::sequencer::rootStepNodeId(0),
         2
     ).ok);
@@ -925,9 +845,9 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
 
     assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
     bank.syncSharedTrackState(0x0002, 1);
-    setStep(active.pattern, 0, 80);
+    setStep(active.pattern(), 0, 80);
     assert(core::state::sequencer::createMicroSequence(
-        active.pattern,
+        active.pattern(),
         core::state::sequencer::rootStepNodeId(2),
         4
     ).ok);
@@ -942,7 +862,7 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
     SequencerHistoryService history;
     assert(tx::commitAdmittedStructure(history, std::move(change)));
     assert(history.undoCount(SequencerHistoryScope::Structure) == 1);
-    assert(history.undoCount(SequencerHistoryScope::FullBank) == 0);
+    assert(history.undoCount(SequencerHistoryScope::ProjectScale) == 0);
 
     assertActiveDraftBlocksDirectHistory(history, bank, active, false);
     core::state::sequencer::SequencerPreparedStructureHistoryReplay undo;
@@ -959,8 +879,8 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
         bank, active, pages, std::move(undo)).applied);
     assert(bank.activeTrackIndex() == 0);
     assert(bank.currentEnabledMask() == 0x0003);
-    assert(active.pattern.note[0] == 60);
-    assert(hasMicroSequence(active.pattern, 0));
+    assert(active.pattern().note[0] == 60);
+    assert(hasMicroSequence(active.pattern(), 0));
     assert(bank.track(1).note[0] == 72);
     assert(hasCycleStateSet(bank.track(1), 0));
 
@@ -979,16 +899,16 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
         bank, active, pages, std::move(redo)).applied);
     assert(bank.activeTrackIndex() == 1);
     assert(bank.currentEnabledMask() == 0x0002);
-    assert(active.pattern.note[0] == 80);
-    assert(hasMicroSequence(active.pattern, 2));
+    assert(active.pattern().note[0] == 80);
+    assert(hasMicroSequence(active.pattern(), 2));
 
     std::cout << "[PASS] test_structure_history_restores_track_mask_active_track_and_graphs\n";
 }
 
 void test_structure_history_preflight_matches_record_acceptance() {
     SequencerTrackBankState bank;
-    SequencerState active;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
     SequencerHistoryService history;
     auto noOp = core::app::makeExtmemUnique<SequencerHistoryTrackStructureChange>();
@@ -1017,7 +937,7 @@ void test_structure_history_preflight_matches_record_acceptance() {
         trackMask,
         change->before
     ));
-    setStep(active.pattern, 0, 67);
+    setStep(active.pattern(), 0, 67);
     assert(core::state::sequencer::captureHistoryStructureSnapshot(
         bank,
         active,
@@ -1066,36 +986,36 @@ void test_structure_history_preflight_accepts_with_budget_pruning() {
 
 void test_track_switch_preserves_nested_graph_payload() {
     SequencerTrackBankState bank;
-    SequencerState active;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
     bank.syncSharedTrackState(0x0003, 0);
 
-    setStep(active.pattern, 0, 60);
+    setStep(active.pattern(), 0, 60);
     const auto rootCycle = core::state::sequencer::createCycleStateSet(
-        active.pattern,
+        active.pattern(),
         core::state::sequencer::rootStepNodeId(0),
         2
     );
     assert(rootCycle.ok);
 
-    auto* graph = active.pattern.graph.get();
+    auto* graph = active.pattern().graph.get();
     assert(graph != nullptr);
     const auto* rootCycleSet = graph->cycleSet(rootCycle.id);
     assert(rootCycleSet != nullptr);
     const auto secondStateNode = static_cast<uint16_t>(rootCycleSet->firstStateNode + 1U);
 
     const auto nestedCycle = core::state::sequencer::createCycleStateSet(
-        active.pattern,
+        active.pattern(),
         secondStateNode,
         2
     );
     assert(nestedCycle.ok);
-    graph = active.pattern.graph.get();
+    graph = active.pattern().graph.get();
     assert(graph != nullptr);
     const auto* nestedCycleSet = graph->cycleSet(nestedCycle.id);
     assert(nestedCycleSet != nullptr);
     assert(core::state::sequencer::setNodeNoteOffset(
-        active.pattern,
+        active.pattern(),
         static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1U),
         5
     ));
@@ -1113,21 +1033,21 @@ void test_track_switch_preserves_nested_graph_payload() {
     assert(core::state::sequencer::switchActiveTrack(bank, active, 0));
     assert(core::state::sequencer::isRootContentView(active));
 
-    assert(hasCycleStateSet(active.pattern, 0));
-    assert(hasNestedCycleStateSetWithOffset(active.pattern, 0, 1, 5));
+    assert(hasCycleStateSet(active.pattern(), 0));
+    assert(hasNestedCycleStateSetWithOffset(active.pattern(), 0, 1, 5));
 
     std::cout << "[PASS] test_track_switch_preserves_nested_graph_payload\n";
 }
 
 void test_track_switch_rotates_graph_and_cc_ownership_without_cloning() {
     SequencerTrackBankState bank;
-    SequencerState active;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
+    SequencerState active{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
     bank.syncSharedTrackState(0x0003, 0);
 
-    assert(core::state::sequencer::ensureGraphRoot(active.pattern));
+    assert(core::state::sequencer::ensureGraphRoot(active.pattern()));
     auto* track0Lanes =
-        core::state::sequencer::ensureSequencerCcLaneBank(active.pattern);
+        core::state::sequencer::ensureSequencerCcLaneBank(active.pattern());
     assert(track0Lanes != nullptr);
     core::state::sequencer::SequencerCcLaneDraft track0Draft{};
     track0Draft.destination.controller = 74U;
@@ -1136,7 +1056,7 @@ void test_track_switch_rotates_graph_and_cc_ownership_without_cloning() {
         0U,
         track0Draft
     ).changed());
-    setStep(active.pattern, 0, 60);
+    setStep(active.pattern(), 0, 60);
 
     assert(core::state::sequencer::ensureGraphRoot(bank.track(1)));
     auto* track1Lanes =
@@ -1151,8 +1071,8 @@ void test_track_switch_rotates_graph_and_cc_ownership_without_cloning() {
     ).changed());
     setStep(bank.track(1), 0, 72);
 
-    const auto* const track0Graph = active.pattern.graph.get();
-    const auto* const track0Cc = active.pattern.ccLanes.get();
+    const auto* const track0Graph = active.pattern().graph.get();
+    const auto* const track0Cc = active.pattern().ccLanes.get();
     const auto* const track1Graph = bank.track(1).graph.get();
     const auto* const track1Cc = bank.track(1).ccLanes.get();
     assert(track0Graph != nullptr && track0Cc != nullptr);
@@ -1160,14 +1080,14 @@ void test_track_switch_rotates_graph_and_cc_ownership_without_cloning() {
 
     for (uint16_t cycle = 0; cycle < 100U; ++cycle) {
         assert(core::state::sequencer::switchActiveTrack(bank, active, 1));
-        assert(active.pattern.graph.get() == track1Graph);
-        assert(active.pattern.ccLanes.get() == track1Cc);
-        assert(active.pattern.note[0] == 72U);
+        assert(active.pattern().graph.get() == track1Graph);
+        assert(active.pattern().ccLanes.get() == track1Cc);
+        assert(active.pattern().note[0] == 72U);
 
         assert(core::state::sequencer::switchActiveTrack(bank, active, 0));
-        assert(active.pattern.graph.get() == track0Graph);
-        assert(active.pattern.ccLanes.get() == track0Cc);
-        assert(active.pattern.note[0] == 60U);
+        assert(active.pattern().graph.get() == track0Graph);
+        assert(active.pattern().ccLanes.get() == track0Cc);
+        assert(active.pattern().note[0] == 60U);
     }
 
     std::cout
@@ -1176,26 +1096,24 @@ void test_track_switch_rotates_graph_and_cc_ownership_without_cloning() {
 
 void test_history_limits_prune_by_scope() {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
     SequencerHistoryService history;
     for (uint8_t i = 0; i < SequencerHistoryService::PATTERN_ENTRY_LIMIT + 1U; ++i) {
         SequencerHistoryPatternSnapshot before;
         assert(core::state::sequencer::captureHistorySnapshot(state, before));
-        setStep(state.pattern, 0, static_cast<uint8_t>(50U + i));
+        setStep(state.pattern(), 0, static_cast<uint8_t>(50U + i));
         SequencerHistoryPatternSnapshot after;
         assert(core::state::sequencer::captureHistorySnapshot(state, after));
         assert(tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
     }
 
-    for (uint8_t i = 0; i < SequencerHistoryService::FULL_BANK_ENTRY_LIMIT + 1U; ++i) {
-        SequencerHistoryTrackBankSnapshot before;
-        assert(core::state::sequencer::captureHistorySnapshot(bank, state, before));
-        setStep(bank.track(1), 0, static_cast<uint8_t>(70U + i));
-        SequencerHistoryTrackBankSnapshot after;
-        assert(core::state::sequencer::captureHistorySnapshot(bank, state, after));
-        assert(tx::commitAdmittedFullBank(history, std::move(before), std::move(after)));
+    for (uint8_t i = 0; i < SequencerHistoryService::PROJECT_SCALE_ENTRY_LIMIT + 1U; ++i) {
+        auto change = core::app::makeExtmemUnique<SequencerHistoryProjectScaleChange>();
+        change->after.root = static_cast<uint8_t>((change->before.root + 1U) % 12U);
+        assert(history.canRecordProjectScale(*change));
+        history.commitAdmittedProjectScale(std::move(change));
     }
 
     for (uint8_t i = 0; i < SequencerHistoryService::STRUCTURE_ENTRY_LIMIT + 1U; ++i) {
@@ -1208,7 +1126,7 @@ void test_history_limits_prune_by_scope() {
             historyMask,
             change->before
         ));
-        setStep(state.pattern, 1, static_cast<uint8_t>(90U + i));
+        setStep(state.pattern(), 1, static_cast<uint8_t>(90U + i));
         assert(core::state::sequencer::captureHistoryStructureSnapshot(
             bank,
             state,
@@ -1224,51 +1142,36 @@ void test_history_limits_prune_by_scope() {
            SequencerHistoryService::PATTERN_ENTRY_LIMIT);
     assert(history.undoCount(SequencerHistoryScope::Structure) ==
            SequencerHistoryService::STRUCTURE_ENTRY_LIMIT);
-    assert(history.undoCount(SequencerHistoryScope::FullBank) ==
-           SequencerHistoryService::FULL_BANK_ENTRY_LIMIT);
+    assert(history.undoCount(SequencerHistoryScope::ProjectScale) ==
+           SequencerHistoryService::PROJECT_SCALE_ENTRY_LIMIT);
     assert(history.undoCount() ==
            SequencerHistoryService::PATTERN_ENTRY_LIMIT +
                SequencerHistoryService::STRUCTURE_ENTRY_LIMIT +
-               SequencerHistoryService::FULL_BANK_ENTRY_LIMIT);
+               SequencerHistoryService::PROJECT_SCALE_ENTRY_LIMIT);
 
     std::cout << "[PASS] test_history_limits_prune_by_scope\n";
 }
 
-void test_history_prunes_graph_heavy_entries_to_psram_budget() {
-    SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
-    bank.syncSharedTrackState(0xFFFF, 0);
-    assert(core::state::sequencer::ensureGraphRoot(state.pattern));
-    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        assert(core::state::sequencer::copyGraph(
-            bank.track(i),
-            state.pattern
-        ));
-    }
-
+void test_history_prunes_large_scale_entries_to_psram_budget() {
     SequencerHistoryService history;
     for (uint8_t edit = 0; edit < 3; ++edit) {
-        SequencerHistoryTrackBankSnapshot before;
-        assert(core::state::sequencer::captureHistorySnapshot(bank, state, before));
-        bank.track(1).note[0] = static_cast<uint8_t>(61U + edit);
-        SequencerHistoryTrackBankSnapshot after;
-        assert(core::state::sequencer::captureHistorySnapshot(bank, state, after));
-        assert(tx::commitAdmittedFullBank(history, std::move(before), std::move(after)));
+        auto change = core::app::makeExtmemUnique<SequencerHistoryProjectScaleChange>();
+        change->after.root = static_cast<uint8_t>((change->before.root + 1U) % 12U);
+        change->chordCount = 30000U;
+        change->chords = core::app::makeExtmemUniqueArrayForOverwrite<
+            core::state::sequencer::SequencerProjectScaleChordChange>(change->chordCount);
+        assert(history.canRecordProjectScale(*change));
+        history.commitAdmittedProjectScale(std::move(change));
         assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
     }
-
-    assert(history.undoCount(SequencerHistoryScope::FullBank) <
-           SequencerHistoryService::FULL_BANK_ENTRY_LIMIT);
-    assert(history.undoCount(SequencerHistoryScope::FullBank) > 0);
-
-    std::cout << "[PASS] test_history_prunes_graph_heavy_entries_to_psram_budget\n";
+    assert(history.undoCount(SequencerHistoryScope::ProjectScale) == 1U);
+    assert(history.retainedSpans() == 2U);
 }
 
 void test_drum_history_evicts_oldest_entry_at_scope_limit() {
     SequencerTrackBankState bank;
-    SequencerState state;
-    assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
+    SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+    bank.reset();
 
     SequencerHistoryService history;
     for (uint8_t edit = 0U;
@@ -1317,10 +1220,10 @@ void test_drum_history_evicts_oldest_entry_at_scope_limit() {
 }
 
 void test_clear_resets_stacks() {
-    SequencerState state;
+    core::state::sequencer::SequencerDetachedEditor state;
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
-    setStep(state.pattern, 0, 64);
+    setStep(state.pattern(), 0, 64);
     SequencerHistoryPatternSnapshot after;
     assert(core::state::sequencer::captureHistorySnapshot(state, after));
 
@@ -1352,7 +1255,6 @@ int main() {
     test_pattern_noop_ignores_focus_only_change();
     test_redo_clears_after_new_record();
     test_pattern_history_undoes_previous_track_without_switching_active_track();
-    test_full_bank_history_restores_active_track_and_graphs();
     test_structure_history_restores_track_mask_active_track_and_graphs();
     test_structure_history_preflight_matches_record_acceptance();
     test_structure_history_preflight_accepts_with_budget_pruning();
@@ -1360,7 +1262,7 @@ int main() {
     test_track_switch_preserves_nested_graph_payload();
     test_track_switch_rotates_graph_and_cc_ownership_without_cloning();
     test_history_limits_prune_by_scope();
-    test_history_prunes_graph_heavy_entries_to_psram_budget();
+    test_history_prunes_large_scale_entries_to_psram_budget();
     test_drum_history_evicts_oldest_entry_at_scope_limit();
     test_clear_resets_stacks();
 

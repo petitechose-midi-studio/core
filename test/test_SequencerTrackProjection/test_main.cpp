@@ -2,6 +2,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "config/Timing.hpp"
 #include "state/CoreState.hpp"
 #include "ui/sequencer/SequencerHeaderViewModelBuilder.hpp"
 #include "ui/sequencer/SequencerStepGridViewModelBuilder.hpp"
@@ -12,11 +13,13 @@ namespace core::ui::sequencer::grid {
 StepGridFrameState buildStepGridFrameState(
     const core::state::sequencer::SequencerState&,
     oc::note::sequencer::StepSequencerScaleSettings,
-    bool
+    bool,
+    bool runtimeProjectionActive
 ) {
     StepGridFrameState frame{};
     frame.tiles[0].inPattern = true;
     frame.tiles[0].enabled = true;
+    frame.tiles[0].playheadVisible = runtimeProjectionActive;
     return frame;
 }
 
@@ -24,16 +27,23 @@ StepGridFrameState buildStepGridFrameState(
 
 // These firmware-only view-model sources are outside the native source filter.
 #include "ui/sequencer/StepPropertyVisuals.cpp"
+#include "ui/sequencer/SequencerQuickControlVisuals.cpp"
 #include "ui/sequencer/SequencerHeaderViewModelBuilder.cpp"
 #include "ui/sequencer/SequencerStepGridViewModelBuilder.cpp"
 
 namespace {
 
 core::ui::sequencer::SequencerViewModelSource sourceFor(
-    core::state::CoreState& state
+    core::state::CoreState& state,
+    bool patternWorkspace = true
 ) {
+    if (patternWorkspace && state.sequencer.clipWorkspace.matrixVisible()) {
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
+    }
     return {
         .sequencer = state.sequencer,
+        .clips = state.sequencerClips,
+        .clipLaunches = state.sequencerClipLaunches,
         .tracks = state.sequencerTracks,
         .projectTracks = state.projectTracks,
         .trackNavigation = state.trackNavigation,
@@ -47,11 +57,33 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
     };
 }
 
+void testClipQuickPropertySessionEndsAfterFeedbackExpires() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    auto& launcher = state.sequencer.clipWorkspace;
+    launcher.reset(0U);
+    launcher.focus(0U, 0U);
+    launcher.showQuickSelector();
+    launcher.moveQuickAction(1);
+    launcher.armQuickProperty(100U);
+    launcher.updateQuickFeedback(
+        100U + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+    );
+
+    assert(!launcher.quickPropertyArmed);
+    assert(!launcher.quickFeedbackVisible);
+    const auto header = core::ui::sequencer::buildSequencerHeaderBarProps(
+        sourceFor(state, false)
+    );
+    assert(header.contextIcon[0] == '\0');
+    assert(header.contextIconColor == 0U);
+}
+
 void testEmptyTrackPreviewProjectsNoMusicalState() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings);
-    state.sequencer.pattern.setEnabled(0U, true);
-    state.sequencer.pattern.note[0U] = 72U;
+    state.sequencer.pattern().setEnabled(0U, true);
+    state.sequencer.pattern().note[0U] = 72U;
 
     auto source = sourceFor(state);
     auto frame = core::ui::sequencer::buildSequencerStepGridProps(source);
@@ -122,9 +154,9 @@ void testDrumTrackAndPatternProjectTheSameMusicalHeader() {
 void testPitchFeedbackProjectsTonalValueWithoutChangingContext() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings);
-    state.sequencer.pattern.setContentLength(8U);
-    state.sequencer.pattern.setEnabled(3U, true);
-    state.sequencer.pattern.note[3U] = 66U;
+    state.sequencer.pattern().setContentLength(8U);
+    state.sequencer.pattern().setEnabled(3U, true);
+    state.sequencer.pattern().note[3U] = 66U;
     state.sequencer.activeStepProperty.set(
         core::state::sequencer::StepProperty::NOTE
     );
@@ -153,12 +185,30 @@ void testPitchFeedbackProjectsTonalValueWithoutChangingContext() {
            ));
 }
 
+void testPatternPlayheadBelongsOnlyToItsActiveParentClip() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings);
+    state.sequencer.playheadStep.set(0);
+
+    state.sequencer.clipWorkspace.enterPattern(0U, 0U);
+    auto frame = core::ui::sequencer::buildSequencerStepGridProps(
+        sourceFor(state)
+    );
+    assert(frame.tiles[0].playheadVisible);
+
+    state.sequencer.clipWorkspace.enterPattern(0U, 1U);
+    frame = core::ui::sequencer::buildSequencerStepGridProps(sourceFor(state));
+    assert(!frame.tiles[0].playheadVisible);
+}
+
 }  // namespace
 
 int main() {
     testEmptyTrackPreviewProjectsNoMusicalState();
     testDrumTrackAndPatternProjectTheSameMusicalHeader();
     testPitchFeedbackProjectsTonalValueWithoutChangingContext();
+    testPatternPlayheadBelongsOnlyToItsActiveParentClip();
+    testClipQuickPropertySessionEndsAfterFeedbackExpires();
     std::cout << "Sequencer Track projection tests passed\n";
     return 0;
 }

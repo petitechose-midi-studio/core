@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -101,9 +102,9 @@ void assertSameChordSpec(
 }
 
 void test_root_step_graph_preset_roundtrip_preserves_nested_payload() {
-    SequencerState source;
-    source.pattern.setContentLength(8);
-    source.pattern.setEnabled(2, true);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
+    source.pattern().setEnabled(2, true);
     assert(source.setStepDataAt(2, 65, 91, 160, -7, 72));
 
     const auto rootNode = rootStepNodeId(2);
@@ -115,35 +116,35 @@ void test_root_step_graph_preset_roundtrip_preserves_nested_payload() {
         -18,
         9
     );
-    assert(setNodeChordSpec(source.pattern, rootNode, rootChord));
-    assert(setNodeVelocityOffset(source.pattern, rootNode, -11));
-    assert(setNodeLocalVariationRange(source.pattern, rootNode, StepProperty::NOTE, 5));
+    assert(setNodeChordSpec(source.pattern(), rootNode, rootChord));
+    assert(setNodeVelocityOffset(source.pattern(), rootNode, -11));
+    assert(setNodeLocalVariationRange(source.pattern(), rootNode, StepProperty::NOTE, 5));
 
-    const auto micro = createMicroSequence(source.pattern, rootNode, 3);
+    const auto micro = createMicroSequence(source.pattern(), rootNode, 3);
     assert(micro.ok);
-    const auto* sourceGraph = graphView(source.pattern);
+    const auto* sourceGraph = graphView(source.pattern());
     assert(sourceGraph != nullptr);
     const auto* microSequence = sourceGraph->sequence(micro.id);
     assert(microSequence != nullptr);
     const auto microNode = static_cast<uint16_t>(microSequence->firstStepNode + 1);
-    assert(setNodeEnabledOverride(source.pattern, microNode, true));
-    assert(setNodeNoteOffset(source.pattern, microNode, 7));
-    assert(setNodeVelocityOffset(source.pattern, microNode, -20));
-    assert(setNodeGateOffset(source.pattern, microNode, 25));
-    assert(setNodeNudgeOffset(source.pattern, microNode, -6));
-    assert(setNodeProbabilityOffset(source.pattern, microNode, -30));
-    assert(setNodeLocalVariationRange(source.pattern, microNode, StepProperty::VELOCITY, 22));
-    assert(setNodeChordMode(source.pattern, microNode, StepSequencerChordMode::Inherit));
+    assert(setNodeEnabledOverride(source.pattern(), microNode, true));
+    assert(setNodeNoteOffset(source.pattern(), microNode, 7));
+    assert(setNodeVelocityOffset(source.pattern(), microNode, -20));
+    assert(setNodeGateOffset(source.pattern(), microNode, 25));
+    assert(setNodeNudgeOffset(source.pattern(), microNode, -6));
+    assert(setNodeProbabilityOffset(source.pattern(), microNode, -30));
+    assert(setNodeLocalVariationRange(source.pattern(), microNode, StepProperty::VELOCITY, 22));
+    assert(setNodeChordMode(source.pattern(), microNode, StepSequencerChordMode::Inherit));
 
-    const auto nestedCycle = createCycleStateSet(source.pattern, microNode, 2);
+    const auto nestedCycle = createCycleStateSet(source.pattern(), microNode, 2);
     assert(nestedCycle.ok);
-    sourceGraph = graphView(source.pattern);
+    sourceGraph = graphView(source.pattern());
     assert(sourceGraph != nullptr);
     const auto* nestedCycleSet = sourceGraph->cycleSet(nestedCycle.id);
     assert(nestedCycleSet != nullptr);
     const auto nestedCycleNode = static_cast<uint16_t>(nestedCycleSet->firstStateNode + 1);
-    assert(setNodeNoteOffset(source.pattern, nestedCycleNode, 4));
-    assert(setNodeLocalVariationRange(source.pattern, nestedCycleNode, StepProperty::GATE, 18));
+    assert(setNodeNoteOffset(source.pattern(), nestedCycleNode, 4));
+    assert(setNodeLocalVariationRange(source.pattern(), nestedCycleNode, StepProperty::GATE, 18));
 
     SequencerStepGraphPreset captured{};
     SequencerGraphAssetReport report{};
@@ -172,22 +173,22 @@ void test_root_step_graph_preset_roundtrip_preserves_nested_payload() {
     assert(decoded.rootContext);
     assert(decoded.rootValuesValid);
 
-    SequencerState target;
-    target.pattern.setContentLength(8);
-    target.pattern.setEnabled(5, true);
+    core::state::sequencer::SequencerDetachedEditor target;
+    target.pattern().setContentLength(8);
+    target.pattern().setEnabled(5, true);
     assert(target.setStepDataAt(5, 40, 10, 50, 3, 100));
     assert(applyStepGraphPreset(target, 5, decoded, &report));
     assert(report.ok());
     assert(reportHas(report, core::state::sequencer::SEQUENCER_GRAPH_ASSET_REPORT_OVERWRITE));
 
-    assert(target.pattern.isEnabled(5));
-    assert(target.pattern.note[5] == 65);
-    assert(target.pattern.velocity[5] == 91);
-    assert(target.pattern.gate[5] == 160);
-    assert(target.pattern.nudge[5] == -7);
-    assert(target.pattern.probability[5] == 72);
+    assert(target.pattern().isEnabled(5));
+    assert(target.pattern().note[5] == 65);
+    assert(target.pattern().velocity[5] == 91);
+    assert(target.pattern().gate[5] == 160);
+    assert(target.pattern().nudge[5] == -7);
+    assert(target.pattern().probability[5] == 72);
 
-    const auto* targetGraph = graphView(target.pattern);
+    const auto* targetGraph = graphView(target.pattern());
     assert(targetGraph != nullptr);
     const auto* targetRoot = targetGraph->stepNode(rootStepNodeId(5));
     assert(targetRoot != nullptr);
@@ -231,9 +232,9 @@ void test_root_step_graph_preset_roundtrip_preserves_nested_payload() {
 }
 
 void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
-    SequencerState source;
-    source.pattern.setContentLength(8);
-    const auto sourceMicro = createMicroSequence(source.pattern, rootStepNodeId(1), 2);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
+    const auto sourceMicro = createMicroSequence(source.pattern(), rootStepNodeId(1), 2);
     assert(sourceMicro.ok);
     assert(enterMicroSequenceContentView(source, rootStepNodeId(1), sourceMicro.id));
     const auto sourceChildNode = activeContentStepNodeId(source, 1);
@@ -246,12 +247,12 @@ void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
         12,
         -8
     );
-    assert(setNodeChordSpec(source.pattern, sourceChildNode, localChord));
-    assert(setNodeNoteOffset(source.pattern, sourceChildNode, -5));
-    assert(setNodeNudgeOffset(source.pattern, sourceChildNode, 14));
-    assert(setNodeLocalVariationRange(source.pattern, sourceChildNode, StepProperty::NUDGE, 11));
+    assert(setNodeChordSpec(source.pattern(), sourceChildNode, localChord));
+    assert(setNodeNoteOffset(source.pattern(), sourceChildNode, -5));
+    assert(setNodeNudgeOffset(source.pattern(), sourceChildNode, 14));
+    assert(setNodeLocalVariationRange(source.pattern(), sourceChildNode, StepProperty::NUDGE, 11));
 
-    const auto nestedMicro = createMicroSequence(source.pattern, sourceChildNode, 2);
+    const auto nestedMicro = createMicroSequence(source.pattern(), sourceChildNode, 2);
     assert(nestedMicro.ok);
 
     SequencerStepGraphPreset captured{};
@@ -276,16 +277,16 @@ void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
     ));
     assert(!decoded.rootContext);
 
-    SequencerState target;
-    target.pattern.setContentLength(8);
-    const auto targetMicro = createMicroSequence(target.pattern, rootStepNodeId(3), 3);
+    core::state::sequencer::SequencerDetachedEditor target;
+    target.pattern().setContentLength(8);
+    const auto targetMicro = createMicroSequence(target.pattern(), rootStepNodeId(3), 3);
     assert(targetMicro.ok);
     assert(enterMicroSequenceContentView(target, rootStepNodeId(3), targetMicro.id));
     assert(applyStepGraphPreset(target, 2, decoded, &report));
     assert(report.ok());
 
     const auto targetChildNode = activeContentStepNodeId(target, 2);
-    const auto* targetGraph = graphView(target.pattern);
+    const auto* targetGraph = graphView(target.pattern());
     assert(targetGraph != nullptr);
     const auto* node = targetGraph->stepNode(targetChildNode);
     assert(node != nullptr);
@@ -301,14 +302,14 @@ void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
 }
 
 void test_destination_owned_pitch_projection_is_recursive_and_lossless_for_rhythm() {
-    SequencerState source;
-    source.pattern.setContentLength(8U);
-    source.pattern.pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
-    source.pattern.setEnabled(1U, true);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8U);
+    source.pattern().pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
+    source.pattern().setEnabled(1U, true);
     assert(source.setStepDataAt(1U, 71U, 103U, 145U, -8, 63U));
     const auto root = rootStepNodeId(1U);
     assert(setNodeChordSpec(
-        source.pattern,
+        source.pattern(),
         root,
         makeChord(
             4U,
@@ -320,38 +321,38 @@ void test_destination_owned_pitch_projection_is_recursive_and_lossless_for_rhyth
         )
     ));
     assert(setNodeLocalVariationRange(
-        source.pattern,
+        source.pattern(),
         root,
         StepProperty::NOTE,
         9
     ));
     assert(setNodeLocalVariationRange(
-        source.pattern,
+        source.pattern(),
         root,
         StepProperty::VELOCITY,
         17
     ));
-    const auto micro = createMicroSequence(source.pattern, root, 3U);
+    const auto micro = createMicroSequence(source.pattern(), root, 3U);
     assert(micro.ok);
-    const auto* graph = graphView(source.pattern);
+    const auto* graph = graphView(source.pattern());
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const auto child = static_cast<uint16_t>(sequence->firstStepNode + 1U);
-    assert(setNodeNoteOffset(source.pattern, child, 7));
+    assert(setNodeNoteOffset(source.pattern(), child, 7));
     assert(setNodeChordMode(
-        source.pattern,
+        source.pattern(),
         child,
         StepSequencerChordMode::Single
     ));
-    assert(setNodeVelocityOffset(source.pattern, child, -21));
-    const auto cycle = createCycleStateSet(source.pattern, child, 2U);
+    assert(setNodeVelocityOffset(source.pattern(), child, -21));
+    const auto cycle = createCycleStateSet(source.pattern(), child, 2U);
     assert(cycle.ok);
-    graph = graphView(source.pattern);
+    graph = graphView(source.pattern());
     const auto* states = graph->cycleSet(cycle.id);
     assert(states != nullptr);
     assert(setNodeNoteOffset(
-        source.pattern,
+        source.pattern(),
         static_cast<uint16_t>(states->firstStateNode + 1U),
         -12
     ));
@@ -409,8 +410,8 @@ void test_destination_owned_pitch_projection_is_recursive_and_lossless_for_rhyth
 }
 
 void test_context_mismatch_is_reported() {
-    SequencerState rootSource;
-    rootSource.pattern.setContentLength(8);
+    core::state::sequencer::SequencerDetachedEditor rootSource;
+    rootSource.pattern().setContentLength(8);
     SequencerStepGraphPreset rootPreset{};
     SequencerGraphAssetReport report{};
     assert(captureStepGraphPreset(
@@ -421,9 +422,9 @@ void test_context_mismatch_is_reported() {
         &report
     ));
 
-    SequencerState childTarget;
-    childTarget.pattern.setContentLength(8);
-    const auto micro = createMicroSequence(childTarget.pattern, rootStepNodeId(0), 2);
+    core::state::sequencer::SequencerDetachedEditor childTarget;
+    childTarget.pattern().setContentLength(8);
+    const auto micro = createMicroSequence(childTarget.pattern(), rootStepNodeId(0), 2);
     assert(micro.ok);
     assert(enterMicroSequenceContentView(childTarget, rootStepNodeId(0), micro.id));
     assert(!applyStepGraphPreset(childTarget, 0, rootPreset, &report));
@@ -444,8 +445,8 @@ void test_decode_rejects_invalid_buffers() {
     ));
     assert(report.status == SequencerGraphAssetStatus::INVALID_ARGUMENT);
 
-    SequencerState source;
-    source.pattern.setContentLength(8);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
     SequencerStepGraphPreset preset{};
     assert(captureStepGraphPreset(source, 0, {}, preset, nullptr));
     std::array<uint8_t, 512> bytes{};
@@ -464,19 +465,19 @@ void test_decode_rejects_invalid_buffers() {
 }
 
 void test_pitch_policy_is_asset_level_and_unknown_node_flags_are_rejected() {
-    SequencerState source;
-    source.pattern.setContentLength(8);
-    source.pattern.setPitchEditMode(SequencerPitchEditMode::FOLLOW_SCALE);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
+    source.pattern().setPitchEditMode(SequencerPitchEditMode::FOLLOW_SCALE);
     const auto root = rootStepNodeId(0);
-    const auto micro = createMicroSequence(source.pattern, root, 2);
+    const auto micro = createMicroSequence(source.pattern(), root, 2);
     assert(micro.ok);
 
-    auto* graph = source.pattern.graph.get();
+    auto* graph = source.pattern().graph.get();
     assert(graph != nullptr);
     const auto* sequence = graph->sequence(micro.id);
     assert(sequence != nullptr);
     const uint16_t relativeChild = sequence->firstStepNode;
-    assert(setNodeNoteOffset(source.pattern, relativeChild, 1));
+    assert(setNodeNoteOffset(source.pattern(), relativeChild, 1));
 
     SequencerStepGraphPreset preset{};
     const auto sourceScale = constrainedScale();
@@ -588,10 +589,10 @@ void test_pitch_policy_is_asset_level_and_unknown_node_flags_are_rejected() {
 }
 
 void test_previous_format_is_rejected_strictly() {
-    SequencerState source;
-    source.pattern.setContentLength(8);
-    source.pattern.setPitchEditMode(SequencerPitchEditMode::FOLLOW_SCALE);
-    assert(setNodeNoteOffset(source.pattern, rootStepNodeId(0), 1));
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
+    source.pattern().setPitchEditMode(SequencerPitchEditMode::FOLLOW_SCALE);
+    assert(setNodeNoteOffset(source.pattern(), rootStepNodeId(0), 1));
 
     SequencerStepGraphPreset preset{};
     const auto sourceScale = constrainedScale();
@@ -625,8 +626,8 @@ void test_previous_format_is_rejected_strictly() {
 }
 
 void test_current_semantic_chord_roundtrip_rejects_previous_version() {
-    SequencerState source;
-    source.pattern.setContentLength(8);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
     auto semantic = StepSequencerChordSpec::semantic(
         oc::note::sequencer::StepSequencerChordHarmony::Custom,
         8,
@@ -642,7 +643,7 @@ void test_current_semantic_chord_roundtrip_rejects_previous_version() {
     }
     semantic.strum = 21;
     semantic.velocityCurve = -7;
-    assert(setNodeChordSpec(source.pattern, rootStepNodeId(0), semantic));
+    assert(setNodeChordSpec(source.pattern(), rootStepNodeId(0), semantic));
 
     SequencerStepGraphPreset preset{};
     assert(captureStepGraphPreset(source, 0, {}, preset, nullptr));
@@ -681,8 +682,8 @@ void test_current_semantic_chord_roundtrip_rejects_previous_version() {
 }
 
 void test_current_metadata_is_bounded_valid_utf8_and_nonempty() {
-    SequencerState source;
-    source.pattern.setContentLength(8);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
     SequencerStepGraphPreset preset{};
     assert(captureStepGraphPreset(source, 0, {}, preset, nullptr));
 
@@ -742,9 +743,9 @@ void test_current_metadata_is_bounded_valid_utf8_and_nonempty() {
 }
 
 void test_pitch_metadata_and_root_values_have_one_canonical_encoding() {
-    SequencerState source;
-    source.pattern.setContentLength(8);
-    source.pattern.setPitchEditMode(SequencerPitchEditMode::CHROMATIC);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
+    source.pattern().setPitchEditMode(SequencerPitchEditMode::CHROMATIC);
 
     SequencerStepGraphPreset preset{};
     const auto ignoredConstrainedScale = constrainedScale();

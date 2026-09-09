@@ -220,6 +220,12 @@ FLASHMEM void drawAdvancedContentBadges(
     }
 }
 
+constexpr int16_t microCursorIndex(uint8_t length, uint8_t phase, bool visible) {
+    return visible && length > 0U
+        ? static_cast<int16_t>((static_cast<uint16_t>(phase) * length) / 256U)
+        : -1;
+}
+
 FLASHMEM void drawMicroRail(
     lv_layer_t* layer,
     const lv_area_t& cellArea,
@@ -423,6 +429,11 @@ struct DrumGridRenderContext {
     bool focusedLaneNameVisible = false;
     uint8_t focusedLaneNameLane = 0xFFU;
 };
+
+FLASHMEM bool laneScopeFocused(StructureNavigationFocus focus) {
+    return focus == StructureNavigationFocus::LANE ||
+        focus == StructureNavigationFocus::STEP;
+}
 
 FLASHMEM void drawLaneFocusMarker(
     const DrumGridRenderContext& context,
@@ -639,20 +650,12 @@ FLASHMEM void drawDrumStepCell(
     const bool hasMicroSequence = microLength > 0U;
     const bool hasCycleStates = projectionAvailable &&
         (resolvedPage.cyclePresentMask & resolvedCellBit) != 0U;
-    const bool microCursorVisible = microLength > 0U &&
+    const int16_t microCursor = microCursorIndex(
+        microLength, drumUi.playheadPhasesQ8[lane],
         drumUi.playbackActive &&
         (drumUi.playheadValidMask & laneBit) != 0U &&
-        drumUi.playheadSteps[lane] == step;
-    const uint8_t microCursor = microCursorVisible
-        ? std::min<uint8_t>(
-              static_cast<uint8_t>(microLength - 1U),
-              static_cast<uint8_t>(
-                  (static_cast<uint16_t>(drumUi.playheadPhasesQ8[lane]) *
-                   microLength) /
-                  256U
-              )
-          )
-        : 0U;
+        drumUi.playheadSteps[lane] == step);
+    const bool microCursorVisible = microCursor >= 0;
 
     // LVGL can ask this retained surface to redraw only a narrow playhead or
     // resolved-cell band. Avoid submitting every earlier cell merely because
@@ -1034,10 +1037,11 @@ FLASHMEM void drawDrumLaneRow(
     );
     const bool addRow = lane >= context.laneCount;
     const bool selected = addRow
-        ? addSlotFocused
+        ? addSlotFocused && laneScopeFocused(context.focus)
         : laneSelection.active
             ? lane == laneSelection.cursorLane
-            : lane == drumUi.selectedLane && !addSlotFocused;
+            : laneScopeFocused(context.focus) &&
+                lane == drumUi.selectedLane && !addSlotFocused;
     const lv_area_t& clip = context.layer->_clip_area;
     const bool headerVisible = clip.x1 < context.gridStart;
     if (headerVisible) {
@@ -1229,8 +1233,7 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
     const DrumOverviewSurfaceProps& props
 ) {
     if (!focused_lane_name_ || !props.projection ||
-        (props.navigationFocus != core::state::StructureNavigationFocus::PAGE &&
-         props.navigationFocus != core::state::StructureNavigationFocus::TRACK)) {
+        !laneScopeFocused(props.navigationFocus)) {
         hideFocusedLaneName();
         return;
     }
@@ -1380,7 +1383,12 @@ DrumOverviewSurface::captureStaticRows(
         const uint8_t lane = drumUi.visibleLane(row);
         if (lane >= laneCount) {
             hashByte(hash, 1U);
-            hashByte(hash, addSlotFocused ? SELECTED : 0U);
+            hashByte(
+                hash,
+                addSlotFocused && laneScopeFocused(props.navigationFocus)
+                    ? SELECTED
+                    : 0U
+            );
             rows[row] = hash == 0U ? 1U : hash;
             continue;
         }
@@ -1412,7 +1420,8 @@ DrumOverviewSurface::captureStaticRows(
         const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
         const bool selected = selection.active
             ? lane == selection.cursorLane
-            : lane == drumUi.selectedLane && !addSlotFocused;
+            : laneScopeFocused(props.navigationFocus) &&
+                lane == drumUi.selectedLane && !addSlotFocused;
         const bool destination =
             (selection.placementActive() || selection.moveActive()) &&
             (selection.destinationMask & laneBit) != 0U;
@@ -1468,34 +1477,24 @@ FLASHMEM void DrumOverviewSurface::invalidateStaticDelta(
     lv_area_t surface{};
     lv_obj_get_coords(root_, &surface);
     const lv_coord_t laneHeight = drumLaneHeight(surface);
-    uint8_t firstChanged = 0xFFU;
-    for (uint8_t row = 0U; row <= STATIC_ROW_COUNT; ++row) {
-        const bool changed = row < STATIC_ROW_COUNT &&
-            previous[row] != next[row];
-        if (changed && firstChanged == 0xFFU) {
-            firstChanged = row;
-            continue;
-        }
-        if (changed || firstChanged == 0xFFU) continue;
-
-        const uint8_t lastChanged = static_cast<uint8_t>(row - 1U);
-        oc::ui::lvgl::invalidateStaticSurfaceArea(
-            root_,
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<STATIC_ROW_COUNT> batch(root_);
+    for (uint8_t row = 0U; row < STATIC_ROW_COUNT; ++row) {
+        if (previous[row] == next[row]) continue;
+        batch.include(
             lv_area_t{
                 .x1 = surface.x1,
                 .y1 = static_cast<lv_coord_t>(
-                    surface.y1 + firstChanged * laneHeight
+                    surface.y1 + row * laneHeight
                 ),
                 .x2 = surface.x2,
                 .y2 = std::min<lv_coord_t>(
                     surface.y2,
                     static_cast<lv_coord_t>(
-                        surface.y1 + (lastChanged + 1U) * laneHeight - 1
+                        surface.y1 + (row + 1U) * laneHeight - 1
                     )
                 ),
             }
         );
-        firstChanged = 0xFFU;
     }
 }
 
@@ -1610,6 +1609,10 @@ FLASHMEM void DrumOverviewSurface::includeChanceCellDamage(
         return;
     }
 
+    // Root decisions only affect the chance marker below 100%. Advanced
+    // content has its own resolved-cell invalidation, independent of this.
+    if (projection.drumTrack->pattern.lanes[lane].probability[step] >= 100U) return;
+
     const lv_coord_t width = static_cast<lv_coord_t>(
         surface.x2 - surface.x1 + 1
     );
@@ -1634,6 +1637,8 @@ FLASHMEM void DrumOverviewSurface::includeChanceCellDamage(
 }
 
 FLASHMEM void DrumOverviewSurface::includeResolvedCellDamage(
+    const PlaybackSnapshot& previous,
+    const PlaybackSnapshot& next,
     uint8_t row,
     uint8_t column,
     const lv_area_t& surface,
@@ -1659,16 +1664,44 @@ FLASHMEM void DrumOverviewSurface::includeResolvedCellDamage(
     const lv_coord_t rowY = static_cast<lv_coord_t>(
         surface.y1 + row * laneHeight
     );
-    includeDamage(
-        damage,
-        hasDamage,
-        lv_area_t{
-            .x1 = cellX,
-            .y1 = rowY,
-            .x2 = static_cast<lv_coord_t>(cellX + cellWidth - 1),
-            .y2 = static_cast<lv_coord_t>(rowY + laneHeight - 1),
+    lv_area_t cellDamage{cellX, rowY,
+        static_cast<lv_coord_t>(cellX + cellWidth - 1),
+        static_cast<lv_coord_t>(rowY + laneHeight - 1)};
+    bool cellHasDamage = true;
+    const auto& projection = *renderedProps_.projection;
+    const uint8_t lane = projection.visibleLane(row);
+    const uint8_t step = projection.visibleStep(column);
+    const auto cell = core::state::sequencer::DrumResolvedPageProjection::cellIndex(row, column);
+    const auto bit = core::state::sequencer::DrumResolvedPageProjection::cellBit(row, column);
+    const bool advanced = ((previous.resolvedPage.cyclePresentMask |
+                           next.resolvedPage.cyclePresentMask) & bit) != 0U ||
+        previous.resolvedPage.microLength[cell] > 0U || next.resolvedPage.microLength[cell] > 0U;
+    if (advanced && projection.drumTrack->pattern.stepEnabled(lane, step)) {
+        const lv_coord_t gridStart = surface.x1 + DRUM_LABEL_WIDTH;
+        const lv_coord_t gridEnd = gridStart + cellWidth * DrumSequencerState::STEPS_PER_PAGE;
+        const auto includeHit = [&](uint8_t velocity, uint16_t gate, int8_t nudge) {
+            const auto geometry = buildDrumHitGeometry(
+                cellX, rowY, laneHeight, cellWidth, gridStart, gridEnd,
+                drum_hit_visual::build(velocity, gate, nudge, 0U, true));
+            includeDamage(cellDamage, cellHasDamage, geometry.hitArea);
+            if (geometry.nudgeVisible) includeDamage(cellDamage, cellHasDamage, geometry.nudgeArea);
+        };
+        // A resolved event can reveal the authored outline or extend beyond
+        // its cell. Cover both old and new spans using the drawing geometry.
+        const auto& authored = projection.drumTrack->pattern.lanes[lane];
+        const uint16_t contextKey = static_cast<uint16_t>(
+            (static_cast<uint16_t>(projection.page) << 8U) | projection.laneWindowStart);
+        includeHit(authored.velocity[step], authored.gate[step], authored.nudge[step]);
+        for (const auto* snapshot : {&previous, &next}) {
+            const auto& resolved = snapshot->resolvedPage;
+            if (snapshot->playbackActive && resolved.contextKey == contextKey &&
+                (resolved.validMask & bit) != 0U && (resolved.playedMask & bit) != 0U &&
+                (resolved.microLength[cell] > 0U || (resolved.cyclePresentMask & bit) != 0U)) {
+                includeHit(resolved.velocity[cell], resolved.gate[cell], resolved.nudge[cell]);
+            }
         }
-    );
+    }
+    includeDamage(damage, hasDamage, cellDamage);
 }
 
 FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
@@ -1693,6 +1726,8 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
           )
         : 0U;
 
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<
+        core::state::sequencer::DrumSequencerState::VISIBLE_LANE_COUNT> batch(root_);
     for (uint8_t row = 0U; row < visibleRowCount; ++row) {
         const uint8_t lane = projection.visibleLane(row);
         if (lane >= RUNTIME_LANE_CAPACITY) continue;
@@ -1765,14 +1800,28 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
                        next.resolvedPage.gate[cell] ||
                    previous.resolvedPage.nudge[cell] !=
                        next.resolvedPage.nudge[cell]));
-            if (resolvedChanged) {
+            const auto cursor = [&](const PlaybackSnapshot& snapshot) {
+                const uint8_t length = snapshot.resolvedPage.microLength[cell];
+                if (length == 0U) return int16_t{-1};
+                const uint16_t contextKey = static_cast<uint16_t>(
+                    (static_cast<uint16_t>(projection.page) << 8U) |
+                    projection.laneWindowStart);
+                return microCursorIndex(
+                    length,
+                    snapshot.playheadPhasesQ8[lane],
+                    snapshot.resolvedPage.contextKey == contextKey &&
+                    snapshot.playbackActive &&
+                    (snapshot.playheadValidMask & laneBit) != 0U &&
+                    snapshot.playheadSteps[lane] == projection.visibleStep(column));
+            };
+            if (resolvedChanged || cursor(previous) != cursor(next)) {
                 includeResolvedCellDamage(
-                    row, column, surface, damage, hasDamage
+                    previous, next, row, column, surface, damage, hasDamage
                 );
             }
         }
         if (hasDamage) {
-            oc::ui::lvgl::invalidateStaticSurfaceArea(root_, damage);
+            batch.include(damage);
         }
     }
 }

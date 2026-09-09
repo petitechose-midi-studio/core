@@ -114,7 +114,8 @@ SequencerPatternPresetLibraryAdapter::operations() {
 
 FLASHMEM bool SequencerPatternPresetLibraryAdapter::beginSession() {
     const bool editorActive = sequencer_.patternEditor.active.get() ||
-        sequencer_.drumSequencer.laneEditor.active;
+        sequencer_.drumSequencer.selector ==
+            sequencer::DrumSequencerSelector::PATTERN_DEFAULTS;
     if (!editorActive || preview_session_.active()) {
         return false;
     }
@@ -190,12 +191,13 @@ SequencerPatternPresetLibraryAdapter::loadPage(
             pattern.managedLocation.relativeDirectory.data()
         ) == 0) {
         char sourceEntryId[PickerState::ID_SIZE]{};
-        std::snprintf(
-            sourceEntryId,
-            sizeof(sourceEntryId),
-            "@%s",
-            pattern.managedEntryId.data()
-        );
+        if (!sequencer::formatSequencerPatternPresetFolderId(
+                pattern.managedEntryId.data(),
+                sourceEntryId,
+                sizeof(sourceEntryId)
+            )) {
+            return SequencerPresetLibraryPager::PageLoadStatus::FAILED;
+        }
         for (uint8_t index = 0U; index < listed.count; ++index) {
             if (std::strcmp(entries[index].id, sourceEntryId) != 0) continue;
             for (uint8_t next = static_cast<uint8_t>(index + 1U);

@@ -195,7 +195,7 @@ void test_slot_defaults_reuse_and_local_override_are_exact() {
 
     for (uint8_t lane = 0; lane < seq::SequencerCcLaneBank::MAX_LANES; ++lane) {
         createDefaultLane(h, static_cast<uint32_t>(10U + lane));
-        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr && bank->lanes[lane].occupied);
         assert(bank->lanes[lane].destination.controller ==
                h.state.projectNavigation.ccLaneDefaultControllers[lane]);
@@ -209,7 +209,7 @@ void test_slot_defaults_reuse_and_local_override_are_exact() {
     assert(h.state.sequencer.ccLaneUi.draft.destination.controller == 21U);
     assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 30U));
     assert(h.state.projectNavigation.ccLaneDefaultControllers[0] == 20U);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())
                ->lanes[0].destination.controller == 21U);
 
     assert(h.workflow.openSettings());
@@ -218,10 +218,10 @@ void test_slot_defaults_reuse_and_local_override_are_exact() {
         seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
         100U + seq::SequencerCcLaneUiState::ACTION_GUARD_MS
     ));
-    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].occupied);
+    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].occupied);
 
     createDefaultLane(h, 1000U);
-    const auto* reused = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* reused = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(reused->lanes[0].occupied);
     assert(reused->lanes[0].destination.controller == 20U);
     assert(!reused->lanes[0].activeMask.any());
@@ -232,11 +232,11 @@ void test_slot_defaults_reuse_and_local_override_are_exact() {
 
 void test_direct_default_create_is_silent_atomic_and_event_edit_coalesces() {
     Harness h;
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
     assert(h.state.sequencerHistory.undoCount() == 0);
     createDefaultLane(h);
     assert(h.state.sequencerHistory.undoCount() == 1);
-    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].occupied);
     assert(bank->lanes[0].destination.controller == 1U);
     assert(bank->lanes[0].destination.minimum == 0U);
@@ -250,21 +250,21 @@ void test_direct_default_create_is_silent_atomic_and_event_edit_coalesces() {
     // Turning `--` authors Initial exactly; continuing the same gesture edits
     // the value while retaining one pending history entry.
     assert(h.workflow.editFocusedEvent(1.0f, 100));
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank->lanes[0].values[0] == 64);
     assert(h.workflow.editFocusedEvent(1.0f, 120));
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].values[0] == 65);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].values[0] == 65);
     assert(h.state.sequencerHistory.undoCount() == 1);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.updateSequencerPatternHistoryCoalescing(500));
     assert(h.state.sequencerHistory.undoCount() == 2);
 
     assert(h.state.undoSequencerHistory());
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].occupied);
     assert(!bank->lanes[0].activeMask.test(0));
     assert(h.state.redoSequencerHistory());
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].values[0] == 65);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].values[0] == 65);
     test_support::drainNotifications();
     std::cout << "[PASS] direct default create is silent/atomic; event edit coalesces\n";
 }
@@ -284,22 +284,22 @@ void test_pending_event_is_committed_before_cross_track_switch_and_replays_on_t1
     const auto* t1 = seq::sequencerCcLaneView(h.state.sequencerTracks.track(0U));
     assert(t1 != nullptr && t1->lanes[0].activeMask.test(0U));
     assert(t1->lanes[0].values[0] == 64U);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
 
     // Global history targets T1 without replacing or contaminating active T2.
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
     t1 = seq::sequencerCcLaneView(h.state.sequencerTracks.track(0U));
     assert(t1 != nullptr && !t1->lanes[0].activeMask.test(0U));
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
     assert(h.state.redoProjectHistory());
     t1 = seq::sequencerCcLaneView(h.state.sequencerTracks.track(0U));
     assert(t1 != nullptr && t1->lanes[0].activeMask.test(0U));
     assert(t1->lanes[0].values[0] == 64U);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
 
     assert(h.state.setSharedTrackState(0x0003U, 0U));
-    const auto* active = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* active = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(active != nullptr && active->lanes[0].activeMask.test(0U));
     assert(active->lanes[0].values[0] == 64U);
 
@@ -319,11 +319,11 @@ void test_global_undo_commits_and_consumes_the_pending_cc_event_once() {
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencerHistory.redoCount() == 1U);
-    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
 
     assert(h.state.redoProjectHistory());
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
     assert(bank->lanes[0].values[0] == 64U);
 
@@ -343,7 +343,7 @@ void test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction(
 
     core::state::project::ProjectSnapshot snapshot;
     assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
-    const auto* captured = snapshot.sequencer.editorCcLanes.get();
+    const auto* captured = snapshot.sequencer.bankCcLanes[snapshot.sequencer.flat.activeTrack].get();
     assert(captured != nullptr && captured->lanes[0].activeMask.test(0U));
     assert(captured->lanes[0].values[0] == 64U);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -352,7 +352,7 @@ void test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction(
     h.state.resetStandaloneTransientUi();
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 2U);
-    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
 
     // A Project reset is destructive and must leave no stale transaction or
@@ -365,7 +365,7 @@ void test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction(
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(!h.state.projectHistory.canUndo());
     assert(h.state.sequencerHistory.undoCount() == 0U);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
 
     test_support::drainNotifications();
     std::cout << "[PASS] snapshots see pending CC data; reset boundaries close or purge it\n";
@@ -385,11 +385,11 @@ void test_immediate_create_and_settings_follow_pending_event_without_double_publ
         assert(h.state.sequencerHistory.undoCount() == 3U);
 
         assert(h.state.undoProjectHistory());
-        auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr && bank->lanes[0].occupied && !bank->lanes[1].occupied);
         assert(bank->lanes[0].activeMask.test(0U));
         assert(h.state.undoProjectHistory());
-        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
     }
 
@@ -408,12 +408,12 @@ void test_immediate_create_and_settings_follow_pending_event_without_double_publ
         assert(h.state.sequencerHistory.undoCount() == 3U);
 
         assert(h.state.undoProjectHistory());
-        auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr);
         assert(bank->lanes[0].destination.controller == controller);
         assert(bank->lanes[0].activeMask.test(0U));
         assert(h.state.undoProjectHistory());
-        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
     }
 
@@ -435,10 +435,10 @@ void test_history_preflight_failure_does_not_publish_the_staged_cc_event() {
     };
     assert(unavailableHistory.openLane(0U));
 
-    const auto* before = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* before = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(before != nullptr && !before->lanes[0].activeMask.test(0U));
     assert(!unavailableHistory.editFocusedEvent(1.0f, 100U));
-    const auto* after = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* after = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(after != nullptr && !after->lanes[0].activeMask.test(0U));
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
@@ -456,7 +456,7 @@ void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
         assert(h.workflow.selectorFocusesAdd());
         assertFirstAllocationRejected(h, contextual::ContextActionId::CREATE,
                                       [&]() { return h.workflow.activateSelector(100U); });
-        assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+        assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
         assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR);
     }
 
@@ -465,7 +465,7 @@ void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
         createDefaultLane(h);
         assertFirstAllocationRejected(h, contextual::ContextActionId::EDIT,
                                       [&]() { return h.workflow.editFocusedEvent(1.0F, 110U); });
-        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
         assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
     }
@@ -473,7 +473,7 @@ void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
     {
         Harness h;
         createDefaultLane(h);
-        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr);
         const uint8_t controllerBefore = bank->lanes[0].destination.controller;
         assert(h.workflow.openSettings());
@@ -482,7 +482,7 @@ void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
         assertFirstAllocationRejected(h, contextual::ContextActionId::APPLY, [&]() {
             return h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 120U);
         });
-        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank->lanes[0].destination.controller == controllerBefore);
         assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS);
     }
@@ -494,7 +494,7 @@ void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
         assertFirstAllocationRejected(h, contextual::ContextActionId::CLEAR, [&]() {
             return h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 140U);
         });
-        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
     }
 
@@ -502,14 +502,14 @@ void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
         Harness h;
         createDefaultLane(h);
         assert(h.workflow.toggleFocusedEvent(150U));
-        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr);
         const auto transitionBefore = seq::sequencerCcLaneTransition(bank->lanes[0], 0U);
         assert(h.workflow.openFocusedTransitionPicker(160U));
         h.workflow.moveTransition(1.0F);
         assertFirstAllocationRejected(h, contextual::ContextActionId::EDIT,
                                       [&]() { return h.workflow.applyTransition(170U); });
-        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0U) == transitionBefore);
         assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER);
     }
@@ -523,7 +523,7 @@ void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
             return h.workflow.releaseGuard(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
                                            180U + seq::SequencerCcLaneUiState::ACTION_GUARD_MS);
         });
-        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
         assert(bank != nullptr && bank->lanes[0].occupied);
         assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS);
     }
@@ -553,11 +553,11 @@ void test_nav_grammar_toggles_events_and_reveals_advanced_settings() {
 
     assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
     assert(h.workflow.toggleFocusedEvent(20));
-    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].activeMask.test(0));
     assert(bank->lanes[0].values[0] == initial + 1U);
     assert(h.workflow.toggleFocusedEvent(30));
-    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern)
+    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern())
                 ->lanes[0].activeMask.test(0));
 
     test_support::drainNotifications();
@@ -573,20 +573,20 @@ void test_clear_settings_cancel_and_guarded_remove_are_exact_history() {
 
     assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 600));
     assert(h.state.sequencerHistory.undoCount() == 3);
-    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].activeMask.test(0));
+    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].activeMask.test(0));
     assert(h.state.undoSequencerHistory());
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].activeMask.test(0));
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].activeMask.test(0));
     assert(h.state.redoSequencerHistory());
-    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].activeMask.test(0));
+    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].activeMask.test(0));
 
     assert(h.workflow.openSettings());
     const auto controller = h.state.sequencer.ccLaneUi.draft.destination.controller;
     h.workflow.editDraft(1.0f);
     assert(h.state.sequencer.ccLaneUi.draft.destination.controller == controller + 1U);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())
                ->lanes[0].destination.controller == controller);
     h.workflow.closeOneLevel(700);
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())
                ->lanes[0].destination.controller == controller);
     assert(h.state.sequencerHistory.undoCount() == 3);
 
@@ -601,7 +601,7 @@ void test_clear_settings_cancel_and_guarded_remove_are_exact_history() {
     // behind or remove the lane.
     assert(h.workflow.beginGuard(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 800));
     assert(!h.workflow.releaseGuard(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 850));
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].occupied);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].occupied);
     assert(h.state.sequencer.ccLaneUi.operationFeedback.get().status ==
            contextual::OperationFeedbackStatus::CANCELLED);
     assert(h.state.sequencer.ccLaneUi.actionGuard.get().phase ==
@@ -615,12 +615,12 @@ void test_clear_settings_cancel_and_guarded_remove_are_exact_history() {
            contextual::OperationFeedbackStatus::ARMED);
     h.workflow.update(1700);
     assert(h.workflow.releaseGuard(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 1700));
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
     assert(h.state.sequencerHistory.undoCount() == 4);
     assert(h.state.undoSequencerHistory());
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].occupied);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].occupied);
     assert(h.state.redoSequencerHistory());
-    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
     test_support::drainNotifications();
     std::cout << "[PASS] clear/cancel/remove semantics and exact history\n";
 }
@@ -632,7 +632,7 @@ void test_global_history_closes_a_cc_lane_session_when_its_lane_disappears() {
            seq::SequencerCcLaneUiMode::LANE_GRID);
 
     assert(createUndoRedo.state.undoProjectHistory());
-    assert(seq::sequencerCcLaneView(createUndoRedo.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(createUndoRedo.state.sequencer.pattern()) == nullptr);
     assert(createUndoRedo.state.sequencer.ccLaneUi.mode ==
            seq::SequencerCcLaneUiMode::CLOSED);
     assert(!createUndoRedo.state.sequencer.ccLaneUi.visible());
@@ -640,7 +640,7 @@ void test_global_history_closes_a_cc_lane_session_when_its_lane_disappears() {
 
     assert(createUndoRedo.state.redoProjectHistory());
     const auto* restored =
-        seq::sequencerCcLaneView(createUndoRedo.state.sequencer.pattern);
+        seq::sequencerCcLaneView(createUndoRedo.state.sequencer.pattern());
     assert(restored != nullptr && restored->lanes[0].occupied);
     // Redo restores authored data only. The user explicitly reopens the lane.
     assert(createUndoRedo.state.sequencer.ccLaneUi.mode ==
@@ -658,18 +658,18 @@ void test_global_history_closes_a_cc_lane_session_when_its_lane_disappears() {
         seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
         100U + seq::SequencerCcLaneUiState::ACTION_GUARD_MS
     ));
-    assert(seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern) ==
+    assert(seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern()) ==
            nullptr);
 
     assert(removeUndoReopenRedo.state.undoProjectHistory());
-    restored = seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern);
+    restored = seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern());
     assert(restored != nullptr && restored->lanes[0].occupied);
     assert(removeUndoReopenRedo.workflow.openLane(0U));
     assert(removeUndoReopenRedo.state.sequencer.ccLaneUi.mode ==
            seq::SequencerCcLaneUiMode::LANE_GRID);
 
     assert(removeUndoReopenRedo.state.redoProjectHistory());
-    assert(seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern) ==
+    assert(seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern()) ==
            nullptr);
     assert(removeUndoReopenRedo.state.sequencer.ccLaneUi.mode ==
            seq::SequencerCcLaneUiMode::CLOSED);
@@ -702,6 +702,13 @@ void test_semantic_gesture_classifier_never_claims_early_hold_mutation() {
         feedback,
         core::validation::ux::SequencerCcLaneGesturePhase::PRESS
     );
+    assert(std::strcmp(semantic.effect, "press_remove_cc_lane") == 0);
+    assert(std::strcmp(semantic.outcome, "pressed") == 0);
+
+    guard.phase = contextual::GuardedActionPhase::CANCELLED;
+    semantic = core::validation::ux::classifySequencerCcLaneGesture(
+        remove, guard, feedback,
+        core::validation::ux::SequencerCcLaneGesturePhase::PRESS);
     assert(std::strcmp(semantic.effect, "press_remove_cc_lane") == 0);
     assert(std::strcmp(semantic.outcome, "pressed") == 0);
 
@@ -763,7 +770,7 @@ void test_guard_release_promotes_elapsed_hold_without_periodic_update() {
     assert(!shortHold.workflow.releaseGuard(
         seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 150
     ));
-    assert(seq::sequencerCcLaneView(shortHold.state.sequencer.pattern) != nullptr);
+    assert(seq::sequencerCcLaneView(shortHold.state.sequencer.pattern()) != nullptr);
     assert(shortHold.state.sequencer.ccLaneUi.operationFeedback.get().status ==
            contextual::OperationFeedbackStatus::CANCELLED);
 
@@ -776,7 +783,7 @@ void test_guard_release_promotes_elapsed_hold_without_periodic_update() {
         seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
         100 + seq::SequencerCcLaneUiState::ACTION_GUARD_MS
     ));
-    assert(seq::sequencerCcLaneView(exactDeadline.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(exactDeadline.state.sequencer.pattern()) == nullptr);
     assert(exactDeadline.state.sequencer.ccLaneUi.operationFeedback.get().status ==
            contextual::OperationFeedbackStatus::APPLIED);
 
@@ -789,7 +796,7 @@ void test_guard_release_promotes_elapsed_hold_without_periodic_update() {
         seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
         101 + seq::SequencerCcLaneUiState::ACTION_GUARD_MS
     ));
-    assert(seq::sequencerCcLaneView(elapsedWithoutTick.state.sequencer.pattern) == nullptr);
+    assert(seq::sequencerCcLaneView(elapsedWithoutTick.state.sequencer.pattern()) == nullptr);
 
     test_support::drainNotifications();
     std::cout
@@ -804,7 +811,7 @@ void test_slot_defaults_conflicts_and_macro_arbitration_are_direct() {
     h.workflow.moveSelector(1.0f);
     assert(h.workflow.selectorFocusesAdd());
     assert(!h.workflow.activateSelector(20));
-    assert(seq::sequencerCcLaneCount(*seq::sequencerCcLaneView(h.state.sequencer.pattern)) == 1);
+    assert(seq::sequencerCcLaneCount(*seq::sequencerCcLaneView(h.state.sequencer.pattern())) == 1);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     Harness macroHarness;
@@ -831,7 +838,7 @@ void test_slot_defaults_conflicts_and_macro_arbitration_are_direct() {
     };
     macroWorkflow.openLaneSelector();
     assert(macroWorkflow.activateSelector(100));
-    const auto* accepted = seq::sequencerCcLaneView(macroHarness.state.sequencer.pattern);
+    const auto* accepted = seq::sequencerCcLaneView(macroHarness.state.sequencer.pattern());
     assert(accepted != nullptr && accepted->lanes[0].acceptedMacroConflict);
     assert(accepted->lanes[0].destination.pinnedChannel == 9U);
     assert(macroServices.trackRoute(0U).channel == 9U);
@@ -960,7 +967,7 @@ void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() 
     h.handler.update(20);
 
     h.turnMacro(1, 1.0f);
-    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr);
     assert(bank->lanes[0].activeMask.test(1));
     assert(bank->lanes[0].values[1] == 127);
@@ -969,11 +976,11 @@ void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() 
     h.handler.update(g_now_ms);
     h.release(Config::ButtonID::MACRO_2);
     h.handler.update(g_now_ms);
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(!bank->lanes[0].activeMask.test(1));
 
     h.turnMacro(1, 0.75f);
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank->lanes[0].activeMask.test(1));
     assert(bank->lanes[0].values[1] == 95);
 
@@ -993,7 +1000,7 @@ void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() 
            seq::SequencerCcLaneTransition::LINEAR);
     h.release(Config::ButtonID::NAV);
     assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(seq::sequencerCcLaneTransition(bank->lanes[0], 1) ==
            seq::SequencerCcLaneTransition::LINEAR);
 
@@ -1010,7 +1017,7 @@ void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() 
     h.handler.update(g_now_ms);
     assert(h.state.sequencer.ccLaneUi.mode ==
            seq::SequencerCcLaneUiMode::LANE_GRID);
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(seq::sequencerCcLaneTransition(bank->lanes[0], 1) ==
            seq::SequencerCcLaneTransition::EASE_IN_OUT);
 
@@ -1025,7 +1032,7 @@ void test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar() {
     // A genuine tap keeps the existing event toggle contract.
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
-    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank != nullptr && bank->lanes[0].activeMask.test(0));
     const std::size_t afterToggle = h.state.sequencerHistory.undoCount();
 
@@ -1034,7 +1041,7 @@ void test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar() {
     h.handler.update(g_now_ms);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
     h.release(Config::ButtonID::NAV);
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank->lanes[0].activeMask.test(0));
     assert(h.state.sequencerHistory.undoCount() == afterToggle);
 
@@ -1051,17 +1058,17 @@ void test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar() {
     h.release(Config::ButtonID::NAV);
     assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
     assert(!h.state.sequencer.ccLaneUi.compactTransitionPicker);
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(bank->lanes[0].activeMask.test(0));
     assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0) ==
            seq::SequencerCcLaneTransition::LINEAR);
 
     assert(h.state.undoProjectHistory());
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0) ==
            seq::SequencerCcLaneTransition::HOLD);
     assert(h.state.redoProjectHistory());
-    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
     assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0) ==
            seq::SequencerCcLaneTransition::LINEAR);
 

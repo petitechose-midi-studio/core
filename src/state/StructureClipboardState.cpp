@@ -116,7 +116,7 @@ FLASHMEM bool MacroAutomationClipboard::append(
     uint16_t cursor = start;
     if (automationCount > 0U) {
         for (uint16_t index = 0; index < automationCount; ++index) {
-            const auto& source = control.authored.curves.points[
+            const auto& source = control.authored().curves.points[
                 view.automation.pointOffset + index
             ];
             pointPool.points[cursor + index] = source;
@@ -131,7 +131,7 @@ FLASHMEM bool MacroAutomationClipboard::append(
     }
     if (modulationCount > 0U) {
         for (uint16_t index = 0; index < modulationCount; ++index) {
-            const auto& source = control.authored.curves.points[
+            const auto& source = control.authored().curves.points[
                 view.primaryModulation.recordedShape.pointOffset + index
             ];
             pointPool.points[cursor + index] = source;
@@ -153,7 +153,7 @@ FLASHMEM bool MacroAutomationClipboard::append(
         .control = copied,
         .destinationScaleQ15 = includeModulation
             ? core::state::modulation::projectModulationDestinationScaleQ15(
-                  control.authored.modulation,
+                  control.authored().modulation,
                   core::state::modulation::projectControlDestination(address)
               )
             : core::state::modulation::
@@ -510,9 +510,7 @@ FLASHMEM bool StructureClipboardState::storeMacroPageSelection(
         core::state::MacroPageSelectionClipboard
     >();
     if (!clipboard) return false;
-    clipboard->projectControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >(pages.control.authored);
+    clipboard->projectControl = core::app::makeExtmemUniqueCopy(pages.control.authored());
     if (!clipboard->projectControl) {
         return false;
     }
@@ -594,7 +592,7 @@ FLASHMEM bool StructureClipboardState::storeMacroModulationAssignment(
         return false;
     }
     const auto* binding = findProjectModulationBinding(
-        control.authored.modulation,
+        control.authored().modulation,
         bindingId
     );
     if (binding == nullptr ||
@@ -602,7 +600,7 @@ FLASHMEM bool StructureClipboardState::storeMacroModulationAssignment(
         return false;
     }
     const auto* source = findProjectModulator(
-        control.authored.modulation,
+        control.authored().modulation,
         binding->sourceId
     );
     if (source == nullptr) return false;
@@ -630,7 +628,7 @@ FLASHMEM bool StructureClipboardState::storeProjectModulatorSource(
     core::state::modulation::ModulatorId sourceId
 ) {
     const auto* source = core::state::modulation::findProjectModulator(
-        control.authored.modulation,
+        control.authored().modulation,
         sourceId
     );
     if (!source) return false;
@@ -669,6 +667,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerPage(
 
 FLASHMEM bool StructureClipboardState::storeSequencerTrack(
     const core::state::sequencer::SequencerPatternSnapshot& track,
+    const core::state::sequencer::SequencerClipSnapshot& clip,
     const oc::note::sequencer::StepSequencerGraph* graph,
     uint8_t sourceTrack,
     const core::state::sequencer::SequencerCcLaneBank* ccLanes,
@@ -695,6 +694,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrack(
 
     releaseOwnedPayloads(*this);
     sequencerTrack = track;
+    sequencerTrackClip = clip;
     sequencerTrackSource = sourceTrack < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
         ? sourceTrack
         : core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;

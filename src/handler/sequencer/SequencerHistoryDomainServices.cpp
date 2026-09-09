@@ -33,8 +33,18 @@ FLASHMEM void recordPreparedPatternFromCoreState(
     // their no-fail ownership transfer. The sealed Core coalescer publishes
     // through its direct trusted path.
     if (!state->sequencerHistory.canRecordPattern(*change)) return;
+    if (change->descriptor.clipIndex ==
+        core::state::sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+        change->descriptor.clipIndex = state->sequencerClips.residentSlot(
+            change->trackIndex);
+    }
+    const bool activeTarget = change->trackIndex == state->sequencerTracks.activeTrackIndex();
     state->sequencerHistory.recordPreparedPattern(std::move(change));
-    state->markProjectMutated();
+    if (activeTarget) {
+        state->publishPreparedSequencerMutation();
+    } else {
+        state->markProjectMutated();
+    }
 }
 
 FLASHMEM bool canRecordStructureFromCoreState(
@@ -205,10 +215,10 @@ abortPreparedPatternEditFromCoreState(
         ->abortSequencerPreparedPatternEdit(owner, key);
 }
 
-FLASHMEM core::state::sequencer::SequencerPreparedFullBankEditResult
+FLASHMEM core::state::sequencer::SequencerProjectScaleEditResult
 applyPreparedProjectScaleChoiceFromCoreState(
     void* context,
-    core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+    core::state::sequencer::SequencerProjectScaleEditOwner owner,
     uint8_t row,
     int choiceIndex
 ) {
@@ -449,9 +459,9 @@ SequencerHistoryDomainServices::abortPreparedPatternEdit(
                : Outcome::Failed;
 }
 
-FLASHMEM core::state::sequencer::SequencerPreparedFullBankEditResult
+FLASHMEM core::state::sequencer::SequencerProjectScaleEditResult
 SequencerHistoryDomainServices::applyPreparedProjectScaleChoice(
-    core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+    core::state::sequencer::SequencerProjectScaleEditOwner owner,
     uint8_t row,
     int choiceIndex
 ) const {

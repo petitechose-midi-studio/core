@@ -69,7 +69,7 @@ FLASHMEM uint16_t MacroEditDomainServices::modulationGlobalDepthQ15(
             PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
     }
     return core::state::modulation::projectModulationDestinationScaleQ15(
-        pages_->control.authored.modulation,
+        pages_->control.authored().modulation,
         core::state::modulation::projectControlDestination(
             automationAddress(index)
         )
@@ -99,7 +99,7 @@ MacroEditDomainServices::focusedModulationBindingState(uint8_t index) const {
     }
     const auto bindingId = focusedModulationBinding(index);
     return core::state::modulation::findProjectModulationBinding(
-        pages_->control.authored.modulation,
+        pages_->control.authored().modulation,
         bindingId
     );
 }
@@ -269,7 +269,7 @@ MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
     const auto address = automationAddress(index);
     char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
     formatNextProjectLfoName(
-        pages_->control.authored.modulation,
+        pages_->control.authored().modulation,
         name,
         sizeof(name)
     );
@@ -304,7 +304,7 @@ MacroEditDomainServices::beginDefaultAdsrAudition(uint8_t index) const {
     const auto address = automationAddress(index);
     char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
     formatNextProjectModulatorName(
-        pages_->control.authored.modulation,
+        pages_->control.authored().modulation,
         ModulatorKind::ADSR,
         name,
         sizeof(name)

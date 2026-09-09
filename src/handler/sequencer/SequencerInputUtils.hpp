@@ -348,11 +348,11 @@ inline float stepPropertyToNormalized(const SequencerState& state, uint8_t step,
 
     return stepPropertyToNormalized(
         property,
-        state.pattern.note[step],
-        state.pattern.velocity[step],
-        state.pattern.gate[step],
-        state.pattern.nudge[step],
-        state.pattern.probability[step]
+        state.pattern().note[step],
+        state.pattern().velocity[step],
+        state.pattern().gate[step],
+        state.pattern().nudge[step],
+        state.pattern().probability[step]
     );
 }
 
@@ -367,7 +367,7 @@ inline float stepPropertyToNormalized(
 
     if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
         return indexToNormalized(
-            scaleDegreeIndexForNote(state.pattern.note[step], scaleSettings),
+            scaleDegreeIndexForNote(state.pattern().note[step], scaleSettings),
             countScaleNotes(scaleSettings)
         );
     }

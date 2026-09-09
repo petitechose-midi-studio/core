@@ -31,6 +31,7 @@ constexpr uint64_t kClipboardFingerprintPrime = 1099511628211ULL;
 
 struct SourcePayload {
     const PatternSnapshot* snapshot = nullptr;
+    const core::state::sequencer::SequencerClipSnapshot* clip = nullptr;
     const Graph* graph = nullptr;
     const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr;
     const core::state::sequencer::DrumTrackState* drumTrack = nullptr;
@@ -47,6 +48,7 @@ FLASHMEM SourcePayload sourcePayload(
         }
         return {
             &clipboard.sequencerTrack,
+            &clipboard.sequencerTrackClip,
             clipboard.sequencerGraph.get(),
             clipboard.sequencerCcLanes.get(),
             clipboard.sequencerDrumTrack.get(),
@@ -69,6 +71,7 @@ FLASHMEM SourcePayload sourcePayload(
     }
     return {
         &source.snapshot,
+        &source.clip,
         source.graph.get(),
         source.ccLanes.get(),
         source.drumTrack.get(),
@@ -152,6 +155,11 @@ FLASHMEM uint64_t clipboardPayloadFingerprint(
         );
         hash = appendFingerprint(
             hash,
+            source.clip,
+            source.clip == nullptr ? 0U : sizeof(*source.clip)
+        );
+        hash = appendFingerprint(
+            hash,
             source.graph,
             source.graph == nullptr ? 0U : sizeof(*source.graph)
         );
@@ -211,8 +219,7 @@ FLASHMEM bool prepareMacroStructureTransfer(
         return false;
     }
     auto* payload = prepared.history->macroStructure.get();
-    if (payload == nullptr || !payload->beforeControl ||
-        !payload->afterControl) {
+    if (payload == nullptr || payload->control.candidate() == nullptr) {
         return false;
     }
     for (uint8_t track = 0U;
@@ -244,24 +251,15 @@ FLASHMEM bool prepareMacroStructureTransfer(
             .wholeTrack = true,
         };
     }
-    *payload->afterControl = *payload->beforeControl;
     if (!core::state::modulation::
             replaceProjectControlStructureInDomain(
-                *payload->afterControl,
+                *payload->control.candidate(),
                 *selection->projectControl,
                 transfer
             )) {
         return false;
     }
-    if (std::memcmp(
-            payload->beforeControl.get(),
-            payload->afterControl.get(),
-            sizeof(*payload->beforeControl)
-        ) == 0) {
-        payload->afterControl.reset();
-    }
-    payload->afterCaptured = true;
-    return true;
+    return payload->control.sealCandidate(pages.control.authored());
 }
 
 FLASHMEM bool copyGraphIntoReservedStorage(GraphPtr& destination, const Graph* source) {
@@ -485,7 +483,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
 
     const SourcePayload firstSource =
         sourcePayload(clipboard, prepared.plan.entries[0]);
-    if (firstSource.snapshot == nullptr) {
+    if (firstSource.snapshot == nullptr || firstSource.clip == nullptr) {
         prepared.status = SequencerTrackTransferStatus::STALE;
         return prepared;
     }
@@ -509,16 +507,8 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         afterActive.focusedStep = after.focusedStep;
         afterActive.ccLanesCaptured = true;
         if (!copyGraphIntoReservedStorage(afterActive.graph, beforeActive.graph.get()) ||
-            !core::state::cloneSequencerGraph(
-                prepared.outgoingActiveGraph,
-                beforeActive.graph.get()
-            ) ||
             !core::state::sequencer::cloneSequencerCcLaneBank(
                 afterActive.ccLanes,
-                beforeActive.ccLanes.get()
-            ) ||
-            !core::state::sequencer::cloneSequencerCcLaneBank(
-                prepared.outgoingActiveCcLanes,
                 beforeActive.ccLanes.get()
             )) {
             prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
@@ -553,7 +543,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         const auto& destination = prepared.plan.entries[index];
         const SourcePayload source =
             sourcePayload(clipboard, destination);
-        if (source.snapshot == nullptr) {
+        if (source.snapshot == nullptr || source.clip == nullptr) {
             prepared.status = SequencerTrackTransferStatus::STALE;
             return prepared;
         }
@@ -588,6 +578,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         const auto* destinationCcLanes = prepared.history->before
             .tracks[destination.targetTrack].ccLanes.get();
         afterTrack.flat = *source.snapshot;
+        afterTrack.clip = *source.clip;
         afterTrack.focusedStep = after.focusedStep;
         afterTrack.ccLanesCaptured = true;
         if (!copyGraphIntoReservedStorage(
@@ -595,7 +586,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
                 source.graph
             ) ||
             !core::state::cloneSequencerGraph(
-                prepared.bankGraphAt(index),
+                prepared.destinationGraphs[index],
                 source.graph
             ) ||
             !core::state::sequencer::cloneSequencerCcLaneBank(
@@ -620,7 +611,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         // History.after and the live destination must own identical rebased
         // lane generations so an inherited hold cannot leak across Paste.
         if (!core::state::sequencer::cloneSequencerCcLaneBank(
-                prepared.bankCcLanesAt(index),
+                prepared.destinationCcLanes[index],
                 afterTrack.ccLanes.get()
             )) {
             prepared.status =
@@ -632,19 +623,6 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
                     ALLOCATION_UNAVAILABLE;
             return prepared;
         }
-    }
-
-    const auto& firstAfter =
-        after.tracks[prepared.plan.firstTarget];
-    if (!core::state::cloneSequencerGraph(prepared.editorGraph, firstSource.graph) ||
-        !core::state::sequencer::cloneSequencerCcLaneBank(
-            prepared.editorCcLanes,
-            firstAfter.ccLanes.get()
-        )) {
-        prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
-        prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
-        prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
-        return prepared;
     }
 
     prepared.history->descriptor = makeSequencerTrackStructureHistoryDescriptor(
@@ -808,16 +786,6 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             );
     }
 
-    if ((prepared.plan.targetMask & previousActiveBit) == 0) {
-        auto& outgoing = tracks.track(prepared.previousActiveTrack);
-        core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
-            outgoing,
-            prepared.history->before.tracks[prepared.previousActiveTrack].flat,
-            std::move(prepared.outgoingActiveGraph),
-            std::move(prepared.outgoingActiveCcLanes)
-        );
-    }
-
     for (uint8_t index = 0; index < prepared.plan.count; ++index) {
         const auto& destination = prepared.plan.entries[index];
         auto& target = tracks.track(destination.targetTrack);
@@ -825,21 +793,16 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             prepared.history->after.tracks[destination.targetTrack];
         core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
             target,
+            tracks.clip(destination.targetTrack),
             afterTrack.flat,
-            std::move(prepared.bankGraphAt(index)),
-            std::move(prepared.bankCcLanesAt(index))
+            afterTrack.clip,
+            std::move(prepared.destinationGraphs[index]),
+            std::move(prepared.destinationCcLanes[index])
         );
     }
 
-    const auto& firstDestination = prepared.plan.entries[0];
-    const auto& firstAfter =
-        prepared.history->after.tracks[firstDestination.targetTrack];
-    core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedPayload(
-        sequencer,
-        firstAfter.flat,
-        std::move(prepared.editorGraph),
-        std::move(prepared.editorCcLanes)
-    );
+    sequencer.selectPattern(tracks.track(prepared.plan.firstTarget), tracks.clip(prepared.plan.firstTarget));
+    sequencer.bumpClipRevision();
     core::state::sequencer::resetTransientTrackState(sequencer);
     sequencer.focusedStep.set(prepared.history->after.focusedStep);
     sequencer.page.set(prepared.history->after.page);

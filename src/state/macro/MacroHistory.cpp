@@ -29,12 +29,12 @@ constexpr uint32_t kMacroAutomationHistoryPayloadBytes = 96U;
 constexpr uint32_t kMacroAutomationTakeHistoryPayloadBytes = 456U;
 constexpr uint32_t kMacroModulationAssignmentsHistoryPayloadBytes = 6'184U;
 constexpr uint32_t kMacroSlotDeletionHistoryPayloadBytes = 6'256U;
-constexpr uint32_t kMacroPageStructureHistoryPayloadBytes = 1'952U;
+constexpr uint32_t kMacroPageStructureHistoryPayloadBytes = 1'968U;
 constexpr uint32_t kProjectControlDomainStateBytes = 159'516U;
 constexpr uint32_t kRecordedShapeCreationHistoryPayloadBytes = 72U;
 constexpr uint32_t kMacroDestinationStructureHistoryPayloadBytes = 1'948U;
 constexpr uint32_t kRecordedShapeEditHistoryPayloadBytes = 216U;
-constexpr uint32_t kMacroAuxiliaryHistoryPayloadBytes = 244U;
+constexpr uint32_t kMacroAuxiliaryHistoryPayloadBytes = 36U;
 constexpr uint32_t kProjectModulatorDeleteHistoryPayloadBytes = 120U;
 constexpr uint32_t kProjectModulatorSplitHistoryPayloadBytes = 232U;
 constexpr uint32_t kPackedCurvePointBytes = 4U;
@@ -224,12 +224,7 @@ RetainedUsage macroChangeRetainedUsage(const MacroHistoryChange& change) {
     if (change.pageStructure != nullptr) {
         addRetainedOwner(
             usage,
-            change.pageStructure->beforeControl != nullptr,
-            kProjectControlDomainStateBytes
-        );
-        addRetainedOwner(
-            usage,
-            change.pageStructure->afterControl != nullptr,
+            change.pageStructure->control.hasStorage(),
             kProjectControlDomainStateBytes
         );
     }
@@ -405,60 +400,19 @@ FLASHMEM bool MacroHistoryService::compactPages(
         return false;
     }
 
-    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    auto change = preparePageStructure(pages, track);
     if (!change) return false;
-    change->pageStructure =
-        core::app::makeExtmemUnique<MacroPageStructureHistoryPayload>();
-    if (!change->pageStructure) return false;
     auto& payload = *change->pageStructure;
-    payload.beforeControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    if (!payload.beforeControl) return false;
-
-    change->kind = MacroHistoryActionKind::PAGE_STRUCTURE;
-    payload.operation = MacroPageStructureHistoryOperation::COMPACT;
-    payload.track = track;
-    payload.retainedPageMask = retainedPageMask;
-    payload.beforeTrack = pages.tracks[track];
-    *payload.beforeControl = pages.control.authored;
-
-    if (!core::state::modulation::compactProjectControlPages(
-            pages.control,
-            track,
-            retainedPageMask
-        ) || !pages.tracks[track].compactPages(retainedPageMask)) {
-        pages.control.authored = *payload.beforeControl;
-        pages.control.markAuthoredMutation();
-        pages.tracks[track] = payload.beforeTrack;
-        syncPageStructureTrack(pages, track);
+    if (!core::state::modulation::compactProjectControlPagesInDomain(
+            *payload.control.candidate(), track, retainedPageMask
+        ) || !payload.afterTrack.compactPages(retainedPageMask)) {
         return false;
     }
-    syncPageStructureTrack(pages, track);
-    payload.afterTrack = pages.tracks[track];
-    payload.afterControlHash = pageStructureControlHash(
-        pages.control.authored
-    );
-    if (!pageStructureAfterMatches(pages, payload)) {
-        pages.control.authored = *payload.beforeControl;
-        pages.control.markAuthoredMutation();
-        pages.tracks[track] = payload.beforeTrack;
-        syncPageStructureTrack(pages, track);
-        return false;
-    }
-
-    change->address = {
-        .track = track,
-        .page = pages.tracks[track].activePage,
-        .macro = 0U,
-    };
-    endCoalescing();
-    recordNewEntry_(std::move(change));
-    return true;
+    return commitPreparedPageStructure(pages, std::move(change));
 }
 
 FLASHMEM MacroHistoryChangePtr
-MacroHistoryService::preparePageStructureSnapshot(
+MacroHistoryService::preparePageStructure(
     const MacroPagesState& pages,
     uint8_t track
 ) const {
@@ -469,13 +423,7 @@ MacroHistoryService::preparePageStructureSnapshot(
         core::app::makeExtmemUnique<MacroPageStructureHistoryPayload>();
     if (!change->pageStructure) return {};
     auto& payload = *change->pageStructure;
-    payload.beforeControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    payload.afterControl = core::app::makeExtmemUnique<
-        core::state::modulation::ProjectControlDomainState
-    >();
-    if (!payload.beforeControl || !payload.afterControl) return {};
+    if (!payload.control.prepare(pages.control.authored())) return {};
 
     change->kind = MacroHistoryActionKind::PAGE_STRUCTURE;
     change->address = {
@@ -483,43 +431,42 @@ MacroHistoryService::preparePageStructureSnapshot(
         .page = pages.tracks[track].activePage,
         .macro = 0U,
     };
-    payload.operation = MacroPageStructureHistoryOperation::SNAPSHOT;
     payload.track = track;
+    // Reserve admission before callers publish any structural/UI side effects.
+    if (project_history_sink_ != nullptr &&
+        !project_history_sink_->admitsRetainedUsage(
+            core::state::project::ProjectHistoryDomain::Macro,
+            macroChangeRetainedUsage(*change))) return {};
     payload.beforeTrack = pages.tracks[track];
-    *payload.beforeControl = pages.control.authored;
+    payload.afterTrack = payload.beforeTrack;
     return change;
 }
 
-FLASHMEM bool MacroHistoryService::commitPreparedPageStructureSnapshot(
+FLASHMEM bool MacroHistoryService::commitPreparedPageStructure(
     MacroPagesState& pages,
     MacroHistoryChangePtr change
 ) {
     if (!change || change->kind != MacroHistoryActionKind::PAGE_STRUCTURE ||
         !change->pageStructure ||
-        change->pageStructure->operation !=
-            MacroPageStructureHistoryOperation::SNAPSHOT ||
-        !change->pageStructure->beforeControl ||
-        !change->pageStructure->afterControl) {
+        change->pageStructure->control.candidate() == nullptr) {
         return false;
     }
     auto& payload = *change->pageStructure;
-    if (payload.track >= TRACK_COUNT) return false;
-    payload.afterTrack = pages.tracks[payload.track];
-    *payload.afterControl = pages.control.authored;
-    payload.afterControlHash = pageStructureControlHash(
-        pages.control.authored
-    );
-    const bool sameControl = std::memcmp(
-        payload.beforeControl.get(),
-        payload.afterControl.get(),
-        sizeof(core::state::modulation::ProjectControlDomainState)
-    ) == 0;
+    if (payload.track >= TRACK_COUNT ||
+        !sameMacroTrackData(pages.tracks[payload.track], payload.beforeTrack)) return false;
+    const auto& candidate = *payload.control.candidate();
+    if (!core::state::modulation::validProjectModulationDomain(
+            candidate.modulation, candidate.curves, &candidate.automation) ||
+        !payload.control.sealCandidate(pages.control.authored())) return false;
     if (sameMacroTrackData(payload.beforeTrack, payload.afterTrack) &&
-        sameControl) {
-        return false;
-    }
-    if (sameControl) payload.afterControl.reset();
+        !payload.control.changed()) return false;
     change->address.page = payload.afterTrack.activePage;
+    if (payload.control.changed()) {
+        payload.control.apply(pages.control);
+        pages.control.markAuthoredMutation();
+    }
+    pages.tracks[payload.track] = payload.afterTrack;
+    syncPageStructureTrack(pages, payload.track);
     endCoalescing();
     recordNewEntry_(std::move(change));
     return true;

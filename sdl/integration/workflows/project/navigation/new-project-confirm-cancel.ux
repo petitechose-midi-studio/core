@@ -11,9 +11,9 @@
 # Enter Project from the global selector.
 100 button LEFT_TOP down
 220 capture screen selector_open
-300 encoder NAV 1
-380 encoder NAV 1
-460 encoder NAV 1
+300 encoder NAV 0.01
+380 encoder NAV 0.01
+460 encoder NAV 0.01
 520 capture screen project_item_selected
 580 button LEFT_TOP up
 720 capture screen project_overview

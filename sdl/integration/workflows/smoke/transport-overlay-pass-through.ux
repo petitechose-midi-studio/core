@@ -5,6 +5,7 @@
 # Expect: semantic:selector_restarted:effect=transport_start, semantic:stopped_at_root:effect=transport_stop
 # Expect: semantic:playing_at_root:intent=transport, semantic:selector_stopped:intent=transport
 # Expect: semantic:selector_restarted:intent=transport, semantic:stopped_at_root:intent=transport
+# Expect: semantic:selector_playing:overlay=view_selector, semantic:selector_playing:playing=true
 # Expect: semantic:selector_stopped:overlay=view_selector, semantic:selector_stopped:playing=false
 # Expect: semantic:selector_restarted:overlay=view_selector, semantic:selector_restarted:playing=true
 
@@ -15,9 +16,10 @@
 240 tap BOTTOM_CENTER 60
 460 capture screen playing_at_root
 
-# A short LEFT_TOP latches the selector. Transport remains globally available
-# but must not dismiss, navigate, or otherwise mutate the overlay.
+# Return through the Clip Launcher and latch the selector. Transport remains
+# globally available but must not dismiss, navigate, or mutate the overlay.
 560 tap LEFT_TOP 60
+680 tap LEFT_TOP 60
 820 capture screen selector_playing
 920 tap BOTTOM_CENTER 60
 1160 capture screen selector_stopped

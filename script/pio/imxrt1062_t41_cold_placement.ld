@@ -69,11 +69,16 @@
  * sequencer tick, or retained UI rendering.  Keep both their compiler-emitted
  * helpers and constant tables in cached Flash; only the tiny sampling gate in
  * main remains eligible for ITCM. */
+/* Qualification-only SD namespace and timing wrappers are stopped-only too. */
+*(.text.*BenchFileSystem*)
 *(.text.*StorageRecoveryRuntimeManager*)
 *AtomicProductFile.cpp.o(.text* .rodata*)
 *ProductFileTransactionJournal.cpp.o(.text* .rodata*)
 *ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)
 *ProductAssetFileStore.cpp.o(.text* .rodata*)
+/* Preset paging and mutations are storage boundaries; their local sort
+ * templates must stay beside the FLASHMEM entry points, not in ITCM. */
+*PatternPresetFileStore.cpp.o(.text* .rodata*)
 *ProductFileService.cpp.o(.text* .rodata*)
 *ProjectWorkspacePool.cpp.o(.text* .rodata*)
 *ProductPersistenceCoordinator.cpp.o(.text* .rodata*)
@@ -138,11 +143,19 @@
  * draw loop; compiler-generated dispatch thunks therefore belong in Flash. */
 *ProjectHandler*.cpp.o(.text* .rodata*)
 
-/* Sequencer and Macro performance handlers dispatch human-rate controller
- * gestures into workflows. Their named methods already use FLASHMEM; keep the
- * compiler-generated std::function predicate/action thunks beside them instead
- * of spending ITCM reserved for playback, MIDI, and retained draw paths. */
+/* Sequencer and Macro handlers dispatch human-rate controller gestures into
+ * workflows. Their named methods already use FLASHMEM; keep the compiler-
+ * generated std::function predicate/action thunks beside them instead of
+ * spending ITCM reserved for playback, MIDI, and retained draw paths. */
 *MacroPerformanceHandler.cpp.o(.text* .rodata*)
+*ClipWorkspaceHandler.cpp.o(.text* .rodata*)
+*DrumLaneEditorHandler.cpp.o(.text* .rodata*)
+*PatternPitchSettingsHandler.cpp.o(.text* .rodata*)
+*ProjectTrackEditorHandler.cpp.o(.text* .rodata*)
+*SequencerPatternEditorHandler.cpp.o(.text* .rodata*)
+*SequencerPatternQuickControlsHandler.cpp.o(.text* .rodata*)
+*SequencerPropertySelectorHandler.cpp.o(.text* .rodata*)
+*SequencerStepEditHandler.cpp.o(.text* .rodata*)
 *SequencerStepHandler.cpp.o(.text* .rodata*)
 
 /* Macro history is entered only by authored edit, undo, and redo commands.

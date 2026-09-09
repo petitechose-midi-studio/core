@@ -83,13 +83,13 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     if (auditioning && navigation_.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         auto* binding = findProjectModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             pages_.control.audition.bindingId
         );
         if (!binding) return true;
         const auto scale = depth_parameter::scaleFor(
-            pages_.control.authored.modulation,
-            pages_.control.authored.curves,
+            pages_.control.authored().modulation,
+            pages_.control.authored().curves,
             *binding
         );
         const int16_t amount = depth_parameter::amountQ15AtNormalized(
@@ -123,8 +123,8 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             binding->destination.macro,
         };
         const auto scale = depth_parameter::scaleFor(
-            pages_.control.authored.modulation,
-            pages_.control.authored.curves,
+            pages_.control.authored().modulation,
+            pages_.control.authored().curves,
             *binding
         );
         const int16_t amount = depth_parameter::amountQ15AtNormalized(
@@ -158,7 +158,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             return true;
         }
         auto* binding = findProjectModulationTriggerForSource(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             source->id
         );
         if (!binding || binding->trigger.kind !=
@@ -250,7 +250,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     const float value = clampNormalized(normalized);
     if (item == Item::DEPTH) {
         auto* binding = findProjectModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             pages_.control.audition.bindingId
         );
         if (!session.allows(
@@ -259,8 +259,8 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             return false;
         }
         const auto scale = depth_parameter::scaleFor(
-            pages_.control.authored.modulation,
-            pages_.control.authored.curves,
+            pages_.control.authored().modulation,
+            pages_.control.authored().curves,
             *binding
         );
         const int16_t amount =

@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
@@ -67,6 +68,10 @@ const char* iconForLeftAction(
         case InteractionAction::OPEN_PATTERN_DIMENSION_SELECTOR:
         case InteractionAction::APPLY_PATTERN_DIMENSION_SELECTOR:
             return patternIcon;
+        case InteractionAction::OPEN_LANE_DIMENSION_SELECTOR:
+            return patternIcon;
+        case InteractionAction::OPEN_LANE_PROPERTY_SELECTOR:
+            return propertyIcon;
         case InteractionAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
         case InteractionAction::APPLY_MUSICAL_PROPERTY_SELECTOR:
             return propertyIcon;
@@ -106,6 +111,81 @@ FLASHMEM void setStripIconFromAction(
 FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     const SequencerViewModelSource& source
 ) {
+    if (source.sequencer.clipWorkspace.matrixVisible()) {
+        StripProps props;
+        props.visible = true;
+        for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
+        const auto& launcher = source.sequencer.clipWorkspace;
+        if (launcher.editorActive() || launcher.selectionActive() ||
+            source.trackNavigation.selection.active.get()) {
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_BACKWARD,
+                Visual::ACTIVE
+            );
+        }
+        if (source.trackNavigation.selection.active.get()) return props;
+        if (!launcher.selectionActive()) {
+            if (launcher.trackHeaderFocused()) {
+                if (!source.tracks.isTrackEnabled(launcher.focusedTrack)) {
+                    return props;
+                }
+                const bool soloed = core::state::project::projectTrackSoloed(
+                    source.projectTracks,
+                    launcher.focusedTrack
+                );
+                props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::SETTINGS_GEAR,
+                    Visual::ACTIVE
+                );
+                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::TRACK_SOLO,
+                    soloed ? Visual::ARMED : Visual::ACTIVE,
+                    soloed
+                        ? core::ui::ContextActionStripTone::POSITIVE
+                        : core::ui::ContextActionStripTone::NEUTRAL
+                );
+                return props;
+            }
+            const core::state::sequencer::SequencerClipAddress focused{
+                launcher.focusedTrack,
+                launcher.focusedSlot,
+            };
+            if (source.clips.isOccupied(focused)) {
+                props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::CLIP,
+                    Visual::ACTIVE
+                );
+                props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                    standalone::icons::PATTERN,
+                    Visual::ACTIVE
+                );
+            }
+            return props;
+        }
+        if (launcher.operation == core::state::sequencer::
+                ClipWorkspaceOperation::SELECT) {
+            int8_t trackOffset = 0;
+            int8_t slotOffset = 0;
+            const bool hasDestination =
+                core::state::sequencer::canMoveSequencerClipSelectionNow(
+                    source.clips,
+                    source.clipLaunches,
+                    launcher.selectedClipMasks,
+                    source.statusBar.playing.get()) &&
+                core::state::sequencer::firstSequencerClipSelectionMoveOffset(
+                    source.clips,
+                    source.tracks,
+                    source.sequencer,
+                    launcher.selectedClipMasks,
+                    trackOffset,
+                    slotOffset);
+            props.slots[1] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_MOVE,
+                hasDestination ? Visual::ACTIVE : Visual::DISABLED
+            );
+        }
+        return props;
+    }
     if (source.sequencer.patternPresetPreview.active()) {
         StripProps props;
         props.visible = true;
@@ -166,6 +246,10 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
 
         const bool stepFocus = focus ==
             core::state::StructureNavigationFocus::STEP;
+        const bool laneFocus = focus ==
+            core::state::StructureNavigationFocus::LANE;
+        const bool patternFocus = focus ==
+            core::state::StructureNavigationFocus::PAGE;
         const bool trackFocus = focus ==
             core::state::StructureNavigationFocus::TRACK;
         if (drumUi.selector == core::state::sequencer::
@@ -214,10 +298,7 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                 visual::buildDrumPropertyVisual(drumUi.property).icon,
                 Visual::ACTIVE
             );
-        } else if (trackFocus) {
-            // Pattern defaults remain reachable until their dedicated Track
-            // editor row lands, but the strip must describe the actual action
-            // instead of advertising lane dimensions and a dead third slot.
+        } else if (patternFocus) {
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
                 drumUi.patternDefaultField == core::state::sequencer::
                         DrumPatternDefaultField::DIVISION
@@ -225,7 +306,7 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                     : standalone::icons::LENGTH,
                 Visual::ACTIVE
             );
-        } else {
+        } else if (laneFocus) {
             props.slots[1] = core::ui::makeStandaloneIconStripSlot(
                 drumDimensionIcon(drumUi.dimension),
                 Visual::ACTIVE
@@ -234,6 +315,9 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
                 visual::buildDrumPropertyVisual(drumUi.property).icon,
                 Visual::ACTIVE
             );
+        } else if (trackFocus) {
+            props.slots[1].visualState = Visual::HIDDEN;
+            props.slots[2].visualState = Visual::HIDDEN;
         }
         return props;
     }

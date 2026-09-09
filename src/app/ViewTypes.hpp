@@ -6,7 +6,7 @@ namespace core::ui {
 
 enum class ViewType : uint8_t {
     MACRO = 0,
-    SEQUENCER,
+    CLIPS,
     PROJECT,
     DEVICE_SETTINGS,
     /** First-rank musical view backed by the shared Project workspace. */

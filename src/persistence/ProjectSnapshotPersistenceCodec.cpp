@@ -25,7 +25,6 @@ struct ProjectSnapshotCodecWorkspace::Storage {
     > projectTracks;
     std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE> macro;
     std::array<uint8_t, PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE> projectControl;
-    sequencer_codec::EnvelopeBuffer sequencerEnvelope;
 };
 
 ProjectSnapshotCodecWorkspace::ProjectSnapshotCodecWorkspace() = default;
@@ -38,7 +37,7 @@ ProjectSnapshotCodecWorkspace& ProjectSnapshotCodecWorkspace::operator=(
 ) noexcept = default;
 
 FLASHMEM bool ProjectSnapshotCodecWorkspace::prepare() {
-    static_assert(sizeof(Storage) == 600295U, "project encode scratch ABI drift");
+    static_assert(sizeof(Storage) == 174136U, "project encode scratch ABI drift");
     if (!storage_) {
         storage_ = core::app::makeExtmemUniqueForOverwrite<Storage>();
     }
@@ -360,7 +359,8 @@ FLASHMEM bool readProjectControlChunks(
 
 FLASHMEM bool buildSequencerEnvelope(
     const core::state::project::ProjectSnapshot& snapshot,
-    sequencer_codec::EnvelopeBuffer& out,
+    uint8_t* out,
+    uint32_t capacity,
     uint32_t& outSize
 ) {
     OC_PERF_SCOPE(perfEnvelope, "persistence.project-codec.sequencer");
@@ -368,6 +368,7 @@ FLASHMEM bool buildSequencerEnvelope(
     sequencer_codec::ProjectSequencerSnapshotEncodeSource source{};
     source.flat = &snapshot.sequencer.flat;
     source.drums = snapshot.drumTracks.get();
+    source.clips = &snapshot.clips;
     source.focusedStep = snapshot.sequencer.focusedStep;
     source.activeStepProperty = snapshot.sequencer.activeStepProperty;
     const uint8_t activeTrack = snapshot.sequencer.flat.activeTrack;
@@ -378,18 +379,14 @@ FLASHMEM bool buildSequencerEnvelope(
         return false;
     }
     for (uint8_t i = 0; i < source.graphs.size(); ++i) {
-        source.graphs[i] = (i == activeTrack)
-            ? snapshot.sequencer.editorGraph.get()
-            : snapshot.sequencer.bankGraphs[i].get();
-        source.ccLanes[i] = (i == activeTrack)
-            ? snapshot.sequencer.editorCcLanes.get()
-            : snapshot.sequencer.bankCcLanes[i].get();
+        source.graphs[i] = snapshot.sequencer.bankGraphs[i].get();
+        source.ccLanes[i] = snapshot.sequencer.bankCcLanes[i].get();
     }
 
     const auto encoded = sequencer_codec::fillProjectSequencerEnvelope(
         source,
-        out.bytes.data(),
-        static_cast<uint32_t>(out.bytes.size())
+        out,
+        capacity
     );
     if (!encoded.ok) return false;
     outSize = encoded.size;
@@ -437,9 +434,9 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
         return false;
     }
 
-    auto bank = core::app::makeExtmemUnique<core::state::sequencer::SequencerTrackBankState>();
-    auto active = core::app::makeExtmemUnique<core::state::sequencer::SequencerState>();
-    if (!bank || !active) {
+    if (!sequencer_codec::decodeProjectSequencerEnvelope(
+            chunk->data, chunk->size, target.sequencer,
+            target.clips, target.drumTracks)) {
         addReport(report,
                   project_file::LoadSeverity::ERROR,
                   project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
@@ -447,43 +444,6 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
                   chunk->versionMajor,
                   chunk->versionMinor);
         return false;
-    }
-
-    bank->syncSharedTrackState(target.sharedTrackEnabledMask, target.sharedTrackActive);
-
-    if (!sequencer_codec::applyProjectSequencerEnvelope(
-            chunk->data,
-            chunk->size,
-            *bank,
-            *active
-        ) ||
-        !core::state::sequencer::captureHistorySnapshot(*bank, *active, target.sequencer)) {
-        addReport(report,
-                  project_file::LoadSeverity::ERROR,
-                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor);
-        return false;
-    }
-
-    if (bank->drumTrackMask() != 0U) {
-        if (!target.drumTracks) {
-            target.drumTracks = core::app::makeExtmemUnique<
-                core::state::sequencer::DrumTrackBankSnapshot>();
-        }
-        if (!target.drumTracks) {
-            addReport(report,
-                      project_file::LoadSeverity::ERROR,
-                      project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
-                      chunk->id,
-                      chunk->versionMajor,
-                      chunk->versionMinor);
-            return false;
-        }
-        bank->captureDrumTrackBank(*target.drumTracks);
-    } else {
-        target.drumTracks.reset();
     }
 
     return true;
@@ -550,7 +510,7 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     uint32_t outCapacity,
     ProjectSnapshotCodecWorkspace& workspace
 ) {
-    if (!snapshot.projectControl) {
+    if (!snapshot.projectControl || out == nullptr) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
 #if OC_ENABLE_STATS
@@ -640,16 +600,7 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     if (!controlPayloads.encoded()) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
-    uint32_t sequencerSize = 0;
-    if (!buildSequencerEnvelope(
-            snapshot,
-            scratch.sequencerEnvelope,
-            sequencerSize
-        )) {
-        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
-    }
-
-    const project_file::ChunkView chunks[] = {
+    project_file::ChunkView chunks[] = {
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::PROJECT_META),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
@@ -724,14 +675,38 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SEQUENCER_STATE_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = scratch.sequencerEnvelope.bytes.data(),
-            .size = sequencerSize,
+            .data = nullptr,
+            .size = 0U,
         },
     };
 
+    constexpr uint16_t chunkCount =
+        static_cast<uint16_t>(sizeof(chunks) / sizeof(chunks[0]));
+    const uint32_t sequencerOffset = project_file::encodedSize(
+        chunks,
+        chunkCount
+    );
+    if (sequencerOffset == 0U || sequencerOffset >= outCapacity) {
+        return {
+            .status = project_file::Status::BUFFER_TOO_SMALL,
+            .bytesWritten = sequencerOffset + 1U,
+        };
+    }
+    uint32_t sequencerSize = 0U;
+    if (!buildSequencerEnvelope(
+            snapshot,
+            out + sequencerOffset,
+            outCapacity - sequencerOffset,
+            sequencerSize
+        )) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
+    chunks[chunkCount - 1U].data = out + sequencerOffset;
+    chunks[chunkCount - 1U].size = sequencerSize;
+
     auto encoded = project_file::encode(
         chunks,
-        static_cast<uint16_t>(sizeof(chunks) / sizeof(chunks[0])),
+        chunkCount,
         snapshot.project.metadata.modifiedCounter,
         out,
         outCapacity

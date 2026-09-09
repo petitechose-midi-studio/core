@@ -222,6 +222,8 @@ const char* sequencerContextLabel(core::state::StructureNavigationFocus focus) {
             return "Track";
         case core::state::StructureNavigationFocus::STEP:
             return "Step";
+        case core::state::StructureNavigationFocus::LANE:
+            return "Lane";
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return "Pattern";
@@ -234,9 +236,87 @@ const char* sequencerContextIcon(core::state::StructureNavigationFocus focus) {
             return standalone::icons::ROUTING;
         case core::state::StructureNavigationFocus::STEP:
             return standalone::icons::NOTE;
+        case core::state::StructureNavigationFocus::LANE:
+            return standalone::icons::DRUM_GENERIC;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return standalone::icons::LENGTH;
+    }
+}
+
+const char* clipQuickActionLabel(
+    core::state::sequencer::ClipWorkspaceQuickAction action
+) {
+    using Action = core::state::sequencer::ClipWorkspaceQuickAction;
+    switch (action) {
+        case Action::LENGTH: return "Loops";
+        case Action::FOLLOW: return "Follow";
+        case Action::QUANTIZE: return "Follow quantize";
+        case Action::EDIT:
+        case Action::COUNT:
+        default: return "Edit pattern";
+    }
+}
+
+void formatClipQuickActionValue(
+    char* buffer,
+    size_t size,
+    const SequencerViewModelSource& source
+) {
+    if (buffer == nullptr || size == 0U) return;
+    const auto& ui = source.sequencer.clipWorkspace;
+    const core::state::sequencer::SequencerClipAddress address{
+        ui.quickTargetTrack,
+        ui.quickTargetSlot,
+    };
+    const auto behavior = ui.quickTargetFocus ==
+            core::state::sequencer::ClipWorkspaceFocus::SCENE
+        ? source.clips.sceneBehavior(ui.quickTargetSlot)
+        : source.clips.clipBehavior(address);
+    using Action = core::state::sequencer::ClipWorkspaceQuickAction;
+    switch (ui.quickAction) {
+        case Action::LENGTH:
+            if (behavior.length == 0U) {
+                std::snprintf(buffer, size, "Off");
+            } else {
+                std::snprintf(
+                    buffer,
+                    size,
+                    "%u loops",
+                    static_cast<unsigned>(behavior.length)
+                );
+            }
+            return;
+        case Action::FOLLOW:
+            visual::formatLauncherFollowChoice(
+                buffer,
+                size,
+                behavior.follow,
+                false
+            );
+            return;
+        case Action::QUANTIZE:
+            switch (behavior.quantization) {
+                case core::state::sequencer::
+                        SequencerLauncherFollowQuantization::BEAT:
+                    std::snprintf(buffer, size, "1 beat");
+                    break;
+                case core::state::sequencer::
+                        SequencerLauncherFollowQuantization::BAR:
+                    std::snprintf(buffer, size, "1 bar");
+                    break;
+                case core::state::sequencer::
+                        SequencerLauncherFollowQuantization::GLOBAL:
+                default:
+                    std::snprintf(buffer, size, "Global");
+                    break;
+            }
+            return;
+        case Action::EDIT:
+        case Action::COUNT:
+        default:
+            std::snprintf(buffer, size, "Release to open");
+            return;
     }
 }
 
@@ -614,6 +694,26 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
             .value = stepContentDraftFailureValue(sequencer.stepContentDraft),
             .color = standalone::theme::color::STEP_CYCLE_STATE,
         };
+    }
+
+    if (sequencer.clipWorkspace.matrixVisible() &&
+        (sequencer.clipWorkspace.quickSelectorVisible ||
+         sequencer.clipWorkspace.quickFeedbackVisible)) {
+        const auto action = sequencer.clipWorkspace.quickAction;
+        StepPropertySelectionOverlayProps props{
+            .visible = true,
+            .customContent = true,
+            .icon = visual::launcherQuickActionIconGlyph(action),
+            .label = clipQuickActionLabel(action),
+            .useValueText = true,
+            .color = standalone::theme::color::STEP_STATE,
+        };
+        formatClipQuickActionValue(
+            props.valueText.data(),
+            props.valueText.size(),
+            source
+        );
+        return props;
     }
 
     if (sequencer.contextSelector.visible) {

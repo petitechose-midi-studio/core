@@ -375,12 +375,9 @@ FLASHMEM uint16_t projectControlTimelinePositionQ16(
 namespace {
 FLASHMEM int32_t lfoAuthoredPhaseQ16(int16_t authoredPhaseQ15) {
     const int32_t signedPhase = authoredPhaseQ15;
-    const int64_t magnitude = signedPhase < 0
-        ? -static_cast<int64_t>(signedPhase)
-        : static_cast<int64_t>(signedPhase);
-    const int32_t scaled = static_cast<int32_t>(
-        (magnitude * 65535LL + 16383LL) / 32767LL
-    );
+    const int32_t magnitude = signedPhase < 0 ? -signedPhase : signedPhase;
+    // Even INT16_MIN fits: 32768 * 65535 + 16383 = 2147467263 < INT32_MAX.
+    const int32_t scaled = (magnitude * 65535 + 16383) / 32767;
     return signedPhase < 0 ? -scaled : scaled;
 }
 

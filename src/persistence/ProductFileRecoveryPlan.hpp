@@ -26,6 +26,7 @@ public:
     void reset();
     bool active() const;
     bool complete() const;
+    bool nextAdvanceReadsData() const;
 
 private:
     enum class Step : uint8_t {

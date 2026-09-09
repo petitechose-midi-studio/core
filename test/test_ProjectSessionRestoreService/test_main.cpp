@@ -52,9 +52,9 @@ void configureSession(core::state::CoreState& state, const char* id, uint8_t not
     page.values[0] = 0.33f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.setContentLength(10);
+    state.sequencer.pattern().setContentLength(10);
     state.sequencer.setStepDataAt(0, note, 111, 80);
-    state.sequencer.pattern.toggle(0);
+    state.sequencer.pattern().toggle(0);
     state.sequencer.focusedStep.set(0);
 }
 
@@ -121,9 +121,9 @@ void test_valid_session_restores_runtime_project() {
     assert(std::strcmp(runtime.pages.activePageData().name, "Restored") == 0);
     assert(runtime.pages.activePageData().cc[0] == 71);
     assert(runtime.macros.slots[0].value.get() == 0.33f);
-    assert(runtime.sequencer.pattern.length.get() == 10);
-    assert(runtime.sequencer.pattern.isEnabled(0));
-    assert(runtime.sequencer.pattern.note[0] == 70);
+    assert(runtime.sequencer.pattern().length.get() == 10);
+    assert(runtime.sequencer.pattern().isEnabled(0));
+    assert(runtime.sequencer.pattern().note[0] == 70);
     assert(!runtime.hasPendingProjectSessionSave());
     assert(runtime.projectSessionSaveToken().session != tokenBefore.session);
 

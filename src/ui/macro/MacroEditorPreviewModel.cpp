@@ -83,7 +83,7 @@ uint16_t sourceTimelineDurationTicks(
 ) {
     if (source.kind == state_mod::ModulatorKind::RECORDED_SHAPE) {
         const auto* curve = state_mod::findProjectCurve(
-            model.control->authored.curves,
+            model.control->authored().curves,
             source.parameters.recordedCurveId
         );
         return curve != nullptr
@@ -130,7 +130,7 @@ float sourcePreviewValue(
     if (source.kind == state_mod::ModulatorKind::RECORDED_SHAPE) {
         phase = normalizedPosition(positionQ16);
         const auto* curve = state_mod::findProjectCurve(
-            model.control->authored.curves,
+            model.control->authored().curves,
             source.parameters.recordedCurveId
         );
         if (curve == nullptr) return 0.0f;
@@ -248,7 +248,7 @@ ContributionSample sampleProjectContribution(
     const state_mod::ModulatorSourceState* knownSource = nullptr
 ) {
     ContributionSample result{};
-    const auto& graph = model.control->authored.modulation;
+    const auto& graph = model.control->authored().modulation;
     const auto* source = knownSource != nullptr &&
             knownSource->id == binding.sourceId
         ? knownSource
@@ -265,7 +265,7 @@ ContributionSample sampleProjectContribution(
         naturalDomain = state_mod::ModulatorNaturalDomain::CENTERED;
     } else if (!state_mod::projectModulatorNaturalDomain(
                    *source,
-                   model.control->authored.curves,
+                   model.control->authored().curves,
                    naturalDomain
                )) {
         return result;
@@ -299,7 +299,7 @@ ContributionSample sampleRuntimeProjectContribution(
     bool hasPrevious,
     bool naturalTimeline
 ) {
-    const auto& graph = model.control->authored.modulation;
+    const auto& graph = model.control->authored().modulation;
     if (binding.sourceIndex >= graph.sourceCount) return {};
     const auto& source = graph.sources[binding.sourceIndex];
     return sampleResolvedProjectContribution(
@@ -383,7 +383,7 @@ FLASHMEM void selectFirstBinding(MacroEditorPreviewModel& model) {
         return;
     }
     const auto destination = state_mod::projectControlDestination(model.address);
-    const auto& graph = model.control->authored.modulation;
+    const auto& graph = model.control->authored().modulation;
     for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
         if (graph.outputBindings[index].destination == destination) {
             model.focusedBindingId = graph.outputBindings[index].id;
@@ -396,10 +396,10 @@ FLASHMEM void selectFirstBinding(MacroEditorPreviewModel& model) {
 FLASHMEM void cacheFocusedSourceIndices(MacroEditorPreviewModel& model) {
     if (model.control == nullptr ||
         model.focusedBindingIndex >=
-            model.control->authored.modulation.outputBindingCount) {
+            model.control->authored().modulation.outputBindingCount) {
         return;
     }
-    const auto& graph = model.control->authored.modulation;
+    const auto& graph = model.control->authored().modulation;
     const auto& binding = graph.outputBindings[model.focusedBindingIndex];
     if (binding.id != model.focusedBindingId) return;
     for (uint16_t index = 0U; index < graph.sourceCount; ++index) {
@@ -463,7 +463,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
     model.destination = state_mod::projectControlDestination(address);
     model.destinationScaleQ15 =
         state_mod::projectModulationDestinationScaleQ15(
-            control.authored.modulation,
+            control.authored().modulation,
             model.destination
         );
     model.focusedBindingId = focusedBindingId;
@@ -494,12 +494,12 @@ FLASHMEM void buildMacroEditorPreviewModel(
     model.automationDrivingBase = model.automationPlayback;
     if (view.automation.stored()) {
         const auto* curve = state_mod::findProjectCurve(
-            control.authored.curves,
+            control.authored().curves,
             view.automation.id
         );
         if (curve != nullptr) {
             model.automationCurveRecordIndex = static_cast<uint16_t>(
-                curve - control.authored.curves.records.data()
+                curve - control.authored().curves.records.data()
             );
             model.automationDurationTicks = std::max<uint16_t>(
                 curve->durationTicks,
@@ -516,7 +516,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
     }
 
     const auto destination = model.destination;
-    const auto& graph = control.authored.modulation;
+    const auto& graph = control.authored().modulation;
     for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
         const auto& binding = graph.outputBindings[index];
         if (binding.destination != destination) continue;
@@ -630,7 +630,7 @@ FLASHMEM void attachProjectRecordedShapeCapturePreview(
     if (capture.mode ==
             state_mod::ProjectRecordedShapeCaptureMode::REPLACE_EXISTING &&
         state_mod::valid(capture.sourceId)) {
-        const auto& graph = model.control->authored.modulation;
+        const auto& graph = model.control->authored().modulation;
         for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
             const auto& binding = graph.outputBindings[index];
             if (binding.destination == destination &&
@@ -685,14 +685,14 @@ FLASHMEM bool sampleMacroEditorPreview(
         const uint16_t destinationScaleQ15 = authoredModelCurrent
             ? model.destinationScaleQ15
             : state_mod::projectModulationDestinationScaleQ15(
-                model.control->authored.modulation,
+                model.control->authored().modulation,
                 destination
             );
         const float scale = static_cast<float>(destinationScaleQ15) /
             static_cast<float>(
             state_mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
         );
-        const auto& graph = model.control->authored.modulation;
+        const auto& graph = model.control->authored().modulation;
         const bool provisionalFocused =
             model.recordedShapeCapture != nullptr &&
             model.recordedShapeCapture->mode == state_mod::

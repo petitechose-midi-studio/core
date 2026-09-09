@@ -371,6 +371,28 @@ FLASHMEM void formatContextFields(char* out,
         );
     }
     appendField(out, size, "operation_status", operation.operationStatus);
+    const SemanticUxContext& launchState = post.activeSlot >= 0 ||
+            post.queuedSlot >= 0 || post.beatsRemaining >= 0 || post.hasStopped
+        ? post : pre;
+    if (launchState.activeSlot >= 0) {
+        appendIntField(
+            out, size, "active_slot", static_cast<int>(launchState.activeSlot));
+    }
+    if (launchState.queuedSlot >= 0) {
+        appendIntField(
+            out, size, "queued_slot", static_cast<int>(launchState.queuedSlot));
+    }
+    if (launchState.beatsRemaining >= 0) {
+        appendIntField(
+            out,
+            size,
+            "beats_remaining",
+            static_cast<int>(launchState.beatsRemaining)
+        );
+    }
+    if (launchState.hasStopped) {
+        appendBoolField(out, size, "stopped", launchState.stopped);
+    }
     const SemanticUxContext& route = post.hasTargetRoute ? post : pre;
     if (route.hasTargetRoute) {
         appendIntField(out, size, "target_route", static_cast<int>(route.targetRoute));
@@ -893,7 +915,11 @@ FLASHMEM void SemanticUxRecorder::writeCapture_(uint32_t nowMs,
             context.intent = last_semantic_intent_;
         }
         if (last_semantic_effect_) context.effect = last_semantic_effect_;
-        if (last_semantic_outcome_ && !context.outcome) {
+        const bool preserveTerminalCancel =
+            last_semantic_intent_ ==
+            core::state::interaction::ControllerIntent::CANCEL;
+        if (last_semantic_outcome_ &&
+            (!context.outcome || preserveTerminalCancel)) {
             context.outcome = last_semantic_outcome_;
         }
     } else if (allow_state_projection_capture_) {

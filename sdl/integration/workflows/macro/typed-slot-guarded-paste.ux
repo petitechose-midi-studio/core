@@ -14,9 +14,9 @@
 # add-slot grammar so Destination paste has a real, user-visible target and
 # never creates a hidden Slot implicitly.
 120 button NAV down
-180 encoder NAV 1
+180 encoder NAV 0.01
 240 button NAV up
-360 encoder NAV 1
+360 encoder NAV 0.01
 480 tap NAV 60
 
 # Open Macro 1 on its Destination row. Automation and Modulation are visible
@@ -33,7 +33,7 @@
 
 # Select Macro 2 as the exact Destination target with the active-Macro cycle.
 2520 button LEFT_CENTER down
-2680 encoder NAV 1
+2680 encoder NAV 0.01
 2840 button LEFT_CENTER up
 3040 capture screen target_destination
 

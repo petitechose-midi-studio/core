@@ -258,11 +258,13 @@ int main(int argc, char** argv) {
             core::sequencer::SequencerRuntimeService::StateRefs{
                 coreState.sequencer,
                 coreState.sequencerTracks,
+                coreState.sequencerClips,
                 coreState.projectTracks,
                 coreState.projectNavigation,
                 coreState.statusBar,
                 coreState.midiSync,
                 coreState.sequencerTrackActivations,
+                coreState.sequencerClipLaunches,
                 &coreState.midiCcCoordinator,
                 &coreState.sequencerRuntimeProjectRevision,
             },

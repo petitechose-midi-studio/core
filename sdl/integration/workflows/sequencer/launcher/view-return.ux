@@ -1,0 +1,21 @@
+# Purpose: keep Clips playing while Macros owns the screen. Stop while away, then
+# return: the retained matrix must show current transport state, not a stale head.
+# Expect: capture_match:stopped_return=stopped_later
+# Expect: capture_changed:playing=stopped_return
+# Expect: semantic:macro_view:mode=macro.performance
+# Expect: semantic:stopped_return:mode=sequencer.clip_launcher
+0 scenario clip-launcher-v3
+100 capture screen initial
+200 tap BOTTOM_CENTER 60
+300 tap NAV 60
+2000 capture screen playing
+2200 button LEFT_TOP down
+2400 encoder NAV -0.01
+2600 button LEFT_TOP up
+3000 capture screen macro_view
+6000 tap BOTTOM_CENTER 60
+6300 button LEFT_TOP down
+6500 encoder NAV 0.01
+6700 button LEFT_TOP up
+7100 capture screen stopped_return
+7500 capture screen stopped_later

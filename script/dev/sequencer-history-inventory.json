@@ -126,9 +126,47 @@
       "recordFullBankFromCoreState",
       "canRecordFullBankFromCoreState",
       "recordPreparedFullBankFromCoreState",
-      "recordStructureFromCoreState"
+      "recordStructureFromCoreState",
+      "SequencerHistoryFullBankChange",
+      "SequencerHistoryFullBankChangePtr",
+      "SequencerPreparedFullBankEditOwner",
+      "SequencerPreparedFullBankEditOutcome",
+      "SequencerPreparedFullBankEditResult",
+      "prepareHistoryFullBankChangeBefore",
+      "reservePreparedHistoryFullBankAfter",
+      "capturePreparedHistoryFullBankAfterUsingReservedStorage",
+      "populatePreparedHistoryFullBankStaging",
+      "canRecordFullBank",
+      "commitAdmittedFullBank",
+      "projectInheritedChordContexts",
+      "applyProjectScaleTransition",
+      "validateSetPayload",
+      "fillSetPayload",
+      "applySetPayload",
+      "fillSetEnvelope",
+      "applySetEnvelope",
+      "applyProjectSequencerPayload",
+      "applyProjectSequencerEnvelope",
+      "preparePageStructureSnapshot",
+      "commitPreparedPageStructureSnapshot",
+      "MacroPageStructureHistoryOperation",
+      "pageStructureBeforeMatches",
+      "pageStructureAfterMatches",
+      "compactProjectControlPages",
+      "normalizeEqualMacroAfterControl",
+      "pageStructureControlHash",
+      "xorPageStructureControl",
+      "clearAutomationForPage",
+      "replacePageFromClipboard",
+      "replaceTrackFromClipboard",
+      "mutateProjectControl",
+      "clearMacroSlot",
+      "clearTracks",
+      "clearPages"
     ],
     "targetedIdentifiers": [
+      {"path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "beforeControl"},
+      {"path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "afterControl"},
       {
         "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
         "identifier": "canRecordFullBank"
@@ -139,6 +177,8 @@
       }
     ],
     "mutationLayers": [
+      {"name": "track-control-before", "path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "beforeControl"},
+      {"name": "track-control-after", "path": "src/state/sequencer/SequencerStructureHistory.hpp", "identifier": "afterControl"},
       {
         "name": "domain-facade",
         "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
@@ -163,6 +203,16 @@
         "name": "test-clients",
         "path": "test/Regression.cpp",
         "identifier": "recordPattern"
+      },
+      {
+        "name": "macro-page-history",
+        "path": "src/state/macro/MacroHistory.cpp",
+        "identifier": "preparePageStructureSnapshot"
+      },
+      {
+        "name": "macro-page-tests",
+        "path": "test/Regression.cpp",
+        "identifier": "compactProjectControlPages"
       }
     ],
     "expectedTotal": 0
@@ -370,10 +420,10 @@
       }
     ]
   },
-  "preparedFullBankLifecycle": {
+  "preparedProjectScaleLifecycle": {
     "ownerDeclaration": {
       "path": "src/state/sequencer/SequencerHistory.hpp",
-      "enum": "SequencerPreparedFullBankEditOwner",
+      "enum": "SequencerProjectScaleEditOwner",
       "expectedCount": 1,
       "owners": [
         "ProjectScale"
@@ -391,7 +441,7 @@
       "expectedDefinitionCount": 1
     },
     "trustedCommit": {
-      "method": "commitAdmittedFullBank",
+      "method": "commitAdmittedProjectScale",
       "declaration": {
         "path": "src/state/sequencer/SequencerHistory.hpp",
         "expectedCount": 1
@@ -442,20 +492,20 @@
         "callCount": 2
       }
     ],
-    "activeSpareProviders": {
+    "canonicalBankProviders": {
       "path": "src/state/sequencer/SequencerHistory.cpp",
       "providers": [
         {
           "function": "reserveHistoryTrackBankSnapshotStorage",
           "expectedActiveTrackBindingCount": 1,
-          "expectedSkipGuardCount": 1,
-          "expectedGraphResetCount": 1,
-          "expectedCcResetCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 0,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         },
@@ -468,8 +518,8 @@
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 1,
-          "expectedEditorGraphRouteCount": 1,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 1,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         },
@@ -482,8 +532,8 @@
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 1,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 1,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 1,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         },
@@ -496,22 +546,22 @@
           "expectedActiveScratchClearCount": 0,
           "expectedDraftGuardCount": 0,
           "expectedSnapshotActiveGuardCount": 1,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 1,
           "expectedDataCaptureCallCount": 1
         },
         {
           "function": "applyHistorySnapshot",
-          "expectedActiveTrackBindingCount": 1,
-          "expectedSkipGuardCount": 2,
+          "expectedActiveTrackBindingCount": 0,
+          "expectedSkipGuardCount": 0,
           "expectedGraphResetCount": 0,
           "expectedCcResetCount": 0,
-          "expectedActiveScratchClearCount": 2,
-          "expectedDraftGuardCount": 0,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 1,
           "expectedSnapshotActiveGuardCount": 0,
-          "expectedEditorGraphRouteCount": 0,
-          "expectedEditorCcRouteCount": 0,
+          "expectedIndexedGraphRouteCount": 0,
+          "expectedIndexedCcRouteCount": 0,
           "expectedGraphCaptureCallCount": 0,
           "expectedDataCaptureCallCount": 0
         }
@@ -729,7 +779,7 @@
       {"path": "src/handler/sequencer/SequencerStepEditHandler.cpp", "identifier": "showRejection", "expectedCount": 6},
       {"path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "identifier": "showRejection", "expectedCount": 2},
       {"path": "src/handler/sequencer/SequencerStepHandler.cpp", "identifier": "showRejection", "expectedCount": 10},
-      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 8},
+      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 7},
       {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 4},
       {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 2},
       {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 2},
@@ -745,7 +795,7 @@
     "forbiddenIdentifiers": [
       "SequencerHistoryOpenOutcome::Failed",
       "SequencerPreparedPatternEditBeginOutcome::Failed",
-      "SequencerPreparedFullBankEditOutcome::Failed"
+      "SequencerProjectScaleEditOutcome::Failed"
     ],
     "typedBeginMethods": [
       "beginOrContinueSequencerPatternHistoryCoalescing",
@@ -767,6 +817,9 @@
     "platformioPath": "platformio.ini",
     "platformioEnvironment": "native",
     "nativeTarget": "midi_studio_core_native",
+    "additionalTestBuildUses": {
+      "test/lvgl_step_editor/CMakeLists.txt": 1
+    },
     "requiredCmakeGuards": [
       "MS_CORE_BUILD_TESTS",
       "BUILD_TESTING"
@@ -787,6 +840,7 @@
       "test/test_ProjectHistoryCoordinator/test_main.cpp": 1,
       "test/test_ProjectSessionAutosaveService/test_main.cpp": 1,
       "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 10,
+      "test/test_SequencerClipGridState/test_main.cpp": 1,
       "test/test_SequencerHistory/test_main.cpp": 1,
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,
       "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,

@@ -172,19 +172,8 @@ FLASHMEM void MacroKnobWidget::createConfigLabels() {
     );
 }
 
-void MacroKnobWidget::setValue(float value) {
-    current_value_ = clampNormalized(value);
-    const uint16_t nextAngle = valueAngle(current_value_);
-    if (rendered_value_angle_ == nextAngle) return;
-    const uint16_t previousAngle = rendered_value_angle_;
-    rendered_value_angle_ = nextAngle;
-    invalidateArcDelta(previousAngle, nextAngle);
-}
-
 void MacroKnobWidget::setResolvedComponents(
     float baseValue,
-    float modulationDelta,
-    float modulationDepth,
     float resolvedValue,
     bool clippedLow,
     bool clippedHigh
@@ -195,8 +184,6 @@ void MacroKnobWidget::setResolvedComponents(
         : rendered_value_angle_;
     const bool previousClipped = clipped_low_ || clipped_high_;
     const float nextBase = clampNormalized(baseValue);
-    const float nextDelta = std::clamp(modulationDelta, -1.0f, 1.0f);
-    const float nextDepth = clampNormalized(modulationDepth);
     const float nextOutput = clampNormalized(resolvedValue);
     const uint16_t nextBaseAngle = valueAngle(nextBase);
     const uint16_t nextOutputAngle = valueAngle(nextOutput);
@@ -212,8 +199,6 @@ void MacroKnobWidget::setResolvedComponents(
     );
 
     base_value_ = nextBase;
-    modulation_delta_ = nextDelta;
-    modulation_depth_ = nextDepth;
     clipped_low_ = clippedLow;
     clipped_high_ = clippedHigh;
     current_value_ = nextOutput;
@@ -243,12 +228,6 @@ void MacroKnobWidget::setConfig(uint8_t cc) {
     if (!cc_value_ || current_cc_ == cc) return;
     cc_value_->setText(static_cast<int>(cc));
     current_cc_ = cc;
-}
-
-void MacroKnobWidget::setAutomationActive(bool active) {
-    if (!knob_ || automation_active_ == active) return;
-    automation_active_ = active;
-    updateAutomationTrackColor();
 }
 
 void MacroKnobWidget::setAutomationRecording(bool active) {
@@ -544,6 +523,7 @@ void MacroKnobWidget::invalidateArcRange(lv_value_precise_t startAngle, lv_value
     }
 
     invalidateArcRangeAt(
+        geometry,
         startAngle,
         endAngle,
         geometry.radius,
@@ -552,18 +532,13 @@ void MacroKnobWidget::invalidateArcRange(lv_value_precise_t startAngle, lv_value
 }
 
 FLASHMEM void MacroKnobWidget::invalidateArcRangeAt(
+    const ArcGeometry& geometry,
     lv_value_precise_t startAngle,
     lv_value_precise_t endAngle,
     uint16_t radius,
     lv_coord_t width
 ) {
     if (!knob_ || lv_obj_has_flag(knob_, LV_OBJ_FLAG_HIDDEN)) return;
-
-    ArcGeometry geometry;
-    if (!buildArcGeometry(geometry)) {
-        lv_obj_invalidate(knob_);
-        return;
-    }
 
     if (startAngle > endAngle) std::swap(startAngle, endAngle);
 
@@ -599,6 +574,7 @@ FLASHMEM void MacroKnobWidget::invalidateRailRange(
         geometry.width
     );
     invalidateArcRangeAt(
+        geometry,
         span.start,
         span.end,
         railRadius,

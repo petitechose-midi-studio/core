@@ -14,9 +14,9 @@
 # Hold NAV and turn the shared context selector Page -> Macro, then select
 # Macro 2, which owns an automation lane.
 180 button NAV down
-240 encoder NAV 1
+240 encoder NAV 0.01
 320 button NAV up
-460 encoder NAV 1
+460 encoder NAV 0.01
 620 capture screen macro_2_focused
 
 # Tap copies the complete focused Slot.

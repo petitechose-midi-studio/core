@@ -38,7 +38,9 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     createGrid();
     if (!step_grid_ || !step_grid_->getElement() ||
         !cc_lane_grid_ || !cc_lane_grid_->getElement()
+        || !clip_launcher_surface_ || !clip_launcher_surface_->getElement()
         || !drum_overview_surface_ || !drum_overview_surface_->getElement()
+        || !content_parking_host_
     ) return;
     createTrackPastePreflightCard();
     if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
@@ -52,6 +54,7 @@ FLASHMEM SequencerView::~SequencerView() {
 
     track_paste_preflight_card_.reset();
     drum_overview_surface_.reset();
+    clip_launcher_surface_.reset();
     cc_lane_grid_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
@@ -105,10 +108,16 @@ FLASHMEM void SequencerView::createGrid() {
         center_column_,
         SequencerCcLaneGridLayout::EMBEDDED
     );
+    clip_launcher_surface_ = core::app::makeExtmemUnique<
+        core::ui::sequencer::SequencerClipLauncherSurface>(center_column_);
     drum_overview_surface_ =
         core::app::makeExtmemUnique<core::ui::sequencer::DrumOverviewSurface>(
             center_column_
         );
+    if (!content_parking_.initialize()) return;
+    content_parking_host_ = content_parking_.createHost();
+    oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+        nullptr, center_column_, content_parking_host_);
 }
 
 FLASHMEM void SequencerView::createPropertySelectionOverlay() {
@@ -213,6 +222,7 @@ FLASHMEM bool SequencerView::bindToState() {
     bindHeaderStripState();
     const bool structureSelectionBound = bindStructureSelectionState();
     bindGridState();
+    bindClipActivityState();
     bindSelectorOverlayState();
     bindOverlayVisibilityState();
     bindLeftActionStripState();
@@ -220,6 +230,7 @@ FLASHMEM bool SequencerView::bindToState() {
     bindHistoryFeedbackState();
     bindTrackSwitchReadyState();
     bindTrackPastePreflightState();
+    bindProjectTrackState();
     bindClipboardState();
 
     const bool bound =
@@ -230,6 +241,8 @@ FLASHMEM bool SequencerView::bindToState() {
             structure_selection_watcher_.capacity() &&
         grid_watcher_.subscriptionCount() == grid_watcher_.capacity() &&
         grid_tick_watcher_.subscriptionCount() == grid_tick_watcher_.capacity() &&
+        clip_activity_watcher_.subscriptionCount() ==
+            clip_activity_watcher_.capacity() &&
         selector_overlay_watcher_.subscriptionCount() == selector_overlay_watcher_.capacity() &&
         overlay_visibility_watcher_.subscriptionCount() == overlay_visibility_watcher_.capacity() &&
         left_action_strip_watcher_.subscriptionCount() == left_action_strip_watcher_.capacity() &&
@@ -238,6 +251,8 @@ FLASHMEM bool SequencerView::bindToState() {
         track_switch_ready_watcher_.subscriptionCount() == track_switch_ready_watcher_.capacity() &&
         track_paste_preflight_watcher_.subscriptionCount() ==
             track_paste_preflight_watcher_.capacity() &&
+        project_track_watcher_.subscriptionCount() ==
+            project_track_watcher_.capacity() &&
         clipboard_watcher_.subscriptionCount() == clipboard_watcher_.capacity();
     if (!bound) return false;
 
@@ -265,7 +280,9 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.patternQuickControls.previewRevision,
         state_refs_.sequencer.drumSequencer.revision,
-        state_refs_.sequencer.patternPresetPreview.revision
+        state_refs_.sequencer.patternPresetPreview.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
+        state_refs_.clipLaunches.telemetryRevision()
     );
 }
 
@@ -276,7 +293,7 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
     header_strip_watcher_.watchAll(
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
-        state_refs_.sequencer.pattern.length,
+        state_refs_.sequencer.patternChanges.length,
         state_refs_.sequencer.page,
         state_refs_.structureNavigationFocus,
         state_refs_.trackNavigation.previewAddSlot,
@@ -310,16 +327,15 @@ FLASHMEM void SequencerView::bindGridState() {
         *this, 2, "SequencerView.grid"
     );
     grid_watcher_.watchAll(
-        state_refs_.sequencer.pattern.length,
+        state_refs_.sequencer.patternChanges.length,
         state_refs_.sequencer.page,
         state_refs_.sequencer.focusedStep,
-        state_refs_.sequencer.pattern.enabledMask,
-        state_refs_.sequencer.playheadStep,
-        state_refs_.sequencer.pattern.stepDataRevision,
+        state_refs_.sequencer.patternChanges.enabledMask,
+        state_refs_.sequencer.patternChanges.stepDataRevision,
         state_refs_.sequencer.probabilityCycleRevision,
         state_refs_.sequencer.variationTelemetryRevision,
-        state_refs_.sequencer.pattern.patternVariationRevision,
-        state_refs_.sequencer.pattern.patternScaleRevision,
+        state_refs_.sequencer.patternChanges.patternVariationRevision,
+        state_refs_.sequencer.patternChanges.patternScaleRevision,
         state_refs_.tracks.projectScaleRevisionSignal(),
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepStatePropertyActive,
@@ -351,7 +367,10 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
-        state_refs_.sequencer.patternQuickControls.previewRevision
+        state_refs_.sequencer.patternQuickControls.previewRevision,
+        state_refs_.sequencer.clipWorkspace.revision,
+        state_refs_.clips.revisionSignal(),
+        state_refs_.clipLaunches.telemetryRevision()
     );
     grid_watcher_.watch(
         state_refs_.tracks.drumRevisionSignal()
@@ -359,14 +378,38 @@ FLASHMEM void SequencerView::bindGridState() {
     grid_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
     );
-    grid_watcher_.watch(
-        state_refs_.sequencer.drumSequencer.playbackRevision
-    );
     grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
         *this, 11, "SequencerView.gridTick"
     );
-    grid_tick_watcher_.watch(
-        state_refs_.sequencer.playheadStepPhaseQ8
+    grid_tick_watcher_.watchAll(
+        state_refs_.sequencer.playheadStep,
+        state_refs_.sequencer.playheadStepPhaseQ8,
+        state_refs_.sequencer.drumSequencer.playbackRevision,
+        state_refs_.clipLaunches.playbackProgressRevision()
+    );
+}
+
+FLASHMEM void SequencerView::bindClipActivityState() {
+    clip_activity_watcher_.bind<&SequencerView::requestClipActivityRender>(
+        *this, 13, "SequencerView.clipActivity"
+    );
+    clip_activity_watcher_.watchAll(
+        state_refs_.statusBar.trackNoteActivity[0],
+        state_refs_.statusBar.trackNoteActivity[1],
+        state_refs_.statusBar.trackNoteActivity[2],
+        state_refs_.statusBar.trackNoteActivity[3],
+        state_refs_.statusBar.trackNoteActivity[4],
+        state_refs_.statusBar.trackNoteActivity[5],
+        state_refs_.statusBar.trackNoteActivity[6],
+        state_refs_.statusBar.trackNoteActivity[7],
+        state_refs_.statusBar.trackNoteActivity[8],
+        state_refs_.statusBar.trackNoteActivity[9],
+        state_refs_.statusBar.trackNoteActivity[10],
+        state_refs_.statusBar.trackNoteActivity[11],
+        state_refs_.statusBar.trackNoteActivity[12],
+        state_refs_.statusBar.trackNoteActivity[13],
+        state_refs_.statusBar.trackNoteActivity[14],
+        state_refs_.statusBar.trackNoteActivity[15]
     );
 }
 
@@ -376,6 +419,7 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
     );
     selector_overlay_watcher_.watchAll(
         state_refs_.sequencer.contextSelector.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepStatePropertyActive,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
@@ -383,23 +427,21 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive,
         state_refs_.sequencer.stepContentSelector.selecting,
         state_refs_.sequencer.stepContentSelector.focusedAction,
-        state_refs_.sequencer.pattern.enabledMask,
-        state_refs_.sequencer.pattern.graphRevision,
+        state_refs_.sequencer.patternChanges.enabledMask,
+        state_refs_.sequencer.patternChanges.graphRevision,
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.offsetSteps,
         state_refs_.sequencer.patternQuickControls.feedbackVisible,
-        state_refs_.sequencer.pattern.stepsPerBeat,
-        state_refs_.sequencer.pattern.swingOffsetPercent,
-        state_refs_.sequencer.pattern.patternNudgePercent,
-        state_refs_.sequencer.pattern.patternTimingRevision,
+        state_refs_.sequencer.patternChanges.patternTimingRevision,
         state_refs_.projectNavigation.contentRevision,
-        state_refs_.sequencer.pattern.length,
+        state_refs_.sequencer.patternChanges.length,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision,
         state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.patternQuickControls.previewRevision
+        state_refs_.sequencer.patternQuickControls.previewRevision,
+        state_refs_.clips.revisionSignal()
     );
     selector_overlay_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
@@ -434,7 +476,9 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.patternPresetPreview.revision
+        state_refs_.sequencer.patternPresetPreview.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
+        state_refs_.clipLaunches.telemetryRevision()
     );
     left_action_strip_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
@@ -462,14 +506,16 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepStatePropertyActive,
-        state_refs_.sequencer.pattern.patternVariationRevision,
+        state_refs_.sequencer.patternChanges.patternVariationRevision,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.revision,
         state_refs_.trackActivations.telemetryRevision(),
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.ccLaneUi.actionGuard,
         state_refs_.sequencer.ccLaneUi.operationFeedback,
-        state_refs_.sequencer.patternPresetPreview.revision
+        state_refs_.sequencer.patternPresetPreview.revision,
+        state_refs_.sequencer.clipWorkspace.revision,
+        state_refs_.clipLaunches.telemetryRevision()
     );
     bottom_action_strip_watcher_.watch(
         state_refs_.sequencer.drumSequencer.revision
@@ -510,13 +556,22 @@ FLASHMEM void SequencerView::bindTrackPastePreflightState() {
         state_refs_.sharedTrackActive,
         state_refs_.tracks.activeTrackSignal(),
         state_refs_.tracks.enabledMaskSignal(),
-        state_refs_.projectTracks.revision,
         state_refs_.trackActivations.telemetryRevision()
     );
 }
 
+FLASHMEM void SequencerView::bindProjectTrackState() {
+    project_track_watcher_.bind<
+        &SequencerView::requestStructureDependentRenders>(
+        *this,
+        14,
+        "SequencerView.projectTracks"
+    );
+    project_track_watcher_.watch(state_refs_.projectTracks.revision);
+}
+
 FLASHMEM void SequencerView::bindClipboardState() {
-    clipboard_watcher_.bind<&SequencerView::requestClipboardDependentRenders>(
+    clipboard_watcher_.bind<&SequencerView::requestStructureDependentRenders>(
         *this,
         10,
         "SequencerView.clipboard"
@@ -572,14 +627,6 @@ void SequencerView::resumePendingRender() {
     if (render_scheduler_) render_scheduler_->resumePending(true);
 }
 
-void SequencerView::requestHeaderTopRender() {
-    requestRender(RENDER_HEADER_TOP);
-}
-
-void SequencerView::requestHeaderStripRender() {
-    requestRender(RENDER_HEADER_STRIP);
-}
-
 void SequencerView::requestHeaderAndLeftRender() {
     requestRender(
         RENDER_HEADER_TOP |
@@ -632,9 +679,26 @@ void SequencerView::requestGridRender() {
 }
 
 void SequencerView::requestGridTickRender() {
+    if (state_refs_.sequencer.clipWorkspace.matrixVisible()) {
+        if (!canDrainRender(this)) {
+            requestRender(RENDER_GRID);
+            return;
+        }
+        if (clip_launcher_surface_) {
+            clip_launcher_surface_->invalidatePlaybackProgress();
+        }
+        return;
+    }
     if (state_refs_.sequencer.ccLaneUi.mode !=
         core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID) {
         requestRender(RENDER_GRID);
+    }
+}
+
+void SequencerView::requestClipActivityRender() {
+    if (state_refs_.sequencer.clipWorkspace.matrixVisible() &&
+        !state_refs_.sequencer.clipWorkspace.editorActive()) {
+        requestRender(RENDER_CLIP_ACTIVITY);
     }
 }
 
@@ -642,7 +706,7 @@ void SequencerView::requestTrackPastePreflightRender() {
     requestRender(RENDER_TRACK_PASTE_PREFLIGHT);
 }
 
-void SequencerView::requestClipboardDependentRenders() {
+void SequencerView::requestStructureDependentRenders() {
     requestRender(
         RENDER_HEADER_TOP |
         RENDER_HEADER_STRIP |
@@ -679,13 +743,17 @@ void SequencerView::render(uint32_t flags) {
     const bool needsHeaderTop = (flags & RENDER_HEADER_TOP) != 0 && header_bar_;
     const bool needsHeaderStrip = (flags & RENDER_HEADER_STRIP) != 0 && header_bar_;
     const bool needsGrid =
-        (flags & RENDER_GRID) != 0 && step_grid_ && cc_lane_grid_;
+        (flags & RENDER_GRID) != 0 && step_grid_ && cc_lane_grid_ &&
+        clip_launcher_surface_;
     const bool needsTrackPastePreflight =
         (flags & RENDER_TRACK_PASTE_PREFLIGHT) != 0 &&
         track_paste_preflight_card_;
+    const bool needsClipActivity =
+        (flags & RENDER_CLIP_ACTIVITY) != 0 && clip_launcher_surface_;
     if (!needsSelectorOverlay && !needsLeftActionStrip &&
         !needsBottomActionStrip && !needsHistoryToast && !needsHeaderTop &&
-        !needsHeaderStrip && !needsGrid && !needsTrackPastePreflight) {
+        !needsHeaderStrip && !needsGrid && !needsTrackPastePreflight &&
+        !needsClipActivity) {
         return;
     }
 
@@ -730,9 +798,33 @@ void SequencerView::render(uint32_t flags) {
             state_refs_.sequencer.drumSequencer;
         const bool previewEmptyTrack =
             sequencer::sequencerPreviewingEmptyTrack(source);
-        if (!previewEmptyTrack &&
+        if (state_refs_.sequencer.clipWorkspace.matrixVisible()) {
+            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.clip-launcher");
+            oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                clip_launcher_surface_->getElement(), center_column_, content_parking_host_);
+            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            cc_lane_grid_->render({.visible = false});
+            drum_overview_surface_->render({.visible = false});
+            clip_launcher_surface_->render({
+                .visible = true,
+                .ui = &state_refs_.sequencer.clipWorkspace,
+                .clips = &state_refs_.clips,
+                .launches = &state_refs_.clipLaunches,
+                .tracks = &state_refs_.tracks,
+                .projectTracks = &state_refs_.projectTracks,
+                .sequencer = &state_refs_.sequencer,
+                .trackNavigation = &state_refs_.trackNavigation,
+                .statusBar = &state_refs_.statusBar,
+                .enabledTrackMask = state_refs_.sharedTrackEnabledMask.get(),
+                .contentRevision =
+                    state_refs_.projectNavigation.contentRevision.get(),
+            });
+        } else if (!previewEmptyTrack &&
             core::state::sequencer::isDrumOverviewActive(
                 state_refs_.sequencer)) {
+            oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                drum_overview_surface_->getElement(), center_column_, content_parking_host_);
+            clip_launcher_surface_->render({.visible = false});
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-overview");
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             cc_lane_grid_->render({.visible = false});
@@ -745,21 +837,30 @@ void SequencerView::render(uint32_t flags) {
                 .uiRevision = drumProjection.revision.get(),
             });
         } else {
+            clip_launcher_surface_->render({.visible = false});
             drum_overview_surface_->render({.visible = false});
             const auto ccLaneProps =
                 sequencer::buildSequencerCcLaneGridProps(source);
             if (!previewEmptyTrack && ccLaneProps.visible) {
+                oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                    cc_lane_grid_->getElement(), center_column_, content_parking_host_);
                 OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
                 lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
                 cc_lane_grid_->render(ccLaneProps);
             } else {
                 const auto stepGridProps = sequencer::buildStepGridProps(source);
+                oc::ui::lvgl::RetainedSurfaceParkingLot::select(
+                    step_grid_->getElement(), center_column_, content_parking_host_);
                 OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.step-grid");
                 cc_lane_grid_->render({.visible = false});
                 lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
                 step_grid_->render(stepGridProps);
             }
         }
+    }
+
+    if (needsClipActivity && !needsGrid) {
+        clip_launcher_surface_->invalidateTrackActivity();
     }
 
     if (needsHistoryToast) {
@@ -819,9 +920,11 @@ void SequencerView::renderHistoryToast() {
 
 sequencer::SequencerViewModelSource SequencerView::modelSource() const {
     return {
-          .sequencer = state_refs_.sequencer,
-          .tracks = state_refs_.tracks,
-          .projectTracks = state_refs_.projectTracks,
+        .sequencer = state_refs_.sequencer,
+        .clips = state_refs_.clips,
+        .clipLaunches = state_refs_.clipLaunches,
+        .tracks = state_refs_.tracks,
+        .projectTracks = state_refs_.projectTracks,
         .trackNavigation = state_refs_.trackNavigation,
         .navigationFocus = state_refs_.structureNavigationFocus,
         .sharedTrackActive = state_refs_.sharedTrackActive,

@@ -85,7 +85,7 @@ menu::MacroModulationRows modulationRows(
             .macro = macroIndex,
         });
     return menu::buildMacroModulationRows(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         destination
     );
 }
@@ -114,7 +114,7 @@ void publishRecordedShapeAudition(
     if (descriptor.mode == ProjectRecordedShapeCaptureMode::CREATE_ASSIGNED) {
         const uint16_t scale =
             core::state::modulation::projectModulationDestinationScaleQ15(
-                pages->control.authored.modulation,
+                pages->control.authored().modulation,
                 descriptor.destination
             );
         (void)core::state::modulation::setProjectRecordedShapeDestinationAudition(
@@ -471,7 +471,7 @@ FLASHMEM void MacroEditHandler::openValueSelector() {
                 slot
             ) && slot.modulationCount > 0U) {
             const auto focused = services_.focusedModulationBinding(macroIndex);
-            const auto& graph = pages_.control.authored.modulation;
+            const auto& graph = pages_.control.authored().modulation;
             const auto rows = menu::buildMacroModulationRows(
                 graph,
                 core::state::modulation::projectControlDestination(address)
@@ -583,7 +583,7 @@ FLASHMEM void MacroEditHandler::configureOptForFocusedRow() {
             pages_, macro_edit_.editingIndex.get()
         );
         const auto descriptor = menu::macroContextActionAt(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             rows,
             menu::macroRootItemAt(macro_edit_.focusedRow.get()),
             macro_edit_.contextPropertyIndex.get()
@@ -657,7 +657,7 @@ FLASHMEM void MacroEditHandler::beginContextSelector() {
             macro_edit_.editingIndex.get()
         );
         selected = menu::macroContextActionIndexForBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             rows,
             focused
         );
@@ -728,7 +728,7 @@ FLASHMEM int MacroEditHandler::contextValueCount() const {
     const auto item = menu::macroRootItemAt(macro_edit_.focusedRow.get());
     const auto rows = modulationRows(pages_, macro_edit_.editingIndex.get());
     const auto descriptor = menu::macroContextActionAt(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         rows,
         item,
         macro_edit_.contextPropertyIndex.get()
@@ -749,15 +749,15 @@ FLASHMEM int MacroEditHandler::contextValueCount() const {
             return 64;
         case menu::MacroContextAction::MODULATION_EDGE_DEPTH: {
             const auto* binding = menu::macroModulationBinding(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 {menu::MacroModulationRowKind::ASSIGNMENT,
                  descriptor.bindingId,
                  rows.destination}
             );
             const auto scale = binding != nullptr
                 ? depth_parameter::scaleFor(
-                      pages_.control.authored.modulation,
-                      pages_.control.authored.curves,
+                      pages_.control.authored().modulation,
+                      pages_.control.authored().curves,
                       *binding
                   )
                 : depth_parameter::Scale::STANDARD;
@@ -778,7 +778,7 @@ FLASHMEM int MacroEditHandler::contextValue() const {
     const auto item = menu::macroRootItemAt(macro_edit_.focusedRow.get());
     const auto rows = modulationRows(pages_, macroIndex);
     const auto descriptor = menu::macroContextActionAt(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         rows,
         item,
         macro_edit_.contextPropertyIndex.get()
@@ -837,15 +837,15 @@ FLASHMEM int MacroEditHandler::contextValue() const {
     }
     if (descriptor.action == menu::MacroContextAction::MODULATION_EDGE_DEPTH) {
         const auto* binding = menu::macroModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             {menu::MacroModulationRowKind::ASSIGNMENT,
              descriptor.bindingId,
              rows.destination}
         );
         if (binding != nullptr) {
             const auto scale = depth_parameter::scaleFor(
-                pages_.control.authored.modulation,
-                pages_.control.authored.curves,
+                pages_.control.authored().modulation,
+                pages_.control.authored().curves,
                 *binding
             );
             return depth_parameter::amountQ15ToPercent(
@@ -870,7 +870,7 @@ FLASHMEM void MacroEditHandler::setContextValue(float normalized) {
     const auto item = menu::macroRootItemAt(macro_edit_.focusedRow.get());
     const auto rows = modulationRows(pages_, macroIndex);
     const auto descriptor = menu::macroContextActionAt(
-        pages_.control.authored.modulation,
+        pages_.control.authored().modulation,
         rows,
         item,
         macro_edit_.contextPropertyIndex.get()
@@ -993,15 +993,15 @@ FLASHMEM void MacroEditHandler::setContextValue(float normalized) {
     }
     if (descriptor.action == menu::MacroContextAction::MODULATION_EDGE_DEPTH) {
         const auto* binding = menu::macroModulationBinding(
-            pages_.control.authored.modulation,
+            pages_.control.authored().modulation,
             {menu::MacroModulationRowKind::ASSIGNMENT,
              descriptor.bindingId,
              rows.destination}
         );
         if (binding == nullptr) return;
         const auto scale = depth_parameter::scaleFor(
-            pages_.control.authored.modulation,
-            pages_.control.authored.curves,
+            pages_.control.authored().modulation,
+            pages_.control.authored().curves,
             *binding
         );
         const int16_t amount = depth_parameter::amountQ15AtNormalized(

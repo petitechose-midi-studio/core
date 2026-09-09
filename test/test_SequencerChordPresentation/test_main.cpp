@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -159,7 +160,7 @@ void test_formula_surface_formats_the_complete_eight_voice_rail() {
 
 void test_chord_preset_surface_has_dedicated_copy_and_voice_preview() {
     namespace seq = core::state::sequencer;
-    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(
         seq::SequencerPresetLibraryMode::LOAD,
@@ -252,7 +253,7 @@ void test_chord_preset_surface_has_dedicated_copy_and_voice_preview() {
 
 void test_chord_preset_error_detail_remains_explicit_and_navigable() {
     namespace seq = core::state::sequencer;
-    seq::SequencerState sequencer;
+    core::state::sequencer::SequencerDetachedEditor sequencer;
     auto& picker = sequencer.presetLibrary;
     picker.open(
         seq::SequencerPresetLibraryMode::LOAD,

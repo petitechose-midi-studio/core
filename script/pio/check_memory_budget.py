@@ -19,6 +19,7 @@ RELEASE_SCRIPT_DIR = Path(pio_env["PROJECT_DIR"]) / "script" / "release"
 sys.path.insert(0, str(RELEASE_SCRIPT_DIR))
 
 from teensy_diagnostics_placement import (  # noqa: E402
+    hardware_benchmark_placement_violations,
     diagnostics_placement_violations,
     normal_build_diagnostics_violations,
 )
@@ -96,8 +97,16 @@ def elf_placement_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     )
     if result.returncode != 0:
         raise RuntimeError(f"arm-none-eabi-nm failed for {elf_path}:\n{result.stderr}")
-    violations = product_placement_violations(result.stdout)
-    if project_flag(action_env, "custom_diagnostics_build"):
+    benchmark = project_flag(action_env, "custom_hardware_benchmark_build")
+    filesystem_benchmark = project_flag(action_env, "custom_filesystem_benchmark_build")
+    violations = product_placement_violations(
+        result.stdout, ram_only_benchmark=benchmark and not filesystem_benchmark
+    )
+    if benchmark:
+        violations += hardware_benchmark_placement_violations(
+            result.stdout, filesystem=filesystem_benchmark
+        )
+    elif project_flag(action_env, "custom_diagnostics_build"):
         violations += diagnostics_placement_violations(result.stdout)
     else:
         violations += normal_build_diagnostics_violations(result.stdout)

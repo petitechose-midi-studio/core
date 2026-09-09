@@ -411,7 +411,7 @@ void test_music_scale_root_is_wired_and_undoable() {
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.sequencerTracks.projectScaleSettings().root == 6);
-    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 1);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::ProjectScale) == 1);
 
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
@@ -431,7 +431,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.state.sequencerTracks.projectScaleSettings().root == 11U);
-    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 1U);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::ProjectScale) == 1U);
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
 
@@ -440,7 +440,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
     const std::size_t retainedBefore = h.state.sequencerHistory.retainedBytes();
     const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
 
-    // NAV is the stepped Project surface. Its first FullBank allocation fails
+    // NAV is the stepped Project surface. Its first Project-scale allocation fails
     // before any scale, History, redo-branch or dirty/save mutation.
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -456,7 +456,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
                        "Memory unavailable - unchanged") == 0);
 
     // OPT is the normalized Project surface. An exact value is a pre-boundary
-    // no-op and therefore never probes FullBank allocation or consumes redo.
+    // no-op and therefore never probes Project-scale allocation or consumes redo.
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         h.turn(Config::EncoderID::OPT, 5.0f / 11.0f);
@@ -470,7 +470,7 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
 
     // An unsealed predecessor cannot be crossed by Project Scale. The
     // handler keeps the current choice and publishes the History-specific
-    // lifecycle reason without probing FullBank allocation.
+    // lifecycle reason without probing Project-scale allocation.
     assert(core::state::sequencer::sequencerHistoryOpenAccepted(
         h.state.beginOrContinueSequencerPatternHistoryCoalescing(
             0U, core::state::sequencer::StepProperty::NOTE, 100U,
@@ -889,7 +889,7 @@ void test_storage_rename_name_editor_moves_project_file() {
 void test_new_project_resets_musical_project_state() {
     ProjectHandlerHarness h;
 
-    h.state.sequencer.pattern.setContentLength(16);
+    h.state.sequencer.pattern().setContentLength(16);
     h.state.sequencer.setStepNoteAt(0, 72);
     h.state.macros.slots[0].value.set(0.91f);
     h.state.pages.activePageData().cc[0] = 99;
@@ -918,8 +918,8 @@ void test_new_project_resets_musical_project_state() {
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 0U);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
-    assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
-    assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(h.state.sequencer.pattern().note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
     assert(h.state.pages.activePageData().cc[0] == 0);
     assert(near(h.state.pages.activePageData().values[0], 0.5f));
@@ -930,7 +930,7 @@ void test_new_project_resets_musical_project_state() {
     assert(h.state.statusBar.tempo.get() == 120.0f);
     assert(h.state.statusBar.tempoDisplay.get() == 120.0f);
     assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
-    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 0);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::ProjectScale) == 0);
 
     std::cout << "[PASS] test_new_project_resets_musical_project_state\n";
 }
@@ -938,7 +938,7 @@ void test_new_project_resets_musical_project_state() {
 void test_new_project_confirmation_cancel_preserves_state() {
     ProjectHandlerHarness h;
 
-    h.state.sequencer.pattern.setContentLength(24);
+    h.state.sequencer.pattern().setContentLength(24);
     h.state.macros.slots[0].value.set(0.77f);
     h.state.statusBar.tempo.set(132.0f);
 
@@ -953,7 +953,7 @@ void test_new_project_confirmation_cancel_preserves_state() {
 
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 3U);
-    assert(h.state.sequencer.pattern.length.get() == 24);
+    assert(h.state.sequencer.pattern().length.get() == 24);
     assert(near(h.state.macros.slots[0].value.get(), 0.77f));
     assert(h.state.statusBar.tempo.get() == 132.0f);
 
@@ -993,7 +993,7 @@ void test_new_project_reset_failure_is_visible_and_keeps_confirmation() {
                "Reset failed"
            ) == 0);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[0] == 73U);
+    assert(h.state.sequencer.pattern().note[0] == 73U);
     assert(h.state.statusBar.tempo.get() == 149.0f);
     assert(h.state.projectSessionSaveToken() == beforeSaveToken);
     std::cout << "[PASS] failed Project reset remains visible and retryable\n";
@@ -1005,9 +1005,9 @@ void test_new_project_save_as_new_persists_then_resets() {
     h.state.statusBar.tempo.set(171.0f);
     h.state.statusBar.tempoDisplay.set(171.0f);
     h.state.projectNavigation.transportSwingPercent = 24;
-    h.state.sequencer.pattern.setContentLength(9);
+    h.state.sequencer.pattern().setContentLength(9);
     h.state.sequencer.setStepDataAt(2, 75, 99, 64);
-    h.state.sequencer.pattern.toggle(2);
+    h.state.sequencer.pattern().toggle(2);
     h.state.pages.activePageData().cc[0] = 88;
     h.state.pages.activePageData().values[0] = 0.66f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
@@ -1027,8 +1027,8 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(std::strcmp(h.state.project.metadata.name.data(), "untitled") == 0);
     assert(h.state.statusBar.tempo.get() == 120.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
-    assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
-    assert(!h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(!h.state.sequencer.pattern().isEnabled(2));
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
 
     core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
@@ -1042,11 +1042,11 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(!restored.state.project.metadata.dirty);
     assert(restored.state.statusBar.tempo.get() == 171.0f);
     assert(restored.state.projectNavigation.transportSwingPercent == 24);
-    assert(restored.state.sequencer.pattern.length.get() == 9);
-    assert(restored.state.sequencer.pattern.isEnabled(2));
-    assert(restored.state.sequencer.pattern.note[2] == 75);
-    assert(restored.state.sequencer.pattern.velocity[2] == 99);
-    assert(restored.state.sequencer.pattern.gate[2] == 64);
+    assert(restored.state.sequencer.pattern().length.get() == 9);
+    assert(restored.state.sequencer.pattern().isEnabled(2));
+    assert(restored.state.sequencer.pattern().note[2] == 75);
+    assert(restored.state.sequencer.pattern().velocity[2] == 99);
+    assert(restored.state.sequencer.pattern().gate[2] == 64);
     assert(restored.state.pages.activePageData().cc[0] == 88);
     assert(near(restored.state.macros.slots[0].value.get(), 0.66f));
 
@@ -1064,9 +1064,9 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
 
     h.state.statusBar.tempo.set(188.0f);
     h.state.statusBar.tempoDisplay.set(188.0f);
-    h.state.sequencer.pattern.setContentLength(13);
+    h.state.sequencer.pattern().setContentLength(13);
     h.state.sequencer.setStepDataAt(7, 82, 115, 71);
-    h.state.sequencer.pattern.toggle(7);
+    h.state.sequencer.pattern().toggle(7);
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
@@ -1081,8 +1081,8 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     assert(!h.state.project.metadata.hasSavedIdentity);
     assert(h.state.project.metadata.id[0] == '\0');
     assert(h.state.statusBar.tempo.get() == 120.0f);
-    assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
-    assert(!h.state.sequencer.pattern.isEnabled(7));
+    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(!h.state.sequencer.pattern().isEnabled(7));
 
     core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
@@ -1091,11 +1091,11 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     RestoredProjectHarness restored{saved};
     assert(std::strcmp(restored.state.project.metadata.id.data(), "p002") == 0);
     assert(restored.state.statusBar.tempo.get() == 188.0f);
-    assert(restored.state.sequencer.pattern.length.get() == 13);
-    assert(restored.state.sequencer.pattern.isEnabled(7));
-    assert(restored.state.sequencer.pattern.note[7] == 82);
-    assert(restored.state.sequencer.pattern.velocity[7] == 115);
-    assert(restored.state.sequencer.pattern.gate[7] == 71);
+    assert(restored.state.sequencer.pattern().length.get() == 13);
+    assert(restored.state.sequencer.pattern().isEnabled(7));
+    assert(restored.state.sequencer.pattern().note[7] == 82);
+    assert(restored.state.sequencer.pattern().velocity[7] == 115);
+    assert(restored.state.sequencer.pattern().gate[7] == 71);
 
     std::cout << "[PASS] test_new_project_save_current_persists_saved_identity_then_resets\n";
 }
@@ -1189,9 +1189,9 @@ void test_storage_save_and_load_roundtrip_project_file() {
     h.state.statusBar.tempo.set(149.0f);
     h.state.statusBar.tempoDisplay.set(149.0f);
     h.state.projectNavigation.transportSwingPercent = 19;
-    h.state.sequencer.pattern.setContentLength(11);
+    h.state.sequencer.pattern().setContentLength(11);
     h.state.sequencer.setStepDataAt(2, 67, 101, 75);
-    h.state.sequencer.pattern.toggle(2);
+    h.state.sequencer.pattern().toggle(2);
     h.state.pages.activePageData().cc[0] = 81;
     h.state.pages.activePageData().values[0] = 0.63f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(h.state.macros, h.state.pages);
@@ -1205,10 +1205,10 @@ void test_storage_save_and_load_roundtrip_project_file() {
     h.state.statusBar.tempo.set(88.0f);
     h.state.statusBar.tempoDisplay.set(88.0f);
     h.state.projectNavigation.transportSwingPercent = 0;
-    h.state.sequencer.pattern.setContentLength(4);
+    h.state.sequencer.pattern().setContentLength(4);
     h.state.sequencer.setStepDataAt(2, 40, 1, 1);
-    if (h.state.sequencer.pattern.isEnabled(2)) {
-        h.state.sequencer.pattern.toggle(2);
+    if (h.state.sequencer.pattern().isEnabled(2)) {
+        h.state.sequencer.pattern().toggle(2);
     }
     h.state.pages.activePageData().cc[0] = 1;
     h.state.pages.activePageData().values[0] = 0.01f;
@@ -1228,11 +1228,11 @@ void test_storage_save_and_load_roundtrip_project_file() {
     assert(std::strcmp(h.state.project.metadata.name.data(), "p001") == 0);
     assert(h.state.statusBar.tempo.get() == 149.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 19);
-    assert(h.state.sequencer.pattern.length.get() == 11);
-    assert(h.state.sequencer.pattern.note[2] == 67);
-    assert(h.state.sequencer.pattern.velocity[2] == 101);
-    assert(h.state.sequencer.pattern.gate[2] == 75);
-    assert(h.state.sequencer.pattern.isEnabled(2));
+    assert(h.state.sequencer.pattern().length.get() == 11);
+    assert(h.state.sequencer.pattern().note[2] == 67);
+    assert(h.state.sequencer.pattern().velocity[2] == 101);
+    assert(h.state.sequencer.pattern().gate[2] == 75);
+    assert(h.state.sequencer.pattern().isEnabled(2));
     assert(h.state.pages.activePageData().cc[0] == 81);
     assert(near(h.state.macros.slots[0].value.get(), 0.63f));
     assert(h.state.projectSessionSaveToken().session != beforeLoadToken.session);
@@ -1441,9 +1441,9 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
 
     h.state.statusBar.tempo.set(121.0f);
     h.state.statusBar.tempoDisplay.set(121.0f);
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.setStepDataAt(4, 60, 90, 70);
-    h.state.sequencer.pattern.toggle(4);
+    h.state.sequencer.pattern().toggle(4);
 
     focusStorageAction(h, 0U);
     h.tap(Config::ButtonID::NAV);
@@ -1454,7 +1454,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     h.state.statusBar.tempo.set(166.0f);
     h.state.statusBar.tempoDisplay.set(166.0f);
     h.state.sequencer.setStepDataAt(5, 74, 111, 82);
-    h.state.sequencer.pattern.toggle(5);
+    h.state.sequencer.pattern().toggle(5);
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
@@ -1472,9 +1472,9 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p001") == 0);
     assert(!h.state.project.metadata.dirty);
     assert(h.state.statusBar.tempo.get() == 166.0f);
-    assert(h.state.sequencer.pattern.isEnabled(5));
-    assert(h.state.sequencer.pattern.note[5] == 74);
-    assert(h.state.sequencer.pattern.velocity[5] == 111);
+    assert(h.state.sequencer.pattern().isEnabled(5));
+    assert(h.state.sequencer.pattern().note[5] == 74);
+    assert(h.state.sequencer.pattern().velocity[5] == 111);
 
     core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot loaded;
@@ -1482,9 +1482,9 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
 
     RestoredProjectHarness restored{loaded};
     assert(restored.state.statusBar.tempo.get() == 166.0f);
-    assert(restored.state.sequencer.pattern.isEnabled(5));
-    assert(restored.state.sequencer.pattern.note[5] == 74);
-    assert(restored.state.sequencer.pattern.velocity[5] == 111);
+    assert(restored.state.sequencer.pattern().isEnabled(5));
+    assert(restored.state.sequencer.pattern().note[5] == 74);
+    assert(restored.state.sequencer.pattern().velocity[5] == 111);
 
     std::cout << "[PASS] test_dirty_project_load_prompts_save_and_preserves_latest_edits\n";
 }
@@ -1505,7 +1505,7 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     h.state.statusBar.tempo.set(177.0f);
     h.state.statusBar.tempoDisplay.set(177.0f);
     h.state.sequencer.setStepDataAt(3, 71, 100, 76);
-    h.state.sequencer.pattern.toggle(3);
+    h.state.sequencer.pattern().toggle(3);
     h.state.markProjectMutated();
     assert(h.state.project.metadata.dirty);
 
@@ -1535,8 +1535,8 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     assert(!restored.state.project.metadata.dirty);
     assert(restored.state.project.metadata.hasSavedIdentity);
     assert(restored.state.statusBar.tempo.get() == 177.0f);
-    assert(restored.state.sequencer.pattern.isEnabled(3));
-    assert(restored.state.sequencer.pattern.note[3] == 71);
+    assert(restored.state.sequencer.pattern().isEnabled(3));
+    assert(restored.state.sequencer.pattern().note[3] == 71);
 
     std::cout << "[PASS] test_untitled_dirty_load_prompts_save_as_and_then_loads_target\n";
 }
@@ -1725,14 +1725,14 @@ void test_project_modulator_creation_and_destination_workflow() {
     h.turn(Config::EncoderID::OPT, 1.0f);   // Square
     h.turn(Config::EncoderID::NAV, 1.0f);   // Rate
     h.turn(Config::EncoderID::OPT, 1.0f);   // 32 bars
-    assert(h.state.pages.control.authored.modulation.sources[0]
+    assert(h.state.pages.control.authored().modulation.sources[0]
                .parameters.lfo.periodTicks ==
            PROJECT_CONTROL_TICKS_PER_BEAT * 128U);
     h.turn(Config::EncoderID::NAV, 1.0f);   // Depth
     h.turn(Config::EncoderID::OPT, 0.75f);  // +50%
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 1U);
     assert(graph.sources[0].parameters.lfo.shape == ModulatorLfoShape::SQUARE);
@@ -1773,7 +1773,7 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
     ProjectHandlerHarness h;
     enterModulatorsRoot(h);
     const auto pageBefore = h.state.pages.pageData(0, 0);
-    const auto graphBefore = h.state.pages.control.authored.modulation;
+    const auto graphBefore = h.state.pages.control.authored().modulation;
     const bool dirtyBefore = h.state.project.metadata.dirty;
 
     h.tap(Config::ButtonID::NAV);         // Source kind
@@ -1785,17 +1785,17 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_SOURCE_DETAIL);
     assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
-    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 1U);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount == 1U);
     assert(h.state.project.metadata.dirty == dirtyBefore);
 
     h.turn(Config::EncoderID::OPT, 1.0f);  // Source Shape, provisionally
-    assert(h.state.pages.control.authored.modulation.sources[0]
+    assert(h.state.pages.control.authored().modulation.sources[0]
                .parameters.lfo.shape == ModulatorLfoShape::SQUARE);
     h.turn(Config::EncoderID::NAV, 1.0f);  // Rate
     h.turn(Config::EncoderID::NAV, 1.0f);  // Implied destination Depth
     h.turn(Config::EncoderID::OPT, 0.75f);
-    assert(h.state.pages.control.authored.modulation
+    assert(h.state.pages.control.authored().modulation
                .outputBindings[0].amountQ15 == 16384);
     assert(h.state.project.metadata.dirty == dirtyBefore);
     h.tap(Config::ButtonID::LEFT_TOP);     // Cancel preview, keep picker
@@ -1811,7 +1811,7 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
         sizeof(pageBefore)
     ) == 0);
     assert(std::memcmp(
-        &h.state.pages.control.authored.modulation,
+        &h.state.pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -1836,15 +1836,15 @@ void test_project_created_source_undo_returns_to_registry_and_redo_restores() {
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATORS_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 0U);
-    assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 0U);
     assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
 
     projectModulatorRedo(h);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATORS_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 0U);
-    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
-    assert(h.state.pages.control.authored.modulation.sources[0].id == sourceId);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 1U);
+    assert(h.state.pages.control.authored().modulation.sources[0].id == sourceId);
     assert(h.state.pages.pageData(0, 0).isMacroActive(1));
     std::cout << "[PASS] created Source Undo/Redo keeps Project navigation usable\n";
 }
@@ -1859,7 +1859,7 @@ void test_project_modulator_explicit_unassigned_creation() {
     h.turn(Config::EncoderID::NAV, 2.0f);  // Keep Unassigned
     h.tap(Config::ButtonID::NAV);
 
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATORS_ROOT);
     assert(graph.sourceCount == 1U);
@@ -1907,7 +1907,7 @@ void test_project_destination_creates_new_track_page_and_sparse_macro_atomically
            ModulatorDestinationPickerLevel::MACRO);
     assert(h.state.projectNavigation.focusedRow.get() == 5U);
     assert(!h.state.pages.control.audition.active());
-    assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
+    assert(h.state.pages.control.authored().modulation.sourceCount == 0U);
     assert(h.state.pages.currentTrackEnabledMask() == sharedMaskBefore);
     assert(std::memcmp(
         &h.state.pages.tracks[1U],
@@ -1923,7 +1923,7 @@ void test_project_destination_creates_new_track_page_and_sparse_macro_atomically
     const auto& createdPage = h.state.pages.pageData(1U, 0U);
     assert(createdPage.activeMacroMask == 0x20U);
     assert(createdPage.cc[5U] == core::state::macro::defaultMacroCc(0U, 5U));
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(h.state.pages.control.authored().modulation.outputBindingCount == 1U);
 
     projectModulatorUndo(h);
     assert(h.state.pages.currentTrackEnabledMask() == sharedMaskBefore);
@@ -1957,7 +1957,7 @@ void test_project_adsr_creation_editing_and_trigger_route() {
     enterCurrentDestinationMacroPicker(h);
     h.tap(Config::ButtonID::NAV);          // Macro 1 preview
 
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     assert(h.state.pages.control.audition.active());
     assert(graph.sourceCount == 1U);
     assert(graph.sources[0].kind == ModulatorKind::ADSR);
@@ -2084,7 +2084,7 @@ void test_project_modulator_source_copy_and_guarded_paste() {
     ModulatorLfoDraft draft{};
     draft.name = "LFO 1";
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     const auto created = createLfoModulator(graph, draft);
     assert(created.changed());
     h.state.projectNavigation.notifyContentChanged();
@@ -2125,7 +2125,7 @@ void test_project_modulator_options_expose_global_destinations_without_reach() {
     ModulatorLfoDraft draft{};
     draft.name = "Slow Tide";
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     const auto created = createLfoModulator(graph, draft);
     assert(created.changed());
     ModulationBindingDraft binding{};
@@ -2212,7 +2212,7 @@ void test_project_destination_deep_link_opens_exact_macro_assignment() {
     targetPage.cc[3] = 71U;
     enterModulatorsRoot(h);
 
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     ModulatorLfoDraft draft{};
     draft.name = "Cross Track";
     const auto source = createLfoModulator(graph, draft);
@@ -2293,7 +2293,7 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
     using core::state::project::ProjectNodeId;
     {
         ProjectHandlerHarness h;
-        const auto graphBefore = h.state.pages.control.authored.modulation;
+        const auto graphBefore = h.state.pages.control.authored().modulation;
         const bool dirtyBefore = h.state.project.metadata.dirty;
         openMacroCreatedLfoWorkspace(h);
         assert(h.state.activeView.get() == core::ui::ViewType::MODULATORS);
@@ -2323,7 +2323,7 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
         assert(h.state.macroHistory.undoCount() == 0U);
         assert(h.state.project.metadata.dirty == dirtyBefore);
         assert(std::memcmp(
-            &h.state.pages.control.authored.modulation,
+            &h.state.pages.control.authored().modulation,
             &graphBefore,
             sizeof(graphBefore)
         ) == 0);
@@ -2339,7 +2339,7 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
         const auto bindingId = h.state.pages.control.audition.bindingId;
         h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
-        const auto& graph = h.state.pages.control.authored.modulation;
+        const auto& graph = h.state.pages.control.authored().modulation;
         assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
         assert(h.state.macroEdit.flowPhase.get() ==
                core::state::MacroEditFlowPhase::MODULATION);
@@ -2369,7 +2369,7 @@ void test_macro_created_adsr_cancel_restores_exact_create_row() {
     ProjectHandlerHarness h;
     const core::state::macro::MacroAutomationSlotAddress address{0U, 0U, 0U};
     h.state.pages.setMacroSlotActive(address.macro, true);
-    const auto graphBefore = h.state.pages.control.authored.modulation;
+    const auto graphBefore = h.state.pages.control.authored().modulation;
 
     ModulatorAdsrDraft source{};
     source.name = "ADSR 1";
@@ -2420,7 +2420,7 @@ void test_macro_created_adsr_cancel_restores_exact_create_row() {
     assert(!h.state.projectNavigation.modulatorReturn.active());
     assert(h.state.macroHistory.undoCount() == 0U);
     assert(std::memcmp(
-        &h.state.pages.control.authored.modulation,
+        &h.state.pages.control.authored().modulation,
         &graphBefore,
         sizeof(graphBefore)
     ) == 0);
@@ -2437,7 +2437,7 @@ core::state::modulation::ModulatorId openMacroExistingLfoWorkspace(
     sourceDraft.name = "Shared LFO";
     sourceDraft.parameters.shape = ModulatorLfoShape::TRIANGLE;
     const auto source = createLfoModulator(
-        h.state.pages.control.authored.modulation,
+        h.state.pages.control.authored().modulation,
         sourceDraft
     );
     assert(source.changed());
@@ -2478,12 +2478,12 @@ void test_macro_existing_source_cancel_and_apply_restore_exact_context() {
         ProjectHandlerHarness h;
         const auto sourceId = openMacroExistingLfoWorkspace(h);
         const auto sourceBefore =
-            h.state.pages.control.authored.modulation.sources[0];
+            h.state.pages.control.authored().modulation.sources[0];
         assert(h.state.macroHistory.undoCount() == 0U);
         h.turn(Config::EncoderID::OPT, 0.75f);
         h.tap(Config::ButtonID::LEFT_TOP);
 
-        const auto& graph = h.state.pages.control.authored.modulation;
+        const auto& graph = h.state.pages.control.authored().modulation;
         assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
         assert(h.state.macroEdit.flowPhase.get() ==
                core::state::MacroEditFlowPhase::MODULATOR_PICKER);
@@ -2505,12 +2505,12 @@ void test_macro_existing_source_cancel_and_apply_restore_exact_context() {
         ProjectHandlerHarness h;
         const auto sourceId = openMacroExistingLfoWorkspace(h);
         const auto sourceBefore =
-            h.state.pages.control.authored.modulation.sources[0];
+            h.state.pages.control.authored().modulation.sources[0];
         const auto bindingId = h.state.pages.control.audition.bindingId;
         h.turn(Config::EncoderID::OPT, 0.75f);
         h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
-        const auto& graph = h.state.pages.control.authored.modulation;
+        const auto& graph = h.state.pages.control.authored().modulation;
         assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
         assert(h.state.macroEdit.flowPhase.get() ==
                core::state::MacroEditFlowPhase::MODULATION);
@@ -2542,7 +2542,7 @@ void test_existing_source_audition_workspace_is_depth_only() {
 
     {
         ProjectHandlerHarness h;
-        auto& graph = h.state.pages.control.authored.modulation;
+        auto& graph = h.state.pages.control.authored().modulation;
         h.state.pages.setMacroSlotActive(0U, true);
         ModulatorLfoDraft sourceDraft{};
         sourceDraft.name = "Shared LFO";
@@ -2603,7 +2603,7 @@ void test_existing_source_audition_workspace_is_depth_only() {
 
     {
         ProjectHandlerHarness h;
-        auto& graph = h.state.pages.control.authored.modulation;
+        auto& graph = h.state.pages.control.authored().modulation;
         h.state.pages.setMacroSlotActive(0U, true);
         ModulatorLfoDraft sourceDraft{};
         sourceDraft.name = "Shared LFO";
@@ -2646,7 +2646,7 @@ void test_existing_adsr_trigger_is_inspectable_but_read_only() {
     using namespace core::state::modulation;
     using core::state::project::ProjectNodeId;
     ProjectHandlerHarness h;
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
     h.state.pages.setMacroSlotActive(0U, true);
 
     ModulatorAdsrDraft sourceDraft{};
@@ -2715,7 +2715,7 @@ void test_macro_deep_link_back_restores_exact_assignment() {
     using namespace core::state::modulation;
     ProjectHandlerHarness h;
     enterModulatorsRoot(h);
-    auto& graph = h.state.pages.control.authored.modulation;
+    auto& graph = h.state.pages.control.authored().modulation;
 
     ModulatorLfoDraft firstDraft{};
     firstDraft.name = "LFO 1";
@@ -2786,7 +2786,7 @@ void test_macro_deep_link_deleted_source_returns_with_explicit_fallback() {
     using namespace core::state::modulation;
     ProjectHandlerHarness h;
     enterModulatorsRoot(h);
-    auto& authored = h.state.pages.control.authored;
+    auto& authored = h.state.pages.control.authored();
 
     ModulatorLfoDraft draft{};
     draft.name = "Transient LFO";
@@ -2845,7 +2845,7 @@ void test_recorded_shape_depth_uses_full_two_hundred_percent_ui_scale() {
     using namespace core::state::modulation;
     ProjectHandlerHarness h;
     auto& control = h.state.pages.control;
-    auto& graph = control.authored.modulation;
+    auto& graph = control.authored().modulation;
     h.state.pages.setMacroSlotActive(0U, true);
 
     const ProjectPackedCurvePoint points[]{
@@ -2863,7 +2863,7 @@ void test_recorded_shape_depth_uses_full_two_hundred_percent_ui_scale() {
     sourceDraft.pointCount = 2U;
     const auto source = createRecordedShapeModulator(
         graph,
-        control.authored.curves,
+        control.authored().curves,
         sourceDraft
     );
     assert(source.changed());
@@ -2909,7 +2909,7 @@ void test_project_recorded_shape_creation_is_direct_flat_and_undoable() {
     h.tap(Config::ButtonID::NAV);          // Direct durable creation
 
     const auto& control = h.state.pages.control;
-    const auto& graph = control.authored.modulation;
+    const auto& graph = control.authored().modulation;
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 0U);
     assert(graph.sources[0].kind == ModulatorKind::RECORDED_SHAPE);
@@ -2920,7 +2920,7 @@ void test_project_recorded_shape_creation_is_direct_flat_and_undoable() {
     assert(h.state.macroHistory.undoCount() == 1U);
 
     const auto* curve = findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         graph.sources[0].parameters.recordedCurveId
     );
     assert(curve != nullptr);
@@ -2928,8 +2928,8 @@ void test_project_recorded_shape_creation_is_direct_flat_and_undoable() {
     assert(curve->durationTicks == 4U * PROJECT_CONTROL_TICKS_PER_BEAT);
     assert(curve->valueDomain == ProjectCurveValueDomain::BIPOLAR);
     assert(curve->pointCount == 2U);
-    assert(control.authored.curves.points[curve->pointOffset].value == 0);
-    assert(control.authored.curves.points[
+    assert(control.authored().curves.points[curve->pointOffset].value == 0);
+    assert(control.authored().curves.points[
                curve->pointOffset + curve->pointCount - 1U
            ].value == 0);
 
@@ -2949,7 +2949,7 @@ void test_project_recorded_shape_hold_turn_commit_noop_cancel_and_length() {
     h.tap(Config::ButtonID::NAV);
 
     auto& control = h.state.pages.control;
-    auto& graph = control.authored.modulation;
+    auto& graph = control.authored().modulation;
     const auto sourceId = graph.sources[0].id;
     const auto undoBeforeRecord = h.state.macroHistory.undoCount();
     constexpr auto OPT_ID =
@@ -2995,7 +2995,7 @@ void test_project_recorded_shape_hold_turn_commit_noop_cancel_and_length() {
     h.turn(Config::EncoderID::NAV, 1.0f);  // Length
     h.turn(Config::EncoderID::OPT, 7.0f / 63.0f);  // 8 beats
     const auto* resized = findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         graph.sources[0].parameters.recordedCurveId
     );
     assert(resized != nullptr);

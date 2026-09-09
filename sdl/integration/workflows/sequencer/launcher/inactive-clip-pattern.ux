@@ -1,0 +1,27 @@
+# UX workflow: runtime feedback belongs to the active parent Clip only.
+# Purpose: launches T1/C1, opens the authored Pattern of inactive T1/C2, and
+# proves the editor stays visually stable while the sibling Clip keeps playing.
+# Expect: capture_changed:clip_1_active=clip_2_focused
+# Expect: capture_changed:clip_2_focused=inactive_pattern
+# Expect: capture_match:inactive_pattern=inactive_pattern_later
+# Expect: semantic:clip_1_active:active_slot=0, semantic:clip_1_active:operation_origin=manual_clip, semantic:clip_1_active:operation_status=applied
+# Expect: semantic:inactive_pattern:mode=sequencer.pattern, semantic:inactive_pattern:effect=open_clip_pattern, semantic:inactive_pattern:target_track=0, semantic:inactive_pattern:target_index=1
+
+0 scenario clip-launcher-v3
+
+# Scene rail -> T1/C1, then start transport and launch it.
+180 encoder NAV 0.01
+340 tap BOTTOM_CENTER 60
+500 tap NAV 60
+2500 capture screen clip_1_active
+
+# Browse to T1/C2 without launching it and open its Pattern content directly.
+2580 encoder OPT 0.01
+2740 capture screen clip_2_focused
+2820 tap LEFT_BOTTOM 60
+3180 capture screen inactive_pattern
+
+# The active sibling keeps running, but this Pattern receives no playhead or
+# runtime expansion. Its authored projection must therefore remain identical.
+4100 capture screen inactive_pattern_later
+4280 tap BOTTOM_CENTER 60

@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -11,7 +12,6 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace {
@@ -46,7 +46,7 @@ void assertSameDrumRhythm(
 }
 
 void testInstrumentRoundTrip() {
-    seq::SequencerState source{};
+    core::state::sequencer::SequencerDetachedEditor source;
     source.reset();
     seq::SequencerPatternPresetMetadata sourceMetadata{};
     assert(seq::setSequencerPatternPresetMetadata(
@@ -55,23 +55,22 @@ void testInstrumentRoundTrip() {
         "instrument-pattern-001",
         "Chromatic pulse"
     ));
-    assert(source.pattern.setContentLength(32U));
-    assert(seq::setPatternPlaybackRegion(source.pattern, {32U, 2U, 5U, 27U}));
-    auto enabled = source.pattern.enabledMask.get();
+    assert(source.pattern().setContentLength(32U));
+    auto enabled = source.pattern().enabledMask.get();
     enabled.setBit(3U, true);
-    source.pattern.enabledMask.set(enabled);
-    assert(source.pattern.setStepDataAt(3U, 72U, 111U, 240U, -12, 67U));
+    source.pattern().enabledMask.set(enabled);
+    assert(source.pattern().setStepDataAt(3U, 72U, 111U, 240U, -12, 67U));
     assert(seq::setNodeNoteOffset(
-        source.pattern,
+        source.pattern(),
         seq::rootStepNodeId(3U),
         7
     ));
-    authorCcLane(source.pattern);
+    authorCcLane(source.pattern());
 
     std::array<uint8_t, codec::MAX_ENCODED_SIZE> bytes{};
     const auto encoded = codec::encode(
         sourceMetadata,
-        source.pattern,
+        source.pattern(),
         nullptr,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())
@@ -89,25 +88,32 @@ void testInstrumentRoundTrip() {
     assert(std::strcmp(metadata.metadata.semanticName, "Chromatic pulse") == 0);
     assert(metadata.drumRecordSize == 0U);
 
-    seq::SequencerState decoded{};
+    core::state::sequencer::SequencerDetachedEditor decoded;
     decoded.reset();
+    decoded.clip() = {12U, 24U, 84U};
+    const auto destinationClip = decoded.clip();
     seq::SequencerPatternPresetMetadata decodedMetadata{};
     assert(codec::decode(
         bytes.data(),
         encoded.bytesWritten,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         nullptr
     ));
     assert(std::strcmp(decodedMetadata.technicalId, "instrument-pattern-001") == 0);
-    assert(seq::sameMusicalPatternState(source.pattern, decoded.pattern));
+    assert(seq::sameMusicalPatternState(source.pattern(), decoded.pattern()));
+    assert(std::memcmp(
+        &decoded.clip(),
+        &destinationClip,
+        sizeof(destinationClip)
+    ) == 0);
 
     std::cout << "[PASS] instrument Pattern Preset round-trip: "
               << encoded.bytesWritten << " bytes\n";
 }
 
 void testDrumRoundTripAndKitCompatibility() {
-    seq::SequencerState source{};
+    core::state::sequencer::SequencerDetachedEditor source;
     source.reset();
     seq::SequencerPatternPresetMetadata sourceMetadata{};
     assert(seq::setSequencerPatternPresetMetadata(
@@ -125,7 +131,7 @@ void testDrumRoundTripAndKitCompatibility() {
     assert(sourceDrum.pattern.setStepEnabled(1U, 3U, true));
     assert(sourceDrum.bindAdvancedRootSlot(0U, 0U, 0U));
     assert(seq::setNodeVelocityOffset(
-        source.pattern,
+        source.pattern(),
         seq::rootStepNodeId(0U),
         9
     ));
@@ -133,14 +139,14 @@ void testDrumRoundTripAndKitCompatibility() {
     std::array<uint8_t, codec::MAX_ENCODED_SIZE> bytes{};
     const auto encoded = codec::encode(
         sourceMetadata,
-        source.pattern,
+        source.pattern(),
         &sourceDrum,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())
     );
     assert(encoded.ok());
 
-    seq::SequencerState decoded{};
+    core::state::sequencer::SequencerDetachedEditor decoded;
     decoded.reset();
     seq::DrumTrackState decodedDrum{};
     seq::SequencerPatternPresetMetadata decodedMetadata{};
@@ -148,11 +154,11 @@ void testDrumRoundTripAndKitCompatibility() {
         bytes.data(),
         encoded.bytesWritten,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         &decodedDrum
     ));
     assert(decodedMetadata.trackKind == seq::SequencerTrackKind::DRUM);
-    assert(seq::sameMusicalPatternState(source.pattern, decoded.pattern));
+    assert(seq::sameMusicalPatternState(source.pattern(), decoded.pattern()));
     assertSameDrumRhythm(sourceDrum, decodedDrum);
 
     auto destination = sourceDrum;
@@ -174,7 +180,7 @@ void testDrumRoundTripAndKitCompatibility() {
 }
 
 void testStrictEnvelopeAndIntegrity() {
-    seq::SequencerState source{};
+    core::state::sequencer::SequencerDetachedEditor source;
     source.reset();
     seq::SequencerPatternPresetMetadata sourceMetadata{};
     assert(seq::setSequencerPatternPresetMetadata(
@@ -187,14 +193,14 @@ void testStrictEnvelopeAndIntegrity() {
     std::array<uint8_t, codec::MAX_ENCODED_SIZE> bytes{};
     const auto encoded = codec::encode(
         sourceMetadata,
-        source.pattern,
+        source.pattern(),
         nullptr,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())
     );
     assert(encoded.ok());
 
-    seq::SequencerState decoded{};
+    core::state::sequencer::SequencerDetachedEditor decoded;
     seq::SequencerPatternPresetMetadata decodedMetadata{};
     seq::SequencerPatternPresetStatus status{};
     auto corrupt = bytes;
@@ -203,7 +209,7 @@ void testStrictEnvelopeAndIntegrity() {
         corrupt.data(),
         encoded.bytesWritten,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         nullptr,
         &status
     ));
@@ -215,19 +221,21 @@ void testStrictEnvelopeAndIntegrity() {
         corrupt.data(),
         encoded.bytesWritten,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         nullptr,
         &status
     ));
     assert(status == seq::SequencerPatternPresetStatus::INVALID_FORMAT);
 
     corrupt = bytes;
-    corrupt[4] = 0U;
+    corrupt[4] = static_cast<uint8_t>(
+        seq::SequencerPatternPresetMetadata::CURRENT_FORMAT_VERSION - 1U
+    );
     assert(!codec::decode(
         corrupt.data(),
         encoded.bytesWritten,
         decodedMetadata,
-        decoded.pattern,
+        decoded.pattern(),
         nullptr,
         &status
     ));
@@ -235,7 +243,7 @@ void testStrictEnvelopeAndIntegrity() {
 
     assert(!codec::encode(
         sourceMetadata,
-        source.pattern,
+        source.pattern(),
         nullptr,
         bytes.data(),
         static_cast<uint16_t>(codec::HEADER_SIZE - 1U)
@@ -244,10 +252,10 @@ void testStrictEnvelopeAndIntegrity() {
     sourceMetadata.trackKind = seq::SequencerTrackKind::DRUM;
     seq::DrumTrackState sourceDrum{};
     sourceDrum.reset(seq::DrumKitPreset::GENERAL_MIDI);
-    authorCcLane(source.pattern);
+    authorCcLane(source.pattern());
     assert(!codec::encode(
         sourceMetadata,
-        source.pattern,
+        source.pattern(),
         &sourceDrum,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())

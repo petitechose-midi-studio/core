@@ -9,7 +9,7 @@ Utility scripts for development workflow.
 | `format.sh` | Format all C/C++ files in `src/` with clang-format |
 | `restart-clangd.sh` | Regenerate `compile_commands.json` and prompt to restart clangd |
 | `check-downstream-compat.ps1` | Build a downstream repo such as `plugin-bitwig` against the current `ms-core` export surface |
-| `check-architecture-contracts.py` | Enforce layer, legacy, input, mutation, placement, memory, and retained-view contracts; report the advisory >800-line inventory |
+| `check-architecture-contracts.py` | Enforce layer, legacy, input, mutation, placement, memory, retained-view, and UX intent/expectation contracts; report the advisory >800-line inventory |
 | `ux_recording_to_script.py` | Convert raw logical inputs from a Core/MS Manager UX recording into a replayable `.ux` script |
 
 ## Usage

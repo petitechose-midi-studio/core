@@ -22,13 +22,13 @@
 # replace the editor chrome instead of letting its text leak through.
 1600 tap NAV 60
 1820 capture screen destination_selector_open
-1920 encoder NAV 1
+1920 encoder NAV 0.01
 2140 capture screen destination_selector_moved
 2240 tap NAV 60
 2460 capture screen destination_applied
 
 # Move focus and edit the next property with OPT.
-2560 encoder NAV 1
+2560 encoder NAV 0.01
 2660 encoder OPT 0.50
 2880 capture screen edit_adjusted
 

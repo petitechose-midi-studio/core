@@ -158,14 +158,14 @@ constexpr std::size_t kArmAllocationHeaderBytes = 16U;
 constexpr std::size_t kArmStructureChangeBytes = 27192U;
 constexpr std::size_t kArmGraphBytes = 14792U;
 constexpr std::size_t kArmCcBankBytes = 840U;
-constexpr std::size_t kArmMacroPayloadBytes = 30860U;
+constexpr std::size_t kArmMacroPayloadBytes = 30888U;
 constexpr std::size_t kArmControlDomainBytes = 159516U;
 constexpr std::size_t kArmPairBytes =
     (kArmGraphBytes + kArmAllocationHeaderBytes) +
     (kArmCcBankBytes + kArmAllocationHeaderBytes);
 constexpr std::size_t kArmMacroAddonBytes =
     (kArmMacroPayloadBytes + kArmAllocationHeaderBytes) +
-    2U * (kArmControlDomainBytes + kArmAllocationHeaderBytes);
+    (kArmControlDomainBytes + kArmAllocationHeaderBytes);
 constexpr std::size_t kArmCreatePeak =
     (kArmStructureChangeBytes + kArmAllocationHeaderBytes) +
     3U * kArmPairBytes;
@@ -182,8 +182,8 @@ constexpr std::size_t kArmMacroT2Peak =
 static_assert(kArmPairBytes == 15664U);
 static_assert(kArmCreatePeak == 74200U);
 static_assert(kArmRemovePeak == 89864U);
-static_assert(kArmMacroT1Peak == 408476U);
-static_assert(kArmMacroT2Peak == 439804U);
+static_assert(kArmMacroT1Peak == 248972U);
+static_assert(kArmMacroT2Peak == 280300U);
 
 // Distinct from the logical LOCK-P h=16 accounting above: Teensy smalloc
 // physically rounds payloads to 12-byte quanta and charges two 12-byte
@@ -206,7 +206,7 @@ constexpr std::size_t kSmallocRemovePeak =
     smallocSpan(kArmStructureChangeBytes) + 4U * kSmallocPairBytes;
 constexpr std::size_t kSmallocMacroAddon =
     smallocSpan(kArmMacroPayloadBytes) +
-    2U * smallocSpan(kArmControlDomainBytes);
+    smallocSpan(kArmControlDomainBytes);
 constexpr std::size_t kSmallocMacroT1Peak =
     smallocSpan(kArmStructureChangeBytes) +
     2U * kSmallocPairBytes + kSmallocMacroAddon;
@@ -217,8 +217,8 @@ constexpr std::size_t kSmallocMacroT2Peak =
 static_assert(smallocSpan(kArmControlDomainBytes) == 159540U);
 static_assert(kSmallocCreatePeak == 74268U);
 static_assert(kSmallocRemovePeak == 89952U);
-static_assert(kSmallocMacroT1Peak == 408552U);
-static_assert(kSmallocMacroT2Peak == 439920U);
+static_assert(kSmallocMacroT1Peak == 249036U);
+static_assert(kSmallocMacroT2Peak == 280404U);
 
 enum class Call : uint8_t {
     Build = 0,
@@ -244,6 +244,7 @@ enum class MacroMode : uint8_t {
 };
 
 struct Script {
+    seq::SequencerState* sequencer = nullptr;
     TrackBank* tracks = nullptr;
     mac::MacroPagesState* macroPages = nullptr;
     oc::state::Signal<uint8_t, 8>* sharedActive = nullptr;
@@ -387,7 +388,7 @@ struct Script {
         ++self.admitCount;
         self.admittedAfterControl =
             change.macroStructure != nullptr &&
-            change.macroStructure->afterControl != nullptr;
+            change.macroStructure->control.changed();
         return self.admitOutcomes[index];
     }
 
@@ -417,6 +418,7 @@ struct Script {
         assert(self.tracks != nullptr);
         assert(self.sharedMask != nullptr);
         assert(self.sharedActive != nullptr);
+        self.sequencer->selectPattern(self.tracks->track(activeTrack), self.tracks->clip(activeTrack));
         self.tracks->syncSharedTrackState(enabledMask, activeTrack);
         if (self.macroPages != nullptr) {
             self.macroPages->syncSharedTrackState(enabledMask, activeTrack);
@@ -486,8 +488,6 @@ Plan basePlan(
     plan.afterPage = 0U;
     plan.targetTrack = kInvalidTrack;
     plan.macroAffectedTrack = kInvalidMacroTrack;
-    plan.incomingOwnerPolicy =
-        seq::SequencerActiveTrackIncomingOwnerPolicy::Preserve;
     return plan;
 }
 
@@ -496,8 +496,6 @@ Plan createPlan() {
                          0x0003U, 1U, 0x0002U, 0x0003U);
     plan.targetTrack = 1U;
     plan.canonicalResetTrackMask = 0x0002U;
-    plan.incomingOwnerPolicy =
-        seq::SequencerActiveTrackIncomingOwnerPolicy::Reset;
     return plan;
 }
 
@@ -569,7 +567,7 @@ Plan macroCreatePlan() {
 
 struct Harness {
     TrackBank tracks;
-    seq::SequencerState sequencer;
+    seq::SequencerState sequencer{tracks.track(tracks.activeTrackIndex()), tracks.clip(tracks.activeTrackIndex())};
     mac::MacroPagesState macros;
     seq::SequencerTrackActivationQueue activationQueue;
     oc::state::Signal<uint8_t, 8> sharedActive{0U};
@@ -578,6 +576,7 @@ struct Harness {
 
     Harness() {
         script.tracks = &tracks;
+        script.sequencer = &sequencer;
         script.macroPages = &macros;
         script.sharedActive = &sharedActive;
         script.sharedMask = &sharedMask;
@@ -650,6 +649,8 @@ std::unique_ptr<Harness> makeHarness(
         plan.beforeEnabledMask,
         plan.beforeActiveTrack
     );
+    harness->sequencer.selectPattern(harness->tracks.track(plan.beforeActiveTrack),
+                                     harness->tracks.clip(plan.beforeActiveTrack));
     harness->macros.syncSharedTrackState(
         plan.beforeEnabledMask,
         plan.beforeActiveTrack
@@ -695,15 +696,9 @@ void seedRequiredOwners(Harness& harness, const Plan& plan) {
         const uint16_t bit = static_cast<uint16_t>(1U << track);
         if ((plan.capturedTrackMask & bit) == 0U) continue;
         auto& pattern = track == plan.beforeActiveTrack
-            ? harness.sequencer.pattern
+            ? harness.sequencer.pattern()
             : harness.tracks.track(track);
         installOwners(pattern, tag++);
-    }
-    if (plan.beforeActiveTrack != plan.afterActiveTrack) {
-        installOwners(
-            harness.tracks.track(plan.beforeActiveTrack),
-            tag
-        );
     }
 }
 
@@ -800,7 +795,7 @@ void capturePatternProof(
 
 LiveProof captureLiveProof(const Harness& harness) {
     LiveProof proof{};
-    capturePatternProof(harness.sequencer.pattern, 0U, proof);
+    capturePatternProof(harness.sequencer.pattern(), 0U, proof);
     for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
         capturePatternProof(
             harness.tracks.track(track),
@@ -813,8 +808,8 @@ LiveProof captureLiveProof(const Harness& harness) {
         sizeof(harness.macros.tracks)
     );
     proof.controlHash = byteHash(
-        &harness.macros.control.authored,
-        sizeof(harness.macros.control.authored)
+        &harness.macros.control.authored(),
+        sizeof(harness.macros.control.authored())
     );
     proof.trackMask = harness.tracks.currentEnabledMask();
     proof.sharedMask = harness.sharedMask.get();
@@ -883,7 +878,6 @@ void assertPlanEquals(const Plan& actual, const Plan& expected) {
     assert(actual.afterPage == expected.afterPage);
     assert(actual.targetTrack == expected.targetTrack);
     assert(actual.macroAffectedTrack == expected.macroAffectedTrack);
-    assert(actual.incomingOwnerPolicy == expected.incomingOwnerPolicy);
 }
 
 void assertCommittedLifecycle(const Script& script, bool hasMacro) {
@@ -1025,8 +1019,6 @@ void test_abi_plans_and_all_seven_actions_commit() {
 
     assert(plans[0U].targetTrack == 1U);
     assert(plans[0U].canonicalResetTrackMask == 0x0002U);
-    assert(plans[0U].incomingOwnerPolicy ==
-           seq::SequencerActiveTrackIncomingOwnerPolicy::Reset);
     assert(plans[1U].beforeEnabledMask == 0x0003U);
     assert(plans[1U].afterEnabledMask == 0x0002U);
     assert(plans[2U].targetTrack == kInvalidTrack);
@@ -1121,23 +1113,21 @@ constexpr std::array<std::size_t, 9U> kRemoveRequests{
     sizeof(Graph), sizeof(CcBank),
 };
 
-constexpr std::array<std::size_t, 8U> kMacroT1Requests{
+constexpr std::array<std::size_t, 7U> kMacroT1Requests{
     sizeof(Change),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(MacroPayload),
-    sizeof(ControlDomain),
     sizeof(ControlDomain),
 };
 
-constexpr std::array<std::size_t, 12U> kMacroT2Requests{
+constexpr std::array<std::size_t, 11U> kMacroT2Requests{
     sizeof(Change),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(Graph), sizeof(CcBank),
     sizeof(MacroPayload),
-    sizeof(ControlDomain),
     sizeof(ControlDomain),
 };
 
@@ -1647,7 +1637,7 @@ void test_plan_tokens_checkpoint_and_live_drift_abort_before_tail() {
                 harness->refs(), direct.action, harness->execution()
             );
         assert(prepared.ready());
-        ++harness->sequencer.pattern.note[0U];
+        ++harness->sequencer.pattern().note[0U];
         const Result result =
             core::handler::commitPreparedSequencerTrackStructureTransaction(
                 std::move(prepared)
@@ -1764,7 +1754,7 @@ void test_no_change_and_macro_control_normalization_contracts() {
             );
         assert(result.status == Status::Committed);
         assert(harness->script.committed->macroStructure);
-        assert(!harness->script.committed->macroStructure->afterControl);
+        assert(!harness->script.committed->macroStructure->control.changed());
         assert(!harness->script.admittedAfterControl);
         assert(harness->macros.control.authoredRevision ==
                controlRevisionBefore);
@@ -1799,7 +1789,7 @@ void test_no_change_and_macro_control_normalization_contracts() {
             );
         assert(result.status == Status::Committed);
         assert(harness->script.committed->macroStructure);
-        assert(harness->script.committed->macroStructure->afterControl);
+        assert(harness->script.committed->macroStructure->control.changed());
         assert(harness->script.admittedAfterControl);
         assert(harness->macros.control.authoredRevision ==
                controlRevisionBefore + 1U);
@@ -1885,19 +1875,19 @@ ColdOwners coldOwners(const seq::SequencerPatternState& pattern) {
     return {pattern.graph.get(), pattern.ccLanes.get()};
 }
 
-void test_create_reset_and_remove_preserve_rotate_exact_owners() {
+void test_create_resets_target_and_remove_preserves_canonical_owners() {
     {
         const Plan plan = createPlan();
         auto harness = makeHarness(plan);
         seedRequiredOwners(*harness, plan);
-        const ColdOwners editor = coldOwners(harness->sequencer.pattern);
+        const ColdOwners editor = coldOwners(harness->sequencer.pattern());
         const ColdOwners outgoingScratch =
             coldOwners(harness->tracks.track(0U));
         const ColdOwners incoming = coldOwners(harness->tracks.track(1U));
-        assert(editor.graph != outgoingScratch.graph);
+        assert(editor.graph == outgoingScratch.graph);
         assert(editor.graph != incoming.graph);
         assert(outgoingScratch.graph != incoming.graph);
-        assert(editor.cc != outgoingScratch.cc);
+        assert(editor.cc == outgoingScratch.cc);
         assert(editor.cc != incoming.cc);
         assert(outgoingScratch.cc != incoming.cc);
 
@@ -1908,12 +1898,10 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
         assert(result.status == Status::Committed);
         assert(coldOwners(harness->tracks.track(0U)).graph == editor.graph);
         assert(coldOwners(harness->tracks.track(0U)).cc == editor.cc);
-        assert(harness->sequencer.pattern.graph == nullptr);
-        assert(harness->sequencer.pattern.ccLanes == nullptr);
-        assert(coldOwners(harness->tracks.track(1U)).graph ==
-               outgoingScratch.graph);
-        assert(coldOwners(harness->tracks.track(1U)).cc ==
-               outgoingScratch.cc);
+        assert(harness->sequencer.pattern().graph == nullptr);
+        assert(harness->sequencer.pattern().ccLanes == nullptr);
+        assert(coldOwners(harness->tracks.track(1U)).graph == nullptr);
+        assert(coldOwners(harness->tracks.track(1U)).cc == nullptr);
         assert(seq::liveHistoryStructureSnapshotMatches(
             harness->tracks,
             harness->sequencer,
@@ -1925,7 +1913,7 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
         const Plan plan = removeCurrentPlan();
         auto harness = makeHarness(plan);
         seedRequiredOwners(*harness, plan);
-        const ColdOwners editor = coldOwners(harness->sequencer.pattern);
+        const ColdOwners editor = coldOwners(harness->sequencer.pattern());
         const ColdOwners outgoingScratch =
             coldOwners(harness->tracks.track(0U));
         const ColdOwners incoming = coldOwners(harness->tracks.track(1U));
@@ -1937,12 +1925,10 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
         assert(result.status == Status::Committed);
         assert(coldOwners(harness->tracks.track(0U)).graph == editor.graph);
         assert(coldOwners(harness->tracks.track(0U)).cc == editor.cc);
-        assert(harness->sequencer.pattern.graph.get() == incoming.graph);
-        assert(harness->sequencer.pattern.ccLanes.get() == incoming.cc);
-        assert(coldOwners(harness->tracks.track(1U)).graph ==
-               outgoingScratch.graph);
-        assert(coldOwners(harness->tracks.track(1U)).cc ==
-               outgoingScratch.cc);
+        assert(harness->sequencer.pattern().graph.get() == incoming.graph);
+        assert(harness->sequencer.pattern().ccLanes.get() == incoming.cc);
+        assert(coldOwners(harness->tracks.track(1U)).graph == incoming.graph);
+        assert(coldOwners(harness->tracks.track(1U)).cc == incoming.cc);
         assert(seq::liveHistoryStructureSnapshotMatches(
             harness->tracks,
             harness->sequencer,
@@ -1969,7 +1955,7 @@ void test_create_reset_and_remove_preserve_rotate_exact_owners() {
     }
 
     std::cout
-        << "[PASS] Reset/Preserve owner rotations and scratch drift hold\n";
+        << "[PASS] Reset/Preserve canonical owners and owner drift hold\n";
 }
 
 }  // namespace
@@ -1985,7 +1971,7 @@ int main() {
     test_plan_tokens_checkpoint_and_live_drift_abort_before_tail();
     test_no_change_and_macro_control_normalization_contracts();
     test_activation_guard_rejects_collisions_and_any_late_queue_drift();
-    test_create_reset_and_remove_preserve_rotate_exact_owners();
+    test_create_resets_target_and_remove_preserves_canonical_owners();
     std::cout
         << "All SequencerPreparedTrackStructureTransaction tests passed\n";
     return 0;

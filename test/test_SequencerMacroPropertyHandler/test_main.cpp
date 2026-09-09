@@ -171,6 +171,7 @@ struct SequencerMacroPropertyHarness {
                   SEQUENCER_SCOPE,
                   mockTimeMs) {
         g_now_ms = 0;
+        state.sequencer.clipWorkspace.enterPattern(0U, 0U);
     }
 
     void press(Config::ButtonID id) {
@@ -210,15 +211,15 @@ void configureRejectedMacroCaller(
     RejectedMacroCaller caller
 ) {
     auto& sequencer = h.state.sequencer;
-    sequencer.pattern.setContentLength(8U);
+    sequencer.pattern().setContentLength(8U);
     sequencer.activeStepProperty.set(StepProperty::VELOCITY);
-    sequencer.pattern.velocity[0U] = 10U;
-    sequencer.pattern.velocity[2U] = 20U;
+    sequencer.pattern().velocity[0U] = 10U;
+    sequencer.pattern().velocity[2U] = 20U;
 
     switch (caller) {
         case RejectedMacroCaller::MacroLocalVariation:
             sequencer.activeStepProperty.set(StepProperty::NOTE);
-            sequencer.pattern.note[2U] = 60U;
+            sequencer.pattern().note[2U] = 60U;
             sequencer.stepPropertyInlineSelector.selecting.set(true);
             h.press(Config::ButtonID::LEFT_BOTTOM);
             return;
@@ -309,9 +310,9 @@ void prepareChildGraphAndCc(
     ChildMacroCaller caller
 ) {
     auto& sequencer = h.state.sequencer;
-    sequencer.pattern.setContentLength(8U);
+    sequencer.pattern().setContentLength(8U);
     const auto micro = core::state::sequencer::createMicroSequence(
-        sequencer.pattern,
+        sequencer.pattern(),
         core::state::sequencer::rootStepNodeId(0U),
         4U
     );
@@ -338,7 +339,7 @@ void prepareChildGraphAndCc(
     }
 
     auto* cc = core::state::sequencer::ensureSequencerCcLaneBank(
-        sequencer.pattern
+        sequencer.pattern()
     );
     assert(cc != nullptr);
     core::state::sequencer::SequencerCcLaneDraft draft{};
@@ -350,16 +351,13 @@ void prepareChildGraphAndCc(
         0U,
         91U
     ).changed());
-    sequencer.pattern.bumpCcLaneRevision();
+    sequencer.pattern().bumpCcLaneRevision();
 
     if (caller == ChildMacroCaller::OptState ||
         caller == ChildMacroCaller::OptOrdinary) {
         h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
     }
-    assert(core::state::sequencer::initializeTrackBankFromActive(
-        h.state.sequencerTracks,
-        sequencer
-    ));
+
 }
 
 void invokeChildMacroCaller(
@@ -369,35 +367,6 @@ void invokeChildMacroCaller(
     const bool opt = caller == ChildMacroCaller::OptState ||
                      caller == ChildMacroCaller::OptOrdinary;
     h.turn(opt ? Config::EncoderID::OPT : Config::EncoderID::MACRO_1, 1.0F);
-}
-
-void assertChildEditorAndBankPayloadMatch(
-    const SequencerMacroPropertyHarness& h
-) {
-    const auto& editor = h.state.sequencer.pattern;
-    const auto& bank = h.state.sequencerTracks.track(0U);
-    const auto* editorGraph = core::state::sequencer::graphView(editor);
-    const auto* bankGraph = core::state::sequencer::graphView(bank);
-    const auto* editorCc = core::state::sequencer::sequencerCcLaneView(editor);
-    const auto* bankCc = core::state::sequencer::sequencerCcLaneView(bank);
-    assert(editorGraph != nullptr && bankGraph != nullptr);
-    assert(editorCc != nullptr && bankCc != nullptr);
-    assert(editorGraph != bankGraph);
-    assert(editorCc != bankCc);
-    assert(std::memcmp(editorGraph, bankGraph, sizeof(*editorGraph)) == 0);
-    assert(std::memcmp(editorCc, bankCc, sizeof(*editorCc)) == 0);
-    assert(editor.stepDataRevision.get() == bank.stepDataRevision.get());
-    assert(
-        editor.patternVariationRevision.get() ==
-        bank.patternVariationRevision.get()
-    );
-    assert(editor.patternScaleRevision.get() == bank.patternScaleRevision.get());
-    assert(
-        editor.patternTimingRevision.get() ==
-        bank.patternTimingRevision.get()
-    );
-    assert(editor.graphRevision.get() == bank.graphRevision.get());
-    assert(editor.ccLaneRevision.get() == bank.ccLaneRevision.get());
 }
 
 void test_child_macro_and_opt_callers_use_full_payload() {
@@ -417,35 +386,32 @@ void test_child_macro_and_opt_callers_use_full_payload() {
         tx::captureMusicalSnapshot(h.state, before);
 
         {
-            // Full Graph+CC owns exactly seven allocations. Seal and commit
+            // Full Graph+CC owns exactly five allocations. Seal and commit
             // must leave the max+1 failure armed.
-            core::app::testing::ScopedExtmemAllocationFailure failure(8U);
+            core::app::testing::ScopedExtmemAllocationFailure failure(6U);
             invokeChildMacroCaller(h, caller);
-            tx::assertMaxPlusOneStillArmed(7U);
+            tx::assertMaxPlusOneStillArmed(5U);
             assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
             assert(h.state.commitSequencerPatternHistoryCoalescing());
-            tx::assertMaxPlusOneStillArmed(7U);
+            tx::assertMaxPlusOneStillArmed(5U);
         }
 
         assert(h.state.sequencerHistory.undoCount() == 1U);
         const auto ownersAfter = tx::captureStateInvariant(h.state);
         assert(ownersAfter.editorGraphOwner == ownersBefore.editorGraphOwner);
         assert(ownersAfter.editorCcOwner == ownersBefore.editorCcOwner);
-        assert(ownersAfter.bankGraphOwner != ownersBefore.bankGraphOwner);
-        assert(ownersAfter.bankCcOwner != ownersBefore.bankCcOwner);
-        assert(ownersAfter.bankGraphOwner != ownersAfter.editorGraphOwner);
-        assert(ownersAfter.bankCcOwner != ownersAfter.editorCcOwner);
-        assertChildEditorAndBankPayloadMatch(h);
+        assert(ownersAfter.bankGraphOwner == ownersBefore.bankGraphOwner);
+        assert(ownersAfter.bankCcOwner == ownersBefore.bankCcOwner);
+        assert(ownersAfter.bankGraphOwner == ownersAfter.editorGraphOwner);
+        assert(ownersAfter.bankCcOwner == ownersAfter.editorCcOwner);
 
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
         tx::captureMusicalSnapshot(h.state, after);
         assert(!core::state::sequencer::sameMusicalHistorySnapshot(before, after));
         assert(h.state.undoSequencerHistory());
         tx::assertMusicalSnapshot(h.state, before);
-        assertChildEditorAndBankPayloadMatch(h);
         assert(h.state.redoSequencerHistory());
         tx::assertMusicalSnapshot(h.state, after);
-        assertChildEditorAndBankPayloadMatch(h);
     }
 
     std::cout
@@ -454,7 +420,7 @@ void test_child_macro_and_opt_callers_use_full_payload() {
 
 void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(16);
+    h.state.sequencer.pattern().setContentLength(16);
     h.state.sequencer.page.set(1);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     g_now_ms = 1234;
@@ -462,7 +428,7 @@ void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     h.turn(Config::EncoderID::MACRO_3, 1.0f);
 
     const uint8_t step = 10;
-    assert(h.state.sequencer.pattern.velocity[step] == 127);
+    assert(h.state.sequencer.pattern().velocity[step] == 127);
     assert(h.state.sequencer.stepInlineFeedback.visible.get());
     assert(h.state.sequencer.stepInlineFeedback.touchedMask.get().test(step));
     assert(h.state.sequencer.stepInlineFeedback.property.get() == StepProperty::VELOCITY);
@@ -474,12 +440,12 @@ void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
 
 void test_opt_encoder_does_not_edit_without_step_focus() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.focusedStep.set(4);
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
 
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(h.state.sequencer.pattern.gate[4] == core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
+    assert(h.state.sequencer.pattern().gate[4] == core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
     assert(!h.state.sequencer.stepInlineFeedback.visible.get());
     assert(!h.state.sequencer.stepInlineFeedback.touchedMask.get().test(4));
 
@@ -488,7 +454,7 @@ void test_opt_encoder_does_not_edit_without_step_focus() {
 
 void test_opt_encoder_edits_focused_step_in_step_focus() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.focusedStep.set(4);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -496,7 +462,7 @@ void test_opt_encoder_edits_focused_step_in_step_focus() {
 
     h.turn(Config::EncoderID::OPT, 1.0f);
 
-    assert(h.state.sequencer.pattern.velocity[4] == 127);
+    assert(h.state.sequencer.pattern().velocity[4] == 127);
     assert(h.state.sequencer.stepInlineFeedback.visible.get());
     assert(h.state.sequencer.stepInlineFeedback.touchedMask.get().test(4));
     assert(h.state.sequencer.stepInlineFeedback.property.get() == StepProperty::VELOCITY);
@@ -510,7 +476,7 @@ void test_opt_encoder_edits_focused_step_in_step_focus() {
 
 void test_opt_state_caller_seals_pending_edit_and_is_undoable() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8U);
+    h.state.sequencer.pattern().setContentLength(8U);
     h.state.sequencer.focusedStep.set(3U);
     h.state.sequencer.stepStatePropertyActive.set(true);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -518,16 +484,16 @@ void test_opt_state_caller_seals_pending_edit_and_is_undoable() {
 
     h.turn(Config::EncoderID::OPT, 1.0F);
 
-    assert(h.state.sequencer.pattern.isEnabled(3U));
+    assert(h.state.sequencer.pattern().isEnabled(3U));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0U);
     assert(h.state.commitSequencerPatternHistoryCoalescing());
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.undoSequencerHistory());
-    assert(!h.state.sequencer.pattern.isEnabled(3U));
+    assert(!h.state.sequencer.pattern().isEnabled(3U));
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(3U));
+    assert(h.state.sequencer.pattern().isEnabled(3U));
 
     std::cout
         << "[PASS] OPT state caller seals pending edit and is undoable\n";
@@ -535,12 +501,12 @@ void test_opt_state_caller_seals_pending_edit_and_is_undoable() {
 
 void test_direct_state_edit_coalesces_as_state_history() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.stepStatePropertyActive.set(true);
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().isEnabled(0));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
 
     h.advance(700);
@@ -548,7 +514,7 @@ void test_direct_state_edit_coalesces_as_state_history() {
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     assert(h.state.undoSequencerHistory());
-    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(!h.state.sequencer.pattern().isEnabled(0));
     assert(std::strcmp(
         h.state.sequencer.historyFeedback.line2.data(),
         "Step 01 State"
@@ -559,14 +525,14 @@ void test_direct_state_edit_coalesces_as_state_history() {
     ) == 0);
 
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.sequencer.pattern().isEnabled(0));
 
     std::cout << "[PASS] test_direct_state_edit_coalesces_as_state_history\n";
 }
 
 void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
 
     const uint8_t step = 2;
@@ -577,7 +543,7 @@ void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
 
     h.turn(Config::EncoderID::MACRO_3, 1.0f);
 
-    assert(h.state.sequencer.pattern.note[step] == 127);
+    assert(h.state.sequencer.pattern().note[step] == 127);
     assert(!h.state.sequencer.cycleVariationTelemetry.validMask.test(step));
     assert(!h.state.sequencer.cycleVariationTelemetry.triggeredMask.test(step));
     assert(h.state.sequencer.variationTelemetryRevision.get() == 11);
@@ -595,7 +561,7 @@ void test_direct_edit_retires_runtime_projection_before_authored_revision() {
 
     for (const auto property : properties) {
         SequencerMacroPropertyHarness h;
-        h.state.sequencer.pattern.setContentLength(8);
+        h.state.sequencer.pattern().setContentLength(8);
         h.state.sequencer.activeStepProperty.set(property);
 
         constexpr uint8_t step = 0;
@@ -614,7 +580,7 @@ void test_direct_edit_retires_runtime_projection_before_authored_revision() {
                     if (callbackCount < 2U) callbackOrder[callbackCount++] = 1U;
                 }
             );
-        auto authoredSubscription = h.state.sequencer.pattern.stepDataRevision.subscribe(
+        auto authoredSubscription = h.state.sequencer.pattern().stepDataRevision.subscribe(
             [&](const uint32_t&) {
                 if (callbackCount < 2U) callbackOrder[callbackCount++] = 2U;
                 authoredRevisionSawCoherentState =
@@ -642,7 +608,7 @@ void test_direct_edit_retires_runtime_projection_before_authored_revision() {
 
 void test_follow_scale_pitch_edit_writes_scale_degree_note() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
     h.state.sequencer.setStepNoteAt(0, 60);
 
@@ -666,7 +632,7 @@ void test_follow_scale_pitch_edit_writes_scale_degree_note() {
 
     h.turn(Config::EncoderID::MACRO_1, b4AsScaleDegree);
 
-    assert(h.state.sequencer.pattern.note[0] == 71);
+    assert(h.state.sequencer.pattern().note[0] == 71);
 
     std::cout << "[PASS] test_follow_scale_pitch_edit_writes_scale_degree_note\n";
 }
@@ -676,28 +642,28 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
         SequencerMacroPropertyHarness h;
         h.state.overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern().note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     {
         SequencerMacroPropertyHarness h;
         h.state.sequencer.structureUi.stepSelection.active.set(true);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern().note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     {
         SequencerMacroPropertyHarness h;
         h.state.sequencer.patternQuickControls.selecting.set(true);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern().note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     {
         SequencerMacroPropertyHarness h;
         h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.pattern.note[0] != core::state::sequencer::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencer.pattern().note[0] != core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
     std::cout << "[PASS] test_macro_property_edits_are_blocked_by_modal_states\n";
@@ -705,21 +671,21 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
 
 void test_left_bottom_selector_macro_edits_local_variation_range() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
-    h.state.sequencer.pattern.note[2] = 60;
+    h.state.sequencer.pattern().note[2] = 60;
     h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
     h.press(Config::ButtonID::LEFT_BOTTOM);
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_3, 1.0f);
 
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
     assert(node != nullptr);
     assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::NOTE) == 36);
-    assert(h.state.sequencer.pattern.note[2] == 60);
+    assert(h.state.sequencer.pattern().note[2] == 60);
     assert(h.state.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.get());
     assert(h.state.sequencer.stepPropertyInlineSelector.localVariationStepIndex == 2);
     assert(h.state.sequencer.stepInlineFeedback.visible.get());
@@ -738,7 +704,7 @@ void test_left_bottom_selector_macro_edits_local_variation_range() {
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     assert(h.state.undoSequencerHistory());
-    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     if (graph != nullptr) {
         node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
         assert(
@@ -746,25 +712,25 @@ void test_left_bottom_selector_macro_edits_local_variation_range() {
             core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::NOTE) == 0
         );
     }
-    assert(h.state.sequencer.pattern.note[2] == 60);
+    assert(h.state.sequencer.pattern().note[2] == 60);
 
     std::cout << "[PASS] test_left_bottom_selector_macro_edits_local_variation_range\n";
 }
 
 void test_left_bottom_selector_does_not_randomize_probability() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::PROBABILITY);
-    h.state.sequencer.pattern.probability[0] = 64;
+    h.state.sequencer.pattern().probability[0] = 64;
     h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
     h.press(Config::ButtonID::LEFT_BOTTOM);
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
 
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graph == nullptr);
-    assert(h.state.sequencer.pattern.probability[0] == 64);
+    assert(h.state.sequencer.pattern().probability[0] == 64);
     assert(!h.state.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.get());
 
     h.release(Config::ButtonID::LEFT_BOTTOM);
@@ -774,18 +740,18 @@ void test_left_bottom_selector_does_not_randomize_probability() {
 
 void test_left_center_quick_controls_do_not_randomize_step() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
-    h.state.sequencer.pattern.note[0] = 60;
+    h.state.sequencer.pattern().note[0] = 60;
     h.state.sequencer.patternQuickControls.selecting.set(true);
     h.press(Config::ButtonID::LEFT_CENTER);
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
 
-    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern());
     assert(graph == nullptr);
-    assert(h.state.sequencer.pattern.note[0] == 60);
+    assert(h.state.sequencer.pattern().note[0] == 60);
 
     h.release(Config::ButtonID::LEFT_CENTER);
 
@@ -794,9 +760,9 @@ void test_left_center_quick_controls_do_not_randomize_step() {
 
 void test_macro_property_edits_coalesce_until_idle() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
-    h.state.sequencer.pattern.velocity[0] = 0;
+    h.state.sequencer.pattern().velocity[0] = 0;
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 0.25f);
@@ -805,7 +771,7 @@ void test_macro_property_edits_coalesce_until_idle() {
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0);
-    assert(h.state.sequencer.pattern.velocity[0] == 127);
+    assert(h.state.sequencer.pattern().velocity[0] == 127);
 
     h.advance(699);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -816,7 +782,7 @@ void test_macro_property_edits_coalesce_until_idle() {
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.velocity[0] == 0);
+    assert(h.state.sequencer.pattern().velocity[0] == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
 
     std::cout << "[PASS] test_macro_property_edits_coalesce_until_idle\n";
@@ -824,10 +790,10 @@ void test_macro_property_edits_coalesce_until_idle() {
 
 void test_rapid_multi_step_property_edits_share_one_history_gesture() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
-    h.state.sequencer.pattern.velocity[0] = 10;
-    h.state.sequencer.pattern.velocity[1] = 20;
+    h.state.sequencer.pattern().velocity[0] = 10;
+    h.state.sequencer.pattern().velocity[1] = 20;
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 0.25f);
@@ -838,8 +804,8 @@ void test_rapid_multi_step_property_edits_share_one_history_gesture() {
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0);
-    assert(h.state.sequencer.pattern.velocity[0] == 51);
-    assert(h.state.sequencer.pattern.velocity[1] == 83);
+    assert(h.state.sequencer.pattern().velocity[0] == 51);
+    assert(h.state.sequencer.pattern().velocity[1] == 83);
 
     h.advance(619);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -848,15 +814,15 @@ void test_rapid_multi_step_property_edits_share_one_history_gesture() {
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.velocity[0] == 10);
-    assert(h.state.sequencer.pattern.velocity[1] == 20);
+    assert(h.state.sequencer.pattern().velocity[0] == 10);
+    assert(h.state.sequencer.pattern().velocity[1] == 20);
     assert(std::strcmp(
         h.state.sequencer.historyFeedback.line2.data(),
         "Step Property"
     ) == 0);
     assert(h.state.redoSequencerHistory());
-    assert(h.state.sequencer.pattern.velocity[0] == 51);
-    assert(h.state.sequencer.pattern.velocity[1] == 83);
+    assert(h.state.sequencer.pattern().velocity[0] == 51);
+    assert(h.state.sequencer.pattern().velocity[1] == 83);
 
     std::cout
         << "[PASS] rapid multi-Step property edits share one history gesture\n";
@@ -864,7 +830,7 @@ void test_rapid_multi_step_property_edits_share_one_history_gesture() {
 
 void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
     SequencerMacroPropertyHarness h;
-    auto& pattern = h.state.sequencer.pattern;
+    auto& pattern = h.state.sequencer.pattern();
     pattern.setContentLength(8U);
     pattern.velocity[0U] = 0U;
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
@@ -882,8 +848,7 @@ void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
     assert(core::state::sequencer::setSequencerCcLaneEvent(
         *cc, 0U, 0U, 91U).changed());
     pattern.bumpCcLaneRevision();
-    assert(core::state::sequencer::initializeTrackBankFromActive(
-        h.state.sequencerTracks, h.state.sequencer));
+
 
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
@@ -897,12 +862,12 @@ void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
     h.state.flushProjectMutationCoalescing();
     h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
 
-    const auto* const editorGraphOwner = h.state.sequencer.pattern.graph.get();
-    const auto* const editorCcOwner = h.state.sequencer.pattern.ccLanes.get();
+    const auto* const editorGraphOwner = h.state.sequencer.pattern().graph.get();
+    const auto* const editorCcOwner = h.state.sequencer.pattern().ccLanes.get();
     assert(editorGraphOwner != nullptr);
     assert(editorCcOwner != nullptr);
-    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
-    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph.get() == editorGraphOwner);
+    assert(h.state.sequencerTracks.track(0U).ccLanes.get() == editorCcOwner);
 
     g_now_ms = 100U;
     h.turn(Config::EncoderID::MACRO_1, 0.25F);
@@ -911,18 +876,18 @@ void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0U);
-    assert(h.state.sequencer.pattern.velocity[0U] == 127U);
+    assert(h.state.sequencer.pattern().velocity[0U] == 127U);
     h.advance(699U);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     h.advance(700U);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1U);
-    assert(h.state.sequencer.pattern.graph.get() == editorGraphOwner);
-    assert(h.state.sequencer.pattern.ccLanes.get() == editorCcOwner);
-    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
-    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    assert(h.state.sequencer.pattern().graph.get() == editorGraphOwner);
+    assert(h.state.sequencer.pattern().ccLanes.get() == editorCcOwner);
+    assert(h.state.sequencerTracks.track(0U).graph.get() == editorGraphOwner);
+    assert(h.state.sequencerTracks.track(0U).ccLanes.get() == editorCcOwner);
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.velocity[0U] == 0U);
+    assert(h.state.sequencer.pattern().velocity[0U] == 0U);
 
     std::cout
         << "[PASS] restored root Graph+CC velocity gesture coalesces into one Undo\n";
@@ -930,10 +895,10 @@ void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
 
 void test_macro_property_step_change_commits_previous_coalesced_edit() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
-    h.state.sequencer.pattern.gate[0] = 50;
-    h.state.sequencer.pattern.gate[1] = 60;
+    h.state.sequencer.pattern().gate[0] = 50;
+    h.state.sequencer.pattern().gate[1] = 60;
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
@@ -950,11 +915,11 @@ void test_macro_property_step_change_commits_previous_coalesced_edit() {
     assert(h.state.sequencerHistory.undoCount() == 2);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.gate[0] == core::state::sequencer::SequencerState::MAX_GATE_PERCENT);
-    assert(h.state.sequencer.pattern.gate[1] == 60);
+    assert(h.state.sequencer.pattern().gate[0] == core::state::sequencer::SequencerState::MAX_GATE_PERCENT);
+    assert(h.state.sequencer.pattern().gate[1] == 60);
 
     assert(h.state.undoSequencerHistory());
-    assert(h.state.sequencer.pattern.gate[0] == 50);
+    assert(h.state.sequencer.pattern().gate[0] == 50);
 
     std::cout << "[PASS] test_macro_property_step_change_commits_previous_coalesced_edit\n";
 }
@@ -962,9 +927,9 @@ void test_macro_property_step_change_commits_previous_coalesced_edit() {
 void test_macro_property_track_change_commits_pending_coalesced_edit() {
     SequencerMacroPropertyHarness h;
     h.state.setSharedTrackState(0x0003, 0);
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
-    h.state.sequencer.pattern.velocity[0] = 10;
+    h.state.sequencer.pattern().velocity[0] = 10;
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
@@ -980,27 +945,27 @@ void test_macro_property_track_change_commits_pending_coalesced_edit() {
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.sequencerTracks.track(0).velocity[0] == 10);
-    assert(h.state.sequencer.pattern.velocity[0] != 10);
+    assert(h.state.sequencer.pattern().velocity[0] != 10);
 
     std::cout << "[PASS] test_macro_property_track_change_commits_pending_coalesced_edit\n";
 }
 
 void test_macro_property_pending_edit_undoes_with_single_command() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
-    h.state.sequencer.pattern.note[0] = 60;
+    h.state.sequencer.pattern().note[0] = 60;
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0);
-    assert(h.state.sequencer.pattern.note[0] == 127);
+    assert(h.state.sequencer.pattern().note[0] == 127);
 
     assert(h.state.undoSequencerHistory());
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
-    assert(h.state.sequencer.pattern.note[0] == 60);
+    assert(h.state.sequencer.pattern().note[0] == 60);
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
     assert(h.state.sequencer.historyFeedback.visible.get());
@@ -1013,10 +978,10 @@ void test_macro_property_pending_edit_undoes_with_single_command() {
 
 void test_macro_property_new_pending_edit_invalidates_redo_on_commit() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
-    h.state.sequencer.pattern.velocity[0] = 10;
-    h.state.sequencer.pattern.velocity[1] = 20;
+    h.state.sequencer.pattern().velocity[0] = 10;
+    h.state.sequencer.pattern().velocity[1] = 20;
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
@@ -1025,7 +990,7 @@ void test_macro_property_new_pending_edit_invalidates_redo_on_commit() {
 
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencerHistory.redoCount() == 1);
-    assert(h.state.sequencer.pattern.velocity[0] == 10);
+    assert(h.state.sequencer.pattern().velocity[0] == 10);
 
     g_now_ms = 800;
     h.turn(Config::EncoderID::MACRO_2, 1.0f);
@@ -1035,8 +1000,8 @@ void test_macro_property_new_pending_edit_invalidates_redo_on_commit() {
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 1);
     assert(h.state.sequencerHistory.redoCount() == 0);
-    assert(h.state.sequencer.pattern.velocity[0] == 10);
-    assert(h.state.sequencer.pattern.velocity[1] == 127);
+    assert(h.state.sequencer.pattern().velocity[0] == 10);
+    assert(h.state.sequencer.pattern().velocity[1] == 127);
 
     std::cout << "[PASS] test_macro_property_new_pending_edit_invalidates_redo_on_commit\n";
 }

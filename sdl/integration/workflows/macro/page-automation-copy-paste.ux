@@ -16,7 +16,7 @@
 1550 capture screen page_copied
 
 # Move to the add-page slot and paste the copied page there.
-1700 encoder NAV 1
+1700 encoder NAV 0.01
 1850 capture screen page_add_target
 2000 button BOTTOM_RIGHT down
 3150 tick

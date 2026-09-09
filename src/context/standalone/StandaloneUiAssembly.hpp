@@ -78,6 +78,7 @@ private:
     bool bindGlobalTrackStrip();
     void applyOverlayExclusivity();
     void scheduleGlobalTrackStripRender(bool ready = false);
+    void preparePerformanceViewport() const;
     void renderGlobalTrackStrip();
     void requestGlobalTrackStripRender();
     void requestGlobalTrackStripRenderReady();
@@ -88,7 +89,7 @@ private:
     oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID project_view_scope_ = 0;
     oc::type::ScopeID device_settings_view_scope_ = 0;
-    oc::state::StaticWatchGroup<2> global_track_context_watcher_;
+    oc::state::StaticWatchGroup<3> global_track_context_watcher_;
     oc::state::StaticWatchGroup<
         5U + core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
         global_track_structure_watcher_;

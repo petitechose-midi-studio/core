@@ -80,6 +80,7 @@ class ProjectTrackEditorHandler;
 class SequencerCcLaneHandler;
 class SequencerCcLaneWorkflow;
 class SequencerMacroPropertyHandler;
+class ClipWorkspaceHandler;
 class SequencerPatternQuickControlsHandler;
 class SequencerPatternEditorHandler;
 class SequencerPropertySelectorHandler;
@@ -96,6 +97,10 @@ namespace core::state::macro {
 struct MacroPagesState;
 }
 
+namespace core::state {
+struct CoreState;
+}
+
 namespace core::context::standalone {
 
 /**
@@ -108,6 +113,7 @@ namespace core::context::standalone {
 class SequencerFeatureModule {
 public:
     struct StateRefs {
+        core::state::CoreState& core;
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         oc::state::Signal<
@@ -176,6 +182,8 @@ private:
         preset_library_ux_surface_;
     core::context::standalone::ux::SequencerCcLaneUxSurface cc_lane_ux_surface_;
     core::context::standalone::ux::SequencerQuickControlsUxSurface quick_controls_ux_surface_;
+    core::context::standalone::ux::SequencerClipLauncherUxSurface
+        clip_launcher_ux_surface_;
     core::context::standalone::ux::SequencerStructureUxSurface structure_ux_surface_;
     core::context::standalone::ux::SequencerStepEditUxSurface step_edit_ux_surface_;
     core::context::standalone::ux::DrumLaneEditorUxSurface
@@ -194,6 +202,8 @@ private:
         pattern_editor_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::project::ProjectTrackEditorOverlay>
         track_editor_overlay_;
+    core::app::ExtmemUniquePtr<core::ui::interaction::TextKeyboardView>
+        track_name_keyboard_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
         track_editor_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::SequencerStepEditOverlay> step_edit_overlay_;
@@ -230,6 +240,8 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::PatternPitchSettingsOverlayPresenter>
         pattern_pitch_settings_presenter_;
     core::app::ExtmemUniquePtr<core::handler::SequencerStepHandler> step_handler_;
+    core::app::ExtmemUniquePtr<core::handler::ClipWorkspaceHandler>
+        clip_workspace_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerPatternQuickControlsHandler>
         quick_controls_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerPatternEditorHandler>

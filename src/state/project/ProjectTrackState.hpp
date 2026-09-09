@@ -13,6 +13,9 @@ inline constexpr uint16_t PROJECT_TRACK_ALL_MASK = 0xFFFFU;
 inline constexpr uint8_t PROJECT_TRACK_MIDI_CHANNEL_MAX_0BASED = 15U;
 inline constexpr int16_t PROJECT_TRACK_DELAY_MIN_MS = -100;
 inline constexpr int16_t PROJECT_TRACK_DELAY_MAX_MS = 100;
+inline constexpr uint8_t PROJECT_TRACK_NAME_MAX_LENGTH = 8U;
+using ProjectTrackName =
+    std::array<char, PROJECT_TRACK_NAME_MAX_LENGTH + 1U>;
 
 /**
  * Compact authored Track routing/mix state used at history and persistence
@@ -26,11 +29,12 @@ inline constexpr int16_t PROJECT_TRACK_DELAY_MAX_MS = 100;
 struct ProjectTrackSnapshot {
     std::array<int16_t, PROJECT_TRACK_COUNT> delayMs{};
     std::array<uint8_t, PROJECT_TRACK_COUNT> midiChannels{};
+    std::array<ProjectTrackName, PROJECT_TRACK_COUNT> names{};
     uint16_t mutedMask = 0U;
     uint16_t soloMask = 0U;
 };
 
-static_assert(sizeof(ProjectTrackSnapshot) == 52U);
+static_assert(sizeof(ProjectTrackSnapshot) == 196U);
 static_assert(std::is_trivially_copyable_v<ProjectTrackSnapshot>);
 
 [[nodiscard]] constexpr ProjectTrackSnapshot defaultProjectTrackSnapshot() {

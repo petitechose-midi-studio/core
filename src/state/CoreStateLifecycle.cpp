@@ -80,11 +80,8 @@ FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
 }
 
 FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
-    state.sequencer.reset();
-    state.sequencerTracks.reset();
-    if (!sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer)) {
-        OC_LOG_ERROR("[CoreState] Failed to initialize sequencer track bank");
-    }
+    sequencer::resetTrackBank(state.sequencerTracks, state.sequencer);
+    state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     state.requestSequencerRuntimeProjectReset();
 }
 
@@ -165,15 +162,17 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.projectTracks.reset();
     state.pages.initDefaults();
 
-    state.sequencer.reset();
-    state.sequencerTracks.reset();
-    if (!sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer)) {
-        OC_LOG_ERROR("[CoreState] Failed to initialize sequencer track bank");
-    }
+    sequencer::resetTrackBank(state.sequencerTracks, state.sequencer);
+    state.sequencerClips.reset(state.sequencerTracks.currentEnabledMask());
     state.requestSequencerRuntimeProjectReset();
 
     state.setSharedTrackState_(macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK, 0);
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+
+    // A Project replacement already publishes its own session boundary.
+    // Consume the watched domain mutations before resetting retained UI state
+    // so their obsolete callbacks do not occupy the bounded notification wave.
+    consumeProjectReplacementMutationCoalescing(state);
 
     state.statusBar.tempo.set(120.0f);
     if (!state.statusBar.tempoLocked.get()) {
@@ -217,7 +216,6 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
         state.projectHistory.clear();
     }
 
-    flushMutationCoalescers_(state);
     state.publishProjectSessionReplacement_();
 }
 

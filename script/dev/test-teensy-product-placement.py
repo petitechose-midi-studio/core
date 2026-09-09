@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from teensy_product_placement import (
+    DISPLAY_DIFF_ITCM_MARKERS,
     COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
     MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS,
     PAGE_STRUCTURE_BUILDER_FLASH_MARKERS,
@@ -111,6 +112,8 @@ def main() -> int:
 54856 1888 T core::sequencer::SequencerCcLaneRuntime::buildMusicalTickFrame(void)
 97048 752 T core::ui::MacroView::processRenderFlags(unsigned long)
 86548 702 T core::ui::StepGrid::renderTile(void)
+2048 1000 W T4Diff::DiffBuffT<ILI9341_T4::DiffBuffTraits>::_computeDiff(void)
+3072 400 W T4Diff::DiffBuffT<ILI9341_T4::DiffBuffTraits>::readDiff(void)
 539099136 153600 B ms::device_support::v1::buffers::lvgl
 """
     assert len(PAGE_STRUCTURE_BUILDER_FLASH_MARKERS) == 9
@@ -130,6 +133,9 @@ def main() -> int:
     assert len(COUPLED_HISTORY_REPLAY_FLASH_MARKERS) == 10
     assert len(set(COUPLED_HISTORY_REPLAY_FLASH_MARKERS)) == 10
     assert product_placement_violations(valid) == ()
+    ram_only = "\n".join(line for line in valid.splitlines() if "FatFormatter" not in line)
+    assert product_placement_violations(ram_only, ram_only_benchmark=True) == ()
+    assert any("FatFormatter" in item for item in product_placement_violations(ram_only))
 
     invalid = valid.replace(
         "1610613000 220 W oc::state::Signal<bool, 4u>::subscribe",
@@ -149,8 +155,20 @@ def main() -> int:
     assert "strict PSRAM allocation/lifecycle must execute from Flash" in violations
     assert any("MacroValueHandler" in item for item in violations)
     assert "LVGL draw buffer must be one 320x240 RGB565 frame in RAM2" in violations
+    # RAM-only changes only the unavailable SD formatter requirement, never
+    # the product's Flash/ITCM/RAM2 safety assertions.
+    assert "LVGL draw buffer must be one 320x240 RGB565 frame in RAM2" in product_placement_violations(
+        invalid, ram_only_benchmark=True)
 
     valid_lines = valid.splitlines()
+    for marker in DISPLAY_DIFF_ITCM_MARKERS:
+        symbol_line = next(line for line in valid_lines if marker in line)
+        missing = "\n".join(line for line in valid_lines if marker not in line)
+        flash = valid.replace(symbol_line, symbol_line.replace(
+            symbol_line.split(maxsplit=1)[0], "1610618000", 1))
+        assert f"required realtime ITCM symbol is missing: {marker}" in product_placement_violations(missing)
+        assert f"realtime symbol must execute from ITCM: {marker}" in product_placement_violations(flash)
+
     for marker in (
         *PAGE_STRUCTURE_FLASH_MARKERS,
         *TRACK_STRUCTURE_FLASH_MARKERS,

@@ -6,6 +6,7 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "persistence/PersistenceChecksum.hpp"
+#include "persistence/ProductFileTransactionJournalInternal.hpp"
 
 namespace core::persistence {
 
@@ -83,6 +84,19 @@ FLASHMEM oc::type::Result<void> replaceProductFileAtomically(
         return oc::type::Result<void>::err(
             {ErrorCode::INVALID_ARGUMENT, "invalid atomic file paths"}
         );
+    }
+    if (data == nullptr || size == 0U || chunkSize == 0U) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_ARGUMENT, "invalid atomic file payload"}
+        );
+    }
+    // Apply the commit's canonical/distinct-path rules before removing tmp,
+    // otherwise a rejected alias can already have deleted the current file.
+    {
+        product_file_transaction::JournalWorkspace workspace{};
+        const auto valid = product_file_transaction::normalizePaths(
+            files, workspace, paths.current, paths.tmp, paths.backup);
+        if (!valid) return valid;
     }
 
     auto ensureDirectory = files.createDirectory(lease, paths.directory);

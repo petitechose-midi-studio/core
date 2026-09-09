@@ -13,7 +13,7 @@
 360 capture screen property_selector_open
 
 # Select velocity and set its randomization range.
-460 encoder NAV 1
+460 encoder NAV 0.01
 560 encoder OPT 1.00
 710 capture screen velocity_range_adjusted
 

@@ -1,0 +1,46 @@
+# Bench fixture's 16-note pattern. Shared multi-selection and Step Editor.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_mode sequencer.clip_launcher
+1200 encoder_value NAV 0.010
+1600 tap LEFT_BOTTOM 60
+2000 assert_mode sequencer.pattern
+2200 button NAV down
+2300 encoder_value NAV 0.010
+2400 button NAV up
+2800 button NAV down
+3900 button NAV up
+4300 marker selection
+4320 assert_mode sequencer.step_selection
+4500 tap MACRO_1 60
+4700 tap MACRO_2 60
+4900 tap MACRO_3 60
+5100 tap MACRO_4 60
+5300 tap MACRO_5 60
+5500 tap MACRO_6 60
+5700 tap MACRO_7 60
+5900 tap MACRO_8 60
+6200 marker eight_step_edit
+6400 encoder_value OPT 0.250
+6700 encoder_value OPT 0.750
+7000 encoder_value OPT 0.250
+7300 encoder_value OPT 0.750
+7600 encoder_value OPT 0.250
+7900 encoder_value OPT 0.750
+8300 tap LEFT_TOP 60
+8500 tap LEFT_TOP 60
+8700 button MACRO_1 down
+9800 button MACRO_1 up
+10200 marker step_editor
+10220 assert_mode sequencer.step_edit
+10400 encoder_value NAV 0.010
+10600 encoder_value NAV 0.010
+10800 encoder_value NAV 0.010
+11000 encoder_value OPT 0.250
+11300 encoder_value OPT 0.750
+11600 encoder_value OPT 0.250
+12000 tap LEFT_TOP 60
+13000 transport stop

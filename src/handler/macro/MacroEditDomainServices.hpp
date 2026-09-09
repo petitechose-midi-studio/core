@@ -25,7 +25,9 @@ namespace core::handler {
  */
 class MacroEditDomainServices {
 public:
-    using SetConfigFn = bool (*)(void* context, uint8_t index, uint8_t channel, uint8_t cc);
+    /** Owns history, rollback and revision publication; callers must not record again. */
+    using SetConfigFn = bool (*)(void* context, uint8_t index, uint8_t channel, uint8_t cc,
+                                core::state::macro::MacroHistoryActionKind kind);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
     using SwitchToTrackFn = void (*)(void* context, uint8_t trackIndex);
     using MarkProjectMutatedFn = void (*)(void* context);
@@ -58,7 +60,9 @@ public:
 
     const core::state::macro::MacroConfig& activeConfig(uint8_t index) const;
     bool isMacroSlotActive(uint8_t index) const;
-    bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
+    bool setConfig(uint8_t index, uint8_t channel, uint8_t cc,
+                   core::state::macro::MacroHistoryActionKind kind =
+                       core::state::macro::MacroHistoryActionKind::CONFIG_EDIT) const;
     void switchToPage(uint8_t pageIndex) const;
     void switchToTrack(uint8_t trackIndex) const;
     bool synchronizeSharedTrackState() const;

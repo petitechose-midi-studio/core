@@ -7,6 +7,7 @@
 #include <oc/note/sequencer/StepSequencerScale.hpp>
 
 #include "state/sequencer/SequencerScaleState.hpp"
+#include "state/sequencer/SequencerClipState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -14,9 +15,6 @@ namespace core::state::sequencer {
 
 struct SequencerPatternSnapshot {
     uint8_t length = SequencerPatternState::DEFAULT_LENGTH;
-    uint8_t playStart = 0;
-    uint8_t loopStart = 0;
-    uint8_t loopEnd = SequencerPatternState::DEFAULT_LENGTH;
     uint8_t stepsPerBeat = SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
@@ -39,6 +37,14 @@ struct SequencerPatternSnapshot {
     std::array<uint8_t, SequencerPatternState::MAX_STEPS> probability{};
 };
 
+struct SequencerClipSnapshot {
+    uint16_t playStartTick = 0U;
+    uint16_t loopStartTick = 0U;
+    uint16_t loopEndTick = SequencerClipState::DEFAULT_END_TICK;
+};
+
+static_assert(sizeof(SequencerClipSnapshot) == sizeof(SequencerClipState));
+
 struct SequencerTrackBankSnapshot {
     uint8_t activeTrack = 0;
     uint16_t enabledMask = 0x0001;
@@ -46,6 +52,7 @@ struct SequencerTrackBankSnapshot {
     uint8_t projectSwingPercent = 0;
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings{};
     std::array<SequencerPatternSnapshot, SequencerTrackBankState::TRACK_COUNT> tracks{};
+    std::array<SequencerClipSnapshot, SequencerTrackBankState::TRACK_COUNT> clips{};
 };
 
 }  // namespace core::state::sequencer

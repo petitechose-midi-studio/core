@@ -78,7 +78,7 @@ FLASHMEM void ProjectHandler::navigate(float delta) {
     core::state::project::navigateProjectRows(
         navigation_,
         delta,
-        pages_.control.authored.modulation.sourceCount,
+        pages_.control.authored().modulation.sourceCount,
         focusedModulatorDetailRowCount()
     );
     if (navigation_.currentNode.get() ==
@@ -405,7 +405,7 @@ FLASHMEM void ProjectHandler::openFocusedModulationDestination() {
 
     uint16_t assignmentCount = 0U;
     uint16_t selectedOrdinal = 0U;
-    const auto& graph = pages_.control.authored.modulation;
+    const auto& graph = pages_.control.authored().modulation;
     for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
         const auto& candidate = graph.outputBindings[index];
         if (candidate.destination != destination) continue;

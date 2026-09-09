@@ -9,7 +9,7 @@ namespace core::state {
 
 enum class ViewSelectorItem : uint8_t {
     MACROS = 0,
-    SEQUENCER,
+    CLIPS,
     MODULATORS,
     PROJECT_SETTINGS,
     DEVICE_SETTINGS,
@@ -21,7 +21,7 @@ inline constexpr int VIEW_SELECTOR_ITEM_COUNT =
 
 inline constexpr std::array<const char*, VIEW_SELECTOR_ITEM_COUNT> VIEW_SELECTOR_ITEM_LABELS = {
     "Macros",
-    "Sequencer",
+    "Clips",
     "Modulators",
     "Project",
     "Device",
@@ -40,8 +40,8 @@ inline const char* viewSelectorItemLabel(ViewSelectorItem item) {
 
 inline ViewSelectorItem viewSelectorItemForView(core::ui::ViewType view) {
     switch (view) {
-        case core::ui::ViewType::SEQUENCER:
-            return ViewSelectorItem::SEQUENCER;
+        case core::ui::ViewType::CLIPS:
+            return ViewSelectorItem::CLIPS;
         case core::ui::ViewType::MODULATORS:
             return ViewSelectorItem::MODULATORS;
         case core::ui::ViewType::PROJECT:
@@ -56,7 +56,7 @@ inline ViewSelectorItem viewSelectorItemForView(core::ui::ViewType view) {
 
 inline bool viewSelectorItemHasView(ViewSelectorItem item) {
     return item == ViewSelectorItem::MACROS ||
-           item == ViewSelectorItem::SEQUENCER ||
+           item == ViewSelectorItem::CLIPS ||
            item == ViewSelectorItem::MODULATORS ||
            item == ViewSelectorItem::PROJECT_SETTINGS ||
            item == ViewSelectorItem::DEVICE_SETTINGS;
@@ -64,8 +64,8 @@ inline bool viewSelectorItemHasView(ViewSelectorItem item) {
 
 inline core::ui::ViewType viewForSelectorItem(ViewSelectorItem item) {
     switch (item) {
-        case ViewSelectorItem::SEQUENCER:
-            return core::ui::ViewType::SEQUENCER;
+        case ViewSelectorItem::CLIPS:
+            return core::ui::ViewType::CLIPS;
         case ViewSelectorItem::MODULATORS:
             return core::ui::ViewType::MODULATORS;
         case ViewSelectorItem::PROJECT_SETTINGS:

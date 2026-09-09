@@ -45,7 +45,7 @@ const ModulatorSourceState* sourceFor(
     );
     if (!control) return nullptr;
     return findProjectModulator(
-        control->authored.modulation,
+        control->authored().modulation,
         ModulatorId{descriptor.identity}
     );
 }
@@ -57,7 +57,7 @@ FLASHMEM bool sourceUsesPositiveDomain(
     if (source.kind == ModulatorKind::ADSR) return true;
     if (source.kind == ModulatorKind::LFO) return false;
     const auto* curve = findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         source.parameters.recordedCurveId
     );
     return curve != nullptr && curve->valueDomain ==
@@ -89,13 +89,13 @@ FLASHMEM uint32_t sourceGeometryRevisionImpl(
         ));
     } else if (source.kind == ModulatorKind::RECORDED_SHAPE) {
         const auto* curve = findProjectCurve(
-            control.authored.curves,
+            control.authored().curves,
             source.parameters.recordedCurveId
         );
         hashU32(hash, source.parameters.recordedCurveId.value);
         if (curve == nullptr ||
             static_cast<uint32_t>(curve->pointOffset) + curve->pointCount >
-                control.authored.curves.pointCount) {
+                control.authored().curves.pointCount) {
             return hash;
         }
         hashU16(hash, curve->pointCount);
@@ -107,7 +107,7 @@ FLASHMEM uint32_t sourceGeometryRevisionImpl(
         hashByte(hash, curve->flags);
         hashByte(hash, static_cast<uint8_t>(curve->origin));
         for (uint16_t index = 0U; index < curve->pointCount; ++index) {
-            const auto& point = control.authored.curves.points[
+            const auto& point = control.authored().curves.points[
                 static_cast<uint16_t>(curve->pointOffset + index)
             ];
             hashU16(hash, point.tick);
@@ -160,7 +160,7 @@ bool sampleSource(
         );
     } else if (source->kind == ModulatorKind::RECORDED_SHAPE) {
         const auto* curve = findProjectCurve(
-            control->authored.curves,
+            control->authored().curves,
             source->parameters.recordedCurveId
         );
         if (!curve || curve->pointCount == 0U) return false;
@@ -205,7 +205,7 @@ bool sampleRuntimeMarker(
         control->plan.sources[descriptor.runtimeIndex].id != source->id ||
         !projectModulatorRuntimeProjectionAtIndex(
             control->plan,
-            control->authored.curves,
+            control->authored().curves,
             control->runtime,
             time,
             descriptor.runtimeIndex,
@@ -259,7 +259,7 @@ FLASHMEM ms::ui::KeyValueSparkline buildSource(
 ) {
     if (source.kind == ModulatorKind::RECORDED_SHAPE) {
         const auto* curve = findProjectCurve(
-            control.authored.curves,
+            control.authored().curves,
             source.parameters.recordedCurveId
         );
         if (!curve || curve->pointCount == 0U) return {};

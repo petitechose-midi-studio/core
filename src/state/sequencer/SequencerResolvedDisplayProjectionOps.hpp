@@ -47,6 +47,7 @@ struct SequencerResolvedDisplayProjectionContext {
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings{};
     StepProperty activeProperty = StepProperty::NOTE;
     bool childContext = false;
+    bool runtimeProjectionActive = true;
     uint8_t length = 0;
     bool probabilityCycleMaskActive = false;
     bool effectiveScaleFeedbackRelevant = false;

@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -48,6 +49,7 @@ struct Harness {
                   state.projectTrackEditor,
                   state.projectTracks,
                   state.sequencerTracks,
+                  state.sequencerClips,
                   core::handler::SharedTrackDomainServices::fromCoreState(state),
                   core::state::project::ProjectTrackDomainServices::fromCoreState(state),
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
@@ -215,6 +217,77 @@ void test_dirty_type_draft_blocks_track_retarget_until_resolved() {
     assert(h.state.projectTrackEditor.trackIndex == 1U);
 }
 
+void test_track_type_conversion_rejects_mixed_kind_clip_sets() {
+    Harness h;
+    assert(h.state.createSequencerClip({0U, 1U}));
+    assert(h.handler.openActiveTrack());
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    assert(h.state.projectTrackEditor.typeChangeBlocked);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.sequencerTracks.isDrumTrack(0U));
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+
+    assert(h.state.deleteSequencerClip({0U, 1U}));
+    h.handler.update(0U);
+    assert(!h.state.projectTrackEditor.typeChangeBlocked);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.sequencerTracks.isDrumTrack(0U));
+
+    std::cout << "[PASS] Track kind conversion guards every Clip on the Track\n";
+}
+
+void test_name_keyboard_applies_once_and_cancel_stays_local() {
+    Harness h;
+    assert(h.handler.openActiveTrack());
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.projectTrackEditor.selectedProperty ==
+           core::state::project::ProjectTrackEditorProperty::NAME);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.projectTrackEditor.textEditing);
+    assert(std::strcmp(
+        h.state.projectTrackEditor.nameDraft.data(),
+        "Track 1"
+    ) == 0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(std::strlen(h.state.projectTrackEditor.nameDraft.data()) ==
+           core::state::project::PROJECT_TRACK_NAME_MAX_LENGTH);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.projectTrackEditor.textEditing);
+    assert(core::state::project::projectTrackCustomName(
+        h.state.projectTracks, 0U
+    )[0] != '\0');
+    assert(h.state.projectTrackHistory.undoCount() == 1U);
+
+    const auto applied = h.state.projectTracks.authored.names[0U];
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.projectTrackEditor.textEditing);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.projectTrackEditor.textEditing);
+    assert(h.state.projectTrackEditor.active);
+    assert(h.state.projectTracks.authored.names[0U] == applied);
+    assert(h.state.projectTrackHistory.undoCount() == 1U);
+
+    assert(h.state.undoProjectHistory());
+    assert(core::state::project::projectTrackCustomName(
+        h.state.projectTracks, 0U
+    )[0] == '\0');
+}
+
 }  // namespace
 
 int main() {
@@ -223,6 +296,8 @@ int main() {
     test_bottom_mute_and_solo_are_global_history_commands();
     test_track_type_conversion_is_destructive_but_fully_undoable();
     test_dirty_type_draft_blocks_track_retarget_until_resolved();
+    test_track_type_conversion_rejects_mixed_kind_clip_sets();
+    test_name_keyboard_applies_once_and_cancel_stays_local();
     std::cout << "All ProjectTrackEditorHandler tests passed.\n";
     return 0;
 }

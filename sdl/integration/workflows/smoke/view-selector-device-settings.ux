@@ -12,15 +12,15 @@
 220 capture screen selector_open
 
 # Sequencer no longer exposes the settings gear action in the bottom strip.
-300 encoder NAV 1
+300 encoder NAV 0.01
 380 capture screen sequencer_item_without_settings
 450 tap BOTTOM_LEFT 60
 620 capture screen view_list_without_extra_entry
 
 # Device Settings is an explicit selector item and switches active view.
-740 encoder NAV 1
-840 encoder NAV 1
-940 encoder NAV 1
+740 encoder NAV 0.01
+840 encoder NAV 0.01
+940 encoder NAV 0.01
 1020 capture screen device_settings_item
 1120 button LEFT_TOP up
 1300 capture screen device_settings_open

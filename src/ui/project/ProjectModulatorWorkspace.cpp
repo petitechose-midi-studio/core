@@ -7,8 +7,10 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
+#include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 
 #include "state/modulation/ModulationDepthParameterMapping.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
@@ -23,6 +25,8 @@
 
 namespace core::ui::project {
 namespace {
+
+using ms::ui::text::copyTruncatedIfChanged;
 
 namespace theme = standalone::theme;
 using namespace core::state::modulation;
@@ -77,25 +81,6 @@ FLASHMEM lv_obj_t* createLabel(
     return label;
 }
 
-template <size_t Capacity>
-FLASHMEM bool copyText(
-    std::array<char, Capacity>& destination,
-    const char* source
-) {
-    static_assert(Capacity > 0U);
-    std::array<char, Capacity> next{};
-    if (source) {
-        size_t index = 0U;
-        while (index + 1U < Capacity && source[index] != '\0') {
-            next[index] = source[index];
-            ++index;
-        }
-    }
-    if (destination == next) return false;
-    destination = next;
-    return true;
-}
-
 FLASHMEM uint16_t normalizedToQ16(float value) {
     return static_cast<uint16_t>(std::lround(
         std::clamp(value, 0.0f, 1.0f) * 65535.0f
@@ -109,7 +94,7 @@ FLASHMEM bool sourceUsesPositiveDomain(
     if (source.kind == ModulatorKind::LFO) return false;
     if (source.kind == ModulatorKind::ADSR) return true;
     const auto* curve = findProjectCurve(
-        control.authored.curves,
+        control.authored().curves,
         source.parameters.recordedCurveId
     );
     return curve != nullptr &&
@@ -216,8 +201,8 @@ FLASHMEM void populateAuditionDepthRow(
         ? depth_parameter::amountQ15ToPercent(
               binding->amountQ15,
               depth_parameter::scaleFor(
-                  control->authored.modulation,
-                  control->authored.curves,
+                  control->authored().modulation,
+                  control->authored().curves,
                   *binding
               )
           )
@@ -427,13 +412,14 @@ FLASHMEM void ProjectModulatorWorkspace::createCard(uint8_t index) {
 FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     const ProjectModulatorWorkspaceProps& props
 ) {
+    OC_PERF_SCOPE(perfHeader, "ui.project.modulator.header");
     const auto& source = *props.source;
     const bool audition = props.session.audition();
     const bool existing = props.session.existingAudition();
     const bool enabled =
         (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     const bool recording = captureMatches(props);
-    if (copyText(titleText_, source.name.data())) {
+    if (copyTruncatedIfChanged(titleText_, source.name.data())) {
         lv_label_set_text_static(title_, titleText_.data());
     }
     standalone::icons::set(
@@ -490,8 +476,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
         const int depth = depth_parameter::amountQ15ToPercent(
             props.auditionBinding->amountQ15,
             depth_parameter::scaleFor(
-                props.control->authored.modulation,
-                props.control->authored.curves,
+                props.control->authored().modulation,
+                props.control->authored().curves,
                 *props.auditionBinding
             )
         );
@@ -561,6 +547,7 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
 FLASHMEM void ProjectModulatorWorkspace::renderCards(
     const ProjectModulatorWorkspaceProps& props
 ) {
+    OC_PERF_SCOPE(perfCards, "ui.project.modulator.cards");
     const auto layout = core::state::project::modulators::sourceWorkspaceLayout(
         props.source->kind,
         props.options,
@@ -648,13 +635,13 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
                 captureStatusLabel(props.capture->status)
             );
         }
-        if (copyText(card.iconText, row.icon.data())) {
+        if (copyTruncatedIfChanged(card.iconText, row.icon.data())) {
             lv_label_set_text_static(card.icon, card.iconText.data());
         }
-        if (copyText(card.labelText, row.key.data())) {
+        if (copyTruncatedIfChanged(card.labelText, row.key.data())) {
             lv_label_set_text_static(card.label, card.labelText.data());
         }
-        if (copyText(card.valueText, row.value.data())) {
+        if (copyTruncatedIfChanged(card.valueText, row.value.data())) {
             lv_label_set_text_static(card.value, card.valueText.data());
         }
 
@@ -781,7 +768,7 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
         out.base = normalizedToQ16(rawValue);
     } else {
         const auto* curve = findProjectCurve(
-            context->control->authored.curves,
+            context->control->authored().curves,
             source.parameters.recordedCurveId
         );
         if (!curve || curve->pointCount == 0U) return false;
@@ -844,7 +831,7 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
     ProjectModulatorRuntimeProjection projection{};
     if (!projectModulatorRuntimeProjectionAtIndex(
             control.plan,
-            control.authored.curves,
+            control.authored().curves,
             control.runtime,
             time,
             context->runtimeSourceIndex,
@@ -893,6 +880,7 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
 FLASHMEM void ProjectModulatorWorkspace::renderCurve(
     const ProjectModulatorWorkspaceProps& props
 ) {
+    OC_PERF_SCOPE(perfCurve, "ui.project.modulator.curve");
     const lv_coord_t curveWidth = std::max<lv_coord_t>(
         1,
         lv_obj_get_width(root_) - 2 * HORIZONTAL_PAD
@@ -1011,8 +999,8 @@ FLASHMEM void ProjectModulatorWorkspace::presentFeedback(
     const char* value
 ) {
     if (key == nullptr || value == nullptr) return;
-    copyText(editFeedbackKeyText_, key);
-    copyText(editFeedbackValueText_, value);
+    copyTruncatedIfChanged(editFeedbackKeyText_, key);
+    copyTruncatedIfChanged(editFeedbackValueText_, value);
     lv_label_set_text_static(edit_feedback_key_, editFeedbackKeyText_.data());
     lv_label_set_text_static(edit_feedback_value_, editFeedbackValueText_.data());
     lv_obj_clear_flag(edit_feedback_, LV_OBJ_FLAG_HIDDEN);
@@ -1074,16 +1062,16 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
             row
         );
     }
-    copyText(editFeedbackKeyText_, row.key.data());
-    if (item == Item::ATTACK) copyText(editFeedbackKeyText_, "Attack");
-    if (item == Item::DELAY) copyText(editFeedbackKeyText_, "Delay");
-    if (item == Item::HOLD) copyText(editFeedbackKeyText_, "Hold");
-    if (item == Item::DECAY) copyText(editFeedbackKeyText_, "Decay");
-    if (item == Item::SUSTAIN) copyText(editFeedbackKeyText_, "Sustain");
-    if (item == Item::RELEASE) copyText(editFeedbackKeyText_, "Release");
-    if (item == Item::SMOOTH) copyText(editFeedbackKeyText_, "Smooth");
-    if (item == Item::DEPTH) copyText(editFeedbackKeyText_, "Depth");
-    copyText(editFeedbackValueText_, row.value.data());
+    copyTruncatedIfChanged(editFeedbackKeyText_, row.key.data());
+    if (item == Item::ATTACK) copyTruncatedIfChanged(editFeedbackKeyText_, "Attack");
+    if (item == Item::DELAY) copyTruncatedIfChanged(editFeedbackKeyText_, "Delay");
+    if (item == Item::HOLD) copyTruncatedIfChanged(editFeedbackKeyText_, "Hold");
+    if (item == Item::DECAY) copyTruncatedIfChanged(editFeedbackKeyText_, "Decay");
+    if (item == Item::SUSTAIN) copyTruncatedIfChanged(editFeedbackKeyText_, "Sustain");
+    if (item == Item::RELEASE) copyTruncatedIfChanged(editFeedbackKeyText_, "Release");
+    if (item == Item::SMOOTH) copyTruncatedIfChanged(editFeedbackKeyText_, "Smooth");
+    if (item == Item::DEPTH) copyTruncatedIfChanged(editFeedbackKeyText_, "Depth");
+    copyTruncatedIfChanged(editFeedbackValueText_, row.value.data());
     const bool temporal = item == Item::DELAY || item == Item::ATTACK ||
         item == Item::HOLD || item == Item::DECAY ||
         item == Item::RELEASE || item == Item::SMOOTH;
@@ -1112,10 +1100,10 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
                 parameter
             ))
         );
-        copyText(editFeedbackValueText_, exact.data());
+        copyTruncatedIfChanged(editFeedbackValueText_, exact.data());
     }
     if (item == Item::TIMING && props.source->kind == ModulatorKind::ADSR) {
-        copyText(
+        copyTruncatedIfChanged(
             editFeedbackValueText_,
             modulatorAdsrTiming(props.source->parameters.adsr.traits) ==
                     ModulatorTimingMode::FREE
@@ -1132,7 +1120,7 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
         } else if (response == ModulatorAdsrCurve::SMOOTH) {
             curve = "Ease";
         }
-        copyText(editFeedbackValueText_, curve);
+        copyTruncatedIfChanged(editFeedbackValueText_, curve);
     }
     presentFeedback(
         editFeedbackKeyText_.data(),
@@ -1207,10 +1195,18 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     if (!visible_) {
         lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
         visible_ = true;
+        OC_PERF_SCOPE(perfLayout, "ui.project.modulator.layout");
         lv_obj_update_layout(root_);
     } else if (!has_rendered_source_) {
+        OC_PERF_SCOPE(perfLayout, "ui.project.modulator.layout");
         lv_obj_update_layout(root_);
     }
+
+    // Parent geometry is settled above. This synchronous update only changes
+    // our clipped, effect-free children; collect their damage once instead of
+    // traversing the display for every intermediate style/text/layout change.
+    oc::ui::lvgl::StaticSurfaceInvalidationBatch<1> invalidation(root_);
+    invalidation.include(root_);
 
     const bool sameContext = has_rendered_source_ &&
         rendered_source_id_ == props.source->id &&
@@ -1241,6 +1237,8 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     showCaptureFeedback(props, captureActive);
 
     rendered_source_ = *props.source;
+    // Deferred curve callbacks borrow our cache, not an exchangeable domain.
+    curve_sample_context_.source = &rendered_source_;
     rendered_source_id_ = props.source->id;
     rendered_authored_revision_ = props.control->authoredRevision;
     rendered_selected_index_ = props.selectedIndex;

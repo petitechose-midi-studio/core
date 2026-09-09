@@ -36,8 +36,8 @@
       "oc-ui-lvgl-components"
     ],
     "coreNativePins": {
-      "oc-framework": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
-      "oc-note": "539e48a1529165c982e9ea619b2c319ad9128f2b"
+      "oc-framework": "24037dcee919f955cb3626b92853fd963ead87aa",
+      "oc-note": "ca8bb368e092a78ece270a5d6d31416f966fed44"
     },
     "coreReleaseLibraries": [
       "${oc_sdk_deps.lib_deps}",
@@ -45,12 +45,12 @@
       "ms-ui"
     ],
     "coreReleasePins": {
-      "oc-framework": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
-      "oc-hal-common": "e3aa784055554922d130bba8065422d11a7dcd02",
-      "oc-hal-teensy": "f3c49f75aeda045c28d698bca0ec450e20a56838",
-      "oc-note": "539e48a1529165c982e9ea619b2c319ad9128f2b",
-      "oc-ui-lvgl": "04eeef42aee5b88863a22736af06b52c5815aed1",
-      "oc-ui-lvgl-components": "b04f88c32319f9bf62c016d16b3bbb5b71696011"
+      "oc-framework": "24037dcee919f955cb3626b92853fd963ead87aa",
+      "oc-hal-common": "5567103c878e3c9e5be8929d1301a15b4bfa02aa",
+      "oc-hal-teensy": "617769b086b385aa3a035611e217efda3144eb57",
+      "oc-note": "ca8bb368e092a78ece270a5d6d31416f966fed44",
+      "oc-ui-lvgl": "4d6276976b7db31f4af0b3dd6ffc8c8589cb6dba",
+      "oc-ui-lvgl-components": "5bad36e8a81237bd5ab25c277c9f27ebb6735066"
     },
     "libremidi": {
       "immutableCommit": true,
@@ -74,30 +74,30 @@
     "bitwig/cmake/MidiStudioBitwigSources.cmake": "3cf5ed1ec09e37f0204445721244a4056db25b20b1a85082128b1677d893b174",
     "bitwig/platformio.ini": "12a2ea56f76573c7df457c1c39415904b771d6fd978cb0390058f3fe9966eea0",
     "bitwig/sdl/app.cmake": "1fb132597404331082690c7f7af6cd71f3f878262f77e2183ad6c1aa851676a8",
-    "core/.github/release-tooling.json": "cfa0160700381645ebf8cfb9e069a6126520f3ef503eeea0306755aad2bd6877",
+    "core/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "59a868197d6257f907b03680c83809409ab8dfbad9d86e8bfcab2021d483722e",
-    "core/CMakeLists.txt": "96c2e3cf4ef19f7c82f422cf91ce176be93d10818a427782c6ed42c9e04b3c6e",
-    "core/cmake/MsCoreProductSources.cmake": "328827f744f18cf1452a5d07e1eb7b8ae438df752c8e72b759a8ea64424d2500",
+    "core/.github/workflows/ci.yml": "063fc45b73b3f02aaf8bf5abbd3c494ad60492e570c08865fb64612319db8dc0",
+    "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
+    "core/cmake/MsCoreProductSources.cmake": "5526d4fde1fbbd4fd623ac3258e074855a33993debed33753259d0be730a2439",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
-    "core/cmake/MsCoreSources.cmake": "8febd6b181f70809e57e1f2f90a7389e542046c8037d87bb802d6dfc0ea7f227",
+    "core/cmake/MsCoreSources.cmake": "38e68246d11f7831ee6408cb35475c644a56b95b81357ce8e1ce8d17e14783e1",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
-    "core/oc-native-sdk.ini": "46992a84fb08ac9840c947836a605e4a5ed6c42d2c85d856b0e279098dfa5261",
-    "core/oc-sdk.ini": "a914a246698a05b71150cfff6bbf96e2cb153cc1c1ae16490e02a111ea3eef0b",
-    "core/platformio.ini": "c69abbd5b8e0eb629569a2617f19bf9426175d02725489903c6f16567619f83d",
+    "core/oc-native-sdk.ini": "e07fac41553e41b784c1c2b1ed804f187a39d7b34320dbcd431b670e11c68136",
+    "core/oc-sdk.ini": "a1f3125ef79a7b098364916fda724b8b6e0c2817d3ed970599c90d8b0884bd56",
+    "core/platformio.ini": "9cd5eddeec0bede71d3160acf37165d088c8244927011b061cb66d82f08b2342",
     "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
-    "core/sdl/CMakeLists.txt": "966fceb633f8910e1737b0afa81db0160cad8c45f0b95260368763ecd76dff38",
+    "core/sdl/CMakeLists.txt": "3035159be113b55bcce4c7383c6d98bf10cac27a74679d066b58a170d00b4901",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
     "deviceSupport/library.json": "13a6d12ead206723952bf3dd62148512fbb790c7a3a7786d413c6415da83ba41",
-    "deviceSupport/platformio.ini": "7265fd9ad1515fa955af00274a983053ddebf99b48e05926bb19867f3befa127",
+    "deviceSupport/platformio.ini": "115832584d71884c2449db60c44f4b24a48abc3bbaa216f869833c4d567667fe",
     "note/cmake/OpenControlNoteSources.cmake": "4d8928c67b1cd2814716ccb1998db1fb708d64968fa39aa6fda2f5fdf7ce830c",
     "ui/CMakeLists.txt": "381a454aee7465a850b4cbe63110925d7c44bad738f4345ec65148c7d212f9d9",
     "ui/cmake/MidiStudioUiSources.cmake": "3dac62dacd71abffca26e868f5e17038d023ccbbb968788b2b44b6d830ffee7d",
     "ui/library.json": "33a3e9c8e3afe01667f505f8e9b64947a9b76358ea099a2dc8f4b77d3e24db61",
-    "uiLvgl/cmake/OpenControlUiLvglSources.cmake": "40180b7221ab5565cd7b095c06d299145587583850d6339192afecc497a73ae3",
+    "uiLvgl/cmake/OpenControlUiLvglSources.cmake": "d29957525b2b4024b371ed7d78cc1562f4c1b3e72bfdecf604277e4c4b67b220",
     "uiLvglComponents/cmake/OpenControlUiLvglComponentsSources.cmake": "12832007c339eacc120f8fcdca14d0c177b9618576ef2faf38398d37628bbf25"
   },
   "profiles": {
@@ -128,7 +128,7 @@
       "pendingNotifications": 96
     },
     "corePioNative": {
-      "buttonBindings": 256,
+      "buttonBindings": 272,
       "buttons": 48,
       "cobsFrame": 4096,
       "cxxStandard": "gnu++17",
@@ -140,13 +140,13 @@
     },
     "coreTeensy": {
       "board": "teensy41",
-      "buttonBindings": 256,
+      "buttonBindings": 272,
       "buttons": 48,
       "cobsFrame": 32768,
       "cpuHz": 450000000,
       "cxxStandard": "gnu++17",
       "encoderBindings": 96,
-      "itcmMax": 294912,
+      "itcmMax": 327680,
       "linker": "script/pio/imxrt1062_t41_product.ld",
       "pendingNotifications": 96,
       "platform": "platformio/teensy@5.2.0",
@@ -170,7 +170,7 @@
       "OC_MAX_PENDING_NOTIFICATIONS": 64
     },
     "sdlWasm": {
-      "buttonBindings": 256,
+      "buttonBindings": 272,
       "buttons": 64,
       "cobsFrame": 4096,
       "cxxStandard": 20,
@@ -190,18 +190,18 @@
     },
     "deviceSupport": {
       "cleanExpected": true,
-      "commit": "923550edbd8bb0a7bef3bee74248cc1e116db6e3",
-      "tree": "2b8f8d39a9ecba55389a5be5e22979cd6c5ec4eb"
+      "commit": "20c328431f55ef86546947b74efd66865d2ad2d9",
+      "tree": "35e4d83fbe44e4427e2c5420052d1fe44a85682d"
     },
     "framework": {
       "cleanExpected": true,
-      "commit": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
-      "tree": "be670eaf87777c0be8fb5e6122e1e89be9562f11"
+      "commit": "24037dcee919f955cb3626b92853fd963ead87aa",
+      "tree": "4002c4e31a465b9f54c91005d6fd59a0591f21f5"
     },
     "halCommon": {
       "cleanExpected": true,
-      "commit": "e3aa784055554922d130bba8065422d11a7dcd02",
-      "tree": "92e3688c3905869991e23fb6bbf9c878ac18ff7b"
+      "commit": "5567103c878e3c9e5be8929d1301a15b4bfa02aa",
+      "tree": "67d96425b153248a95246603f986da6eca86011f"
     },
     "halMidi": {
       "cleanExpected": true,
@@ -220,28 +220,28 @@
     },
     "halTeensy": {
       "cleanExpected": true,
-      "commit": "f3c49f75aeda045c28d698bca0ec450e20a56838",
-      "tree": "d096547462df9cf7cd76a683cea42cf127281c4b"
+      "commit": "617769b086b385aa3a035611e217efda3144eb57",
+      "tree": "a76d64526f1b3c5a98df58bbe4587719bf56da1d"
     },
     "note": {
       "cleanExpected": true,
-      "commit": "539e48a1529165c982e9ea619b2c319ad9128f2b",
-      "tree": "7b09f51868bf4e71c45c97b4891c385e1a60ec67"
+      "commit": "ca8bb368e092a78ece270a5d6d31416f966fed44",
+      "tree": "62a5cb2c9c96907e3284511f2e4c078c7572a1c7"
     },
     "ui": {
       "cleanExpected": true,
-      "commit": "225562269c47ff8f56ff1f252c1e926ceb887701",
-      "tree": "2bdd1602abb75a24b9b7953af9ac27af5e6c9815"
+      "commit": "f880f20a9eb258a584c11ad93cdfa918ef5bb8f2",
+      "tree": "8b703efdfa49dd70e5a63707c612b9f89cb84732"
     },
     "uiLvgl": {
       "cleanExpected": true,
-      "commit": "04eeef42aee5b88863a22736af06b52c5815aed1",
-      "tree": "7a399ffd7239b35f91fd00865e3e38963a64fe98"
+      "commit": "4d6276976b7db31f4af0b3dd6ffc8c8589cb6dba",
+      "tree": "ebcd89beb1fe05bf9aa74632a4d1021b46a67ef9"
     },
     "uiLvglComponents": {
       "cleanExpected": true,
-      "commit": "b04f88c32319f9bf62c016d16b3bbb5b71696011",
-      "tree": "3459309f398fe54e85d279be77a21ea59cfe0ac1"
+      "commit": "5bad36e8a81237bd5ab25c277c9f27ebb6735066",
+      "tree": "9a5736187a0a7210d8c04ece0292257bbfba60a7"
     }
   },
   "schema": 3,
@@ -332,8 +332,9 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "coreNativeCmakeImplementations": {
-      "count": 329,
+      "count": 330,
       "paths": [
+        "src/app/RpcLifetime.cpp",
         "src/context/standalone/MacroOverlayInvalidationBindings.cpp",
         "src/context/standalone/MacroViewActivationContract.cpp",
         "src/context/standalone/SequencerChordFieldPresentation.cpp",
@@ -376,6 +377,7 @@
         "src/handler/project/ProjectHandlerValueEditing.cpp",
         "src/handler/project/ProjectLifecycleDomainServices.cpp",
         "src/handler/project/ProjectScaleSettingsDomainServices.cpp",
+        "src/handler/sequencer/ClipWorkspaceHandler.cpp",
         "src/handler/sequencer/DrumLaneEditorHandler.cpp",
         "src/handler/sequencer/PatternPitchSettingsDomainServices.cpp",
         "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
@@ -481,14 +483,10 @@
         "src/persistence/SequencerPersistenceEnvelope.cpp",
         "src/persistence/StepPresetFileStore.cpp",
         "src/persistence/StorageRecoveryMachine.cpp",
-        "src/protocol/filesystem/FileSystemJobRpc.cpp",
-        "src/protocol/filesystem/FileSystemRpcCodec.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
-        "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
-        "src/protocol/filesystem/FileSystemRpcHandler.cpp",
-        "src/protocol/filesystem/FileSystemRpcInternal.cpp",
-        "src/protocol/filesystem/FileSystemRpcWriteSession.cpp",
+        "src/protocol/filesystem/RpcBody.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemRpc.cpp",
+        "src/protocol/filesystem/UnifiedFileTransfer.cpp",
         "src/sequencer/ClockSourceSelector.cpp",
         "src/sequencer/DrumPlaybackEngine.cpp",
         "src/sequencer/ExternalClockEstimator.cpp",
@@ -559,6 +557,7 @@
         "src/state/macro/MacroSlotClipboardPlan.cpp",
         "src/state/macro/MacroUiState.cpp",
         "src/state/macro/MacroWorkflow.cpp",
+        "src/state/modulation/ProjectControlHistory.cpp",
         "src/state/modulation/ProjectControlMacroConversion.cpp",
         "src/state/modulation/ProjectControlMacroCurveOps.cpp",
         "src/state/modulation/ProjectControlMacroOps.cpp",
@@ -604,6 +603,9 @@
         "src/state/sequencer/SequencerChordPresetModel.cpp",
         "src/state/sequencer/SequencerChordProjectionWorkspace.cpp",
         "src/state/sequencer/SequencerChordUiOps.cpp",
+        "src/state/sequencer/SequencerClipGridState.cpp",
+        "src/state/sequencer/SequencerClipLaunchQueue.cpp",
+        "src/state/sequencer/SequencerClipRegionOps.cpp",
         "src/state/sequencer/SequencerContentProjectionOps.cpp",
         "src/state/sequencer/SequencerContentStepOps.cpp",
         "src/state/sequencer/SequencerContentViewInternal.cpp",
@@ -624,7 +626,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPatternRegionOps.cpp",
         "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
@@ -664,11 +665,12 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "87d636caa162167527987bee2b076a06443e83c70b07935e1c719c4f8d146b66"
+      "sha256": "2f8b82af9f5f8451cc54431ad4aa56e62043ea193d54cc4863ec8f1376f94f7c"
     },
     "coreSdlWasmImplementations": {
-      "count": 417,
+      "count": 423,
       "paths": [
+        "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
         "src/context/standalone/DrumLaneEditorPresenter.cpp",
@@ -744,6 +746,7 @@
         "src/handler/project/ProjectHandlerValueEditing.cpp",
         "src/handler/project/ProjectLifecycleDomainServices.cpp",
         "src/handler/project/ProjectScaleSettingsDomainServices.cpp",
+        "src/handler/sequencer/ClipWorkspaceHandler.cpp",
         "src/handler/sequencer/DrumLaneEditorHandler.cpp",
         "src/handler/sequencer/PatternPitchSettingsDomainServices.cpp",
         "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
@@ -849,14 +852,10 @@
         "src/persistence/SequencerPersistenceEnvelope.cpp",
         "src/persistence/StepPresetFileStore.cpp",
         "src/persistence/StorageRecoveryMachine.cpp",
-        "src/protocol/filesystem/FileSystemJobRpc.cpp",
-        "src/protocol/filesystem/FileSystemRpcCodec.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
-        "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
-        "src/protocol/filesystem/FileSystemRpcHandler.cpp",
-        "src/protocol/filesystem/FileSystemRpcInternal.cpp",
-        "src/protocol/filesystem/FileSystemRpcWriteSession.cpp",
+        "src/protocol/filesystem/RpcBody.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemRpc.cpp",
+        "src/protocol/filesystem/UnifiedFileTransfer.cpp",
         "src/sequencer/ClockSourceSelector.cpp",
         "src/sequencer/DrumPlaybackEngine.cpp",
         "src/sequencer/ExternalClockEstimator.cpp",
@@ -927,6 +926,7 @@
         "src/state/macro/MacroSlotClipboardPlan.cpp",
         "src/state/macro/MacroUiState.cpp",
         "src/state/macro/MacroWorkflow.cpp",
+        "src/state/modulation/ProjectControlHistory.cpp",
         "src/state/modulation/ProjectControlMacroConversion.cpp",
         "src/state/modulation/ProjectControlMacroCurveOps.cpp",
         "src/state/modulation/ProjectControlMacroOps.cpp",
@@ -972,6 +972,9 @@
         "src/state/sequencer/SequencerChordPresetModel.cpp",
         "src/state/sequencer/SequencerChordProjectionWorkspace.cpp",
         "src/state/sequencer/SequencerChordUiOps.cpp",
+        "src/state/sequencer/SequencerClipGridState.cpp",
+        "src/state/sequencer/SequencerClipLaunchQueue.cpp",
+        "src/state/sequencer/SequencerClipRegionOps.cpp",
         "src/state/sequencer/SequencerContentProjectionOps.cpp",
         "src/state/sequencer/SequencerContentStepOps.cpp",
         "src/state/sequencer/SequencerContentViewInternal.cpp",
@@ -992,7 +995,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPatternRegionOps.cpp",
         "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
@@ -1037,6 +1039,7 @@
         "src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.cpp",
         "src/ui/sequencer/SequencerChordPresetPresentation.cpp",
         "src/ui/sequencer/SequencerChordVoiceRail.cpp",
+        "src/ui/sequencer/SequencerClipLauncherSurface.cpp",
         "src/ui/sequencer/SequencerHeaderBar.cpp",
         "src/ui/sequencer/SequencerHeaderBarRenderModel.cpp",
         "src/ui/sequencer/SequencerHeaderViewModelBuilder.cpp",
@@ -1079,6 +1082,10 @@
         "src/ui/view/RetainedViewRenderPolicy.cpp",
         "src/ui/view/SequencerView.cpp",
         "src/ui/widget/MacroKnobWidget.cpp",
+        "src/validation/benchmark/HardwareBenchmarkEndpoint.cpp",
+        "src/validation/benchmark/HardwareBenchmarkFixture.cpp",
+        "src/validation/benchmark/HardwareBenchmarkMetrics.cpp",
+        "src/validation/benchmark/HardwareBenchmarkRun.cpp",
         "src/validation/project/ProjectModulationBenchmark.cpp",
         "src/validation/project/ProjectStoreSmoke.cpp",
         "src/validation/ux/SemanticUxContext.cpp",
@@ -1087,11 +1094,12 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "94ab35e44718b6bc0d1603147f858f481b9d7bd6193c8af9ea22c2a6efc21d78"
+      "sha256": "553f2df6f85e3964872f30d95d032eb61ece52ce2da39acb12c3ffe20ef3e0c2"
     },
     "coreTeensyImplementations": {
-      "count": 405,
+      "count": 407,
       "paths": [
+        "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
         "src/context/standalone/DrumLaneEditorPresenter.cpp",
@@ -1162,6 +1170,7 @@
         "src/handler/project/ProjectHandlerValueEditing.cpp",
         "src/handler/project/ProjectLifecycleDomainServices.cpp",
         "src/handler/project/ProjectScaleSettingsDomainServices.cpp",
+        "src/handler/sequencer/ClipWorkspaceHandler.cpp",
         "src/handler/sequencer/DrumLaneEditorHandler.cpp",
         "src/handler/sequencer/PatternPitchSettingsDomainServices.cpp",
         "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
@@ -1267,14 +1276,10 @@
         "src/persistence/SequencerPersistenceEnvelope.cpp",
         "src/persistence/StepPresetFileStore.cpp",
         "src/persistence/StorageRecoveryMachine.cpp",
-        "src/protocol/filesystem/FileSystemJobRpc.cpp",
-        "src/protocol/filesystem/FileSystemRpcCodec.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
-        "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
-        "src/protocol/filesystem/FileSystemRpcHandler.cpp",
-        "src/protocol/filesystem/FileSystemRpcInternal.cpp",
-        "src/protocol/filesystem/FileSystemRpcWriteSession.cpp",
+        "src/protocol/filesystem/RpcBody.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemRpc.cpp",
+        "src/protocol/filesystem/UnifiedFileTransfer.cpp",
         "src/sequencer/ClockSourceSelector.cpp",
         "src/sequencer/DrumPlaybackEngine.cpp",
         "src/sequencer/ExternalClockEstimator.cpp",
@@ -1345,6 +1350,7 @@
         "src/state/macro/MacroSlotClipboardPlan.cpp",
         "src/state/macro/MacroUiState.cpp",
         "src/state/macro/MacroWorkflow.cpp",
+        "src/state/modulation/ProjectControlHistory.cpp",
         "src/state/modulation/ProjectControlMacroConversion.cpp",
         "src/state/modulation/ProjectControlMacroCurveOps.cpp",
         "src/state/modulation/ProjectControlMacroOps.cpp",
@@ -1390,6 +1396,9 @@
         "src/state/sequencer/SequencerChordPresetModel.cpp",
         "src/state/sequencer/SequencerChordProjectionWorkspace.cpp",
         "src/state/sequencer/SequencerChordUiOps.cpp",
+        "src/state/sequencer/SequencerClipGridState.cpp",
+        "src/state/sequencer/SequencerClipLaunchQueue.cpp",
+        "src/state/sequencer/SequencerClipRegionOps.cpp",
         "src/state/sequencer/SequencerContentProjectionOps.cpp",
         "src/state/sequencer/SequencerContentStepOps.cpp",
         "src/state/sequencer/SequencerContentViewInternal.cpp",
@@ -1410,7 +1419,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPatternRegionOps.cpp",
         "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
@@ -1455,6 +1463,7 @@
         "src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.cpp",
         "src/ui/sequencer/SequencerChordPresetPresentation.cpp",
         "src/ui/sequencer/SequencerChordVoiceRail.cpp",
+        "src/ui/sequencer/SequencerClipLauncherSurface.cpp",
         "src/ui/sequencer/SequencerHeaderBar.cpp",
         "src/ui/sequencer/SequencerHeaderBarRenderModel.cpp",
         "src/ui/sequencer/SequencerHeaderViewModelBuilder.cpp",
@@ -1498,15 +1507,16 @@
         "src/ui/view/SequencerView.cpp",
         "src/ui/widget/MacroKnobWidget.cpp"
       ],
-      "sha256": "2b3e6bb3ab88fbfb2269bc836db23b8d613af4bf3c44b1e0e7dfc7598e0ef3ac"
+      "sha256": "3c179c2d56a2ab27c935ace1d801e111494d315629535d3479c2bd1382c1965a"
     },
     "coreTotalHeaders": {
-      "count": 467,
+      "count": 485,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
         "src/app/OverlayTypes.hpp",
         "src/app/PhaseRetainingDeadline.hpp",
+        "src/app/RpcLifetime.hpp",
         "src/app/ViewTypes.hpp",
         "src/config/App.hpp",
         "src/config/InputIDs.hpp",
@@ -1581,6 +1591,7 @@
         "src/handler/project/ProjectHandlerInternals.hpp",
         "src/handler/project/ProjectLifecycleDomainServices.hpp",
         "src/handler/project/ProjectScaleSettingsDomainServices.hpp",
+        "src/handler/sequencer/ClipWorkspaceHandler.hpp",
         "src/handler/sequencer/DrumLaneAuditionServices.hpp",
         "src/handler/sequencer/DrumLaneEditorHandler.hpp",
         "src/handler/sequencer/PatternPitchSettingsDomainServices.hpp",
@@ -1695,9 +1706,10 @@
         "src/persistence/SequencerPersistencePayloads.hpp",
         "src/persistence/StepPresetFileStore.hpp",
         "src/persistence/StorageRecoveryMachine.hpp",
-        "src/protocol/filesystem/FileSystemJobRpc.hpp",
-        "src/protocol/filesystem/FileSystemRpc.hpp",
-        "src/protocol/filesystem/FileSystemRpcInternal.hpp",
+        "src/protocol/filesystem/RpcBody.hpp",
+        "src/protocol/filesystem/UnifiedFileSystemEndpoint.hpp",
+        "src/protocol/filesystem/UnifiedFileSystemRpc.hpp",
+        "src/protocol/filesystem/UnifiedFileTransfer.hpp",
         "src/sequencer/ClockSourceSelector.hpp",
         "src/sequencer/DrumPlaybackEngine.hpp",
         "src/sequencer/ExternalClockEstimator.hpp",
@@ -1769,6 +1781,7 @@
         "src/state/modulation/ModulatorEnvelopeTiming.hpp",
         "src/state/modulation/ModulatorLfoParameterMapping.hpp",
         "src/state/modulation/ProjectControlDomainState.hpp",
+        "src/state/modulation/ProjectControlHistory.hpp",
         "src/state/modulation/ProjectControlMacroOps.hpp",
         "src/state/modulation/ProjectControlMacroOpsInternal.hpp",
         "src/state/modulation/ProjectControlRuntime.hpp",
@@ -1812,8 +1825,13 @@
         "src/state/sequencer/SequencerChordProjectionWorkspace.hpp",
         "src/state/sequencer/SequencerChordState.hpp",
         "src/state/sequencer/SequencerChordUiOps.hpp",
+        "src/state/sequencer/SequencerClipGridState.hpp",
+        "src/state/sequencer/SequencerClipLaunchQueue.hpp",
+        "src/state/sequencer/SequencerClipRegionOps.hpp",
+        "src/state/sequencer/SequencerClipState.hpp",
         "src/state/sequencer/SequencerContentViewInternal.hpp",
         "src/state/sequencer/SequencerContentViewOps.hpp",
+        "src/state/sequencer/SequencerDetachedEditor.hpp",
         "src/state/sequencer/SequencerExpansionBudgetProjection.hpp",
         "src/state/sequencer/SequencerGraphAsset.hpp",
         "src/state/sequencer/SequencerGraphCanonicalPolicy.hpp",
@@ -1826,10 +1844,10 @@
         "src/state/sequencer/SequencerNoteSpelling.hpp",
         "src/state/sequencer/SequencerPatternEditorOps.hpp",
         "src/state/sequencer/SequencerPatternEditorState.hpp",
+        "src/state/sequencer/SequencerPatternObservation.hpp",
         "src/state/sequencer/SequencerPatternPreset.hpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.hpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.hpp",
-        "src/state/sequencer/SequencerPatternRegionOps.hpp",
         "src/state/sequencer/SequencerPatternState.hpp",
         "src/state/sequencer/SequencerPitchEditAuthority.hpp",
         "src/state/sequencer/SequencerPresetLibraryActionPolicy.hpp",
@@ -1911,6 +1929,7 @@
         "src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.hpp",
         "src/ui/sequencer/SequencerChordPresetPresentation.hpp",
         "src/ui/sequencer/SequencerChordVoiceRail.hpp",
+        "src/ui/sequencer/SequencerClipLauncherSurface.hpp",
         "src/ui/sequencer/SequencerHeaderBar.hpp",
         "src/ui/sequencer/SequencerHeaderBarRenderModel.hpp",
         "src/ui/sequencer/SequencerHeaderViewModelBuilder.hpp",
@@ -1961,6 +1980,14 @@
         "src/ui/view/SequencerView.hpp",
         "src/ui/widget/MacroKnobVisualPolicy.hpp",
         "src/ui/widget/MacroKnobWidget.hpp",
+        "src/validation/benchmark/BenchFileSystem.hpp",
+        "src/validation/benchmark/BenchInput.hpp",
+        "src/validation/benchmark/BenchStorage.hpp",
+        "src/validation/benchmark/HardwareBenchmarkEndpoint.hpp",
+        "src/validation/benchmark/HardwareBenchmarkFixture.hpp",
+        "src/validation/benchmark/HardwareBenchmarkMetrics.hpp",
+        "src/validation/benchmark/HardwareBenchmarkRun.hpp",
+        "src/validation/fixtures/MacroModulationFixture.hpp",
         "src/validation/project/ProjectModulationBenchmark.hpp",
         "src/validation/project/ProjectStoreSmoke.hpp",
         "src/validation/ux/SemanticUxContext.hpp",
@@ -1971,11 +1998,12 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "a55bb4930187651fab177a0e23217ea055d651e35ff5cee4088bd41310afbd0c"
+      "sha256": "05c69c8685a3e83337e693517ac760ad1ea4788c72720cfeb18cd55b07dfd4e4"
     },
     "coreTotalImplementations": {
-      "count": 417,
+      "count": 423,
       "paths": [
+        "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
         "src/context/standalone/DrumLaneEditorPresenter.cpp",
@@ -2051,6 +2079,7 @@
         "src/handler/project/ProjectHandlerValueEditing.cpp",
         "src/handler/project/ProjectLifecycleDomainServices.cpp",
         "src/handler/project/ProjectScaleSettingsDomainServices.cpp",
+        "src/handler/sequencer/ClipWorkspaceHandler.cpp",
         "src/handler/sequencer/DrumLaneEditorHandler.cpp",
         "src/handler/sequencer/PatternPitchSettingsDomainServices.cpp",
         "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
@@ -2156,14 +2185,10 @@
         "src/persistence/SequencerPersistenceEnvelope.cpp",
         "src/persistence/StepPresetFileStore.cpp",
         "src/persistence/StorageRecoveryMachine.cpp",
-        "src/protocol/filesystem/FileSystemJobRpc.cpp",
-        "src/protocol/filesystem/FileSystemRpcCodec.cpp",
-        "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
-        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
-        "src/protocol/filesystem/FileSystemRpcFileManagement.cpp",
-        "src/protocol/filesystem/FileSystemRpcHandler.cpp",
-        "src/protocol/filesystem/FileSystemRpcInternal.cpp",
-        "src/protocol/filesystem/FileSystemRpcWriteSession.cpp",
+        "src/protocol/filesystem/RpcBody.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp",
+        "src/protocol/filesystem/UnifiedFileSystemRpc.cpp",
+        "src/protocol/filesystem/UnifiedFileTransfer.cpp",
         "src/sequencer/ClockSourceSelector.cpp",
         "src/sequencer/DrumPlaybackEngine.cpp",
         "src/sequencer/ExternalClockEstimator.cpp",
@@ -2234,6 +2259,7 @@
         "src/state/macro/MacroSlotClipboardPlan.cpp",
         "src/state/macro/MacroUiState.cpp",
         "src/state/macro/MacroWorkflow.cpp",
+        "src/state/modulation/ProjectControlHistory.cpp",
         "src/state/modulation/ProjectControlMacroConversion.cpp",
         "src/state/modulation/ProjectControlMacroCurveOps.cpp",
         "src/state/modulation/ProjectControlMacroOps.cpp",
@@ -2279,6 +2305,9 @@
         "src/state/sequencer/SequencerChordPresetModel.cpp",
         "src/state/sequencer/SequencerChordProjectionWorkspace.cpp",
         "src/state/sequencer/SequencerChordUiOps.cpp",
+        "src/state/sequencer/SequencerClipGridState.cpp",
+        "src/state/sequencer/SequencerClipLaunchQueue.cpp",
+        "src/state/sequencer/SequencerClipRegionOps.cpp",
         "src/state/sequencer/SequencerContentProjectionOps.cpp",
         "src/state/sequencer/SequencerContentStepOps.cpp",
         "src/state/sequencer/SequencerContentViewInternal.cpp",
@@ -2299,7 +2328,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPatternRegionOps.cpp",
         "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
@@ -2344,6 +2372,7 @@
         "src/ui/sequencer/SequencerCcLaneGridViewModelBuilder.cpp",
         "src/ui/sequencer/SequencerChordPresetPresentation.cpp",
         "src/ui/sequencer/SequencerChordVoiceRail.cpp",
+        "src/ui/sequencer/SequencerClipLauncherSurface.cpp",
         "src/ui/sequencer/SequencerHeaderBar.cpp",
         "src/ui/sequencer/SequencerHeaderBarRenderModel.cpp",
         "src/ui/sequencer/SequencerHeaderViewModelBuilder.cpp",
@@ -2386,6 +2415,10 @@
         "src/ui/view/RetainedViewRenderPolicy.cpp",
         "src/ui/view/SequencerView.cpp",
         "src/ui/widget/MacroKnobWidget.cpp",
+        "src/validation/benchmark/HardwareBenchmarkEndpoint.cpp",
+        "src/validation/benchmark/HardwareBenchmarkFixture.cpp",
+        "src/validation/benchmark/HardwareBenchmarkMetrics.cpp",
+        "src/validation/benchmark/HardwareBenchmarkRun.cpp",
         "src/validation/project/ProjectModulationBenchmark.cpp",
         "src/validation/project/ProjectStoreSmoke.cpp",
         "src/validation/ux/SemanticUxContext.cpp",
@@ -2394,7 +2427,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "94ab35e44718b6bc0d1603147f858f481b9d7bd6193c8af9ea22c2a6efc21d78"
+      "sha256": "553f2df6f85e3964872f30d95d032eb61ece52ce2da39acb12c3ffe20ef3e0c2"
     },
     "deviceSupportHeaders": {
       "count": 10,
@@ -2808,18 +2841,19 @@
       ],
       "cmakeRecursiveGlob": false,
       "librarySources": {
-        "count": 8,
+        "count": 9,
         "paths": [
           "src/oc/ui/lvgl/Bridge.cpp",
           "src/oc/ui/lvgl/FontLoader.cpp",
           "src/oc/ui/lvgl/FontUtils.cpp",
+          "src/oc/ui/lvgl/LvglFrameProfiler.cpp",
           "src/oc/ui/lvgl/PausableTimer.cpp",
           "src/oc/ui/lvgl/RetainedSurfaceParkingLot.cpp",
           "src/oc/ui/lvgl/Screen.cpp",
           "src/oc/ui/lvgl/SdlBridge.cpp",
           "src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp"
         ],
-        "sha256": "36781bc67dce355fd2c9bdcf75f20e810176dbcfa3dbcbbf66e44ffa52e6c4e1"
+        "sha256": "886108a8c71f9613eafe18e4802eaf9937bbafe68dee0841e56aae35c126ed68"
       },
       "ownedSourceList": {
         "consumedByCmakeTarget": true,
@@ -2832,6 +2866,7 @@
         "+<oc/ui/lvgl/Bridge.cpp>",
         "+<oc/ui/lvgl/FontLoader.cpp>",
         "+<oc/ui/lvgl/FontUtils.cpp>",
+        "+<oc/ui/lvgl/LvglFrameProfiler.cpp>",
         "+<oc/ui/lvgl/PausableTimer.cpp>",
         "+<oc/ui/lvgl/RetainedSurfaceParkingLot.cpp>",
         "+<oc/ui/lvgl/Screen.cpp>",
@@ -2840,19 +2875,20 @@
       ],
       "platformioSourceFilterExact": true,
       "sources": {
-        "count": 9,
+        "count": 10,
         "paths": [
           "src/main.cpp",
           "src/oc/ui/lvgl/Bridge.cpp",
           "src/oc/ui/lvgl/FontLoader.cpp",
           "src/oc/ui/lvgl/FontUtils.cpp",
+          "src/oc/ui/lvgl/LvglFrameProfiler.cpp",
           "src/oc/ui/lvgl/PausableTimer.cpp",
           "src/oc/ui/lvgl/RetainedSurfaceParkingLot.cpp",
           "src/oc/ui/lvgl/Screen.cpp",
           "src/oc/ui/lvgl/SdlBridge.cpp",
           "src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp"
         ],
-        "sha256": "e6c62fa7832483c352b7e5ab14ff6b6018a2f70977178ddcc5962fa2b7cfeb7e"
+        "sha256": "4dbe57126347aef20152531634f1bd71062749c2009d98fb38b60cceadb23f95"
       }
     },
     "uiLvglComponents": {
@@ -2938,7 +2974,7 @@
       "releaseTooling": {
         "ref": "main",
         "repo": "petitechose-midi-studio/ms-dev-env",
-        "sha": "d22d7f4c34b413b3e678129e8a9e56c3d92a8063"
+        "sha": "3dff6acacd84dd9fefbafbafabf07b19479d1f8d"
       }
     },
     "coreCi": {
@@ -2946,22 +2982,22 @@
         "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
         "MIDI_STUDIO_BITWIG_SHA": "bb81912399ee5db82395dd864e7ed481efeeff92",
-        "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "923550edbd8bb0a7bef3bee74248cc1e116db6e3",
-        "MIDI_STUDIO_UI_SHA": "225562269c47ff8f56ff1f252c1e926ceb887701",
-        "MS_DEV_ENV_SHA": "2f6f8af02afc5b8af9096f83319953d7d9829dd5",
-        "OPEN_CONTROL_FRAMEWORK_SHA": "3b8a182422bb1183e5930da0eeb53e584a570dbb",
-        "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
+        "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "20c328431f55ef86546947b74efd66865d2ad2d9",
+        "MIDI_STUDIO_UI_SHA": "f880f20a9eb258a584c11ad93cdfa918ef5bb8f2",
+        "MS_DEV_ENV_SHA": "3dff6acacd84dd9fefbafbafabf07b19479d1f8d",
+        "OPEN_CONTROL_FRAMEWORK_SHA": "24037dcee919f955cb3626b92853fd963ead87aa",
+        "OPEN_CONTROL_HAL_COMMON_SHA": "5567103c878e3c9e5be8929d1301a15b4bfa02aa",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
         "OPEN_CONTROL_HAL_NET_SHA": "2207e6befc4b18fad5e4db870ba5ca8aab13aa29",
         "OPEN_CONTROL_HAL_SDL_SHA": "f8755529b4240bf05547d3ab6eadc92d823882c3",
-        "OPEN_CONTROL_HAL_TEENSY_SHA": "f3c49f75aeda045c28d698bca0ec450e20a56838",
-        "OPEN_CONTROL_NOTE_SHA": "539e48a1529165c982e9ea619b2c319ad9128f2b",
-        "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "b04f88c32319f9bf62c016d16b3bbb5b71696011",
-        "OPEN_CONTROL_UI_LVGL_SHA": "04eeef42aee5b88863a22736af06b52c5815aed1"
+        "OPEN_CONTROL_HAL_TEENSY_SHA": "617769b086b385aa3a035611e217efda3144eb57",
+        "OPEN_CONTROL_NOTE_SHA": "ca8bb368e092a78ece270a5d6d31416f966fed44",
+        "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "5bad36e8a81237bd5ab25c277c9f27ebb6735066",
+        "OPEN_CONTROL_UI_LVGL_SHA": "4d6276976b7db31f4af0b3dd6ffc8c8589cb6dba"
       },
       "emsdkVersion": "4.0.23",
       "finalWasmLink": true,
-      "msDevEnv": "2f6f8af02afc5b8af9096f83319953d7d9829dd5",
+      "msDevEnv": "3dff6acacd84dd9fefbafbafabf07b19479d1f8d",
       "platformio": "6.1.18"
     }
   }

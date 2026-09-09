@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -11,8 +12,9 @@
 #include "persistence/SequencerCcLanePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerClipRegionOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace {
@@ -65,8 +67,7 @@ void authorTwoLanes(seq::SequencerPatternState& pattern) {
     pattern.bumpCcLaneRevision();
 }
 
-void assertTwoLanes(const seq::SequencerPatternState& pattern) {
-    const auto* bank = seq::sequencerCcLaneView(pattern);
+void assertTwoLanes(const seq::SequencerCcLaneBank* bank) {
     assert(bank != nullptr);
     assert(seq::sequencerCcLaneCount(*bank) == 2U);
     assert(bank->lanes[0].destination.controller == 74U);
@@ -125,11 +126,10 @@ void testCurrentRecordRoundTripAndStrictVersioning() {
 }
 
 void testPatternEnvelopeRoundTripAndStrictVersioning() {
-    seq::SequencerState source{};
+    core::state::sequencer::SequencerDetachedEditor source;
     source.reset();
-    source.pattern.setContentLength(32U);
-    assert(seq::setPatternPlaybackRegion(source.pattern, {32U, 2U, 5U, 27U}));
-    authorTwoLanes(source.pattern);
+    source.pattern().setContentLength(32U);
+    authorTwoLanes(source.pattern());
     auto chord = oc::note::sequencer::StepSequencerChordSpec::semantic(
         oc::note::sequencer::StepSequencerChordHarmony::Custom,
         8U,
@@ -144,34 +144,33 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         chord.setCustomInterval(voice, intervals[voice]);
     }
     assert(seq::setNodeChordSpec(
-        source.pattern,
+        source.pattern(),
         seq::rootStepNodeId(0U),
         chord
     ));
 
     codec::PatternEnvelopeBuffer bytes{};
     const auto encoded = codec::fillPatternEnvelope(
-        source.pattern,
+        source.pattern(),
         bytes.bytes.data(),
         static_cast<uint32_t>(bytes.bytes.size())
     );
     assert(encoded.ok);
     assert(bytes.bytes[4] == codec::ENVELOPE_VERSION);
 
-    seq::SequencerState loaded{};
+    core::state::sequencer::SequencerDetachedEditor loaded;
     loaded.reset();
     assert(codec::applyPatternEnvelope(
         bytes.bytes.data(),
         encoded.size,
-        loaded.pattern
+        loaded.pattern()
     ));
-    assertTwoLanes(loaded.pattern);
-    const auto region = seq::patternPlaybackRegion(loaded.pattern);
-    assert(region.contentLength == 32U);
-    assert(region.playStart == 2U);
-    assert(region.loopStart == 5U);
-    assert(region.loopEnd == 27U);
-    const auto* graph = seq::graphView(loaded.pattern);
+    assertTwoLanes(seq::sequencerCcLaneView(loaded.pattern()));
+    assert(loaded.pattern().length.get() == 32U);
+    assert(loaded.clip().playStartTick == 0U);
+    assert(loaded.clip().loopStartTick == 0U);
+    assert(loaded.clip().loopEndTick == seq::SequencerClipState::DEFAULT_END_TICK);
+    const auto* graph = seq::graphView(loaded.pattern());
     assert(graph != nullptr);
     const auto* node = graph->stepNode(seq::rootStepNodeId(0U));
     assert(node != nullptr);
@@ -190,20 +189,20 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
     assert(!codec::applyPatternEnvelope(
         invalidPitchContext.bytes.data(),
         encoded.size,
-        loaded.pattern
+        loaded.pattern()
     ));
 
     bytes.bytes[4] = 11U;
     assert(!codec::applyPatternEnvelope(
         bytes.bytes.data(),
         encoded.size,
-        loaded.pattern
+        loaded.pattern()
     ));
     bytes.bytes[4] = static_cast<uint8_t>(codec::ENVELOPE_VERSION + 1U);
     assert(!codec::applyPatternEnvelope(
         bytes.bytes.data(),
         encoded.size,
-        loaded.pattern
+        loaded.pattern()
     ));
 
     std::cout << "[PASS] Pattern envelope round-trip and strict versioning\n";
@@ -217,10 +216,12 @@ void authorTrackRegions(
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
-        auto& pattern = track == activeTrack ? active.pattern : bank.track(track);
-        pattern.setContentLength(128U);
-        assert(seq::setPatternPlaybackRegion(
+        auto& pattern = track == activeTrack ? active.pattern() : bank.track(track);
+        auto& clip = track == activeTrack ? active.clip() : bank.clip(track);
+        assert(seq::resizeClipPatternContent(pattern, clip, 128U));
+        assert(seq::setClipPlaybackRegion(
             pattern,
+            clip,
             {
                 128U,
                 track,
@@ -231,31 +232,26 @@ void authorTrackRegions(
     }
 }
 
-void assertTrackRegions(
-    const seq::SequencerTrackBankState& bank,
-    const seq::SequencerState& active
-) {
-    const uint8_t activeTrack = bank.activeTrackIndex();
-    for (uint8_t track = 0U;
-         track < seq::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        const auto& pattern = track == activeTrack ? active.pattern : bank.track(track);
-        const auto region = seq::patternPlaybackRegion(pattern);
-        assert(region.contentLength == 128U);
-        assert(region.playStart == track);
-        assert(region.loopStart == static_cast<uint8_t>(track + 1U));
-        assert(region.loopEnd == static_cast<uint8_t>(track + 100U));
+void assertTrackRegions(const seq::SequencerTrackBankSnapshot& bank) {
+    for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
+        const auto& pattern = bank.tracks[track];
+        const auto& clip = bank.clips[track];
+        const auto ticks = seq::sequencerTicksPerStep(pattern.stepsPerBeat);
+        assert(pattern.length == 128U);
+        assert(clip.playStartTick == track * ticks);
+        assert(clip.loopStartTick == (track + 1U) * ticks);
+        assert(clip.loopEndTick == (track + 100U) * ticks);
     }
 }
 
-void testProjectAndSetRoundTripEveryTrackOwner() {
-    seq::SequencerState source{};
+void testProjectRoundTripEveryTrackOwner() {
     seq::SequencerTrackBankState bank{};
+    seq::SequencerState source{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     source.reset();
     bank.reset();
-    assert(seq::initializeTrackBankFromActive(bank, source));
     bank.syncSharedTrackState(0x0007U, 0U);
-    authorTwoLanes(source.pattern);
+    authorTwoLanes(source.pattern());
     authorTrackRegions(bank, source);
 
     const uint8_t activeTrack = bank.activeTrackIndex();
@@ -278,13 +274,33 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
     assert(drums);
     bank.captureDrumTrackBank(*drums);
     codec::ProjectSequencerSnapshotEncodeSource projectSource{};
+    seq::SequencerClipGridSnapshot projectClips{};
+    for (uint8_t track = 0U; track < seq::SequencerTrackBankState::TRACK_COUNT; ++track) {
+        if ((flat.enabledMask & static_cast<uint16_t>(1U << track)) != 0U) {
+            projectClips.residentSlots[track] = 0U;
+        }
+    }
     projectSource.flat = &flat;
     projectSource.drums = drums.get();
+    projectSource.clips = &projectClips;
+    projectClips.stopMasks[3U] = 0x0001U;
+    projectClips.clipBehaviors[
+        seq::SequencerClipGridState::cellIndex({0U, 0U})
+    ] = {
+        .length = 2U,
+        .follow = seq::SequencerLauncherFollowChoice::RANDOM_OTHER,
+        .quantization = seq::SequencerLauncherFollowQuantization::BEAT,
+    };
+    projectClips.sceneBehaviors[0U] = {
+        .length = 4U,
+        .follow = seq::SequencerLauncherFollowChoice::NEXT,
+        .quantization = seq::SequencerLauncherFollowQuantization::BAR,
+    };
     for (uint8_t track = 0U;
          track < seq::SequencerTrackBankState::TRACK_COUNT;
          ++track) {
         const auto& pattern = track == activeTrack
-            ? source.pattern
+            ? source.pattern()
             : bank.track(track);
         projectSource.ccLanes[track] = seq::sequencerCcLaneView(pattern);
     }
@@ -296,62 +312,58 @@ void testProjectAndSetRoundTripEveryTrackOwner() {
         static_cast<uint32_t>(projectBytes.bytes.size())
     );
     assert(projectEncoded.ok);
-    seq::SequencerState projectLoaded{};
-    seq::SequencerTrackBankState projectBank{};
-    projectLoaded.reset();
-    projectBank.reset();
-    assert(codec::applyProjectSequencerEnvelope(
+    seq::SequencerHistoryTrackBankSnapshot projectBank{};
+    seq::SequencerClipGridSnapshot projectGrid{};
+    core::app::ExtmemUniquePtr<seq::DrumTrackBankSnapshot> projectDrums;
+    assert(codec::decodeProjectSequencerEnvelope(
         projectBytes.bytes.data(),
         projectEncoded.size,
         projectBank,
-        projectLoaded
+        projectGrid,
+        projectDrums
     ));
-    assertTwoLanes(projectLoaded.pattern);
-    assert(seq::sequencerCcLaneView(projectBank.track(1U))->lanes[3].values[64] == 42U);
-    assert(projectBank.isDrumTrack(2U));
-    assert(projectBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
-    assert(projectBank.drumTrack(2U).pattern.lanes[1U].velocity[3U] == 109U);
-    assertTrackRegions(projectBank, projectLoaded);
+    assertTwoLanes(projectBank.bankCcLanes[projectBank.flat.activeTrack].get());
+    assert(projectBank.bankCcLanes[projectBank.flat.activeTrack]);
+    assert(!projectBank.bankGraphs[projectBank.flat.activeTrack]);
+    assert(projectBank.bankCcLanes[1U]->lanes[3].values[64] == 42U);
+    assert(projectDrums && (projectDrums->drumTrackMask & (1U << 2U)));
+    assert(projectDrums->tracks[2U].pattern.stepEnabled(1U, 3U));
+    assert(projectDrums->tracks[2U].pattern.lanes[1U].velocity[3U] == 109U);
+    assertTrackRegions(projectBank.flat);
+    assert((projectGrid.stopMasks[3U] & 1U) != 0U);
+    assert(projectGrid.clipBehaviors[seq::SequencerClipGridState::cellIndex({0U, 0U})] ==
+           projectClips.clipBehaviors[
+               seq::SequencerClipGridState::cellIndex({0U, 0U})]);
+    assert(projectGrid.sceneBehaviors[0U] == projectClips.sceneBehaviors[0U]);
 
-    codec::EnvelopeBuffer setBytes{};
-    const auto setEncoded = codec::fillSetEnvelope(
-        bank,
-        source,
-        setBytes.bytes.data(),
-        static_cast<uint32_t>(setBytes.bytes.size())
+    projectBytes.bytes[4U] = static_cast<uint8_t>(
+        codec::ENVELOPE_VERSION - 1U
     );
-    assert(setEncoded.ok);
-    seq::SequencerState setLoaded{};
-    seq::SequencerTrackBankState setBank{};
-    setLoaded.reset();
-    setBank.reset();
-    assert(codec::applySetEnvelope(
-        setBytes.bytes.data(),
-        setEncoded.size,
-        setBank,
-        setLoaded
+    assert(!codec::decodeProjectSequencerEnvelope(
+        projectBytes.bytes.data(),
+        projectEncoded.size,
+        projectBank,
+        projectGrid,
+        projectDrums
     ));
-    assertTwoLanes(setLoaded.pattern);
-    assert(seq::sequencerCcLaneView(setBank.track(1U))->lanes[3].values[64] == 42U);
-    assert(setBank.isDrumTrack(2U));
-    assert(setBank.drumTrack(2U).pattern.stepEnabled(1U, 3U));
-    assert(setBank.drumTrack(2U).pattern.lanes[1U].velocity[3U] == 109U);
-    assertTrackRegions(setBank, setLoaded);
 
-    std::cout << "[PASS] Project and Set retain every Track-local lane owner\n";
+    std::cout << "[PASS] Project retains every Track-local lane owner\n";
 }
 
 void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
-    seq::SequencerState source{};
     seq::SequencerTrackBankState bank{};
+    seq::SequencerState source{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
+
     source.reset();
     bank.reset();
-    assert(seq::initializeTrackBankFromActive(bank, source));
 
     seq::SequencerTrackBankSnapshot flat{};
     seq::captureTrackBankSnapshot(bank, source, flat);
     codec::ProjectSequencerSnapshotEncodeSource projectSource{};
+    seq::SequencerClipGridSnapshot projectClips{};
+    projectClips.residentSlots[0U] = 0U;
     projectSource.flat = &flat;
+    projectSource.clips = &projectClips;
 
     codec::EnvelopeBuffer projectBytes{};
     const auto projectEncoded = codec::fillProjectSequencerEnvelope(
@@ -361,36 +373,16 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
     );
     assert(projectEncoded.ok);
 
-    seq::SequencerState loaded{};
-    seq::SequencerTrackBankState loadedBank{};
-    loaded.reset();
-    loadedBank.reset();
-    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
-    assert(loadedBank.drumTrackMask() != 0U);
-    assert(codec::applyProjectSequencerEnvelope(
-        projectBytes.bytes.data(),
-        projectEncoded.size,
-        loadedBank,
-        loaded
+    seq::SequencerHistoryTrackBankSnapshot loaded{};
+    seq::SequencerClipGridSnapshot loadedGrid{};
+    auto drums = core::app::makeExtmemUnique<seq::DrumTrackBankSnapshot>();
+    assert(drums);
+    drums->drumTrackMask = 1U;
+    assert(codec::decodeProjectSequencerEnvelope(
+        projectBytes.bytes.data(), projectEncoded.size,
+        loaded, loadedGrid, drums
     ));
-    assert(loadedBank.drumTrackMask() == 0U);
-
-    codec::EnvelopeBuffer setBytes{};
-    const auto setEncoded = codec::fillSetEnvelope(
-        bank,
-        source,
-        setBytes.bytes.data(),
-        static_cast<uint32_t>(setBytes.bytes.size())
-    );
-    assert(setEncoded.ok);
-    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
-    assert(codec::applySetEnvelope(
-        setBytes.bytes.data(),
-        setEncoded.size,
-        loadedBank,
-        loaded
-    ));
-    assert(loadedBank.drumTrackMask() == 0U);
+    assert(!drums);
 
     std::cout << "[PASS] Drum state is replaced by a Drum-free envelope\n";
 }
@@ -400,7 +392,7 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
 int main() {
     testCurrentRecordRoundTripAndStrictVersioning();
     testPatternEnvelopeRoundTripAndStrictVersioning();
-    testProjectAndSetRoundTripEveryTrackOwner();
+    testProjectRoundTripEveryTrackOwner();
     testEnvelopeWithoutDrumsClearsExistingDrumBank();
     std::cout << "All SequencerCcLanePersistence tests passed\n";
     return 0;

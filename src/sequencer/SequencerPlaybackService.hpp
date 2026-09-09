@@ -15,6 +15,7 @@
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 
@@ -24,6 +25,7 @@ struct SequencerCcLaneRuntimeProjectSnapshot;
 struct SequencerDrumRuntimeProjectSnapshot;
 struct ProjectTrackRuntimeSnapshot;
 class MidiCcGlobalFrameCoordinator;
+class SequencerRuntimeSnapshotBank;
 
 /** Fixed tick scratch; production ownership is one PSRAM allocation. */
 struct SequencerCcTemporalRuntimeScratch {
@@ -36,17 +38,11 @@ struct SequencerCcTemporalRuntimeScratch {
 
 static_assert(sizeof(SequencerCcTemporalRuntimeScratch) < 8U * 1024U);
 
-/** One PSRAM cache for the currently inspected Drum viewport only. */
+/** Foreground-only PSRAM cache for the currently inspected Drum viewport. */
 struct SequencerDrumResolvedProjectionCache {
     DrumResolvedPageSignature signature{};
     core::state::sequencer::DrumResolvedPageProjection projection{};
     bool valid = false;
-
-    void invalidate() {
-        signature = {};
-        projection.reset();
-        valid = false;
-    }
 };
 
 static_assert(sizeof(SequencerDrumResolvedProjectionCache) < 640U);
@@ -66,6 +62,8 @@ public:
     static constexpr uint8_t TRACK_COUNT = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
 
     struct UiProjectionSnapshot {
+        uint32_t transportTick = 0U;
+        bool transportPlaying = false;
         bool noteOutPulse = false;
         bool ccOutPulse = false;
         bool beatPulse = false;
@@ -85,8 +83,9 @@ public:
         uint16_t drumLaneValidMask = 0U;
         uint16_t drumLaneDecisionValidMask = 0U;
         uint16_t drumLaneDecisionPlayedMask = 0U;
-        core::state::sequencer::DrumResolvedPageProjection
-            drumResolvedPage{};
+        // Borrowed immutable inputs; consume before the next foreground
+        // snapshot refresh or graph retirement, never retain across frames.
+        DrumResolvedPageSignature drumPreview{};
         bool drumPlaying = false;
     };
 
@@ -99,7 +98,10 @@ public:
                              SequencerCcLaneRuntime* ccLaneRuntime = nullptr,
                              MidiCcGlobalFrameCoordinator* ccCoordinator =
                                  nullptr,
-                             SequencerCcLaneRuntime* ccPredictiveLaneRuntime = nullptr);
+                             SequencerCcLaneRuntime* ccPredictiveLaneRuntime = nullptr,
+                             const SequencerRuntimeSnapshotBank* runtimeSnapshotBank = nullptr,
+                             core::state::sequencer::SequencerClipLaunchQueue*
+                                 clipLaunches = nullptr);
 
     /**
      * Advances playback against one coherent publication generation.
@@ -178,7 +180,13 @@ private:
         uint32_t tickPeriodUs,
         bool allowPredictiveLookahead
     );
+    uint32_t playbackTick_(uint8_t trackIndex, uint32_t tick) const;
     bool isLocalLoopBoundary_(uint8_t trackIndex, uint32_t tick) const;
+    static bool isClipLaunchBoundary_(
+        uint32_t dueTick,
+        uint32_t tick,
+        bool playing
+    );
     void syncRuntimeMasksForTrack_(
         const ProjectTrackRuntimeSnapshot& projectTracks,
         uint8_t trackIndex
@@ -188,6 +196,21 @@ private:
         const ProjectTrackRuntimeSnapshot& projectTracks,
         uint8_t trackIndex,
         uint32_t generation,
+        uint32_t tick,
+        bool playing
+    );
+    void applyStagedClip_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
+        uint8_t trackIndex,
+        uint32_t generation,
+        uint32_t tick,
+        bool playing
+    );
+    bool applyStagedTrackContent_(
+        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
+        uint8_t trackIndex,
         uint32_t tick,
         bool playing
     );
@@ -209,7 +232,9 @@ private:
     core::state::StatusBarState& status_bar_;
     RealtimeMidiQueue& midi_queue_;
     const SequencerRuntimeGraphBank& runtime_graph_bank_;
+    const SequencerRuntimeSnapshotBank* runtime_snapshot_bank_ = nullptr;
     core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
+    core::state::sequencer::SequencerClipLaunchQueue* clip_launches_ = nullptr;
     SequencerCcLaneRuntime* cc_lane_runtime_ = nullptr;
     SequencerCcLaneRuntime* cc_predictive_lane_runtime_ = nullptr;
     MidiCcGlobalFrameCoordinator* cc_coordinator_ = nullptr;
@@ -248,6 +273,7 @@ private:
     uint32_t runtime_tick_period_us_ = 0U;
     uint32_t runtime_transport_tick_ = 0U;
     uint32_t runtime_tick_anchor_us_ = 0U;
+    bool runtime_transport_playing_ = false;
     bool runtime_tick_anchor_valid_ = false;
     bool runtime_predictive_lookahead_ = false;
 

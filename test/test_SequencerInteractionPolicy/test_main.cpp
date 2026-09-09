@@ -48,6 +48,17 @@ void expectsRootFocusMatrix() {
     assert(pattern.leftCenterVisibility == Visibility::ACTIVE);
     assert(pattern.leftBottomVisibility == Visibility::ACTIVE);
 
+    auto lane = buildSequencerInteractionPolicy(baseContext(Focus::LANE));
+    assert(lane.scope == Scope::LANE);
+    assert(lane.navTurn == Action::MOVE_LANE);
+    assert(lane.navTap == Action::OPEN_LANE_EDITOR);
+    assert(lane.navLongPress == Action::ENTER_SELECTION);
+    assert(lane.optTurn == Action::EDIT_LANE_DIMENSION);
+    assert(lane.leftCenterPress == Action::OPEN_LANE_DIMENSION_SELECTOR);
+    assert(lane.leftBottomPress == Action::OPEN_LANE_PROPERTY_SELECTOR);
+    assert(lane.bottomLeftVisibility == Visibility::HIDDEN);
+    assert(lane.bottomRightVisibility == Visibility::HIDDEN);
+
     auto step = buildSequencerInteractionPolicy(baseContext(Focus::STEP));
     assert(step.scope == Scope::STEP);
     assert(step.navTurn == Action::MOVE_STEP);
@@ -60,6 +71,37 @@ void expectsRootFocusMatrix() {
     assert(step.leftTopTap == Action::NONE);
     assert(step.leftCenterVisibility == Visibility::ACTIVE);
     assert(step.leftBottomVisibility == Visibility::ACTIVE);
+}
+
+void expectsClipLauncherPolicy() {
+    auto context = baseContext(Focus::PAGE);
+    context.clipWorkspaceActive = true;
+
+    auto policy = buildSequencerInteractionPolicy(context);
+    assert(policy.scope == Scope::CLIP_LAUNCHER);
+    assert(policy.navTurn == Action::MOVE_CLIP);
+    assert(policy.navTap == Action::OPEN_CLIP);
+    assert(policy.navLongPress == Action::ENTER_SELECTION);
+    assert(policy.macroTap == Action::LAUNCH_CLIP);
+    assert(!sequencerInteractionMainSurfaceAvailable(context));
+
+    context.navigationFocus = Focus::TRACK;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.scope == Scope::TRACK);
+    assert(policy.navTurn == Action::MOVE_CLIP);
+    assert(policy.navTap == Action::OPEN_TRACK_EDITOR);
+    assert(policy.navLongPress == Action::ENTER_SELECTION);
+    assert(policy.macroTap == Action::NONE);
+    assert(policy.bottomLeftTap == Action::MUTE_CURRENT_TRACK);
+    assert(policy.bottomRightTap == Action::COPY_CURRENT_STRUCTURE);
+
+    context.navigationFocus = Focus::PAGE;
+    context.overlayVisible = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.scope == Scope::CLIP_LAUNCHER);
+    assert(policy.navTurn == Action::NONE);
+    assert(policy.navTap == Action::NONE);
+    assert(policy.macroTap == Action::NONE);
 }
 
 void expectsStepContentPolicy() {
@@ -333,6 +375,7 @@ void expectsDestructiveAndMuteIconsToRemainSemanticallyDistinct() {
 
 int main() {
     expectsRootFocusMatrix();
+    expectsClipLauncherPolicy();
     expectsStepContentPolicy();
     expectsChildContentBottomActions();
     expectsStructureCopyVisibleWithoutClipboard();

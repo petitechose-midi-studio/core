@@ -2,7 +2,6 @@
 #include "handler/sequencer/SequencerPreparedTrackStructurePlanValidation.hpp"
 
 #include <cstring>
-#include <new>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -74,12 +73,6 @@ FLASHMEM Status statusForChronology(
     }
 }
 
-FLASHMEM core::state::sequencer::SequencerTrackFlatSnapshotView flatView(
-    const core::state::sequencer::SequencerHistoryPatternSnapshot& snapshot
-) noexcept {
-    return {&snapshot.flat, snapshot.ccLaneRevision};
-}
-
 FLASHMEM bool macroAfterRespectsAction(
     Action action,
     const Plan& plan,
@@ -88,7 +81,7 @@ FLASHMEM bool macroAfterRespectsAction(
 ) noexcept {
     if (payload.capturedTrackMask != plan.macroCapturedTrackMask ||
         payload.affectedTrackIndex != plan.macroAffectedTrack ||
-        payload.beforeControl == nullptr || payload.afterControl == nullptr) {
+        !payload.control.hasStorage() || payload.control.ready()) {
         return false;
     }
     for (uint8_t track = 0U;
@@ -108,19 +101,6 @@ FLASHMEM bool macroAfterRespectsAction(
         }
     }
     return true;
-}
-
-FLASHMEM void normalizeEqualMacroAfterControl(
-    core::state::sequencer::SequencerHistoryMacroTrackStructurePayload& payload
-) noexcept {
-    if (payload.beforeControl != nullptr && payload.afterControl != nullptr &&
-        std::memcmp(
-            payload.beforeControl.get(),
-            payload.afterControl.get(),
-            sizeof(core::state::modulation::ProjectControlDomainState)
-        ) == 0) {
-        payload.afterControl.reset();
-    }
 }
 
 FLASHMEM core::state::sequencer::SequencerHistoryDescriptor descriptorFor(
@@ -178,11 +158,7 @@ FLASHMEM bool PreparedSequencerTrackStructureTransaction::
         const uint16_t bit = trackBit(track);
         if ((capturedMask & bit) == 0U) continue;
         if (outCount >= out.size()) return false;
-        const auto& live = core::state::sequencer::canonicalTrackPattern(
-            tracks,
-            sequencer,
-            track
-        );
+        const auto& live = tracks.track(track);
         out[outCount++] = {
             live.graph.get(),
             live.ccLanes.get(),
@@ -203,11 +179,7 @@ FLASHMEM bool PreparedSequencerTrackStructureTransaction::
     for (uint8_t index = 0U; index < count; ++index) {
         const auto& identity = expected[index];
         if (identity.track >= TrackBank::TRACK_COUNT) return false;
-        const auto& live = core::state::sequencer::canonicalTrackPattern(
-            tracks,
-            sequencer,
-            identity.track
-        );
+        const auto& live = tracks.track(identity.track);
         if (live.graph.get() != identity.graph ||
             live.ccLanes.get() != identity.ccLanes) {
             return false;
@@ -227,7 +199,7 @@ FLASHMEM PreparedSequencerTrackStructureTransaction::
       chronology_(other.chronology_),
       plan_(other.plan_),
       change_(std::move(other.change_)),
-      topologyGuard_(other.topologyGuard_),
+      ownerIdentities_(other.ownerIdentities_),
       activationGuard_(other.activationGuard_),
       settlementCheckpoint_(other.settlementCheckpoint_),
       tracks_(other.tracks_),
@@ -253,7 +225,7 @@ PreparedSequencerTrackStructureTransaction::operator=(
     chronology_ = other.chronology_;
     plan_ = other.plan_;
     change_ = std::move(other.change_);
-    topologyGuard_ = other.topologyGuard_;
+    ownerIdentities_ = other.ownerIdentities_;
     activationGuard_ = other.activationGuard_;
     settlementCheckpoint_ = other.settlementCheckpoint_;
     tracks_ = other.tracks_;
@@ -363,25 +335,20 @@ prepareSequencerTrackStructureTransaction(
         prepared.status_ = Status::Stale;
         return prepared;
     }
-    if (prepared.plan_.beforeActiveTrack == prepared.plan_.afterActiveTrack) {
-        ::new (static_cast<void*>(
-            &prepared.topologyGuard_.ownerIdentities
-        )) decltype(prepared.topologyGuard_.ownerIdentities){};
-        uint8_t ownerIdentityCount = 0U;
-        if (!PreparedSequencerTrackStructureTransaction::
-                captureOwnerIdentities_(
-                state.tracks,
-                state.sequencer,
-                prepared.plan_.capturedTrackMask,
-                prepared.topologyGuard_.ownerIdentities,
-                ownerIdentityCount
-            ) ||
-            ownerIdentityCount != trackCount(
-                prepared.plan_.capturedTrackMask
-            )) {
-            prepared.status_ = Status::Stale;
-            return prepared;
-        }
+    uint8_t ownerIdentityCount = 0U;
+    if (!PreparedSequencerTrackStructureTransaction::
+            captureOwnerIdentities_(
+            state.tracks,
+            state.sequencer,
+            prepared.plan_.capturedTrackMask,
+            prepared.ownerIdentities_,
+            ownerIdentityCount
+        ) ||
+        ownerIdentityCount != trackCount(
+            prepared.plan_.capturedTrackMask
+        )) {
+        prepared.status_ = Status::Stale;
+        return prepared;
     }
 
     prepared.change_ = core::state::sequencer::
@@ -447,12 +414,12 @@ prepareSequencerTrackStructureTransaction(
         }
         auto& payload = *prepared.change_->macroStructure;
         payload.afterTracks = payload.beforeTracks;
-        *payload.afterControl = *payload.beforeControl;
+        auto& candidate = *payload.control.candidate();
         const MacroOutcome macroOutcome = operations->prepareMacroAfter(
             execution.context_,
             prepared.plan_,
             payload.afterTracks,
-            *payload.afterControl
+            candidate
         );
         if (macroOutcome != MacroOutcome::Ready) {
             prepared.status_ = macroOutcome == MacroOutcome::Stale
@@ -465,15 +432,17 @@ prepareSequencerTrackStructureTransaction(
             return prepared;
         }
         if (!core::state::modulation::validProjectModulationDomain(
-                payload.afterControl->modulation,
-                payload.afterControl->curves,
-                &payload.afterControl->automation
+                candidate.modulation,
+                candidate.curves,
+                &candidate.automation
             )) {
             prepared.status_ = Status::Invalid;
             return prepared;
         }
-        payload.afterCaptured = true;
-        normalizeEqualMacroAfterControl(payload);
+        if (!payload.control.sealCandidate(state.macroPages->control.authored())) {
+            prepared.status_ = Status::Stale;
+            return prepared;
+        }
     }
 
     prepared.change_->descriptor = descriptorFor(*prepared.change_);
@@ -495,35 +464,6 @@ prepareSequencerTrackStructureTransaction(
         return prepared;
     }
 
-    if (prepared.plan_.beforeActiveTrack !=
-        prepared.plan_.afterActiveTrack) {
-        const auto& beforeOutgoing = prepared.change_->before.tracks[
-            prepared.plan_.beforeActiveTrack
-        ];
-        const auto& beforeIncoming = prepared.change_->before.tracks[
-            prepared.plan_.afterActiveTrack
-        ];
-        const auto& afterOutgoing = prepared.change_->after.tracks[
-            prepared.plan_.beforeActiveTrack
-        ];
-        const auto& afterIncoming = prepared.change_->after.tracks[
-            prepared.plan_.afterActiveTrack
-        ];
-        if (!core::state::sequencer::prepareActiveTrackOwnerRotation(
-                state.tracks,
-                state.sequencer,
-                prepared.plan_.afterActiveTrack,
-                flatView(beforeOutgoing),
-                flatView(beforeIncoming),
-                flatView(afterOutgoing),
-                flatView(afterIncoming),
-                prepared.plan_.incomingOwnerPolicy,
-                prepared.topologyGuard_.rotation
-            )) {
-            prepared.status_ = Status::Stale;
-            return prepared;
-        }
-    }
 
     prepared.status_ = Status::Prepared;
     return prepared;
@@ -585,13 +525,12 @@ FLASHMEM Result commitPreparedSequencerTrackStructureTransaction(
         return result(Status::Stale, chronology);
     }
 
-    const bool hasRotation = prepared.plan_.beforeActiveTrack !=
+    const bool changesSelection = prepared.plan_.beforeActiveTrack !=
         prepared.plan_.afterActiveTrack;
-    if (!hasRotation &&
-        !PreparedSequencerTrackStructureTransaction::ownerIdentitiesMatch_(
+    if (!PreparedSequencerTrackStructureTransaction::ownerIdentitiesMatch_(
             *prepared.tracks_,
             *prepared.sequencer_,
-            prepared.topologyGuard_.ownerIdentities,
+            prepared.ownerIdentities_,
             trackCount(prepared.plan_.capturedTrackMask)
         )) {
         return result(Status::Stale, chronology);
@@ -632,14 +571,6 @@ FLASHMEM Result commitPreparedSequencerTrackStructureTransaction(
     if (!prepared.sharedTracks_.canPublishPreparedSequencerState()) {
         return result(Status::PublicationUnavailable, chronology);
     }
-    if (hasRotation &&
-        !core::state::sequencer::preparedActiveTrackOwnerRotationMatches(
-            *prepared.tracks_,
-            *prepared.sequencer_,
-            prepared.topologyGuard_.rotation
-        )) {
-        return result(Status::Stale, chronology);
-    }
     if (!prepared.history_.canCommitAdmittedStructure(*prepared.change_)) {
         return result(Status::HistoryUnavailable, chronology);
     }
@@ -652,12 +583,14 @@ FLASHMEM Result commitPreparedSequencerTrackStructureTransaction(
 
     // No recoverable branch, allocation or reconstructive rollback is allowed
     // beyond this point.
-    if (hasRotation) {
-        core::state::sequencer::rotateActiveTrackOwnersNoPublish(
-            *prepared.tracks_,
-            *prepared.sequencer_,
-            prepared.topologyGuard_.rotation
-        );
+    for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
+        if ((prepared.plan_.canonicalResetTrackMask & trackBit(track)) == 0U) continue;
+        prepared.tracks_->track(track).reset();
+        prepared.tracks_->clip(track).reset();
+    }
+    if (changesSelection) {
+        prepared.sequencer_->bumpClipRevision();
+        core::state::sequencer::resetTransientTrackState(*prepared.sequencer_);
     }
     prepared.sequencer_->focusedStep.set(prepared.plan_.afterFocusedStep);
     prepared.sequencer_->page.set(prepared.plan_.afterPage);

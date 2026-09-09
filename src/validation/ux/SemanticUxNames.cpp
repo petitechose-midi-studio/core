@@ -102,8 +102,8 @@ FLASHMEM const char* viewName(core::ui::ViewType view) {
     switch (view) {
         case core::ui::ViewType::MACRO:
             return "macro";
-        case core::ui::ViewType::SEQUENCER:
-            return "sequencer";
+        case core::ui::ViewType::CLIPS:
+            return "clips";
         case core::ui::ViewType::PROJECT:
             return "project";
         case core::ui::ViewType::MODULATORS:

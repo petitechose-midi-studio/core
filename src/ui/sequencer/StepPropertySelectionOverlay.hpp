@@ -48,13 +48,7 @@ private:
     lv_obj_t* value_ = nullptr;
     bool visible_cache_ = false;
     bool has_rendered_ = false;
-    bool rendered_custom_content_ = false;
-    core::state::sequencer::StepProperty rendered_property_ =
-        core::state::sequencer::StepProperty::NOTE;
     uint32_t rendered_color_ = 0;
-    const char* rendered_icon_ = nullptr;
-    std::array<char, 24> rendered_label_{};
-    std::array<char, 16> rendered_value_{};
 };
 
 }  // namespace core::ui

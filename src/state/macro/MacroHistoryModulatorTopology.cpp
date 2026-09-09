@@ -31,7 +31,7 @@ MacroHistoryService::splitProjectModulatorTrack(
         cloneName[0] == '\0') {
         return failure;
     }
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     uint16_t bindingCount = 0;
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
         const auto& binding = graph.outputBindings[index];
@@ -80,8 +80,8 @@ MacroHistoryService::splitProjectModulator(
         return failure;
     }
 
-    auto& graph = pages.control.authored.modulation;
-    auto& arena = pages.control.authored.curves;
+    auto& graph = pages.control.authored().modulation;
+    auto& arena = pages.control.authored().curves;
     const auto* source = findProjectModulator(graph, request.sourceId);
     if (!source) {
         failure.status = ProjectModulationStatus::INVALID_ID;
@@ -219,8 +219,8 @@ MacroHistoryService::deleteProjectModulator(
         failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
         return failure;
     }
-    auto& graph = pages.control.authored.modulation;
-    auto& arena = pages.control.authored.curves;
+    auto& graph = pages.control.authored().modulation;
+    auto& arena = pages.control.authored().curves;
     const auto* source = findProjectModulator(graph, sourceId);
     if (!source) return failure;
 

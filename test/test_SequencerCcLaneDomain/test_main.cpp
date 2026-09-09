@@ -78,13 +78,7 @@ void testBulkPatternTransformsPreserveCcValuesAndTransitions() {
         0,
         seq::SequencerCcLaneTransition::EASE_IN_OUT
     ).changed());
-    const uint32_t beforeDuplicate = bank.revision;
-    assert(seq::duplicateSequencerCcLaneBankRange(bank, 0, 8, 8));
-    assert(bank.revision == beforeDuplicate + 1U);
-    assert(bank.lanes[0].activeMask.test(8));
-    assert(bank.lanes[0].values[8] == 20);
-    assert(seq::sequencerCcLaneTransition(bank.lanes[0], 8) ==
-           seq::SequencerCcLaneTransition::EASE_IN_OUT);
+    assert(seq::setSequencerCcLaneEvent(bank, 0, 8, 20).changed());
 
     const uint32_t beforeRotate = bank.revision;
     assert(seq::rotateSequencerCcLaneBank(bank, 16, 1));
@@ -985,9 +979,40 @@ void testFull128StepLaneValidationAndRotation() {
     assert(!bank.lanes[0].activeMask.test(127U));
 }
 
+void testPackedTransitionValidationIncludesInactiveSteps() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 0, 64);
+    const auto writeRaw = [](seq::SequencerCcLane& lane, unsigned step, unsigned value) {
+        // Bitwise test writer independent of the production byte decoder.
+        for (unsigned bit = 0; bit < 3; ++bit) {
+            const auto index = step * 3 + bit;
+            const auto mask = static_cast<uint8_t>(1U << (index % 8));
+            auto& byte = lane.transitions[index / 8];
+            byte = static_cast<uint8_t>((byte & ~mask) | ((value & (1U << bit)) ? mask : 0));
+        }
+    };
+    for (unsigned step = 0; step < 128; ++step) {
+        writeRaw(bank.lanes[0], step, step % 5);
+    }
+    assert(seq::validSequencerCcLaneBank(bank));
+    for (unsigned step = 0; step < 128; ++step) {
+        for (unsigned code = 0; code < 8; ++code) {
+            for (bool active : {false, true}) {
+                auto lane = bank.lanes[0];
+                lane.activeMask.setBit(static_cast<uint8_t>(step), active);
+                writeRaw(lane, step, code);
+                assert(seq::validSequencerCcLane(lane) == (code <= 4));
+                lane.values[step] = 128;
+                assert(seq::validSequencerCcLane(lane) == (code <= 4 && !active));
+            }
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
+    testPackedTransitionValidationIncludesInactiveSteps();
     testBulkPatternTransformsPreserveCcValuesAndTransitions();
     testRuntimeProjectionUsesRegionAndResetsTransactionally();
     testPredictiveScratchCapturesFirstEventWithoutAdvancingAudibleState();

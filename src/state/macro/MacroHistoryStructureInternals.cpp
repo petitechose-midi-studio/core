@@ -73,32 +73,25 @@ FLASHMEM bool applyMacroSlotDeletionState(
         return false;
     }
 
-    // Removal and its history replay are cold structural operations. Build the
-    // complete Project Control result in one PSRAM scratch object so failure can
-    // never expose a half-cleared destination to the realtime runtime.
-    auto pending = core::app::makeExtmemUnique<ProjectControlDomainState>();
-    if (!pending) return false;
-    *pending = pages.control.authored;
+    // Only bindings/scales and one automation curve change. Prepare the graph
+    // first; curve replacement checks every failure before its first write.
+    auto& domain = pages.control.authored();
+    auto pending = core::app::makeExtmemUniqueCopy(domain.modulation);
+    if (!pending || !applyModulationAssignmentsToGraph(*pending, target.modulation) ||
+        !validProjectModulationDomain(*pending, domain.curves, &domain.automation)) return false;
     if (!replaceProjectControlAutomationInDomain(
-            *pending,
+            domain,
             address,
             target.automation.automation,
             target.automation.pointCount > 0U
                 ? target.automation.points.get() : nullptr,
             target.automation.pointCount
-        ) || !applyModulationAssignmentsToGraph(
-            pending->modulation,
-            target.modulation
-        ) || !validProjectModulationDomain(
-            pending->modulation,
-            pending->curves,
-            &pending->automation
         )) {
         return false;
     }
-
-    pages.control.authored = *pending;
+    domain.modulation = *pending;
     pages.control.markAuthoredMutation();
+
     auto& page = pages.pageData(address.track, address.page);
     page.setMacroActive(address.macro, target.macroActive);
     page.cc[address.macro] = target.cc;
@@ -110,16 +103,6 @@ FLASHMEM bool applyMacroSlotDeletionState(
     return true;
 }
 
-FLASHMEM uint64_t pageStructureControlHash(
-    const core::state::modulation::ProjectControlDomainState& domain
-) {
-    return hashBytes64(
-        14695981039346656037ULL,
-        &domain,
-        sizeof(domain)
-    );
-}
-
 FLASHMEM void syncPageStructureTrack(
     MacroPagesState& pages,
     uint8_t track
@@ -129,89 +112,24 @@ FLASHMEM void syncPageStructureTrack(
     pages.updateActiveConfigs();
 }
 
-FLASHMEM bool pageStructureBeforeMatches(
-    const MacroPagesState& pages,
-    const MacroPageStructureHistoryPayload& payload
-) {
-    return payload.beforeControl != nullptr &&
-        payload.track < TRACK_COUNT &&
-        sameMacroTrackData(
-            pages.tracks[payload.track],
-            payload.beforeTrack
-        ) &&
-        std::memcmp(
-            &pages.control.authored,
-            payload.beforeControl.get(),
-            sizeof(core::state::modulation::ProjectControlDomainState)
-        ) == 0;
-}
-
-FLASHMEM bool pageStructureAfterMatches(
-    const MacroPagesState& pages,
-    const MacroPageStructureHistoryPayload& payload
-) {
-    return payload.track < TRACK_COUNT &&
-        sameMacroTrackData(
-            pages.tracks[payload.track],
-            payload.afterTrack
-        ) &&
-        pageStructureControlHash(pages.control.authored) ==
-            payload.afterControlHash;
-}
-
 FLASHMEM bool applyPageStructureHistory(
     MacroPagesState& pages,
     const MacroPageStructureHistoryPayload& payload,
     bool after
 ) {
-    if (payload.beforeControl == nullptr || payload.track >= TRACK_COUNT ||
-        (payload.operation == MacroPageStructureHistoryOperation::COMPACT &&
-         payload.retainedPageMask == 0U)) {
+    if (payload.track >= TRACK_COUNT ||
+        !sameMacroTrackData(pages.tracks[payload.track],
+                           after ? payload.beforeTrack : payload.afterTrack) ||
+        !payload.control.matches(pages.control.authored(), !after)) {
         return false;
     }
-    if (!after) {
-        if (!pageStructureAfterMatches(pages, payload)) return false;
-        pages.control.authored = *payload.beforeControl;
+    if (payload.control.changed()) {
+        payload.control.apply(pages.control);
         pages.control.markAuthoredMutation();
-        pages.tracks[payload.track] = payload.beforeTrack;
-        syncPageStructureTrack(pages, payload.track);
-        return pageStructureBeforeMatches(pages, payload);
     }
-
-    if (!pageStructureBeforeMatches(pages, payload)) return false;
-    if (payload.operation == MacroPageStructureHistoryOperation::SNAPSHOT) {
-        if (payload.afterControl != nullptr) {
-            pages.control.authored = *payload.afterControl;
-            pages.control.markAuthoredMutation();
-        } else if (pageStructureControlHash(pages.control.authored) !=
-                   payload.afterControlHash) {
-            return false;
-        }
-        pages.tracks[payload.track] = payload.afterTrack;
-    } else {
-        if (!core::state::modulation::compactProjectControlPages(
-                pages.control,
-                payload.track,
-                payload.retainedPageMask
-            )) {
-            return false;
-        }
-        if (!pages.tracks[payload.track].compactPages(
-                payload.retainedPageMask
-            )) {
-            pages.control.authored = *payload.beforeControl;
-            pages.control.markAuthoredMutation();
-            return false;
-        }
-    }
+    pages.tracks[payload.track] = after ? payload.afterTrack : payload.beforeTrack;
     syncPageStructureTrack(pages, payload.track);
-    if (pageStructureAfterMatches(pages, payload)) return true;
-
-    pages.control.authored = *payload.beforeControl;
-    pages.control.markAuthoredMutation();
-    pages.tracks[payload.track] = payload.beforeTrack;
-    syncPageStructureTrack(pages, payload.track);
-    return false;
+    return true;
 }
 
 }  // namespace history_detail

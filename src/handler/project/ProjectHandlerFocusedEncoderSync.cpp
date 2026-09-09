@@ -28,8 +28,8 @@ FLASHMEM void configureModulationDepthEncoder(
 ) {
     const auto scale = binding != nullptr
         ? depth_parameter::scaleFor(
-              control.authored.modulation,
-              control.authored.curves,
+              control.authored().modulation,
+              control.authored().curves,
               *binding
           )
         : depth_parameter::Scale::STANDARD;
@@ -60,7 +60,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         modulatorAuditionAddress(auditionAddress)) {
         const auto* binding =
             core::state::modulation::findProjectModulationBinding(
-                pages_.control.authored.modulation,
+                pages_.control.authored().modulation,
                 pages_.control.audition.bindingId
             );
         configureModulationDepthEncoder(encoders_, pages_.control, binding);
@@ -121,7 +121,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         }
         const auto* trigger = source
             ? core::state::modulation::findProjectModulationTriggerForSource(
-                  pages_.control.authored.modulation,
+                  pages_.control.authored().modulation,
                   source->id
               )
             : nullptr;
@@ -184,7 +184,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 return;
             case Item::LENGTH: {
                 const auto* curve = findProjectCurve(
-                    pages_.control.authored.curves,
+                    pages_.control.authored().curves,
                     source->parameters.recordedCurveId
                 );
                 const uint16_t duration = curve != nullptr
@@ -305,7 +305,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 return;
             case Item::DEPTH: {
                 const auto* binding = findProjectModulationBinding(
-                    pages_.control.authored.modulation,
+                    pages_.control.authored().modulation,
                     pages_.control.audition.bindingId
                 );
                 configureModulationDepthEncoder(

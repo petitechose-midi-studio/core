@@ -23,7 +23,7 @@ void test_macro_view_lifecycle_plan_orders_deactivate_then_activate_then_sync() 
 
     constexpr std::array<ActiveViewLifecycleStep, 6> expected{
         ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-        ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+        ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
         ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
         ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
         ActiveViewLifecycleStep::ACTIVATE_MACRO,
@@ -38,15 +38,15 @@ void test_macro_view_lifecycle_plan_orders_deactivate_then_activate_then_sync() 
 
 void test_sequencer_view_lifecycle_plan_orders_deactivate_then_activate_then_sync() {
     constexpr auto plan =
-        core::context::standalone::makeActiveViewLifecyclePlan(core::ui::ViewType::SEQUENCER);
+        core::context::standalone::makeActiveViewLifecyclePlan(core::ui::ViewType::CLIPS);
 
     constexpr std::array<ActiveViewLifecycleStep, 6> expected{
         ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-        ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+        ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
         ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
         ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
-        ActiveViewLifecycleStep::ACTIVATE_SEQUENCER,
-        ActiveViewLifecycleStep::SYNC_SEQUENCER_ENCODERS,
+        ActiveViewLifecycleStep::ACTIVATE_CLIPS,
+        ActiveViewLifecycleStep::SYNC_CLIP_EDITOR_ENCODERS,
     };
 
     static_assert(plansMatch(plan, expected));
@@ -61,7 +61,7 @@ void test_project_view_lifecycle_plan_orders_deactivate_then_activate_then_sync(
 
     constexpr std::array<ActiveViewLifecycleStep, 6> expected{
         ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-        ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+        ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
         ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
         ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
         ActiveViewLifecycleStep::ACTIVATE_PROJECT,
@@ -82,7 +82,7 @@ void test_modulators_view_reuses_retained_project_lifecycle() {
 
     constexpr std::array<ActiveViewLifecycleStep, 6> expected{
         ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-        ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+        ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
         ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
         ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
         ActiveViewLifecycleStep::ACTIVATE_PROJECT,
@@ -101,7 +101,7 @@ void test_device_settings_view_lifecycle_plan_orders_deactivate_then_activate() 
 
     constexpr std::array<ActiveViewLifecycleStep, 6> expected{
         ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-        ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+        ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
         ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
         ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
         ActiveViewLifecycleStep::ACTIVATE_DEVICE_SETTINGS,
@@ -121,7 +121,7 @@ void test_unknown_view_falls_back_to_macro_lifecycle_plan() {
 
     constexpr std::array<ActiveViewLifecycleStep, 6> expected{
         ActiveViewLifecycleStep::DEACTIVATE_MACRO,
-        ActiveViewLifecycleStep::DEACTIVATE_SEQUENCER,
+        ActiveViewLifecycleStep::DEACTIVATE_CLIPS,
         ActiveViewLifecycleStep::DEACTIVATE_PROJECT,
         ActiveViewLifecycleStep::DEACTIVATE_DEVICE_SETTINGS,
         ActiveViewLifecycleStep::ACTIVATE_MACRO,

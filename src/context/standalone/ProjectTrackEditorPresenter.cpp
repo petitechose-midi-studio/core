@@ -15,10 +15,12 @@ namespace theme = ::standalone::theme;
 FLASHMEM ProjectTrackEditorPresenter::ProjectTrackEditorPresenter(
     StateRefs state,
     core::ui::project::ProjectTrackEditorOverlay& overlay,
+    core::ui::interaction::TextKeyboardView& keyboard,
     core::ui::ContextActionStrip& actionStrip
 )
     : state_(state)
     , overlay_(overlay)
+    , keyboard_(keyboard)
     , action_strip_(actionStrip)
     , render_scheduler_(
           core::ui::renderSchedulerDebugLabel("TrackEditor"),
@@ -72,6 +74,8 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         state_.enabledMask.get()
     );
     if (!viewModel.visible) {
+        keyboard_.setVisible(false);
+        overlay_.setContentVisible(true);
         overlay_.render({.visible = false});
         action_strip_.render({.visible = false});
         return;
@@ -101,20 +105,43 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         .route = route_.data(),
         .delay = delay_.data(),
         .structureHint = viewModel.draftDrum ? "Drum" : "Instrument",
-        .status = viewModel.typeChangePending
-            ? "Type \xC2\xB7 Edited"
+        .status = viewModel.typeChangeBlocked
+            ? "Remove other clips"
+            : viewModel.typeChangePending
+                ? "Type \xC2\xB7 Edited"
             : (viewModel.selectedProperty ==
                     core::state::project::ProjectTrackEditorProperty::TYPE
                 ? "Type \xC2\xB7 Ready"
                 : "Direct"),
         .trackColor = theme::color::trackColor(viewModel.trackIndex),
-        .statusColor = viewModel.typeChangePending
+        .statusColor = viewModel.typeChangeBlocked
+            ? theme::color::DESTRUCTIVE
+            : viewModel.typeChangePending
             ? theme::color::WARNING
             : theme::color::TEXT_SECONDARY,
         .selectedProperty = viewModel.selectedProperty,
         .trackEnabled = viewModel.trackEnabled,
         .drum = viewModel.draftDrum,
     });
+
+    if (state_.editor.textEditing) {
+        overlay_.setContentVisible(false);
+        keyboard_.render({
+            .visible = true,
+            .title = "Track name",
+            .meta = "",
+            .name = state_.editor.nameDraft.data(),
+            .selectedKey = state_.editor.textKeyIndex,
+            .shiftActive = state_.editor.textShiftActive,
+        });
+        action_strip_.render(
+            core::ui::interaction::TextKeyboardView::
+                bottomActionStripProps(true, false)
+        );
+        return;
+    }
+    keyboard_.setVisible(false);
+    overlay_.setContentVisible(true);
 
     core::ui::ContextActionStripProps actions{.visible = true};
     if (viewModel.typeChangePending) {
@@ -143,7 +170,8 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         core::ui::ContextActionStripVisualState::HIDDEN;
     if (viewModel.typeChangePending) {
         actions.slots[2] = {
-            .visualState = viewModel.trackEnabled
+            .visualState = viewModel.trackEnabled &&
+                    !viewModel.typeChangeBlocked
                 ? core::ui::ContextActionStripVisualState::AVAILABLE
                 : core::ui::ContextActionStripVisualState::DISABLED,
             .tone = core::ui::ContextActionStripTone::POSITIVE,

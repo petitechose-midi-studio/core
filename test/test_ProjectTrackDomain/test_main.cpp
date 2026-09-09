@@ -3,9 +3,11 @@
 #endif
 
 #include <cassert>
+#include <cstdio>
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <cstring>
 
 #include "state/project/ProjectTrackDomainOps.hpp"
 
@@ -24,12 +26,23 @@ void testDefaultsUseExistingMidiConventionAndNoMixFlags() {
         assert(project::projectTrackDelayMs(state, track) == 0);
         assert(!project::projectTrackMuted(state, track));
         assert(!project::projectTrackSoloed(state, track));
+        assert(project::projectTrackCustomName(state, track)[0] == '\0');
+        char name[project::PROJECT_TRACK_NAME_MAX_LENGTH + 1U]{};
+        project::formatProjectTrackName(state, track, name, sizeof(name));
+        char expected[project::PROJECT_TRACK_NAME_MAX_LENGTH + 1U]{};
+        std::snprintf(
+            expected,
+            sizeof(expected),
+            "Track %u",
+            static_cast<unsigned>(track + 1U)
+        );
+        assert(std::strcmp(name, expected) == 0);
     }
 
     const auto defaults = project::defaultProjectTrackSnapshot();
     assert(project::validProjectTrackSnapshot(defaults));
     assert(project::sameProjectTrackSnapshot(state.authored, defaults));
-    assert(sizeof(defaults) == 52U);
+    assert(sizeof(defaults) == 196U);
 }
 
 void testTypedMutationsAreStrictAndNoOpsDoNotPublish() {
@@ -63,6 +76,15 @@ void testTypedMutationsAreStrictAndNoOpsDoNotPublish() {
 
     assert(project::setProjectTrackDelayMs(state, 2U, 100).changed());
     assert(project::projectTrackDelayMs(state, 2U) == 100);
+
+    assert(project::setProjectTrackName(state, 2U, "Bass").changed());
+    assert(std::strcmp(project::projectTrackCustomName(state, 2U), "Bass") == 0);
+    assert(project::setProjectTrackName(state, 2U, "Bass").status ==
+           project::ProjectTrackMutationStatus::NO_CHANGE);
+    assert(project::setProjectTrackName(state, 2U, "Track 3").changed());
+    assert(project::projectTrackCustomName(state, 2U)[0] == '\0');
+    assert(project::setProjectTrackName(state, 2U, "123456789").status ==
+           project::ProjectTrackMutationStatus::INVALID_NAME);
 }
 
 void testMuteSoloAreIndependentAndAudibilityIsDeterministic() {
@@ -98,6 +120,7 @@ void testSnapshotApplyIsAtomicCompactAndOneRevision() {
     snapshot.delayMs[0] = -37;
     snapshot.mutedMask = 0x0050U;
     snapshot.soloMask = 0x1040U;
+    std::strncpy(snapshot.names[0].data(), "Lead", snapshot.names[0].size());
 
     assert(project::applyProjectTrackSnapshot(state, snapshot).changed());
     assert(state.revision.get() == 1U);
@@ -117,6 +140,10 @@ void testSnapshotApplyIsAtomicCompactAndOneRevision() {
     auto invalidDelay = snapshot;
     invalidDelay.delayMs[15] = 101;
     assert(project::applyProjectTrackSnapshot(state, invalidDelay).status ==
+           project::ProjectTrackMutationStatus::INVALID_SNAPSHOT);
+    auto invalidName = snapshot;
+    invalidName.names[15].fill('x');
+    assert(project::applyProjectTrackSnapshot(state, invalidName).status ==
            project::ProjectTrackMutationStatus::INVALID_SNAPSHOT);
     assert(project::sameProjectTrackSnapshot(state.authored, snapshot));
     assert(state.revision.get() == 1U);

@@ -180,13 +180,6 @@ struct ProjectControlCurveWindowSummary {
     const macro::MacroAutomationSlotAddress& address
 );
 
-/** Removes non-retained Pages and compacts every retained destination. */
-[[nodiscard]] bool compactProjectControlPages(
-    ProjectControlState& control,
-    uint8_t track,
-    uint16_t retainedPageMask
-);
-
 /** Caller-owned cold-domain variant used by atomic structural transactions. */
 [[nodiscard]] bool compactProjectControlPagesInDomain(
     ProjectControlDomainState& domain,

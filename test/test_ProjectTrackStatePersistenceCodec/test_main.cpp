@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 
 #include "persistence/ProjectFileContainer.hpp"
@@ -24,6 +25,7 @@ bool sameSnapshot(
 ) {
     return lhs.midiChannels == rhs.midiChannels &&
            lhs.delayMs == rhs.delayMs &&
+           lhs.names == rhs.names &&
            lhs.mutedMask == rhs.mutedMask &&
            lhs.soloMask == rhs.soloMask;
 }
@@ -41,6 +43,8 @@ project::ProjectTrackSnapshot makeSnapshot() {
     snapshot.delayMs.back() = project::PROJECT_TRACK_DELAY_MAX_MS;
     snapshot.mutedMask = 0xA55AU;
     snapshot.soloMask = 0x5AA5U;
+    std::strncpy(snapshot.names[0].data(), "Bass", snapshot.names[0].size());
+    std::strncpy(snapshot.names[15].data(), "Drums", snapshot.names[15].size());
     return snapshot;
 }
 
@@ -48,6 +52,9 @@ project::ProjectTrackSnapshot makeSentinel() {
     project::ProjectTrackSnapshot snapshot{};
     snapshot.midiChannels.fill(7U);
     snapshot.delayMs.fill(37);
+    for (auto& name : snapshot.names) {
+        std::strncpy(name.data(), "Sentinel", name.size());
+    }
     snapshot.mutedMask = 0x1357U;
     snapshot.soloMask = 0x2468U;
     return snapshot;
@@ -89,8 +96,9 @@ void assertDecodeFailureDoesNotMutate(
 
 void testContractAndExplicitLittleEndianLayout() {
     static_assert(codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR == 1U);
-    static_assert(codec::PROJECT_TRACK_CHUNK_VERSION_MINOR == 0U);
-    static_assert(codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE == 52U);
+    static_assert(codec::PROJECT_TRACK_CHUNK_VERSION_MINOR == 1U);
+    static_assert(codec::PROJECT_TRACK_LEGACY_PAYLOAD_SIZE == 52U);
+    static_assert(codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE == 196U);
     static_assert(
         project_file::chunkIdValue(project_file::ChunkId::TRACK_STATE) ==
         0x54524B53U
@@ -128,6 +136,12 @@ void testContractAndExplicitLittleEndianLayout() {
     assert(bytes[masksOffset + 1U] == 0xA5U);
     assert(bytes[masksOffset + 2U] == 0xA5U);
     assert(bytes[masksOffset + 3U] == 0x5AU);
+    constexpr uint32_t namesOffset = codec::PROJECT_TRACK_LEGACY_PAYLOAD_SIZE;
+    assert(std::memcmp(
+        bytes.data() + namesOffset,
+        source.names[0].data(),
+        source.names[0].size()
+    ) == 0);
 }
 
 void testRoundTripPublishesCompleteSnapshot() {
@@ -159,28 +173,28 @@ void testDecodeRejectsVersionSizeAndNullTransactionally() {
         bytes.data(),
         static_cast<uint32_t>(bytes.size()),
         1U,
-        1U,
+        2U,
         codec::Status::UNSUPPORTED_VERSION
     );
     assertDecodeFailureDoesNotMutate(
         bytes.data(),
         static_cast<uint32_t>(bytes.size() - 1U),
         1U,
-        0U,
+        codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
         codec::Status::INVALID_PAYLOAD_SIZE
     );
     assertDecodeFailureDoesNotMutate(
         bytes.data(),
         static_cast<uint32_t>(bytes.size() + 1U),
         1U,
-        0U,
+        codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
         codec::Status::INVALID_PAYLOAD_SIZE
     );
     assertDecodeFailureDoesNotMutate(
         nullptr,
         static_cast<uint32_t>(bytes.size()),
         1U,
-        0U,
+        codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
         codec::Status::INVALID_ARGUMENT
     );
 }
@@ -194,7 +208,7 @@ void testDecodeRejectsEveryBoundedDomainWithoutPartialPublish() {
         invalidChannel.data(),
         static_cast<uint32_t>(invalidChannel.size()),
         1U,
-        0U,
+        codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
         codec::Status::INVALID_DOMAIN
     );
 
@@ -206,7 +220,7 @@ void testDecodeRejectsEveryBoundedDomainWithoutPartialPublish() {
         delayAboveMaximum.data(),
         static_cast<uint32_t>(delayAboveMaximum.size()),
         1U,
-        0U,
+        codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
         codec::Status::INVALID_DOMAIN
     );
 
@@ -217,9 +231,43 @@ void testDecodeRejectsEveryBoundedDomainWithoutPartialPublish() {
         delayBelowMinimum.data(),
         static_cast<uint32_t>(delayBelowMinimum.size()),
         1U,
-        0U,
+        codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
         codec::Status::INVALID_DOMAIN
     );
+
+    auto invalidName = valid;
+    constexpr uint32_t namesOffset = codec::PROJECT_TRACK_LEGACY_PAYLOAD_SIZE;
+    for (uint32_t index = 0U;
+         index <= project::PROJECT_TRACK_NAME_MAX_LENGTH;
+         ++index) {
+        invalidName[namesOffset + index] = 'x';
+    }
+    assertDecodeFailureDoesNotMutate(
+        invalidName.data(),
+        static_cast<uint32_t>(invalidName.size()),
+        1U,
+        codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
+        codec::Status::INVALID_DOMAIN
+    );
+}
+
+void testLegacyPayloadLoadsWithDefaultNames() {
+    const auto source = makeSnapshot();
+    const auto current = encode(source);
+    project::ProjectTrackSnapshot out = makeSentinel();
+    const auto result = codec::decodeProjectTrackStatePayload(
+        current.data(),
+        codec::PROJECT_TRACK_LEGACY_PAYLOAD_SIZE,
+        1U,
+        0U,
+        out
+    );
+    assert(result.decoded());
+    assert(out.midiChannels == source.midiChannels);
+    assert(out.delayMs == source.delayMs);
+    assert(out.mutedMask == source.mutedMask);
+    assert(out.soloMask == source.soloMask);
+    for (const auto& name : out.names) assert(name[0] == '\0');
 }
 
 void testEncodePreflightsWithoutTouchingOutput() {
@@ -271,6 +319,7 @@ int main() {
     testRoundTripPublishesCompleteSnapshot();
     testDecodeRejectsVersionSizeAndNullTransactionally();
     testDecodeRejectsEveryBoundedDomainWithoutPartialPublish();
+    testLegacyPayloadLoadsWithDefaultNames();
     testEncodePreflightsWithoutTouchingOutput();
     std::cout << "Project Track persistence codec tests passed\n";
     return 0;

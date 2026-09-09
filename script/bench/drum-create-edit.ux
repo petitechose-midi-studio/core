@@ -1,0 +1,48 @@
+# Create an eight-lane General MIDI kit through real controls, in RAM only.
+# The fixture already owns two Tracks; use its sole +Track3 header.
+# Programs two lanes, then visits Lane and Step editors.
+# For eight active lanes use drum-eight-lanes-playback.ux.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_mode sequencer.clip_launcher
+1200 encoder_value NAV 0.010
+1400 encoder_value OPT -0.010
+1600 encoder_value NAV 0.010
+1800 encoder_value NAV 0.010
+2200 tap NAV 60
+2600 marker track_type
+2800 encoder_value NAV 0.010
+3200 tap NAV 60
+3600 marker kit_picker
+3800 encoder_value NAV 0.010
+4200 tap NAV 60
+4800 marker drum_pattern
+5200 button NAV down
+5300 encoder_value NAV 0.010
+5400 button NAV up
+5800 tap MACRO_1 60
+6000 tap MACRO_5 60
+6200 encoder_value NAV 0.010
+6400 tap MACRO_3 60
+6600 tap MACRO_7 60
+7000 marker drum_playback
+7300 tap NAV 60
+7800 marker lane_editor
+8200 tap LEFT_TOP 60
+8800 button NAV down
+8900 encoder_value NAV 0.010
+9000 button NAV up
+9400 button MACRO_3 down
+10500 button MACRO_3 up
+11000 marker drum_step_editor
+11400 encoder_value NAV 0.010
+11800 encoder_value NAV 0.010
+12200 encoder_value OPT 0.250
+12600 encoder_value OPT 0.750
+13000 encoder_value OPT 0.250
+13400 encoder_value OPT 0.750
+14000 tap LEFT_TOP 60
+15000 transport stop

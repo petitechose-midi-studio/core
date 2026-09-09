@@ -49,6 +49,7 @@ public:
         uint8_t historyTrack
     );
     [[nodiscard]] bool setSoloed(uint8_t track, bool soloed);
+    [[nodiscard]] bool setName(uint8_t track, const char* name);
 
     [[nodiscard]] bool beginGesture(
         ProjectTrackHistoryActionKind kind,

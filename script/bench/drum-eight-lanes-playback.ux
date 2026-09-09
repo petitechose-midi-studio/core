@@ -1,0 +1,41 @@
+# Create a GM kit, put a hit on each lane, and observe aligned playheads.
+# RAM-only bench fixture; no lane/step editor detours.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_mode sequencer.clip_launcher
+1200 encoder_value NAV 0.010
+1400 encoder_value OPT -0.010
+1600 encoder_value NAV 0.010
+1800 encoder_value NAV 0.010
+2200 tap NAV 60
+2800 encoder_value NAV 0.010
+3200 tap NAV 60
+3800 encoder_value NAV 0.010
+4200 tap NAV 60
+4500 assert_mode sequencer.pattern
+4600 button NAV down
+4700 encoder_value NAV 0.010
+4800 button NAV up
+5000 assert_mode sequencer.drum_lane
+5200 tap MACRO_1 60
+5400 encoder_value NAV 0.010
+5600 tap MACRO_2 60
+5800 encoder_value NAV 0.010
+6000 tap MACRO_3 60
+6200 encoder_value NAV 0.010
+6400 tap MACRO_4 60
+6600 encoder_value NAV 0.010
+6800 tap MACRO_5 60
+7000 encoder_value NAV 0.010
+7200 tap MACRO_6 60
+7400 encoder_value NAV 0.010
+7600 tap MACRO_7 60
+7800 encoder_value NAV 0.010
+8000 tap MACRO_8 60
+8400 marker eight_lanes_playing
+8600 assert_mode sequencer.drum_lane
+11200 marker end_playback
+11400 transport stop

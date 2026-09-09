@@ -137,6 +137,8 @@ uint8_t midiCcCandidatePriority(MidiCcCandidateClass candidateClass);
  * destination, class priority, then stable address. On non-OK status, out is
  * left byte-for-byte untouched; capacity failures therefore never publish a
  * partial frame. PREVIEW computes identical winners but suppresses emission.
+ * Only destinations[0..destinationCount) and losers[0..loserCount) are valid;
+ * unused entries are retained when a publication buffer is reused.
  */
 MidiCcResolveStatus resolveMidiCcDestinations(
     const MidiCcCandidate* candidates,

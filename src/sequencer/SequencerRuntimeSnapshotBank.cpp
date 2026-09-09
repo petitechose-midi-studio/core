@@ -22,12 +22,16 @@ FLASHMEM SequencerRuntimeSnapshotBank::SequencerRuntimeSnapshotBank(
 // Snapshot construction belongs to the main-loop control plane. The timer ISR
 // only consumes the committed bank through the small accessors below, so keep
 // this comparatively large scan/copy path out of scarce ITCM.
-FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
+FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
+    const core::state::sequencer::SequencerClipRuntimeSources& sources
+) {
     last_refresh_succeeded_ = false;
     const uint8_t currentIndex = active_index_;
     const uint8_t writeIndex = static_cast<uint8_t>(currentIndex ^ 0x1U);
+    const bool forceRefresh = force_refresh_[writeIndex];
     auto& runtimeSnapshot = snapshots_[writeIndex];
     auto& writeSignatures = track_signatures_[writeIndex];
+    auto& clipSourceSignatures = clip_source_signatures_[writeIndex];
     auto& laneSourceSignatures = lane_source_signatures_[writeIndex];
 
     const uint8_t activeTrack =
@@ -36,14 +40,18 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
         );
     const auto& activePattern =
         core::state::sequencer::authoringPattern(sequencer_);
-
+    const auto& activeClip =
+        core::state::sequencer::authoringClip(sequencer_);
     uint16_t lanePresentMask = 0;
     for (uint8_t i = 0;
          i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
          ++i) {
-        const auto& source =
-            (i == activeTrack) ? activePattern : track_bank_.track(i);
-        if (core::state::sequencer::sequencerCcLaneView(source) != nullptr) {
+        const auto& clipSource = sources[i];
+        const auto* lanes = clipSource.document != nullptr
+            ? clipSource.document->ccLanes.get()
+            : core::state::sequencer::sequencerCcLaneView(
+                  i == activeTrack ? activePattern : track_bank_.track(i));
+        if (lanes != nullptr) {
             lanePresentMask = static_cast<uint16_t>(lanePresentMask | (1U << i));
         }
     }
@@ -62,13 +70,23 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
             lanes.presentMask = lanePresentMask;
         }
         for (uint8_t i = 0; i < lanes.tracks.size(); ++i) {
-            const auto& sourcePattern =
-                (i == activeTrack) ? activePattern : track_bank_.track(i);
-            const auto* source =
-                core::state::sequencer::sequencerCcLaneView(sourcePattern);
-            const uint32_t sourceRevision = sourcePattern.ccLaneRevision.get();
+            const auto& clipSource = sources[i];
+            const auto& residentPattern = i == activeTrack
+                ? activePattern
+                : track_bank_.track(i);
+            const auto* source = clipSource.document != nullptr
+                ? clipSource.document->ccLanes.get()
+                : core::state::sequencer::sequencerCcLaneView(residentPattern);
+            const uint32_t sourceRevision = clipSource.document != nullptr
+                ? clipSource.generation
+                : residentPattern.ccLaneRevision.get();
             auto& signature = laneSourceSignatures[i];
-            if (signature.matches(source, sourceRevision)) {
+            if (forceRefresh && source == nullptr) {
+                signature.identity = nullptr;
+                signature.revision = sourceRevision;
+                continue;
+            }
+            if (!forceRefresh && signature.matches(source, sourceRevision)) {
                 continue;
             }
             if (source == nullptr) {
@@ -84,7 +102,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
 
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
-    if (!refreshDrumTracks_(writeIndex)) {
+    if (!refreshDrumTracks_(writeIndex, sources)) {
         // Do not publish a flat generation without its Track-kind payload.
         // Allocation is retried from this non-realtime path on the next pass.
         return currentIndex;
@@ -98,31 +116,49 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh() {
     const ProjectTimingContext projectTiming{runtimeSnapshot.projectSwingPercent};
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
-        const auto& source = (i == activeTrack)
-            ? activePattern
-            : track_bank_.track(i);
-        const auto signature =
-            captureRuntimeStateSignature(
-                source,
-                runtimeSnapshot.projectScaleSettings,
-                projectTiming
-            );
-        if (writeSignatures[i].matches(signature)) {
+        const auto& clipSource = sources[i];
+        const auto* document = clipSource.document;
+        const auto& source = i == activeTrack ? activePattern : track_bank_.track(i);
+        const auto& sourceClip = i == activeTrack ? activeClip : track_bank_.clip(i);
+        auto signature = document != nullptr
+            ? captureRuntimeStateSignature(document->pattern, document->clip)
+            : captureRuntimeStateSignature(source, sourceClip,
+                  runtimeSnapshot.projectScaleSettings, projectTiming);
+        if (document != nullptr) {
+            signature.effectiveScaleSettings =
+                core::state::sequencer::resolveEffectiveScaleSettings(
+                    runtimeSnapshot.projectScaleSettings,
+                    document->pattern.scalePolicy,
+                    document->pattern.scaleOverride);
+            signature.effectiveSwingPercent =
+                core::state::sequencer::SequencerPatternState::clampEffectiveSwingPercent(
+                    static_cast<int16_t>(runtimeSnapshot.projectSwingPercent) +
+                    document->pattern.swingOffsetPercent);
+        }
+        if (!forceRefresh && clipSourceSignatures[i].matches(clipSource) &&
+            writeSignatures[i].matches(signature)) {
             continue;
         }
 
-        core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
-        runtimeSnapshot.tracks[i].effectiveScaleSettings =
-            core::state::sequencer::resolveEffectiveScaleSettings(
-                runtimeSnapshot.projectScaleSettings,
-                runtimeSnapshot.tracks[i].scalePolicy,
-                runtimeSnapshot.tracks[i].scaleOverride
-            );
-        runtimeSnapshot.tracks[i].effectiveSwingPercent =
-            source.effectiveSwingPercent(runtimeSnapshot.projectSwingPercent);
+        // Both residences publish the same runtime representation. Inspect only
+        // the signature on a cache hit; copy musical arrays only on a miss.
+        if (document != nullptr) {
+            runtimeSnapshot.tracks[i] = document->pattern;
+            runtimeSnapshot.clips[i] = document->clip;
+        } else {
+            core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
+            core::state::sequencer::captureSnapshot(sourceClip, runtimeSnapshot.clips[i]);
+        }
+        runtimeSnapshot.tracks[i].effectiveScaleSettings = signature.effectiveScaleSettings;
+        runtimeSnapshot.tracks[i].effectiveSwingPercent = signature.effectiveSwingPercent;
+        clipSourceSignatures[i] = {
+            clipSource.address.slot,
+            clipSource.generation,
+        };
         writeSignatures[i] = signature;
     }
 
+    force_refresh_[writeIndex] = false;
     last_refresh_succeeded_ = true;
     return writeIndex;
 }
@@ -144,11 +180,21 @@ SequencerRuntimeSnapshotBank::laneSnapshot(uint8_t snapshotIndex) const {
 }
 
 FLASHMEM bool SequencerRuntimeSnapshotBank::refreshDrumTracks_(
-    uint8_t writeIndex
+    uint8_t writeIndex,
+    const core::state::sequencer::SequencerClipRuntimeSources& sources
 ) {
     const uint8_t slotIndex = static_cast<uint8_t>(writeIndex & 0x1U);
-    const uint16_t presentMask = static_cast<uint16_t>(
-        track_bank_.drumTrackMask() & track_bank_.currentEnabledMask());
+    uint16_t presentMask = 0U;
+    for (uint8_t track = 0U; track < sources.size(); ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((track_bank_.currentEnabledMask() & bit) == 0U) continue;
+        const bool drum = sources[track].document != nullptr
+            ? sources[track].document->trackKind ==
+                core::state::sequencer::SequencerTrackKind::DRUM
+            : track_bank_.trackKind(track) ==
+                core::state::sequencer::SequencerTrackKind::DRUM;
+        if (drum) presentMask = static_cast<uint16_t>(presentMask | bit);
+    }
     auto& slot = drum_snapshots_[slotIndex];
     if (presentMask == 0U && !slot) return true;
 
@@ -163,20 +209,36 @@ FLASHMEM bool SequencerRuntimeSnapshotBank::refreshDrumTracks_(
         const uint16_t trackBit = static_cast<uint16_t>(1U << track);
         if ((presentMask & trackBit) == 0U) continue;
 
-        const auto& source = track_bank_.drumTrack(track);
-        const uint32_t sourceRevision =
-            track_bank_.drumTrackRevision(track);
-        if (slot->sourceRevisions[track] == sourceRevision) {
+        const auto& clipSource = sources[track];
+        const uint8_t sourceSlot = clipSource.address.slot;
+        const uint32_t sourceGeneration = clipSource.generation;
+        const uint32_t contentRevision = clipSource.document != nullptr
+            ? sourceGeneration
+            : track_bank_.drumTrackRevision(track);
+        if (!force_refresh_[slotIndex] &&
+            slot->sourceSlots[track] == sourceSlot &&
+            slot->sourceGenerations[track] == sourceGeneration &&
+            slot->sourceRevisions[track] == contentRevision) {
             continue;
         }
-        core::state::sequencer::captureDrumRuntimeSnapshot(
-            source,
-            slot->tracks[track]
-        );
+        if (clipSource.document != nullptr) {
+            if (!clipSource.document->drum) return false;
+            core::state::sequencer::captureDrumRuntimeSnapshot(
+                *clipSource.document->drum,
+                slot->tracks[track]
+            );
+        } else {
+            core::state::sequencer::captureDrumRuntimeSnapshot(
+                track_bank_.drumTrack(track),
+                slot->tracks[track]
+            );
+        }
         // Runtime lifecycle generations do not collide across Project loads,
         // unlike persisted authored counters that commonly restart at one.
-        slot->tracks[track].revision = sourceRevision;
-        slot->sourceRevisions[track] = sourceRevision;
+        slot->tracks[track].revision = contentRevision;
+        slot->sourceRevisions[track] = contentRevision;
+        slot->sourceSlots[track] = sourceSlot;
+        slot->sourceGenerations[track] = sourceGeneration;
     }
     return true;
 }

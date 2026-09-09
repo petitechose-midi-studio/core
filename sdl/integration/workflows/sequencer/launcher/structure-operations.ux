@@ -1,0 +1,56 @@
+# UX workflow: Clip selection, duplicate, move and guarded removal.
+# Purpose: proves long NAV enters the shared structural-selection grammar and
+# that the complete structure workflow remains reachable from the controller.
+# Expect: capture_changed:clip_focused=launcher_ready
+# Expect: capture_changed:clip_selected=clip_focused
+# Expect: capture_changed:duplicate_target=clip_selected
+# Expect: capture_changed:clip_duplicated=duplicate_target
+# Expect: capture_changed:move_target=clip_duplicated
+# Expect: capture_changed:clip_moved=move_target
+# Expect: capture_changed:clip_removed=clip_moved
+# Expect: semantic:clip_selected:effect=enter_clip_selection, semantic:clip_selected:projection=selected
+# Expect: semantic:duplicate_target:effect=begin_duplicate_clip, semantic:duplicate_target:projection=duplicate_destination
+# Expect: semantic:clip_duplicated:effect=duplicate_clip, semantic:clip_duplicated:outcome=applied
+# Expect: semantic:move_target:effect=focus_launcher_column, semantic:move_target:projection=move_destination
+# Expect: semantic:clip_moved:effect=move_clip, semantic:clip_moved:outcome=applied
+# Expect: semantic:clip_removed:effect=remove_clip, semantic:clip_removed:outcome=applied
+
+0 scenario clip-launcher-v3
+100 capture screen launcher_ready
+
+# Scene rail -> first occupied Clip.
+220 button NAV down
+300 encoder NAV 0.01
+380 button NAV up
+540 capture screen clip_focused
+
+# Long NAV enters selection. Its paired release must not launch the Clip.
+620 button NAV down
+1680 tick
+1720 capture screen clip_selected
+1800 button NAV up
+
+# Copy starts placement on the next empty slot; a second tap applies it.
+2040 tap BOTTOM_RIGHT 60
+2280 capture screen duplicate_target
+2380 tap BOTTOM_RIGHT 60
+2640 capture screen clip_duplicated
+
+# Select the duplicate, then LEFT_CENTER starts movement.
+2740 button NAV down
+3800 tick
+3880 button NAV up
+3980 tap LEFT_CENTER 60
+4140 encoder NAV 0.01
+4380 capture screen move_target
+4480 tap BOTTOM_RIGHT 60
+4740 capture screen clip_moved
+
+# Removal remains guarded and is committed only after the hold threshold.
+4840 button NAV down
+5900 tick
+5980 button NAV up
+6080 button BOTTOM_LEFT down
+7140 tick
+7300 capture screen clip_removed
+7360 button BOTTOM_LEFT up

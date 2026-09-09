@@ -74,7 +74,8 @@ def main() -> int:
     assert active_core_policy.vector_name == "release-current"
     assert active_core_policy.flash_enforcement == "advisory"
     assert active_core_policy.itcm_banks_exact is None
-    assert active_core_policy.itcm_banks_max == 9
+    assert active_core_policy.itcm_banks_max == 10
+    assert active_core_policy.ram1_free_min == 143360
     assert ux_recorder_policy.itcm_banks_exact is None
     assert ux_recorder_policy.itcm_banks_max == 10
     assert ux_recorder_policy.ram1_free_min == 98304
@@ -91,10 +92,17 @@ def main() -> int:
     assert bitwig_final_policy.ram2_free_exact == 353120
 
     core = evaluated("core", "core-product-profile-v1.json")
+    # Current code keeps less data in RAM1 than the historical R04 fixture.
+    # Model a 32 KiB smaller .data owner while retaining nine physical banks;
+    # the ten-bank policy is a ceiling, not an exact placement requirement.
+    current_size = replace_once(text("core.teensy-size.txt"), "variables:76032", "variables:43264")
+    current_size = replace_once(current_size, "variables:153344", "variables:186112")
+    current_sections = replace_once(text("core.sections.txt"), "010000 00  WA", "008000 00  WA")
+    current_sections = replace_once(current_sections, "20010000", "20008000")
     active_core = gate.evaluate_post_link(
         active_core_policy,
-        text("core.teensy-size.txt"),
-        text("core.sections.txt"),
+        current_size,
+        current_sections,
         text("core.symbols.txt"),
     )
     diagnostics_with_nine_banks = gate.evaluate_post_link(
@@ -129,7 +137,7 @@ def main() -> int:
     ).violations
     assert any("Flash code 331537B exceeds maximum 331536B" in item for item in violations)
 
-    advisory_flash_over = replace_once(core_size, "code:1083376", "code:1208321")
+    advisory_flash_over = replace_once(current_size, "code:1083376", "code:1208321")
     advisory_flash_over = replace_once(
         advisory_flash_over,
         "free for files:6759424",
@@ -138,7 +146,7 @@ def main() -> int:
     advisory_result = gate.evaluate_post_link(
         active_core_policy,
         advisory_flash_over,
-        core_sections,
+        current_sections,
         core_symbols,
     )
     assert advisory_result.passed

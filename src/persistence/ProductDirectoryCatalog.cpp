@@ -29,7 +29,9 @@ const char kGeneratedIdBufferInvalid[] PROGMEM =
     "invalid generated asset id buffer";
 const char kGeneratedIdExhausted[] PROGMEM = "asset id space exhausted";
 
-FLASHMEM int compareTextCaseFolded(const char* lhs, const char* rhs) {
+}  // namespace
+
+FLASHMEM int compareProductCatalogNames(const char* lhs, const char* rhs) {
     size_t index = 0U;
     while (lhs[index] != '\0' && rhs[index] != '\0') {
         auto left = static_cast<unsigned char>(lhs[index]);
@@ -42,8 +44,6 @@ FLASHMEM int compareTextCaseFolded(const char* lhs, const char* rhs) {
     if (lhs[index] == rhs[index]) return 0;
     return lhs[index] == '\0' ? -1 : 1;
 }
-
-}  // namespace
 
 FLASHMEM ProductDirectoryCatalog::ProductDirectoryCatalog(
     ProductFileService& files,
@@ -255,6 +255,9 @@ FLASHMEM bool ProductDirectoryCatalog::rawVisitor_(
 FLASHMEM oc::type::Result<void> ProductDirectoryCatalog::scanRaw_(
     ProductPersistenceWorkMeasurement& measurement
 ) {
+    if (snapshot_id_ == UINT32_MAX)
+        return oc::type::Result<void>::err({ErrorCode::RESOURCE_EXHAUSTED, kCatalogOverflow});
+    ++snapshot_id_;
     raw_count_ = 0U;
     raw_overflow_ = false;
     const auto listed = files_.list(directory_, rawVisitor_, this);
@@ -331,7 +334,7 @@ FLASHMEM int ProductDirectoryCatalog::compareAssets_(
     const ProductDirectoryAssetEntry& lhs,
     const ProductDirectoryAssetEntry& rhs
 ) {
-    const int byName = compareTextCaseFolded(lhs.semanticName, rhs.semanticName);
+    const int byName = compareProductCatalogNames(lhs.semanticName, rhs.semanticName);
     return byName != 0 ? byName : std::strcmp(lhs.id, rhs.id);
 }
 
@@ -501,6 +504,10 @@ ProductDirectoryCatalog::rawEntries(
     return raw_entries_;
 }
 
+FLASHMEM uint32_t ProductDirectoryCatalog::rawSnapshotId(const char* directory) const {
+    return rawReadyFor_(directory) ? snapshot_id_ : 0U;
+}
+
 FLASHMEM const ProductDirectoryAssetEntry*
 ProductDirectoryCatalog::assetEntries(
     const ProductDirectoryAssetQuery& query,
@@ -516,7 +523,7 @@ FLASHMEM bool ProductDirectoryCatalog::rawContainsName_(const char* name) const 
     if (name == nullptr) return false;
     for (uint16_t index = 0U; index < raw_count_; ++index) {
         if (!raw_entries_[index].nameTruncated &&
-            compareTextCaseFolded(raw_entries_[index].name, name) == 0) {
+            compareProductCatalogNames(raw_entries_[index].name, name) == 0) {
             return true;
         }
     }

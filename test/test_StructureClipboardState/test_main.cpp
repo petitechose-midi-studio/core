@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -67,8 +68,8 @@ void assertAutomationClipboardUnchanged(
 
 void test_cross_domain_copy_releases_inactive_owned_payloads() {
     core::state::StructureClipboardState clipboard;
-    sequencer::SequencerState sequencerState;
-    assert(sequencer::ensureGraphRoot(sequencerState.pattern));
+    core::state::sequencer::SequencerDetachedEditor sequencerState;
+    assert(sequencer::ensureGraphRoot(sequencerState.pattern()));
 
     core::state::SequencerPageClipboard page;
     page.valid = true;
@@ -76,7 +77,7 @@ void test_cross_domain_copy_releases_inactive_owned_payloads() {
     page.sourcePage = 0;
     assert(clipboard.storeSequencerPage(
         page,
-        sequencer::graphView(sequencerState.pattern)
+        sequencer::graphView(sequencerState.pattern())
     ));
     assert(clipboard.sequencerGraph != nullptr);
 
@@ -301,7 +302,7 @@ void test_modulation_assignment_clipboard_references_shared_source_only() {
     sourceDraft.name = "Shared LFO";
     sourceDraft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     const auto source = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         sourceDraft
     );
     assert(source.changed());
@@ -311,7 +312,7 @@ void test_modulation_assignment_clipboard_references_shared_source_only() {
     bindingDraft.amountQ15 = -12288;
     bindingDraft.application = ModulationApplication::AROUND_BASE;
     const auto binding = addProjectModulationBinding(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         bindingDraft
     );
     assert(binding.changed());
@@ -346,7 +347,7 @@ void test_project_modulator_source_clipboard_keeps_stable_reference() {
     draft.name = "Shared Source";
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     const auto created = createLfoModulator(
-        pages.control.authored.modulation,
+        pages.control.authored().modulation,
         draft
     );
     assert(created.changed());

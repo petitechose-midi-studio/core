@@ -174,7 +174,7 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
         // variation telemetry for this direct edit.
         sequencer_.stepInlineFeedback.show(abs, property, now);
         const bool changed = core::state::sequencer::setNodeLocalVariationRange(
-            sequencer_.pattern,
+            sequencer_.pattern(),
             nodeId,
             property,
             range
@@ -239,11 +239,11 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
         abs,
         property,
         normalized,
-        sequencer_.pattern.pitchEditMode,
+        sequencer_.pattern().pitchEditMode,
         core::state::sequencer::resolveEffectiveScaleSettings(
             track_bank_.projectScaleSettings(),
-            sequencer_.pattern.scalePolicy,
-            sequencer_.pattern.scaleOverride
+            sequencer_.pattern().scalePolicy,
+            sequencer_.pattern().scaleOverride
         )
     );
     if (!history_.sealCoalescedPatternEdit(changed)) {
@@ -311,11 +311,11 @@ FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normali
         abs,
         property,
         normalized,
-        sequencer_.pattern.pitchEditMode,
+        sequencer_.pattern().pitchEditMode,
         core::state::sequencer::resolveEffectiveScaleSettings(
             track_bank_.projectScaleSettings(),
-            sequencer_.pattern.scalePolicy,
-            sequencer_.pattern.scaleOverride
+            sequencer_.pattern().scalePolicy,
+            sequencer_.pattern().scaleOverride
         )
     );
     if (!history_.sealCoalescedPatternEdit(changed)) {
@@ -413,11 +413,11 @@ FLASHMEM void SequencerMacroPropertyHandler::handleDrumOwnedStepTurn(
                 step,
                 property,
                 normalized,
-                sequencer_.pattern.pitchEditMode,
+                sequencer_.pattern().pitchEditMode,
                 seq::resolveEffectiveScaleSettings(
                     track_bank_.projectScaleSettings(),
-                    sequencer_.pattern.scalePolicy,
-                    sequencer_.pattern.scaleOverride
+                    sequencer_.pattern().scalePolicy,
+                    sequencer_.pattern().scaleOverride
                 )
             );
         }

@@ -68,13 +68,13 @@ FLASHMEM int SequencerCcLaneWorkflow::direction_(float delta) {
 }
 
 FLASHMEM uint8_t SequencerCcLaneWorkflow::selectorItemCount() const {
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     const uint8_t count = bank ? seq::sequencerCcLaneCount(*bank) : 0;
     return static_cast<uint8_t>(count + (count < seq::SequencerCcLaneBank::MAX_LANES ? 1U : 0U));
 }
 
 FLASHMEM int8_t SequencerCcLaneWorkflow::selectorLane() const {
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank == nullptr) return -1;
     uint8_t dense = 0;
     for (uint8_t lane = 0; lane < bank->lanes.size(); ++lane) {
@@ -94,7 +94,7 @@ FLASHMEM void SequencerCcLaneWorkflow::openLaneSelector() {
     auto& ui = editor_.ccLaneUi;
     ui.mode = seq::SequencerCcLaneUiMode::LANE_SELECTOR;
     ui.selectorIndex = 0;
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank != nullptr && ui.focusedLane < bank->lanes.size() &&
         bank->lanes[ui.focusedLane].occupied) {
         uint8_t dense = 0;
@@ -158,7 +158,7 @@ FLASHMEM void SequencerCcLaneWorkflow::moveSelector(float delta) {
 FLASHMEM bool SequencerCcLaneWorkflow::createDefaultLane(uint32_t nowMs) {
     if (!commitEventEdit(nowMs)) return false;
     auto& ui = editor_.ccLaneUi;
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     const int8_t freeLane = bank ? seq::firstFreeSequencerCcLane(*bank) : 0;
     if (freeLane < 0) {
         block_(ActionId::CREATE, Reason::CAPACITY, nowMs);
@@ -216,13 +216,13 @@ FLASHMEM bool SequencerCcLaneWorkflow::createDefaultLane(uint32_t nowMs) {
 
 FLASHMEM void SequencerCcLaneWorkflow::openGrid_(uint8_t lane) {
     auto& ui = editor_.ccLaneUi;
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank == nullptr || lane >= bank->lanes.size() || !bank->lanes[lane].occupied) return;
     ui.focusedLane = lane;
     ui.compactTransitionPicker = false;
     ui.focusedStep = std::min<uint8_t>(
         editor_.focusedStep.get(),
-        static_cast<uint8_t>(std::max<uint8_t>(1, editor_.pattern.length.get()) - 1U));
+        static_cast<uint8_t>(std::max<uint8_t>(1, editor_.pattern().length.get()) - 1U));
     ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
     refreshProjection();
 }
@@ -240,7 +240,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::activateSelector(uint32_t nowMs) {
 
 FLASHMEM void SequencerCcLaneWorkflow::loadSettingsDraft_() {
     auto& ui = editor_.ccLaneUi;
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return;
     const auto& lane = bank->lanes[ui.focusedLane];
     if (!lane.occupied) return;
@@ -347,7 +347,7 @@ FLASHMEM void SequencerCcLaneWorkflow::moveFocusedStep(float delta, uint32_t now
     ui.transitionAppliedFeedback = false;
     if (!commitEventEdit(nowMs)) return;
     const int direction = direction_(delta);
-    const uint8_t length = std::max<uint8_t>(1, editor_.pattern.length.get());
+    const uint8_t length = std::max<uint8_t>(1, editor_.pattern().length.get());
     if (direction == 0) return;
     ui.focusedStep =
         static_cast<uint8_t>((static_cast<int>(ui.focusedStep) + direction + length) % length);
@@ -359,7 +359,7 @@ FLASHMEM void SequencerCcLaneWorkflow::moveFocusedStep(float delta, uint32_t now
 
 FLASHMEM bool SequencerCcLaneWorkflow::focusStep(uint8_t step, uint32_t nowMs) {
     auto& ui = editor_.ccLaneUi;
-    const uint8_t length = std::max<uint8_t>(1U, editor_.pattern.length.get());
+    const uint8_t length = std::max<uint8_t>(1U, editor_.pattern().length.get());
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID || step >= length) { return false; }
     if (ui.focusedStep != step) {
         if (!commitEventEdit(nowMs)) return false;
@@ -373,7 +373,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::focusStep(uint8_t step, uint32_t nowMs) {
 
 FLASHMEM bool SequencerCcLaneWorkflow::stageCurrentBank_(LaneBankPtr& out,
                                                          bool materializeEmpty) const {
-    if (!seq::cloneSequencerCcLaneBank(out, seq::sequencerCcLaneView(editor_.pattern))) {
+    if (!seq::cloneSequencerCcLaneBank(out, seq::sequencerCcLaneView(editor_.pattern()))) {
         return false;
     }
     if (!out && materializeEmpty) { out = core::app::makeExtmemUnique<seq::SequencerCcLaneBank>(); }
@@ -415,7 +415,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::installPreparedChange_(PatternChangePtr c
         !history_.canRecordPattern(*change)) {
         return false;
     }
-    seq::installSequencerCcLaneBank(editor_.pattern, std::move(bank));
+    seq::installSequencerCcLaneBank(editor_.pattern(), std::move(bank));
     history_.recordPreparedPattern(std::move(change));
     return true;
 }
@@ -470,7 +470,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::editFocusedEvent(float delta, uint32_t no
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID || direction_(delta) == 0) {
         return false;
     }
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size() ||
         !bank->lanes[ui.focusedLane].occupied) {
         block_(ActionId::EDIT, Reason::INVALID_PAYLOAD, nowMs);
@@ -483,7 +483,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::editFocusedEvent(float delta, uint32_t no
                                   ? clampAdd(beforeValue, direction_(delta),
                                              lane.destination.minimum, lane.destination.maximum)
                                   : seq::proposedSequencerCcLaneEventValue(
-                                        lane, ui.focusedStep, editor_.pattern.length.get());
+                                        lane, ui.focusedStep, editor_.pattern().length.get());
     return setFocusedEventValue_(nextValue, nowMs);
 }
 
@@ -517,7 +517,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::setFocusedEventValue_(uint8_t nextValue, 
         refreshProjection();
         return false;
     }
-    seq::installSequencerCcLaneBank(editor_.pattern, std::move(staged));
+    seq::installSequencerCcLaneBank(editor_.pattern(), std::move(staged));
     refreshProjection();
     return true;
 }
@@ -533,14 +533,14 @@ FLASHMEM bool SequencerCcLaneWorkflow::focusVisibleStep_(uint8_t indexInWindow, 
         static_cast<uint8_t>((ui.focusedStep / seq::SequencerPatternState::STEPS_PER_PAGE) *
                              seq::SequencerPatternState::STEPS_PER_PAGE);
     const uint8_t step = static_cast<uint8_t>(start + indexInWindow);
-    if (step >= std::max<uint8_t>(1U, editor_.pattern.length.get())) return false;
+    if (step >= std::max<uint8_t>(1U, editor_.pattern().length.get())) return false;
     return focusStep(step, nowMs);
 }
 
 FLASHMEM bool SequencerCcLaneWorkflow::editVisibleEvent(uint8_t indexInWindow, float normalized,
                                                         uint32_t nowMs) {
     if (!focusVisibleStep_(indexInWindow, nowMs) || !std::isfinite(normalized)) { return false; }
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     const auto& ui = editor_.ccLaneUi;
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return false;
     const auto& lane = bank->lanes[ui.focusedLane];
@@ -569,7 +569,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::openTransitionPickerForFocused_(bool comp
     auto& ui = editor_.ccLaneUi;
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID) return false;
     if (!commitEventEdit(nowMs)) return false;
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return false;
     const auto& lane = bank->lanes[ui.focusedLane];
     if (!lane.activeMask.test(ui.focusedStep)) return false;
@@ -668,7 +668,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::toggleFocusedEvent(uint32_t nowMs) {
     auto& ui = editor_.ccLaneUi;
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID) return false;
     ui.transitionAppliedFeedback = false;
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size() ||
         !bank->lanes[ui.focusedLane].occupied) {
         return false;
@@ -867,7 +867,7 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshValueProjection_() {
     ui.hasResolvedValue = false;
     ui.resolvedValue = 0;
     ui.liveProjection = false;
-    const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+    const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return;
     const auto& lane = bank->lanes[ui.focusedLane];
     if (!lane.occupied) return;
@@ -960,7 +960,7 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshProjection() {
     if (ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) {
         preflight = services_.preflight(tracks_.activeTrackIndex(), ui.focusedLane, ui.draft);
     } else {
-        const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
+        const auto* bank = seq::sequencerCcLaneView(editor_.pattern());
         if (bank != nullptr && ui.focusedLane < bank->lanes.size() &&
             bank->lanes[ui.focusedLane].occupied) {
             seq::SequencerCcLaneDraft current{};

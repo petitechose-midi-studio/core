@@ -13,7 +13,7 @@
 
 # Switch Load -> Save, focus New Folder and open the common text keyboard.
 1650 tap BOTTOM_LEFT 60
-1850 encoder NAV 1
+1850 encoder NAV 0.01
 2000 capture screen pattern_folder_save_list
 2100 tap BOTTOM_RIGHT 60
 2300 capture screen pattern_folder_keyboard

@@ -431,8 +431,6 @@ FLASHMEM PlanOutcome buildPlan(
             oldActiveBit | targetBit
         );
         plan.canonicalResetTrackMask = targetBit;
-        plan.incomingOwnerPolicy = core::state::sequencer::
-            SequencerActiveTrackIncomingOwnerPolicy::Reset;
         if (!fillActiveChangeFocus(
                 context,
                 core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH,
@@ -455,15 +453,9 @@ FLASHMEM PlanOutcome buildPlan(
             oldActiveBit |
             core::state::shared::slotBit(mutation.nextActive)
         );
-        plan.incomingOwnerPolicy = core::state::sequencer::
-            SequencerActiveTrackIncomingOwnerPolicy::Preserve;
         if (!fillActiveChangeFocus(
                 context,
-                core::state::sequencer::canonicalTrackPattern(
-                    context.state.tracks,
-                    context.state.sequencer,
-                    mutation.nextActive
-                ).length.get(),
+                context.state.tracks.track(mutation.nextActive).length.get(),
                 plan
             )) {
             return PlanOutcome::Invalid;
@@ -488,13 +480,7 @@ FLASHMEM PlanOutcome buildPlan(
             oldActiveBit |
             core::state::shared::slotBit(mutation.nextActive)
         );
-        plan.incomingOwnerPolicy = core::state::sequencer::
-            SequencerActiveTrackIncomingOwnerPolicy::Preserve;
-        const uint8_t incomingLength = core::state::sequencer::canonicalTrackPattern(
-            context.state.tracks,
-            context.state.sequencer,
-            mutation.nextActive
-        ).length.get();
+        const uint8_t incomingLength = context.state.tracks.track(mutation.nextActive).length.get();
         if (!fillActiveChangeFocus(
                 context,
                 incomingLength,

@@ -23,20 +23,4 @@ SequencerProjectScaleChoice resolveProjectScaleChoice(
     int choiceIndex
 );
 
-struct SequencerProjectScaleMutationResult {
-    bool changed = false;
-    SequencerChordContextProjectionStats projection{};
-};
-
-/**
- * Applies one already-resolved Project-scale transition. This operation is
- * allocation-free and presence-preserving for canonical Pattern payloads, so
- * the identical operation can be run on prepared staging and live state.
- */
-SequencerProjectScaleMutationResult applyProjectScaleTransition(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    oc::note::sequencer::StepSequencerScaleSettings target
-);
-
 }  // namespace core::state::sequencer

@@ -3,7 +3,6 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/PersistenceBinaryCodec.hpp"
-#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::persistence::sequencer_codec {
 
@@ -59,18 +58,6 @@ FLASHMEM bool enabledMaskCanonical(
 ) {
     const auto available = lengthMask(length);
     return (mask & available) == mask;
-}
-
-FLASHMEM oc::note::sequencer::StepSequencerScaleSettings payloadScaleSettings(
-    uint8_t root,
-    uint8_t type,
-    uint8_t mode
-) {
-    return {
-        .root = root,
-        .type = static_cast<oc::note::sequencer::StepSequencerScaleType>(type),
-        .mode = static_cast<oc::note::sequencer::StepSequencerScaleConstraintMode>(mode),
-    };
 }
 
 FLASHMEM bool trackSelectionCanonical(
@@ -392,6 +379,54 @@ FLASHMEM bool validatePattern(
     return true;
 }
 
+template <typename Pattern>
+FLASHMEM bool readPatternData(binary::Reader& reader, Pattern& target) {
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!reader.readU8(target.note[i])) return false;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!reader.readU8(target.velocity[i])) return false;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!reader.readU16(target.gate[i])) return false;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!reader.readI8(target.nudge[i])) return false;
+    }
+    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
+        if (!reader.readU8(target.probability[i])) return false;
+    }
+
+    return true;
+}
+
+FLASHMEM bool readPattern(binary::Reader& reader,
+                          sequencer::SequencerPatternSnapshot& target) {
+    PatternHeader header{};
+    if (!readPatternHeader(reader, header)) return false;
+    // Revisions are session-local and are not stored in the file. A decoded
+    // document starts a fresh epoch; installation publishes its own changes.
+    target.stepDataRevision = 0U;
+    target.patternVariationRevision = 0U;
+    target.patternScaleRevision = 0U;
+    target.patternTimingRevision = 0U;
+    target.graphRevision = 0U;
+    target.length = header.length;
+    target.stepsPerBeat = header.stepsPerBeat;
+    target.pitchEditMode = static_cast<sequencer::SequencerPitchEditMode>(header.pitchEditMode);
+    target.variationRanges = header.variationRanges;
+    target.swingOffsetPercent = header.swingOffset;
+    target.patternNudgePercent = header.patternNudge;
+    target.scalePolicy = static_cast<sequencer::SequencerPatternScalePolicy>(header.scalePolicy);
+    target.scaleOverride = header.scaleOverride;
+    target.enabledMask = header.enabledMask;
+    target.effectiveSwingPercent = sequencer::SequencerPatternState::clampEffectiveSwingPercent(
+        header.swingOffset);
+    target.effectiveScaleSettings = sequencer::resolveEffectiveScaleSettings(
+        {}, target.scalePolicy, target.scaleOverride);
+    return readPatternData(reader, target);
+}
+
 FLASHMEM bool readPattern(binary::Reader& reader,
                           sequencer::SequencerPatternState& target) {
     PatternHeader header{};
@@ -413,34 +448,10 @@ FLASHMEM bool readPattern(binary::Reader& reader,
     target.setPatternScaleOverride(header.scaleOverride);
     target.enabledMask.set(header.enabledMask);
 
-    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
-        if (!reader.readU8(target.note[i])) return false;
-    }
-    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
-        if (!reader.readU8(target.velocity[i])) return false;
-    }
-    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
-        if (!reader.readU16(target.gate[i])) return false;
-    }
-    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
-        if (!reader.readI8(target.nudge[i])) return false;
-    }
-    for (uint8_t i = 0; i < PERSISTED_PATTERN_STEPS; ++i) {
-        if (!reader.readU8(target.probability[i])) return false;
-    }
+    if (!readPatternData(reader, target)) return false;
 
     target.bumpStepDataRevision();
     return true;
-}
-
-FLASHMEM bool readPatternAt(const uint8_t* data,
-                            uint16_t size,
-                            uint16_t offset,
-                            sequencer::SequencerPatternState& target) {
-    if (data == nullptr || offset > size || PATTERN_PAYLOAD_SIZE > size - offset) {
-        return false;
-    }
-    return applyPatternPayload(data + offset, PATTERN_PAYLOAD_SIZE, target);
 }
 
 FLASHMEM bool readScaleSettings(
@@ -526,39 +537,6 @@ FLASHMEM bool validateProjectSequencerPayload(
            reader.offset() == PROJECT_SEQUENCER_PAYLOAD_SIZE;
 }
 
-FLASHMEM bool validateSetPayload(
-    const uint8_t* data,
-    uint16_t size
-) {
-    if (data == nullptr || size != SET_PAYLOAD_SIZE) return false;
-
-    binary::Reader reader(data, size);
-    uint8_t trackCount = 0U;
-    uint8_t activeTrack = 0U;
-    uint16_t enabledMask = 0U;
-    uint16_t reservedProjectTrackState = 0U;
-    oc::note::sequencer::StepSequencerScaleSettings projectScale{};
-    uint8_t reserved = 0U;
-    if (!reader.readU8(trackCount) ||
-        !reader.readU8(activeTrack) ||
-        !reader.readU16(enabledMask) ||
-        !reader.readU16(reservedProjectTrackState) ||
-        !readScaleSettings(reader, projectScale) ||
-        !reader.readU8(reserved) ||
-        trackCount != sequencer::SequencerTrackBankState::TRACK_COUNT ||
-        reservedProjectTrackState != 0U ||
-        reserved != 0U ||
-        !trackSelectionCanonical(enabledMask, activeTrack)) {
-        return false;
-    }
-    for (uint8_t track = 0U;
-         track < sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        if (!validatePattern(reader)) return false;
-    }
-    return reader.ok() && reader.offset() == SET_PAYLOAD_SIZE;
-}
-
 }  // namespace
 
 FLASHMEM bool fillPatternPayload(const sequencer::SequencerPatternState& source,
@@ -569,6 +547,17 @@ FLASHMEM bool fillPatternPayload(const sequencer::SequencerPatternState& source,
     return writePattern(writer, patternEncodeView(source)) &&
            writer.ok() &&
            writer.offset() == PATTERN_PAYLOAD_SIZE;
+}
+
+FLASHMEM bool fillPatternPayload(
+    const sequencer::SequencerPatternSnapshot& source,
+    uint8_t* out,
+    uint16_t capacity
+) {
+    if (capacity != PATTERN_PAYLOAD_SIZE) return false;
+    binary::Writer writer(out, capacity);
+    return writePattern(writer, patternEncodeView(source)) &&
+           writer.ok() && writer.offset() == PATTERN_PAYLOAD_SIZE;
 }
 
 FLASHMEM bool applyPatternPayload(const uint8_t* data,
@@ -606,165 +595,42 @@ FLASHMEM bool fillProjectSequencerPayload(
     );
 }
 
-FLASHMEM bool applyProjectSequencerPayload(const uint8_t* data,
-                                           uint16_t size,
-                                           sequencer::SequencerTrackBankState& trackBank,
-                                           sequencer::SequencerState& active) {
+FLASHMEM bool decodeProjectSequencerPayload(
+    const uint8_t* data,
+    uint16_t size,
+    sequencer::SequencerTrackBankSnapshot& target,
+    uint8_t& focusedStep,
+    sequencer::StepProperty& activeStepProperty
+) {
+    // Validate the complete payload before writing any output. The second
+    // pass is allocation-free and cannot fail for these immutable bytes.
     if (!validateProjectSequencerPayload(data, size)) return false;
-
     binary::Reader reader(data, size);
-    uint8_t activeTrackRaw = 0;
-    uint16_t enabledMask = 0;
-    uint16_t reservedProjectTrackState = 0;
-    uint8_t projectScaleRoot = 0;
-    uint8_t projectScaleType = 0;
-    uint8_t projectScaleConstraintMode = 0;
-    uint8_t reserved = 0;
-    if (!reader.readU8(activeTrackRaw) ||
-        !reader.readU16(enabledMask) ||
-        !reader.readU16(reservedProjectTrackState) ||
-        !reader.readU8(projectScaleRoot) ||
-        !reader.readU8(projectScaleType) ||
-        !reader.readU8(projectScaleConstraintMode) ||
+    uint16_t reservedTrackState = 0U;
+    uint8_t reserved = 0U;
+    if (!reader.readU8(target.activeTrack) ||
+        !reader.readU16(target.enabledMask) ||
+        !reader.readU16(reservedTrackState) ||
+        !readScaleSettings(reader, target.projectScaleSettings) ||
         !reader.readU8(reserved)) {
         return false;
     }
-
-    trackBank.reset();
-    trackBank.syncSharedTrackState(enabledMask, activeTrackRaw);
-    trackBank.setProjectScaleSettings(payloadScaleSettings(
-        projectScaleRoot,
-        projectScaleType,
-        projectScaleConstraintMode
-    ));
-
-    const uint8_t activeTrack = trackBank.activeTrackIndex();
-    uint16_t activePatternOffset = 0;
-    uint8_t activePage = 0;
-    uint8_t activeFocusedStep = 0;
-    uint8_t activeStepProperty = static_cast<uint8_t>(sequencer::StepProperty::NOTE);
-
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const uint16_t patternOffset = static_cast<uint16_t>(reader.offset());
-        if (!readPattern(reader, trackBank.track(i))) return false;
-
-        uint8_t page = 0;
-        uint8_t focused = 0;
-        uint8_t stepProperty = 0;
-        uint8_t trackReserved = 0;
-        if (!reader.readU8(page) ||
-            !reader.readU8(focused) ||
-            !reader.readU8(stepProperty) ||
-            !reader.readU8(trackReserved)) {
+    target.projectScaleRevision = 0U;
+    target.projectSwingPercent = 0U;
+    for (uint8_t track = 0U; track < PERSISTED_TRACK_COUNT; ++track) {
+        target.clips[track] = {};  // Playback regions are a separate envelope section.
+        uint8_t page = 0U, focused = 0U, property = 0U;
+        if (!readPattern(reader, target.tracks[track]) ||
+            !reader.readU8(page) || !reader.readU8(focused) ||
+            !reader.readU8(property) || !reader.readU8(reserved)) {
             return false;
         }
-
-        if (i == activeTrack) {
-            activePatternOffset = patternOffset;
-            activePage = page;
-            activeFocusedStep = focused;
-            activeStepProperty = stepProperty;
+        if (track == target.activeTrack) {
+            focusedStep = focused;
+            activeStepProperty = static_cast<sequencer::StepProperty>(property);
         }
     }
-    if (!reader.ok() || reader.offset() != PROJECT_SEQUENCER_PAYLOAD_SIZE) return false;
-    if (!readPatternAt(data, size, activePatternOffset, active.pattern)) return false;
-
-    active.focusedStep.set(activeFocusedStep);
-    active.page.set(activePage);
-    active.activeStepProperty.set(
-        static_cast<sequencer::StepProperty>(activeStepProperty)
-    );
-    return true;
-}
-
-FLASHMEM bool fillSetPayload(const sequencer::SequencerTrackBankState& trackBank,
-                             const sequencer::SequencerState& active,
-                             uint8_t* out,
-                             uint16_t capacity) {
-    if (capacity != SET_PAYLOAD_SIZE) return false;
-
-    const uint8_t activeTrack = trackBank.activeTrackIndex();
-    const uint16_t enabledMask = trackBank.currentEnabledMask();
-    const auto projectScale = trackBank.projectScaleSettings();
-    if (!trackSelectionCanonical(enabledMask, activeTrack) ||
-        !scaleSettingsCanonical(projectScale)) {
-        return false;
-    }
-    for (uint8_t track = 0U;
-         track < sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        const auto& source = sequencer::canonicalTrackPattern(trackBank, active, track);
-        if (!patternCanonical(patternEncodeView(source))) return false;
-    }
-
-    binary::Writer writer(out, capacity);
-    if (!writer.writeU8(sequencer::SequencerTrackBankState::TRACK_COUNT) ||
-        !writer.writeU8(activeTrack) ||
-        !writer.writeU16(enabledMask) ||
-        // Set assets carry Sequencer topology/content, never Project Track mix.
-        !writer.writeU16(0U) ||
-        !writer.writeU8(projectScale.root) ||
-        !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
-        !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
-        !writer.writeU8(0)) {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const auto& source = sequencer::canonicalTrackPattern(trackBank, active, i);
-        if (!writePattern(writer, patternEncodeView(source))) return false;
-    }
-
-    return writer.ok() && writer.offset() == SET_PAYLOAD_SIZE;
-}
-
-FLASHMEM bool applySetPayload(const uint8_t* data,
-                              uint16_t size,
-                              sequencer::SequencerTrackBankState& trackBank,
-                              sequencer::SequencerState& active) {
-    if (!validateSetPayload(data, size)) return false;
-
-    binary::Reader reader(data, size);
-    uint8_t trackCountRaw = 0;
-    uint8_t activeTrackRaw = 0;
-    uint16_t enabledMask = 0;
-    uint16_t reservedProjectTrackState = 0;
-    uint8_t projectScaleRoot = 0;
-    uint8_t projectScaleType = 0;
-    uint8_t projectScaleConstraintMode = 0;
-    uint8_t reserved = 0;
-    if (!reader.readU8(trackCountRaw) ||
-        !reader.readU8(activeTrackRaw) ||
-        !reader.readU16(enabledMask) ||
-        !reader.readU16(reservedProjectTrackState) ||
-        !reader.readU8(projectScaleRoot) ||
-        !reader.readU8(projectScaleType) ||
-        !reader.readU8(projectScaleConstraintMode) ||
-        !reader.readU8(reserved)) {
-        return false;
-    }
-
-    trackBank.reset();
-    trackBank.syncSharedTrackState(enabledMask, activeTrackRaw);
-    trackBank.setProjectScaleSettings(payloadScaleSettings(
-        projectScaleRoot,
-        projectScaleType,
-        projectScaleConstraintMode
-    ));
-
-    uint16_t activePatternOffset = 0;
-    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const uint16_t patternOffset = static_cast<uint16_t>(reader.offset());
-        if (!readPattern(reader, trackBank.track(i))) return false;
-        if (i == activeTrackRaw) activePatternOffset = patternOffset;
-    }
-    if (!reader.ok() || reader.offset() != SET_PAYLOAD_SIZE) return false;
-    if (!readPatternAt(data, size, activePatternOffset, active.pattern)) return false;
-
-    active.focusedStep.set(0);
-    active.page.set(0);
-    active.activeStepProperty.set(sequencer::StepProperty::NOTE);
-    return true;
+    return reader.ok() && reader.offset() == PROJECT_SEQUENCER_PAYLOAD_SIZE;
 }
 
 }  // namespace core::persistence::sequencer_codec

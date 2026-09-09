@@ -14,12 +14,13 @@ enum class ProjectTrackHistoryActionKind : uint8_t {
     Delay,
     Mute,
     Solo,
+    Name,
 };
 
 /**
  * One bounded, allocation-free Track control command.
  *
- * The payload stores complete 52-byte snapshots so one gesture remains atomic
+ * The payload stores complete snapshots so one gesture remains atomic
  * even when a control changes the global audible mask (Solo/Mute). Entries are
  * held in stable slots: their addresses can therefore be used safely by the
  * Project-wide chronology while commands move between Undo and Redo.

@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -28,7 +29,7 @@ void test_apply_sanitizes_and_syncs_all_domains() {
     oc::state::Signal<uint16_t, 16> enabledMask{0x0002};
     auto pages = std::make_unique<core::state::macro::MacroPagesState>();
     auto sequencerTracks = std::make_unique<core::state::sequencer::SequencerTrackBankState>();
-    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>();
+    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>(sequencerTracks->track(0U), sequencerTracks->clip(0U));
 
     const auto result = core::state::shared::SharedTrackCoordinator::apply(
         refsFor(activeTrack, enabledMask, *pages, *sequencerTracks, *sequencer),
@@ -54,7 +55,7 @@ void test_apply_switches_to_first_enabled_track_when_active_is_disabled() {
     oc::state::Signal<uint16_t, 16> enabledMask{0x0001};
     auto pages = std::make_unique<core::state::macro::MacroPagesState>();
     auto sequencerTracks = std::make_unique<core::state::sequencer::SequencerTrackBankState>();
-    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>();
+    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>(sequencerTracks->track(0U), sequencerTracks->clip(0U));
 
     const auto result = core::state::shared::SharedTrackCoordinator::apply(
         refsFor(activeTrack, enabledMask, *pages, *sequencerTracks, *sequencer),
@@ -80,7 +81,7 @@ void test_noop_still_keeps_domain_caches_aligned() {
     oc::state::Signal<uint16_t, 16> enabledMask{0x000C};
     auto pages = std::make_unique<core::state::macro::MacroPagesState>();
     auto sequencerTracks = std::make_unique<core::state::sequencer::SequencerTrackBankState>();
-    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>();
+    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>(sequencerTracks->track(0U), sequencerTracks->clip(0U));
 
     pages->syncSharedTrackState(0x0001, 0);
     sequencerTracks->syncSharedTrackState(0x0001, 0);
@@ -100,14 +101,14 @@ void test_noop_still_keeps_domain_caches_aligned() {
     std::cout << "[PASS] test_noop_still_keeps_domain_caches_aligned\n";
 }
 
-void test_publish_prepared_state_does_not_replace_preinstalled_editor_content() {
+void test_publish_prepared_state_selects_preinstalled_bank_content() {
     oc::state::Signal<uint8_t, 8> activeTrack{0};
     oc::state::Signal<uint16_t, 16> enabledMask{0x0001};
     auto pages = std::make_unique<core::state::macro::MacroPagesState>();
     auto sequencerTracks = std::make_unique<core::state::sequencer::SequencerTrackBankState>();
-    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>();
+    auto sequencer = std::make_unique<core::state::sequencer::SequencerState>(sequencerTracks->track(0U), sequencerTracks->clip(0U));
 
-    sequencer->pattern.note[0] = 91;
+    sequencer->pattern().note[0] = 91;
     sequencerTracks->track(2).note[0] = 72;
     const auto result =
         core::state::shared::SharedTrackCoordinator::publishPreparedSequencerState(
@@ -122,11 +123,13 @@ void test_publish_prepared_state_does_not_replace_preinstalled_editor_content() 
     assert(enabledMask.get() == 0x0005);
     assert(sequencerTracks->activeTrackIndex() == 2);
     assert(pages->currentActiveTrack() == 2);
-    assert(sequencer->pattern.note[0] == 91);
+    assert(sequencer->pattern().note[0] == 72);
+    assert(sequencerTracks->track(0U).note[0] == 91);
+    assert(&sequencer->pattern() == &sequencerTracks->track(2U));
     assert(sequencerTracks->track(2).note[0] == 72);
 
     std::cout
-        << "[PASS] test_publish_prepared_state_does_not_replace_preinstalled_editor_content\n";
+        << "[PASS] test_publish_prepared_state_selects_preinstalled_bank_content\n";
 }
 
 }  // namespace
@@ -135,7 +138,7 @@ int main() {
     test_apply_sanitizes_and_syncs_all_domains();
     test_apply_switches_to_first_enabled_track_when_active_is_disabled();
     test_noop_still_keeps_domain_caches_aligned();
-    test_publish_prepared_state_does_not_replace_preinstalled_editor_content();
+    test_publish_prepared_state_selects_preinstalled_bank_content();
 
     std::cout << "All SharedTrackCoordinator tests passed\n";
     return 0;

@@ -1,3 +1,4 @@
+#include "state/sequencer/SequencerDetachedEditor.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -201,12 +202,12 @@ std::vector<uint8_t> encodePreset(
     SequencerStepGraphPreset::ScalePolicy scalePolicy =
         SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
 ) {
-    SequencerState source;
-    source.pattern.setContentLength(8);
-    source.pattern.setEnabled(2, true);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
+    source.pattern().setEnabled(2, true);
     assert(source.setStepDataAt(2, note, 96, 155, -3, 84));
     const auto sequence = core::state::sequencer::createMicroSequence(
-        source.pattern,
+        source.pattern(),
         core::state::sequencer::rootStepNodeId(2),
         2
     );
@@ -256,46 +257,46 @@ std::vector<uint8_t> encodeRandomCyclePreset(
     const char* technicalId,
     const char* semanticName
 ) {
-    SequencerState source;
-    source.pattern.setContentLength(8);
-    source.pattern.setEnabled(2, true);
+    core::state::sequencer::SequencerDetachedEditor source;
+    source.pattern().setContentLength(8);
+    source.pattern().setEnabled(2, true);
     assert(source.setStepDataAt(2, 67, 96, 155, -3, 84));
     const auto root = core::state::sequencer::rootStepNodeId(2);
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        source.pattern,
+        source.pattern(),
         root,
         core::state::sequencer::StepProperty::NOTE,
         7
     ));
     const auto sequence = core::state::sequencer::createMicroSequence(
-        source.pattern,
+        source.pattern(),
         root,
         2
     );
     assert(sequence.ok);
-    const auto* graph = core::state::sequencer::graphView(source.pattern);
+    const auto* graph = core::state::sequencer::graphView(source.pattern());
     assert(graph != nullptr);
     const auto* childSequence = graph->sequence(sequence.id);
     assert(childSequence != nullptr);
     const auto child = static_cast<uint16_t>(childSequence->firstStepNode + 1U);
-    assert(core::state::sequencer::setNodeNoteOffset(source.pattern, child, 5));
+    assert(core::state::sequencer::setNodeNoteOffset(source.pattern(), child, 5));
     const auto cycle = core::state::sequencer::createCycleStateSet(
-        source.pattern,
+        source.pattern(),
         child,
         3
     );
     assert(cycle.ok);
-    graph = core::state::sequencer::graphView(source.pattern);
+    graph = core::state::sequencer::graphView(source.pattern());
     assert(graph != nullptr);
     const auto* cycleSet = graph->cycleSet(cycle.id);
     assert(cycleSet != nullptr && cycleSet->length == 3);
     assert(core::state::sequencer::setNodeNoteOffset(
-        source.pattern,
+        source.pattern(),
         static_cast<uint16_t>(cycleSet->firstStateNode + 1U),
         -4
     ));
     assert(core::state::sequencer::setNodeNoteOffset(
-        source.pattern,
+        source.pattern(),
         static_cast<uint16_t>(cycleSet->firstStateNode + 2U),
         9
     ));
@@ -392,7 +393,7 @@ core::handler::SequencerStepPresetListResult listPresetsSettled(
 }
 
 void prepareTarget(Harness& h, uint8_t step = 5) {
-    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern().setContentLength(8);
     assert(core::state::project::setProjectTrackMidiChannel(
         h.state.projectTracks,
         0,
@@ -401,15 +402,12 @@ void prepareTarget(Harness& h, uint8_t step = 5) {
     h.state.projectTracks.authored.midiChannels[
         h.state.currentSharedActiveTrack()
     ] = 9;
-    h.state.sequencer.pattern.setEnabled(step, false);
+    h.state.sequencer.pattern().setEnabled(step, false);
     assert(h.state.sequencer.setStepDataAt(step, 41, 12, 40, 4, 100));
     h.state.sequencer.stepEdit.stepIndex.set(step);
     h.state.sequencer.focusedStep.set(step);
     h.state.sequencer.page.set(0);
-    assert(core::state::sequencer::initializeTrackBankFromActive(
-        h.state.sequencerTracks,
-        h.state.sequencer
-    ));
+    h.state.sequencerTracks.reset();
     h.state.project.metadata.modifiedCounter = 42;
     h.state.project.metadata.dirty = false;
 }
@@ -473,7 +471,7 @@ LiveInvariant captureInvariant(core::state::CoreState& state) {
         state.hasPendingSequencerPatternHistoryCoalescing();
     snapshot.page = state.sequencer.page.get();
     snapshot.focusedStep = state.sequencer.focusedStep.get();
-    snapshot.editorGraphRevision = state.sequencer.pattern.graphRevision.get();
+    snapshot.editorGraphRevision = state.sequencer.pattern().graphRevision.get();
     snapshot.contentKind = state.sequencer.contentView.kind.get();
     snapshot.ownerNodeId = state.sequencer.contentView.ownerNodeId.get();
     snapshot.sequenceId = state.sequencer.contentView.sequenceId.get();
@@ -529,7 +527,7 @@ void assertInvariantUnchanged(
     assert(state.sequencer.page.get() == before.page);
     assert(state.sequencer.focusedStep.get() == before.focusedStep);
     assert(
-        state.sequencer.pattern.graphRevision.get() ==
+        state.sequencer.pattern().graphRevision.get() ==
         before.editorGraphRevision
     );
     assert(state.sequencer.contentView.kind.get() == before.contentKind);
@@ -793,7 +791,7 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
         core::state::sequencer::StepProperty::VELOCITY,
         100,
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
-    h.state.sequencer.pattern.velocity[target.stepIndex] = 77;
+    h.state.sequencer.pattern().velocity[target.stepIndex] = 77;
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     const auto beforePendingEdit = captureInvariant(h.state);
     const auto pendingRejected = h.presets.applyPreset(
@@ -808,7 +806,7 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
 }
 
 void test_apply_allocation_failure_matrix_is_atomic_and_bounded() {
-    constexpr std::size_t APPLY_ALLOCATION_ATTEMPTS = 8U;
+    constexpr std::size_t APPLY_ALLOCATION_ATTEMPTS = 7U;
     static_assert(APPLY_ALLOCATION_ATTEMPTS <= 12U,
                   "Step preset apply exceeded its frozen allocation-attempt budget");
 
@@ -1069,6 +1067,7 @@ void test_apply_stopped_preserves_destination_route_and_undoes_exactly() {
     assert(inspected.inspected());
     const auto before = captureInvariant(h.state);
 
+    const auto& bankTrack = h.state.sequencerTracks.track(target.trackIndex);
     const auto result = h.presets.applyPreset(
         "apply-valid",
         target,
@@ -1077,14 +1076,13 @@ void test_apply_stopped_preserves_destination_route_and_undoes_exactly() {
     assert(result.ok());
     assert(result.status == SequencerStepPresetStatus::OK);
     assert(result.activation == SequencerStepPresetActivation::APPLIED);
-    assert(h.state.sequencer.pattern.note[target.stepIndex] == 67);
-    assert(h.state.sequencer.pattern.velocity[target.stepIndex] == 96);
+    assert(h.state.sequencer.pattern().note[target.stepIndex] == 67);
+    assert(h.state.sequencer.pattern().velocity[target.stepIndex] == 96);
     assert(h.state.projectTracks.authored.midiChannels[
         h.state.currentSharedActiveTrack()
     ] == 9);
-    const auto& bankTrack = h.state.sequencerTracks.track(target.trackIndex);
-    assert(bankTrack.note[target.stepIndex] == 67);
-    assert(bankTrack.velocity[target.stepIndex] == 96);
+    assert(bankTrack.note[target.stepIndex] == 67U);
+    assert(bankTrack.velocity[target.stepIndex] == 96U);
     assert(h.state.projectTracks.authored.midiChannels[target.trackIndex] == 9);
     assert(h.state.project.metadata.modifiedCounter == 43);
     assert(h.state.project.metadata.dirty);
@@ -1201,7 +1199,7 @@ void test_drum_target_reuses_shared_preset_and_preserves_lane_identity() {
 
     const int16_t slot = drum.advancedRootSlot(1U, 2U);
     assert(slot >= 0);
-    const auto* graph = seq::graphView(h.state.sequencer.pattern);
+    const auto* graph = seq::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
     // The live Pattern graph also owns its canonical root sequence; the
     // preset's nested Micro/Cycle content is additive to that infrastructure.
@@ -1266,7 +1264,7 @@ void test_apply_playing_is_queued_and_undo_before_boundary_cancels_it() {
         h.presets.activationStatus(target.trackIndex, result.activationGeneration) ==
         core::state::sequencer::SequencerTrackActivationStatus::QUEUED
     );
-    assert(h.state.sequencer.pattern.note[target.stepIndex] == 72);
+    assert(h.state.sequencer.pattern().note[target.stepIndex] == 72);
     assert(h.state.projectTracks.authored.midiChannels[target.trackIndex] == 9);
     const uint16_t targetBit = static_cast<uint16_t>(1U << target.trackIndex);
     assert(h.state.sequencerTrackActivations.pendingTrackMask() == targetBit);

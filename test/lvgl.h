@@ -20,6 +20,13 @@ struct lv_area_t {
 };
 struct lv_timer_t {};
 struct lv_event_t {};
+struct lv_style_value_t { const void* ptr = nullptr; };
+enum lv_style_res_t { LV_STYLE_RES_NOT_FOUND, LV_STYLE_RES_FOUND };
+inline constexpr int LV_STYLE_TEXT_FONT = 0;
+
+// Declare inline-header dependencies only; actual rendering uses real LVGL tests.
+lv_style_res_t lv_obj_get_local_style_prop(lv_obj_t*, int, lv_style_value_t*, int);
+const char* lv_label_get_text(const lv_obj_t*);
 
 inline constexpr lv_opa_t LV_OPA_TRANSP = 0;
 inline constexpr lv_opa_t LV_OPA_60 = 153;

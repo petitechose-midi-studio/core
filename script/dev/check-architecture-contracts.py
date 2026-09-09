@@ -58,6 +58,16 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
 )
 
 FORBIDDEN_LEGACY = (
+    "SequencerPreparedActiveTrackRotation",
+    "SequencerActiveTrackIncomingOwnerPolicy",
+    "SequencerTrackFlatSnapshotView",
+    "canonicalTrackPattern",
+    "mutableCanonicalTrackPattern",
+    "canonicalTrackClip",
+    "mutableCanonicalTrackClip",
+    # Public UX and metric labels are stable strings, never C++ accessors.
+    '"sequencer.pattern()',
+    '"sequencer.clip()',
     "PERF_LOG",
     "PerfWindowCounters",
     "SequencerPlaybackProfiler",
@@ -336,6 +346,7 @@ CORE_SEQUENCER_HISTORY_RECORDING = (
 )
 SEQUENCER_STEP_HANDLER = "src/handler/sequencer/SequencerStepHandler.cpp"
 SEQUENCER_STEP_HANDLER_HEADER = "src/handler/sequencer/SequencerStepHandler.hpp"
+CLIP_WORKSPACE_HANDLER = "src/handler/sequencer/ClipWorkspaceHandler.cpp"
 SEQUENCER_VIEW = "src/ui/view/SequencerView.cpp"
 SEQUENCER_VIEW_HEADER = "src/ui/view/SequencerView.hpp"
 SEQUENCER_OVERLAY_PRESENTER = (
@@ -381,18 +392,21 @@ PAGE_STRUCTURE_ACTIONS = (
     "PageSelectionReset",
     "PageSelectionDeleteOrDeepReset",
 )
-LEASED_TEST_VERSIONED_PAGE_WRITERS = (
+RETIRED_SNAPSHOT_WRITERS = (
+    "applyTrackContentSnapshotWithGraph",
+    "copyPatternStatePreservingGraph",
+    "applySnapshotToEditorWithGraph",
+    "applyTrackContentSnapshotToEditorWithGraph",
+    "installPatternStateToEditor",
+    "mergePatternStateIntoCurrent",
+    "mergeSnapshotIntoCurrent",
+    "rotatePattern",
     "clearStepRange",
     "appendPage",
     "insertPage",
     "deletePage",
 )
-LEASED_TEST_VERSIONED_PAGE_WRITER_OWNER_FILES = frozenset(
-    (
-        "src/state/sequencer/SequencerSnapshotOps.cpp",
-        "src/state/sequencer/SequencerSnapshotOps.hpp",
-    )
-)
+
 PAGE_STRUCTURE_GRAPH_RESULT_FUNCTIONS = (
     "initializeSequencerGraphRootUnversioned",
     "extendMicroSequencePreservingLogicalContentUnversioned",
@@ -493,6 +507,13 @@ def cpp_code_mask(content: str) -> str:
                 state = "block-comment"
                 index += 2
                 continue
+            if char == "'" and index > 0 and following.isalnum():
+                token_start = index - 1
+                while token_start > 0 and (content[token_start - 1].isalnum() or content[token_start - 1] == "_"):
+                    token_start -= 1
+                if content[token_start].isdigit():
+                    index += 1  # C++ numeric separator, not a character literal.
+                    continue
             if char in ('"', "'"):
                 masked[index] = " "
                 quote = char
@@ -655,6 +676,22 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
         r"\s*bytes\s*\)\s*;",
         "strict allocation must use the canonical PSRAM pool sink",
     )
+    require_once(
+        strict_allocate, EXTMEM_ALLOCATOR_SOURCE, "allocateExtmemStrict",
+        r"\bif\s*\(\s*forOverwrite\s*&&\s*extmem_smalloc_pool\.oomfn\s*==\s*nullptr\s*\)"
+        r"\s*\{\s*auto\s+overwritePool\s*=\s*extmem_smalloc_pool\s*;"
+        r"\s*overwritePool\.do_zero\s*=\s*0\s*;"
+        r"\s*allocated\s*=\s*sm_malloc_pool\s*\(\s*&overwritePool\s*,\s*bytes\s*\)\s*;"
+        r"\s*\}\s*else\s*\{\s*allocated\s*=\s*sm_malloc_pool\s*\("
+        r"\s*&extmem_smalloc_pool\s*,\s*bytes\s*\)\s*;\s*\}",
+        "overwrite allocation must exclusively select a fixed-pool descriptor copy "
+        "or the canonical growing-pool descriptor",
+    )
+    require_once(
+        allocator_code, EXTMEM_ALLOCATOR_SOURCE, "allocateExtmemStrict",
+        r"\bbool\s+forOverwrite\s*=\s*false\b",
+        "ordinary strict allocations must preserve zeroing by default",
+    )
     if strict_allocate is not None:
         failure_hooks = len(re.findall(
             r"\bcore::diagnostics::trackExtmemAllocationFailure\s*\(\s*\)",
@@ -675,17 +712,17 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
         "strict free must use the matching canonical PSRAM pool sink",
     )
 
-    for name, body in (
-        ("allocateExtmemStrict", strict_allocate),
-        ("freeExtmemStrict", strict_free),
+    for name, body, expected in (
+        ("allocateExtmemStrict", strict_allocate, 2),
+        ("freeExtmemStrict", strict_free, 1),
     ):
         if body is None:
             continue
         found = len(DIRECT_SMALLOC_MUTATION_CALL.findall(body))
-        if found != 1:
+        if found != expected:
             errors.append(
                 f"{EXTMEM_ALLOCATOR_SOURCE}: {name} must contain exactly "
-                f"one smalloc pool mutation (found {found})"
+                f"{expected} smalloc pool call site(s) (found {found})"
             )
 
     if strict_allocate is not None and re.search(
@@ -710,10 +747,10 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
     pool_mutation_count = len(
         DIRECT_SMALLOC_MUTATION_CALL.findall(allocator_code)
     )
-    if pool_mutation_count != 2:
+    if pool_mutation_count != 3:
         errors.append(
-            f"{EXTMEM_ALLOCATOR_SOURCE}: expected only the canonical "
-            "smalloc allocation/free pair "
+            f"{EXTMEM_ALLOCATOR_SOURCE}: expected only the two exclusive "
+            "smalloc allocation alternatives and canonical free "
             f"(found {pool_mutation_count} pool mutations)"
         )
 
@@ -739,7 +776,10 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
             body,
             EXTMEM_ALLOCATOR_SOURCE,
             helper,
-            r"\ballocateExtmemStrict\s*\(",
+            (r"\ballocateExtmemStrict\s*\([^;]*,\s*true\s*\)"
+             if helper in ("makeExtmemUniqueCopy", "makeExtmemUniqueForOverwrite",
+                           "makeExtmemUniqueArrayForOverwrite")
+             else r"\ballocateExtmemStrict\s*\("),
             "EXTMEM helper must allocate through allocateExtmemStrict",
         )
         require_once(
@@ -1638,11 +1678,11 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     project_store_source = "src/persistence/ProjectFileStore.cpp"
     session_header = "src/persistence/ProjectSessionStore.hpp"
     project_codec_source = "src/persistence/ProjectSnapshotPersistenceCodec.cpp"
-    rpc_header = "src/protocol/filesystem/FileSystemRpc.hpp"
-    job_rpc_header = "src/protocol/filesystem/FileSystemJobRpc.hpp"
-    job_rpc_source = "src/protocol/filesystem/FileSystemJobRpc.cpp"
-    rpc_endpoint = "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
-    rpc_handler = "src/protocol/filesystem/FileSystemRpcHandler.cpp"
+    rpc_header = "src/protocol/filesystem/UnifiedFileTransfer.hpp"
+    job_rpc_header = "src/protocol/filesystem/UnifiedFileSystemRpc.hpp"
+    job_rpc_source = "src/protocol/filesystem/UnifiedFileSystemRpc.cpp"
+    rpc_endpoint = "src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp"
+    rpc_handler = "src/protocol/filesystem/UnifiedFileTransfer.cpp"
     conditional_digest = "src/persistence/ProductConditionalMutationDigest.cpp"
     conditional_plan = "src/persistence/ProductConditionalMutationPlan.hpp"
     recovery_source = "src/persistence/ProductStorageRecoveryService.cpp"
@@ -1654,7 +1694,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     journal_internal = "src/persistence/ProductFileTransactionJournalInternal.hpp"
     coordinator_source = "src/persistence/ProductPersistenceCoordinator.cpp"
     conditional_source = "src/persistence/ProductConditionalMutationTransaction.cpp"
-    rpc_internal = "src/protocol/filesystem/FileSystemRpcInternal.hpp"
+    rpc_internal = "src/protocol/filesystem/RpcBody.hpp"
     project_transactions = "src/persistence/ProjectFileTransactions.cpp"
     atomic_test = "test/test_AtomicProductFile/test_main.cpp"
     project_store_test = "test/test_ProjectFileStore/test_main.cpp"
@@ -1685,40 +1725,18 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (service_source, r"ProductFileService::prepareProjectWorkspace\s*\(\s*\).*?mutationActive\s*\(\s*\).*?project_workspace_\.prepare\s*\(\s*\)", "Project prewarm must reject an active mutation before preparing"),
         (service_source, r"ProductFileService::ownsProjectWorkspaceLease_.*?ProductMutationOwner::PROJECT.*?ProductMutationOwner::RECOVERY", "Project pool borrow must accept only exact Project or Recovery owners"),
         (project_transactions, r"files\.projectReadWorkspace\s*\(\s*lease\s*\)", "Project load must borrow only read capability under its lease"),
-        (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project save/cancel must revalidate write capability", 2),
+        (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project quota/save/cancel must revalidate write capability", 3),
         (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*8U", "Project file store must remain two references on ARM"),
-        (project_codec_source, r"sizeof\(Storage\)\s*==\s*600295U", "Project encode scratch must remain exactly 600,295 B in cold PSRAM"),
+        (project_codec_source, r"sizeof\(Storage\)\s*==\s*174136U", "Project encode scratch must remain exactly 174,136 B in cold PSRAM"),
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*52U", "session store must remain 52 B on ARM"),
-        (rpc_header, r"sizeof\(WriteSession\)\s*==\s*280U", "RPC write session must remain 280 B on ARM"),
-        (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*308U", "RPC handler must remain 308 B on ARM"),
-        (rpc_header, r"FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS\s*=\s*1u\s*<<\s*4", "legacy capabilities must reserve persistence-job feature bit 4"),
-        (rpc_header, r"JOB_RECORD_COUNT\s*=\s*32U", "RPC endpoint must retain exactly 32 job records"),
-        (rpc_header, r"JOB_TERMINAL_RESPONSE_BYTES\s*=\s*72U", "each job record must retain at most 72 response bytes"),
-        (rpc_header, r"sizeof\(JobRecord\)\s*<=\s*136U", "job metadata must remain compact"),
-        (rpc_header, r"PendingFrame\s+pending_\s*\[\s*2\s*\]", "RPC endpoint must retain exactly two payload slots"),
-        (rpc_header, r"JobRecord\s+job_records_\s*\[\s*JOB_RECORD_COUNT\s*\]", "RPC endpoint must preallocate its terminal cache"),
-        (rpc_header, r"sizeof\(FileSystemRpcEndpoint\)\s*<=\s*106'496U", "RPC endpoint must remain inside its PSRAM ceiling"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_REQUEST_ID\s*=\s*0xFCU", "job request id must match Bridge v1"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_ID\s*=\s*0xFDU", "job response id must match Bridge v1"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_REQUEST_NAME\s*\[\s*\]\s*=\s*\"FsJobRequest\"", "job request name must match Bridge v1"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_NAME\s*\[\s*\]\s*=\s*\"FsJobResponse\"", "job response name must match Bridge v1"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_REQUEST_HEADER_BYTES\s*=\s*16U", "job request header must remain 16 B"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_HEADER_BYTES\s*=\s*20U", "job response header must remain 20 B"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_CAPABILITIES_BYTES\s*=\s*24U", "job capability body must remain 24 B"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_INNER_REQUEST_BYTES\s*=\s*32'512U", "job inner request ceiling must match the retained slot"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_INNER_RESPONSE_BYTES\s*=\s*32'512U", "job inner response wire ceiling must match Bridge v1"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_DEADLINE_MS\s*=\s*10'000U", "job deadline ceiling must remain 10 seconds"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_TERMINAL_RETENTION_MS\s*=\s*30'000U", "terminal retention must remain 30 seconds"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_CONCURRENT\s*=\s*2U", "job capability must expose the exact coordinator capacity"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RETRY_AFTER_MS\s*=\s*5U", "job polling interval must remain 5 ms"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_FEATURES\s*=\s*FILESYSTEM_JOB_RPC_FEATURE_START\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_POLL\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_CANCEL\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_TERMINAL_RETENTION\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_TYPED_ERRORS\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_LEGACY_MAPPING", "job capabilities must publish the exact Bridge feature mask"),
-        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_FLAGS\s*=\s*FILESYSTEM_JOB_RPC_FLAG_DUPLICATE_START\s*\|\s*FILESYSTEM_JOB_RPC_FLAG_LEGACY_MAPPED\s*\|\s*FILESYSTEM_JOB_RPC_FLAG_TERMINAL_RETAINED\s*\|\s*FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE", "job responses must retain the exact Bridge flag mask"),
-        (job_rpc_source, r"nowMs\s*-\s*terminalAtMs\)\s*<=\s*FILESYSTEM_JOB_RPC_TERMINAL_RETENTION_MS", "terminal retention must remain inclusive and rollover-safe"),
-        (rpc_handler, r"FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS\s*\|\s*FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS", "legacy capabilities must publish bit 4 only with the provider"),
-        (rpc_endpoint, r"pending\.size\s*!=\s*0U\s*&&\s*pending\.jobRecordIndex\s*==\s*JOB_RECORD_NONE", "legacy compatibility must retain exactly one frame"),
-        (rpc_endpoint, r"record->jobId\s*=\s*upload_job_\.id\s*\(\s*\)", "write commit must reuse the upload coordinator identity"),
-        (rpc_endpoint, r"deadlineAfterMs\s*=\s*0U", "provider deadlines must be enforced by the retained job record"),
+        (rpc_header, r"RETAINED_CAPACITY\s*=\s*32", "unified service must retain exactly 32 results"),
+        (rpc_header, r"RETENTION_MS\s*=\s*30'000", "terminal retention must remain bounded"),
+        (rpc_header, r"sizeof\(Record\)\s*<=\s*104", "retained metadata must remain compact"),
+        (rpc_header, r"std::variant<", "mutually exclusive continuations must share storage"),
+        (job_rpc_header, r"VERSION\s*=\s*6", "wire version changes require coordinated qualification"),
+        (job_rpc_header, r"HEADER\s*=\s*40", "unified header must remain 40 bytes"),
+        (rpc_endpoint, r"pending.media\s*=\s*files_\.storageIdentity", "queue must capture media identity before foreground execution"),
         (conditional_digest, r"bool\s+hashBytes\s*\([^)]*uint8_t\s+output\s*\[\s*SHA256_SIZE\s*\]", "in-memory request identity must reuse allocation-free SHA-256"),
         (conditional_plan, r"return\s+journal_started_\s*\|\|\s*promotion_\.mapped\s*\(\s*\)", "conditional cancellation must expose its durable boundary"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
@@ -1729,14 +1747,13 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_B\s*=.*?tmp/rpc-product-file-b\.journal", "ordinary journal slot B must remain fixed"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_VERSION\s*=\s*2U", "ordinary supported journal version must remain explicit"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*=\s*607U", "ordinary journal record must remain bounded"),
-        (atomic_header, r"PRODUCT_FILE_INTEGRITY_CHUNK_SIZE\s*=\s*512U", "ordinary integrity reads must remain bounded to 512 B"),
         (atomic_header, r"commitProductFileTemp\s*\([^;]*uint32_t\s+expectedSize", "ordinary commit must bind the expected payload size"),
         (atomic_header, r"commitProductFileTemp\s*\([^;]*uint32_t\s+expectedCrc32", "ordinary commit must bind the expected payload CRC32"),
         (journal_internal, r"union\s+JournalStorage\s*\{\s*uint8_t\s+encoded\s*\[\s*PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*\]\s*;\s*char\s+paths\s*\[\s*PATH_COUNT\s*\]\s*\[\s*PATH_CAPACITY\s*\]", "journal codec must reuse one bounded workspace"),
         (journal_codec, r"targetSlot\s*=\s*workspace\.activeSlot\s*==\s*NO_ACTIVE_SLOT.*?inactiveSlot\s*\(\s*workspace\.activeSlot\s*\)", "phase writes must alternate through the inactive slot"),
         (coordinator_source, r"ProductPersistenceCoordinator::requireRecovery\s*\(\s*const\s+ProductMutationLease&\s+lease", "mapped failure must transition through the exact lease"),
         (project_transactions, r"shouldTryBackup\s*\([^)]*\)\s*\{\s*return\s+!result\s*&&\s*result\.error\(\)\.code\s*==\s*ErrorCode::RESOURCE_NOT_FOUND", "unmapped backup recovery must require a missing current"),
-        (rpc_internal, r"bool\s+isProtocolReservedPath\s*\(", "ordinary RPC must reserve the complete protocol namespace"),
+        (rpc_handler, r"bool\s+isProtocolReservedPath\s*\(", "ordinary RPC must reserve the complete protocol namespace"),
         (cmake_source, r"MS_CORE_PERSISTENCE_IO_TESTS.*?test_AtomicProductFile", "fault campaign must share the persistence I/O lock"),
         (atomic_test, r"for\s*\(\s*CutMode\s+mode\s*:\s*\{\s*CutMode::BEFORE\s*,\s*CutMode::AFTER\s*\}\s*\)", "fault campaign must enumerate cuts before and after every boundary"),
         (project_store_test, r"ProjectFileReadWorkspace\s+workspace", "direct Project test must exercise a fresh read workspace"),
@@ -1856,86 +1873,28 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
                 "encode scratch owner"
             )
 
-    supported_start_bodies = cpp_function_bodies(
-        files.get(job_rpc_source, ""),
-        "FileSystemJobRpcCodec::isSupportedStartRequest",
-    )
-    if len(supported_start_bodies) != 1:
-        errors.append(
-            f"{job_rpc_source}: supported job subset must have one balanced "
-            f"definition (found {len(supported_start_bodies)})"
-        )
-    else:
-        supported_cases = set(
-            re.findall(
-                r"case\s+FileSystemRpcMessageId::([A-Z0-9_]+)\s*:",
-                cpp_code_mask(supported_start_bodies[0]),
-            )
-        )
-        expected_cases = {
-            "WRITE_COMMIT_REQUEST",
-            "MKDIR_REQUEST",
-            "DELETE_REQUEST",
-            "RENAME_REQUEST",
-            "CONDITIONAL_REPLACE_REQUEST",
-            "CONDITIONAL_DELETE_REQUEST",
-        }
-        if supported_cases != expected_cases:
-            errors.append(
-                f"{job_rpc_source}: durable job subset drifted "
-                f"(expected {sorted(expected_cases)}, found {sorted(supported_cases)})"
-            )
-
-    for helper in (
-        "decodeCommand",
-        "decodeState",
-        "decodeError",
-        "writeEnvelope",
-        "readEnvelope",
-        "isLegacyResponseId",
-        "canonicalLegacyFrame",
-        "responseSemanticsValid",
-        "writeCapabilities",
-        "capabilitiesValid",
-    ):
-        require(
-            job_rpc_source,
-            rf"FLASHMEM\s+bool\s+{helper}\s*\(",
-            f"cold job codec helper {helper} must remain outside ITCM",
-        )
+    retained_bodies = cpp_function_bodies(files.get(job_rpc_source, ""), "bool retained")
+    expected_retained = {"UploadCommit", "Mkdir", "Delete", "Rename", "ConditionalReplace", "ConditionalDelete"}
+    if len(retained_bodies) != 1 or set(re.findall(r"Operation::(\w+)", cpp_code_mask(retained_bodies[0]))) != expected_retained:
+        errors.append(f"{job_rpc_source}: retained operation set drifted")
 
     receive_io = re.compile(
-        r"\b(?:files_|handler_)\."
-        r"(?:createDirectory|remove|rename|write|flush|beginWrite|appendWrite|"
-        r"finishWrite|abortWrite|abortWriteSession|handleAdmittedFrame|"
-        r"beginCooperative[A-Za-z0-9_]*|advanceCooperative[A-Za-z0-9_]*|"
-        r"cancelCooperative[A-Za-z0-9_]*)\s*\("
+        r"\bfiles_\.(?:stat|read|list|createDirectory|remove|rename|write|flush|beginWrite|appendWrite|finishWrite|abortWrite)\s*\("
+        r"|\bservice_\.(?:process|advance)\s*\("
         r"|\b(?:claimAdvance|measurePersistenceWork)\s*\("
-        r"|\b(?:cancelFrameOperation_|advanceJobInterruption_|prepareJobAdvance_|"
-        r"advanceUploadTimeout_)\s*\("
     )
-    for function_name in (
-        "FileSystemRpcEndpoint::handleReceive_",
-        "FileSystemRpcEndpoint::handleJobReceive_",
-        "FileSystemRpcEndpoint::handleJobStart_",
-    ):
+    for function_name in ("Endpoint::receive", "Endpoint::reject"):
         bodies = cpp_function_bodies(files.get(rpc_endpoint, ""), function_name)
-        if len(bodies) != 1:
-            errors.append(
-                f"{rpc_endpoint}: {function_name} must have one balanced "
-                f"definition (found {len(bodies)})"
-            )
-            continue
-        if receive_io.search(cpp_code_mask(bodies[0])):
-            errors.append(
-                f"{rpc_endpoint}: {function_name} must remain filesystem-I/O-free"
-            )
+        if len(bodies) != 1 or receive_io.search(cpp_code_mask(bodies[0])):
+            errors.append(f"{rpc_endpoint}: {function_name} must exist and remain filesystem-I/O-free")
 
     provider_sources = (
         job_rpc_header,
         job_rpc_source,
         rpc_header,
         rpc_endpoint,
+        rpc_handler,
+        rpc_internal,
         conditional_digest,
         conditional_plan,
     )
@@ -1954,66 +1913,19 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
                 "dynamic containers, tasks, channels or mutexes"
             )
 
-    advance_bodies = cpp_function_bodies(
-        files.get(rpc_endpoint, ""),
-        "FileSystemRpcEndpoint::advance",
-    )
+    advance_bodies = cpp_function_bodies(files.get(rpc_handler, ""), "FileTransfer::advance")
     if len(advance_bodies) != 1:
-        errors.append(
-            f"{rpc_endpoint}: endpoint advance must have one balanced definition "
-            f"(found {len(advance_bodies)})"
-        )
-    else:
-        advance_body = cpp_code_mask(advance_bodies[0])
-        if re.search(r"\b(?:reapExpiredJobRecords_|job_records_)\b", advance_body):
-            errors.append(
-                f"{rpc_endpoint}: 1920 Hz advance must not scan the 32-record cache"
-            )
-        if re.search(
-            r"if\s*\(\s*jobRecord\s*\)\s*\{\s*"
-            r"terminalizeJobResponse_\s*\(.*?\)\s*;\s*\}\s*"
-            r"else\s+if\s*\(\s*response\s*&&\s*"
-            r"response\.value\s*\(\s*\)\s*>\s*0U\s*\)\s*\{\s*"
-            r"transport_\.send\s*\(",
-            advance_body,
-            flags=re.DOTALL,
-        ) is None:
-            errors.append(
-                f"{rpc_endpoint}: job completion must remain poll-only while legacy "
-                "completion keeps its response"
-            )
-
+        errors.append(f"{rpc_handler}: service advance must have one balanced definition")
+    elif re.search(r"\b(?:expire|transport_)\b", cpp_code_mask(advance_bodies[0])):
+        errors.append(f"{rpc_handler}: idle foreground advance must not scan retained results or send unsolicited replies")
     require_ordered_function(
-        rpc_endpoint,
-        "FileSystemRpcEndpoint::handleJobStart_",
-        (
-            r"JobRecord\s*\*\s*record\s*=\s*freeJobRecord_\s*\(\s*\)",
-            r"record->flags\s*=\s*JOB_FLAG_OCCUPIED",
-            r"auto\s+admitted\s*=\s*jobs\.admit\s*\(",
-        ),
-        "a terminal record must be reserved before ordinary coordinator admission",
+        rpc_endpoint, "Endpoint::receive",
+        (r"decode\s*\(", r"count_\s*==\s*QUEUE_CAPACITY", r"std::memcpy\s*\("),
+        "strict validation and queue capacity must precede retained payload copies",
     )
-    require_ordered_function(
-        rpc_endpoint,
-        "FileSystemRpcEndpoint::handleReceive_",
-        (
-            r"FileSystemJobRpcCodec::isJobRequestId\s*\(",
-            r"FileSystemRpcCodec::isFileSystemRequestId\s*\(",
-            r"pending\.jobRecordIndex\s*==\s*JOB_RECORD_NONE",
-            r"PendingFrame\s*\*\s*frame\s*=\s*emptyFrame_\s*\(\s*\)",
-        ),
-        "job dispatch and the one-frame legacy lease must precede slot admission",
-    )
-    require_ordered_function(
-        rpc_endpoint,
-        "FileSystemRpcEndpoint::handleJobReceive_",
-        (
-            r"FileSystemJobRpcCodec::decodeRequest\s*\(",
-            r"reapExpiredJobRecords_\s*\(",
-            r"switch\s*\(\s*request\.command\s*\)",
-        ),
-        "terminal cache expiry must run only after strict control-frame decoding",
-    )
+    for rel, text in files.items():
+        if rel.startswith("src/") and re.search(r"\b(?:FileSystemRpcCodec|FileSystemRpcHandler|FileSystemJobRpcCodec|FileSystemRpcStatus)\b", cpp_code_mask(text)):
+            errors.append(f"{rel}: retired filesystem RPC provider restored")
     require(
         main_source,
         r"productFileService->markMediaUnavailable\s*\(",
@@ -2027,10 +1939,10 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         count=2,
     )
     require(
-        conditional_source,
-        r"commitProductFileTemp\s*\(",
-        "both conditional replacement branches must use durable ordinary promotion",
-        count=2,
+        "src/persistence/ProductConditionalMutationPlan.cpp",
+        r"promotion_\.begin\s*\(",
+        "conditional replacement must share the durable ordinary promotion continuation",
+        count=1,
     )
     require(
         main_source,
@@ -2482,6 +2394,19 @@ def documentation_contract_errors() -> list[str]:
     return errors
 
 
+def ux_workflow_contract_errors() -> list[str]:
+    errors: list[str] = []
+    workflow_root = ROOT / "sdl" / "integration" / "workflows"
+    for path in sorted(workflow_root.rglob("*.ux")):
+        content = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        if not re.search(r"^# Purpose:\s+\S", content, flags=re.MULTILINE):
+            errors.append(f"{rel}: UX workflow must declare # Purpose:")
+        if not re.search(r"^# Expect:\s+\S", content, flags=re.MULTILINE):
+            errors.append(f"{rel}: UX workflow must declare at least one # Expect:")
+    return errors
+
+
 def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     errors: list[str] = []
     code_mask_cache: dict[str, str] = {}
@@ -2872,12 +2797,11 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
                 f"must remain absent (found {observed})"
             )
 
-    for symbol in LEASED_TEST_VERSIONED_PAGE_WRITERS:
+    for symbol in RETIRED_SNAPSHOT_WRITERS:
         callers = [
             rel
             for rel, content in files.items()
             if rel.startswith("src/")
-            and rel not in LEASED_TEST_VERSIONED_PAGE_WRITER_OWNER_FILES
             and (
                 symbol != "deletePage"
                 or rel.startswith("src/state/sequencer/")
@@ -2892,8 +2816,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         ]
         if callers:
             errors.append(
-                f"src: test-leased versioned Page writer {symbol} escaped SnapshotOps "
-                f"into {', '.join(sorted(callers))}"
+                f"src: retired Snapshot writer {symbol} must remain absent; found "
+                f"in {', '.join(sorted(callers))}"
             )
 
     require(
@@ -3153,7 +3077,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "commitPreparedSequencerTrackTransfer",
         r"commitAdmittedMacroTrackStructureHistoryAfter\s*\(.*?"
         r"installTrackContentSnapshotWithOwnedPayload\s*\(.*?"
-        r"installTrackContentSnapshotToEditorWithOwnedPayload\s*\(.*?"
+        r"sequencer\.selectPattern\s*\(.*?"
         r"publishPreparedSequencerState\s*\(.*?"
         r"reconcilePreparedMacroTrackTransfer\s*\(.*?"
         r"history\.commitAdmittedStructure\s*\(.*?"
@@ -3432,12 +3356,9 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\bprepareHistoryStructureReplayOwners\s*\([^)]*\)\s*\{.*?"
         r"for\s*\([^)]*\)\s*\{.*?"
         r"cloneSnapshotGraph\s*\(\s*snapshot\.tracks\[i\]\s*,\s*"
-        r"out\.bankGraphs\[i\]\s*\).*?"
-        r"cloneSequencerCcLaneBank\s*\(\s*out\.bankCcLanes\[i\].*?"
-        r"cloneSnapshotGraph\s*\(\s*snapshot\.tracks\[targetActive\]\s*,\s*"
-        r"out\.editorGraph\s*\).*?"
-        r"cloneSequencerCcLaneBank\s*\(\s*out\.editorCcLanes",
-        "Structure replay allocation order must remain bank G,C ascending then editor G,C",
+        r"out\.trackGraphs\[i\]\s*\).*?"
+        r"cloneSequencerCcLaneBank\s*\(\s*out\.trackCcLanes\[i\].*?",
+        "Structure replay reserves one Graph/CC pair per captured Track in ascending order",
     )
     require_in_function(
         "src/state/sequencer/SequencerHistory.cpp",
@@ -3665,8 +3586,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"plan\.capturedTrackMask\s*=\s*static_cast<uint16_t>\s*\(\s*"
         r"oldActiveBit\s*\|\s*"
         r"(?:[A-Za-z_][A-Za-z0-9_]*::)*slotBit\s*\(\s*mutation\.nextActive\s*\)\s*"
-        r"\)\s*;.*?"
-        r"SequencerActiveTrackIncomingOwnerPolicy::Preserve",
+        r"\)\s*;",
         "SelectionRemove plan must affect S while capturing only the old/new active pair",
     )
     require_in_function(
@@ -3674,11 +3594,10 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "FLASHMEM PlanOutcome buildPlan",
         r"action\s*==\s*Action::SequencerRemoveSelection.*?"
         r"const\s+uint8_t\s+incomingLength\s*=\s*"
-        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*canonicalTrackPattern\s*\(\s*"
-        r"context\.state\.tracks\s*,\s*context\.state\.sequencer\s*,\s*"
+        r"\(?context\.state\.tracks\)?\.track\s*\(\s*"
         r"mutation\.nextActive\s*\)\.length\.get\s*\(\s*\)\s*;.*?"
         r"fillActiveChangeFocus\s*\(\s*context\s*,\s*incomingLength\s*,\s*plan\s*\)",
-        "SelectionRemove focus must use the active editor when the active Track survives",
+        "SelectionRemove focus must use the canonical destination bank owner",
     )
     require_in_function(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
@@ -4516,19 +4435,53 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"shared_tracks_\s*,\s*history_\s*,\s*\}\s*,\s*kind\s*,\s*drumPreset\s*\)",
         "Track Create edit workflow must validate activation ownership and pass every state and typed intent source",
     )
+    require(
+        CONTEXT_SELECTOR_WORKFLOW_HEADER,
+        r"\b(?:OPEN_TRACK_EDITOR|previewAddSlot|includeTrack)\b",
+        "Pattern context selector must not recover Track ownership",
+        count=0,
+    )
     require_in_function(
-        SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::handleContextSelectorRelease",
-        r"case\s+SequencerContextSelectorAction::OPEN_TRACK_EDITOR\s*:"
-        r".*?outcome\.focus\s*!=\s*"
-        r"core::state::StructureNavigationFocus::TRACK.*?"
-        r"track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*!=\s*"
-        r"outcome\.previewTarget.*?"
-        r"if\s*\(\s*outcome\.previewAddSlot\s*\).*?"
-        r"track_ui_\.previewAddSlot\.get\s*\(\s*\).*?"
-        r"sequencer_\.drumSequencer\.openTypePicker\s*\(\s*"
-        r"outcome\.previewTarget\s*\)",
-        "Track Add release must validate its exact preview and open the typed Track picker",
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::openFocused",
+        r"if\s*\(\s*ui\.trackHeaderFocused\s*\(\s*\)\s*\).*?"
+        r"!\s*core_\.sequencerTracks\.isTrackEnabled\s*\(\s*"
+        r"ui\.focusedTrack\s*\).*?"
+        r"core_\.sequencer\.drumSequencer\.openTypePicker\s*\(\s*"
+        r"ui\.focusedTrack\s*\).*?return\s*;.*?"
+        r"toggleTrackMute\s*\(\s*\)",
+        "Clip Track header short action must own typed creation and Mute",
+    )
+    require_in_function(
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::setupBindings",
+        r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
+        r"\.press\s*\(\s*\).*?"
+        r"!\s*core_\.sequencer\.clipWorkspace\.selectionActive\s*\(\s*\).*?"
+        r"beginStopLayer\s*\(\s*\).*?"
+        r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
+        r"\.release\s*\(\s*\).*?"
+        r"stopLayerActive.*?endStopLayer\s*\(\s*\)",
+        "Clip matrix Bottom Left must own one momentary Stop layer",
+    )
+    require_in_function(
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::openFocusedEditor",
+        r"if\s*\(\s*ui\.trackHeaderFocused\s*\(\s*\)\s*\).*?"
+        r"core_\.sequencerTracks\.isTrackEnabled\s*\(\s*ui\.focusedTrack\s*\).*?"
+        r"track_editor_handler_\s*!=\s*nullptr.*?"
+        r"track_editor_handler_->openActiveTrack\s*\(\s*\)",
+        "Clip Track header long action must own Track editing",
+    )
+    require_in_function(
+        CLIP_WORKSPACE_HANDLER,
+        "ClipWorkspaceHandler::beginTrackSelection",
+        r"trackHeaderAvailable\s*\(\s*\).*?"
+        r"core_\.trackNavigation\.syncPreviewTrack\s*\(\s*track\s*\).*?"
+        r"navigation_focus_\.set\s*\(\s*"
+        r"core::state::StructureNavigationFocus::TRACK\s*\).*?"
+        r"navigation_workflow_->enterSelectionModeForCurrentFocus\s*\(\s*\)",
+        "Clip Track header hold must own Track selection",
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
@@ -4579,29 +4532,19 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"navigation_focus_\.get\s*\(\s*\)\s*!=\s*"
         r"core::state::StructureNavigationFocus::PAGE.*?"
         r"sequencer_\.structureUi\.previewPageIndex\.get\s*\(\s*\)\s*!=\s*"
-        r"outcome\.previewTarget\s*\|\|\s*outcome\.previewAddSlot.*?"
+        r"outcome\.previewTarget.*?"
+        r"core::state::sequencer::isRootContentView\s*\(\s*sequencer_\s*\).*?"
         r"pattern_editor_handler_->openFromCurrentPage\s*\(\s*\)",
-        "Pattern Editor release must revalidate Page focus/target and reject add provenance",
-    )
-    require_in_function(
-        SEQUENCER_STEP_HANDLER,
-        "SequencerStepHandler::setupNavigationBindings",
-        r"const\s+bool\s+previewAddSlot\s*=\s*"
-        r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*&&\s*"
-        r"track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*;",
-        "NAV press and hold must derive add provenance from Track only",
-        count=2,
+        "Pattern Editor release must revalidate its exact root Pattern target",
     )
     require_in_function(
         SEQUENCER_STEP_HANDLER,
         "SequencerStepHandler::setupNavigationBindings",
         r"const\s+uint8_t\s+previewTarget\s*=\s*"
-        r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*"
-        r"\?\s*track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*"
-        r":\s*focus\s*==\s*core::state::StructureNavigationFocus::STEP\s*"
+        r"focus\s*==\s*core::state::StructureNavigationFocus::STEP\s*"
         r"\?\s*sequencer_\.focusedStep\.get\s*\(\s*\)\s*"
         r":\s*sequencer_\.structureUi\.previewPageIndex\.get\s*\(\s*\)",
-        "NAV press and hold must latch the exact Track/Page/Step target",
+        "NAV press and hold must latch the exact Pattern/Step target",
         count=2,
     )
     require_in_function(
@@ -4761,7 +4704,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         STRUCTURE_NAVIGATION_STATE_HEADER,
         r"enum\s+class\s+StructureNavigationFocus\s*:\s*uint8_t\s*\{\s*"
         r"PAGE\s*=\s*0\s*,\s*TRACK\s*=\s*1\s*,\s*STEP\s*=\s*2\s*,\s*"
-        r"COUNT\s*=\s*3\s*,\s*\}\s*;.*?"
+        r"LANE\s*=\s*3\s*,\s*COUNT\s*=\s*4\s*,\s*\}\s*;.*?"
         r"enum\s+class\s+StructureHoldAction\s*:\s*uint8_t\s*\{\s*"
         r"NONE\s*=\s*0\s*,\s*REMOVE\s*=\s*1\s*,\s*PASTE\s*=\s*2\s*,\s*"
         r"COUNT\s*=\s*3\s*,\s*\}\s*;",
@@ -4852,16 +4795,18 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require(
         SEQUENCER_VIEW_HEADER,
-        r"StaticWatchGroup\s*<\s*16\s*>\s+header_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*18\s*>\s+header_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*14\s*>\s+header_strip_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*2U\s*\*\s*"
         r"core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT\s*>\s*"
         r"structure_selection_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*45\s*>\s+grid_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*26\s*>\s+selector_overlay_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*12\s*>\s+left_action_strip_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*25\s*>\s+bottom_action_strip_watcher_\s*;",
-        "Sequencer UI watcher capacities must retain the shared selection and Drum UI locks",
+        r"StaticWatchGroup\s*<\s*46\s*>\s+grid_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*4\s*>\s+grid_tick_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*25\s*>\s+selector_overlay_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*5\s*>\s+overlay_visibility_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*14\s*>\s+left_action_strip_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*27\s*>\s+bottom_action_strip_watcher_\s*;",
+        "Sequencer UI watcher capacities must retain the shared selection, Drum, and Clip UI locks",
     )
 
     require_in_type(
@@ -4888,9 +4833,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "SequencerContextSelectorWorkflow::press",
         r"press_target_\s*=\s*previewTarget\s*;.*?"
         r"static_cast<uint8_t>\s*\(\s*state_\.previewFocus\s*\)\s*&\s*0x03U.*?"
-        r"previewAddSlot\s*\?\s*0x04U\s*:\s*0U.*?"
-        r"includeTrack\s*\?\s*0x08U\s*:\s*0U",
-        "context press must retain an exact target and packed context provenance",
+        r"includeLane\s*\?\s*0x04U\s*:\s*0U",
+        "context press must retain its exact target and Pattern hierarchy provenance",
     )
     require_in_function(
         CONTEXT_SELECTOR_WORKFLOW,
@@ -4900,9 +4844,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"press_target_\s*=\s*0U\s*;\s*"
         r"return\s+false\s*;\s*\}.*?"
         r"current\s*==\s*origin\s*&&\s*"
-        r"previewTarget\s*==\s*press_target_\s*&&\s*"
-        r"previewAddSlot\s*==\s*"
-        r"\(\s*\(\s*press_context_\s*&\s*0x04U\s*\)\s*!=\s*0U\s*\).*?"
+        r"previewTarget\s*==\s*press_target_\s*;.*?"
         r"if\s*\(\s*!\s*pressMatches\s*\)\s*\{\s*cancel\s*\(\s*\)",
         "context selection hold must fail closed on exact press provenance drift",
     )
@@ -4927,7 +4869,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"^\s*if\s*\(\s*!\s*state_\.visible\s*\)\s*\{\s*"
         r"gesture_\.cancel\s*\(\s*\)\s*;\s*press_context_\s*=\s*0U\s*;\s*"
         r"press_target_\s*=\s*0U\s*;\s*return\s+false\s*;\s*\}.*?"
-        r"press_context_\s*&\s*0x08U",
+        r"press_context_\s*&\s*0x04U",
         "context turn must fail closed after external presentation reset",
     )
     require_in_function(
@@ -5184,14 +5126,13 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     require(
         SEQUENCER_STEP_HANDLER,
         r"\.when\s*\(\s*\[this\]\s*\(\s*\)\s*\{\s*return\s+"
-        r"currentStructureBottomActionsAvailable\s*\(\s*\)\s*&&\s*"
-        r"!trackFocusActive\s*\(\s*\)\s*;\s*\}\s*\)\s*\.then\s*"
+        r"currentStructureBottomActionsAvailable\s*\(\s*\)\s*;\s*\}\s*\)\s*\.then\s*"
         r"\(\s*\[this\]\s*\(\s*\)\s*\{\s*"
         r"bottom_action_release_latch_\.arm\s*\(\s*"
         r"Config::ButtonID::BOTTOM_RIGHT\s*\)\s*;.*?#endif\s*"
         r"edit_workflow_\.pasteCurrentStructure\s*"
         r"\(\s*\)\s*;",
-        "current Page/Step BottomRight must latch then delegate without an old barrier",
+        "current Pattern/Step BottomRight must latch then delegate without an old barrier",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -5216,7 +5157,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"if\s*\(\s*track_ui_\.selection\.active\.get\s*\(\s*\)\s*\)\s*\{\s*"
         r"edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*\}.*?"
         r"applySelectionBottomLeftHold\s*\(\s*\)",
-        "selection BottomLeft hold must route tokenized Track provenance before legacy Page/Step",
+        "selection BottomLeft hold must route tokenized Track provenance before Pattern/Step",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -5231,25 +5172,14 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"return\s*;\s*\}.*?"
         r"commitPatternHistoryBarrier\s*\(\s*sequencer_\s*,\s*history_\s*\).*?"
         r"applySelectionBottomLeftTap\s*\(\s*\)",
-        "selection BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
+        "selection BottomLeft tap must route tokenized Track provenance before Pattern/Step",
     )
-    require(
+    require_in_function(
         SEQUENCER_STEP_HANDLER,
-        r"if\s*\(\s*edit_workflow_\.currentTrackRemoveHoldPending\s*"
-        r"\(\s*\)\s*\)\s*return\s+true\s*;.*?"
-        r"bottom_action_release_latch_\.consume\s*\(\s*"
-        r"Config::ButtonID::BOTTOM_LEFT\s*\).*?"
-        r"if\s*\(\s*edit_workflow_\.currentTrackRemoveHoldPending\s*"
-        r"\(\s*\)\s*\)\s*\{\s*"
-        r"edit_workflow_\.applyLatchedCurrentTrackShortPress\s*\(\s*\)\s*;\s*"
-        r"return\s*;\s*\}.*?"
-        r"if\s*\(\s*edit_workflow_\.trackRemoveHoldPending\s*\(\s*\)\s*\)"
-        r"\s*\{\s*edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*"
-        r"return\s*;\s*\}.*?"
-        r"if\s*\(\s*trackFocusActive\s*\(\s*\)\s*\).*?"
-        r"commitPatternHistoryBarrier\s*\(\s*sequencer_\s*,\s*history_\s*\).*?"
-        r"applyCurrentStructureShortPress\s*\(\s*\)",
-        "current BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
+        "SequencerStepHandler::currentStructureBottomActionsAvailable",
+        r"sequencer_\.clipWorkspace\.matrixVisible\s*\(\s*\)\s*\)\s*"
+        r"return\s+false",
+        "Pattern/Step bottom actions must never compete with the Clip matrix",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -5295,6 +5225,7 @@ def main(show_inventory: bool = False) -> int:
     errors: list[str] = []
 
     errors.extend(documentation_contract_errors())
+    errors.extend(ux_workflow_contract_errors())
     contract_sources = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
         for path in source_files()

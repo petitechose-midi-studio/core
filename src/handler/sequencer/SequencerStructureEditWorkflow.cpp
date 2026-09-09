@@ -216,7 +216,7 @@ SequencerStructureEditWorkflow::canPasteDrumLaneSelection() const {
     const auto& selection = drumUi.laneSelection;
     if (!drumUi.gridVisible() || drumUi.drumTrack == nullptr ||
         navigation_focus_.get() !=
-            core::state::StructureNavigationFocus::PAGE ||
+            core::state::StructureNavigationFocus::LANE ||
         !selection.placementActive() || selection.pasteBlocked ||
         selection.clipboardRevision != structure_clipboard_.revision.get() ||
         !structure_clipboard_.hasSequencerDrumLaneSelection() ||
@@ -738,6 +738,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const 
         return sequencer_.focusedStep.get() <
                core::state::sequencer::activeContentLength(sequencer_);
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return false;
+    }
     return sequencer_.activePageCount() > 1U;
 }
 
@@ -750,6 +753,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::canPasteCurrentStructure() const {
             return canPasteDrumFocusedStep();
         }
         return canPasteFocusedStep();
+    }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return false;
     }
     return structure_clipboard_.hasSequencerPage();
 }
@@ -852,6 +858,10 @@ SequencerStructureEditWorkflow::settleConsumedBottomLeftRelease() {
 
 FLASHMEM uint8_t SequencerStructureEditWorkflow::trackPasteTarget() const {
     if (track_ui_.selection.placementActive()) { return track_ui_.selection.cursorIndex.get(); }
+    const auto& workspace = sequencer_.clipWorkspace;
+    if (workspace.matrixVisible() && workspace.trackHeaderFocused()) {
+        return workspace.focusedTrack;
+    }
     return sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
 }
 
@@ -955,31 +965,37 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(uint32_t 
 
     const bool trackContext =
         navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK;
-    const auto live = trackContext ? buildTrackPastePlan() : core::state::ClipboardTransferPlan{};
-    if (!trackContext || !live.canCommit()) {
-        const bool changed =
-            paste.plan.hasEntries() || paste.detailVisible || paste.feedback.active;
-        paste.plan = {};
-        paste.clipboardKind = core::state::StructureClipboardKind::NONE;
-        paste.clipboardRevision = 0;
-        paste.detailVisible = false;
-        contextual::clearOperationFeedback(paste.feedback);
-        if (changed) paste.bump();
-        return;
+    if (trackContext) {
+        const auto live = buildTrackPastePlan();
+        if (live.canCommit()) {
+            const bool planChanged =
+                !core::state::sameSequencerTrackClipboardTransferPlan(paste.plan, live);
+            const bool feedbackChanged =
+                paste.feedback.status != contextual::OperationFeedbackStatus::PREVIEW;
+            if (!planChanged && !feedbackChanged) return;
+            paste.plan = live;
+            paste.clipboardKind = structure_clipboard_.kind.get();
+            paste.clipboardRevision = structure_clipboard_.revision.get();
+            setTrackPasteFeedback(contextual::OperationFeedbackStatus::PREVIEW,
+                                  core::state::sequencer::contextualReasonForTrackTransfer(live.reason),
+                                  contextual::OperationFeedbackExpiryPolicy::MANUAL, nowMs);
+            paste.bump();
+            return;
+        }
     }
 
-    const bool planChanged =
-        !core::state::sameSequencerTrackClipboardTransferPlan(paste.plan, live);
-    const bool feedbackChanged =
-        paste.feedback.status != contextual::OperationFeedbackStatus::PREVIEW;
-    if (!planChanged && !feedbackChanged) return;
-    paste.plan = live;
-    paste.clipboardKind = structure_clipboard_.kind.get();
-    paste.clipboardRevision = structure_clipboard_.revision.get();
-    setTrackPasteFeedback(contextual::OperationFeedbackStatus::PREVIEW,
-                          core::state::sequencer::contextualReasonForTrackTransfer(live.reason),
-                          contextual::OperationFeedbackExpiryPolicy::MANUAL, nowMs);
-    paste.bump();
+    const bool changed =
+        paste.plan.hasEntries() || paste.detailVisible || paste.feedback.active;
+    // A captured plan keeps its clipboard identity until cleared, including
+    // failed commits with no entries. Do not rewrite an already idle preview.
+    if (!changed && paste.clipboardKind == core::state::StructureClipboardKind::NONE &&
+        paste.clipboardRevision == 0U) return;
+    paste.plan = {};
+    paste.clipboardKind = core::state::StructureClipboardKind::NONE;
+    paste.clipboardRevision = 0;
+    paste.detailVisible = false;
+    contextual::clearOperationFeedback(paste.feedback);
+    if (changed) paste.bump();
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::updateTrackPasteActivation(uint32_t nowMs) {
@@ -1072,12 +1088,8 @@ FLASHMEM void SequencerStructureEditWorkflow::update(uint32_t nowMs) {
 
     if (contextual::updateOperationFeedback(paste.feedback, nowMs)) { paste.bump(); }
 
-    if (!paste.buttonOwned) {
-        refreshTrackPastePreview(nowMs);
-        return;
-    }
-
     refreshTrackPastePreview(nowMs);
+    if (!paste.buttonOwned) return;
     if (paste.guard.phase == contextual::GuardedActionPhase::PRESSED &&
         (nowMs - paste.guard.pressedAtMs) >= Config::Timing::LATCH_THRESHOLD_MS) {
         // Guard progress is anchored to the physical press so COMMITTED occurs
@@ -1304,7 +1316,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStructureSelection() {
     core::state::SequencerPageSelectionClipboard clipboard;
     if (!capturePageSelectionClipboard(sequencer_, selection.selectedMask.get(), clipboard) ||
         !structure_clipboard_.storeSequencerPageSelection(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
     selection.placing.set(true);
@@ -1616,6 +1628,9 @@ FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureShortPress() 
         resetFocusedStep(StepResetDepth::Shallow);
         return;
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return;
+    }
 
     using Action = SequencerPreparedPageStructureAction;
     constexpr auto action = Action::PageClear;
@@ -1701,6 +1716,9 @@ FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureLongPress() {
         resetFocusedStep(StepResetDepth::Deep);
         return;
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return;
+    }
 
     using Action = SequencerPreparedPageStructureAction;
     constexpr auto action = Action::PageDelete;
@@ -1749,11 +1767,14 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         core::state::sequencer::SequencerPatternSnapshot snapshot;
-        core::state::sequencer::captureSnapshot(sequencer_.pattern, snapshot);
+        core::state::sequencer::SequencerClipSnapshot clip;
+        core::state::sequencer::captureSnapshot(sequencer_.pattern(), snapshot);
+        core::state::sequencer::captureSnapshot(sequencer_.clip(), clip);
         if (!structure_clipboard_.storeSequencerTrack(
-                snapshot, core::state::sequencer::graphView(sequencer_.pattern),
+                snapshot, clip,
+                core::state::sequencer::graphView(sequencer_.pattern()),
                 currentActiveTrack(),
-                core::state::sequencer::sequencerCcLaneView(sequencer_.pattern),
+                core::state::sequencer::sequencerCcLaneView(sequencer_.pattern()),
                 tracks_.isDrumTrack(currentActiveTrack())
                     ? &tracks_.drumTrack(currentActiveTrack())
                     : nullptr)) {
@@ -1770,12 +1791,15 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
         copyFocusedStep();
         return;
     }
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::LANE) {
+        return;
+    }
 
     core::state::SequencerPageClipboard clipboard;
     const uint8_t page = sequencer_.visiblePage();
     if (!capturePageClipboard(sequencer_, page, clipboard)) return;
     if (!structure_clipboard_.storeSequencerPage(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
 }
@@ -1877,7 +1901,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyFocusedStep() {
     if (!captureFocusedStepClipboard(sequencer_, tracks_, step, clipboard)) return;
 
     if (!structure_clipboard_.storeSequencerSteps(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
 }
@@ -1896,7 +1920,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
         return;
     }
     if (!structure_clipboard_.storeSequencerSteps(
-            clipboard, core::state::sequencer::graphView(sequencer_.pattern))) {
+            clipboard, core::state::sequencer::graphView(sequencer_.pattern()))) {
         return;
     }
     selection.placing.set(true);

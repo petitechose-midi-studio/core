@@ -55,11 +55,6 @@ struct Journal {
     char stagingPath[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
 };
 
-struct ExecutionResult {
-    Status status = Status::STORAGE_ERROR;
-    bool applied = false;
-};
-
 Status statusFromError(oc::type::Error error);
 oc::type::ErrorCode recoveryError(Status status);
 
@@ -84,15 +79,4 @@ Status quarantineCorruptJournal(
     ProductFileService& files,
     const ProductMutationLease& lease
 );
-ExecutionResult executeJournal(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    const Journal& journal
-);
-Status recoverPendingMutation(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    bool& quarantined
-);
-
 }  // namespace core::persistence::conditional_mutation

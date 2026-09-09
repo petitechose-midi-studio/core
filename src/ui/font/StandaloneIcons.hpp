@@ -2,6 +2,7 @@
 #pragma once
 #include "StandaloneFonts.hpp"
 
+#include <cstring>
 #include <lvgl.h>
 
 namespace standalone::icons {
@@ -79,13 +80,19 @@ enum class Size : uint8_t { S = 12, M = 14, L = 16 };
     constexpr const char* VIEW_DEVICE = "\xEE\x81\x85";
     constexpr const char* VIEW_MACROS = "\xEE\x81\x86";
     constexpr const char* VIEW_PROJECT = "\xEE\x81\x87";
-    constexpr const char* VIEW_SEQUENCER = "\xEE\x81\x88";
+    constexpr const char* VIEW_CLIPS = "\xEE\x81\x88";
 
 inline void set(lv_obj_t* label, const char* icon, Size size = Size::M) {
     lv_font_t* font = (size == Size::S) ? standalone_fonts.icons_12
                         : (size == Size::M) ? standalone_fonts.icons_14
                         : standalone_fonts.icons_16;
-    lv_obj_set_style_text_font(label, font, 0);
-    lv_label_set_text(label, icon);
+    lv_style_value_t currentFont{};
+    if (lv_obj_get_local_style_prop(label, LV_STYLE_TEXT_FONT, &currentFont, 0)
+            != LV_STYLE_RES_FOUND || currentFont.ptr != font) {
+        lv_obj_set_style_text_font(label, font, 0);
+    }
+    if (icon == nullptr || std::strcmp(lv_label_get_text(label), icon) != 0) {
+        lv_label_set_text(label, icon);
+    }
 }
 }  // namespace standalone::icons

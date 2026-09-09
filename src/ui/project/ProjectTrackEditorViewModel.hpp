@@ -11,8 +11,7 @@ namespace core::ui::project {
 
 /** Allocation-free semantic projection consumed by the retained Track view. */
 struct ProjectTrackEditorViewModel {
-    // Enough for the full uint8_t diagnostic range ("TRACK 255\0"), even
-    // though the canonical product domain is currently limited to 16 Tracks.
+    // Track names are bounded to eight visible characters plus terminator.
     static constexpr uint8_t TITLE_CAPACITY = 10U;
     static constexpr uint8_t PORT_CAPACITY = 4U;
 
@@ -33,6 +32,7 @@ struct ProjectTrackEditorViewModel {
     bool drum = false;
     bool draftDrum = false;
     bool typeChangePending = false;
+    bool typeChangeBlocked = false;
 
     friend bool operator==(
         const ProjectTrackEditorViewModel& lhs,
@@ -50,7 +50,8 @@ struct ProjectTrackEditorViewModel {
                lhs.muted == rhs.muted && lhs.soloed == rhs.soloed &&
                lhs.portEditable == rhs.portEditable &&
                lhs.drum == rhs.drum && lhs.draftDrum == rhs.draftDrum &&
-               lhs.typeChangePending == rhs.typeChangePending;
+               lhs.typeChangePending == rhs.typeChangePending &&
+               lhs.typeChangeBlocked == rhs.typeChangeBlocked;
     }
 };
 

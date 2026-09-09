@@ -10,6 +10,7 @@ list(APPEND MS_CORE_NATIVE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/validation/project/ProjectModulationBenchmark.cpp")
 
 set(MS_CORE_NATIVE_EXTRA_SOURCES
+    "${MS_CORE_SOURCE_ROOT}/app/RpcLifetime.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroOverlayInvalidationBindings.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroViewActivationContract.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/SequencerChordFieldPresentation.cpp"
@@ -31,6 +32,7 @@ list(APPEND MS_CORE_NATIVE_SOURCES ${MS_CORE_NATIVE_EXTRA_SOURCES})
 
 set(MS_CORE_PROJECT_FILE_OPEN_CONTROL_SOURCES
     "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/state/NotificationQueue.cpp"
+    "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/state/Signal.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerChord.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerChordProjection.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerChordSpec.cpp"
@@ -85,6 +87,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroConversion.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroCurveOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlState.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectControlMacroOpsInternal.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/modulation/ProjectModulationAutomationOps.cpp"
@@ -97,6 +100,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectSlug.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/project/ProjectHistoryCoordinator.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerClipGridState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentProjectionOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentStepOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerContentViewInternal.cpp"
@@ -115,7 +119,7 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphPropertyOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternPreset.cpp"
-    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRegionOps.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerClipRegionOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRandomizeOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRandomizeSession.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternEditorState.cpp"

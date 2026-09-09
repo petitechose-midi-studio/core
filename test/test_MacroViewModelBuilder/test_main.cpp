@@ -197,9 +197,7 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     state.macroUi.setRuntimeProjection(0, 0, 0, projection, 0.75f);
     props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(std::fabs(props.baseValue - 0.4f) < 0.0001f);
-    assert(std::fabs(props.modulationDelta - 0.2f) < 0.0001f);
     assert(std::fabs(props.value - 0.6f) < 0.0001f);
-    assert(std::fabs(props.modulationDepth - 0.75f) < 0.0001f);
     assert(!props.clippedLow && !props.clippedHigh);
 
     projection.base = 0.9f;
@@ -356,7 +354,6 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     assert(!frame.macros[1].automationRecording);
     assert(frame.macros[2].automationRecording);
     assert(std::fabs(frame.macros[0].baseValue - (48.0f / 127.0f)) < 0.0001f);
-    assert(std::fabs(frame.macros[0].modulationDelta - 0.05f) < 0.0001f);
     assert(std::fabs(
         frame.macros[0].value - (48.0f / 127.0f + 0.05f)
     ) < 0.0001f);

@@ -1,0 +1,22 @@
+# Focused regression: create a GM Drum track, then return to the matrix.
+# Same creation prefix as drum-create-edit; no unrelated lane/step edits.
+# Known failure before correction: NotificationQueue overflows on validation.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_mode sequencer.clip_launcher
+1200 encoder_value NAV 0.010
+1400 encoder_value OPT -0.010
+1600 encoder_value NAV 0.010
+1800 encoder_value NAV 0.010
+2200 tap NAV 60
+2800 encoder_value NAV 0.010
+3200 tap NAV 60
+3800 encoder_value NAV 0.010
+4200 tap NAV 60
+4800 assert_mode sequencer.pattern
+5000 tap LEFT_TOP 60
+5500 assert_mode sequencer.clip_launcher
+6000 transport stop

@@ -2,12 +2,10 @@
 
 #include <algorithm>
 #include <array>
-#include <cstring>
 #include <limits>
 
 #include <config/PlatformCompat.hpp>
 
-#include "app/ExtmemAllocator.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
@@ -126,64 +124,6 @@ FLASHMEM bool clearProjectSelectionInDomain(
         }
     }
 
-    return true;
-}
-
-FLASHMEM bool clearProjectDestinationInDomain(
-    modulation::ProjectControlDomainState& domain,
-    const macro::MacroAutomationSlotAddress& address
-) {
-    if (!macro::macroAutomationAddressValid(address)) return false;
-    const auto destination = modulation::projectControlDestination(address);
-    if (modulation::findProjectAutomationCurve(
-            domain.automation,
-            destination
-        ) != nullptr &&
-        !modulation::deleteProjectAutomationCurve(
-            domain.automation,
-            domain.curves,
-            destination
-        ).changed()) {
-        return false;
-    }
-    for (uint16_t cursor = 0; cursor < domain.modulation.outputBindingCount;) {
-        const auto binding = domain.modulation.outputBindings[cursor];
-        if (binding.destination != destination) {
-            ++cursor;
-            continue;
-        }
-        if (!modulation::removeProjectModulationBinding(
-                domain.modulation,
-                binding.id
-            ).changed()) {
-            return false;
-        }
-    }
-    return true;
-}
-
-template <typename Mutation>
-FLASHMEM bool mutateProjectControl(
-    modulation::ProjectControlState& control,
-    Mutation&& mutation
-) {
-    auto pending = core::app::makeExtmemUnique<
-        modulation::ProjectControlDomainState
-    >();
-    if (!pending) return false;
-    std::memcpy(pending.get(), &control.authored, sizeof(*pending));
-    if (!mutation(*pending) || !modulation::validProjectModulationDomain(
-            pending->modulation,
-            pending->curves,
-            &pending->automation
-        )) {
-        return false;
-    }
-    if (std::memcmp(pending.get(), &control.authored, sizeof(*pending)) == 0) {
-        return true;
-    }
-    std::memcpy(&control.authored, pending.get(), sizeof(*pending));
-    control.markAuthoredMutation();
     return true;
 }
 
@@ -344,58 +284,6 @@ FLASHMEM bool clearPagesInDomain(
     );
 }
 
-FLASHMEM bool clearPages(
-    modulation::ProjectControlState& control,
-    uint8_t track,
-    uint16_t pageMask
-) {
-    if (track >= macro::TRACK_COUNT || pageMask == 0U) return false;
-    return mutateProjectControl(
-        control,
-        [track, pageMask](modulation::ProjectControlDomainState& domain) {
-            return clearProjectSelectionInDomain(
-                domain,
-                ProjectScopeSelection{
-                    .kind = ScopeKind::PAGE,
-                    .mask = pageMask,
-                    .track = track,
-                }
-            );
-        }
-    );
-}
-
-FLASHMEM bool compactPages(
-    modulation::ProjectControlState& control,
-    uint8_t track,
-    uint16_t retainedPageMask
-) {
-    return modulation::compactProjectControlPages(
-        control,
-        track,
-        retainedPageMask
-    );
-}
-
-FLASHMEM bool clearTracks(
-    modulation::ProjectControlState& control,
-    uint16_t trackMask
-) {
-    if (trackMask == 0U) return false;
-    return mutateProjectControl(
-        control,
-        [trackMask](modulation::ProjectControlDomainState& domain) {
-            return clearProjectSelectionInDomain(
-                domain,
-                ProjectScopeSelection{
-                    .kind = ScopeKind::TRACK,
-                    .mask = trackMask,
-                }
-            );
-        }
-    );
-}
-
 FLASHMEM bool clearTracksInDomain(
     modulation::ProjectControlDomainState& domain,
     uint16_t trackMask
@@ -410,56 +298,16 @@ FLASHMEM bool clearTracksInDomain(
     );
 }
 
-FLASHMEM bool clearMacroSlot(
-    modulation::ProjectControlState& control,
-    const macro::MacroAutomationSlotAddress& address
-) {
-    return mutateProjectControl(
-        control,
-        [&address](modulation::ProjectControlDomainState& domain) {
-            return clearProjectDestinationInDomain(domain, address);
-        }
-    );
-}
-
-FLASHMEM bool replacePageFromClipboard(
-    modulation::ProjectControlState& control,
+FLASHMEM bool replacePageFromClipboardInDomain(
+    modulation::ProjectControlDomainState& domain,
     uint8_t destTrack,
     uint8_t destPage,
     const core::state::MacroAutomationClipboard* clipboard
 ) {
-    return mutateProjectControl(
-        control,
-        [destTrack, destPage, clipboard](
-            modulation::ProjectControlDomainState& domain
-        ) {
-            return replaceProjectScopeFromClipboardInDomain(
-                domain,
-                Scope{
-                    .kind = ScopeKind::PAGE,
-                    .track = destTrack,
-                    .page = destPage,
-                },
-                clipboard
-            );
-        }
-    );
-}
-
-FLASHMEM bool replaceTrackFromClipboard(
-    modulation::ProjectControlState& control,
-    uint8_t destTrack,
-    const core::state::MacroAutomationClipboard* clipboard
-) {
-    return mutateProjectControl(
-        control,
-        [destTrack, clipboard](modulation::ProjectControlDomainState& domain) {
-            return replaceProjectScopeFromClipboardInDomain(
-                domain,
-                Scope{.kind = ScopeKind::TRACK, .track = destTrack},
-                clipboard
-            );
-        }
+    return replaceProjectScopeFromClipboardInDomain(
+        domain,
+        Scope{.kind = ScopeKind::PAGE, .track = destTrack, .page = destPage},
+        clipboard
     );
 }
 

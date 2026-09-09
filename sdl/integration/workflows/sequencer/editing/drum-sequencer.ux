@@ -1,4 +1,4 @@
-# Drum Sequencer acceptance path: typed creation, Track/Pattern/Step grammar,
+# Purpose: validates typed Drum creation, Track/Pattern/Step grammar,
 # lane editing, shared Step Editor, advanced rhythmic content and return.
 # Expect: capture_changed:type_drum=kit_empty, capture_changed:kit_empty=kit_general_midi, capture_changed:kit_general_midi=pattern_overview
 # Expect: capture_changed:pattern_overview=kick_programmed, capture_changed:kick_programmed=snare_programmed
@@ -13,8 +13,8 @@
 # Expect: capture_changed:lane_identity_reset=lane_editor_root_after_reset, capture_changed:lane_editor_root_after_reset=overview_lane_reset
 # Expect: semantic:lane_identity_reset_action:property=preset_defaults, semantic:lane_identity_reset:effect=reset_drum_lane_identity, semantic:lane_identity_reset:dirty=true
 # Expect: semantic:lane_editor_root_after_reset:property=identity, semantic:lane_editor_root_after_reset:effect=leave_drum_lane_identity
-# Expect: semantic:pattern_overview:view=sequencer, semantic:pattern_overview:overlay=none, semantic:pattern_overview:shared_track=1
-# Expect: semantic:step_focus:mode=sequencer.step, semantic:step_focus:target=step, semantic:step_focus:target_index=0
+# Expect: semantic:pattern_overview:view=clips, semantic:pattern_overview:overlay=none, semantic:pattern_overview:shared_track=1
+# Expect: semantic:step_focus:mode=sequencer.context_selector, semantic:step_focus:target=step, semantic:step_focus:effect=apply_context
 # Expect: semantic:per_lane_playheads:playing=true, semantic:per_lane_playheads:effect=transport_start
 # Expect: capture_changed:step_focus=step_two_focused, capture_changed:step_editor_state=micro_action, capture_changed:micro_action=micro_child
 # Expect: capture_changed:micro_child=micro_child_edited, capture_changed:advanced_root=overview_advanced_marker
@@ -25,52 +25,53 @@
 0 scenario drum-sequencer
 80 capture screen instrument_grid_before_create
 
-# Open Structure > Tracks, select the first add slot and open typed creation.
-150 button NAV down
-210 encoder NAV -1
-270 button NAV up
-330 tap LEFT_CENTER 60
-1280 capture screen structure_tracks_open
-1530 encoder NAV 1
-1730 capture screen track_2_add_preview
-1830 tap NAV 60
-2150 capture screen type_instrument
+# Track structure belongs to the Clip Launcher. Return to the matrix, move up
+# to the T1 header, then horizontally to the sole +T2 add header.
+150 tap LEFT_TOP 60
+500 encoder OPT -0.01
+700 encoder NAV 0.01
+1280 capture screen launcher_track_add
+1530 tap NAV 60
+1730 capture screen type_instrument
 
 # Drum creation is deliberately two-stage: choose Track kind, then either a
 # blank kit or an optional routing preset. General MIDI gives this scenario
 # eight immediately playable lanes while New kit remains the product default.
-2300 encoder NAV 1
-2500 capture screen type_drum
-2650 tap NAV 60
-2950 capture screen kit_empty
-3100 encoder NAV 1
+1830 encoder NAV 0.01
+2150 capture screen type_drum
+2300 tap NAV 60
+2500 capture screen kit_empty
+2650 encoder NAV 0.01
 3300 capture screen kit_general_midi
 3450 tap NAV 60
 4200 capture screen pattern_overview
 
-# The new Drum Track enters Pattern focus. NAV changes lane and the eight
-# macro buttons author visible hits without opening another screen.
-4350 tap MACRO_1 60
-4550 tap MACRO_5 60
+# The new Drum Track enters Pattern focus. One explicit scope turn enters Lane;
+# NAV then changes Lane and the eight macro buttons author visible hits.
+4250 button NAV down
+4310 encoder NAV 0.01
+4370 button NAV up
+4450 tap MACRO_1 60
+4650 tap MACRO_5 60
 4850 capture screen kick_programmed
-5000 encoder NAV 1
+5000 encoder NAV 0.01
 5150 tap MACRO_3 60
 5350 tap MACRO_7 60
 5650 capture screen snare_programmed
 
-# A short NAV at Pattern opens the compact root. Identity is an explicit child;
+# A short NAV at Lane opens the compact root. Identity is an explicit child;
 # Name reuses the shared keyboard and Color remains a draft until Apply.
 5800 tap NAV 60
 6150 capture screen lane_editor_root
-6300 encoder NAV 1
-6450 encoder NAV 1
+6300 encoder NAV 0.01
+6450 encoder NAV 0.01
 6600 tap NAV 60
 6900 capture screen lane_identity_inherited
 7050 tap NAV 60
 7350 capture screen lane_identity_keyboard
 7500 tap LEFT_TOP 60
-7650 encoder NAV 1
-7800 encoder NAV 1
+7650 encoder NAV 0.01
+7800 encoder NAV 0.01
 8000 encoder OPT 0.75
 8300 capture screen lane_identity_override
 8450 tap BOTTOM_RIGHT 60
@@ -79,10 +80,10 @@
 # Reopening Identity exposes one atomic reset. Back returns to the root without
 # discarding the draft; Apply then publishes the reset as one transaction.
 9000 tap NAV 60
-9150 encoder NAV 1
-9300 encoder NAV 1
+9150 encoder NAV 0.01
+9300 encoder NAV 0.01
 9450 tap NAV 60
-9600 encoder NAV -1
+9600 encoder NAV -0.01
 9900 capture screen lane_identity_reset_action
 10050 tap NAV 60
 10350 capture screen lane_identity_reset
@@ -94,10 +95,10 @@
 # One context turn enters Step focus. NAV now moves horizontally and a
 # short press opens the same shared Step Editor as the melodic sequencer.
 11550 button NAV down
-11650 encoder NAV 1
+11650 encoder NAV 0.01
 11750 button NAV up
 12100 capture screen step_focus
-12250 encoder NAV 1
+12250 encoder NAV 0.01
 12400 tap MACRO_2 60
 12650 capture screen step_two_focused
 12800 tap NAV 60
@@ -105,23 +106,23 @@
 
 # Root Drum rows are State, Chance, Velocity, Gate, Nudge, Micro and Cycle:
 # fixed lane pitch means Pitch/Chord are intentionally absent.
-13350 encoder NAV 1
+13350 encoder NAV 0.01
 13550 encoder OPT 0.70
-13750 encoder NAV 1
+13750 encoder NAV 0.01
 13950 encoder OPT 0.85
-14150 encoder NAV 1
+14150 encoder NAV 0.01
 14350 encoder OPT 0.45
-14550 encoder NAV 1
+14550 encoder NAV 0.01
 14750 encoder OPT 0.65
-14950 encoder NAV 1
+14950 encoder NAV 0.01
 15200 capture screen micro_action
 
 # Create a MicroSequence through NAV. The shared editor remains open inside
 # the child, still exposes the compact rhythm rows and keeps the lane note.
 15350 tap NAV 60
 15900 capture screen micro_child
-16100 encoder NAV 1
-16300 encoder NAV 1
+16100 encoder NAV 0.01
+16300 encoder NAV 0.01
 16500 encoder OPT 0.55
 16800 capture screen micro_child_edited
 
@@ -134,19 +135,19 @@
 17900 tap LEFT_TOP 60
 18300 capture screen overview_advanced_marker
 
-# Re-open the same root Step and enter Cycle through the adjacent shared row.
+# Return from Lane to the same root Step and enter Cycle through the adjacent shared row.
 # The child uses the same Drum-lane presentation as Micro: fixed lane pitch,
 # compact rhythm geometry and no melodic Pitch/Chord detour.
 18500 button NAV down
-18600 encoder NAV 1
+18600 encoder NAV 0.01
 18700 button NAV up
 19000 tap NAV 60
-19300 encoder NAV 1
-19450 encoder NAV 1
-19600 encoder NAV 1
-19750 encoder NAV 1
-19900 encoder NAV 1
-20050 encoder NAV 1
+19300 encoder NAV 0.01
+19450 encoder NAV 0.01
+19600 encoder NAV 0.01
+19750 encoder NAV 0.01
+19900 encoder NAV 0.01
+20050 encoder NAV 0.01
 20300 capture screen cycle_action
 20450 tap NAV 60
 21100 capture screen cycle_child

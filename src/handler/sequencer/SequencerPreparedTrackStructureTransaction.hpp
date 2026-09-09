@@ -89,9 +89,6 @@ struct SequencerPreparedTrackStructurePlan {
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t macroAffectedTrack = core::state::sequencer::
         SequencerHistoryMacroTrackStructurePayload::INVALID_AFFECTED_TRACK;
-    core::state::sequencer::SequencerActiveTrackIncomingOwnerPolicy
-        incomingOwnerPolicy = core::state::sequencer::
-            SequencerActiveTrackIncomingOwnerPolicy::Preserve;
 };
 
 static_assert(
@@ -244,14 +241,6 @@ private:
             core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     };
 
-    /** Rotation and same-active owner proof are mutually exclusive. */
-    union TopologyGuard {
-        core::state::sequencer::SequencerPreparedActiveTrackRotation rotation;
-        std::array<OwnerIdentity, 2U> ownerIdentities;
-
-        constexpr TopologyGuard() : rotation{} {}
-    };
-
     static bool captureOwnerIdentities_(
         const core::state::sequencer::SequencerTrackBankState& tracks,
         const core::state::sequencer::SequencerState& sequencer,
@@ -271,7 +260,7 @@ private:
     core::state::sequencer::SequencerTrackStructureChronologyResult chronology_{};
     SequencerPreparedTrackStructurePlan plan_{};
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr change_{};
-    TopologyGuard topologyGuard_{};
+    std::array<OwnerIdentity, 2U> ownerIdentities_{};
     core::state::sequencer::SequencerTrackActivationMutationGuard
         activationGuard_{};
     PreparedTrackStructureSettlementCheckpoint settlementCheckpoint_{};

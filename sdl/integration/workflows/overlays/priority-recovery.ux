@@ -11,10 +11,10 @@
 300 capture screen selector_after_unrelated_input
 
 # Navigate and confirm the overlay.
-400 encoder NAV 1
+400 encoder NAV 0.01
 500 tap NAV 60
 700 capture screen selector_confirmed
 
 # After overlay close, verify global input routing works again.
-800 encoder NAV 1
+800 encoder NAV 0.01
 950 capture screen post_overlay_navigation

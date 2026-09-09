@@ -82,8 +82,11 @@ FLASHMEM core::app::ExtmemUniquePtr<project::ProjectTrackState> createProjectTra
     return tracks;
 }
 
-FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState() {
-    auto state = core::app::makeExtmemUnique<sequencer::SequencerState>();
+FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEditorState(
+    sequencer::SequencerTrackBankState& tracks
+) {
+    auto state = core::app::makeExtmemUnique<sequencer::SequencerState>(
+        tracks.track(0U), tracks.clip(0U));
     if (!state) failCoreStateAllocation("sequencer editor state");
     return state;
 }
@@ -92,6 +95,13 @@ FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState>
 createSequencerTrackBankState() {
     auto state = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
     if (!state) failCoreStateAllocation("sequencer track bank");
+    return state;
+}
+
+FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerClipGridState>
+createSequencerClipGridState() {
+    auto state = core::app::makeExtmemUnique<sequencer::SequencerClipGridState>();
+    if (!state) failCoreStateAllocation("sequencer clip grid");
     return state;
 }
 
@@ -116,12 +126,14 @@ FLASHMEM MacroDomainState::MacroDomainState()
       pages(core::app::makeExtmemUnique<macro::MacroPagesState>()) {
     if (!runtime) failCoreStateAllocation("macro runtime state");
     if (!pages) failCoreStateAllocation("macro pages state");
+    if (!pages->control.hasAuthored()) failCoreStateAllocation("project control domain");
 }
 
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
 FLASHMEM SequencerDomainState::SequencerDomainState()
-    : editor(createSequencerEditorState()), tracks(createSequencerTrackBankState()),
+    : tracks(createSequencerTrackBankState()), editor(createSequencerEditorState(*tracks)),
+      clips(createSequencerClipGridState()),
       history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>()) {
     if (!history) failCoreStateAllocation("sequencer history service");
 }
@@ -137,8 +149,10 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
       pages(*macroDomain_.pages), macroHistory(macroDomain_.history),
       macroRuntimeOwnerRevision(macroDomain_.runtimeOwnerRevision),
       configRevision(macroDomain_.configRevision), sequencer(*sequencerDomain_.editor),
-      sequencerTracks(*sequencerDomain_.tracks), sequencerHistory(*sequencerDomain_.history),
+      sequencerTracks(*sequencerDomain_.tracks), sequencerClips(*sequencerDomain_.clips),
+      sequencerHistory(*sequencerDomain_.history),
       sequencerTrackActivations(sequencerDomain_.trackActivations),
+      sequencerClipLaunches(sequencerDomain_.clipLaunches),
       sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision), project(project_),
       projectTracks(*projectTracks_), projectTrackHistory(*projectTrackHistory_),
       projectSettingsHistory(*projectSettingsHistory_), projectHistory(*projectHistory_),
@@ -214,6 +228,9 @@ FLASHMEM void CoreState::requestMacroRuntimeOwnerActivation() {
 
 FLASHMEM void CoreState::requestSequencerRuntimeProjectReset() {
     sequencerTrackActivations.reset();
+    sequencerClipLaunches.reset(
+        sequencerClips,
+        sequencerTracks.currentEnabledMask());
     sequencerRuntimeProjectRevision.set(
         nextNonZeroRuntimeRevision(sequencerRuntimeProjectRevision.get()));
 }
@@ -450,6 +467,6 @@ bool CoreState::hasPendingProjectTransaction() const {
            projectTrackHistory.hasPendingGesture();
 }
 
-FLASHMEM void CoreState::markSequencerProjectMutated() { markSequencerProjectMutated_(); }
+FLASHMEM void CoreState::markSequencerProjectMutated() { markProjectMutated(); }
 
 }  // namespace core::state

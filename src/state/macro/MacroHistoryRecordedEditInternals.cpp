@@ -121,7 +121,7 @@ FLASHMEM bool recordedShapeEditMatches(
 ) {
     using namespace core::state::modulation;
     if (!recordedShapeEditStorageValid(payload)) return false;
-    const auto& domain = pages.control.authored;
+    const auto& domain = pages.control.authored();
     const auto& graph = domain.modulation;
     const auto& arena = domain.curves;
     if (!historyDomainValid(domain)) return false;
@@ -229,7 +229,7 @@ FLASHMEM bool applyRecordedShapeEdit(
 ) {
     using namespace core::state::modulation;
     if (!recordedShapeEditMatches(pages, payload, !after)) return false;
-    auto& domain = pages.control.authored;
+    auto& domain = pages.control.authored();
     auto& graph = domain.modulation;
     auto& arena = domain.curves;
     auto* source = findProjectModulator(graph, payload.beforeSource.id);
@@ -339,7 +339,7 @@ FLASHMEM bool deleteAfterMatches(
         (payload.curvePointCount > 0U && !payload.curvePoints)) {
         return false;
     }
-    const auto& graph = pages.control.authored.modulation;
+    const auto& graph = pages.control.authored().modulation;
     if (findProjectModulator(graph, payload.source.id) != nullptr ||
         graph.sourceCount + 1U != payload.beforeSourceCount ||
         graph.outputBindingCount + payload.bindingCount !=
@@ -363,7 +363,7 @@ FLASHMEM bool deleteAfterMatches(
         }
     }
     if (!payload.curvePresent) return true;
-    const auto& arena = pages.control.authored.curves;
+    const auto& arena = pages.control.authored().curves;
     if (arena.nextCurveId != payload.nextCurveId) return false;
     const auto* record = findProjectCurve(arena, payload.curve.id);
     if (payload.curveShared) {

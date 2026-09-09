@@ -1,0 +1,47 @@
+# UX workflow: sliding 3 x 4 Launcher window and Scene + 3 x 2 macro bank.
+# Purpose: validates non-wrapping row/column scrolling across eight Scenes and
+# eight Tracks, then proves macro addressing follows the focused visible pair.
+# Expect: capture_changed:vertical_slide=top_window
+# Expect: capture_changed:bottom_window=vertical_slide
+# Expect: capture_changed:horizontal_slide=bottom_window
+# Expect: capture_changed:right_window=horizontal_slide
+# Expect: capture_changed:macro_bank_queued=right_window
+# Expect: semantic:vertical_slide:target_track=0, semantic:vertical_slide:target_index=4
+# Expect: semantic:bottom_window:target_track=0, semantic:bottom_window:target_index=7
+# Expect: semantic:horizontal_slide:target_track=4, semantic:horizontal_slide:target_index=7
+# Expect: semantic:right_window:target_track=7, semantic:right_window:target_index=7, semantic:right_window:property=stop
+# Expect: semantic:macro_bank_queued:target_track=6, semantic:macro_bank_queued:target_index=6, semantic:macro_bank_queued:operation_origin=manual_clip, semantic:macro_bank_queued:operation_status=queued, semantic:macro_bank_queued:queued_slot=6
+
+0 scenario clip-launcher-v3-scroll
+# Enter Track 1 from the default Scene rail.
+180 encoder NAV 0.01
+420 capture screen top_window
+
+# Four rows remain visible; crossing S4 slides by one instead of paging.
+540 encoder OPT 0.01
+620 encoder OPT 0.01
+700 encoder OPT 0.01
+780 encoder OPT 0.01
+940 capture screen vertical_slide
+1020 encoder OPT 0.01
+1100 encoder OPT 0.01
+1180 encoder OPT 0.01
+1340 capture screen bottom_window
+
+# The same sliding rule applies horizontally with NAV.
+1500 encoder NAV 0.01
+1580 encoder NAV 0.01
+1660 encoder NAV 0.01
+1740 encoder NAV 0.01
+1980 capture screen horizontal_slide
+2140 encoder NAV 0.01
+2220 encoder NAV 0.01
+2300 encoder NAV 0.01
+2540 capture screen right_window
+
+# Focus is on S8, so the physical macros address S7/S8. MACRO_3 therefore
+# launches the visible T7/S7 Clip, not a hidden cell from the first bank.
+2620 tap BOTTOM_CENTER 60
+2780 tap MACRO_3 60
+2960 capture screen macro_bank_queued
+3140 tap BOTTOM_CENTER 60
