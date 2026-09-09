@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <map>
+#include <iterator>
 #include <utility>
 #include <vector>
 
@@ -723,7 +725,7 @@ void test_create_rollback_does_not_restore_stale_backup() {
     writeRaw(productPath("projects/atomic.bin"), FINAL_DATA, sizeof(FINAL_DATA));
     writeRaw(productPath("projects/atomic.bin.bak"), OLD_DATA, sizeof(OLD_DATA));
     const auto record = journalRecord(
-        ProductFileTransactionPhase::COMMITTED,
+        ProductFileTransactionPhase::PROMOTED,
         false,
         47U,
         sizeof(NEW_DATA),
@@ -938,7 +940,8 @@ void test_cooperative_recovery_uses_one_bounded_durable_phase_per_advance() {
         ProductFileService files(backend);
         assert(files.init());
         seedCurrent(files);
-        backend.arm(durableBoundaries - 1U, CutMode::AFTER);
+        // Cut before opening the terminal record (begin/append/finish).
+        backend.arm(durableBoundaries - 2U, CutMode::BEFORE);
         assert(!replace(files, NEW_DATA, sizeof(NEW_DATA)));
         assert(backend.cut());
     }
@@ -1033,6 +1036,114 @@ void test_cooperative_recovery_restores_newly_created_backup_after_bad_promotion
                  "after bad promotion\n";
 }
 
+void test_completed_transaction_does_not_own_later_files() {
+    // A successful promotion is followed by an independent deletion. Reboot
+    // must not reinterpret that deletion as an interrupted promotion.
+    resetTestRoot();
+    {
+        oc::impl::HostFileSystem backend(testRoot().string().c_str());
+        ProductFileService files(backend);
+        assert(files.init());
+        seedCurrent(files);
+        assert(replace(files, NEW_DATA, sizeof(NEW_DATA)));
+        auto acquired = files.acquireMutation(ProductMutationOwner::PROJECT);
+        assert(acquired);
+        auto lease = std::move(acquired.value());
+        assert(files.remove(lease, CURRENT));
+        assert(files.releaseMutation(lease));
+    }
+    oc::impl::HostFileSystem backend(testRoot().string().c_str());
+    ProductFileService files(backend);
+    assert(files.init());
+    assert(missing(files, CURRENT));
+    std::cout << "[PASS] completed transaction releases its paths\n";
+}
+
+auto snapshotTree() {
+    std::map<std::string, std::vector<char>> snapshot;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(testRoot())) {
+        auto name = entry.path().lexically_relative(testRoot()).generic_string();
+        if (entry.is_directory()) {
+            snapshot[name + '/'] = {};
+        } else {
+            std::ifstream input(entry.path(), std::ios::binary);
+            assert(input);
+            snapshot[name] = std::vector<char>(std::istreambuf_iterator<char>(input), {});
+        }
+    }
+    return snapshot;
+}
+
+void test_terminal_recovery_preserves_subsequent_mutations() {
+    uint32_t scenarios = 0;
+    for (const auto phase : {ProductFileTransactionPhase::COMMITTED,
+                             ProductFileTransactionPhase::ROLLED_BACK}) {
+        for (const bool hadCurrent : {false, true}) {
+            for (const bool cooperative : {false, true}) {
+                for (unsigned mutation = 0; mutation < 4; ++mutation) {
+                    resetTestRoot();
+                    {
+                        oc::impl::HostFileSystem backend(testRoot().string().c_str());
+                        ProductFileService files(backend);
+                        assert(files.init());
+                        if (hadCurrent) seedCurrent(files);
+                        assert(replace(files, NEW_DATA, sizeof(NEW_DATA)));
+                    }
+                    if (phase == ProductFileTransactionPhase::ROLLED_BACK) {
+                        // Seed a valid, later terminal rollback record. Its paths
+                        // have the same lifetime rules as a completed commit.
+                        const auto record = journalRecord(phase, hadCurrent, 100U,
+                            sizeof(NEW_DATA), core::persistence::checksum::crc32(
+                                NEW_DATA, sizeof(NEW_DATA)));
+                        writeRaw(productPath("tmp/rpc-product-file-a.journal"),
+                                 record.data(), record.size());
+                    }
+                    if (mutation == 1) {
+                        std::filesystem::rename(productPath(CURRENT),
+                                                productPath("projects/renamed.bin"));
+                    } else {
+                        assert(std::filesystem::remove(productPath(CURRENT)));
+                        if (mutation == 2) {
+                            writeRaw(productPath(CURRENT), FINAL_DATA, sizeof(FINAL_DATA));
+                        } else if (mutation == 3) {
+                            assert(std::filesystem::create_directory(productPath(CURRENT)));
+                            writeRaw(productPath("projects/atomic.bin/child"),
+                                     FINAL_DATA, sizeof(FINAL_DATA));
+                        }
+                    }
+                    // Subsequent operations may reuse the former scratch paths.
+                    writeRaw(productPath(TEMPORARY), OLD_DATA, sizeof(OLD_DATA));
+                    writeRaw(productPath(BACKUP), FINAL_DATA, sizeof(FINAL_DATA));
+                    const auto before = snapshotTree();
+                    for (unsigned reboot = 0; reboot < 2; ++reboot) {
+                        oc::impl::HostFileSystem backend(testRoot().string().c_str());
+                        ProductFileService files(backend);
+                        if (cooperative) {
+                            assert(files.initForRecovery());
+                            auto acquired = files.beginRecovery();
+                            assert(acquired);
+                            auto lease = std::move(acquired.value());
+                            core::persistence::ProductFileRecoveryPlan plan;
+                            assert(plan.begin(files, lease));
+                            uint8_t scratch[core::persistence::PRODUCT_FILE_INTEGRITY_CHUNK_SIZE]{};
+                            auto advanced = plan.advance(files, lease, scratch, sizeof(scratch));
+                            assert(advanced && advanced.value() && plan.complete());
+                            assert(files.completeRecovery(lease, true));
+                        } else {
+                            assert(files.init());
+                        }
+                        assert(files.storageState() == ProductStorageState::READY);
+                        assert(snapshotTree() == before);
+                    }
+                    ++scenarios;
+                }
+            }
+        }
+    }
+    std::cout << "[PASS] terminal recovery preserves later paths ("
+              << scenarios << " scenarios, two reboots each)\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1040,6 +1151,8 @@ int main() {
     std::cout << "AtomicProductFile tests\n";
     std::cout << "==============================================\n\n";
 
+    test_completed_transaction_does_not_own_later_files();
+    test_terminal_recovery_preserves_subsequent_mutations();
     test_every_durable_boundary_recovers_old_or_new();
     test_single_corrupt_slot_is_cleaned();
     test_both_corrupt_slots_block_and_are_preserved();

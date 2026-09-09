@@ -70,7 +70,8 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
                 workspace_
             );
             if (!selected) return fail_(selected.error());
-            if (!selected.value().present) {
+            // Terminal records retain sequence metadata, not path ownership.
+            if (!selected.value().present || transaction::phaseTerminal(workspace_.phase)) {
                 step_ = Step::COMPLETE;
                 return oc::type::Result<bool>::ok(true);
             }
@@ -284,10 +285,6 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
                 workspace_.path(transaction::BACKUP_PATH)
             );
             if (!removed) return fail_(removed.error());
-            if (workspace_.phase == terminal_phase_) {
-                step_ = Step::COMPLETE;
-                return oc::type::Result<bool>::ok(true);
-            }
             step_ = Step::PERSIST_TERMINAL;
             return oc::type::Result<bool>::ok(false);
         }

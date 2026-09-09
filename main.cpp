@@ -595,6 +595,14 @@ static FLASHMEM void benchmarkBootFaultReport() {
 static FLASHMEM void checkOrHalt(const oc::type::Result<void>& result, const char* component) {
     if (!result) {
         BENCH_BOOT("peripheral-failed");
+#if defined(MS_HARDWARE_BENCHMARK)
+        // Startup failure only; retain the cause when measured-run logs are disabled.
+        static constexpr char prefix[] = "\0[bench-init] ";
+        Serial.write(reinterpret_cast<const uint8_t*>(prefix), sizeof(prefix) - 1U);
+        Serial.print(component); Serial.print(" code=");
+        Serial.print(static_cast<unsigned>(result.error().code)); Serial.print(" context=");
+        Serial.println(result.error().context ? result.error().context : "none");
+#endif
 #if defined(OC_LOG)
         const auto error = result.error();
         OC_LOG_ERROR("{} init failed: {} context={}", component,

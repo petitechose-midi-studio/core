@@ -88,20 +88,7 @@ FLASHMEM oc::type::Result<void> finishCommitted(
             backupCleanup.error()
         );
     }
-    if (workspace.phase != ProductFileTransactionPhase::COMMITTED) {
-        auto persisted = persistPhase(
-            files,
-            lease,
-            workspace,
-            ProductFileTransactionPhase::COMMITTED
-        );
-        if (!persisted) {
-            return oc::type::Result<void>::err(
-                persisted.error()
-            );
-        }
-    }
-    return oc::type::Result<void>::ok();
+    return persistPhase(files, lease, workspace, ProductFileTransactionPhase::COMMITTED);
 }
 
 FLASHMEM oc::type::Result<void> finishRolledBack(
@@ -121,20 +108,7 @@ FLASHMEM oc::type::Result<void> finishRolledBack(
             backupCleanup.error()
         );
     }
-    if (workspace.phase != ProductFileTransactionPhase::ROLLED_BACK) {
-        auto persisted = persistPhase(
-            files,
-            lease,
-            workspace,
-            ProductFileTransactionPhase::ROLLED_BACK
-        );
-        if (!persisted) {
-            return oc::type::Result<void>::err(
-                persisted.error()
-            );
-        }
-    }
-    return oc::type::Result<void>::ok();
+    return persistPhase(files, lease, workspace, ProductFileTransactionPhase::ROLLED_BACK);
 }
 
 FLASHMEM oc::type::Result<void> restoreBackup(
@@ -514,7 +488,9 @@ static FLASHMEM oc::type::Result<void> recoverWithWorkspace(
     if (!selected) {
         return oc::type::Result<void>::err(selected.error());
     }
-    if (!selected.value().present) {
+    // A durable terminal record releases all three paths to later mutations.
+    // Retain its sequence, but never inspect or clean those paths on reboot.
+    if (!selected.value().present || phaseTerminal(workspace.phase)) {
         return oc::type::Result<void>::ok();
     }
     return recoverSelected(files, recoveryLease, workspace);
