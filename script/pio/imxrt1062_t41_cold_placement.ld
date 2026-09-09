@@ -69,6 +69,8 @@
  * sequencer tick, or retained UI rendering.  Keep both their compiler-emitted
  * helpers and constant tables in cached Flash; only the tiny sampling gate in
  * main remains eligible for ITCM. */
+/* Qualification-only SD namespace and timing wrappers are stopped-only too. */
+*(.text.*BenchFileSystem*)
 *(.text.*StorageRecoveryRuntimeManager*)
 *AtomicProductFile.cpp.o(.text* .rodata*)
 *ProductFileTransactionJournal.cpp.o(.text* .rodata*)
