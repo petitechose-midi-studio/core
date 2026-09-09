@@ -213,6 +213,11 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py")
     set_tests_properties(check_ArchitectureContracts PROPERTIES LABELS core)
 
+    add_test(NAME check_CppContractMask
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-cpp-contract-mask.py")
+    set_tests_properties(check_CppContractMask PROPERTIES LABELS core)
+
     add_test(
         NAME check_ExtmemLifetimeContracts
         COMMAND "${Python3_EXECUTABLE}"
@@ -340,7 +345,8 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     set(MS_CORE_PERSISTENCE_IO_TESTS
         test_AtomicProductFile
         test_CoreStatePersistence
-        test_FileSystemRpc
+        test_UnifiedFileTransfer
+        test_UnifiedFileSystemRecovery
         test_ProductFileService
         test_ProjectFileStore
         test_ProjectHandler
@@ -352,7 +358,8 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
 
     set(MS_CORE_SANITIZER_BOUNDARY_TESTS
         test_AtomicProductFile
-        test_FileSystemRpc
+        test_UnifiedFileTransfer
+        test_UnifiedFileSystemRecovery
         test_SequencerCcLanePersistence)
 
     foreach(test_source IN LISTS MS_CORE_NATIVE_TESTS)

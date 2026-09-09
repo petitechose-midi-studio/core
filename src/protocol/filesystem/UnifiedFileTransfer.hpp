@@ -45,6 +45,7 @@ private:
         uint8_t result[35]{};
         uint8_t resultSize = 0;
     };
+    static_assert(sizeof(Record) <= 104, "retained result metadata grew beyond its bound");
     Record* find(uint32_t nonce);
     Record* available();
     void retain(const Frame& request, uint32_t nowMs, uint32_t identity);
@@ -69,7 +70,12 @@ private:
     uint32_t expected_ = 0, written_ = 0, crc_ = 0, uploadStarted_ = 0;
     Record records_[RETAINED_CAPACITY]{};
     Record* active_ = nullptr;
+    uint16_t traceRequest_ = 0;
     Error deferredError_ = Error::None;
 };
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(sizeof(FileTransfer) <= 6400, "filesystem service exceeds its ARM memory budget");
+#endif
 
 }  // namespace core::protocol::filesystem::unified

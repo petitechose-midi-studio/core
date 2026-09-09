@@ -8,7 +8,6 @@
 #include <io.h>
 #endif
 #include "protocol/filesystem/UnifiedFileSystemRpc.hpp"
-#include "protocol/filesystem/FileSystemRpc.hpp"
 
 using namespace core::protocol::filesystem::unified;
 
@@ -63,11 +62,5 @@ int main(int argc, char**) {
     assert(decode(wire.data(), wire.size(), frame));
     wire.push_back(0); assert(!decode(wire.data(), wire.size(), frame));
     frame.bodySize = MAX_BODY + 1; assert(!valid(frame));
-    std::array<uint8_t, 128> reference{};
-    const size_t oldCommit = core::protocol::filesystem::FileSystemRpcCodec::encodeWriteCommitRequest(0x1234, 7, reference.data(), reference.size());
-    assert(oldCommit > 0);
-    const size_t oldJobHeader = 5 + std::strlen(core::protocol::filesystem::FILESYSTEM_JOB_RPC_REQUEST_NAME)
-        + core::protocol::filesystem::FILESYSTEM_JOB_RPC_REQUEST_HEADER_BYTES;
-    std::cout << "Commit request bytes: reference=" << oldJobHeader + oldCommit << " unified=" << golden.size() << '\n';
     std::cout << "Unified filesystem codec: golden, truncation, failure atomicity and bounds passed\n";
 }

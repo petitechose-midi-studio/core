@@ -41,4 +41,8 @@ private:
     bool largeOccupied_ = false, active_ = false;
 };
 
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(sizeof(Endpoint) <= 76 * 1024, "filesystem endpoint exceeds its ARM memory budget");
+#endif
+
 } // namespace core::protocol::filesystem::unified

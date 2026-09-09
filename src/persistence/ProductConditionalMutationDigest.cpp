@@ -10,12 +10,6 @@ namespace core::persistence::conditional_mutation {
 
 namespace {
 
-// Seven SHA-256 blocks keep streaming aligned while leaving enough DTCM stack
-// headroom for the exact mutation lease and stat guards. This cold path uses
-// one extra read iteration to protect the realtime stack.
-constexpr size_t HASH_READ_BUFFER_SIZE = 7U * 64U;
-static_assert(HASH_READ_BUFFER_SIZE == 448U);
-
 constexpr uint32_t rotateRight(uint32_t value, uint8_t count) {
     return (value >> count) | (value << (32U - count));
 }
@@ -249,26 +243,6 @@ FLASHMEM bool hashBytes(const uint8_t* data, size_t size,
     plan.finish_();
     copyDigest(output, plan.digest_);
     return true;
-}
-
-FLASHMEM DigestReadResult readDigest(
-    ProductFileService& files,
-    const ProductMutationLease& lease,
-    const char* path
-) {
-    DigestReadResult result{};
-    DigestReadPlan plan;
-    uint8_t buffer[HASH_READ_BUFFER_SIZE] = {};
-    plan.begin();
-    while (!plan.complete()) {
-        (void)plan.advance(files, lease, path, buffer, sizeof(buffer));
-    }
-    result.status = plan.status();
-    if (result.status == Status::OK) {
-        copyDigest(result.sha256, plan.digest());
-        result.crc32 = plan.crc32();
-    }
-    return result;
 }
 
 }  // namespace core::persistence::conditional_mutation

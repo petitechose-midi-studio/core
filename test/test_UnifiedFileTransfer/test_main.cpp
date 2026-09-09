@@ -7,7 +7,7 @@
 #include <vector>
 #include <oc/impl/HostFileSystem.hpp>
 #include "protocol/filesystem/UnifiedFileSystemEndpoint.hpp"
-#include "protocol/filesystem/FileSystemRpcInternal.hpp"
+#include "protocol/filesystem/RpcBody.hpp"
 #include "persistence/ProductFileRecoveryPlan.hpp"
 #ifdef _WIN32
 #include <fcntl.h>
@@ -15,7 +15,7 @@
 #endif
 
 using namespace core::protocol::filesystem::unified;
-using core::protocol::filesystem::internal::ByteWriter;
+
 
 struct FaultFileSystem : oc::impl::HostFileSystem {
     using oc::impl::HostFileSystem::HostFileSystem;
@@ -133,7 +133,7 @@ std::vector<uint8_t> listBody(const char* path, uint16_t start = 0, uint8_t limi
 
 void testListing(const std::filesystem::path& root) {
     Harness h(root);
-    using Reader = core::protocol::filesystem::internal::ByteReader;
+    using Reader = ByteReader;
     auto lease = h.files.acquireMutation(core::persistence::ProductMutationOwner::FILESYSTEM_RPC);
     assert(lease);
     for (size_t i = 0; i < 256; ++i) {

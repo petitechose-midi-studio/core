@@ -182,17 +182,10 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/persistence/SequencerPersistenceEnvelope.cpp
     src/persistence/StepPresetFileStore.cpp
     src/persistence/StorageRecoveryMachine.cpp
-    src/protocol/filesystem/FileSystemJobRpc.cpp
+    src/protocol/filesystem/RpcBody.cpp
     src/protocol/filesystem/UnifiedFileSystemRpc.cpp
     src/protocol/filesystem/UnifiedFileTransfer.cpp
     src/protocol/filesystem/UnifiedFileSystemEndpoint.cpp
-    src/protocol/filesystem/FileSystemRpcCodec.cpp
-    src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp
-    src/protocol/filesystem/FileSystemRpcEndpoint.cpp
-    src/protocol/filesystem/FileSystemRpcFileManagement.cpp
-    src/protocol/filesystem/FileSystemRpcHandler.cpp
-    src/protocol/filesystem/FileSystemRpcInternal.cpp
-    src/protocol/filesystem/FileSystemRpcWriteSession.cpp
     src/sequencer/ClockSourceSelector.cpp
     src/sequencer/DrumPlaybackEngine.cpp
     src/sequencer/ExternalClockEstimator.cpp

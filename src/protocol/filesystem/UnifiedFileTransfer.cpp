@@ -1,5 +1,6 @@
 #include "UnifiedFileTransfer.hpp"
-#include "FileSystemRpcInternal.hpp"
+#include "RpcBody.hpp"
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "persistence/AtomicProductFile.hpp"
 #include "persistence/PersistenceChecksum.hpp"
 #include "persistence/ProductConditionalMutationDigest.hpp"
@@ -11,10 +12,25 @@
 namespace core::protocol::filesystem::unified {
 namespace p = core::persistence;
 namespace mutation = p::conditional_mutation;
-using internal::ByteReader;
-using internal::ByteWriter;
 
 namespace {
+struct RequestTrace {
+    FLASHMEM explicit RequestTrace(uint16_t id) { core::diagnostics::storage_qualification::setRequestId(id); }
+    FLASHMEM ~RequestTrace() { core::diagnostics::storage_qualification::clearRequestId(); }
+};
+FLASHMEM bool isProtocolReservedPath(p::ProductFileService& files, const char* path) {
+    char normalized[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1]{};
+    if (!files.resolvePath(path, normalized, sizeof(normalized))) return true;
+    // Reject FAT short-name aliases as well as every private RPC transaction path.
+    if (std::strchr(normalized, '~')) return true;
+    constexpr char prefix[] = "/midi-studio/tmp/rpc-";
+    for (size_t i = 0; i < sizeof(prefix) - 1; ++i) {
+        const char c = normalized[i] >= 'A' && normalized[i] <= 'Z' ? normalized[i] + ('a' - 'A') : normalized[i];
+        if (c != prefix[i]) return false;
+    }
+    return true;
+}
+
 FLASHMEM Error conditionalError(mutation::Status status) {
     switch (status) {
         case mutation::Status::OK: return Error::None;
@@ -33,7 +49,7 @@ FLASHMEM Error conditionalError(mutation::Status status) {
 FLASHMEM bool normalizedConditionalPath(p::ProductFileService& files, char* path, bool staging) {
     char normalized[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1]{};
     if (!files.resolvePath(path, normalized, sizeof(normalized)) || std::strchr(normalized, '~')
-        || internal::isProtocolReservedPath(files, normalized)) return false;
+        || isProtocolReservedPath(files, normalized)) return false;
     std::memcpy(path, normalized, sizeof(normalized));
     if (!staging) return true;
     constexpr char prefix[] = "/midi-studio/tmp/";
@@ -81,6 +97,7 @@ FLASHMEM FileTransfer::Record* FileTransfer::available() {
 }
 
 FLASHMEM void FileTransfer::retain(const Frame& request, uint32_t nowMs, uint32_t identity) {
+    traceRequest_ = request.requestId;
     active_ = available(); // Admission checks capacity before acquiring storage.
     *active_ = {};
     active_->nonce = request.nonce; active_->id = identity; active_->deadline = request.delayMs;
@@ -181,7 +198,7 @@ FLASHMEM Error FileTransfer::begin(const Frame& request, uint32_t nowMs) {
     if (!reader.readU32(expected) || expected > 524'288
         || !readCanonicalPath(reader, path, sizeof(path)) || reader.remaining() != 0
         || !files_.resolvePath(path, resolved, sizeof(resolved))
-        || internal::isProtocolReservedPath(files_, path)) return Error::InvalidArgument;
+        || isProtocolReservedPath(files_, path)) return Error::InvalidArgument;
     if (hasWork() || pending() || !available()) return Error::ResourceExhausted;
     // Coordinator IDs never wrap or repeat during its lifetime. A delayed chunk,
     // abort or commit cannot address a later upload, even after result expiry.
@@ -294,10 +311,10 @@ FLASHMEM Error FileTransfer::mutate(const Frame& r, uint32_t nowMs) {
     char path[sizeof(final_)]{}, destination[sizeof(final_)]{}, resolved[sizeof(final_)]{};
     bool recursive = false;
     if (!readCanonicalPath(reader, path, sizeof(path)) || !files_.resolvePath(path, resolved, sizeof(resolved))
-        || internal::isProtocolReservedPath(files_, path)) return Error::InvalidArgument;
+        || isProtocolReservedPath(files_, path)) return Error::InvalidArgument;
     if (r.operation == Operation::Rename && (!readCanonicalPath(reader, destination, sizeof(destination))
         || !files_.resolvePath(destination, resolved, sizeof(resolved))
-        || internal::isProtocolReservedPath(files_, destination))) return Error::InvalidArgument;
+        || isProtocolReservedPath(files_, destination))) return Error::InvalidArgument;
     if (r.operation == Operation::Delete && !reader.readBool(recursive)) return Error::InvalidArgument;
     if (reader.remaining()) return Error::InvalidArgument;
     if (hasWork() || pending() || !available()) return Error::ResourceExhausted;
@@ -354,6 +371,7 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
                                       uint8_t* output, size_t capacity, bool deferAdmission) {
     Frame request;
     if (!output || capacity < HEADER + MAX_BODY || !decode(data, size, request) || request.state != State::Request) return 0;
+    RequestTrace trace(request.requestId);
     expire(nowMs);
     Frame response = request; response.state = State::Complete; response.delayMs = 0;
     response.body = output + HEADER; response.bodySize = 0;
@@ -454,7 +472,7 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
 }
 
 FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scratch, size_t capacity) {
-    expire(nowMs);
+    RequestTrace trace(traceRequest_);
     if ((session_ && !files_.owns(lease_))
         || (active_ && (active_->media != files_.storageIdentity().mediaGeneration
                        || files_.storageState() == p::ProductStorageState::ABSENT))) {

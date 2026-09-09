@@ -1,5 +1,4 @@
 #include "UnifiedFileSystemEndpoint.hpp"
-#include "diagnostics/StorageQualificationProbe.hpp"
 #include <config/PlatformCompat.hpp>
 #include <cstring>
 
@@ -63,7 +62,6 @@ FLASHMEM void Endpoint::advance(uint32_t nowMs, bool playing) {
         Frame request;
         bool consumed = true;
         if (decode(data, pending.size, request)) {
-            core::diagnostics::storage_qualification::setRequestId(request.requestId);
             const auto deadline = retained(request.operation) ? request.delayMs : MAX_DEADLINE_MS;
             if (request.operation != Operation::Capabilities && pending.media != files_.storageIdentity().mediaGeneration)
                 reject(request, Error::MediaChanged);
@@ -73,7 +71,6 @@ FLASHMEM void Endpoint::advance(uint32_t nowMs, bool playing) {
                 if (size) transport_.send(response_, size);
                 else consumed = false; // Admission deferred; retain the original deadline and bytes.
             }
-            core::diagnostics::storage_qualification::clearRequestId();
         }
         if (consumed) {
             if (large) largeOccupied_ = false;
