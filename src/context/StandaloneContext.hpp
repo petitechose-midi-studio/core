@@ -49,7 +49,7 @@ class CoalescedLvglRenderScheduler;
 }
 
 namespace core::protocol::filesystem {
-class FileSystemRpcEndpoint;
+namespace unified { class Endpoint; }
 }
 #if defined(MS_HARDWARE_BENCHMARK)
 namespace core::validation::benchmark { class HardwareBenchmarkEndpoint; }
@@ -146,7 +146,7 @@ private:
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneFeatureAssembly> feature_assembly_;
     core::app::ExtmemUniquePtr<core::context::standalone::StandaloneGlobalHandlerAssembly>
         global_handler_assembly_;
-    core::app::ExtmemUniquePtr<core::protocol::filesystem::FileSystemRpcEndpoint>
+    core::app::ExtmemUniquePtr<core::protocol::filesystem::unified::Endpoint>
         filesystem_rpc_endpoint_;
 #if defined(MS_HARDWARE_BENCHMARK)
     core::app::ExtmemUniquePtr<core::validation::benchmark::HardwareBenchmarkEndpoint> benchmark_;

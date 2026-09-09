@@ -6,7 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <oc/impl/HostFileSystem.hpp>
-#include "protocol/filesystem/UnifiedFileTransfer.hpp"
+#include "protocol/filesystem/UnifiedFileSystemEndpoint.hpp"
 #include "protocol/filesystem/FileSystemRpcInternal.hpp"
 #include "persistence/ProductFileRecoveryPlan.hpp"
 #ifdef _WIN32
@@ -394,6 +394,85 @@ void testConditional(const std::filesystem::path& root) {
     std::cout << "Conditional: replace/delete/already-applied, retained observed hash, cancellation/deadline, path validation, durable failure recovery passed\n";
 }
 
+
+struct FrameTransport : oc::interface::ITransport {
+    ReceiveCallback callback;
+    std::vector<std::vector<uint8_t>> replies;
+    oc::type::Result<void> init() override { return oc::type::Result<void>::ok(); }
+    void update() override {}
+    void send(const uint8_t* data, size_t size) override { replies.emplace_back(data, data + size); }
+    void setOnReceive(ReceiveCallback value) override { callback = std::move(value); }
+};
+static uint32_t endpointNow = 0;
+static uint32_t endpointMicros = 0;
+uint32_t endpointClock() { return endpointNow; }
+uint32_t measuredClock() { endpointMicros += 17; return endpointMicros; }
+
+void testEndpoint(const std::filesystem::path& root) {
+    Harness h(root);
+    FrameTransport transport;
+    Endpoint endpoint(transport, h.files, h.catalog, endpointClock, measuredClock);
+    endpoint.begin();
+    auto submit = [&](Operation op, uint16_t id, const std::vector<uint8_t>& body = {}, uint32_t nonce = 0, uint32_t delay = 0) {
+        const auto size = encode({op, State::Request, id, Error::None, nonce, 0, delay, body.data(), body.size()}, h.input.data(), h.input.size());
+        assert(size); transport.callback(h.input.data(), size);
+        std::fill(h.input.begin(), h.input.end(), 0xa5); // Queue owns an exact copy.
+    };
+    auto tick = [&](bool playing = false) {
+        assert(h.files.persistenceJobs().beginTurn(++endpointNow)); endpoint.advance(endpointNow, playing);
+    };
+    auto reply = [&](size_t index) {
+        Frame f; const auto& bytes = transport.replies.at(index); assert(decode(bytes.data(), bytes.size(), f)); return f;
+    };
+    const auto creates = h.filesystem.creates;
+    for (uint16_t id = 1; id <= 8; ++id) submit(Operation::Mkdir, id, mutationBody(("projects/q" + std::to_string(id)).c_str()), id, 10000);
+    assert(transport.replies.empty() && h.filesystem.creates == creates && h.files.persistenceJobs().depth() == 0);
+    submit(Operation::Mkdir, 9, mutationBody("projects/excess"), 9, 10000);
+    assert(transport.replies.size() == 1 && reply(0).error == Error::ResourceExhausted);
+    for (uint16_t id = 1; id <= 8; ++id) { tick(); assert(reply(id).requestId == id && reply(id).state == State::Complete); }
+    assert(h.filesystem.creates == creates + 8 && !h.files.stat("projects/excess"));
+    submit(Operation::Mkdir, 10, mutationBody("projects/playing"), 10, 10000);
+    tick(true); assert(reply(9).error == Error::BusyPlaying && h.filesystem.creates == creates + 8);
+    submit(Operation::Mkdir, 11, mutationBody("projects/stale"), 11, 1);
+    tick(); assert(reply(10).error == Error::DeadlineExceeded && !h.files.stat("projects/stale"));
+    // Another persistence owner can defer admission without dropping the queued request.
+    auto admitted = h.files.persistenceJobs().admit({core::persistence::ProductPersistenceJobOwner::PROJECT_AUTOSAVE,
+        endpointNow, 0, core::persistence::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO});
+    assert(admitted); auto other = std::move(admitted.value());
+    assert(h.files.persistenceJobs().beginTurn(++endpointNow));
+    assert(h.files.persistenceJobs().claimAdvance(other, endpointNow));
+    assert(h.files.persistenceJobs().finishAdvance(other, {}, false));
+    submit(Operation::Mkdir, 12, mutationBody("projects/deferred"), 12, 10000);
+    tick(); assert(transport.replies.size() == 11);
+    assert(h.files.persistenceJobs().cancelAfterUnwind(other));
+    tick(); assert(reply(11).state == State::Complete && h.files.stat("projects/deferred"));
+    submit(Operation::UploadChunk, 13, chunkBody(123, 0, std::vector<uint8_t>(30720, 1)));
+    submit(Operation::UploadChunk, 14, chunkBody(124, 0, std::vector<uint8_t>(30720, 2)));
+    assert(reply(12).requestId == 14 && reply(12).error == Error::ResourceExhausted);
+    tick(); assert(reply(13).requestId == 13 && reply(13).error == Error::PreconditionFailed);
+    // Version and malformed envelope failures never enter storage admission.
+    auto size = encode({Operation::Capabilities, State::Request, 15}, h.input.data(), h.input.size());
+    h.input[1] = 3; transport.callback(h.input.data(), size);
+    assert(reply(14).error == Error::Unsupported);
+    h.input[1] = VERSION; h.input[20] = 1; transport.callback(h.input.data(), size);
+    assert(reply(15).error == Error::InvalidMessage);
+    h.input[0] = 0x11; transport.callback(h.input.data(), size); assert(transport.replies.size() == 16);
+    submit(Operation::Mkdir, 16, mutationBody("projects/disconnected"), 16, 10000);
+    endpoint.end(); assert(!transport.callback); endpoint.begin(); tick();
+    assert(transport.replies.size() == 16 && !h.files.stat("projects/disconnected"));
+    // Queue age remains correct across the 32-bit millisecond rollover.
+    endpointNow = UINT32_MAX - 1;
+    submit(Operation::Capabilities, 17); endpointNow = 1; tick();
+    assert(reply(16).state == State::Complete);
+    submit(Operation::Mkdir, 18, mutationBody("projects/old-media"), 18, 10000);
+    h.files.markMediaUnavailable();
+    auto recovery = h.files.beginRecovery(); assert(recovery);
+    auto lease = std::move(recovery.value()); assert(h.files.completeRecovery(lease, true));
+    tick(); assert(reply(17).error == Error::MediaChanged && !h.files.stat("projects/old-media"));
+    assert(endpointMicros != 0);
+    std::cout << "Endpoint: 8 copied requests, overflow, large-block exclusion, deferred admission, playback, deadlines, version rejection, end/restart and clock rollover passed\n";
+}
+
 int main(int argc, char** argv) {
     const auto root = std::filesystem::temp_directory_path() / ("ms-core-unified-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -402,6 +481,9 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
         _setmode(_fileno(stdin), _O_BINARY); _setmode(_fileno(stdout), _O_BINARY);
 #endif
+        FrameTransport transport;
+        Endpoint endpoint(transport, h.files, h.catalog, endpointClock);
+        endpoint.begin();
         uint32_t size;
         while (std::cin.read(reinterpret_cast<char*>(&size), 4)) {
             assert(size <= h.input.size());
@@ -410,14 +492,25 @@ int main(int argc, char** argv) {
             // Eight admitted turns per exchange keep large-file integrity work
             // from being artificially limited by Manager's wall-clock poll sleep.
             // This is an interoperability oracle, not a firmware timing model.
-            for (unsigned turn = 0; turn < 8; ++turn) h.tick();
-            assert(h.files.persistenceJobs().beginTurn(++h.now));
-            const auto outputSize = uint32_t(h.transfer.process(h.input.data(), size, h.now, false, h.output.data(), h.output.size()));
+            transport.replies.clear();
+            for (unsigned turn = 0; turn < 8; ++turn) {
+                assert(h.files.persistenceJobs().beginTurn(++endpointNow));
+                endpoint.advance(endpointNow, false);
+            }
+            transport.callback(h.input.data(), size);
+            for (unsigned turn = 0; transport.replies.empty() && turn < 100; ++turn) {
+                assert(h.files.persistenceJobs().beginTurn(++endpointNow));
+                endpoint.advance(endpointNow, false);
+            }
+            assert(transport.replies.size() == 1);
+            const auto& bytes = transport.replies.front();
+            const auto outputSize = uint32_t(bytes.size());
             std::cout.write(reinterpret_cast<const char*>(&outputSize), 4);
-            std::cout.write(reinterpret_cast<const char*>(h.output.data()), outputSize); std::cout.flush();
+            std::cout.write(reinterpret_cast<const char*>(bytes.data()), outputSize); std::cout.flush();
         }
         return 0;
     }
+    testEndpoint(root.string() + "-endpoint");
     testListing(root.string() + "-list");
     testMutations(root.string() + "-mutations");
     testTreeMutation(root.string() + "-tree");

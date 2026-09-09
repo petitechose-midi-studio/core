@@ -19,7 +19,7 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
-#include "protocol/filesystem/FileSystemRpc.hpp"
+#include "protocol/filesystem/UnifiedFileSystemEndpoint.hpp"
 #include "config/TimeCompat.hpp"
 #include "state/CoreState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
@@ -299,12 +299,11 @@ FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
     return true;
 #else
     filesystem_rpc_endpoint_ =
-        core::app::makeExtmemUnique<core::protocol::filesystem::FileSystemRpcEndpoint>(
+        core::app::makeExtmemUnique<core::protocol::filesystem::unified::Endpoint>(
             frames(),
             product_files_,
             product_catalog_,
             &core::time_compat::millis,
-            core::protocol::filesystem::FileSystemRpcHandler::Config{},
             &core::time_compat::micros
         );
     if (!filesystem_rpc_endpoint_) {

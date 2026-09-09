@@ -17,13 +17,15 @@ class FileTransfer {
 public:
     static constexpr uint8_t RETAINED_CAPACITY = 32;
     static constexpr uint32_t RETENTION_MS = 30'000;
+    using MicrosProvider = uint32_t (*)();
     FileTransfer(core::persistence::ProductFileService& files,
-                 core::persistence::ProductDirectoryCatalog& catalog) : files_(files), catalog_(catalog) {}
+                 core::persistence::ProductDirectoryCatalog& catalog, MicrosProvider micros = nullptr)
+        : files_(files), catalog_(catalog), micros_(micros) {}
     ~FileTransfer();
     FileTransfer(const FileTransfer&) = delete;
     FileTransfer& operator=(const FileTransfer&) = delete;
     size_t process(const uint8_t* data, size_t size, uint32_t nowMs, bool playing,
-                   uint8_t* output, size_t capacity);
+                   uint8_t* output, size_t capacity, bool deferAdmission = false);
     void advance(uint32_t nowMs, bool playing, uint8_t* scratch, size_t capacity);
 private:
     Error execute(const Frame& request, uint32_t nowMs, uint8_t* body, size_t& size,
@@ -53,6 +55,7 @@ private:
     bool hasWork() const;
     core::persistence::ProductFileService& files_;
     core::persistence::ProductDirectoryCatalog& catalog_;
+    MicrosProvider micros_;
     core::persistence::ProductMutationLease lease_;
     core::persistence::ProductPersistenceJobToken token_;
     // Only one continuation can own storage; share its memory rather than

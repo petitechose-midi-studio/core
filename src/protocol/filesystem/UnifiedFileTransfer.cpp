@@ -159,12 +159,14 @@ FLASHMEM bool FileTransfer::discard(uint32_t nowMs, Error& outcome) {
     if (!jobs.prepareAdvance(token_, p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE)
         || !jobs.claimAdvance(token_, nowMs)) return false;
     p::ProductPersistenceWorkUsage usage{};
+    const uint32_t startedMicros = micros_ ? micros_() : 0;
     bool okay = false;
     {
         auto measured = files_.measurePersistenceWork(usage);
         if (!measured) { (void)jobs.finishAdvance(token_, usage, false); return false; }
         okay = release(true);
     }
+    usage.wallMicros = micros_ ? uint32_t(micros_() - startedMicros) : 0;
     if (!jobs.finishAdvance(token_, usage, session_ == 0)) outcome = Error::ResourceExhausted;
     else if (!okay) outcome = Error::StorageWriteFailed;
     if (!session_) (void)jobs.cancelAfterUnwind(token_);
@@ -349,7 +351,7 @@ FLASHMEM Error FileTransfer::beginConditional(const Frame& r, uint32_t nowMs) {
 }
 
 FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t nowMs, bool playing,
-                                      uint8_t* output, size_t capacity) {
+                                      uint8_t* output, size_t capacity, bool deferAdmission) {
     Frame request;
     if (!output || capacity < HEADER + MAX_BODY || !decode(data, size, request) || request.state != State::Request) return 0;
     expire(nowMs);
@@ -413,7 +415,7 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
     if (!token_.valid()) {
         auto admitted = jobs.admit({p::ProductPersistenceJobOwner::FILESYSTEM_RPC, nowMs, 0,
             p::PRODUCT_PERSISTENCE_QUOTA_ENDPOINT_FRAME});
-        if (!admitted) return finish(Error::ResourceExhausted);
+        if (!admitted) return deferAdmission ? 0 : finish(Error::ResourceExhausted);
         token_ = std::move(admitted.value());
     }
     const auto quota = request.operation == Operation::UploadBegin || request.operation == Operation::UploadCommit
@@ -421,13 +423,18 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
             ? p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
         : request.operation == Operation::List ? p::PRODUCT_PERSISTENCE_QUOTA_RAW_CATALOG
         : p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
-    if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) return finish(Error::ResourceExhausted);
+    if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) {
+        if (!hasWork()) (void)jobs.cancel(token_);
+        return deferAdmission ? 0 : finish(Error::ResourceExhausted);
+    }
     p::ProductPersistenceWorkUsage usage{};
+    const uint32_t startedMicros = micros_ ? micros_() : 0;
     Error error = Error::Internal;
     {
         auto measured = files_.measurePersistenceWork(usage);
         if (measured) error = execute(request, nowMs, output + HEADER, response.bodySize, measured.value());
     }
+    usage.wallMicros = micros_ ? uint32_t(micros_() - startedMicros) : 0;
     if (token_.valid() && !jobs.finishAdvance(token_, usage, !hasWork())) {
         error = Error::ResourceExhausted;
         if (hasWork()) deferredError_ = error;
@@ -485,6 +492,7 @@ FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scrat
             ? p::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO : p::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
     if (!jobs.prepareAdvance(token_, quota) || !jobs.claimAdvance(token_, nowMs)) return;
     p::ProductPersistenceWorkUsage usage{};
+    const uint32_t startedMicros = micros_ ? micros_() : 0;
     bool done = false; Error error = Error::None;
     {
         auto measured = files_.measurePersistenceWork(usage);
@@ -511,6 +519,7 @@ FLASHMEM void FileTransfer::advance(uint32_t nowMs, bool playing, uint8_t* scrat
             }
         } else error = Error::Internal;
     }
+    usage.wallMicros = micros_ ? uint32_t(micros_() - startedMicros) : 0;
     if (!jobs.finishAdvance(token_, usage, done)) error = Error::ResourceExhausted;
     if (done) {
         const bool success = release(false, error == Error::None);
