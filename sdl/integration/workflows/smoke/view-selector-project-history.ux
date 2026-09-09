@@ -28,7 +28,8 @@
 2680 tap LEFT_CENTER 60
 2900 capture screen selector_redo_ready
 3000 tap LEFT_TOP 60
-3200 tap NAV 60
+# LEFT_BOTTOM opens the focused Clip's Pattern; NAV launches the Clip.
+3200 tap LEFT_BOTTOM 60
 4400 tick
 4500 capture screen step_state_undone
 
@@ -40,6 +41,6 @@
 5830 tap LEFT_BOTTOM 60
 6050 capture screen selector_undo_restored
 6150 tap LEFT_TOP 60
-6350 tap NAV 60
+6350 tap LEFT_BOTTOM 60
 7550 tick
 7650 capture screen step_state_redone
