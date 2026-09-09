@@ -372,7 +372,6 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
     Frame request;
     if (!output || capacity < HEADER + MAX_BODY || !decode(data, size, request) || request.state != State::Request) return 0;
     RequestTrace trace(uint16_t(request.requestId));
-    expire(nowMs);
     Frame response = request; response.state = State::Complete; response.delayMs = 0;
     response.body = output + HEADER; response.bodySize = 0;
     auto finish = [&](Error error) {
@@ -386,14 +385,18 @@ FLASHMEM size_t FileTransfer::process(const uint8_t* data, size_t size, uint32_t
         for (size_t i = 0; i < 4; ++i) output[20+i] = uint8_t(bodySize >> (8*i));
         return HEADER + bodySize;
     };
+    if (!lifetime_) return finish(Error::StorageUnavailable);
     if (request.operation == Operation::Capabilities) {
-        if (request.bodySize) return finish(Error::InvalidArgument);
+        if (request.bodySize || request.lifetime) return finish(Error::InvalidArgument);
+        response.lifetime = lifetime_;
         ByteWriter writer(output + HEADER, MAX_BODY);
         writer.writeU32(0x7fffU); // All operations in this contract are implemented.
         writer.writeU32(30'720); writer.writeU32(524'288); writer.writeU32(RETENTION_MS);
         writer.writeU16(oc::interface::FILESYSTEM_MAX_PATH_LENGTH); writer.writeU8(1); writer.writeU8(RETAINED_CAPACITY);
         response.bodySize = writer.position(); return finish(Error::None);
     }
+    if (request.lifetime != lifetime_) return finish(Error::LifetimeChanged);
+    expire(nowMs);
     const bool query = request.operation == Operation::Poll || request.operation == Operation::Cancel;
     if (retained(request.operation) && request.bodySize > 450) return finish(Error::InvalidArgument);
     auto* record = find(request.nonce);

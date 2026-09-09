@@ -1,6 +1,7 @@
 # Canonical tracked implementation inventory for Core consumers.
 # Supported graphs derive their intentional platform exclusions from this list.
 set(MS_CORE_PRODUCT_SOURCE_PATHS
+    src/app/RpcLifetime.cpp
     src/context/StandaloneContext.cpp
     src/context/standalone/DeviceSettingsSelectorPresenter.cpp
     src/context/standalone/DrumLaneEditorPresenter.cpp

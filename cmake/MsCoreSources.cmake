@@ -10,6 +10,7 @@ list(APPEND MS_CORE_NATIVE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/validation/project/ProjectModulationBenchmark.cpp")
 
 set(MS_CORE_NATIVE_EXTRA_SOURCES
+    "${MS_CORE_SOURCE_ROOT}/app/RpcLifetime.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroOverlayInvalidationBindings.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroViewActivationContract.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/SequencerChordFieldPresentation.cpp"

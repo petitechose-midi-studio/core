@@ -15,8 +15,8 @@ public:
     Endpoint(oc::interface::ITransport& transport,
              core::persistence::ProductFileService& files,
              core::persistence::ProductDirectoryCatalog& catalog,
-             NowProvider now, NowProvider micros = nullptr)
-        : transport_(transport), files_(files), service_(files, catalog, micros), now_(now) {}
+             uint64_t lifetime, NowProvider now, NowProvider micros = nullptr)
+        : transport_(transport), files_(files), service_(files, catalog, lifetime, micros), now_(now) {}
     ~Endpoint();
     void begin();
     void end();

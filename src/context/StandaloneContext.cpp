@@ -1,3 +1,4 @@
+#include "app/RpcLifetime.hpp"
 #include "StandaloneContext.hpp"
 
 #include <oc/log/Log.hpp>
@@ -303,6 +304,7 @@ FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
             frames(),
             product_files_,
             product_catalog_,
+            core::app::createRpcLifetime(),
             &core::time_compat::millis,
             &core::time_compat::micros
         );

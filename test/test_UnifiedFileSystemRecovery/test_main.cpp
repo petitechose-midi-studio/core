@@ -115,7 +115,7 @@ unsigned campaign(const std::filesystem::path& root, bool replacing, unsigned ta
         CutFileSystem fs(root.string().c_str());
         p::ProductFileService files(fs); assert(files.init());
         p::ProductDirectoryCatalog catalog(files);
-        FileTransfer service(files, catalog);
+        FileTransfer service(files, catalog, 42);
         std::array<uint8_t, HEADER + MAX_BODY> input{}, output{}, scratch{};
         uint8_t body[450], oldHash[32], nextHash[32];
         assert(c::hashBytes(old.data(), old.size(), oldHash));
@@ -126,7 +126,7 @@ unsigned campaign(const std::filesystem::path& root, bool replacing, unsigned ta
         assert(writer.writeString("projects/current", 192));
         if (replacing) assert(writer.writeString("tmp/stage", 192));
         Frame request{replacing ? Operation::ConditionalReplace : Operation::ConditionalDelete,
-            State::Request, 1, Error::None, 99, 0, 10000, body, writer.position()};
+            State::Request, 1, Error::None, 99, 0, 10000, body, writer.position(), false, 42};
         fs.count = 0; fs.target = target; fs.after = after;
         const auto size = encode(request, input.data(), input.size()); assert(size);
         assert(files.persistenceJobs().beginTurn(1));
@@ -137,6 +137,7 @@ unsigned campaign(const std::filesystem::path& root, bool replacing, unsigned ta
             assert(files.persistenceJobs().beginTurn(turn));
             service.advance(turn, false, scratch.data(), scratch.size());
             Frame poll{Operation::Poll, State::Request, 2, Error::None, 99, identity};
+            poll.lifetime = 42;
             const auto pollSize = encode(poll, input.data(), input.size()); assert(pollSize);
             length = service.process(input.data(), pollSize, turn, false, output.data(), output.size());
             assert(decode(output.data(), length, result));

@@ -5,8 +5,8 @@
 
 namespace core::protocol::filesystem::unified {
 
-inline constexpr uint8_t REQUEST = 0xfc, RESPONSE = 0xfd, VERSION = 5;
-inline constexpr size_t HEADER = 32, MAX_BODY = 32'512;
+inline constexpr uint8_t REQUEST = 0xfc, RESPONSE = 0xfd, VERSION = 6;
+inline constexpr size_t HEADER = 40, MAX_BODY = 32'512;
 inline constexpr uint32_t MAX_DEADLINE_MS = 10'000;
 
 enum class Operation : uint8_t {
@@ -18,7 +18,7 @@ enum class Error : uint16_t {
     None, InvalidMessage, InvalidArgument, Unsupported, NotFound, BusyPlaying,
     ResourceExhausted, Conflict, PreconditionFailed, DeadlineExceeded, MediaChanged,
     StorageUnavailable, StorageReadFailed, StorageWriteFailed, StorageCorrupt,
-    Cancelled, Internal, ResultExpired, CancelTooLate, StorageFailure, TooLarge,
+    Cancelled, Internal, ResultExpired, CancelTooLate, StorageFailure, TooLarge, LifetimeChanged,
 };
 
 struct Frame {
@@ -32,6 +32,7 @@ struct Frame {
     const uint8_t* body = nullptr;
     size_t bodySize = 0;
     bool replayed = false;
+    uint64_t lifetime = 0;
 };
 
 bool retained(Operation operation);

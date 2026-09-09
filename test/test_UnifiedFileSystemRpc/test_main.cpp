@@ -34,13 +34,13 @@ int main(int argc, char**) {
         }
         return 0;
     }
-    constexpr std::array<uint8_t, 36> golden = {0xfc, 5, 6, 0, 0, 0, 0, 0,
-        4, 3, 2, 1, 0, 0, 0, 0, 0x10, 0x27, 0, 0, 4, 0, 0, 0, 0x34, 0x12, 0x78, 0x56, 0xab, 0xcd, 0xef, 0x90, 7, 0, 0, 0};
+    constexpr std::array<uint8_t, 44> golden = {0xfc, 6, 6, 0, 0, 0, 0, 0,
+        4, 3, 2, 1, 0, 0, 0, 0, 0x10, 0x27, 0, 0, 4, 0, 0, 0, 0x34, 0x12, 0x78, 0x56, 0xab, 0xcd, 0xef, 0x90, 42, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0};
     Frame frame;
     assert(decode(golden.data(), golden.size(), frame));
     assert(frame.operation == Operation::UploadCommit && frame.requestId == 0x90efcdab56781234ULL);
     assert(frame.body == golden.data() + HEADER && frame.bodySize == 4);
-    std::array<uint8_t, 36> encoded{};
+    std::array<uint8_t, 44> encoded{};
     assert(encode(frame, encoded.data(), encoded.size()) == golden.size());
     assert(encoded == golden);
     auto oldVersion = golden; oldVersion[1] = 2;

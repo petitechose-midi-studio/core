@@ -14,7 +14,7 @@ FLASHMEM bool valid(const Frame& f) {
     if (f.requestId == 0 || f.bodySize > MAX_BODY || (f.bodySize != 0 && !f.body)
         || static_cast<uint8_t>(f.operation) > static_cast<uint8_t>(Operation::Cancel)
         || static_cast<uint8_t>(f.state) > static_cast<uint8_t>(State::Cancelled)
-        || static_cast<uint16_t>(f.error) > static_cast<uint16_t>(Error::TooLarge)) return false;
+        || static_cast<uint16_t>(f.error) > static_cast<uint16_t>(Error::LifetimeChanged)) return false;
     if (f.replayed && (f.state == State::Request || !retained(f.operation) || f.operationId == 0)) return false;
     if (f.state == State::Request) {
         if (f.error != Error::None) return false;
@@ -54,7 +54,7 @@ FLASHMEM bool decode(const uint8_t* data, size_t size, Frame& out) {
     const auto u32 = [data](size_t i) { return uint32_t(data[i]) | (uint32_t(data[i+1]) << 8)
         | (uint32_t(data[i+2]) << 16) | (uint32_t(data[i+3]) << 24); };
     Frame frame{static_cast<Operation>(data[2]), static_cast<State>(data[3] & 0x7f), uint64_t(u32(24)) | uint64_t(u32(28)) << 32,
-        static_cast<Error>(u16(4)), u32(8), u32(12), u32(16), data + HEADER, u32(20), (data[3] & 0x80) != 0};
+        static_cast<Error>(u16(4)), u32(8), u32(12), u32(16), data + HEADER, u32(20), (data[3] & 0x80) != 0, uint64_t(u32(32)) | uint64_t(u32(36)) << 32};
     if (data[0] != (frame.state == State::Request ? REQUEST : RESPONSE)
         || frame.bodySize != size - HEADER || !valid(frame)) return false;
     out = frame;
@@ -69,6 +69,7 @@ FLASHMEM size_t encode(const Frame& frame, uint8_t* out, size_t capacity) {
     const auto put16 = [out](size_t i, uint16_t n) { out[i] = uint8_t(n); out[i+1] = uint8_t(n >> 8); };
     const auto put32 = [out](size_t i, uint32_t n) { for (size_t b = 0; b < 4; ++b) out[i+b] = uint8_t(n >> (8*b)); };
     put16(4, static_cast<uint16_t>(frame.error)); put16(6, 0);
+    put32(32, uint32_t(frame.lifetime)); put32(36, uint32_t(frame.lifetime >> 32));
     put32(24, uint32_t(frame.requestId)); put32(28, uint32_t(frame.requestId >> 32));
     put32(8, frame.nonce); put32(12, frame.operationId); put32(16, frame.delayMs);
     put32(20, static_cast<uint32_t>(frame.bodySize));

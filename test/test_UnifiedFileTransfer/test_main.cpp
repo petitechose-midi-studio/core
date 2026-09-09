@@ -66,12 +66,13 @@ struct Harness {
     FaultFileSystem filesystem;
     core::persistence::ProductFileService files;
     core::persistence::ProductDirectoryCatalog catalog;
+    const uint64_t lifetime;
     FileTransfer transfer;
     std::array<uint8_t, HEADER + MAX_BODY> input{}, output{}, scratch{};
     uint32_t now = 0;
-    explicit Harness(const std::filesystem::path& path)
-        : root(path), filesystem(root.string().c_str()), files(filesystem), catalog(files), transfer(files, catalog) {
-        assert(!std::filesystem::exists(root));
+    explicit Harness(const std::filesystem::path& path, uint64_t epoch = 42, bool reopen = false)
+        : root(path), filesystem(root.string().c_str()), files(filesystem), catalog(files), lifetime(epoch), transfer(files, catalog, lifetime) {
+        assert(reopen || !std::filesystem::exists(root));
         std::filesystem::create_directories(root);
         assert(files.init());
         auto lease = files.acquireMutation(core::persistence::ProductMutationOwner::FILESYSTEM_RPC);
@@ -79,8 +80,8 @@ struct Harness {
         assert(files.releaseMutation(lease.value()));
     }
     Frame call(Operation operation, const std::vector<uint8_t>& body = {}, uint32_t nonce = 0,
-               uint32_t identity = 0, uint32_t delay = 0, bool playing = false) {
-        Frame request{operation, State::Request, 7, Error::None, nonce, identity, delay, body.data(), body.size()};
+               uint32_t identity = 0, uint32_t delay = 0, bool playing = false, uint64_t requestLifetime = 0) {
+        Frame request{operation, State::Request, 7, Error::None, nonce, identity, delay, body.data(), body.size(), false, operation == Operation::Capabilities ? 0 : requestLifetime ? requestLifetime : lifetime};
         assert(files.persistenceJobs().beginTurn(++now));
         const auto size = encode(request, input.data(), input.size()); assert(size);
         const auto count = transfer.process(input.data(), size, now, playing, output.data(), output.size());
@@ -411,10 +412,10 @@ uint32_t measuredClock() { endpointMicros += 17; return endpointMicros; }
 void testEndpoint(const std::filesystem::path& root) {
     Harness h(root);
     FrameTransport transport;
-    Endpoint endpoint(transport, h.files, h.catalog, endpointClock, measuredClock);
+    Endpoint endpoint(transport, h.files, h.catalog, h.lifetime, endpointClock, measuredClock);
     endpoint.begin();
     auto submit = [&](Operation op, uint16_t id, const std::vector<uint8_t>& body = {}, uint32_t nonce = 0, uint32_t delay = 0) {
-        const auto size = encode({op, State::Request, id, Error::None, nonce, 0, delay, body.data(), body.size()}, h.input.data(), h.input.size());
+        const auto size = encode({op, State::Request, id, Error::None, nonce, 0, delay, body.data(), body.size(), false, op == Operation::Capabilities ? 0 : h.lifetime}, h.input.data(), h.input.size());
         assert(size); transport.callback(h.input.data(), size);
         std::fill(h.input.begin(), h.input.end(), 0xa5); // Queue owns an exact copy.
     };
@@ -473,6 +474,42 @@ void testEndpoint(const std::filesystem::path& root) {
     std::cout << "Endpoint: 8 copied requests, overflow, large-block exclusion, deferred admission, playback, deadlines, version rejection, end/restart and clock rollover passed\n";
 }
 
+void testLifetime(const std::filesystem::path& root) {
+    uint32_t oldTicket = 0;
+    {
+        Harness first(root, 11);
+        assert(first.call(Operation::Capabilities).lifetime == 11);
+        oldTicket = first.start("projects/old.bin", 1);
+        assert(first.call(Operation::UploadChunk, chunkBody(oldTicket, 0, {0xaa})).state == State::Complete);
+    }
+    Harness next(root, 22, true); // Fresh coordinator, same persistent backend.
+    const auto ticket = next.start("projects/new.bin", 1);
+    assert(ticket == oldTicket); // Exercise actual reuse across Core lifetimes.
+    const auto creates = next.filesystem.creates, renames = next.filesystem.renames, removes = next.filesystem.removes;
+    for (uint8_t code = 1; code <= uint8_t(Operation::Cancel); ++code) {
+        const auto op = Operation(code);
+        const bool control = op == Operation::Poll || op == Operation::Cancel;
+        const auto body = op == Operation::UploadChunk ? chunkBody(ticket, 0, {0xbb}) :
+            op == Operation::UploadCommit || op == Operation::UploadAbort ? identityBody(ticket) : std::vector<uint8_t>{};
+        auto response = next.call(op, body, control || retained(op) ? 9 : 0,
+            control ? ticket : 0, retained(op) ? 10000 : 0, false, 11);
+        assert(response.state == State::Failed && response.error == Error::LifetimeChanged);
+        assert(response.lifetime == 11); // Correlate the refusal to the original request.
+        assert(next.files.writeSessionActive());
+        assert(next.filesystem.creates == creates && next.filesystem.renames == renames && next.filesystem.removes == removes);
+    }
+    // The stale block did not move the write offset or abort the new session.
+    assert(next.call(Operation::UploadChunk, chunkBody(ticket, 0, {0xcc})).state == State::Complete);
+    assert(next.call(Operation::UploadAbort, identityBody(ticket)).state == State::Complete);
+    assert(next.call(Operation::Capabilities).lifetime == 22);
+    Harness unavailable(root.string() + "-no-entropy", 0);
+    const auto count = unavailable.filesystem.creates;
+    assert(unavailable.call(Operation::Capabilities).error == Error::StorageUnavailable);
+    assert(unavailable.call(Operation::Mkdir, mutationBody("projects/refused"), 10, 0, 10000).error == Error::StorageUnavailable);
+    assert(unavailable.filesystem.creates == count && !unavailable.files.writeSessionActive());
+    std::cout << "Lifetime: reused upload ticket rejected across reboot for all 14 storage/control operations; missing entropy fails closed\n";
+}
+
 int main(int argc, char** argv) {
     const auto root = std::filesystem::temp_directory_path() / ("ms-core-unified-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -482,7 +519,7 @@ int main(int argc, char** argv) {
         _setmode(_fileno(stdin), _O_BINARY); _setmode(_fileno(stdout), _O_BINARY);
 #endif
         FrameTransport transport;
-        Endpoint endpoint(transport, h.files, h.catalog, endpointClock);
+        Endpoint endpoint(transport, h.files, h.catalog, h.lifetime, endpointClock);
         endpoint.begin();
         uint32_t size;
         while (std::cin.read(reinterpret_cast<char*>(&size), 4)) {
@@ -511,6 +548,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     testEndpoint(root.string() + "-endpoint");
+    testLifetime(root.string() + "-lifetime");
     testListing(root.string() + "-list");
     testMutations(root.string() + "-mutations");
     testTreeMutation(root.string() + "-tree");

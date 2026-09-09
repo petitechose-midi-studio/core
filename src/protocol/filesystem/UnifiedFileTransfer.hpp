@@ -19,8 +19,8 @@ public:
     static constexpr uint32_t RETENTION_MS = 30'000;
     using MicrosProvider = uint32_t (*)();
     FileTransfer(core::persistence::ProductFileService& files,
-                 core::persistence::ProductDirectoryCatalog& catalog, MicrosProvider micros = nullptr)
-        : files_(files), catalog_(catalog), micros_(micros) {}
+                 core::persistence::ProductDirectoryCatalog& catalog, uint64_t lifetime, MicrosProvider micros = nullptr)
+        : files_(files), catalog_(catalog), micros_(micros), lifetime_(lifetime) {}
     ~FileTransfer();
     FileTransfer(const FileTransfer&) = delete;
     FileTransfer& operator=(const FileTransfer&) = delete;
@@ -57,6 +57,7 @@ private:
     core::persistence::ProductFileService& files_;
     core::persistence::ProductDirectoryCatalog& catalog_;
     MicrosProvider micros_;
+    const uint64_t lifetime_;
     core::persistence::ProductMutationLease lease_;
     core::persistence::ProductPersistenceJobToken token_;
     // Only one continuation can own storage; share its memory rather than

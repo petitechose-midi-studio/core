@@ -14,8 +14,8 @@ p.add_argument('--output', required=True)
 args = p.parse_args()
 
 def wire(op=6, state=0, error=0, nonce=1, identity=0, delay=10000, body=b'\x07\0\0\0'):
-    return struct.pack('<BBBBHHIIIIQ', 0xfc if state == 0 else 0xfd, 5, op, state, error,
-                       0, nonce, identity, delay, len(body), 0x90efcdab56781234) + body
+    return struct.pack('<BBBBHHIIIIQQ', 0xfc if state == 0 else 0xfd, 6, op, state, error,
+                       0, nonce, identity, delay, len(body), 0x90efcdab56781234, 42) + body
 
 # Acceptance and rejection fixtures written independently of either codec.
 known = [(wire(), True), (wire(op=0, nonce=0, delay=0, body=b''), True),
@@ -32,6 +32,7 @@ known = [(wire(), True), (wire(op=0, nonce=0, delay=0, body=b''), True),
 known.append((wire()[:1] + b'\x02' + wire()[2:], False))
 known.append((wire()[:1] + b'\x03' + wire()[2:], False))
 known.append((wire()[:1] + b'\x04' + wire()[2:], False))
+known.append((wire()[:1] + b'\x05' + wire()[2:], False))
 details = b'\0\1\1' + bytes(range(32))
 for op in [11, 12, 13, 14]:
     known.append((wire(op=op, state=3, error=8, identity=8, delay=0, body=details), True))
@@ -46,7 +47,7 @@ for seed, _ in known[:7] + [(wire(op=11, state=3, error=8, identity=8, delay=0, 
         for byte in range(256):
             corpus.append(seed[:position] + bytes([byte]) + seed[position+1:])
 for op, state, error, nonce, identity, delay in itertools.product(
-        range(15), range(5), [0, 7, 15, 18, 19, 20, 21], [0, 1], [0, 8], [0, 5, 10000, 10001]):
+        range(15), range(5), [0, 7, 15, 18, 19, 20, 21, 22], [0, 1], [0, 8], [0, 5, 10000, 10001]):
     corpus.append(wire(op, state, error, nonce, identity, delay, b''))
 rng = random.Random(9042026)
 corpus.extend(rng.randbytes(rng.randrange(120)) for _ in range(5000))
