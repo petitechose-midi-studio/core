@@ -426,19 +426,7 @@ ProjectSessionAutosaveService::recoveryWorkQuota() const {
             ? PRODUCT_PERSISTENCE_QUOTA_AUTOSAVE_SEQUENCER
             : PRODUCT_PERSISTENCE_QUOTA_AUTOSAVE_AUTOMATION;
     }
-    if (!store_.saveCurrentInProgress()) {
-        return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
-    }
-    switch (store_.saveCurrentStage()) {
-        case ProjectSaveStage::ENCODE:
-            return PRODUCT_PERSISTENCE_QUOTA_PROJECT_ENCODE;
-        case ProjectSaveStage::WRITE:
-            return PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
-        case ProjectSaveStage::PREPARE:
-        case ProjectSaveStage::COMMIT:
-        default:
-            return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
-    }
+    return store_.saveCurrentWorkQuota();
 }
 
 FLASHMEM ProjectSessionAutosaveService::Result

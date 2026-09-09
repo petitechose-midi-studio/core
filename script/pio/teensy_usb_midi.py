@@ -1,4 +1,4 @@
-"""Load the selected HAL's USB integration before PlatformIO builds Arduino."""
+"""Load the selected HAL's SDK integrations before PlatformIO builds Arduino."""
 
 import runpy
 from pathlib import Path
@@ -13,8 +13,9 @@ manager = LibraryPackageManager(env.subst("$PROJECT_LIBDEPS_DIR/$PIOENV"))
 spec = next(dep for dep in env.GetProjectOption("lib_deps")
             if dep.startswith("oc-hal-teensy="))
 package = manager.install(spec)
-hook = Path(package.path) / "script/usb_midi_sdk.py"
-if hook.is_file():
-    runpy.run_path(str(hook))["configure"](env)
+for name in ("usb_midi_sdk.py", "sdio_sdk.py"):
+    hook = Path(package.path) / "script" / name
+    if hook.is_file():
+        runpy.run_path(str(hook))["configure"](env)
 # Older release pins predate the adapter and continue to compile their own
 # original transport. A HAL using the new API cannot link without this hook.

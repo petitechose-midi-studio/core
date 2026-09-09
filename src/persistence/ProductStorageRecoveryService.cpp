@@ -560,6 +560,9 @@ ProductPersistenceWorkQuota ProductStorageRecoveryPlan::nextWorkQuota(
             ? PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO
             : PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
     }
+    if (step_ == Step::ADVANCE_ORDINARY && ordinary_.nextAdvanceReadsData()) {
+        return PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
+    }
     if (step_ == Step::ADVANCE_SESSION_SAVE) {
         return autosaveService.recoveryWorkQuota();
     }
