@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 #include <cstdint>
 
 #include <oc/state/Signal.hpp>
@@ -22,6 +23,10 @@ struct DrumTrackBankSnapshot {
     uint16_t drumTrackMask = 0U;
     std::array<DrumTrackState, 16> tracks{};
 };
+
+using DrumTrackPtr = core::app::ExtmemUniquePtr<DrumTrackState>;
+using DrumTrackOwners = std::array<DrumTrackPtr, 16>;
+bool prepareDrumTrackBank(const DrumTrackBankSnapshot& snapshot, DrumTrackOwners& out);
 
 /**
  * Owns persistent sequencer state for all shared tracks.
@@ -71,12 +76,23 @@ struct SequencerTrackBankState {
     [[nodiscard]] uint16_t drumTrackMask() const { return drum_track_mask_; }
 
     DrumTrackState& drumTrack(uint8_t index) {
-        return drum_tracks_[clampTrackIndex(index)];
+        assert(drumTrackIfPresent(index));
+        return *drumTrackIfPresent(index);
     }
 
     const DrumTrackState& drumTrack(uint8_t index) const {
-        return drum_tracks_[clampTrackIndex(index)];
+        assert(drumTrackIfPresent(index));
+        return *drumTrackIfPresent(index);
     }
+
+    DrumTrackState* drumTrackIfPresent(uint8_t index) {
+        return drum_tracks_[clampTrackIndex(index)].get();
+    }
+    const DrumTrackState* drumTrackIfPresent(uint8_t index) const {
+        return drum_tracks_[clampTrackIndex(index)].get();
+    }
+
+    bool matchesDrumTrack(uint8_t index, const DrumTrackState* source) const noexcept;
 
     bool setTrackKind(
         uint8_t index,
@@ -84,13 +100,13 @@ struct SequencerTrackBankState {
         bool resetPayload = false,
         DrumKitPreset drumPreset = DrumKitPreset::GENERAL_MIDI
     );
-    void restoreDrumTrack(
-        uint8_t index,
-        SequencerTrackKind kind,
-        const DrumTrackState& state
-    );
+    // Install only fully prepared owners. Null represents an Instrument Track.
+    void exchangeDrumTrack(uint8_t index, DrumTrackPtr& owner) noexcept;
+    void installDrumTrack(uint8_t index, DrumTrackPtr owner) noexcept {
+        exchangeDrumTrack(index, owner);
+    }
+    void installDrumTracks(DrumTrackOwners owners) noexcept;
     void captureDrumTrackBank(DrumTrackBankSnapshot& out) const;
-    bool applyDrumTrackBank(const DrumTrackBankSnapshot& snapshot);
     void clearDrumTrackBank();
 
     void captureSharedTrackState(uint16_t& enabledMaskOut, uint8_t& activeTrackOut) const {
@@ -139,7 +155,7 @@ private:
     std::array<uint32_t, TRACK_COUNT> drum_track_revisions_{};
     std::array<SequencerPatternState, TRACK_COUNT> tracks_{};
     std::array<SequencerClipState, TRACK_COUNT> clips_{};
-    std::array<DrumTrackState, TRACK_COUNT> drum_tracks_{};
+    DrumTrackOwners drum_tracks_{};
 };
 
 }  // namespace core::state::sequencer

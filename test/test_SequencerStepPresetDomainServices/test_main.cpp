@@ -1134,10 +1134,9 @@ void test_drum_target_reuses_shared_preset_and_preserves_lane_identity() {
         true,
         seq::DrumKitPreset::GENERAL_MIDI
     ));
-    auto& drum = h.state.sequencerTracks.drumTrack(0U);
+    auto drum = [&]() -> auto& { return h.state.sequencerTracks.drumTrack(0U); };
     h.state.sequencer.drumSequencer.bindTrack(
         0U,
-        drum,
         h.state.sequencerTracks
     );
     auto& edit = h.state.sequencer.stepEdit;
@@ -1151,7 +1150,7 @@ void test_drum_target_reuses_shared_preset_and_preserves_lane_identity() {
     h.state.project.metadata.modifiedCounter = 42U;
     h.state.project.metadata.dirty = false;
 
-    const auto identity = drum.kit.lanes[1U];
+    const auto identity = drum().kit.lanes[1U];
     const auto target = h.presets.captureTarget();
     assert(target.valid);
     assert(target.destinationOwnsPitch);
@@ -1185,19 +1184,19 @@ void test_drum_target_reuses_shared_preset_and_preserves_lane_identity() {
     assert(result.status == SequencerStepPresetStatus::OK);
     assert(result.activation == SequencerStepPresetActivation::APPLIED);
     assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
-    assert(drum.pattern.stepEnabled(1U, 2U));
-    assert(drum.pattern.lanes[1U].velocity[2U] == 96U);
-    assert(drum.pattern.lanes[1U].gate[2U] == 155U);
-    assert(drum.pattern.lanes[1U].nudge[2U] == -3);
-    assert(drum.pattern.lanes[1U].probability[2U] == 84U);
-    assert(drum.kit.lanes[1U].midiNote == identity.midiNote);
-    assert(drum.kit.lanes[1U].role == identity.role);
-    assert(drum.kit.lanes[1U].overrideMask == identity.overrideMask);
-    assert(drum.kit.lanes[1U].icon == identity.icon);
-    assert(drum.kit.lanes[1U].colorIndex == identity.colorIndex);
-    assert(drum.kit.lanes[1U].name == identity.name);
+    assert(drum().pattern.stepEnabled(1U, 2U));
+    assert(drum().pattern.lanes[1U].velocity[2U] == 96U);
+    assert(drum().pattern.lanes[1U].gate[2U] == 155U);
+    assert(drum().pattern.lanes[1U].nudge[2U] == -3);
+    assert(drum().pattern.lanes[1U].probability[2U] == 84U);
+    assert(drum().kit.lanes[1U].midiNote == identity.midiNote);
+    assert(drum().kit.lanes[1U].role == identity.role);
+    assert(drum().kit.lanes[1U].overrideMask == identity.overrideMask);
+    assert(drum().kit.lanes[1U].icon == identity.icon);
+    assert(drum().kit.lanes[1U].colorIndex == identity.colorIndex);
+    assert(drum().kit.lanes[1U].name == identity.name);
 
-    const int16_t slot = drum.advancedRootSlot(1U, 2U);
+    const int16_t slot = drum().advancedRootSlot(1U, 2U);
     assert(slot >= 0);
     const auto* graph = seq::graphView(h.state.sequencer.pattern());
     assert(graph != nullptr);
@@ -1222,13 +1221,13 @@ void test_drum_target_reuses_shared_preset_and_preserves_lane_identity() {
     }
 
     assert(h.state.undoSequencerHistory());
-    assert(!drum.pattern.stepEnabled(1U, 2U));
-    assert(drum.advancedRootSlot(1U, 2U) < 0);
-    assert(drum.kit.lanes[1U].midiNote == identity.midiNote);
+    assert(!drum().pattern.stepEnabled(1U, 2U));
+    assert(drum().advancedRootSlot(1U, 2U) < 0);
+    assert(drum().kit.lanes[1U].midiNote == identity.midiNote);
     assert(h.state.redoSequencerHistory());
-    assert(drum.pattern.stepEnabled(1U, 2U));
-    assert(drum.advancedRootSlot(1U, 2U) >= 0);
-    assert(drum.kit.lanes[1U].midiNote == identity.midiNote);
+    assert(drum().pattern.stepEnabled(1U, 2U));
+    assert(drum().advancedRootSlot(1U, 2U) >= 0);
+    assert(drum().kit.lanes[1U].midiNote == identity.midiNote);
 
     std::cout
         << "[PASS] Drum target reuses shared Step preset and preserves identity\n";

@@ -1172,6 +1172,7 @@ void test_drum_history_evicts_oldest_entry_at_scope_limit() {
     SequencerTrackBankState bank;
     SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
     bank.reset();
+    assert(bank.setTrackKind(0U, core::state::sequencer::SequencerTrackKind::DRUM, true));
 
     SequencerHistoryService history;
     for (uint8_t edit = 0U;

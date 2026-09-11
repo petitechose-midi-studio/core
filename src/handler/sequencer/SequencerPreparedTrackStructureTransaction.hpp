@@ -261,6 +261,7 @@ private:
     SequencerPreparedTrackStructurePlan plan_{};
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr change_{};
     std::array<OwnerIdentity, 2U> ownerIdentities_{};
+    std::array<core::state::sequencer::DrumTrackPtr, 2U> drumOwners_{};
     core::state::sequencer::SequencerTrackActivationMutationGuard
         activationGuard_{};
     PreparedTrackStructureSettlementCheckpoint settlementCheckpoint_{};

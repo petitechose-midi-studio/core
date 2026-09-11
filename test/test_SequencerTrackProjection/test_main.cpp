@@ -126,7 +126,7 @@ void testDrumTrackAndPatternProjectTheSameMusicalHeader() {
     auto& drum = state.sequencer.drumSequencer;
     drum.phase = core::state::sequencer::DrumSequencerPhase::GRID;
     drum.targetTrack = 0U;
-    drum.drumTrack = &state.sequencerTracks.drumTrack(0U);
+    drum.bindTrack(0U, state.sequencerTracks);
     drum.selectedLane = 1U;
 
     auto source = sourceFor(state);

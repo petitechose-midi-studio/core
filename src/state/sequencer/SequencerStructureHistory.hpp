@@ -110,6 +110,7 @@ struct SequencerPreparedStructureHistoryReplay {
         trackGraphs{};
     std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT>
         trackCcLanes{};
+    DrumTrackOwners drumOwners{};
 
     SequencerPreparedStructureHistoryReplay();
     ~SequencerPreparedStructureHistoryReplay();
@@ -222,7 +223,7 @@ bool liveHistoryStructureSnapshotMatches(
 
 bool prepareHistoryStructureReplayOwners(
     const SequencerHistoryTrackStructureSnapshot& snapshot,
-    uint8_t liveActiveTrack,
+    const SequencerTrackBankState& bank,
     SequencerPreparedStructureHistoryReplay& out
 );
 void commitPreparedHistoryStructureReplayState(
@@ -233,9 +234,13 @@ void commitPreparedHistoryStructureReplayState(
 
 // Applies the sparse Drum kind/content sidecar without allocating. This is
 // shared by newly admitted Structure transactions and Undo/Redo replay.
+bool prepareHistoryStructureDrumOwners(
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    const SequencerTrackBankState& bank, DrumTrackOwners& out);
 void commitHistoryStructureDrumSnapshot(
     SequencerTrackBankState& bank,
-    const SequencerHistoryTrackStructureSnapshot& snapshot
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    DrumTrackOwners owners
 ) noexcept;
 
 bool sameMusicalHistoryStructureSnapshot(

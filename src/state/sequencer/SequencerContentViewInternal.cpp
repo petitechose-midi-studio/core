@@ -275,9 +275,9 @@ FLASHMEM ResolvedStep rootBase(const SequencerState& sequencer, uint8_t rootStep
     const uint8_t lane = contentOwner ? content.drumOwnerLane : edit.drumLane;
     const uint8_t step = contentOwner ? content.drumOwnerStep : edit.drumStep;
     if ((contentOwner || editorOwner) &&
-        drumUi.drumTrack != nullptr &&
+        drumUi.drumTrack() != nullptr &&
         drumUi.stepInRange(lane, step)) {
-        const auto& drum = *drumUi.drumTrack;
+        const auto& drum = *drumUi.drumTrack();
         const auto& lanePattern = drum.pattern.lanes[lane];
         return {
             .valid = true,

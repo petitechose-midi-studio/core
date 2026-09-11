@@ -355,7 +355,7 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
         sequencer.pattern(), seq::rootStepNodeId(0U), 2U).ok);
     assert(drum.bindAdvancedRootSlot(0U, 0U, 0U));
     bank.publishDrumMutation(0U);
-    sequencer.drumSequencer.bindTrack(0U, drum, bank);
+    sequencer.drumSequencer.bindTrack(0U, bank);
     sequencer.drumSequencer.enterGrid();
     SequencerTrackFixturePlaybackAdapter service{
         sequencer, status, queue, graphBank,
@@ -391,7 +391,7 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
     sequencer.drumSequencer.close();
     service.publishUiState(4U);
     assert(sequencer.drumSequencer.resolvedPage.matches({}));
-    sequencer.drumSequencer.bindTrack(0U, drum, bank);
+    sequencer.drumSequencer.bindTrack(0U, bank);
     sequencer.drumSequencer.enterGrid();
     service.publishUiState(5U);
     assert(sequencer.drumSequencer.resolvedPage.microLength[0] == 2U);

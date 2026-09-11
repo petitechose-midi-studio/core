@@ -645,16 +645,16 @@ void test_track_bank_owns_independent_drum_tracks() {
     bank.captureDrumTrackBank(*snapshot);
     drum::SequencerTrackBankState restored{};
     restored.reset();
-    assert(restored.applyDrumTrackBank(*snapshot));
+    drum::DrumTrackOwners owners;
+    assert(drum::prepareDrumTrackBank(*snapshot, owners));
+    restored.installDrumTracks(std::move(owners));
     assert(restored.drumTrackMask() == 0x000AU);
     assert(restored.drumTrack(1U).pattern.stepEnabled(0U, 1U));
     assert(restored.drumTrack(3U).pattern.stepEnabled(1U, 3U));
 
     restored.clearDrumTrackBank();
     assert(restored.drumTrackMask() == 0U);
-    assert(restored.drumTrack(1U).kit.lanes[0U].midiNote == 36U);
-    assert(restored.drumTrack(1U).pattern.lanes[0U].velocity[0U] ==
-           drum::DRUM_DEFAULT_VELOCITY);
+    assert(restored.drumTrackIfPresent(1U) == nullptr);
 
     std::cout << "[PASS] Track bank keeps independent persistent Drum owners\n";
 }

@@ -365,6 +365,9 @@ struct SequencerHistoryDrumChange {
     SequencerHistoryPatternActivationMetadata activation{};
     DrumTrackState before{};
     DrumTrackState after{};
+    // Only type changes can retire a live Drum during an uncommitted edit.
+    // Reserve its rollback owner before mutation; never retain it in history.
+    DrumTrackPtr kindRollback{};
     uint32_t beforeGraphRevision = 0U;
     uint32_t afterGraphRevision = 0U;
     SequencerHistoryGraphPtr beforeGraph{};

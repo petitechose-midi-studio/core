@@ -670,6 +670,11 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         return prepared;
     }
 
+    if (!core::state::sequencer::prepareHistoryStructureDrumOwners(
+            prepared.history->after, tracks, prepared.drumOwners)) {
+        prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
+        return prepared;
+    }
     prepared.status = SequencerTrackTransferStatus::READY;
     return prepared;
 }
@@ -809,7 +814,7 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
 
     core::state::sequencer::commitHistoryStructureDrumSnapshot(
         tracks,
-        prepared.history->after
+        prepared.history->after, std::move(prepared.drumOwners)
     );
 
     sharedTracks.publishPreparedSequencerState(

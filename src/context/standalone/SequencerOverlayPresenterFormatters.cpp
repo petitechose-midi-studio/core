@@ -403,11 +403,11 @@ FLASHMEM void buildDrumStepEditRenderData(
         return;
     }
 
-    const auto& descriptor = drumUi.drumTrack->kit.lanes[lane];
-    const auto& lanePattern = drumUi.drumTrack->pattern.lanes[lane];
-    const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(lane);
+    const auto& descriptor = drumUi.drumTrack()->kit.lanes[lane];
+    const auto& lanePattern = drumUi.drumTrack()->pattern.lanes[lane];
+    const uint8_t length = drumUi.drumTrack()->pattern.effectiveLength(lane);
     const uint8_t stepsPerBeat =
-        drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane);
+        drumUi.drumTrack()->pattern.effectiveStepsPerBeat(lane);
     const auto displayContext =
         core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
             sequencer,
@@ -428,7 +428,7 @@ FLASHMEM void buildDrumStepEditRenderData(
     }
     const bool enabled = childContext
         ? projection.enabled
-        : drumUi.drumTrack->pattern.stepEnabled(lane, drumStep);
+        : drumUi.drumTrack()->pattern.stepEnabled(lane, drumStep);
 
     data.rowCount = static_cast<int>(StepEditRenderData::ROW_COUNT);
     data.stepIndex = editedStep;
@@ -630,7 +630,7 @@ FLASHMEM void buildDrumStepEditRenderData(
             sequencer, editedStep
         );
     } else {
-        const int16_t slot = drumUi.drumTrack->advancedRootSlot(lane, drumStep);
+        const int16_t slot = drumUi.drumTrack()->advancedRootSlot(lane, drumStep);
         if (slot >= 0) {
             nodeId = core::state::sequencer::rootStepNodeId(
                 static_cast<uint8_t>(slot)
@@ -1200,8 +1200,8 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
                 sequencer,
                 sequencer.stepEdit.stepIndex.get()
             );
-        } else if (sequencer.drumSequencer.drumTrack != nullptr) {
-            const int16_t slot = sequencer.drumSequencer.drumTrack
+        } else if (sequencer.drumSequencer.drumTrack() != nullptr) {
+            const int16_t slot = sequencer.drumSequencer.drumTrack()
                 ->advancedRootSlot(lane, drumStep);
             if (slot >= 0) {
                 nodeId = core::state::sequencer::rootStepNodeId(

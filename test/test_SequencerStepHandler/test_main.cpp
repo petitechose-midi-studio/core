@@ -8299,7 +8299,7 @@ void createDrumTrackFromAddSlot(
     assert(h.state.sequencerTracks.activeTrackIndex() == target);
     assert(drumUi.gridVisible());
     assert(drumUi.targetTrack == target);
-    assert(drumUi.drumTrack == &h.state.sequencerTracks.drumTrack(target));
+    assert(drumUi.drumTrack() == &h.state.sequencerTracks.drumTrack(target));
 }
 
 void test_drum_track_creation_navigation_and_owners_are_independent() {
@@ -8363,7 +8363,7 @@ void test_drum_track_creation_navigation_and_owners_are_independent() {
     h.tick(g_now_ms + 1U);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
     assert(drumUi.targetTrack == 1U);
-    assert(drumUi.drumTrack == &first);
+    assert(drumUi.drumTrack() == &first);
     assert(first.kit.laneCount == 1U);
     assert(first.pattern.stepEnabled(0U, 0U));
     assert(first.pattern.lanes[0U].velocity[0U] == 91U);

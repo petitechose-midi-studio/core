@@ -227,6 +227,7 @@ FLASHMEM void SequencerPreparedStructureHistoryReplay::reset() {
     ready = false;
     for (auto& graph : trackGraphs) graph.reset();
     for (auto& ccLanes : trackCcLanes) ccLanes.reset();
+    for (auto& drum : drumOwners) drum.reset();
 }
 
 FLASHMEM uint16_t sequencerHistoryTrackBit(uint8_t trackIndex) {
@@ -522,7 +523,7 @@ FLASHMEM bool liveHistoryStructureSnapshotMatches(
 
 FLASHMEM bool prepareHistoryStructureReplayOwners(
     const SequencerHistoryTrackStructureSnapshot& snapshot,
-    uint8_t liveActiveTrack,
+    const SequencerTrackBankState& bank,
     SequencerPreparedStructureHistoryReplay& out
 ) {
     out.reset();
@@ -531,6 +532,7 @@ FLASHMEM bool prepareHistoryStructureReplayOwners(
     }
     const uint16_t capturedMask = snapshot.capturedTrackMask;
     const uint8_t targetActive = snapshot.activeTrack;
+    const auto liveActiveTrack = bank.activeTrackIndex();
     if (liveActiveTrack >= SequencerTrackBankState::TRACK_COUNT ||
         (capturedMask & sequencerHistoryTrackBit(liveActiveTrack)) == 0U) {
         return false;
@@ -547,6 +549,10 @@ FLASHMEM bool prepareHistoryStructureReplayOwners(
             out.reset();
             return false;
         }
+    }
+    if (!prepareHistoryStructureDrumOwners(snapshot, bank, out.drumOwners)) {
+        out.reset();
+        return false;
     }
     out.ready = true;
     return true;
@@ -582,39 +588,45 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
     const uint8_t targetActive = replay.targetActiveTrack;
     active.selectPattern(bank.track(targetActive), bank.clip(targetActive));
     active.bumpClipRevision();
-    commitHistoryStructureDrumSnapshot(bank, *snapshot);
+    commitHistoryStructureDrumSnapshot(bank, *snapshot, std::move(replay.drumOwners));
     bank.syncSharedTrackState(snapshot->enabledMask, targetActive);
     active.focusedStep.set(snapshot->focusedStep);
     active.page.set(snapshot->page);
     replay.ready = false;
 }
 
+FLASHMEM bool prepareHistoryStructureDrumOwners(
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    const SequencerTrackBankState& bank, DrumTrackOwners& out
+) {
+    DrumTrackOwners next;
+    for (uint8_t i = 0; i < next.size(); ++i) {
+        if ((snapshot.capturedTrackMask & snapshot.drumTrackMask & (1U << i)) == 0U) continue;
+        if (!snapshot.drumTracks[i]) return false;
+        if (bank.matchesDrumTrack(i, snapshot.drumTracks[i].get())) continue;
+        next[i] = core::app::makeExtmemUniqueCopy(*snapshot.drumTracks[i]);
+        if (!next[i]) return false;
+    }
+    out = std::move(next);
+    return true;
+}
+
 FLASHMEM void commitHistoryStructureDrumSnapshot(
     SequencerTrackBankState& bank,
-    const SequencerHistoryTrackStructureSnapshot& snapshot
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    DrumTrackOwners owners
 ) noexcept {
-    if (!validStructureSnapshotSource(snapshot)) {
-        failStructureHistoryInvariant();
-    }
-    for (uint8_t track = 0U;
-         track < SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
+    if (!validStructureSnapshotSource(snapshot)) failStructureHistoryInvariant();
+    for (uint8_t track = 0; track < SequencerTrackBankState::TRACK_COUNT; ++track) {
         const uint16_t bit = sequencerHistoryTrackBit(track);
         if ((snapshot.capturedTrackMask & bit) == 0U) continue;
-        if ((snapshot.drumTrackMask & bit) != 0U) {
-            if (!snapshot.drumTracks[track]) failStructureHistoryInvariant();
-            bank.restoreDrumTrack(
-                track,
-                SequencerTrackKind::DRUM,
-                *snapshot.drumTracks[track]
-            );
-        } else {
-            (void)bank.setTrackKind(
-                track,
-                SequencerTrackKind::INSTRUMENT,
-                false
-            );
+        if ((snapshot.drumTrackMask & bit) != 0U && !owners[track]) {
+            // Unchanged captured Tracks retain their live owner.
+            if (!bank.matchesDrumTrack(track, snapshot.drumTracks[track].get()))
+                failStructureHistoryInvariant();
+            continue;
         }
+        bank.installDrumTrack(track, std::move(owners[track]));
     }
 }
 

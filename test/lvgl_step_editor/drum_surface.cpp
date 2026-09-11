@@ -5,6 +5,7 @@
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/sequencer/DrumOverviewSurface.hpp"
 #include "state/sequencer/SequencerUiState.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 
 CoreFonts fonts;
 StandaloneFonts standalone_fonts;
@@ -22,12 +23,14 @@ int main() {
     lv_display_set_flush_cb(display, [](lv_display_t* d, const lv_area_t*, uint8_t*) { lv_display_flush_ready(d); });
     {
         using namespace core::state::sequencer;
-        DrumTrackState track;
+        SequencerTrackBankState bank;
+        assert(bank.setTrackKind(0, SequencerTrackKind::DRUM, true));
+        auto& track = bank.drumTrack(0);
         track.reset();
         track.pattern.setStepEnabled(0, 0, true);
         track.pattern.setStepEnabled(0, 1, true);
         DrumSequencerState projection;
-        projection.drumTrack = &track;
+        projection.bindTrack(0, bank);
         projection.phase = DrumSequencerPhase::GRID;
         projection.playbackActive = true;
         core::ui::sequencer::DrumOverviewSurface surface(lv_screen_active());

@@ -517,8 +517,8 @@ FLASHMEM void drawLaneHeader(
     uint32_t laneColor,
     bool selected
 ) {
-    const auto& laneDescriptor = context.drumUi.drumTrack->kit.lanes[lane];
-    const auto& lanePattern = context.drumUi.drumTrack->pattern.lanes[lane];
+    const auto& laneDescriptor = context.drumUi.drumTrack()->kit.lanes[lane];
+    const auto& lanePattern = context.drumUi.drumTrack()->pattern.lanes[lane];
     const lv_area_t nameArea{
         .x1 = static_cast<lv_coord_t>(context.surface.x1 + 23),
         .y1 = rowY,
@@ -607,11 +607,11 @@ FLASHMEM void drawDrumStepCell(
     bool selected
 ) {
     const auto& drumUi = context.drumUi;
-    const auto& lanePattern = drumUi.drumTrack->pattern.lanes[lane];
+    const auto& lanePattern = drumUi.drumTrack()->pattern.lanes[lane];
     const uint8_t step = drumUi.visibleStep(column);
     const bool available = step < laneLength;
     const bool active = available &&
-        drumUi.drumTrack->pattern.stepEnabled(lane, step);
+        drumUi.drumTrack()->pattern.stepEnabled(lane, step);
     const lv_coord_t cellX = static_cast<lv_coord_t>(
         context.gridStart + column * context.cellWidth
     );
@@ -1052,7 +1052,7 @@ FLASHMEM void drawDrumLaneRow(
         return;
     }
 
-    const auto& laneDescriptor = drumUi.drumTrack->kit.lanes[lane];
+    const auto& laneDescriptor = drumUi.drumTrack()->kit.lanes[lane];
     const uint32_t laneColor = theme::color::trackColor(
         core::state::sequencer::drumLaneDisplayColorIndex(laneDescriptor)
     );
@@ -1083,9 +1083,9 @@ FLASHMEM void drawDrumLaneRow(
               core::ui::interaction::StructureSelectionVisualRole::SELECTED
           );
     const uint8_t laneLength =
-        drumUi.drumTrack->pattern.effectiveLength(lane);
+        drumUi.drumTrack()->pattern.effectiveLength(lane);
     const uint8_t stepsPerBeat =
-        drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane);
+        drumUi.drumTrack()->pattern.effectiveStepsPerBeat(lane);
 
     if (headerVisible) {
         drawLaneHeader(context, lane, rowY, laneColor, selected);
@@ -1240,7 +1240,7 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
 
     const auto& drumUi = *props.projection;
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         core::state::sequencer::DRUM_MAX_LANES
     );
     if (drumUi.laneAddSlotFocused()) {
@@ -1273,7 +1273,7 @@ FLASHMEM void DrumOverviewSurface::syncFocusedLaneName(
         )
     );
     const char* name = core::state::sequencer::drumLaneDisplayName(
-        drumUi.drumTrack->kit.lanes[lane]
+        drumUi.drumTrack()->kit.lanes[lane]
     );
     const bool contentChanged = focused_lane_name_lane_ != lane ||
         std::strncmp(
@@ -1348,14 +1348,14 @@ DrumOverviewSurface::captureStaticRows(
     const DrumOverviewSurfaceProps& props
 ) const {
     StaticRows rows{};
-    if (!props.projection || !props.projection->drumTrack) {
+    if (!props.projection || !props.projection->drumTrack()) {
         return rows;
     }
 
     const auto& drumUi = *props.projection;
     const auto& selection = drumUi.laneSelection;
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         core::state::sequencer::DRUM_MAX_LANES
     );
     const bool addSlotFocused = drumUi.laneAddSlotFocused();
@@ -1393,10 +1393,10 @@ DrumOverviewSurface::captureStaticRows(
             continue;
         }
 
-        const auto& descriptor = drumUi.drumTrack->kit.lanes[lane];
-        const auto& pattern = drumUi.drumTrack->pattern.lanes[lane];
+        const auto& descriptor = drumUi.drumTrack()->kit.lanes[lane];
+        const auto& pattern = drumUi.drumTrack()->pattern.lanes[lane];
         const uint8_t length =
-            drumUi.drumTrack->pattern.effectiveLength(lane);
+            drumUi.drumTrack()->pattern.effectiveLength(lane);
         hashByte(hash, 2U);
         hashByte(hash, lane);
         hashByte(hash, drumUi.page);
@@ -1414,7 +1414,7 @@ DrumOverviewSurface::captureStaticRows(
         hashByte(hash, length);
         hashByte(
             hash,
-            drumUi.drumTrack->pattern.effectiveStepsPerBeat(lane)
+            drumUi.drumTrack()->pattern.effectiveStepsPerBeat(lane)
         );
 
         const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
@@ -1455,7 +1455,7 @@ DrumOverviewSurface::captureStaticRows(
         for (uint8_t column = 0U; column < STATIC_STEP_COUNT; ++column) {
             const uint8_t step = drumUi.visibleStep(column);
             const bool active = step < length &&
-                drumUi.drumTrack->pattern.stepEnabled(lane, step);
+                drumUi.drumTrack()->pattern.stepEnabled(lane, step);
             hashByte(hash, active ? 1U : 0U);
             if (!active) continue;
             hashByte(hash, pattern.velocity[step]);
@@ -1611,7 +1611,7 @@ FLASHMEM void DrumOverviewSurface::includeChanceCellDamage(
 
     // Root decisions only affect the chance marker below 100%. Advanced
     // content has its own resolved-cell invalidation, independent of this.
-    if (projection.drumTrack->pattern.lanes[lane].probability[step] >= 100U) return;
+    if (projection.drumTrack()->pattern.lanes[lane].probability[step] >= 100U) return;
 
     const lv_coord_t width = static_cast<lv_coord_t>(
         surface.x2 - surface.x1 + 1
@@ -1676,7 +1676,7 @@ FLASHMEM void DrumOverviewSurface::includeResolvedCellDamage(
     const bool advanced = ((previous.resolvedPage.cyclePresentMask |
                            next.resolvedPage.cyclePresentMask) & bit) != 0U ||
         previous.resolvedPage.microLength[cell] > 0U || next.resolvedPage.microLength[cell] > 0U;
-    if (advanced && projection.drumTrack->pattern.stepEnabled(lane, step)) {
+    if (advanced && projection.drumTrack()->pattern.stepEnabled(lane, step)) {
         const lv_coord_t gridStart = surface.x1 + DRUM_LABEL_WIDTH;
         const lv_coord_t gridEnd = gridStart + cellWidth * DrumSequencerState::STEPS_PER_PAGE;
         const auto includeHit = [&](uint8_t velocity, uint16_t gate, int8_t nudge) {
@@ -1688,7 +1688,7 @@ FLASHMEM void DrumOverviewSurface::includeResolvedCellDamage(
         };
         // A resolved event can reveal the authored outline or extend beyond
         // its cell. Cover both old and new spans using the drawing geometry.
-        const auto& authored = projection.drumTrack->pattern.lanes[lane];
+        const auto& authored = projection.drumTrack()->pattern.lanes[lane];
         const uint16_t contextKey = static_cast<uint16_t>(
             (static_cast<uint16_t>(projection.page) << 8U) | projection.laneWindowStart);
         includeHit(authored.velocity[step], authored.gate[step], authored.nudge[step]);
@@ -1715,7 +1715,7 @@ FLASHMEM void DrumOverviewSurface::invalidatePlaybackDelta(
     const lv_coord_t laneHeight = drumLaneHeight(surface);
     const auto& projection = *renderedProps_.projection;
     const uint8_t laneCount = std::min<uint8_t>(
-        projection.drumTrack->kit.laneCount,
+        projection.drumTrack()->kit.laneCount,
         core::state::sequencer::DRUM_MAX_LANES
     );
     const uint8_t visibleRowCount = projection.laneWindowStart < laneCount
@@ -1903,7 +1903,7 @@ FLASHMEM void DrumOverviewSurface::drawSurface(
         core::state::sequencer::DrumSequencerState::STEPS_PER_PAGE
     );
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         core::state::sequencer::DRUM_MAX_LANES
     );
 

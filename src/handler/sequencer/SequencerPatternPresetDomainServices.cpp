@@ -1600,11 +1600,8 @@ SequencerPatternPresetDomainServices::previewPreset(
             return result;
         }
 
-        state_->sequencerTracks.restoreDrumTrack(
-            target.trackIndex,
-            seq::SequencerTrackKind::DRUM,
-            candidate
-        );
+        state_->sequencerTracks.installDrumTrack(
+            target.trackIndex, std::move(loaded.drum));
         state_->sequencer.pattern().graph =
             std::move(loaded.staged->graph);
         state_->sequencer.pattern().setGraphRevision(

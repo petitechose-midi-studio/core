@@ -197,7 +197,6 @@ void expects_drum_lane_editor_to_keep_opt_authority_over_the_visible_grid() {
     auto& drumUi = h.state.sequencer.drumSequencer;
     drumUi.bindTrack(
         0U,
-        h.state.sequencerTracks.drumTrack(0U),
         h.state.sequencerTracks
     );
     drumUi.enterGrid();
@@ -246,7 +245,6 @@ void expects_drum_pattern_defaults_to_own_opt_only_while_open() {
     auto& drumUi = h.state.sequencer.drumSequencer;
     drumUi.bindTrack(
         0U,
-        h.state.sequencerTracks.drumTrack(0U),
         h.state.sequencerTracks
     );
     drumUi.enterGrid();

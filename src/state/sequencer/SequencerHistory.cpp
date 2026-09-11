@@ -96,7 +96,13 @@ FLASHMEM SequencerHistoryDrumChangePtr prepareHistoryDrumChangeBefore(
     change->afterKind = change->beforeKind;
     change->descriptor = descriptor;
     change->descriptor.trackIndex = target;
-    change->before = bank.drumTrack(target);
+    if (bank.isDrumTrack(target)) change->before = bank.drumTrack(target);
+    else change->before.reset();
+    if (change->beforeKind == SequencerTrackKind::DRUM &&
+        descriptor.kind == SequencerHistoryActionKind::DrumTrackKind) {
+        change->kindRollback = core::app::makeExtmemUniqueCopy(change->before);
+        if (!change->kindRollback) return {};
+    }
     change->after = change->before;
     change->capturesGraph =
         descriptor.kind == SequencerHistoryActionKind::DrumAdvancedContent ||
@@ -129,7 +135,8 @@ FLASHMEM bool capturePreparedHistoryDrumAfter(
 ) {
     if (change.trackIndex >= SequencerTrackBankState::TRACK_COUNT) return false;
     change.afterKind = bank.trackKind(change.trackIndex);
-    change.after = bank.drumTrack(change.trackIndex);
+    if (bank.isDrumTrack(change.trackIndex)) change.after = bank.drumTrack(change.trackIndex);
+    else change.after.reset();
     if (change.capturesGraph) {
         const auto& source = bank.track(change.trackIndex);
         change.afterGraphRevision = source.graphRevision;
@@ -174,11 +181,15 @@ FLASHMEM bool restorePreparedHistoryDrumBefore(
 ) noexcept {
     if (change.trackIndex >= SequencerTrackBankState::TRACK_COUNT) return false;
 
-    bank.restoreDrumTrack(
-        change.trackIndex,
-        change.beforeKind,
-        change.before
-    );
+    if (change.beforeKind == SequencerTrackKind::INSTRUMENT) {
+        bank.installDrumTrack(change.trackIndex, {});
+    } else if (bank.isDrumTrack(change.trackIndex)) {
+        bank.drumTrack(change.trackIndex) = change.before;
+        bank.publishDrumMutation(change.trackIndex);
+    } else {
+        if (!change.kindRollback) return false;
+        bank.installDrumTrack(change.trackIndex, std::move(change.kindRollback));
+    }
     if (!change.capturesGraph) return true;
 
     auto& target = bank.track(change.trackIndex);
@@ -1176,11 +1187,22 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
 
         GraphPtr restoredGraph;
         if (change.capturesGraph && !cloneGraph(graph, restoredGraph)) return false;
-        bank.restoreDrumTrack(
-            change.trackIndex,
-            after ? change.afterKind : change.beforeKind,
-            after ? change.after : change.before
-        );
+        DrumTrackPtr restoredDrum;
+        const bool targetIsDrum =
+            (after ? change.afterKind : change.beforeKind) == SequencerTrackKind::DRUM;
+        auto* liveDrum = bank.drumTrackIfPresent(change.trackIndex);
+        if (targetIsDrum && !liveDrum) {
+            restoredDrum = core::app::makeExtmemUniqueCopy(after ? change.after : change.before);
+            if (!restoredDrum) return false;
+        }
+        // Ordinary Drum edits retain their owner; only a kind conversion needs
+        // a prepared allocation. All fallible work precedes the live mutation.
+        if (targetIsDrum && liveDrum) {
+            *liveDrum = after ? change.after : change.before;
+            bank.publishDrumMutation(change.trackIndex);
+        } else {
+            bank.installDrumTrack(change.trackIndex, std::move(restoredDrum));
+        }
         if (change.capturesGraph) {
             installGraph(
                 bank.track(change.trackIndex),
@@ -2128,6 +2150,7 @@ FLASHMEM void SequencerHistoryService::recordPreparedDrum(
         change->trackIndex);
     change->descriptor.trackIndex = change->trackIndex;
 
+    change->kindRollback.reset();
     SequencerHistoryEntry entry;
     entry.scope = SequencerHistoryScope::Drum;
     entry.drum = std::move(change);
@@ -2327,7 +2350,7 @@ SequencerHistoryService::prepareStructureHistoryReplay(
 
     const auto& target = after ? entry.structure->after : entry.structure->before;
     if (!prepareHistoryStructureReplayOwners(
-            target, bank.activeTrackIndex(), out)) {
+            target, bank, out)) {
         return SequencerStructureHistoryReplayPrepareOutcome::Rejected;
     }
 

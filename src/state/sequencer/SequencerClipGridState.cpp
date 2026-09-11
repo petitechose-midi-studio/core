@@ -146,20 +146,6 @@ FLASHMEM void installDocumentPattern(
     }
 }
 
-FLASHMEM void swapDrumState(
-    DrumTrackState& left,
-    DrumTrackState& right
-) noexcept {
-    static_assert(std::is_trivially_copyable_v<DrumTrackState>);
-    auto* leftBytes = reinterpret_cast<uint8_t*>(&left);
-    auto* rightBytes = reinterpret_cast<uint8_t*>(&right);
-    for (size_t index = 0U; index < sizeof(DrumTrackState); ++index) {
-        const uint8_t value = leftBytes[index];
-        leftBytes[index] = rightBytes[index];
-        rightBytes[index] = value;
-    }
-}
-
 FLASHMEM bool exchangeCanonicalTrackDocument(
     SequencerTrackBankState& bank,
     SequencerState& active,
@@ -191,8 +177,7 @@ FLASHMEM bool exchangeCanonicalTrackDocument(
     document.graph = std::move(outgoingGraph);
     document.ccLanes = std::move(outgoingCcLanes);
     if (document.trackKind == SequencerTrackKind::DRUM) {
-        swapDrumState(bank.drumTrack(track), *document.drum);
-        bank.publishDrumMutation(track);
+        bank.exchangeDrumTrack(track, document.drum);
     }
     return true;
 }
@@ -1641,7 +1626,7 @@ FLASHMEM bool switchResidentSequencerClip(
         if (!promoted) return false;
         installDocumentPattern(bank, active, target.track, *promoted);
         if (promoted->trackKind == SequencerTrackKind::DRUM) {
-            bank.restoreDrumTrack(target.track, promoted->trackKind, *promoted->drum);
+            bank.installDrumTrack(target.track, std::move(promoted->drum));
         } else {
             bank.setTrackKind(target.track, SequencerTrackKind::INSTRUMENT);
         }

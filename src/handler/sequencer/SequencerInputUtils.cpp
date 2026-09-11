@@ -112,18 +112,18 @@ FLASHMEM float drumStepPropertyToNormalized(
     uint8_t step,
     DrumProperty property
 ) {
-    if (!drumUi.drumTrack || laneIndex >= drumUi.LANE_COUNT ||
+    if (!drumUi.drumTrack() || laneIndex >= drumUi.LANE_COUNT ||
         step >= drumUi.MAX_STEPS) {
         return 0.0f;
     }
     if (property == DrumProperty::STATE) {
-        return drumUi.drumTrack->pattern.stepEnabled(laneIndex, step)
+        return drumUi.drumTrack()->pattern.stepEnabled(laneIndex, step)
             ? 1.0f
             : 0.0f;
     }
 
-    const auto& descriptor = drumUi.drumTrack->kit.lanes[laneIndex];
-    const auto& lane = drumUi.drumTrack->pattern.lanes[laneIndex];
+    const auto& descriptor = drumUi.drumTrack()->kit.lanes[laneIndex];
+    const auto& lane = drumUi.drumTrack()->pattern.lanes[laneIndex];
     return stepPropertyToNormalized(
         drumStepProperty(property),
         descriptor.midiNote,
