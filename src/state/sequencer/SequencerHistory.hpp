@@ -30,7 +30,7 @@ using SequencerHistoryCcLanePtr = SequencerCcLaneBankPtr;
 
 struct SequencerHistoryPatternSnapshot {
     SequencerPatternSnapshot flat{};
-    SequencerClipSnapshot clip{};
+    SequencerClipState clip{};
     // FlatOnly does not retain a CC payload. Prepared Page FullGraph also sets
     // ccLanesCaptured=false for an already-allocated, musically empty owner so
     // commit/rollback/traversal preserve that live owner instead of replaying

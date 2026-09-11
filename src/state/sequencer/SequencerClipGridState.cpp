@@ -177,9 +177,9 @@ FLASHMEM bool exchangeCanonicalTrackDocument(
     if (!validClipRegion(pattern, clip)) return false;
 
     SequencerPatternSnapshot outgoingPattern;
-    SequencerClipSnapshot outgoingClip;
+    SequencerClipState outgoingClip;
     captureSnapshot(pattern, outgoingPattern);
-    captureSnapshot(clip, outgoingClip);
+    outgoingClip = clip;
     const uint32_t outgoingCcLaneRevision = pattern.ccLaneRevision.get();
     auto outgoingGraph = std::move(pattern.graph);
     auto outgoingCcLanes = std::move(pattern.ccLanes);
@@ -298,7 +298,7 @@ FLASHMEM bool captureSequencerClipDocument(
     auto next = core::app::makeExtmemUniqueCold<SequencerClipDocument>();
     if (!next) return false;
     captureSnapshot(pattern, next->pattern);
-    captureSnapshot(clip, next->clip);
+    next->clip = clip;
     next->ccLaneRevision = pattern.ccLaneRevision.get();
     next->trackKind = trackKind;
     if (!cloneGraph(graphView(pattern), next->graph)) return false;
@@ -324,22 +324,22 @@ FLASHMEM bool createEmptySequencerClipDocument(
         return false;
     }
 
-    auto pattern = core::app::makeExtmemUniqueCold<SequencerPatternState>();
-    if (!pattern) return false;
-    pattern->reset();
-    const SequencerClipState clip{};
-    if (!captureSequencerClipDocument(
-            *pattern,
-            clip,
-            trackKind,
-            drumTemplate,
-            out)) {
-        return false;
+    auto next = core::app::makeExtmemUniqueCold<SequencerClipDocument>();
+    if (!next) return false;
+    next->pattern.resetStepData();
+    // Match a newly reset live Pattern without constructing observers or
+    // allocating a temporary reactive owner for this detached document.
+    next->pattern.stepDataRevision = next->pattern.patternVariationRevision =
+        next->pattern.patternScaleRevision = next->pattern.patternTimingRevision =
+        next->pattern.graphRevision = next->ccLaneRevision = 1U;
+    next->trackKind = trackKind;
+    if (drumTemplate != nullptr) {
+        next->drum = core::app::makeExtmemUniqueCopy(*drumTemplate);
+        if (!next->drum) return false;
+        next->drum->pattern.reset();
+        next->drum->advancedStepKeys.fill(DRUM_ADVANCED_STEP_KEY_INVALID);
     }
-    if (out->drum != nullptr) {
-        out->drum->pattern.reset();
-        out->drum->advancedStepKeys.fill(DRUM_ADVANCED_STEP_KEY_INVALID);
-    }
+    out = std::move(next);
     return true;
 }
 

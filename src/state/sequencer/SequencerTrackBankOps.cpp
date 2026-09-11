@@ -68,7 +68,7 @@ FLASHMEM void captureTrackBankSnapshot(
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         captureSnapshot(bank.track(i), out.tracks[i]);
-        captureSnapshot(bank.clip(i), out.clips[i]);
+        out.clips[i] = bank.clip(i);
     }
 }
 
@@ -87,7 +87,7 @@ FLASHMEM void applyTrackBankSnapshot(
     bank.projectScaleRevisionSignal().set(snapshot.projectScaleRevision);
     for (uint8_t i = 0U; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
         applySnapshot(bank.track(i), snapshot.tracks[i]);
-        applySnapshot(bank.clip(i), snapshot.clips[i]);
+        bank.clip(i) = snapshot.clips[i];
     }
     active.selectPattern(bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex()));
     const uint8_t focused = std::min<uint8_t>(active.focusedStep.get(), active.pattern().length.get() - 1U);

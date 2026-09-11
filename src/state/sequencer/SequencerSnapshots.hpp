@@ -13,7 +13,7 @@
 
 namespace core::state::sequencer {
 
-struct SequencerPatternSnapshot {
+struct SequencerPatternSnapshot : oc::note::sequencer::StepSequencerStepData {
     uint8_t length = SequencerPatternState::DEFAULT_LENGTH;
     uint8_t stepsPerBeat = SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
     oc::note::sequencer::StepBitMask128 enabledMask{};
@@ -30,20 +30,7 @@ struct SequencerPatternSnapshot {
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
     SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
     oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
-    std::array<uint8_t, SequencerPatternState::MAX_STEPS> note{};
-    std::array<uint8_t, SequencerPatternState::MAX_STEPS> velocity{};
-    std::array<uint16_t, SequencerPatternState::MAX_STEPS> gate{};
-    std::array<int8_t, SequencerPatternState::MAX_STEPS> nudge{};
-    std::array<uint8_t, SequencerPatternState::MAX_STEPS> probability{};
 };
-
-struct SequencerClipSnapshot {
-    uint16_t playStartTick = 0U;
-    uint16_t loopStartTick = 0U;
-    uint16_t loopEndTick = SequencerClipState::DEFAULT_END_TICK;
-};
-
-static_assert(sizeof(SequencerClipSnapshot) == sizeof(SequencerClipState));
 
 struct SequencerTrackBankSnapshot {
     uint8_t activeTrack = 0;
@@ -52,7 +39,7 @@ struct SequencerTrackBankSnapshot {
     uint8_t projectSwingPercent = 0;
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings{};
     std::array<SequencerPatternSnapshot, SequencerTrackBankState::TRACK_COUNT> tracks{};
-    std::array<SequencerClipSnapshot, SequencerTrackBankState::TRACK_COUNT> clips{};
+    std::array<SequencerClipState, SequencerTrackBankState::TRACK_COUNT> clips{};
 };
 
 }  // namespace core::state::sequencer

@@ -270,8 +270,8 @@ FLASHMEM bool sameFlatPatternSnapshot(const SequencerPatternSnapshot& lhs,
 }
 
 FLASHMEM bool sameClipSnapshot(
-    const SequencerClipSnapshot& lhs,
-    const SequencerClipSnapshot& rhs
+    const SequencerClipState& lhs,
+    const SequencerClipState& rhs
 ) {
     return lhs.playStartTick == rhs.playStartTick &&
            lhs.loopStartTick == rhs.loopStartTick &&
@@ -592,7 +592,7 @@ FLASHMEM bool captureCoalescedPatternBefore(const SequencerTrackBankState& bank,
 
     if (!cloneSequencerCcLaneBank(out.ccLanes, source.ccLanes.get())) { return false; }
     captureSnapshot(source, out.flat);
-    captureSnapshot(bank.clip(trackIndex), out.clip);
+    out.clip = bank.clip(trackIndex);
     out.ccLaneRevision = source.ccLaneRevision.get();
     out.focusedStep = active.focusedStep.get();
     out.ccLanesCaptured = true;
@@ -1050,14 +1050,14 @@ FLASHMEM bool applyFlatHistorySnapshotToTrack(SequencerTrackBankState& bank, Seq
 
     if (targetTrack != activeTrack) {
         auto& target = bank.track(targetTrack);
-        applySnapshot(bank.clip(targetTrack), snapshot.clip);
+        bank.clip(targetTrack) = snapshot.clip;
         applyFlatSnapshotPreservingColdPayload(target, snapshot.flat);
         synchronizeHistoryPatternRevisionSignals(
             target, snapshot.flat, snapshot.ccLaneRevision);
         return true;
     }
 
-    applySnapshot(active.clip(), snapshot.clip);
+    active.clip() = snapshot.clip;
     applyFlatSnapshotToEditorPreservingColdPayload(active, snapshot.flat);
     active.bumpClipRevision();
     synchronizeHistoryPatternRevisionSignals(
@@ -1264,7 +1264,7 @@ FLASHMEM bool capturePatternHistoryUsingReservedStorage(
         return false;
     }
     captureSnapshot(source, out.flat);
-    captureSnapshot(clip, out.clip);
+    out.clip = clip;
     out.ccLaneRevision = source.ccLaneRevision.get();
     out.focusedStep = focusedStep;
     out.ccLanesCaptured = true;
@@ -1278,7 +1278,7 @@ FLASHMEM bool capturePatternHistoryUsingReservedGraph(
     SequencerHistoryPatternSnapshot& out
 ) {
     captureSnapshot(source, out.flat);
-    captureSnapshot(clip, out.clip);
+    out.clip = clip;
     out.ccLaneRevision = source.ccLaneRevision.get();
     out.focusedStep = focusedStep;
     if (!captureGraphUsingReservedStorage(graphView(source), out.graph) ||
@@ -1297,7 +1297,7 @@ FLASHMEM void captureFlatPatternHistory(
 ) {
     out.reset();
     captureSnapshot(source, out.flat);
-    captureSnapshot(clip, out.clip);
+    out.clip = clip;
     out.ccLaneRevision = source.ccLaneRevision.get();
     out.focusedStep = focusedStep;
     out.ccLanesCaptured = false;
@@ -1574,13 +1574,10 @@ FLASHMEM bool captureHistoryTrackBankDataUsingReservedStorage(
     }
 
     captureSnapshot(source, out.flat.tracks[trackIndex]);
-    captureSnapshot(
-        bank.clip(trackIndex),
-        out.flat.clips[trackIndex]
-    );
+    out.flat.clips[trackIndex] = bank.clip(trackIndex);
     if (bytesCopied) {
         *bytesCopied = sizeof(SequencerPatternSnapshot) +
-            sizeof(SequencerClipSnapshot) +
+            sizeof(SequencerClipState) +
             (sourceCcLanesEmpty ? 0U : sizeof(SequencerCcLaneBank));
     }
     return true;
@@ -1645,7 +1642,7 @@ FLASHMEM bool applyHistorySnapshotToEditor(SequencerState& active,
         return false;
     }
 
-    applySnapshot(active.clip(), snapshot.clip);
+    active.clip() = snapshot.clip;
     applySnapshotToEditor(active, snapshot.flat);
     active.bumpClipRevision();
     installGraph(active.pattern(), std::move(editorGraph), snapshot.flat.graphRevision);
@@ -1674,7 +1671,7 @@ FLASHMEM bool applyHistorySnapshotToTrack(SequencerTrackBankState& bank, Sequenc
         return false;
     }
 
-    applySnapshot(bank.clip(targetTrack), snapshot.clip);
+    bank.clip(targetTrack) = snapshot.clip;
     applySnapshot(bank.track(targetTrack), snapshot.flat);
     installGraph(bank.track(targetTrack), std::move(bankGraph), snapshot.flat.graphRevision);
     if (snapshot.ccLanesCaptured) {
@@ -1820,9 +1817,9 @@ FLASHMEM bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankSt
     const auto& target = bank.track(targetTrack);
     const auto& targetClip = bank.clip(targetTrack);
     SequencerPatternSnapshot flat{};
-    SequencerClipSnapshot clip{};
+    SequencerClipState clip{};
     captureSnapshot(target, flat);
-    captureSnapshot(targetClip, clip);
+    clip = targetClip;
     if (!sameFlatPatternSnapshot(flat, after.flat) ||
         clip.playStartTick != after.clip.playStartTick ||
         clip.loopStartTick != after.clip.loopStartTick ||
@@ -1999,7 +1996,7 @@ FLASHMEM bool restorePreparedHistoryPatternBefore(
         // public abort must leave the live state untouched and retryable.
         if (!graphOwnerPresent) target.graph.reset();
         if (!ccOwnerPresent) target.ccLanes.reset();
-        applySnapshot(bank.clip(change.trackIndex), before.clip);
+        bank.clip(change.trackIndex) = before.clip;
         if (targetActive) applyFlatSnapshotToEditorPreservingColdPayload(active, before.flat);
         else applyFlatSnapshotPreservingColdPayload(target, before.flat);
         synchronizeHistoryPatternRevisionSignals(
@@ -2027,7 +2024,7 @@ FLASHMEM bool restorePreparedHistoryPatternBefore(
 
     // From this point every remaining operation is allocation-free and
     // non-fallible: no partial rollback can escape as AbortOutcome::Failed.
-    applySnapshot(bank.clip(change.trackIndex), before.clip);
+    bank.clip(change.trackIndex) = before.clip;
     if (targetActive) applySnapshotToEditorPreservingGraph(active, before.flat);
     else applySnapshotPreservingGraph(target, before.flat);
     if (before.graph) {

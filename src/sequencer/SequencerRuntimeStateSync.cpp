@@ -140,7 +140,7 @@ FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternSnapshot& source,
-    const core::state::sequencer::SequencerClipSnapshot& clip
+    const core::state::sequencer::SequencerClipState& clip
 ) {
     return {
         .length = source.length,
@@ -165,7 +165,7 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
 
 oc::note::sequencer::StepSequencerPlaybackRegion runtimePlaybackRegion(
     const core::state::sequencer::SequencerPatternSnapshot& source,
-    const core::state::sequencer::SequencerClipSnapshot& clip
+    const core::state::sequencer::SequencerClipState& clip
 ) {
     const uint8_t length = std::clamp<uint8_t>(
         source.length,

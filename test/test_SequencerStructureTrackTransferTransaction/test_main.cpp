@@ -96,9 +96,9 @@ constexpr core::handler::SequencerHistoryDomainServices::Operations kPreparedHis
 void storeSourceClipboard(core::state::StructureClipboardState& clipboard,
                           const core::state::sequencer::SequencerState& editor) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::SequencerClipSnapshot clip;
+    core::state::sequencer::SequencerClipState clip;
     core::state::sequencer::captureSnapshot(editor.pattern(), snapshot);
-    core::state::sequencer::captureSnapshot(editor.clip(), clip);
+    clip = editor.clip();
     assert(clipboard.storeSequencerTrack(
         snapshot,
         clip,
@@ -1031,9 +1031,9 @@ void test_drum_track_copy_paste_is_detached_and_history_exact() {
     const seq::DrumTrackState expected = source;
 
     seq::SequencerPatternSnapshot snapshot{};
-    seq::SequencerClipSnapshot clip{};
+    seq::SequencerClipState clip{};
     seq::captureSnapshot(state.sequencer.pattern(), snapshot);
-    seq::captureSnapshot(state.sequencer.clip(), clip);
+    clip = state.sequencer.clip();
     assert(state.structureClipboard.storeSequencerTrack(
         snapshot,
         clip,

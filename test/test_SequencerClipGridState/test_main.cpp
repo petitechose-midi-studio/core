@@ -136,6 +136,50 @@ void test_capture_and_snapshot_fail_without_mutating_destination() {
     std::cout << "[PASS] allocation failures preserve destinations\n";
 }
 
+void test_empty_document_matches_live_defaults_and_preserves_destination_on_failure() {
+    seq::SequencerPatternState pattern;
+    pattern.reset();
+    seq::SequencerClipState clip;
+    seq::DrumTrackState drum;
+    drum.reset();
+    assert(drum.pattern.setStepEnabled(0U, 3U, true));
+    assert(drum.bindAdvancedRootSlot(0U, 0U, 3U));
+    const auto originalDrum = drum;
+
+    for (const auto kind : {seq::SequencerTrackKind::INSTRUMENT,
+                           seq::SequencerTrackKind::DRUM}) {
+        const auto* sourceDrum = kind == seq::SequencerTrackKind::DRUM ? &drum : nullptr;
+        seq::SequencerClipDocumentPtr expected;
+        assert(seq::captureSequencerClipDocument(pattern, clip, kind, sourceDrum, expected));
+        if (expected->drum) {
+            expected->drum->pattern.reset();
+            expected->drum->advancedStepKeys.fill(seq::DRUM_ADVANCED_STEP_KEY_INVALID);
+        }
+        seq::SequencerClipDocumentPtr actual;
+        const size_t allocations = sourceDrum ? 2U : 1U;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1024U);
+            assert(seq::createEmptySequencerClipDocument(kind, sourceDrum, actual));
+            assert(core::app::testing::extmemAllocationAttempt == allocations);
+        }
+        assert(seq::sameSequencerClipDocument(*expected, *actual));
+        assert(seq::validSequencerClipDocument(*actual, kind));
+        const auto* identity = actual.get();
+        for (size_t ordinal = 1U; ordinal <= allocations; ++ordinal) {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            assert(!seq::createEmptySequencerClipDocument(kind, sourceDrum, actual));
+            assert(actual.get() == identity);
+            assert(seq::sameSequencerClipDocument(*expected, *actual));
+        }
+        assert(!seq::createEmptySequencerClipDocument(kind, sourceDrum ? nullptr : &drum, actual));
+        assert(actual.get() == identity);
+        std::cout << "[PASS] empty document allocations=" << allocations
+                  << " temporary Pattern bytes removed=" << sizeof(pattern) << '\n';
+    }
+    assert(drum.pattern.stepEnabled(0U, 3U));
+    assert(drum.advancedStepKeys == originalDrum.advancedStepKeys);
+}
+
 void test_grid_rejects_malformed_documents() {
     seq::SequencerClipGridState grid;
     seq::SequencerPatternState pattern;
@@ -740,6 +784,7 @@ int main() {
     test_document_installation_publishes_final_owners_and_editor_state();
     test_sparse_grid_capacity_and_snapshot_are_exact();
     test_capture_and_snapshot_fail_without_mutating_destination();
+    test_empty_document_matches_live_defaults_and_preserves_destination_on_failure();
     test_grid_rejects_malformed_documents();
     test_grid_enforces_the_aggregate_psram_budget();
     test_launcher_metadata_survives_snapshot_move_and_history();

@@ -147,7 +147,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
             runtimeSnapshot.clips[i] = document->clip;
         } else {
             core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
-            core::state::sequencer::captureSnapshot(sourceClip, runtimeSnapshot.clips[i]);
+            runtimeSnapshot.clips[i] = sourceClip;
         }
         runtimeSnapshot.tracks[i].effectiveScaleSettings = signature.effectiveScaleSettings;
         runtimeSnapshot.tracks[i].effectiveSwingPercent = signature.effectiveSwingPercent;

@@ -10,7 +10,7 @@
 namespace {
 
 using core::state::sequencer::SequencerClipPlaybackRegion;
-using core::state::sequencer::SequencerClipSnapshot;
+using core::state::sequencer::SequencerClipState;
 using core::state::sequencer::SequencerClipState;
 using core::state::sequencer::SequencerPatternSnapshot;
 using core::state::sequencer::SequencerPatternState;
@@ -138,15 +138,15 @@ void test_snapshot_round_trip_preserves_region_exactly() {
     assert(setClipPlaybackRegion(source, sourceClip, {24, 3, 7, 19}));
 
     SequencerPatternSnapshot snapshot{};
-    SequencerClipSnapshot clipSnapshot{};
+    SequencerClipState clipSnapshot{};
     core::state::sequencer::captureSnapshot(source, snapshot);
-    core::state::sequencer::captureSnapshot(sourceClip, clipSnapshot);
+    clipSnapshot = sourceClip;
     assert(snapshot.length == 24);
 
     SequencerPatternState restored;
     SequencerClipState restoredClip;
     core::state::sequencer::applySnapshot(restored, snapshot);
-    core::state::sequencer::applySnapshot(restoredClip, clipSnapshot);
+    restoredClip = clipSnapshot;
     expectRegion(clipPlaybackRegion(restored, restoredClip), 24, 3, 7, 19);
 }
 

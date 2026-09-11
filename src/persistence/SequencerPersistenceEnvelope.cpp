@@ -307,7 +307,7 @@ FLASHMEM bool addClipRegionSection(
 
 FLASHMEM state::sequencer::SequencerClipPlaybackRegion snapshotPlaybackRegion(
     const state::sequencer::SequencerPatternSnapshot& snapshot,
-    const state::sequencer::SequencerClipSnapshot& clip
+    const state::sequencer::SequencerClipState& clip
 ) {
     const uint16_t ticksPerStep = state::sequencer::sequencerTicksPerStep(
         snapshot.stepsPerBeat
@@ -919,7 +919,7 @@ FLASHMEM bool decodeClipDocument(
     uint8_t reserved = 0U;
     uint16_t patternSize = 0U;
     uint16_t drumSize = 0U;
-    state::sequencer::SequencerClipSnapshot clip{};
+    state::sequencer::SequencerClipState clip{};
     if (!reader.readU8(kindRaw) || !reader.readU8(reserved) ||
         !reader.readU16(patternSize) || !reader.readU16(drumSize) ||
         !reader.readU16(clip.playStartTick) ||

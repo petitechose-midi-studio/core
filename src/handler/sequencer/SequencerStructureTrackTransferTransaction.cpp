@@ -31,7 +31,7 @@ constexpr uint64_t kClipboardFingerprintPrime = 1099511628211ULL;
 
 struct SourcePayload {
     const PatternSnapshot* snapshot = nullptr;
-    const core::state::sequencer::SequencerClipSnapshot* clip = nullptr;
+    const core::state::sequencer::SequencerClipState* clip = nullptr;
     const Graph* graph = nullptr;
     const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr;
     const core::state::sequencer::DrumTrackState* drumTrack = nullptr;

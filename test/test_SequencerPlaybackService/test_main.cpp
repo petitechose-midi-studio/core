@@ -471,9 +471,9 @@ void storeTrackClipboard(
     const core::state::sequencer::SequencerState& editor
 ) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::SequencerClipSnapshot clip;
+    core::state::sequencer::SequencerClipState clip;
     core::state::sequencer::captureSnapshot(editor.pattern(), snapshot);
-    core::state::sequencer::captureSnapshot(editor.clip(), clip);
+    clip = editor.clip();
     assert(clipboard.storeSequencerTrack(
         snapshot,
         clip,

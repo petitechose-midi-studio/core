@@ -173,8 +173,8 @@ bool samePatternSnapshot(
 }
 
 bool sameClipSnapshot(
-    const seq::SequencerClipSnapshot& lhs,
-    const seq::SequencerClipSnapshot& rhs
+    const seq::SequencerClipState& lhs,
+    const seq::SequencerClipState& rhs
 ) {
     return lhs.playStartTick == rhs.playStartTick &&
            lhs.loopStartTick == rhs.loopStartTick &&

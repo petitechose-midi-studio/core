@@ -135,10 +135,7 @@ FLASHMEM core::app::ExtmemUniquePtr<
             pattern,
             entry.snapshot
         );
-        core::state::sequencer::captureSnapshot(
-            clip,
-            entry.clip
-        );
+        entry.clip = clip;
         if (!core::state::cloneSequencerGraph(
                 entry.graph,
                 core::state::sequencer::graphView(

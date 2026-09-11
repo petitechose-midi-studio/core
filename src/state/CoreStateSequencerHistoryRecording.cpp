@@ -1300,12 +1300,12 @@ CoreState::applySequencerPreparedQuickControlsEdit(
     // been captured and admitted. The draft takes the obsolete live payload so
     // both publication and any invariant unwind remain allocation-free.
     const sequencer::SequencerPatternSnapshot beforeFlat = change.before.flat;
-    const sequencer::SequencerClipSnapshot beforeClip = change.before.clip;
+    const sequencer::SequencerClipState beforeClip = change.before.clip;
     const uint32_t beforeCcLaneRevision = change.before.ccLaneRevision;
     sequencer.quickControlsDraft.suspendPreview();
     std::swap(sequencer.pattern().graph, draft->graph);
     std::swap(sequencer.pattern().ccLanes, draft->ccLanes);
-    sequencer::applySnapshot(sequencer.clip(), change.after.clip);
+    sequencer.clip() = change.after.clip;
     sequencer::applySnapshotToEditorPreservingGraph(sequencer, change.after.flat);
     sequencer.bumpClipRevision();
     sequencer::synchronizeHistoryPatternRevisionSignals(
@@ -1323,7 +1323,7 @@ CoreState::applySequencerPreparedQuickControlsEdit(
 
     std::swap(sequencer.pattern().graph, draft->graph);
     std::swap(sequencer.pattern().ccLanes, draft->ccLanes);
-    sequencer::applySnapshot(sequencer.clip(), beforeClip);
+    sequencer.clip() = beforeClip;
     sequencer::applySnapshotToEditorPreservingGraph(sequencer, beforeFlat);
     sequencer.bumpClipRevision();
     sequencer::synchronizeHistoryPatternRevisionSignals(

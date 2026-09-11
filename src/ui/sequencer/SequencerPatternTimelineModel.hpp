@@ -13,7 +13,6 @@ namespace core::state::sequencer {
 struct SequencerPatternState;
 struct SequencerPatternSnapshot;
 struct SequencerClipState;
-struct SequencerClipSnapshot;
 }
 
 namespace core::ui::sequencer {
@@ -155,7 +154,7 @@ struct SequencerPatternTimelineGeometry {
 
 [[nodiscard]] bool makeSequencerPatternTimelineRebuildKey(
     const core::state::sequencer::SequencerPatternSnapshot& snapshot,
-    const core::state::sequencer::SequencerClipSnapshot& clip,
+    const core::state::sequencer::SequencerClipState& clip,
     const core::state::sequencer::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineRebuildKey& out
@@ -177,7 +176,7 @@ struct SequencerPatternTimelineGeometry {
 /** Exact non-published preview path used by deterministic Randomize drafts. */
 [[nodiscard]] bool rebuildSequencerPatternTimelineGeometry(
     const core::state::sequencer::SequencerPatternSnapshot& snapshot,
-    const core::state::sequencer::SequencerClipSnapshot& clip,
+    const core::state::sequencer::SequencerClipState& clip,
     const core::state::sequencer::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineGeometry& out

@@ -667,7 +667,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerPage(
 
 FLASHMEM bool StructureClipboardState::storeSequencerTrack(
     const core::state::sequencer::SequencerPatternSnapshot& track,
-    const core::state::sequencer::SequencerClipSnapshot& clip,
+    const core::state::sequencer::SequencerClipState& clip,
     const oc::note::sequencer::StepSequencerGraph* graph,
     uint8_t sourceTrack,
     const core::state::sequencer::SequencerCcLaneBank* ccLanes,

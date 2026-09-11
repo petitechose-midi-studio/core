@@ -307,7 +307,7 @@ FLASHMEM bool captureStepContentDraftAfterSnapshot(
     if (!sequencer.stepContentDraft.active.get()) return false;
 
     captureSnapshot(sequencer.pattern(), out.flat);
-    captureSnapshot(sequencer.clip(), out.clip);
+    out.clip = sequencer.clip();
     out.flat.graphRevision = publishedRevisionFor(sequencer);
     out.focusedStep = sequencer.focusedStep.get();
     if (!reserveHistorySnapshotGraphStorage(out)) return false;
@@ -330,7 +330,7 @@ FLASHMEM bool captureStepContentDraftAfterSnapshot(
     if (draft == nullptr) return false;
     const auto* draftClip = sequencer.stepContentDraft.clip();
     if (draftClip == nullptr) return false;
-    captureSnapshot(*draftClip, out.clip);
+    out.clip = *draftClip;
     const auto* graph = graphView(*draft);
     if (graph != nullptr) {
         *out.graph = *graph;

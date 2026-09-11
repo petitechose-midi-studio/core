@@ -232,7 +232,7 @@ FLASHMEM bool SequencerPatternEditorPresenter::ensureGeometry() {
         .ccLaneMask = 0x0FU,
     };
     const bool preview = state_.randomize.active;
-    const seq::SequencerClipSnapshot clipSnapshot{
+    const seq::SequencerClipState clipSnapshot{
         .playStartTick = state_.sequencer.clip().playStartTick,
         .loopStartTick = state_.sequencer.clip().loopStartTick,
         .loopEndTick = state_.sequencer.clip().loopEndTick,

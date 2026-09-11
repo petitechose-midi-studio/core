@@ -6,7 +6,8 @@
 
 namespace core::state::sequencer {
 
-/** Playback placement owned by the single implicit Clip of one Track. */
+/** Musical tick boundaries shared by live Clips, documents and snapshots.
+ * Copies own their values; no observers or runtime pointers are retained. */
 struct SequencerClipState {
     static constexpr uint16_t DEFAULT_END_TICK = static_cast<uint16_t>(
         8U * oc::note::clock::PPQN / 4U

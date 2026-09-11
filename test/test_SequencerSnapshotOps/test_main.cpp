@@ -213,9 +213,9 @@ void test_track_content_installation_consumes_prepared_graphs() {
     createRootMicroSequence(source, 0, 2);
 
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::SequencerClipSnapshot clipSnapshot;
+    core::state::sequencer::SequencerClipState clipSnapshot;
     core::state::sequencer::captureSnapshot(source.pattern(), snapshot);
-    core::state::sequencer::captureSnapshot(source.clip(), clipSnapshot);
+    clipSnapshot = source.clip();
     const auto* sourceGraph = core::state::sequencer::graphView(source.pattern());
     assert(sourceGraph != nullptr);
 

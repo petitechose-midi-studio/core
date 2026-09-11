@@ -126,7 +126,7 @@ constexpr bool operator==(
 /** Plain, non-reactive Pattern document retained only for an inactive Clip. */
 struct SequencerClipDocument {
     SequencerPatternSnapshot pattern{};
-    SequencerClipSnapshot clip{};
+    SequencerClipState clip{};
     uint32_t ccLaneRevision = 0U;
     SequencerTrackKind trackKind = SequencerTrackKind::INSTRUMENT;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;

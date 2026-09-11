@@ -65,17 +65,7 @@ FLASHMEM StepPayload readStep(const SequencerPatternState& source, uint8_t step)
     };
 }
 
-FLASHMEM StepPayload readSanitizedStep(const SequencerPatternState& source, uint8_t step) {
-    return {
-        sanitizeMidi7(source.note[step]),
-        sanitizeMidi7(source.velocity[step]),
-        SequencerPatternState::clampGatePercent(source.gate[step]),
-        source.nudge[step],
-        SequencerPatternState::clampProbability(source.probability[step]),
-    };
-}
-
-FLASHMEM StepPayload readSanitizedStep(const SequencerPatternSnapshot& source, uint8_t step) {
+FLASHMEM StepPayload readSanitizedStep(const oc::note::sequencer::StepSequencerStepData& source, uint8_t step) {
     return {
         sanitizeMidi7(source.note[step]),
         sanitizeMidi7(source.velocity[step]),
@@ -192,15 +182,7 @@ FLASHMEM SequencerSnapshotBatchMutationResult batchResult(
     };
 }
 
-FLASHMEM void writeStep(SequencerPatternState& target, uint8_t step, const StepPayload& payload) {
-    target.note[step] = payload.note;
-    target.velocity[step] = payload.velocity;
-    target.gate[step] = payload.gate;
-    target.nudge[step] = payload.nudge;
-    target.probability[step] = payload.probability;
-}
-
-FLASHMEM void writeStep(SequencerPatternSnapshot& target, uint8_t step, const StepPayload& payload) {
+FLASHMEM void writeStep(oc::note::sequencer::StepSequencerStepData& target, uint8_t step, const StepPayload& payload) {
     target.note[step] = payload.note;
     target.velocity[step] = payload.velocity;
     target.gate[step] = payload.gate;
@@ -308,26 +290,8 @@ FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatt
     }
 }
 
-FLASHMEM void captureSnapshot(
-    const SequencerClipState& source,
-    SequencerClipSnapshot& out
-) {
-    out.playStartTick = source.playStartTick;
-    out.loopStartTick = source.loopStartTick;
-    out.loopEndTick = source.loopEndTick;
-}
-
 FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot) {
     applySnapshotImpl(target, snapshot);
-}
-
-FLASHMEM void applySnapshot(
-    SequencerClipState& target,
-    const SequencerClipSnapshot& snapshot
-) {
-    target.playStartTick = snapshot.playStartTick;
-    target.loopStartTick = snapshot.loopStartTick;
-    target.loopEndTick = snapshot.loopEndTick;
 }
 
 FLASHMEM void applySnapshotPreservingGraph(
@@ -385,10 +349,10 @@ FLASHMEM void installTrackContentSnapshotWithOwnedGraph(
     SequencerPatternState& target,
     SequencerClipState& targetClip,
     const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 ) {
-    applySnapshot(targetClip, clipSnapshot);
+    targetClip = clipSnapshot;
     applySnapshotImpl(target, snapshot);
     target.graph = std::move(graph);
     target.graphRevision.set(snapshot.graphRevision);
@@ -398,7 +362,7 @@ FLASHMEM void installTrackContentSnapshotWithOwnedPayload(
     SequencerPatternState& target,
     SequencerClipState& targetClip,
     const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes
 ) {
@@ -426,10 +390,10 @@ FLASHMEM void applySnapshotToEditorPreservingGraph(
 FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 ) {
-    applySnapshot(target.clip(), clipSnapshot);
+    target.clip() = clipSnapshot;
     applySnapshotToEditorImpl(target, snapshot);
     target.pattern().graph = std::move(graph);
     target.pattern().graphRevision.set(snapshot.graphRevision);
@@ -439,7 +403,7 @@ FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
 FLASHMEM void installTrackContentSnapshotToEditorWithOwnedPayload(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes
 ) {

@@ -558,7 +558,7 @@ void test_resident_and_document_publications_converge() {
         pattern.pitchEditMode = track % 3 ? seq::SequencerPitchEditMode::FOLLOW_SCALE
                                          : seq::SequencerPitchEditMode::CHROMATIC;
         seq::captureSnapshot(pattern, clips[track].pattern);
-        seq::captureSnapshot(clip, clips[track].clip);
+        clips[track].clip = clip;
         // Document effective values are stale derived data, not runtime authority.
         clips[track].pattern.effectiveSwingPercent = 255;
         clips[track].pattern.effectiveScaleSettings.root = 255;

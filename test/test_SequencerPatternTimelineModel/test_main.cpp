@@ -19,7 +19,7 @@ namespace {
 namespace seq = core::state::sequencer;
 namespace timeline = core::ui::sequencer;
 
-seq::SequencerClipSnapshot fullClip(
+seq::SequencerClipState fullClip(
     const seq::SequencerPatternSnapshot& pattern
 ) {
     return {

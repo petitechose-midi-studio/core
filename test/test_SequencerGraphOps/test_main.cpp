@@ -238,7 +238,7 @@ void test_pattern_copy_preserves_graph() {
 
 void test_runtime_signature_tracks_graph_revision() {
     core::state::sequencer::SequencerDetachedEditor state;
-    const seq::SequencerClipSnapshot clip{};
+    const seq::SequencerClipState clip{};
     SequencerPatternSnapshot before;
     core::state::sequencer::captureSnapshot(state.pattern(), before);
     auto beforeSignature = core::sequencer::captureRuntimeStateSignature(
@@ -265,7 +265,7 @@ void test_runtime_signature_tracks_graph_revision() {
 
 void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
     core::state::sequencer::SequencerDetachedEditor state;
-    const seq::SequencerClipSnapshot clip{};
+    const seq::SequencerClipState clip{};
     assert(core::state::sequencer::ensureGraphRoot(state.pattern()));
     const uint32_t graphRevision = state.pattern().graphRevision.get();
 
