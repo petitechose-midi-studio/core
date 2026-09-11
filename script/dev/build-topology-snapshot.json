@@ -79,9 +79,9 @@
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
     "core/.github/workflows/ci.yml": "46c2d03214339de60423de1856ec18d8b11feeafbb1d58fc0f73de38e0589f40",
     "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
-    "core/cmake/MsCoreProductSources.cmake": "5526d4fde1fbbd4fd623ac3258e074855a33993debed33753259d0be730a2439",
+    "core/cmake/MsCoreProductSources.cmake": "3541ca6ccce9dfb4d66675cc9e9be29ae84c776860d668338cfd7f6611a7af45",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
-    "core/cmake/MsCoreSources.cmake": "38e68246d11f7831ee6408cb35475c644a56b95b81357ce8e1ce8d17e14783e1",
+    "core/cmake/MsCoreSources.cmake": "c96fd895088255ac8e06900976bf26f8cebbd99f92a4277b0b144cae48c5c32f",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
     "core/oc-native-sdk.ini": "a1cfecf1fbadecade89ea711565f19870a65e4967d6c06c186d83c5deeba6ba3",
     "core/oc-sdk.ini": "3df4ee8884454582454f76a5591b1c1e56bdd727d35c8138f3bc51fae6ceed6e",
@@ -332,7 +332,7 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "coreNativeCmakeImplementations": {
-      "count": 330,
+      "count": 329,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/standalone/MacroOverlayInvalidationBindings.cpp",
@@ -626,7 +626,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
         "src/state/sequencer/SequencerQuickControlsDraft.cpp",
@@ -665,10 +664,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "2f8b82af9f5f8451cc54431ad4aa56e62043ea193d54cc4863ec8f1376f94f7c"
+      "sha256": "8b7c6421b0c04846538a6000f3cf728beccd210e677b3f4b82639b03f54d5e80"
     },
     "coreSdlWasmImplementations": {
-      "count": 423,
+      "count": 422,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -995,7 +994,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
         "src/state/sequencer/SequencerQuickControlsDraft.cpp",
@@ -1094,10 +1092,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "553f2df6f85e3964872f30d95d032eb61ece52ce2da39acb12c3ffe20ef3e0c2"
+      "sha256": "74739f9b7235f76e2a190554ce35efd2582079dba2faf40f5f327f329bb52174"
     },
     "coreTeensyImplementations": {
-      "count": 407,
+      "count": 406,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -1419,7 +1417,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
         "src/state/sequencer/SequencerQuickControlsDraft.cpp",
@@ -1507,7 +1504,7 @@
         "src/ui/view/SequencerView.cpp",
         "src/ui/widget/MacroKnobWidget.cpp"
       ],
-      "sha256": "3c179c2d56a2ab27c935ace1d801e111494d315629535d3479c2bd1382c1965a"
+      "sha256": "6ac26efd6b8f64acfe5a7a752ebb820e48c74b0e6b0fe6c80f1de517c073cd46"
     },
     "coreTotalHeaders": {
       "count": 491,
@@ -2007,7 +2004,7 @@
       "sha256": "d2c21d85ce51862a1dcd5dbf3e3546487ce2a12bf8885c424610d63d4c6f5695"
     },
     "coreTotalImplementations": {
-      "count": 423,
+      "count": 422,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -2334,7 +2331,6 @@
         "src/state/sequencer/SequencerPatternPreset.cpp",
         "src/state/sequencer/SequencerPatternRandomizeOps.cpp",
         "src/state/sequencer/SequencerPatternRandomizeSession.cpp",
-        "src/state/sequencer/SequencerPitchEditAuthority.cpp",
         "src/state/sequencer/SequencerPresetMetadata.cpp",
         "src/state/sequencer/SequencerProjectScaleOps.cpp",
         "src/state/sequencer/SequencerQuickControlsDraft.cpp",
@@ -2433,7 +2429,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "553f2df6f85e3964872f30d95d032eb61ece52ce2da39acb12c3ffe20ef3e0c2"
+      "sha256": "74739f9b7235f76e2a190554ce35efd2582079dba2faf40f5f327f329bb52174"
     },
     "deviceSupportHeaders": {
       "count": 10,
