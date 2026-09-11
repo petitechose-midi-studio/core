@@ -716,12 +716,6 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
             clipboard,
             true
         )) {
-        if (change) {
-            (void)core::state::macro::applyMacroSlotHistorySnapshot(
-                *pages_,
-                change->slot->before
-            );
-        }
         return false;
     }
     if (history_ != nullptr && !history_->commitPrepared(

@@ -1852,6 +1852,64 @@ void test_destination_paste_allocation_failures_leave_no_partial_transaction() {
     std::cout << "[PASS] destination paste allocation failures are atomic\n";
 }
 
+void test_slot_paste_allocation_failures_preserve_authored_identity() {
+    bool reachedSuccess = false;
+    size_t failures = 0U;
+    for (size_t ordinal = 1U; ordinal <= 8U && !reachedSuccess; ++ordinal) {
+        CoreStorages storage;
+        core::state::CoreState state(storage.settings);
+        const auto structure = core::handler::MacroStructureDomainServices::fromCoreState(state);
+        state.pages.setMacroSlotActive(0U, true);
+        state.pages.setMacroSlotActive(1U, true);
+        configureAutomation(state.pages.control, {0U, 0U, 0U});
+        configureModulation(state.pages.control, {0U, 0U, 0U}, 0.4f);
+        configureAutomation(state.pages.control, {0U, 0U, 1U});
+        configureModulation(state.pages.control, {0U, 0U, 1U}, 0.8f);
+        assert(structure.copyMacroAutomation(0U, state.structureClipboard));
+        auto& control = state.pages.control;
+        std::array<uint8_t, sizeof(control.authored())> before{};
+        std::memcpy(before.data(), &control.authored(), before.size());
+        const auto page = state.pages.activePageData();
+        const auto authoredRevision = control.authoredRevision;
+        const auto configRevision = state.configRevision.get();
+        const auto modified = state.project.metadata.modifiedCounter;
+        const auto retained = state.macroHistory.retainedBytes();
+        core::state::macro::MacroSlotHistorySnapshot beforeSlot{};
+        assert(core::state::macro::captureMacroSlotHistorySnapshot(
+            state.pages, {0U, 0U, 1U}, beforeSlot));
+        {
+            core::app::testing::ScopedExtmemAllocationFailure fail(ordinal);
+            reachedSuccess = structure.pasteMacroAutomation(1U, state.structureClipboard);
+        }
+        if (!reachedSuccess) {
+            ++failures;
+            assert(std::memcmp(before.data(), &control.authored(), before.size()) == 0);
+            assert(control.authoredRevision == authoredRevision);
+            assert(std::memcmp(&page, &state.pages.activePageData(), sizeof(page)) == 0);
+            assert(state.configRevision.get() == configRevision);
+            assert(state.project.metadata.modifiedCounter == modified);
+            assert(state.macroHistory.undoCount() == 0U);
+            assert(state.projectHistory.undoCount() == 0U);
+            assert(state.macroHistory.retainedBytes() == retained);
+        } else {
+            assert(state.macroHistory.undoCount() == 1U);
+            assert(state.projectHistory.undoCount() == 1U);
+            core::state::macro::MacroSlotHistorySnapshot afterSlot{};
+            assert(core::state::macro::captureMacroSlotHistorySnapshot(
+                state.pages, {0U, 0U, 1U}, afterSlot));
+            assert(state.undoProjectHistory());
+            assert(core::state::macro::liveMacroSlotMatchesHistorySnapshot(
+                state.pages, beforeSlot));
+            assert(state.redoProjectHistory());
+            assert(core::state::macro::liveMacroSlotMatchesHistorySnapshot(
+                state.pages, afterSlot));
+        }
+    }
+    assert(reachedSuccess);
+    assert(failures == 3U);
+    std::cout << "[PASS] failed Slot paste preserves domain bytes, identities and revisions\n";
+}
+
 void test_config_history_is_compact_and_preserves_unrelated_content() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings);
@@ -2035,6 +2093,7 @@ int main() {
     test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries();
     test_destination_paste_preserves_canonical_track_channel();
     test_destination_paste_allocation_failures_leave_no_partial_transaction();
+    test_slot_paste_allocation_failures_preserve_authored_identity();
     test_config_history_is_compact_and_preserves_unrelated_content();
     test_manual_takeover_is_one_global_value_and_authority_transaction();
     std::cout << "\nAll MacroPerformanceDomainServices tests passed.\n";
