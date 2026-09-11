@@ -557,11 +557,9 @@ void test_resident_and_document_publications_converge() {
             StepSequencerScaleConstraintMode::ConstrainDown};
         pattern.pitchEditMode = track % 3 ? seq::SequencerPitchEditMode::FOLLOW_SCALE
                                          : seq::SequencerPitchEditMode::CHROMATIC;
-        seq::captureSnapshot(pattern, clips[track].pattern);
+        static_cast<seq::SequencerPatternData&>(clips[track].pattern) = pattern;
         clips[track].clip = clip;
-        // Document effective values are stale derived data, not runtime authority.
-        clips[track].pattern.effectiveSwingPercent = 255;
-        clips[track].pattern.effectiveScaleSettings.root = 255;
+        // Effective settings are resolved from the current project on refresh.
         sources[track] = {{track, 1}, 1, &clips[track], true};
     }
     for (uint8_t round = 0; round < 12; ++round) {

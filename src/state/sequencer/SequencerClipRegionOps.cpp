@@ -99,7 +99,8 @@ FLASHMEM bool validClipRegion(
         pattern.stepsPerBeat
     );
     const uint16_t contentEnd = patternContentEndTick(pattern);
-    return ticksPerStep != 0U && contentEnd != 0U &&
+    return pattern.length > 0U && pattern.length <= SequencerPatternState::MAX_STEPS &&
+           ticksPerStep != 0U && contentEnd != 0U &&
            clip.playStartTick % ticksPerStep == 0U &&
            clip.loopStartTick % ticksPerStep == 0U &&
            clip.loopEndTick % ticksPerStep == 0U &&

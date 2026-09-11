@@ -233,22 +233,12 @@ using oc::note::sequencer::StepSequencerStepNode;
 #endif
 }
 
-struct ScaleTarget {
-    SequencerPatternState* live = nullptr;
-    SequencerClipDocument* document = nullptr;
-    Graph* graph() const { return live ? live->graph.get() : document->graph.get(); }
-    bool inherits() const {
-        return !isPatternScaleOverride(live ? live->scalePolicy : document->pattern.scalePolicy);
-    }
-};
-
-FLASHMEM ScaleTarget scaleTarget(SequencerTrackBankState& bank, SequencerState& active,
-                                SequencerClipGridState& clips, SequencerClipAddress address) {
-    if (address.track >= SequencerTrackBankState::TRACK_COUNT) return {};
-    if (clips.residentSlot(address.track) == address.slot) {
-        return {&bank.track(address.track), nullptr};
-    }
-    return {nullptr, clips.inactiveDocument(address)};
+FLASHMEM SequencerClipDocument* scaleTarget(
+    SequencerTrackBankState& bank, SequencerClipGridState& clips, SequencerClipAddress address
+) {
+    if (address.track >= SequencerTrackBankState::TRACK_COUNT) return nullptr;
+    return clips.residentSlot(address.track) == address.slot
+        ? &bank.document(address.track) : clips.inactiveDocument(address);
 }
 
 FLASHMEM bool sameScaleSettings(oc::note::sequencer::StepSequencerScaleSettings lhs,
@@ -1087,9 +1077,9 @@ FLASHMEM bool applyPatternSnapshotToInactiveClip(
     if (document == nullptr) return false;
 
     if (storage == SequencerHistoryPatternStorage::FlatOnly) {
-        document->pattern = snapshot.flat;
+        static_cast<SequencerPatternData&>(document->pattern) = snapshot.flat;
         document->clip = snapshot.clip;
-        document->ccLaneRevision = snapshot.ccLaneRevision;
+        document->pattern.ccLaneRevision = snapshot.ccLaneRevision;
         return clips.markInactiveDocumentMutated(address);
     }
 
@@ -1100,12 +1090,12 @@ FLASHMEM bool applyPatternSnapshotToInactiveClip(
          !cloneSequencerCcLaneBank(ccLanes, snapshot.ccLanes.get()))) {
         return false;
     }
-    document->pattern = snapshot.flat;
+    static_cast<SequencerPatternData&>(document->pattern) = snapshot.flat;
     document->clip = snapshot.clip;
-    document->ccLaneRevision = snapshot.ccLaneRevision;
-    document->graph = std::move(graph);
+    document->pattern.ccLaneRevision = snapshot.ccLaneRevision;
+    document->pattern.graph = std::move(graph);
     if (snapshot.ccLanesCaptured) {
-        document->ccLanes = std::move(ccLanes);
+        document->pattern.ccLanes = std::move(ccLanes);
     }
     return clips.markInactiveDocumentMutated(address);
 }
@@ -1128,7 +1118,7 @@ FLASHMEM bool applyDrumSnapshotToInactiveClip(
 
     *document->drum = after ? change.after : change.before;
     if (change.capturesGraph) {
-        document->graph = std::move(graph);
+        document->pattern.graph = std::move(graph);
         document->pattern.graphRevision = after
             ? change.afterGraphRevision
             : change.beforeGraphRevision;
@@ -1340,9 +1330,9 @@ FLASHMEM bool applyHistoryProjectScaleChange(
     // Later chronological operations may have replaced owners or moved residence.
     for (uint16_t i = 0U; i < change.patternCount; ++i) {
         const auto& item = change.patterns[i];
-        const auto target = scaleTarget(bank, active, *clips, item.address);
-        if ((!target.live && !target.document) || !target.inherits()) return false;
-        const auto* graph = target.graph();
+        const auto target = scaleTarget(bank, *clips, item.address);
+        if (!target || isPatternScaleOverride(target->pattern.scalePolicy)) return false;
+        const auto* graph = target->pattern.graph.get();
         for (uint16_t n = 0U; n < item.chordCount; ++n) {
             const auto& chord = change.chords[item.firstChord + n];
             if (!graph || chord.node >= graph->stepNodeCount || chord.node >= graph->stepNodes.size()) {
@@ -1360,22 +1350,16 @@ FLASHMEM bool applyHistoryProjectScaleChange(
     bank.projectScaleRevisionSignal().set(change.projectScaleRevision + (after ? 1U : 0U));
     for (uint16_t i = 0U; i < change.patternCount; ++i) {
         const auto& item = change.patterns[i];
-        const auto target = scaleTarget(bank, active, *clips, item.address);
+        const auto target = scaleTarget(bank, *clips, item.address);
         for (uint16_t n = 0U; n < item.chordCount; ++n) {
             const auto& chord = change.chords[item.firstChord + n];
-            target.graph()->stepNodes[chord.node].chordSpec = after ? chord.after : chord.before;
+            target->pattern.graph.get()->stepNodes[chord.node].chordSpec = after ? chord.after : chord.before;
         }
         const uint32_t graphRevision = item.graphRevision + (after && item.chordCount ? 1U : 0U);
         const uint32_t scaleRevision = item.scaleRevision + (after ? 1U : 0U);
-        if (target.live) {
-            target.live->setGraphRevision(graphRevision);
-            target.live->setPatternScaleRevision(scaleRevision);
-        } else {
-            target.document->pattern.graphRevision = graphRevision;
-            target.document->pattern.patternScaleRevision = scaleRevision;
-            target.document->pattern.effectiveScaleSettings = settings;
-            (void)clips->markInactiveDocumentMutated(item.address);
-        }
+        target->pattern.setGraphRevision(graphRevision);
+        target->pattern.setPatternScaleRevision(scaleRevision);
+        (void)clips->markInactiveDocumentMutated(item.address);
     }
     if (!isPatternScaleOverride(active.pattern().scalePolicy)) active.invalidateVariationTelemetry();
     return true;

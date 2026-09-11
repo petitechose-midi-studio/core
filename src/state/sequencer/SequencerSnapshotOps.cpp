@@ -200,7 +200,7 @@ namespace {
 
 FLASHMEM void applySnapshotImpl(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 ) {
     const uint8_t length = sanitizeSequencerLength(snapshot.length);
     target.setContentLength(length);
@@ -226,7 +226,7 @@ FLASHMEM void applySnapshotImpl(
 
 FLASHMEM void applySnapshotPreservingGraphImpl(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 ) {
     auto graph = std::move(target.graph);
     applySnapshotImpl(target, snapshot);
@@ -235,7 +235,7 @@ FLASHMEM void applySnapshotPreservingGraphImpl(
 
 FLASHMEM void applySnapshotToEditorImpl(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 ) {
     const uint8_t length = sanitizeSequencerLength(snapshot.length);
     const uint8_t focusedBefore = target.focusedStep.get();
@@ -250,7 +250,7 @@ FLASHMEM void applySnapshotToEditorImpl(
 
 FLASHMEM void applySnapshotToEditorPreservingGraphImpl(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 ) {
     auto graph = std::move(target.pattern().graph);
     applySnapshotToEditorImpl(target, snapshot);
@@ -259,7 +259,7 @@ FLASHMEM void applySnapshotToEditorPreservingGraphImpl(
 
 }  // namespace
 
-FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out) {
+FLASHMEM void capturePatternData(const SequencerPatternData& source, SequencerPatternData& out) {
     out.length = sanitizeSequencerLength(source.length);
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat);
     out.enabledMask = source.enabledMask;
@@ -272,17 +272,11 @@ FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatt
         SequencerPatternState::clampPatternSwingOffsetPercent(source.swingOffsetPercent);
     out.patternNudgePercent =
         SequencerPatternState::clampPatternNudgePercent(source.patternNudgePercent);
-    out.effectiveSwingPercent = source.effectiveSwingPercent(0);
     out.variationRanges = source.variationRanges;
     out.variationRanges.clamp();
     out.scalePolicy = source.scalePolicy;
     out.scaleOverride = sanitizeScaleSettings(source.scaleOverride);
     out.pitchEditMode = source.pitchEditMode;
-    out.effectiveScaleSettings = resolveEffectiveScaleSettings(
-        {},
-        out.scalePolicy,
-        out.scaleOverride
-    );
 
     for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
         const auto step = static_cast<uint8_t>(i);
@@ -290,13 +284,19 @@ FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatt
     }
 }
 
-FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot) {
+FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out) {
+    capturePatternData(source, out);
+    out.effectiveSwingPercent = source.effectiveSwingPercent(0);
+    out.effectiveScaleSettings = resolveEffectiveScaleSettings({}, out.scalePolicy, out.scaleOverride);
+}
+
+FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatternData& snapshot) {
     applySnapshotImpl(target, snapshot);
 }
 
 FLASHMEM void applySnapshotPreservingGraph(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 ) {
     applySnapshotPreservingGraphImpl(target, snapshot);
 }
@@ -335,7 +335,7 @@ FLASHMEM bool copyPatternState(
 
 FLASHMEM bool applySnapshotWithGraph(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot,
+    const SequencerPatternData& snapshot,
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     // Prepare or update graph ownership before touching scalar state. If PSRAM
@@ -348,7 +348,7 @@ FLASHMEM bool applySnapshotWithGraph(
 FLASHMEM void installTrackContentSnapshotWithOwnedGraph(
     SequencerPatternState& target,
     SequencerClipState& targetClip,
-    const SequencerPatternSnapshot& snapshot,
+    const SequencerPatternData& snapshot,
     const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 ) {
@@ -361,7 +361,7 @@ FLASHMEM void installTrackContentSnapshotWithOwnedGraph(
 FLASHMEM void installTrackContentSnapshotWithOwnedPayload(
     SequencerPatternState& target,
     SequencerClipState& targetClip,
-    const SequencerPatternSnapshot& snapshot,
+    const SequencerPatternData& snapshot,
     const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes
@@ -376,20 +376,20 @@ FLASHMEM void installTrackContentSnapshotWithOwnedPayload(
     installSequencerCcLaneBank(target, std::move(ccLanes));
 }
 
-FLASHMEM void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
+FLASHMEM void applySnapshotToEditor(SequencerState& target, const SequencerPatternData& snapshot) {
     applySnapshotToEditorImpl(target, snapshot);
 }
 
 FLASHMEM void applySnapshotToEditorPreservingGraph(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 ) {
     applySnapshotToEditorPreservingGraphImpl(target, snapshot);
 }
 
 FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
+    const SequencerPatternData& snapshot,
     const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 ) {
@@ -402,7 +402,7 @@ FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
 
 FLASHMEM void installTrackContentSnapshotToEditorWithOwnedPayload(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
+    const SequencerPatternData& snapshot,
     const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes

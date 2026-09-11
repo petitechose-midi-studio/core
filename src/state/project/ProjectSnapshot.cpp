@@ -350,11 +350,11 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
                     };
                 }
                 workBytes = sizeof(*document);
-                if (document->graph != nullptr) {
-                    workBytes += sizeof(*document->graph);
+                if (document->pattern.graph != nullptr) {
+                    workBytes += sizeof(*document->pattern.graph);
                 }
-                if (document->ccLanes != nullptr) {
-                    workBytes += sizeof(*document->ccLanes);
+                if (document->pattern.ccLanes != nullptr) {
+                    workBytes += sizeof(*document->pattern.ccLanes);
                 }
                 if (document->drum != nullptr) {
                     workBytes += sizeof(*document->drum);

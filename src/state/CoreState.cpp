@@ -94,7 +94,7 @@ FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEd
 FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState>
 createSequencerTrackBankState() {
     auto state = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
-    if (!state) failCoreStateAllocation("sequencer track bank");
+    if (!state || !state->ready()) failCoreStateAllocation("sequencer track bank");
     return state;
 }
 

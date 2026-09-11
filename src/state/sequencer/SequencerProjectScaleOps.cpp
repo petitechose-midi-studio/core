@@ -120,7 +120,7 @@ FLASHMEM SequencerHistoryProjectScaleChangePtr prepareHistoryProjectScaleChange(
                 const SequencerClipAddress address{track, slot};
                 const auto* doc = clips.inactiveDocument(address);
                 if (doc == nullptr) continue;
-                visit(address, doc->pattern.note, doc->pattern.length, doc->graph.get(),
+                visit(address, doc->pattern.note, doc->pattern.length, doc->pattern.graph.get(),
                       doc->pattern.pitchEditMode, doc->pattern.scalePolicy,
                       doc->pattern.graphRevision, doc->pattern.patternScaleRevision);
             }

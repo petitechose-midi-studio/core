@@ -7,17 +7,12 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/sequencer/DrumPatternState.hpp"
-#include "state/sequencer/SequencerClipState.hpp"
+#include "state/sequencer/SequencerClipDocument.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 
 namespace core::state::sequencer {
 
 using oc::state::Signal;
-
-enum class SequencerTrackKind : uint8_t {
-    INSTRUMENT = 0,
-    DRUM,
-};
 
 struct DrumTrackBankSnapshot {
     uint16_t drumTrackMask = 0U;
@@ -31,13 +26,22 @@ bool prepareDrumTrackBank(const DrumTrackBankSnapshot& snapshot, DrumTrackOwners
 /**
  * Owns persistent sequencer state for all shared tracks.
  *
- * Every resident Pattern/Clip stays in its Track. The editor borrows the
- * selected pair; navigation never copies values or rotates payload owners.
+ * Each Track owns its selected Clip document. Changing Clips exchanges that
+ * owner with the launcher; the editor borrows data at its stable address.
  */
 struct SequencerTrackBankState {
     static constexpr uint8_t TRACK_COUNT = 16;
 
     SequencerTrackBankState();
+    bool ready() const noexcept { return documents_.back() != nullptr; }
+    SequencerClipDocument& document(uint8_t index) {
+        return *documents_[clampTrackIndex(index)];
+    }
+    const SequencerClipDocument& document(uint8_t index) const {
+        return *documents_[clampTrackIndex(index)];
+    }
+    void exchangeDocument(uint8_t index, SequencerClipDocumentPtr& owner) noexcept;
+
 
     static constexpr uint8_t clampTrackIndex(uint8_t track) {
         return (track >= TRACK_COUNT) ? static_cast<uint8_t>(TRACK_COUNT - 1) : track;
@@ -47,19 +51,19 @@ struct SequencerTrackBankState {
     static uint8_t sanitizeActiveTrack(uint16_t enabledMask, uint8_t activeTrack);
 
     SequencerPatternState& track(uint8_t index) {
-        return tracks_[clampTrackIndex(index)];
+        return documents_[clampTrackIndex(index)]->pattern;
     }
 
     const SequencerPatternState& track(uint8_t index) const {
-        return tracks_[clampTrackIndex(index)];
+        return documents_[clampTrackIndex(index)]->pattern;
     }
 
     SequencerClipState& clip(uint8_t index) {
-        return clips_[clampTrackIndex(index)];
+        return documents_[clampTrackIndex(index)]->clip;
     }
 
     const SequencerClipState& clip(uint8_t index) const {
-        return clips_[clampTrackIndex(index)];
+        return documents_[clampTrackIndex(index)]->clip;
     }
 
     [[nodiscard]] SequencerTrackKind trackKind(uint8_t index) const {
@@ -86,10 +90,10 @@ struct SequencerTrackBankState {
     }
 
     DrumTrackState* drumTrackIfPresent(uint8_t index) {
-        return drum_tracks_[clampTrackIndex(index)].get();
+        return documents_[clampTrackIndex(index)]->drum.get();
     }
     const DrumTrackState* drumTrackIfPresent(uint8_t index) const {
-        return drum_tracks_[clampTrackIndex(index)].get();
+        return documents_[clampTrackIndex(index)]->drum.get();
     }
 
     bool matchesDrumTrack(uint8_t index, const DrumTrackState* source) const noexcept;
@@ -153,9 +157,7 @@ private:
     oc::note::sequencer::StepSequencerScaleSettings project_scale_settings_{};
     uint16_t drum_track_mask_ = 0U;
     std::array<uint32_t, TRACK_COUNT> drum_track_revisions_{};
-    std::array<SequencerPatternState, TRACK_COUNT> tracks_{};
-    std::array<SequencerClipState, TRACK_COUNT> clips_{};
-    DrumTrackOwners drum_tracks_{};
+    std::array<SequencerClipDocumentPtr, TRACK_COUNT> documents_{};
 };
 
 }  // namespace core::state::sequencer

@@ -29,7 +29,11 @@ FLASHMEM SequencerTrackBankState::SequencerTrackBankState()
     , enabled_mask_{0x0001}
     , project_scale_revision_{0}
     , project_scale_settings_{defaultProjectScaleSettings()}
-    , tracks_{} {
+    , documents_{} {
+    for (auto& document : documents_) {
+        document = core::app::makeExtmemUniqueCold<SequencerClipDocument>();
+        if (!document) return;
+    }
     drum_track_revisions_.fill(1U);
 }
 
@@ -76,7 +80,7 @@ FLASHMEM bool SequencerTrackBankState::setProjectScaleSettings(
     project_scale_settings_ = settings;
     project_scale_revision_.set(project_scale_revision_.get() + 1U);
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        auto& track = tracks_[i];
+        auto& track = this->track(i);
         if (!isPatternScaleOverride(track.scalePolicy)) {
             track.bumpPatternScaleRevision();
         }
@@ -96,6 +100,15 @@ FLASHMEM bool SequencerTrackBankState::matchesDrumTrack(
 ) const noexcept {
     const auto* live = drumTrackIfPresent(index);
     return live && source ? std::memcmp(live, source, sizeof(*live)) == 0 : live == source;
+}
+
+FLASHMEM void SequencerTrackBankState::exchangeDocument(
+    uint8_t index, SequencerClipDocumentPtr& owner
+) noexcept {
+    const auto track = clampTrackIndex(index);
+    assert(owner && owner->trackKind == trackKind(track));
+    documents_[track].swap(owner);
+    if (isDrumTrack(track)) publishDrumMutation(track);
 }
 
 FLASHMEM bool SequencerTrackBankState::setTrackKind(
@@ -120,8 +133,10 @@ FLASHMEM void SequencerTrackBankState::exchangeDrumTrack(
 ) noexcept {
     const uint8_t trackIndex = clampTrackIndex(index);
     const uint16_t bit = static_cast<uint16_t>(1U << trackIndex);
-    drum_tracks_[trackIndex].swap(owner);
-    drum_track_mask_ = drum_tracks_[trackIndex]
+    documents_[trackIndex]->drum.swap(owner);
+    documents_[trackIndex]->trackKind = documents_[trackIndex]->drum
+        ? SequencerTrackKind::DRUM : SequencerTrackKind::INSTRUMENT;
+    drum_track_mask_ = documents_[trackIndex]->drum
         ? static_cast<uint16_t>(drum_track_mask_ | bit)
         : static_cast<uint16_t>(drum_track_mask_ & ~bit);
     publishDrumMutation(trackIndex);
@@ -132,7 +147,7 @@ FLASHMEM void SequencerTrackBankState::captureDrumTrackBank(
 ) const {
     out.drumTrackMask = drum_track_mask_;
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        if (drum_tracks_[i]) out.tracks[i] = *drum_tracks_[i];
+        if (const auto* drum = drumTrackIfPresent(i)) out.tracks[i] = *drum;
         else out.tracks[i].reset();
     }
 }
@@ -153,10 +168,12 @@ FLASHMEM bool prepareDrumTrackBank(
 FLASHMEM void SequencerTrackBankState::installDrumTracks(
     DrumTrackOwners owners
 ) noexcept {
-    drum_tracks_ = std::move(owners);
     drum_track_mask_ = 0U;
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        if (drum_tracks_[i]) drum_track_mask_ |= static_cast<uint16_t>(1U << i);
+        documents_[i]->drum = std::move(owners[i]);
+        documents_[i]->trackKind = documents_[i]->drum
+            ? SequencerTrackKind::DRUM : SequencerTrackKind::INSTRUMENT;
+        if (documents_[i]->drum) drum_track_mask_ |= static_cast<uint16_t>(1U << i);
         drum_track_revisions_[i] = nextRevision(drum_track_revisions_[i]);
     }
     drum_revision_.set(nextRevision(drum_revision_.get()));
@@ -172,9 +189,9 @@ FLASHMEM void SequencerTrackBankState::reset() {
     project_scale_revision_.set(0);
 
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        auto& seq = tracks_[i];
+        auto& seq = track(i);
         seq.reset();
-        clips_[i].reset();
+        clip(i).reset();
     }
     clearDrumTrackBank();
 }

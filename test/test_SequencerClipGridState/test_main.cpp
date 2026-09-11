@@ -429,6 +429,19 @@ void test_sparse_drum_owners_and_failure_atomicity() {
     std::cout << "[PASS] sparse Drum owners, prepare failures and kind rollback are atomic\n";
 }
 
+void test_document_bank_initialization_reports_allocation_failure() {
+    for (size_t ordinal = 1U; ordinal <= seq::SequencerTrackBankState::TRACK_COUNT; ++ordinal) {
+        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+        seq::SequencerTrackBankState bank;
+        assert(!bank.ready());
+        assert(core::app::testing::extmemAllocationAttempt == ordinal);
+    }
+    core::app::testing::ScopedExtmemAllocationFailure failure(17U);
+    seq::SequencerTrackBankState bank;
+    assert(bank.ready());
+    assert(core::app::testing::extmemAllocationAttempt == 16U);
+}
+
 void test_document_installation_publishes_final_owners_and_editor_state() {
     // Exercise both consumers of document installation, on both canonical
     // locations and with each cold-payload policy. Two installs precede one
@@ -449,6 +462,7 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                 seed(pattern, clip, 60U);
                 assert(seq::ensureGraphRoot(pattern));
                 const auto* originalGraph = pattern.graph.get();
+                const auto* originalDocument = &bank.document(track);
                 const auto* originalDrum = bank.drumTrackIfPresent(track);
                 active.drumSequencer.bindTrack(track, bank);
                 if (promote) assert(grid.clearResident({track, 0U}));
@@ -472,9 +486,11 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                     assert(grid.installInactiveDocument({track, slot}, std::move(document)));
                 }
                 const auto* firstDrum = grid.inactiveDocument({track, 1U})->drum.get();
+                const auto* finalDocument = grid.inactiveDocument({track, 2U});
+                const auto finalStepRevision = finalDocument->pattern.stepDataRevision;
                 const auto* finalDrum = grid.inactiveDocument({track, 2U})->drum.get();
-                const auto* finalGraph = grid.inactiveDocument({track, 2U})->graph.get();
-                const auto* finalCc = grid.inactiveDocument({track, 2U})->ccLanes.get();
+                const auto* finalGraph = grid.inactiveDocument({track, 2U})->pattern.graph.get();
+                const auto* finalCc = grid.inactiveDocument({track, 2U})->pattern.ccLanes.get();
                 active.focusedStep.set(63U);
                 active.page.set(7U);
                 active.stepEdit.visible.set(true);
@@ -521,6 +537,9 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                     assert(core::app::testing::extmemAllocationAttempt == 0U);
                 }
                 assert(observer.calls == 0U);
+                assert(&bank.document(track) == finalDocument);
+                assert(&bank.track(track) == &finalDocument->pattern);
+                assert(bank.track(track).stepDataRevision == finalStepRevision);
                 test_support::drainNotifications();
                 assert(observer.calls == 1U);
                 assert(active.focusedStep.get() == (track == 0U ? 7U : 63U));
@@ -536,8 +555,9 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                 if (drum) assert(previous->drum->kit.lanes[0].midiNote == 43U);
                 if (!promote) {
                     const auto* original = grid.inactiveDocument({track, 0U});
+                    assert(original == originalDocument);
                     assert(original && original->pattern.note[0] == 61U);
-                    assert(original->graph.get() == originalGraph);
+                    assert(original->pattern.graph.get() == originalGraph);
                     assert(original->drum.get() == originalDrum);
                 }
             }
@@ -872,6 +892,7 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
 }  // namespace
 
 int main() {
+    test_document_bank_initialization_reports_allocation_failure();
     test_sparse_drum_owners_and_failure_atomicity();
     test_document_installation_publishes_final_owners_and_editor_state();
     test_sparse_grid_capacity_and_snapshot_are_exact();
