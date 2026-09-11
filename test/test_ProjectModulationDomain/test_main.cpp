@@ -1349,6 +1349,64 @@ void testSourceRenameIsBoundedAndPreservesStableGraphReferences() {
     ) == 0);
 }
 
+void testCurveOwnershipValidationAtCapacity() {
+    const std::vector<mod::ProjectPackedCurvePoint> points{{0U, 0}, {1U, 32767}};
+    for (const bool automationOwned : {false, true}) {
+        Fixture fixture;
+        mod::ProjectAutomationCurveDirectory automation{};
+        if (automationOwned) {
+            assert(mod::setProjectAutomationCurve(
+                automation, *fixture.arena, destination(0, 0, 0),
+                curveSpec(2U, mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR),
+                points.data(), points.size(), true).changed());
+        } else {
+            addRecorded(fixture, points, "Shared",
+                        mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR);
+        }
+        auto& curve = fixture.arena->records[0];
+        const uint16_t capacity = automationOwned
+            ? mod::PROJECT_AUTOMATION_ENTRY_CAPACITY : mod::PROJECT_MODULATOR_CAPACITY;
+        for (uint16_t count = 1U; count <= capacity; ++count) {
+            if (count > 1U) {
+                if (automationOwned) {
+                    auto& entry = automation.entries[count - 1U];
+                    entry = automation.entries[0];
+                    entry.destination = destination(0, (count - 1U) / 8U, (count - 1U) % 8U);
+                    automation.entryCount = count;
+                } else {
+                    auto& source = fixture.state->sources[count - 1U];
+                    source = fixture.state->sources[0];
+                    source.id.value = count;
+                    fixture.state->sourceCount = count;
+                    fixture.state->nextSourceId = count + 1U;
+                }
+                curve.referenceCount = count;
+            }
+            assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena, &automation));
+            ++curve.referenceCount;
+            assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena, &automation));
+            curve.referenceCount = 0U;
+            assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena, &automation));
+            curve.referenceCount = count;
+        }
+        // IDs are persistent identities, not bounded array indices.
+        curve.id.value = UINT32_MAX;
+        fixture.arena->nextCurveId = 0U;
+        for (uint16_t index = 0U; index < automation.entryCount; ++index)
+            automation.entries[index].curveId = curve.id;
+        for (uint16_t index = 0U; index < fixture.state->sourceCount; ++index)
+            fixture.state->sources[index].parameters.recordedCurveId = curve.id;
+        assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena, &automation));
+        assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena) == !automationOwned);
+        if (automationOwned) {
+            automation.entries[0].curveId = {12345U};
+        } else {
+            fixture.state->sources[0].parameters.recordedCurveId = {12345U};
+        }
+        assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena, &automation));
+    }
+}
+
 void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
     Fixture fixture;
     const auto first = addLfo(fixture);
@@ -1453,6 +1511,7 @@ int main() {
     testUnknownApplicationIsRejectedAtomically();
     testSourceRenameIsBoundedAndPreservesStableGraphReferences();
     testValidatorRejectsDanglingDuplicateAndBadReferenceCount();
+    testCurveOwnershipValidationAtCapacity();
     std::cout << "All Project modulation domain tests passed.\n";
     return 0;
 }

@@ -1,5 +1,7 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
+#include <algorithm>
+#include <array>
 #include <bitset>
 #include <limits>
 
@@ -29,6 +31,14 @@ FLASHMEM bool validProjectModulationDomain(
         return false;
     }
 
+    // Count references while resolving each owner, keeping the two persisted
+    // curve directories disjoint. A curve may be shared within either directory.
+    struct CurveReferences { uint8_t count; bool automation; };
+    static_assert(PROJECT_MODULATOR_CAPACITY <= std::numeric_limits<uint8_t>::max() &&
+                  PROJECT_AUTOMATION_ENTRY_CAPACITY <= std::numeric_limits<uint8_t>::max());
+    std::array<CurveReferences, PROJECT_CURVE_LIVE_CAPACITY> references;
+    std::fill_n(references.begin(), arena.recordCount, CurveReferences{});
+
     std::bitset<PROJECT_MODULATION_TRACK_COUNT * PROJECT_MODULATION_PAGE_COUNT *
                 PROJECT_MODULATION_MACRO_COUNT> destinations;
 
@@ -47,6 +57,12 @@ FLASHMEM bool validProjectModulationDomain(
             const auto address = modulationDestinationStableAddress(current.destination);
             if (destinations[address]) return false;
             destinations[address] = true;
+            const auto curve = curveIndex(arena, current.curveId);
+            if (curve < 0 ||
+                arena.records[curve].valueDomain != ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
+                arena.records[curve].origin != ProjectCurveOrigin::NATIVE) return false;
+            ++references[curve].count;
+            references[curve].automation = true;
         }
     }
 
@@ -82,14 +98,16 @@ FLASHMEM bool validProjectModulationDomain(
                 return false;
             }
         } else if (source.kind == ModulatorKind::RECORDED_SHAPE) {
-            if (!valid(source.parameters.recordedCurveId) ||
-                curveIndex(arena, source.parameters.recordedCurveId) < 0 ||
+            const auto curve = curveIndex(arena, source.parameters.recordedCurveId);
+            if (!valid(source.parameters.recordedCurveId) || curve < 0 ||
+                references[curve].automation ||
                 !parameterTailZero(
                     source.parameters,
                     sizeof(ProjectCurveId)
                 )) {
                 return false;
             }
+            ++references[curve].count;
         } else {
             return false;
         }
@@ -193,42 +211,10 @@ FLASHMEM bool validProjectModulationDomain(
             )) {
             return false;
         }
-        uint16_t references = 0;
-        bool referencedByRecordedShape = false;
-        bool referencedByAutomation = false;
-        for (uint16_t source = 0; source < state.sourceCount; ++source) {
-            if (state.sources[source].kind == ModulatorKind::RECORDED_SHAPE &&
-                state.sources[source].parameters.recordedCurveId == curve.id) {
-                ++references;
-                referencedByRecordedShape = true;
-            }
-        }
-        if (automation != nullptr) {
-            for (uint16_t entry = 0; entry < automation->entryCount; ++entry) {
-                if (automation->entries[entry].curveId == curve.id) {
-                    if (curve.valueDomain != ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
-                        curve.origin != ProjectCurveOrigin::NATIVE) {
-                        return false;
-                    }
-                    ++references;
-                    referencedByAutomation = true;
-                }
-            }
-        }
-        // The two chunks own disjoint curve directories. Sharing across them
-        // would duplicate identity during decode even if values remained equal.
-        if (referencedByRecordedShape && referencedByAutomation) return false;
-        if (references != curve.referenceCount) return false;
+        if (references[index].count != curve.referenceCount) return false;
         coveredPointCount += curve.pointCount;
     }
     if (coveredPointCount != arena.pointCount) return false;
-    if (automation != nullptr) {
-        for (uint16_t entry = 0; entry < automation->entryCount; ++entry) {
-            if (curveIndex(arena, automation->entries[entry].curveId) < 0) {
-                return false;
-            }
-        }
-    }
     return true;
 }
 
