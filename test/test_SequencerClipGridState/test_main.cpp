@@ -30,7 +30,7 @@ void seed(
 ) {
     pattern.reset();
     pattern.setStepNoteAt(0U, note);
-    pattern.enabledMask.set(oc::note::sequencer::StepBitMask128::prefixMask(1U));
+    pattern.setEnabledMask(oc::note::sequencer::StepBitMask128::prefixMask(1U));
     clip.reset();
 }
 
@@ -380,7 +380,7 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                 }
                 for (uint8_t slot : {1U, 2U}) {
                     source.setStepNoteAt(0U, static_cast<uint8_t>(72U + slot));
-                    source.ccLaneRevision.set(40U + slot);
+                    source.setCcLaneRevision(40U + slot);
                     seq::SequencerClipDocumentPtr document;
                     assert(seq::captureSequencerClipDocument(
                         source, sourceClip, bank.trackKind(track),
@@ -414,7 +414,7 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                         assert(current.note[0] == 74U);
                         assert(current.graph.get() == graph);
                         assert(current.ccLanes.get() == cc);
-                        assert(current.ccLaneRevision.get() == 42U);
+                        assert(current.ccLaneRevision == 42U);
                         if (bank.isDrumTrack(track)) {
                             assert(bank.drumTrack(track).kit.lanes[0].midiNote == 44U);
                         }
@@ -422,8 +422,9 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                 } observer{bank, active, grid, track, finalGraph, finalCc};
                 oc::state::StaticWatchGroup<5> watcher;
                 watcher.bind<&Observer::render>(observer, 0U);
-                assert(watcher.watchAll(pattern.stepDataRevision, pattern.graphRevision,
-                    pattern.ccLaneRevision, grid.revisionSignal(), bank.drumRevisionSignal()));
+                assert(watcher.watchAll(active.patternChanges.stepDataRevision,
+                    active.patternChanges.graphRevision, active.patternChanges.ccLaneRevision,
+                    grid.revisionSignal(), bank.drumRevisionSignal()));
                 pattern.setStepNoteAt(0U, 61U); // Pending work from the outgoing source.
                 {
                     core::app::testing::ScopedExtmemAllocationFailure failure(1U);

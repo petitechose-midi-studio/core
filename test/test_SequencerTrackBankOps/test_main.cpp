@@ -172,7 +172,7 @@ void test_navigation_preserves_every_musical_owner_and_revision() {
             }
             assert(&active.pattern() == &bank->track(target));
             assert(&active.clip() == &bank->clip(target));
-            assert(active.focusedStep.get() < active.pattern().length.get());
+            assert(active.focusedStep.get() < active.pattern().length);
             for (uint8_t track = 0U; track < 16U; ++track) {
                 assert(bank->track(track).graph.get() == graphs[track]);
                 assert(bank->track(track).ccLanes.get() == ccLanes[track]);
@@ -223,7 +223,7 @@ void test_observation_follows_selection_before_old_owner_destruction() {
     // Distinct owners with equal values and revisions still change selection.
     old = std::make_unique<seq::SequencerPatternState>();
     old->setStepNoteAt(0U, 73U);
-    old->stepDataRevision.set(next.stepDataRevision.get());
+    old->setStepDataRevision(next.stepDataRevision);
     editor.selectPattern(*old, oldClip);
     test_support::drainNotifications();
     assert(observer.calls == 3U && observer.note == 73U);
@@ -249,14 +249,13 @@ void test_core_navigation_rebinds_autosave_without_heap_allocation() {
             const uint8_t track = i % seq::SequencerTrackBankState::TRACK_COUNT;
             assert(state.setSharedTrackState(0xFFFFU, track));
             assert(&state.sequencer.pattern() == &state.sequencerTracks.track(track));
-            const auto& selected = state.sequencer.pattern();
-            assert(selected.patternScaleRevision.subscriberCount() == 2U);
-            assert(selected.swingOffsetPercent.subscriberCount() == 2U);
-            assert(selected.patternNudgePercent.subscriberCount() == 2U);
-            const auto& previous = state.sequencerTracks.track((i - 1U) % 16U);
-            assert(previous.patternScaleRevision.subscriberCount() == 0U);
-            assert(previous.swingOffsetPercent.subscriberCount() == 0U);
-            assert(previous.patternNudgePercent.subscriberCount() == 0U);
+            auto& changes = state.sequencer.patternChanges;
+            assert(changes.authoredRevision.subscriberCount() == 1U);
+            const auto before = changes.patternScaleRevision.get();
+            state.sequencerTracks.track((i - 1U) % 16U).bumpPatternScaleRevision();
+            assert(changes.patternScaleRevision.get() == before);
+            state.sequencer.pattern().bumpPatternScaleRevision();
+            assert(changes.patternScaleRevision.get() == before + 1U);
             test_support::drainNotifications();
         }
         state.flushProjectMutationCoalescing();
@@ -266,23 +265,30 @@ void test_core_navigation_rebinds_autosave_without_heap_allocation() {
     }
 }
 
-void test_rebinding_save_subscriptions_preserves_the_pending_window() {
+void test_document_selection_and_destruction_preserve_pending_save() {
     unsigned saves = 0U;
-    oc::state::Signal<int> previous{0}, next{0};
+    auto previous = std::make_unique<seq::SequencerPatternState>();
+    seq::SequencerPatternState next;
+    seq::SequencerClipState previousClip, nextClip;
+    seq::SequencerState editor(*previous, previousClip);
     oc::state::ChangeCoalescer<1> coalescer([&] { ++saves; }, 300U);
-    assert(coalescer.watch(previous));
-    previous.set(1);
+    assert(coalescer.watch(editor.patternChanges.authoredRevision));
     test_support::drainNotifications();
-    assert(coalescer.hasPendingChanges());
-    coalescer.clearSubscriptions();
-    assert(coalescer.watch(next));
+    assert(!coalescer.hasPendingChanges());
+    assert(previous->setStepNoteAt(0U, 73U));
+    // The musical owner may disappear before the deferred save notification.
+    previous.reset();
+    editor.selectPattern(next, nextClip);
+    test_support::drainNotifications();
     assert(coalescer.hasPendingChanges());
     coalescer.flush();
     assert(saves == 1U);
-    previous.set(2);
+
+    seq::SequencerPatternState inactive;
+    assert(inactive.setStepNoteAt(0U, 90U));
     test_support::drainNotifications();
     assert(!coalescer.hasPendingChanges());
-    next.set(3);
+    assert(next.setStepNoteAt(0U, 91U));
     test_support::drainNotifications();
     coalescer.flush();
     assert(saves == 2U);
@@ -292,7 +298,7 @@ void test_rebinding_save_subscriptions_preserves_the_pending_window() {
 int main() {
     test_navigation_preserves_every_musical_owner_and_revision();
     test_observation_follows_selection_before_old_owner_destruction();
-    test_rebinding_save_subscriptions_preserves_the_pending_window();
+    test_document_selection_and_destruction_preserve_pending_save();
     test_core_navigation_rebinds_autosave_without_heap_allocation();
     std::cout << "Bank ownership, navigation, filtered observation and save rebinding passed\n";
 }

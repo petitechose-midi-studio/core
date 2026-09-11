@@ -104,7 +104,7 @@ FLASHMEM SequencerHistoryDrumChangePtr prepareHistoryDrumChangeBefore(
         descriptor.kind == SequencerHistoryActionKind::PatternPreset;
     if (change->capturesGraph) {
         const auto& source = bank.track(target);
-        change->beforeGraphRevision = source.graphRevision.get();
+        change->beforeGraphRevision = source.graphRevision;
         change->afterGraphRevision = change->beforeGraphRevision;
         const auto* sourceGraph = graphView(source);
         if (sourceGraph != nullptr) {
@@ -132,7 +132,7 @@ FLASHMEM bool capturePreparedHistoryDrumAfter(
     change.after = bank.drumTrack(change.trackIndex);
     if (change.capturesGraph) {
         const auto& source = bank.track(change.trackIndex);
-        change.afterGraphRevision = source.graphRevision.get();
+        change.afterGraphRevision = source.graphRevision;
         const auto* sourceGraph = graphView(source);
         if (sourceGraph == nullptr) {
             change.afterGraph.reset();
@@ -190,7 +190,7 @@ FLASHMEM bool restorePreparedHistoryDrumBefore(
         if (!target.graph) return false;
         *target.graph = *change.beforeGraph;
     }
-    target.graphRevision.set(change.beforeGraphRevision);
+    target.setGraphRevision(change.beforeGraphRevision);
     if (change.trackIndex == bank.activeTrackIndex()) {
         refreshContentView(active);
     }
@@ -593,7 +593,7 @@ FLASHMEM bool captureCoalescedPatternBefore(const SequencerTrackBankState& bank,
     if (!cloneSequencerCcLaneBank(out.ccLanes, source.ccLanes.get())) { return false; }
     captureSnapshot(source, out.flat);
     out.clip = bank.clip(trackIndex);
-    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.ccLaneRevision = source.ccLaneRevision;
     out.focusedStep = active.focusedStep.get();
     out.ccLanesCaptured = true;
     return true;
@@ -601,11 +601,11 @@ FLASHMEM bool captureCoalescedPatternBefore(const SequencerTrackBankState& bank,
 
 FLASHMEM void installGraph(SequencerPatternState& target, GraphPtr graph, uint32_t revision) {
     target.graph = std::move(graph);
-    target.graphRevision.set(revision);
+    target.setGraphRevision(revision);
 }
 
 FLASHMEM uint8_t clampedFocusFor(const SequencerState& active, uint8_t focusedStep) {
-    const uint8_t length = active.pattern().length.get();
+    const uint8_t length = active.pattern().length;
     if (length == 0) { return 0; }
     return static_cast<uint8_t>(std::min<uint16_t>(focusedStep, length - 1U));
 }
@@ -1025,10 +1025,10 @@ FLASHMEM void applyFlatSnapshotPreservingColdPayload(
     const SequencerPatternSnapshot& snapshot
 ) noexcept {
     auto ccLanes = std::move(target.ccLanes);
-    const uint32_t ccLaneRevision = target.ccLaneRevision.get();
+    const uint32_t ccLaneRevision = target.ccLaneRevision;
     applySnapshotPreservingGraph(target, snapshot);
     target.ccLanes = std::move(ccLanes);
-    target.ccLaneRevision.set(ccLaneRevision);
+    target.setCcLaneRevision(ccLaneRevision);
 }
 
 FLASHMEM void applyFlatSnapshotToEditorPreservingColdPayload(
@@ -1036,10 +1036,10 @@ FLASHMEM void applyFlatSnapshotToEditorPreservingColdPayload(
     const SequencerPatternSnapshot& snapshot
 ) noexcept {
     auto ccLanes = std::move(target.pattern().ccLanes);
-    const uint32_t ccLaneRevision = target.pattern().ccLaneRevision.get();
+    const uint32_t ccLaneRevision = target.pattern().ccLaneRevision;
     applySnapshotToEditorPreservingGraph(target, snapshot);
     target.pattern().ccLanes = std::move(ccLanes);
-    target.pattern().ccLaneRevision.set(ccLaneRevision);
+    target.pattern().setCcLaneRevision(ccLaneRevision);
 }
 
 FLASHMEM bool applyFlatHistorySnapshotToTrack(SequencerTrackBankState& bank, SequencerState& active,
@@ -1265,7 +1265,7 @@ FLASHMEM bool capturePatternHistoryUsingReservedStorage(
     }
     captureSnapshot(source, out.flat);
     out.clip = clip;
-    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.ccLaneRevision = source.ccLaneRevision;
     out.focusedStep = focusedStep;
     out.ccLanesCaptured = true;
     return true;
@@ -1279,7 +1279,7 @@ FLASHMEM bool capturePatternHistoryUsingReservedGraph(
 ) {
     captureSnapshot(source, out.flat);
     out.clip = clip;
-    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.ccLaneRevision = source.ccLaneRevision;
     out.focusedStep = focusedStep;
     if (!captureGraphUsingReservedStorage(graphView(source), out.graph) ||
         !captureSequencerCcLaneBankUsingReservedStorage(source.ccLanes.get(), out.ccLanes)) {
@@ -1298,7 +1298,7 @@ FLASHMEM void captureFlatPatternHistory(
     out.reset();
     captureSnapshot(source, out.flat);
     out.clip = clip;
-    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.ccLaneRevision = source.ccLaneRevision;
     out.focusedStep = focusedStep;
     out.ccLanesCaptured = false;
 }
@@ -1346,8 +1346,8 @@ FLASHMEM bool applyHistoryProjectScaleChange(
         const uint32_t graphRevision = item.graphRevision + (after && item.chordCount ? 1U : 0U);
         const uint32_t scaleRevision = item.scaleRevision + (after ? 1U : 0U);
         if (target.live) {
-            target.live->graphRevision.set(graphRevision);
-            target.live->patternScaleRevision.set(scaleRevision);
+            target.live->setGraphRevision(graphRevision);
+            target.live->setPatternScaleRevision(scaleRevision);
         } else {
             target.document->pattern.graphRevision = graphRevision;
             target.document->pattern.patternScaleRevision = scaleRevision;
@@ -1376,12 +1376,12 @@ FLASHMEM bool captureHistorySnapshot(const SequencerPatternState& source,
 FLASHMEM void synchronizeHistoryPatternRevisionSignals(SequencerPatternState& target,
                                                        const SequencerPatternSnapshot& snapshot,
                                                        uint32_t ccLaneRevision) {
-    target.stepDataRevision.set(snapshot.stepDataRevision);
-    target.patternVariationRevision.set(snapshot.patternVariationRevision);
-    target.patternScaleRevision.set(snapshot.patternScaleRevision);
-    target.patternTimingRevision.set(snapshot.patternTimingRevision);
-    target.graphRevision.set(snapshot.graphRevision);
-    target.ccLaneRevision.set(ccLaneRevision);
+    target.setStepDataRevision(snapshot.stepDataRevision);
+    target.setPatternVariationRevision(snapshot.patternVariationRevision);
+    target.setPatternScaleRevision(snapshot.patternScaleRevision);
+    target.setPatternTimingRevision(snapshot.patternTimingRevision);
+    target.setGraphRevision(snapshot.graphRevision);
+    target.setCcLaneRevision(ccLaneRevision);
 }
 
 FLASHMEM bool reserveHistorySnapshotStorage(const SequencerState& source,
@@ -1405,7 +1405,7 @@ FLASHMEM bool captureDetachedHistorySnapshotUsingReservedStorage(
     uint8_t focusedStep,
     SequencerHistoryPatternSnapshot& out
 ) {
-    const uint8_t length = source.length.get();
+    const uint8_t length = source.length;
     const uint8_t clampedFocus = length == 0U
         ? 0U
         : static_cast<uint8_t>(std::min<uint16_t>(focusedStep, length - 1U));
@@ -1701,7 +1701,7 @@ FLASHMEM bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState
                      snapshot.flat.tracks[i].graphRevision);
         installSequencerCcLaneBank(bank.track(i), std::move(bankCcLanes[i]));
         synchronizeHistoryPatternRevisionSignals(
-            bank.track(i), snapshot.flat.tracks[i], bank.track(i).ccLaneRevision.get());
+            bank.track(i), snapshot.flat.tracks[i], bank.track(i).ccLaneRevision);
     }
 
     restoreFocus(active, snapshot.focusedStep);
@@ -1739,11 +1739,11 @@ FLASHMEM bool sameMusicalPatternState(
     const SequencerPatternState& lhs,
     const SequencerPatternState& rhs
 ) {
-    return lhs.length.get() == rhs.length.get() &&
-           lhs.stepsPerBeat.get() == rhs.stepsPerBeat.get() &&
-           lhs.enabledMask.get() == rhs.enabledMask.get() &&
-           lhs.swingOffsetPercent.get() == rhs.swingOffsetPercent.get() &&
-           lhs.patternNudgePercent.get() == rhs.patternNudgePercent.get() &&
+    return lhs.length == rhs.length &&
+           lhs.stepsPerBeat == rhs.stepsPerBeat &&
+           lhs.enabledMask == rhs.enabledMask &&
+           lhs.swingOffsetPercent == rhs.swingOffsetPercent &&
+           lhs.patternNudgePercent == rhs.patternNudgePercent &&
            sameVariationRanges(lhs.variationRanges, rhs.variationRanges) &&
            lhs.scalePolicy == rhs.scalePolicy &&
            sameScaleSettings(lhs.scaleOverride, rhs.scaleOverride) &&
@@ -1765,20 +1765,20 @@ FLASHMEM bool liveHistoryPatternSnapshotMatches(
     const SequencerHistoryPatternSnapshot& snapshot
 ) {
     const auto& flat = snapshot.flat;
-    if (live.length.get() != flat.length ||
+    if (live.length != flat.length ||
         clip.playStartTick != snapshot.clip.playStartTick ||
         clip.loopStartTick != snapshot.clip.loopStartTick ||
         clip.loopEndTick != snapshot.clip.loopEndTick ||
-        live.stepsPerBeat.get() != flat.stepsPerBeat ||
-        live.enabledMask.get() != flat.enabledMask ||
-        live.stepDataRevision.get() != flat.stepDataRevision ||
-        live.patternVariationRevision.get() != flat.patternVariationRevision ||
-        live.patternScaleRevision.get() != flat.patternScaleRevision ||
-        live.patternTimingRevision.get() != flat.patternTimingRevision ||
-        live.graphRevision.get() != flat.graphRevision ||
-        live.ccLaneRevision.get() != snapshot.ccLaneRevision ||
-        live.swingOffsetPercent.get() != flat.swingOffsetPercent ||
-        live.patternNudgePercent.get() != flat.patternNudgePercent ||
+        live.stepsPerBeat != flat.stepsPerBeat ||
+        live.enabledMask != flat.enabledMask ||
+        live.stepDataRevision != flat.stepDataRevision ||
+        live.patternVariationRevision != flat.patternVariationRevision ||
+        live.patternScaleRevision != flat.patternScaleRevision ||
+        live.patternTimingRevision != flat.patternTimingRevision ||
+        live.graphRevision != flat.graphRevision ||
+        live.ccLaneRevision != snapshot.ccLaneRevision ||
+        live.swingOffsetPercent != flat.swingOffsetPercent ||
+        live.patternNudgePercent != flat.patternNudgePercent ||
         live.effectiveSwingPercent(0U) != flat.effectiveSwingPercent ||
         !sameVariationRangesExact(live.variationRanges, flat.variationRanges) ||
         live.scalePolicy != flat.scalePolicy ||
@@ -1824,8 +1824,8 @@ FLASHMEM bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankSt
         clip.playStartTick != after.clip.playStartTick ||
         clip.loopStartTick != after.clip.loopStartTick ||
         clip.loopEndTick != after.clip.loopEndTick ||
-        target.graphRevision.get() != after.flat.graphRevision ||
-        target.ccLaneRevision.get() != after.ccLaneRevision) {
+        target.graphRevision != after.flat.graphRevision ||
+        target.ccLaneRevision != after.ccLaneRevision) {
         return false;
     }
     // Snapshot installation can advance flat revision signals. Compare musical

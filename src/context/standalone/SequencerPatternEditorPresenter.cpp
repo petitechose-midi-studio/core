@@ -90,7 +90,7 @@ void formatFieldValue(
                 buffer.size(),
                 "1/%u",
                 static_cast<unsigned>(
-                    4U * sequencer.pattern().stepsPerBeat.get()
+                    4U * sequencer.pattern().stepsPerBeat
                 )
             );
             return;
@@ -282,7 +282,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
 
     const uint8_t length = state_.randomize.active
         ? state_.randomize.preview.length
-        : state_.sequencer.pattern().length.get();
+        : state_.sequencer.pattern().length;
     const uint8_t windowEnd = static_cast<uint8_t>(std::min<uint16_t>(
         static_cast<uint16_t>(editor.windowStart) + 8U,
         length
@@ -295,7 +295,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         meta_.data(), meta_.size(), "%u steps \xC2\xB7 1/%u",
         static_cast<unsigned>(length),
         static_cast<unsigned>(
-            4U * state_.sequencer.pattern().stepsPerBeat.get()
+            4U * state_.sequencer.pattern().stepsPerBeat
         )
     );
 
@@ -370,7 +370,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
             std::snprintf(
                 hint_.data(), hint_.size(), "Division Â· 1/%u",
                 static_cast<unsigned>(
-                    4U * state_.sequencer.pattern().stepsPerBeat.get()
+                    4U * state_.sequencer.pattern().stepsPerBeat
                 )
             );
         } else {
@@ -479,7 +479,7 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
         );
         actions.slots[2] = core::ui::makeStandaloneIconStripSlot(
             icons::ACTION_PLACE_TARGET,
-            state_.sequencer.pattern().length.get() < seq::SequencerState::MAX_STEPS
+            state_.sequencer.pattern().length < seq::SequencerState::MAX_STEPS
                 ? core::ui::ContextActionStripVisualState::AVAILABLE
                 : core::ui::ContextActionStripVisualState::DISABLED,
             core::ui::ContextActionStripTone::CONSTRUCTIVE

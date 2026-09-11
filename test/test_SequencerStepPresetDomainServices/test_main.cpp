@@ -465,13 +465,13 @@ LiveInvariant captureInvariant(core::state::CoreState& state) {
         snapshot.activationTelemetry[track] =
             state.sequencerTrackActivations.telemetry(track);
         snapshot.bankGraphRevisions[track] =
-            state.sequencerTracks.track(track).graphRevision.get();
+            state.sequencerTracks.track(track).graphRevision;
     }
     snapshot.pendingCoalescing =
         state.hasPendingSequencerPatternHistoryCoalescing();
     snapshot.page = state.sequencer.page.get();
     snapshot.focusedStep = state.sequencer.focusedStep.get();
-    snapshot.editorGraphRevision = state.sequencer.pattern().graphRevision.get();
+    snapshot.editorGraphRevision = state.sequencer.pattern().graphRevision;
     snapshot.contentKind = state.sequencer.contentView.kind.get();
     snapshot.ownerNodeId = state.sequencer.contentView.ownerNodeId.get();
     snapshot.sequenceId = state.sequencer.contentView.sequenceId.get();
@@ -516,7 +516,7 @@ void assertInvariantUnchanged(
         assert(telemetry.status == before.activationTelemetry[track].status);
         assert(telemetry.generation == before.activationTelemetry[track].generation);
         assert(
-            state.sequencerTracks.track(track).graphRevision.get() ==
+            state.sequencerTracks.track(track).graphRevision ==
             before.bankGraphRevisions[track]
         );
     }
@@ -527,7 +527,7 @@ void assertInvariantUnchanged(
     assert(state.sequencer.page.get() == before.page);
     assert(state.sequencer.focusedStep.get() == before.focusedStep);
     assert(
-        state.sequencer.pattern().graphRevision.get() ==
+        state.sequencer.pattern().graphRevision ==
         before.editorGraphRevision
     );
     assert(state.sequencer.contentView.kind.get() == before.contentKind);

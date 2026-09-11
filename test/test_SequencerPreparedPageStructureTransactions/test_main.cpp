@@ -1596,8 +1596,8 @@ void test_core_track_drift_revalidation_restores_inactive_owner() {
     authorCoreFullPayload(h, true);
     auto* const graphOwner = h.state.sequencer.pattern().graph.get();
     auto* const ccOwner = h.state.sequencer.pattern().ccLanes.get();
-    const uint32_t graphRevision = h.state.sequencer.pattern().graphRevision.get();
-    const uint32_t ccRevision = h.state.sequencer.pattern().ccLaneRevision.get();
+    const uint32_t graphRevision = h.state.sequencer.pattern().graphRevision;
+    const uint32_t ccRevision = h.state.sequencer.pattern().ccLaneRevision;
     h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
     h.state.sequencerTracks.track(1U).note[0] = 41U;
     CoreLifecycleProbe probe{
@@ -1638,8 +1638,8 @@ void test_core_track_drift_revalidation_restores_inactive_owner() {
     assert(h.state.sequencerTracks.track(0U).note[0] == 60U);
     assert(h.state.sequencerTracks.track(0U).graph.get() == graphOwner);
     assert(h.state.sequencerTracks.track(0U).ccLanes.get() == ccOwner);
-    assert(h.state.sequencerTracks.track(0U).graphRevision.get() == graphRevision);
-    assert(h.state.sequencerTracks.track(0U).ccLaneRevision.get() == ccRevision);
+    assert(h.state.sequencerTracks.track(0U).graphRevision == graphRevision);
+    assert(h.state.sequencerTracks.track(0U).ccLaneRevision == ccRevision);
     assert(seq::graphView(h.state.sequencerTracks.track(0U)) != nullptr);
     assert(seq::sequencerCcLaneCount(
                *h.state.sequencerTracks.track(0U).ccLanes) == 1U);

@@ -718,7 +718,7 @@ void prepareSequencerSemanticGridScenario(core::state::CoreState& state) {
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern().length.set(8);
+    state.sequencer.pattern().setLength(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
@@ -786,7 +786,7 @@ void prepareSequencerLocalRandomGridScenario(core::state::CoreState& state) {
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern().length.set(8);
+    state.sequencer.pattern().setLength(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(StepProperty::NOTE);
@@ -901,7 +901,7 @@ void prepareSequencerSummedLocalRandomScenario(
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern().length.set(8);
+    state.sequencer.pattern().setLength(8);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(activeProperty);
@@ -1004,7 +1004,7 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
     state.sequencer.reset();
     state.activeView.set(core::ui::ViewType::CLIPS);
     state.sequencer.clipWorkspace.enterPattern(0U, 0U);
-    state.sequencer.pattern().length.set(4);
+    state.sequencer.pattern().setLength(4);
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(StepProperty::NOTE);
@@ -1339,7 +1339,7 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     (void)state.setSharedTrackState(0x0001, 0);
     state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
 
-    state.sequencer.pattern().length.set(1);
+    state.sequencer.pattern().setLength(1);
     if (!core::state::project::setProjectTrackMidiChannel(
             state.projectTracks,
             0U,
@@ -1469,7 +1469,7 @@ bool prepareClipLauncherV3Scenario(core::state::CoreState& state) {
         state.sequencer.pattern().gate[step] = 75U;
         previewMask.setBit(step);
     }
-    state.sequencer.pattern().enabledMask.set(previewMask);
+    state.sequencer.pattern().setEnabledMask(previewMask);
 
     // Three authored Tracks plus the one sequential Add Track column. The
     // first four Scenes deliberately mix Clip, Stop and Empty cells so one

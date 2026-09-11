@@ -146,7 +146,7 @@ void configureProject(core::state::CoreState& state,
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
     state.sequencer.pattern().setContentLength(8);
-    state.sequencer.pattern().stepsPerBeat.set(4);
+    state.sequencer.pattern().setStepsPerBeat(4);
     state.sequencer.setStepDataAt(1, static_cast<uint8_t>(60U + modifiedCounter), 100, 80);
     state.sequencer.pattern().toggle(1);
     state.sequencer.focusedStep.set(1);

@@ -1350,7 +1350,7 @@ FLASHMEM bool copyGraph(SequencerPatternState& target, const StepSequencerGraph*
                         uint32_t revision) {
     if (source == nullptr || !source->enabled) {
         target.graph.reset();
-        target.graphRevision.set(revision);
+        target.setGraphRevision(revision);
         return true;
     }
 
@@ -1361,12 +1361,12 @@ FLASHMEM bool copyGraph(SequencerPatternState& target, const StepSequencerGraph*
         if (!graph) return false;
         target.graph = std::move(graph);
     }
-    target.graphRevision.set(revision);
+    target.setGraphRevision(revision);
     return true;
 }
 
 FLASHMEM bool copyGraph(SequencerPatternState& target, const SequencerPatternState& source) {
-    return copyGraph(target, graphView(source), source.graphRevision.get());
+    return copyGraph(target, graphView(source), source.graphRevision);
 }
 
 FLASHMEM const StepSequencerGraph* graphView(const SequencerPatternState& pattern) {

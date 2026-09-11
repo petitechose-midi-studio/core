@@ -137,9 +137,9 @@ void setLength(seq::SequencerState& sequencer, uint8_t length) {
 
 void dirtyRootStep(seq::SequencerState& sequencer, uint8_t step = 0U) {
     sequencer.pattern().note[step] = 73U;
-    auto enabled = sequencer.pattern().enabledMask.get();
+    auto enabled = sequencer.pattern().enabledMask;
     enabled.setBit(step, true);
-    sequencer.pattern().enabledMask.set(enabled);
+    sequencer.pattern().setEnabledMask(enabled);
     sequencer.pattern().bumpStepDataRevision();
 }
 
@@ -810,12 +810,12 @@ void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
         assert(!seq::validInitializedSequencerGraph(source));
 
         const uint32_t stepRevision =
-            sequencer.pattern().stepDataRevision.get();
+            sequencer.pattern().stepDataRevision;
         const uint32_t graphRevision =
-            sequencer.pattern().graphRevision.get();
-        const uint32_t ccRevision = sequencer.pattern().ccLaneRevision.get();
+            sequencer.pattern().graphRevision;
+        const uint32_t ccRevision = sequencer.pattern().ccLaneRevision;
         const uint32_t timingRevision =
-            sequencer.pattern().patternTimingRevision.get();
+            sequencer.pattern().patternTimingRevision;
         const uint8_t note = sequencer.pattern().note[0U];
         MutationPlan plan;
         {
@@ -830,10 +830,10 @@ void test_graph_budget_is_aggregate_exact_and_malformed_source_rejects() {
                        plan) == Preflight::Rejected);
             assert(allocation_trace::count == 0U);
         }
-        assert(sequencer.pattern().stepDataRevision.get() == stepRevision);
-        assert(sequencer.pattern().graphRevision.get() == graphRevision);
-        assert(sequencer.pattern().ccLaneRevision.get() == ccRevision);
-        assert(sequencer.pattern().patternTimingRevision.get() ==
+        assert(sequencer.pattern().stepDataRevision == stepRevision);
+        assert(sequencer.pattern().graphRevision == graphRevision);
+        assert(sequencer.pattern().ccLaneRevision == ccRevision);
+        assert(sequencer.pattern().patternTimingRevision ==
                timingRevision);
         assert(sequencer.pattern().note[0U] == note);
         assert(sequencer.pattern().graph == nullptr);
@@ -982,7 +982,7 @@ void test_graph_paste_releases_canonical_default_targets_idempotently() {
     core::state::sequencer::SequencerDetachedEditor sequencer;
     setLength(sequencer, 8U);
     assert(seq::ensureGraphRoot(sequencer.pattern()));
-    const uint32_t revisionBefore = sequencer.pattern().graphRevision.get();
+    const uint32_t revisionBefore = sequencer.pattern().graphRevision;
 
     core::state::StructureClipboardState clipboard;
     fillStepsClipboard(clipboard);
@@ -1010,7 +1010,7 @@ void test_graph_paste_releases_canonical_default_targets_idempotently() {
     const auto* graph = seq::graphView(sequencer.pattern());
     assert(graph != nullptr);
     assert(graph->stepNodes[0U].noteOffset == 5);
-    assert(sequencer.pattern().graphRevision.get() == revisionBefore + 1U);
+    assert(sequencer.pattern().graphRevision == revisionBefore + 1U);
 
     std::cout << "[PASS] enabled/default Graph targets release idempotently\n";
 }
@@ -1209,7 +1209,7 @@ void runChildOffsetExtensionCase(
     const void* const graphOwner = graph;
     const uint64_t beforeHash = byteHash(graph, sizeof(Graph));
     const uint32_t revisionBefore =
-        sequencer.pattern().graphRevision.get();
+        sequencer.pattern().graphRevision;
     std::array<GraphNode, oldLength> oldLogical{};
     for (uint8_t logical = 0U; logical < oldLength; ++logical) {
         const uint16_t node = seq::activeContentStepNodeId(
@@ -1246,7 +1246,7 @@ void runChildOffsetExtensionCase(
 
     assert(sequencer.pattern().graph.get() == graphOwner);
     assert(seq::activeContentLength(sequencer) == expectedLength);
-    assert(sequencer.pattern().graphRevision.get() == revisionBefore + 1U);
+    assert(sequencer.pattern().graphRevision == revisionBefore + 1U);
     graph = sequencer.pattern().graph.get();
     for (uint8_t logical = 0U; logical < oldLength; ++logical) {
         const uint16_t node = seq::activeContentStepNodeId(
@@ -1446,7 +1446,7 @@ void test_child_offset_extension_commit_failure_rolls_back_exactly() {
         sequencer.pattern().graph.get(), sizeof(Graph));
     const uint64_t ccHash = byteHash(
         sequencer.pattern().ccLanes.get(), sizeof(*sequencer.pattern().ccLanes));
-    const uint32_t ccRevision = sequencer.pattern().ccLaneRevision.get();
+    const uint32_t ccRevision = sequencer.pattern().ccLaneRevision;
     const uint32_t viewRevision = sequencer.contentView.revision.get();
     const uint8_t focus = sequencer.focusedStep.get();
     const uint8_t page = sequencer.page.get();
@@ -1481,7 +1481,7 @@ void test_child_offset_extension_commit_failure_rolls_back_exactly() {
     assert(byteHash(
                sequencer.pattern().ccLanes.get(),
                sizeof(*sequencer.pattern().ccLanes)) == ccHash);
-    assert(sequencer.pattern().ccLaneRevision.get() == ccRevision);
+    assert(sequencer.pattern().ccLaneRevision == ccRevision);
     assert(seq::activeContentLength(sequencer) == 4U);
     assert(sequencer.contentView.revision.get() == viewRevision);
     assert(sequencer.focusedStep.get() == focus);
@@ -1509,8 +1509,8 @@ void test_root_step_extension_keeps_cold_cc_exact_under_flat_history() {
     assert(bankPattern.ccLanes != nullptr);
     const void* const editorOwner = pattern.ccLanes.get();
     const void* const bankOwner = bankPattern.ccLanes.get();
-    const uint32_t editorRevision = pattern.ccLaneRevision.get();
-    const uint32_t bankRevision = bankPattern.ccLaneRevision.get();
+    const uint32_t editorRevision = pattern.ccLaneRevision;
+    const uint32_t bankRevision = bankPattern.ccLaneRevision;
     const uint64_t editorHash = byteHash(editorCc, sizeof(*editorCc));
     const uint64_t bankHash = byteHash(
         bankPattern.ccLanes.get(), sizeof(*bankPattern.ccLanes));
@@ -1518,8 +1518,8 @@ void test_root_step_extension_keeps_cold_cc_exact_under_flat_history() {
     auto assertColdCcExact = [&]() {
         assert(pattern.ccLanes.get() == editorOwner);
         assert(bankPattern.ccLanes.get() == bankOwner);
-        assert(pattern.ccLaneRevision.get() == editorRevision);
-        assert(bankPattern.ccLaneRevision.get() == bankRevision);
+        assert(pattern.ccLaneRevision == editorRevision);
+        assert(bankPattern.ccLaneRevision == bankRevision);
         assert(byteHash(pattern.ccLanes.get(), sizeof(*pattern.ccLanes)) ==
                editorHash);
         assert(byteHash(
@@ -1551,14 +1551,14 @@ void test_root_step_extension_keeps_cold_cc_exact_under_flat_history() {
     assert(transaction.execute(
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Committed);
-    assert(pattern.length.get() == 16U);
+    assert(pattern.length == 16U);
     assertColdCcExact();
 
     assert(harness.state.undoSequencerHistory());
-    assert(pattern.length.get() == 8U);
+    assert(pattern.length == 8U);
     assertColdCcExact();
     assert(harness.state.redoSequencerHistory());
-    assert(pattern.length.get() == 16U);
+    assert(pattern.length == 16U);
     assertColdCcExact();
 
     std::cout <<
@@ -1577,8 +1577,8 @@ void test_page_delete_keeps_empty_cc_owner_exact_under_flat_history() {
     auto& pattern = sequencer.pattern();
     auto& bankPattern = harness.state.sequencerTracks.track(0U);
     const void* const editorOwner = pattern.ccLanes.get();
-    const uint32_t editorRevision = pattern.ccLaneRevision.get();
-    const uint32_t bankRevision = bankPattern.ccLaneRevision.get();
+    const uint32_t editorRevision = pattern.ccLaneRevision;
+    const uint32_t bankRevision = bankPattern.ccLaneRevision;
     const uint64_t editorHash = byteHash(emptyCc, sizeof(*emptyCc));
     assert(editorOwner != nullptr);
     assert(bankPattern.ccLanes.get() == editorOwner);
@@ -1588,9 +1588,9 @@ void test_page_delete_keeps_empty_cc_owner_exact_under_flat_history() {
         assert(seq::sequencerCcLaneCount(*pattern.ccLanes) == 0U);
         assert(byteHash(pattern.ccLanes.get(), sizeof(*pattern.ccLanes)) ==
                editorHash);
-        assert(pattern.ccLaneRevision.get() == editorRevision);
+        assert(pattern.ccLaneRevision == editorRevision);
         assert(bankPattern.ccLanes.get() == editorOwner);
-        assert(bankPattern.ccLaneRevision.get() == bankRevision);
+        assert(bankPattern.ccLaneRevision == bankRevision);
     };
 
     Transaction transaction(sequencer, harness.history, Action::PageDelete);
@@ -1605,14 +1605,14 @@ void test_page_delete_keeps_empty_cc_owner_exact_under_flat_history() {
     assert(transaction.execute(
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Committed);
-    assert(pattern.length.get() == 8U);
+    assert(pattern.length == 8U);
     assertEmptyCcExact();
 
     assert(harness.state.undoSequencerHistory());
-    assert(pattern.length.get() == 16U);
+    assert(pattern.length == 16U);
     assertEmptyCcExact();
     assert(harness.state.redoSequencerHistory());
-    assert(pattern.length.get() == 8U);
+    assert(pattern.length == 8U);
     assertEmptyCcExact();
 
     std::cout << "[PASS] PageDelete keeps empty CC owner exact via FlatOnly\n";
@@ -1644,8 +1644,8 @@ void test_full_graph_page_history_preserves_empty_cc_owners() {
     const uint64_t editorHash = byteHash(editorOwner, sizeof(*editorCc));
     const uint64_t bankHash = byteHash(
         bankOwner, sizeof(*bankPattern.ccLanes));
-    const uint32_t editorRevision = pattern.ccLaneRevision.get();
-    const uint32_t bankRevision = bankPattern.ccLaneRevision.get();
+    const uint32_t editorRevision = pattern.ccLaneRevision;
+    const uint32_t bankRevision = bankPattern.ccLaneRevision;
 
     auto assertEmptyOwnersExact = [&]() {
         assert(pattern.ccLanes.get() == editorOwner);
@@ -1655,8 +1655,8 @@ void test_full_graph_page_history_preserves_empty_cc_owners() {
         assert(byteHash(
                    bankPattern.ccLanes.get(), sizeof(*bankPattern.ccLanes)) ==
                bankHash);
-        assert(pattern.ccLaneRevision.get() == editorRevision);
-        assert(bankPattern.ccLaneRevision.get() == bankRevision);
+        assert(pattern.ccLaneRevision == editorRevision);
+        assert(bankPattern.ccLaneRevision == bankRevision);
     };
 
     Transaction transaction(sequencer, harness.history, Action::PageClear);
@@ -1741,11 +1741,11 @@ void test_step_extension_reclaims_matching_cold_descendants_near_capacity() {
     const uint64_t afterHash = byteHash(graph, sizeof(Graph));
 
     assert(harness.state.undoSequencerHistory());
-    assert(sequencer.pattern().length.get() == 8U);
+    assert(sequencer.pattern().length == 8U);
     assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            beforeHash);
     assert(harness.state.redoSequencerHistory());
-    assert(sequencer.pattern().length.get() == 9U);
+    assert(sequencer.pattern().length == 9U);
     assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            afterHash);
 
@@ -1802,7 +1802,7 @@ void test_step_extension_capacity_failure_restores_matching_cold_target() {
     assert(sequencer.pattern().graph.get() == graphOwner);
     assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            graphHash);
-    assert(sequencer.pattern().length.get() == 8U);
+    assert(sequencer.pattern().length == 8U);
     tx::assertStateInvariant(harness.state, invariantBefore);
     assert(!harness.state.hasPendingSequencerPatternHistoryCoalescing());
 
@@ -1859,12 +1859,12 @@ void test_root_extension_from_graphless_and_disabled_destinations() {
         assert(graph->stepNodes[8U].has(
             oc::note::sequencer::STEP_NODE_NOTE_OFFSET));
         assert(graph->stepNodes[8U].noteOffset == 5);
-        assert(sequencer.pattern().length.get() == 9U);
+        assert(sequencer.pattern().length == 9U);
         assert(harness.state.undoSequencerHistory());
-        assert(sequencer.pattern().length.get() == 8U);
+        assert(sequencer.pattern().length == 8U);
         assert(seq::graphView(sequencer.pattern()) == nullptr);
         assert(harness.state.redoSequencerHistory());
-        assert(sequencer.pattern().length.get() == 9U);
+        assert(sequencer.pattern().length == 9U);
         graph = seq::graphView(sequencer.pattern());
         assert(graph != nullptr);
         assert(graph->stepNodes[8U].noteOffset == 5);
@@ -1953,7 +1953,7 @@ void test_page_delete_reclaims_descendants_from_cold_root_tail() {
                core::handler::makeSequencerPreparedPageStructureExecution(
                    plan)) == Result::Committed);
 
-    assert(sequencer.pattern().length.get() == 8U);
+    assert(sequencer.pattern().length == 8U);
     assert(seq::validInitializedSequencerGraph(*sequencer.pattern().graph));
     assert(sequencer.pattern().graph->stepNodeCount ==
            seq::SequencerState::MAX_STEPS);
@@ -1963,11 +1963,11 @@ void test_page_delete_reclaims_descendants_from_cold_root_tail() {
         sequencer.pattern().graph.get(), sizeof(Graph));
 
     assert(harness.state.undoSequencerHistory());
-    assert(sequencer.pattern().length.get() == 16U);
+    assert(sequencer.pattern().length == 16U);
     assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            beforeHash);
     assert(harness.state.redoSequencerHistory());
-    assert(sequencer.pattern().length.get() == 8U);
+    assert(sequencer.pattern().length == 8U);
     assert(byteHash(sequencer.pattern().graph.get(), sizeof(Graph)) ==
            afterHash);
 

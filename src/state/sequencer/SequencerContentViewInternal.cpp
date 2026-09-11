@@ -296,7 +296,7 @@ FLASHMEM ResolvedStep rootBase(const SequencerState& sequencer, uint8_t rootStep
     if (rootStep >= SequencerState::MAX_STEPS) return {};
     return {
         .valid = true,
-        .enabled = authoringPattern(sequencer).enabledMask.get().test(rootStep),
+        .enabled = authoringPattern(sequencer).enabledMask.test(rootStep),
         .note = authoringPattern(sequencer).note[rootStep],
         .velocity = authoringPattern(sequencer).velocity[rootStep],
         .gate = authoringPattern(sequencer).gate[rootStep],

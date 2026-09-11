@@ -271,7 +271,7 @@ FLASHMEM void projectVisualSummary(
     const auto& pattern = *loaded.staged;
     out.valid = true;
     out.visibleStepCount = std::min<uint8_t>(
-        pattern.length.get(),
+        pattern.length,
         seq::SequencerPatternPresetVisualSummary::STEP_CAPACITY
     );
 
@@ -320,7 +320,7 @@ FLASHMEM void projectVisualSummary(
         return;
     }
 
-    const auto enabled = pattern.enabledMask.get();
+    const auto enabled = pattern.enabledMask;
     for (uint8_t step = 0U; step < out.visibleStepCount; ++step) {
         if (enabled.test(step)) {
             out.melodicEnabledMask |=
@@ -1233,8 +1233,8 @@ SequencerPatternPresetDomainServices::inspectPreset(
     }
 
     descriptor.metadata = loaded.metadata;
-    descriptor.patternLength = loaded.staged->length.get();
-    descriptor.stepsPerBeat = loaded.staged->stepsPerBeat.get();
+    descriptor.patternLength = loaded.staged->length;
+    descriptor.stepsPerBeat = loaded.staged->stepsPerBeat;
     descriptor.drumLaneCount = loaded.drum ? loaded.drum->kit.laneCount : 0U;
     projectVisualSummary(loaded, descriptor.visual);
     descriptor.compatibility = compatibilityFor(
@@ -1559,7 +1559,7 @@ SequencerPatternPresetDomainServices::previewPreset(
                 seq::SequencerTrackKind::DRUM,
                 candidate,
                 sourceGraph,
-                loaded.staged->graphRevision.get()
+                loaded.staged->graphRevision
             )) {
             result.status =
                 SequencerPatternPresetDomainStatus::ALLOCATION_UNAVAILABLE;
@@ -1607,8 +1607,8 @@ SequencerPatternPresetDomainServices::previewPreset(
         );
         state_->sequencer.pattern().graph =
             std::move(loaded.staged->graph);
-        state_->sequencer.pattern().graphRevision.set(
-            loaded.staged->graphRevision.get()
+        state_->sequencer.pattern().setGraphRevision(
+            loaded.staged->graphRevision
         );
         seq::refreshContentView(state_->sequencer);
         state_->sequencer.drumSequencer.bump();

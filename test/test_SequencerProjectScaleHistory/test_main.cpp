@@ -229,7 +229,7 @@ void authorPayload(
     PayloadKind kind,
     uint8_t salt = 0U
 ) {
-    if (pattern.length.get() != 8U) {
+    if (pattern.length != 8U) {
         assert(pattern.setContentLength(8U));
     }
     assert(pattern.setStepDataAt(
@@ -305,12 +305,12 @@ struct RevisionVector {
 
 RevisionVector revisions(const seq::SequencerPatternState& pattern) {
     return {
-        .step = pattern.stepDataRevision.get(),
-        .variation = pattern.patternVariationRevision.get(),
-        .scale = pattern.patternScaleRevision.get(),
-        .timing = pattern.patternTimingRevision.get(),
-        .graph = pattern.graphRevision.get(),
-        .cc = pattern.ccLaneRevision.get(),
+        .step = pattern.stepDataRevision,
+        .variation = pattern.patternVariationRevision,
+        .scale = pattern.patternScaleRevision,
+        .timing = pattern.patternTimingRevision,
+        .graph = pattern.graphRevision,
+        .cc = pattern.ccLaneRevision,
     };
 }
 
@@ -342,7 +342,7 @@ PatternProof capturePatternProof(const seq::SequencerPatternState& pattern) {
     seq::captureSnapshot(pattern, proof.flat);
     proof.graphOwner = pattern.graph.get();
     proof.ccOwner = pattern.ccLanes.get();
-    proof.ccRevision = pattern.ccLaneRevision.get();
+    proof.ccRevision = pattern.ccLaneRevision;
     proof.graphContent = graphHash(pattern);
     proof.ccContent = ccHash(pattern);
     return proof;
@@ -357,7 +357,7 @@ void assertPatternProof(
     assert(samePatternSnapshot(actual, expected.flat));
     assert(pattern.graph.get() == expected.graphOwner);
     assert(pattern.ccLanes.get() == expected.ccOwner);
-    assert(pattern.ccLaneRevision.get() == expected.ccRevision);
+    assert(pattern.ccLaneRevision == expected.ccRevision);
     assert(graphHash(pattern) == expected.graphContent);
     assert(ccHash(pattern) == expected.ccContent);
 }

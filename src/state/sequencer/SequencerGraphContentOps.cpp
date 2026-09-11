@@ -326,7 +326,7 @@ FLASHMEM bool rotateRootStepNodes(SequencerPatternState& pattern, int offsetStep
     }
 
     const uint8_t length = std::min<uint8_t>(
-        pattern.length.get(),
+        pattern.length,
         SequencerPatternState::MAX_STEPS
     );
     const bool changed = rotateStepNodeSegment(

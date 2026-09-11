@@ -35,10 +35,10 @@ struct TimelinePatternSource {
 ) {
     return {
         .region = seq::clipPlaybackRegion(pattern, clip),
-        .enabledMask = pattern.enabledMask.get(),
-        .stepDataRevision = pattern.stepDataRevision.get(),
-        .patternTimingRevision = pattern.patternTimingRevision.get(),
-        .ccLaneRevision = pattern.ccLaneRevision.get(),
+        .enabledMask = pattern.enabledMask,
+        .stepDataRevision = pattern.stepDataRevision,
+        .patternTimingRevision = pattern.patternTimingRevision,
+        .ccLaneRevision = pattern.ccLaneRevision,
         .sourceFingerprint = 0U,
         .note = pattern.note.data(),
         .velocity = pattern.velocity.data(),

@@ -132,12 +132,12 @@ FLASHMEM bool clearRootNode(SequencerPatternState& pattern, uint8_t step) {
 
 FLASHMEM bool validBatchPatternState(const SequencerState& sequencer) {
     const auto& pattern = sequencer.pattern();
-    const uint8_t length = pattern.length.get();
+    const uint8_t length = pattern.length;
     if (length == 0U || length > SequencerPatternState::MAX_STEPS ||
         !validClipRegion(pattern, sequencer.clip())) {
         return false;
     }
-    return (pattern.enabledMask.get() & ~lengthMask(length)) ==
+    return (pattern.enabledMask & ~lengthMask(length)) ==
            oc::note::sequencer::StepBitMask128{};
 }
 
@@ -154,18 +154,18 @@ FLASHMEM void applyBatchPlaybackRegion(
     // Internal callers validate the complete region before the first live
     // write; keep this leaf free of firmware assert strings in scarce DTCM.
     const uint16_t ticksPerStep = sequencerTicksPerStep(
-        sequencer.pattern().stepsPerBeat.get()
+        sequencer.pattern().stepsPerBeat
     );
     sequencer.clip() = {
         static_cast<uint16_t>(region.playStart * ticksPerStep),
         static_cast<uint16_t>(region.loopStart * ticksPerStep),
         static_cast<uint16_t>(region.loopEnd * ticksPerStep),
     };
-    sequencer.pattern().enabledMask.set(
+    sequencer.pattern().setEnabledMask(
         enabledMask & lengthMask(region.contentLength)
     );
     // Length is observable and therefore published after its dependent bytes.
-    sequencer.pattern().length.set(region.contentLength);
+    sequencer.pattern().setLength(region.contentLength);
 }
 
 FLASHMEM SequencerSnapshotBatchMutationResult batchResult(
@@ -204,17 +204,17 @@ FLASHMEM void applySnapshotImpl(
 ) {
     const uint8_t length = sanitizeSequencerLength(snapshot.length);
     target.setContentLength(length);
-    target.stepsPerBeat.set(sanitizeStepsPerBeat(snapshot.stepsPerBeat));
-    target.enabledMask.set(snapshot.enabledMask & lengthMask(length));
+    target.setStepsPerBeat(sanitizeStepsPerBeat(snapshot.stepsPerBeat));
+    target.setEnabledMask(snapshot.enabledMask & lengthMask(length));
     target.setPatternVariationRanges(snapshot.variationRanges);
     target.setPatternScalePolicy(snapshot.scalePolicy);
     target.setPatternScaleOverride(snapshot.scaleOverride);
     target.setPitchEditMode(snapshot.pitchEditMode);
     target.setPatternSwingOffsetPercent(snapshot.swingOffsetPercent);
     target.setPatternNudgePercent(snapshot.patternNudgePercent);
-    target.patternTimingRevision.set(snapshot.patternTimingRevision);
+    target.setPatternTimingRevision(snapshot.patternTimingRevision);
     target.graph.reset();
-    target.graphRevision.set(snapshot.graphRevision);
+    target.setGraphRevision(snapshot.graphRevision);
 
     for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
         const auto step = static_cast<uint8_t>(i);
@@ -260,18 +260,18 @@ FLASHMEM void applySnapshotToEditorPreservingGraphImpl(
 }  // namespace
 
 FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out) {
-    out.length = sanitizeSequencerLength(source.length.get());
-    out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
-    out.enabledMask = source.enabledMask.get();
-    out.stepDataRevision = source.stepDataRevision.get();
-    out.patternVariationRevision = source.patternVariationRevision.get();
-    out.patternScaleRevision = source.patternScaleRevision.get();
-    out.patternTimingRevision = source.patternTimingRevision.get();
-    out.graphRevision = source.graphRevision.get();
+    out.length = sanitizeSequencerLength(source.length);
+    out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat);
+    out.enabledMask = source.enabledMask;
+    out.stepDataRevision = source.stepDataRevision;
+    out.patternVariationRevision = source.patternVariationRevision;
+    out.patternScaleRevision = source.patternScaleRevision;
+    out.patternTimingRevision = source.patternTimingRevision;
+    out.graphRevision = source.graphRevision;
     out.swingOffsetPercent =
-        SequencerPatternState::clampPatternSwingOffsetPercent(source.swingOffsetPercent.get());
+        SequencerPatternState::clampPatternSwingOffsetPercent(source.swingOffsetPercent);
     out.patternNudgePercent =
-        SequencerPatternState::clampPatternNudgePercent(source.patternNudgePercent.get());
+        SequencerPatternState::clampPatternNudgePercent(source.patternNudgePercent);
     out.effectiveSwingPercent = source.effectiveSwingPercent(0);
     out.variationRanges = source.variationRanges;
     out.variationRanges.clamp();
@@ -305,7 +305,7 @@ FLASHMEM void copySequencerCcLaneRevision(
     SequencerPatternState& target,
     const SequencerPatternState& source
 ) {
-    target.ccLaneRevision.set(source.ccLaneRevision.get());
+    target.setCcLaneRevision(source.ccLaneRevision);
 }
 
 FLASHMEM bool copyPatternState(
@@ -327,7 +327,7 @@ FLASHMEM bool copyPatternState(
 
     applySnapshot(target, snapshot);
     target.graph = std::move(graph);
-    target.graphRevision.set(snapshot.graphRevision);
+    target.setGraphRevision(snapshot.graphRevision);
     installSequencerCcLaneBank(target, std::move(ccLanes));
     copySequencerCcLaneRevision(target, source);
     return true;
@@ -355,7 +355,7 @@ FLASHMEM void installTrackContentSnapshotWithOwnedGraph(
     targetClip = clipSnapshot;
     applySnapshotImpl(target, snapshot);
     target.graph = std::move(graph);
-    target.graphRevision.set(snapshot.graphRevision);
+    target.setGraphRevision(snapshot.graphRevision);
 }
 
 FLASHMEM void installTrackContentSnapshotWithOwnedPayload(
@@ -396,7 +396,7 @@ FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
     target.clip() = clipSnapshot;
     applySnapshotToEditorImpl(target, snapshot);
     target.pattern().graph = std::move(graph);
-    target.pattern().graphRevision.set(snapshot.graphRevision);
+    target.pattern().setGraphRevision(snapshot.graphRevision);
     target.bumpClipRevision();
 }
 
@@ -417,7 +417,7 @@ FLASHMEM void installTrackContentSnapshotToEditorWithOwnedPayload(
 }
 
 FLASHMEM bool rotatePatternState(SequencerPatternState& target, int offsetSteps) {
-    const uint8_t len = target.length.get();
+    const uint8_t len = target.length;
     if (len <= 1) return false;
 
     int normalizedOffset = offsetSteps % static_cast<int>(len);
@@ -428,7 +428,7 @@ FLASHMEM bool rotatePatternState(SequencerPatternState& target, int offsetSteps)
 
     std::array<StepPayload, SequencerState::MAX_STEPS> nextSteps{};
     const auto activeMask = lengthMask(len);
-    const auto sourceMask = target.enabledMask.get();
+    const auto sourceMask = target.enabledMask;
     auto nextMask = sourceMask & ~activeMask;
 
     for (uint16_t i = 0; i < len; ++i) {
@@ -446,7 +446,7 @@ FLASHMEM bool rotatePatternState(SequencerPatternState& target, int offsetSteps)
         writeStep(target, step, nextSteps[i]);
     }
 
-    target.enabledMask.set(nextMask);
+    target.setEnabledMask(nextMask);
     rotateRootStepNodes(target, normalizedOffset);
     if (target.ccLanes && rotateSequencerCcLaneBank(
             *target.ccLanes,
@@ -464,7 +464,7 @@ resizeSequencerRootContentUnversioned(
     SequencerState& target,
     uint8_t requiredLength
 ) noexcept {
-    const uint8_t oldLength = target.pattern().length.get();
+    const uint8_t oldLength = target.pattern().length;
     if (requiredLength == 0U ||
         requiredLength > SequencerState::MAX_STEPS ||
         requiredLength < oldLength) {
@@ -509,7 +509,7 @@ resizeSequencerRootContentUnversioned(
     }
 
     bool graphChanged = false;
-    auto enabledMask = target.pattern().enabledMask.get();
+    auto enabledMask = target.pattern().enabledMask;
     for (uint16_t step = oldLength; step < requiredLength; ++step) {
         const auto stepIndex = static_cast<uint8_t>(step);
         writeStep(target.pattern(), stepIndex, defaultStep());
@@ -541,7 +541,7 @@ extendSequencerPageRootUnversioned(
     uint8_t pageIndex
 ) noexcept {
     if (pageIndex >= SequencerState::PAGE_COUNT) {
-        const uint8_t length = target.pattern().length.get();
+        const uint8_t length = target.pattern().length;
         return batchResult(
             SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
             length,
@@ -553,7 +553,7 @@ extendSequencerPageRootUnversioned(
     );
     return resizeSequencerRootContentUnversioned(
         target,
-        std::max(requiredLength, target.pattern().length.get())
+        std::max(requiredLength, target.pattern().length)
     );
 }
 
@@ -563,7 +563,7 @@ clearSequencerRootStepSpanUnversioned(
     uint8_t startStep,
     uint8_t stepCount
 ) noexcept {
-    const uint8_t length = target.pattern().length.get();
+    const uint8_t length = target.pattern().length;
     const uint16_t end = static_cast<uint16_t>(startStep) + stepCount;
     if (stepCount == 0U || end > length || end > SequencerState::MAX_STEPS) {
         return batchResult(
@@ -587,7 +587,7 @@ clearSequencerRootStepSpanUnversioned(
         );
     }
 
-    auto enabledMask = target.pattern().enabledMask.get();
+    auto enabledMask = target.pattern().enabledMask;
     bool stepChanged = false;
     bool graphChanged = false;
     for (uint16_t step = startStep; step < end; ++step) {
@@ -603,7 +603,7 @@ clearSequencerRootStepSpanUnversioned(
         graphChanged = clearRootNode(target.pattern(), stepIndex) || graphChanged;
     }
     if (stepChanged) {
-        target.pattern().enabledMask.set(enabledMask);
+        target.pattern().setEnabledMask(enabledMask);
     }
 
     const SequencerSnapshotBatchDomains domains{
@@ -627,7 +627,7 @@ deleteSequencerRootPagesUnversioned(
     SequencerState& target,
     uint16_t pageMask
 ) noexcept {
-    const uint8_t oldLength = target.pattern().length.get();
+    const uint8_t oldLength = target.pattern().length;
     if (!validBatchPatternState(target)) {
         return batchResult(
             SequencerSnapshotBatchMutationStatus::INVALID_PATTERN_STATE,
@@ -731,7 +731,7 @@ deleteSequencerRootPagesUnversioned(
         ccChanged = ccResult.changed();
     }
 
-    const auto sourceEnabledMask = target.pattern().enabledMask.get();
+    const auto sourceEnabledMask = target.pattern().enabledMask;
     oc::note::sequencer::StepBitMask128 nextEnabledMask{};
     bool graphChanged = false;
     uint8_t destination = 0U;

@@ -497,7 +497,7 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     SequencerState state{bank.track(bank.activeTrackIndex()), bank.clip(bank.activeTrackIndex())};
     bank.reset();
     assert(core::state::sequencer::ensureGraphRoot(state.pattern()));
-    if (state.pattern().length.get() != 8U) {
+    if (state.pattern().length != 8U) {
         assert(state.pattern().setContentLength(8U));
     }
 
@@ -540,14 +540,14 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     const uint64_t bankCcHash = withCcLane
         ? byteHash(bankCcLanes, sizeof(*bankCcLanes))
         : 0U;
-    const uint32_t editorCcRevision = state.pattern().ccLaneRevision.get();
-    const uint32_t bankCcRevision = bank.track(0U).ccLaneRevision.get();
+    const uint32_t editorCcRevision = state.pattern().ccLaneRevision;
+    const uint32_t bankCcRevision = bank.track(0U).ccLaneRevision;
 
     // This reproduces the central Step coalescer shape: a complete `before`
     // snapshot followed by a FlatOnly `after` snapshot.
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
-    assert(state.pattern().length.get() == 8U);
+    assert(state.pattern().length == 8U);
     assert(core::state::sequencer::resizeClipPatternContent(state, 16U));
     state.pattern().setEnabled(0U, true);
     SequencerHistoryPatternSnapshot after;
@@ -565,7 +565,7 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     assert(retainedBytes > 0U);
 
     assert(history.undo(bank, state));
-    assert(state.pattern().length.get() == 8U);
+    assert(state.pattern().length == 8U);
     assert(!state.pattern().isEnabled(0U));
     assert(core::state::sequencer::graphView(state.pattern()) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0U)) == bankGraph);
@@ -573,15 +573,15 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
            editorCcLanes);
     assert(core::state::sequencer::sequencerCcLaneView(bank.track(0U)) ==
            bankCcLanes);
-    assert(state.pattern().ccLaneRevision.get() == editorCcRevision);
-    assert(bank.track(0U).ccLaneRevision.get() == bankCcRevision);
+    assert(state.pattern().ccLaneRevision == editorCcRevision);
+    assert(bank.track(0U).ccLaneRevision == bankCcRevision);
     if (withCcLane) {
         assert(byteHash(editorCcLanes, sizeof(*editorCcLanes)) == editorCcHash);
         assert(byteHash(bankCcLanes, sizeof(*bankCcLanes)) == bankCcHash);
     }
 
     assert(history.redo(bank, state));
-    assert(state.pattern().length.get() == 16U);
+    assert(state.pattern().length == 16U);
     assert(state.pattern().isEnabled(0U));
     assert(core::state::sequencer::graphView(state.pattern()) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0U)) == bankGraph);

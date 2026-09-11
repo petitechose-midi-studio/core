@@ -121,7 +121,7 @@ void test_valid_session_restores_runtime_project() {
     assert(std::strcmp(runtime.pages.activePageData().name, "Restored") == 0);
     assert(runtime.pages.activePageData().cc[0] == 71);
     assert(runtime.macros.slots[0].value.get() == 0.33f);
-    assert(runtime.sequencer.pattern().length.get() == 10);
+    assert(runtime.sequencer.pattern().length == 10);
     assert(runtime.sequencer.pattern().isEnabled(0));
     assert(runtime.sequencer.pattern().note[0] == 70);
     assert(!runtime.hasPendingProjectSessionSave());

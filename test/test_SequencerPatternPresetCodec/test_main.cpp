@@ -56,9 +56,9 @@ void testInstrumentRoundTrip() {
         "Chromatic pulse"
     ));
     assert(source.pattern().setContentLength(32U));
-    auto enabled = source.pattern().enabledMask.get();
+    auto enabled = source.pattern().enabledMask;
     enabled.setBit(3U, true);
-    source.pattern().enabledMask.set(enabled);
+    source.pattern().setEnabledMask(enabled);
     assert(source.pattern().setStepDataAt(3U, 72U, 111U, 240U, -12, 67U));
     assert(seq::setNodeNoteOffset(
         source.pattern(),

@@ -672,8 +672,8 @@ void installOwners(seq::SequencerPatternState& pattern, uint8_t tag) {
     pattern.graph->enabled = true;
     pattern.note[0U] = static_cast<uint8_t>(48U + tag);
     pattern.velocity[0U] = static_cast<uint8_t>(80U + tag);
-    pattern.stepDataRevision.set(100U + tag);
-    pattern.graphRevision.set(200U + tag);
+    pattern.setStepDataRevision(100U + tag);
+    pattern.setGraphRevision(200U + tag);
     seq::SequencerCcLaneDraft draft{};
     draft.destination.controller = static_cast<uint8_t>(70U + tag);
     assert(seq::createSequencerCcLane(
@@ -687,7 +687,7 @@ void installOwners(seq::SequencerPatternState& pattern, uint8_t tag) {
                0U,
                static_cast<uint8_t>(90U + tag)
            ).changed());
-    pattern.ccLaneRevision.set(pattern.ccLanes->revision);
+    pattern.setCcLaneRevision(pattern.ccLanes->revision);
 }
 
 void seedRequiredOwners(Harness& harness, const Plan& plan) {

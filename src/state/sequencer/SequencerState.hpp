@@ -40,10 +40,6 @@ struct SequencerState {
 
     // The musical owner outlives the editor. Selection never copies its data.
     void selectPattern(SequencerPatternState& pattern, SequencerClipState& clip);
-    void setPatternSelectionCallback(void* context, void (*callback)(void*)) {
-        selectionContext_ = context;
-        selectionCallback_ = callback;
-    }
 
     /// Bumps when the active Track's implicit Clip boundaries change.
     Signal<uint32_t, 4> clipRevision{0};
@@ -227,8 +223,6 @@ struct SequencerState {
 private:
     SequencerPatternState* pattern_;
     SequencerClipState* clip_;
-    void* selectionContext_ = nullptr;
-    void (*selectionCallback_)(void*) = nullptr;
 };
 
 }  // namespace core::state::sequencer

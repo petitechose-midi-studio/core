@@ -45,17 +45,10 @@ struct SequencerQuickControlsDraft {
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-#if OC_ENABLE_STATS
 static_assert(
-    sizeof(SequencerQuickControlsDraft) == 1832U,
-    "diagnostic ARM detached Quick Controls root changed"
-);
-#else
-static_assert(
-    sizeof(SequencerQuickControlsDraft) == 1784U,
+    sizeof(SequencerQuickControlsDraft) == 904U,
     "LOCK-P: ARM detached Quick Controls root changed"
 );
-#endif
 #endif
 
 /** Lazy owner for the sole detached Quick Controls Pattern. */

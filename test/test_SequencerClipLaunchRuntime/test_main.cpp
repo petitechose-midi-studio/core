@@ -290,7 +290,7 @@ void test_clip_cc_and_notes_share_intro_loop_and_output_delay() {
         draft.destination.controller = 74U;
         assert(seq::createSequencerCcLane(*lanes, 0U, draft).changed());
         assert(seq::setSequencerCcLaneEvent(*lanes, 0U, 1U, 96U).changed());
-        pattern.ccLaneRevision.set(lanes->revision);
+        pattern.setCcLaneRevision(lanes->revision);
         seq::SequencerClipDocumentPtr document;
         assert(seq::captureSequencerClipDocument(pattern, clip,
             seq::SequencerTrackKind::INSTRUMENT, nullptr, document));

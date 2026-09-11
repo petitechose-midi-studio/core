@@ -346,15 +346,15 @@ void installTrackBankStateForTest(
     seq::applyTrackBankSnapshot(bank, active, snapshot);
     for (uint8_t i = 0; i < seq::SequencerTrackBankState::TRACK_COUNT; ++i) {
         bank.track(i).graph = std::move(graphs[i]);
-        bank.track(i).graphRevision.set(snapshot.tracks[i].graphRevision);
+        bank.track(i).setGraphRevision(snapshot.tracks[i].graphRevision);
         seq::installSequencerCcLaneBank(bank.track(i), std::move(ccLaneBanks[i]));
-        bank.track(i).ccLaneRevision.set(stagedBank.track(i).ccLaneRevision.get());
+        bank.track(i).setCcLaneRevision(stagedBank.track(i).ccLaneRevision);
     }
     const uint8_t activeTrack = bank.activeTrackIndex();
     active.pattern().graph = std::move(editorGraph);
-    active.pattern().graphRevision.set(snapshot.tracks[activeTrack].graphRevision);
+    active.pattern().setGraphRevision(snapshot.tracks[activeTrack].graphRevision);
     seq::installSequencerCcLaneBank(active.pattern(), std::move(editorCcLanes));
-    active.pattern().ccLaneRevision.set(stagedActive.pattern().ccLaneRevision.get());
+    active.pattern().setCcLaneRevision(stagedActive.pattern().ccLaneRevision);
 }
 
 void publishStagedFlatPattern(
@@ -364,8 +364,8 @@ void publishStagedFlatPattern(
     seq::SequencerPatternSnapshot flat{};
     seq::captureSnapshot(staged.pattern(), flat);
     seq::applySnapshotPreservingGraph(h.state.sequencer.pattern(), flat);
-    h.state.sequencer.pattern().ccLaneRevision.set(
-        staged.pattern().ccLaneRevision.get()
+    h.state.sequencer.pattern().setCcLaneRevision(
+        staged.pattern().ccLaneRevision
     );
 }
 
@@ -388,8 +388,8 @@ BankOwnerInvariant captureBankOwners(const Harness& h) {
         const auto& pattern = h.state.sequencerTracks.track(track);
         result.graphs[track] = pattern.graph.get();
         result.cc[track] = pattern.ccLanes.get();
-        result.graphRevisions[track] = pattern.graphRevision.get();
-        result.ccRevisions[track] = pattern.ccLaneRevision.get();
+        result.graphRevisions[track] = pattern.graphRevision;
+        result.ccRevisions[track] = pattern.ccLaneRevision;
     }
     return result;
 }
@@ -802,8 +802,8 @@ void runPatternCommit(
             std::move(staged.pattern().graph),
             std::move(staged.pattern().ccLanes)
         );
-        h.state.sequencer.pattern().ccLaneRevision.set(
-            staged.pattern().ccLaneRevision.get());
+        h.state.sequencer.pattern().setCcLaneRevision(
+            staged.pattern().ccLaneRevision);
         assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
         tx::assertMaxPlusOneStillArmed(0U);
         assertExactlyOnePublication(h.state, before);
@@ -1028,8 +1028,8 @@ void prepareGraphCcPatternTraversalEntry(Harness& h, bool targetActive) {
         std::move(staged.pattern().graph),
         std::move(staged.pattern().ccLanes)
     );
-    h.state.sequencer.pattern().ccLaneRevision.set(
-        staged.pattern().ccLaneRevision.get());
+    h.state.sequencer.pattern().setCcLaneRevision(
+        staged.pattern().ccLaneRevision);
     assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
     settleSetup(h);
 
@@ -1318,7 +1318,7 @@ void test_pattern_identity_and_flat_cc_drift_are_rejected() {
         const auto liveOwners = captureBankOwners(h);
         const auto* bankCcOwner = h.state.sequencerTracks.track(0U).ccLanes.get();
         const uint32_t bankCcRevision =
-            h.state.sequencerTracks.track(0U).ccLaneRevision.get();
+            h.state.sequencerTracks.track(0U).ccLaneRevision;
         auto* stagedCc = staged.pattern().ccLanes.get();
         assert(stagedCc != nullptr);
         assert(seq::setSequencerCcLaneEvent(*stagedCc, 0U, 0U, 42U).changed());
@@ -1339,7 +1339,7 @@ void test_pattern_identity_and_flat_cc_drift_are_rejected() {
         tx::assertMusicalSnapshot(h.state, liveMusical);
         assert(h.state.sequencerTracks.track(0U).ccLanes.get() == bankCcOwner);
         assert(
-            h.state.sequencerTracks.track(0U).ccLaneRevision.get() ==
+            h.state.sequencerTracks.track(0U).ccLaneRevision ==
             bankCcRevision
         );
     }
@@ -1367,8 +1367,8 @@ void test_generic_publication_preserves_spares_and_canonical_readers() {
     assert(editorGraph != nullptr);
     assert(spareGraph != nullptr);
     assert(
-        h.state.sequencer.pattern().graphRevision.get() ==
-        h.state.sequencerTracks.track(1U).graphRevision.get()
+        h.state.sequencer.pattern().graphRevision ==
+        h.state.sequencerTracks.track(1U).graphRevision
     );
     assert(
         editorGraph->stepNode(seq::rootStepNodeId(0U))->noteOffset ==
@@ -1435,11 +1435,11 @@ void test_flat_publication_ignores_unselected_track_payload_revision_drift() {
     Harness h;
     initializeActivePayload(h, PayloadKind::GraphAndCc);
     auto& bankPattern = h.state.sequencerTracks.track(1U);
-    bankPattern.graphRevision.set(
-        h.state.sequencer.pattern().graphRevision.get() + 7U
+    bankPattern.setGraphRevision(
+        h.state.sequencer.pattern().graphRevision + 7U
     );
-    bankPattern.ccLaneRevision.set(
-        h.state.sequencer.pattern().ccLaneRevision.get() + 9U
+    bankPattern.setCcLaneRevision(
+        h.state.sequencer.pattern().ccLaneRevision + 9U
     );
 
     PreparedPattern prepared;
@@ -1460,12 +1460,12 @@ void test_flat_publication_ignores_unselected_track_payload_revision_drift() {
     assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
 
     assert(
-        bankPattern.graphRevision.get() ==
-        h.state.sequencer.pattern().graphRevision.get() + 7U
+        bankPattern.graphRevision ==
+        h.state.sequencer.pattern().graphRevision + 7U
     );
     assert(
-        bankPattern.ccLaneRevision.get() ==
-        h.state.sequencer.pattern().ccLaneRevision.get() + 9U
+        bankPattern.ccLaneRevision ==
+        h.state.sequencer.pattern().ccLaneRevision + 9U
     );
     assertNoDeferredPublication(h);
     std::cout << "[PASS] Flat publication ignores unselected Track payload revision drift\n";
@@ -1588,26 +1588,26 @@ void setPatternRevisionVector(
     seq::SequencerPatternState& pattern,
     uint32_t base
 ) {
-    pattern.stepDataRevision.set(base + 1U);
-    pattern.patternVariationRevision.set(base + 2U);
-    pattern.patternScaleRevision.set(base + 3U);
-    pattern.patternTimingRevision.set(base + 4U);
-    pattern.graphRevision.set(base + 5U);
-    pattern.ccLaneRevision.set(base + 6U);
+    pattern.setStepDataRevision(base + 1U);
+    pattern.setPatternVariationRevision(base + 2U);
+    pattern.setPatternScaleRevision(base + 3U);
+    pattern.setPatternTimingRevision(base + 4U);
+    pattern.setGraphRevision(base + 5U);
+    pattern.setCcLaneRevision(base + 6U);
 }
 
 void assertCapturedPatternRevisionVector(
     const seq::SequencerPatternState& pattern,
     const seq::SequencerPatternSnapshot& expected
 ) {
-    assert(pattern.stepDataRevision.get() == expected.stepDataRevision);
+    assert(pattern.stepDataRevision == expected.stepDataRevision);
     assert(
-        pattern.patternVariationRevision.get() ==
+        pattern.patternVariationRevision ==
         expected.patternVariationRevision
     );
-    assert(pattern.patternScaleRevision.get() == expected.patternScaleRevision);
-    assert(pattern.patternTimingRevision.get() == expected.patternTimingRevision);
-    assert(pattern.graphRevision.get() == expected.graphRevision);
+    assert(pattern.patternScaleRevision == expected.patternScaleRevision);
+    assert(pattern.patternTimingRevision == expected.patternTimingRevision);
+    assert(pattern.graphRevision == expected.graphRevision);
 }
 
 void beginModifiedChordDraft(Harness& h) {
@@ -1681,7 +1681,7 @@ void test_bank_snapshot_apply_restores_revision_contract() {
             pattern,
             static_cast<uint32_t>(1000U + 10U * track)
         );
-        capturedCcRevisions[track] = pattern.ccLaneRevision.get();
+        capturedCcRevisions[track] = pattern.ccLaneRevision;
     }
 
     seq::SequencerHistoryTrackBankSnapshot captured;
@@ -1712,7 +1712,7 @@ void test_bank_snapshot_apply_restores_revision_contract() {
             static_cast<uint8_t>(20U + track)
         ).changed());
         pattern.bumpCcLaneRevision();
-        ccRevisionsBeforeApply[track] = pattern.ccLaneRevision.get();
+        ccRevisionsBeforeApply[track] = pattern.ccLaneRevision;
         assert(ccRevisionsBeforeApply[track] >= capturedCcRevisions[track]);
     }
     h.state.sequencerTracks.projectScaleRevisionSignal().set(9000U);
@@ -1737,7 +1737,7 @@ void test_bank_snapshot_apply_restores_revision_contract() {
             expectedCc
         ));
         assert(
-            pattern.ccLaneRevision.get() >=
+            pattern.ccLaneRevision >=
             ccRevisionsBeforeApply[track]
         );
     }

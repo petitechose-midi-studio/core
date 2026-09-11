@@ -110,7 +110,7 @@ FLASHMEM bool validCommonPlan(
         plan.beforeActiveTrack != sharedTracks.activeTrack() ||
         plan.beforeFocusedStep != sequencer.focusedStep.get() ||
         plan.beforePage != sequencer.page.get() ||
-        plan.beforeFocusedStep >= sequencer.pattern().length.get() ||
+        plan.beforeFocusedStep >= sequencer.pattern().length ||
         plan.beforePage >= core::state::sequencer::SequencerState::PAGE_COUNT ||
         (macroPages != nullptr &&
          (macroPages->currentTrackEnabledMask() != plan.beforeEnabledMask ||
@@ -124,8 +124,8 @@ FLASHMEM bool validCommonPlan(
         (plan.canonicalResetTrackMask & trackBit(plan.afterActiveTrack)) != 0U
             ? core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH
             : (activeChanges
-                   ? tracks.track(plan.afterActiveTrack).length.get()
-                   : sequencer.pattern().length.get());
+                   ? tracks.track(plan.afterActiveTrack).length
+                   : sequencer.pattern().length);
     if (incomingLength == 0U ||
         incomingLength > core::state::sequencer::SequencerState::MAX_STEPS) {
         return false;

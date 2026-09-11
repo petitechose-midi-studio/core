@@ -952,7 +952,7 @@ FLASHMEM bool decodeClipDocument(
     if (!document) return false;
     state::sequencer::captureSnapshot(*pattern, document->pattern);
     document->clip = clip;
-    document->ccLaneRevision = pattern->ccLaneRevision.get();
+    document->ccLaneRevision = pattern->ccLaneRevision;
     document->trackKind = expectedKind;
     document->graph = std::move(pattern->graph);
     document->ccLanes = std::move(pattern->ccLanes);

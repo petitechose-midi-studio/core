@@ -6,20 +6,16 @@
 
 namespace core::state::sequencer {
 
+FLASHMEM SequencerPatternObservation::~SequencerPatternObservation() {
+    if (pattern_) pattern_->observation_ = nullptr;
+}
+
 FLASHMEM void SequencerPatternObservation::bind(SequencerPatternState& pattern) {
-    subscriptions_.clear();
-    watch(pattern.length, length);
-    watch(pattern.enabledMask, enabledMask);
-    watch(pattern.stepDataRevision, stepDataRevision);
-    watch(pattern.graphRevision, graphRevision);
-    watch(pattern.ccLaneRevision, ccLaneRevision);
-    watch(pattern.patternVariationRevision, patternVariationRevision);
-    watch(pattern.patternScaleRevision, patternScaleRevision);
-    watch(pattern.stepsPerBeat, patternTimingRevision);
-    watch(pattern.swingOffsetPercent, patternTimingRevision);
-    watch(pattern.patternNudgePercent, patternTimingRevision);
-    watch(pattern.patternTimingRevision, patternTimingRevision);
-    // Equal values in distinct documents must still invalidate the UI.
+    if (pattern_) pattern_->observation_ = nullptr;
+    // A document has at most one editor. No callback ever retains its address.
+    if (pattern.observation_ && pattern.observation_ != this) std::abort();
+    pattern_ = &pattern;
+    pattern.observation_ = this;
     for (auto* revision : {&length, &enabledMask, &stepDataRevision,
              &graphRevision, &ccLaneRevision, &patternVariationRevision,
              &patternScaleRevision, &patternTimingRevision}) {
@@ -27,7 +23,22 @@ FLASHMEM void SequencerPatternObservation::bind(SequencerPatternState& pattern) 
     }
 }
 
-FLASHMEM SequencerPatternState::~SequencerPatternState() = default;
+FLASHMEM void SequencerPatternObservation::publish(SequencerPatternChange change) {
+    Revision* revisions[] = {&length, &enabledMask, &stepDataRevision,
+        &graphRevision, &ccLaneRevision, &patternVariationRevision,
+        &patternScaleRevision, &patternTimingRevision};
+    auto& revision = *revisions[static_cast<uint8_t>(change)];
+    revision.set(revision.get() + 1U);
+    authoredRevision.set(authoredRevision.get() + 1U);
+}
+
+FLASHMEM void SequencerPatternState::publishChange(SequencerPatternChange change) {
+    if (observation_) observation_->publish(change);
+}
+
+FLASHMEM SequencerPatternState::~SequencerPatternState() {
+    if (observation_) observation_->pattern_ = nullptr;
+}
 
 FLASHMEM uint8_t SequencerPatternState::variationRangeForProperty(
     StepProperty property
@@ -135,16 +146,16 @@ FLASHMEM bool SequencerPatternState::setPitchEditMode(SequencerPitchEditMode mod
 
 FLASHMEM bool SequencerPatternState::setPatternSwingOffsetPercent(int value) {
     const int8_t clamped = clampPatternSwingOffsetPercent(value);
-    if (swingOffsetPercent.get() == clamped) return false;
-    swingOffsetPercent.set(clamped);
+    if (swingOffsetPercent == clamped) return false;
+    setSwingOffsetPercent(clamped);
     bumpPatternTimingRevision();
     return true;
 }
 
 FLASHMEM bool SequencerPatternState::setPatternNudgePercent(int value) {
     const int8_t clamped = clampPatternNudgePercent(value);
-    if (patternNudgePercent.get() == clamped) return false;
-    patternNudgePercent.set(clamped);
+    if (patternNudgePercent == clamped) return false;
+    patternNudgePercent = clamped;
     bumpPatternTimingRevision();
     return true;
 }
@@ -163,7 +174,6 @@ FLASHMEM void SequencerState::selectPattern(
     pattern_ = &pattern;
     clip_ = &clip;
     patternChanges.bind(pattern);
-    if (selectionCallback_) selectionCallback_(selectionContext_);
 }
 FLASHMEM SequencerState::~SequencerState() = default;
 
@@ -361,7 +371,10 @@ FLASHMEM bool SequencerState::setStepDataAt(
 }
 
 FLASHMEM void SequencerPatternState::reset() {
-    oc::note::sequencer::StepSequencerState::reset();
+    setLength(DEFAULT_LENGTH);
+    setStepsPerBeat(DEFAULT_STEPS_PER_BEAT);
+    setEnabledMask({});
+    resetStepData();
     bumpStepDataRevision();
     variationRanges = {};
     bumpPatternVariationRevision();
@@ -369,8 +382,8 @@ FLASHMEM void SequencerPatternState::reset() {
     scaleOverride = {};
     pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
     bumpPatternScaleRevision();
-    swingOffsetPercent.set(0);
-    patternNudgePercent.set(0);
+    setSwingOffsetPercent(0);
+    patternNudgePercent = 0;
     bumpPatternTimingRevision();
     graph.reset();
     bumpGraphRevision();

@@ -165,7 +165,7 @@ void test_restore_and_firmware_ordered_autosave() {
         ms::entry::SdlProjectSessionRuntime runtime(productFiles, state, 1);
         assert(runtime.restoreResult().restored());
         assert(std::strcmp(state.project.metadata.id.data(), "sdl-parity") == 0);
-        assert(state.sequencer.pattern().length.get() == 8);
+        assert(state.sequencer.pattern().length == 8);
         assert(state.sequencer.pattern().isEnabled(0));
         assert(state.sequencer.pattern().note[0] == 67);
     }

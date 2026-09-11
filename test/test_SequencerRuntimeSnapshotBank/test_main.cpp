@@ -144,7 +144,7 @@ void test_region_markers_invalidate_both_flat_runtime_buffers() {
         {},
         {}
     );
-    const uint32_t unchangedRevision = sequencer.pattern().patternTimingRevision.get();
+    const uint32_t unchangedRevision = sequencer.pattern().patternTimingRevision;
     // Reproduce a snapshot restore where the historical revision can be equal
     // even though the persisted region changed.
     assert(core::state::sequencer::setClipPlaybackRegion(
@@ -152,7 +152,7 @@ void test_region_markers_invalidate_both_flat_runtime_buffers() {
         sequencer.clip(),
         {8U, 1U, 2U, 6U}
     ));
-    assert(sequencer.pattern().patternTimingRevision.get() == unchangedRevision);
+    assert(sequencer.pattern().patternTimingRevision == unchangedRevision);
     const auto after = core::sequencer::captureRuntimeStateSignature(
         sequencer.pattern(),
         sequencer.clip(),
@@ -550,7 +550,7 @@ void test_resident_and_document_publications_converge() {
         pattern.nudge[track] = -12;
         pattern.probability[track] = 73;
         pattern.bumpStepDataRevision();
-        pattern.swingOffsetPercent.set(track % 2 ? -50 : 50);
+        pattern.setSwingOffsetPercent(track % 2 ? -50 : 50);
         pattern.scalePolicy = track % 2 ? seq::SequencerPatternScalePolicy::OVERRIDE
                                        : seq::SequencerPatternScalePolicy::INHERIT_PROJECT;
         pattern.scaleOverride = {9, StepSequencerScaleType::NaturalMinor,
@@ -572,7 +572,7 @@ void test_resident_and_document_publications_converge() {
         // equivalent documents those revisions before comparing full signatures.
         for (uint8_t track = 0; track < clips.size(); ++track) {
             clips[track].pattern.patternScaleRevision =
-                tracks.track(track).patternScaleRevision.get();
+                tracks.track(track).patternScaleRevision;
         }
         // Update both alternating buffers, then exercise both cache hits.
         for (unsigned replay = 0; replay < 4; ++replay) {

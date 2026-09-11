@@ -403,7 +403,7 @@ void formatQuickControlValue(
                 size,
                 1U,
                 static_cast<unsigned>(
-                    4U * static_cast<uint16_t>(pattern.stepsPerBeat.get())
+                    4U * static_cast<uint16_t>(pattern.stepsPerBeat)
                 )
             );
             return;
@@ -424,7 +424,7 @@ void formatQuickControlValue(
                 buffer,
                 size,
                 "%+d%%",
-                static_cast<int>(pattern.patternNudgePercent.get())
+                static_cast<int>(pattern.patternNudgePercent)
             );
             return;
         case QuickItem::LENGTH:

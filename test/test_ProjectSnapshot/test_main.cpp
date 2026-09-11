@@ -187,7 +187,7 @@ void configureProjectSession(core::state::CoreState& state) {
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
     state.sequencer.pattern().setContentLength(15);
-    state.sequencer.pattern().stepsPerBeat.set(6);
+    state.sequencer.pattern().setStepsPerBeat(6);
     assert(project::setProjectTrackMidiChannel(state.projectTracks, 1U, 9U).changed());
     state.sequencer.setStepDataAt(0, 66, 111, 88);
     state.sequencer.pattern().toggle(0);
@@ -220,7 +220,7 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(state.resetMusicalProject() ==
            core::state::ProjectResetOutcome::Completed);
     assert(state.statusBar.tempo.get() == 120.0f);
-    assert(state.sequencer.pattern().length.get() == sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(state.sequencer.pattern().length == sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(state.sharedTrackActive.get() == 0);
     assert(state.macroUi.manualOverrides.entryCount == 0);
 
@@ -283,8 +283,8 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(restoredAutomation.primaryModulation.amount > 0.3699f &&
            restoredAutomation.primaryModulation.amount < 0.3701f);
 
-    assert(state.sequencer.pattern().length.get() == 15);
-    assert(state.sequencer.pattern().stepsPerBeat.get() == 6);
+    assert(state.sequencer.pattern().length == 15);
+    assert(state.sequencer.pattern().stepsPerBeat == 6);
     assert(state.projectTracks.authored.midiChannels[1] == 9U);
     assert(state.sequencer.pattern().isEnabled(0));
     assert(state.sequencer.pattern().note[0] == 66);

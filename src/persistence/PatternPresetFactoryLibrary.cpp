@@ -149,8 +149,8 @@ FLASHMEM void authorInstrument(
 ) {
     pattern.reset();
     pattern.setContentLength(definition.length);
-    pattern.stepsPerBeat.set(definition.stepsPerBeat);
-    auto enabled = pattern.enabledMask.get();
+    pattern.setStepsPerBeat(definition.stepsPerBeat);
+    auto enabled = pattern.enabledMask;
     for (uint8_t step = 0U; step < definition.length; ++step) {
         const bool active =
             (definition.instrumentMask & (UINT16_C(1) << step)) != 0U;
@@ -164,7 +164,7 @@ FLASHMEM void authorInstrument(
             82U
         );
     }
-    pattern.enabledMask.set(enabled);
+    pattern.setEnabledMask(enabled);
 }
 
 FLASHMEM void authorDrum(
@@ -174,7 +174,7 @@ FLASHMEM void authorDrum(
 ) {
     pattern.reset();
     pattern.setContentLength(definition.length);
-    pattern.stepsPerBeat.set(definition.stepsPerBeat);
+    pattern.setStepsPerBeat(definition.stepsPerBeat);
     drum.reset(seq::DrumKitPreset::GENERAL_MIDI);
     drum.pattern.setDefaults(definition.length, definition.stepsPerBeat);
     for (uint8_t lane = 0U; lane < seq::DRUM_DEFAULT_LANE_COUNT; ++lane) {

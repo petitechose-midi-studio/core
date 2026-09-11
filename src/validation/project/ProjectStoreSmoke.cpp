@@ -54,7 +54,7 @@ FLASHMEM void configureProjectStoreSmokeState(core::state::CoreState& state,
         state.sequencer,
         12U
     );
-    state.sequencer.pattern().stepsPerBeat.set(4);
+    state.sequencer.pattern().setStepsPerBeat(4);
     state.sequencer.setStepDataAt(3, 65, 111, 72);
     if (!state.sequencer.pattern().isEnabled(3)) {
         state.sequencer.pattern().toggle(3);
@@ -93,7 +93,7 @@ FLASHMEM bool verifyProjectStoreSmokeState(const core::state::CoreState& state) 
            state.projectNavigation.transportSwingPercent == 17U &&
            std::strcmp(page.name, PROJECT_STORE_SMOKE_NAME) == 0 &&
            page.cc[2] == 74U &&
-           state.sequencer.pattern().length.get() == 12U &&
+           state.sequencer.pattern().length == 12U &&
            state.sequencer.pattern().note[3] == 65U &&
            state.sequencer.pattern().velocity[3] == 111U &&
            state.sequencer.pattern().gate[3] == 72U &&

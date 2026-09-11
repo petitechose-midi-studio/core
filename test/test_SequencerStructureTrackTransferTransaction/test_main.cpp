@@ -681,7 +681,7 @@ void test_second_paste_same_track_is_blocked_by_canonical_pending_plan() {
     assert(first.operationId != 0);
     assert(first.activationGeneration == state.sequencerTrackActivations.telemetry(1).generation);
     assert(state.sequencerHistory.undoCount() == 1);
-    const uint32_t editorRevision = state.sequencer.pattern().stepDataRevision.get();
+    const uint32_t editorRevision = state.sequencer.pattern().stepDataRevision;
 
     const auto second = core::handler::executeSequencerTrackTransfer(
         state.sequencerTracks, state.projectTracks, state.sequencer, state.structureClipboard,
@@ -691,7 +691,7 @@ void test_second_paste_same_track_is_blocked_by_canonical_pending_plan() {
     assert(!second.applied());
     assert(second.plan.reason == core::state::ClipboardTransferReason::PASTE_PENDING);
     assert(state.sequencerHistory.undoCount() == 1);
-    assert(state.sequencer.pattern().stepDataRevision.get() == editorRevision);
+    assert(state.sequencer.pattern().stepDataRevision == editorRevision);
     test_support::drainNotifications();
 
     std::cout << "[PASS] test_second_paste_same_track_is_blocked_by_canonical_pending_plan\n";

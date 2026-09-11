@@ -87,7 +87,7 @@ FLASHMEM uint16_t patternContentEndTick(
     const SequencerPatternState& pattern
 ) noexcept {
     return static_cast<uint16_t>(
-        pattern.length.get() * sequencerTicksPerStep(pattern.stepsPerBeat.get())
+        pattern.length * sequencerTicksPerStep(pattern.stepsPerBeat)
     );
 }
 
@@ -96,7 +96,7 @@ FLASHMEM bool validClipRegion(
     const SequencerClipState& clip
 ) noexcept {
     const uint16_t ticksPerStep = sequencerTicksPerStep(
-        pattern.stepsPerBeat.get()
+        pattern.stepsPerBeat
     );
     const uint16_t contentEnd = patternContentEndTick(pattern);
     return ticksPerStep != 0U && contentEnd != 0U &&
@@ -114,10 +114,10 @@ FLASHMEM SequencerClipPlaybackRegion clipPlaybackRegion(
 ) noexcept {
     if (!validClipRegion(pattern, clip)) return invalidRegion();
     const uint16_t ticksPerStep = sequencerTicksPerStep(
-        pattern.stepsPerBeat.get()
+        pattern.stepsPerBeat
     );
     return {
-        pattern.length.get(),
+        pattern.length,
         static_cast<uint8_t>(clip.playStartTick / ticksPerStep),
         static_cast<uint8_t>(clip.loopStartTick / ticksPerStep),
         static_cast<uint8_t>(clip.loopEndTick / ticksPerStep),
@@ -129,9 +129,9 @@ FLASHMEM SequencerClipState clipStateForPlaybackRegion(
     const SequencerClipPlaybackRegion& region
 ) noexcept {
     const uint16_t ticksPerStep = sequencerTicksPerStep(
-        pattern.stepsPerBeat.get()
+        pattern.stepsPerBeat
     );
-    if (!region.isValid() || region.contentLength != pattern.length.get() ||
+    if (!region.isValid() || region.contentLength != pattern.length ||
         ticksPerStep == 0U) {
         return {};
     }
@@ -223,7 +223,7 @@ FLASHMEM bool setClipPlaybackRegion(
 ) {
     if (!region.isValid()) return false;
     const uint16_t ticksPerStep = sequencerTicksPerStep(
-        pattern.stepsPerBeat.get()
+        pattern.stepsPerBeat
     );
     if (ticksPerStep == 0U) return false;
     const SequencerClipState next{
@@ -234,7 +234,7 @@ FLASHMEM bool setClipPlaybackRegion(
     const bool clipChanged = clip.playStartTick != next.playStartTick ||
         clip.loopStartTick != next.loopStartTick ||
         clip.loopEndTick != next.loopEndTick;
-    const bool lengthChanged = pattern.length.get() != region.contentLength;
+    const bool lengthChanged = pattern.length != region.contentLength;
     if (!clipChanged && !lengthChanged) return false;
 
     clip = next;
@@ -298,7 +298,7 @@ FLASHMEM bool setClipPatternStepsPerBeat(
 ) {
     const auto region = clipPlaybackRegion(pattern, clip);
     if (!region.isValid() || sequencerTicksPerStep(stepsPerBeat) == 0U ||
-        pattern.stepsPerBeat.get() == stepsPerBeat) {
+        pattern.stepsPerBeat == stepsPerBeat) {
         return false;
     }
     const uint16_t ticksPerStep = sequencerTicksPerStep(stepsPerBeat);
@@ -308,7 +308,7 @@ FLASHMEM bool setClipPatternStepsPerBeat(
         static_cast<uint16_t>(region.loopEnd * ticksPerStep),
     };
     clip = next;
-    pattern.stepsPerBeat.set(stepsPerBeat);
+    pattern.setStepsPerBeat(stepsPerBeat);
     pattern.bumpPatternTimingRevision();
     return true;
 }
@@ -388,19 +388,19 @@ FLASHMEM bool SequencerPatternState::setContentLength(
 ) {
     if (newContentLength < SequencerClipPlaybackRegion::MIN_CONTENT_LENGTH ||
         newContentLength > SequencerClipPlaybackRegion::MAX_CONTENT_LENGTH ||
-        length.get() == newContentLength) {
+        length == newContentLength) {
         return false;
     }
 
     bool ccChanged = false;
-    if (newContentLength < length.get() && ccLanes) {
+    if (newContentLength < length && ccLanes) {
         ccChanged = trimSequencerCcLaneBank(*ccLanes, newContentLength);
     }
-    enabledMask.set(
-        enabledMask.get() &
+    setEnabledMask(
+        enabledMask &
         oc::note::sequencer::StepBitMask128::prefixMask(newContentLength)
     );
-    length.set(newContentLength);
+    setLength(newContentLength);
     bumpPatternTimingRevision();
     if (ccChanged) bumpCcLaneRevision();
     return true;

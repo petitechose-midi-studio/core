@@ -514,9 +514,9 @@ void testFull128StepPatternAndSnapshotRebuild() {
     );
     assert(resized);
     seq::resetClipToPattern(clip, pattern);
-    auto mask = pattern.enabledMask.get();
+    auto mask = pattern.enabledMask;
     mask.setBit(127U, true);
-    pattern.enabledMask.set(mask);
+    pattern.setEnabledMask(mask);
     pattern.note[127] = 91U;
     pattern.velocity[127] = 119U;
     pattern.probability[127] = 37U;

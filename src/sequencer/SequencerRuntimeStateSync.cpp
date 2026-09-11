@@ -114,19 +114,19 @@ FLASHMEM SequencerRuntimeStateSignature captureRuntimeStateSignature(
     ProjectTimingContext projectTiming
 ) {
     return {
-        .length = source.length.get(),
-        .stepsPerBeat = source.stepsPerBeat.get(),
+        .length = source.length,
+        .stepsPerBeat = source.stepsPerBeat,
         .playStartTick = clip.playStartTick,
         .loopStartTick = clip.loopStartTick,
         .loopEndTick = clip.loopEndTick,
-        .enabledMask = source.enabledMask.get(),
-        .stepDataRevision = source.stepDataRevision.get(),
-        .patternVariationRevision = source.patternVariationRevision.get(),
-        .patternScaleRevision = source.patternScaleRevision.get(),
-        .patternTimingRevision = source.patternTimingRevision.get(),
-        .graphRevision = source.graphRevision.get(),
+        .enabledMask = source.enabledMask,
+        .stepDataRevision = source.stepDataRevision,
+        .patternVariationRevision = source.patternVariationRevision,
+        .patternScaleRevision = source.patternScaleRevision,
+        .patternTimingRevision = source.patternTimingRevision,
+        .graphRevision = source.graphRevision,
         .effectiveSwingPercent = source.effectiveSwingPercent(projectTiming.swingPercent),
-        .patternNudgePercent = source.patternNudgePercent.get(),
+        .patternNudgePercent = source.patternNudgePercent,
         .pitchFollowsScale =
             source.pitchEditMode ==
                 core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE,

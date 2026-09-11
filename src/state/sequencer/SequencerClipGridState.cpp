@@ -131,7 +131,7 @@ FLASHMEM void installDocumentPattern(
             std::move(document.graph),
             std::move(document.ccLanes)
         );
-        active.pattern().ccLaneRevision.set(document.ccLaneRevision);
+        active.pattern().setCcLaneRevision(document.ccLaneRevision);
         resetTransientTrackState(active);
     } else {
         installTrackContentSnapshotWithOwnedPayload(
@@ -142,7 +142,7 @@ FLASHMEM void installDocumentPattern(
             std::move(document.graph),
             std::move(document.ccLanes)
         );
-        bank.track(track).ccLaneRevision.set(document.ccLaneRevision);
+        bank.track(track).setCcLaneRevision(document.ccLaneRevision);
     }
 }
 
@@ -180,7 +180,7 @@ FLASHMEM bool exchangeCanonicalTrackDocument(
     SequencerClipState outgoingClip;
     captureSnapshot(pattern, outgoingPattern);
     outgoingClip = clip;
-    const uint32_t outgoingCcLaneRevision = pattern.ccLaneRevision.get();
+    const uint32_t outgoingCcLaneRevision = pattern.ccLaneRevision;
     auto outgoingGraph = std::move(pattern.graph);
     auto outgoingCcLanes = std::move(pattern.ccLanes);
     installDocumentPattern(bank, active, track, document);
@@ -299,7 +299,7 @@ FLASHMEM bool captureSequencerClipDocument(
     if (!next) return false;
     captureSnapshot(pattern, next->pattern);
     next->clip = clip;
-    next->ccLaneRevision = pattern.ccLaneRevision.get();
+    next->ccLaneRevision = pattern.ccLaneRevision;
     next->trackKind = trackKind;
     if (!cloneGraph(graphView(pattern), next->graph)) return false;
 

@@ -13,22 +13,8 @@
 
 namespace core::state::sequencer {
 
-struct SequencerPatternSnapshot : oc::note::sequencer::StepSequencerStepData {
-    uint8_t length = SequencerPatternState::DEFAULT_LENGTH;
-    uint8_t stepsPerBeat = SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
-    oc::note::sequencer::StepBitMask128 enabledMask{};
-    uint32_t stepDataRevision = 0;
-    uint32_t patternVariationRevision = 0;
-    uint32_t patternScaleRevision = 0;
-    uint32_t patternTimingRevision = 0;
-    uint32_t graphRevision = 0;
-    int8_t swingOffsetPercent = 0;
-    int8_t patternNudgePercent = 0;
+struct SequencerPatternSnapshot : SequencerPatternData {
     uint8_t effectiveSwingPercent = 0;
-    oc::note::sequencer::StepSequencerVariationRanges variationRanges{};
-    SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
-    oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
-    SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
     oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
 };
 

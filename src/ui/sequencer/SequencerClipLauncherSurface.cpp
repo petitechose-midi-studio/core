@@ -553,9 +553,9 @@ FLASHMEM void SequencerClipLauncherSurface::rebuildPreviews() {
                     projectMelodicPreview(
                         pattern,
                         clip,
-                        pattern.length.get(),
-                        pattern.stepsPerBeat.get(),
-                        pattern.enabledMask.get(),
+                        pattern.length,
+                        pattern.stepsPerBeat,
+                        pattern.enabledMask,
                         preview
                     );
                 }

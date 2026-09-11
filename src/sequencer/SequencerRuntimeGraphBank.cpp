@@ -48,7 +48,7 @@ FLASHMEM bool SequencerRuntimeGraphBank::prepare(
             .source = sourceGraph,
             .revision = inactiveClip
                 ? clipSource.document->pattern.graphRevision
-                : residentState.graphRevision.get(),
+                : residentState.graphRevision,
             .draftRevision = quickControlsPreview
                 ? sequencer.patternQuickControls.previewRevision.get()
                 : (stepDraftProjection

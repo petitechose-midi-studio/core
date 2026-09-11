@@ -412,8 +412,8 @@ void expects_history_replay_to_publish_only_the_canonical_owner() {
         assert(tx::commitAdmittedPattern(h.state.sequencerHistory,
             std::move(before), std::move(after), {}, storage));
         test_support::drainNotifications();
-        const auto scratchSwing = tracks.track(0U).swingOffsetPercent.get();
-        const auto scratchRevision = tracks.track(0U).patternTimingRevision.get();
+        const auto scratchSwing = tracks.track(0U).swingOffsetPercent;
+        const auto scratchRevision = tracks.track(0U).patternTimingRevision;
         const auto allocations = storage == seq::SequencerHistoryPatternStorage::FullGraph ? 2U : 0U;
         for (bool redo : {false, true}) {
             seq::SequencerHistoryPatternSnapshot liveBefore;
@@ -437,7 +437,7 @@ void expects_history_replay_to_publish_only_the_canonical_owner() {
             }
             // No syncNow(): exercise the real deferred watcher.
             test_support::drainNotifications();
-            assert(editor.pattern().swingOffsetPercent.get() == (redo ? 17 : 0));
+            assert(editor.pattern().swingOffsetPercent == (redo ? 17 : 0));
             assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
                 input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::SWING)));
             assert(editor.pattern().graph && editor.pattern().ccLanes->lanes[0].values[0] == 99U);
@@ -445,14 +445,14 @@ void expects_history_replay_to_publish_only_the_canonical_owner() {
         }
         // Switch away before replay: the same logical target is now in the bank.
         assert(seq::switchActiveTrack(tracks, editor, 1U));
-        const auto otherSwing = editor.pattern().swingOffsetPercent.get();
+        const auto otherSwing = editor.pattern().swingOffsetPercent;
         assert(h.state.undoSequencerHistory());
-        assert(editor.pattern().swingOffsetPercent.get() == otherSwing);
-        assert(tracks.track(0U).swingOffsetPercent.get() == 0);
+        assert(editor.pattern().swingOffsetPercent == otherSwing);
+        assert(tracks.track(0U).swingOffsetPercent == 0);
         assert(h.state.redoSequencerHistory());
         assert(seq::switchActiveTrack(tracks, editor, 0U));
         test_support::drainNotifications();
-        assert(editor.pattern().swingOffsetPercent.get() == 17);
+        assert(editor.pattern().swingOffsetPercent == 17);
         assert(editor.pattern().graph && editor.pattern().ccLanes->lanes[0].values[0] == 99U);
         // A new real coalesced edit must not require the old active mirror.
         const auto previousNote = editor.pattern().note[0U];
@@ -492,14 +492,14 @@ void expects_clip_installation_to_resolve_the_final_encoder_target() {
         h.state.sequencerClips, h.state.sequencerTracks, editor, {0U, 1U}));
     assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID), previousPosition));
     test_support::drainNotifications(); // Deliberately no syncNow().
-    assert(editor.pattern().length.get() == 16U);
+    assert(editor.pattern().length == 16U);
     assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
         input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::LENGTH)));
     assert(!almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID), previousPosition));
     assert(seq::switchResidentSequencerClip(
         h.state.sequencerClips, h.state.sequencerTracks, editor, {0U, 0U}));
     test_support::drainNotifications();
-    assert(editor.pattern().length.get() == 12U);
+    assert(editor.pattern().length == 12U);
     assert(almostEqual(h.encoderHw.getPosition(OPT_ENCODER_ID),
         input_utils::quickControlToNormalized(editor, seq::PatternQuickControlItem::LENGTH)));
     std::cout << "[PASS] deferred encoder resolves the installed Clip in both directions\n";

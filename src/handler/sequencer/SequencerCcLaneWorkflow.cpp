@@ -222,7 +222,7 @@ FLASHMEM void SequencerCcLaneWorkflow::openGrid_(uint8_t lane) {
     ui.compactTransitionPicker = false;
     ui.focusedStep = std::min<uint8_t>(
         editor_.focusedStep.get(),
-        static_cast<uint8_t>(std::max<uint8_t>(1, editor_.pattern().length.get()) - 1U));
+        static_cast<uint8_t>(std::max<uint8_t>(1, editor_.pattern().length) - 1U));
     ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
     refreshProjection();
 }
@@ -347,7 +347,7 @@ FLASHMEM void SequencerCcLaneWorkflow::moveFocusedStep(float delta, uint32_t now
     ui.transitionAppliedFeedback = false;
     if (!commitEventEdit(nowMs)) return;
     const int direction = direction_(delta);
-    const uint8_t length = std::max<uint8_t>(1, editor_.pattern().length.get());
+    const uint8_t length = std::max<uint8_t>(1, editor_.pattern().length);
     if (direction == 0) return;
     ui.focusedStep =
         static_cast<uint8_t>((static_cast<int>(ui.focusedStep) + direction + length) % length);
@@ -359,7 +359,7 @@ FLASHMEM void SequencerCcLaneWorkflow::moveFocusedStep(float delta, uint32_t now
 
 FLASHMEM bool SequencerCcLaneWorkflow::focusStep(uint8_t step, uint32_t nowMs) {
     auto& ui = editor_.ccLaneUi;
-    const uint8_t length = std::max<uint8_t>(1U, editor_.pattern().length.get());
+    const uint8_t length = std::max<uint8_t>(1U, editor_.pattern().length);
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID || step >= length) { return false; }
     if (ui.focusedStep != step) {
         if (!commitEventEdit(nowMs)) return false;
@@ -483,7 +483,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::editFocusedEvent(float delta, uint32_t no
                                   ? clampAdd(beforeValue, direction_(delta),
                                              lane.destination.minimum, lane.destination.maximum)
                                   : seq::proposedSequencerCcLaneEventValue(
-                                        lane, ui.focusedStep, editor_.pattern().length.get());
+                                        lane, ui.focusedStep, editor_.pattern().length);
     return setFocusedEventValue_(nextValue, nowMs);
 }
 
@@ -533,7 +533,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::focusVisibleStep_(uint8_t indexInWindow, 
         static_cast<uint8_t>((ui.focusedStep / seq::SequencerPatternState::STEPS_PER_PAGE) *
                              seq::SequencerPatternState::STEPS_PER_PAGE);
     const uint8_t step = static_cast<uint8_t>(start + indexInWindow);
-    if (step >= std::max<uint8_t>(1U, editor_.pattern().length.get())) return false;
+    if (step >= std::max<uint8_t>(1U, editor_.pattern().length)) return false;
     return focusStep(step, nowMs);
 }
 

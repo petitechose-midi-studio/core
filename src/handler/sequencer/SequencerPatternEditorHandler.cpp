@@ -184,7 +184,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
                    ((randomize_.active && randomize_.summary.changedCount > 0U) ||
                     (!randomize_.active &&
                      sequencer_.patternEditor.navigationMode == Mode::FIELDS &&
-                     sequencer_.pattern().length.get() <
+                     sequencer_.pattern().length <
                          core::state::sequencer::SequencerState::MAX_STEPS));
         })
         .then([this]() {
@@ -442,7 +442,7 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
 
 FLASHMEM void SequencerPatternEditorHandler::addPage() {
     if (!commitPendingEdit()) return;
-    const uint8_t current = sequencer_.pattern().length.get();
+    const uint8_t current = sequencer_.pattern().length;
     const uint8_t next = static_cast<uint8_t>(
         std::min<unsigned>(core::state::sequencer::SequencerState::MAX_STEPS,
                            ((static_cast<unsigned>(current) +

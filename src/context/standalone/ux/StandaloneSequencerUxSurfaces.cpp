@@ -2181,7 +2181,7 @@ FLASHMEM bool SequencerPatternEditorUxSurface::captureSemanticUxContext(
             core::state::sequencer::SequencerState::STEPS_PER_PAGE
     );
     out.targetStep = sequencer_.patternEditor.windowStart;
-    out.targetCount = sequencer_.pattern().length.get();
+    out.targetCount = sequencer_.pattern().length;
     out.hasDraftActive = true;
     out.draftActive = randomize_.active;
 

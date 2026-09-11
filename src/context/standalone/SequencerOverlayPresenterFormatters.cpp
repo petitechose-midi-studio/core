@@ -161,9 +161,9 @@ FLASHMEM uint32_t buildStepEditDataRevision(
     const auto& sequencer = source.sequencer;
     const auto& pattern = core::state::sequencer::authoringPattern(sequencer);
     uint32_t revision = 2166136261U;
-    revision = mixRevision(revision, pattern.stepDataRevision.get());
-    revision = mixRevision(revision, pattern.graphRevision.get());
-    revision = mixRevision(revision, pattern.patternScaleRevision.get());
+    revision = mixRevision(revision, pattern.stepDataRevision);
+    revision = mixRevision(revision, pattern.graphRevision);
+    revision = mixRevision(revision, pattern.patternScaleRevision);
     revision = mixRevision(revision, sequencer.stepContentDraft.revision.get());
     revision = mixRevision(
         revision,
@@ -649,7 +649,7 @@ FLASHMEM void buildDrumStepEditRenderData(
     revision = mixRevision(revision, drumStep);
     revision = mixRevision(revision, editedStep);
     revision = mixRevision(revision, edit.focusedRow.get());
-    revision = mixRevision(revision, pattern.graphRevision.get());
+    revision = mixRevision(revision, pattern.graphRevision);
     revision = mixRevision(revision, sequencer.contentView.revision.get());
     data.dataRevision = revision;
     data.overlayProps.visible = true;

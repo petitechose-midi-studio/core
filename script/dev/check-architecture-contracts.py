@@ -3595,7 +3595,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"action\s*==\s*Action::SequencerRemoveSelection.*?"
         r"const\s+uint8_t\s+incomingLength\s*=\s*"
         r"\(?context\.state\.tracks\)?\.track\s*\(\s*"
-        r"mutation\.nextActive\s*\)\.length\.get\s*\(\s*\)\s*;.*?"
+        r"mutation\.nextActive\s*\)\.length\s*;.*?"
         r"fillActiveChangeFocus\s*\(\s*context\s*,\s*incomingLength\s*,\s*plan\s*\)",
         "SelectionRemove focus must use the canonical destination bank owner",
     )

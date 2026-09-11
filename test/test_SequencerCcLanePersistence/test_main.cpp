@@ -166,7 +166,7 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         loaded.pattern()
     ));
     assertTwoLanes(seq::sequencerCcLaneView(loaded.pattern()));
-    assert(loaded.pattern().length.get() == 32U);
+    assert(loaded.pattern().length == 32U);
     assert(loaded.clip().playStartTick == 0U);
     assert(loaded.clip().loopStartTick == 0U);
     assert(loaded.clip().loopEndTick == seq::SequencerClipState::DEFAULT_END_TICK);

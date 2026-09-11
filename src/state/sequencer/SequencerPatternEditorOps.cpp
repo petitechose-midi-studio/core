@@ -16,7 +16,7 @@ namespace {
 constexpr uint8_t kWindowSize = SequencerState::STEPS_PER_PAGE;
 
 FLASHMEM uint8_t windowCount(const SequencerState& sequencer) {
-    const uint8_t length = sequencer.pattern().length.get();
+    const uint8_t length = sequencer.pattern().length;
     return static_cast<uint8_t>(
         (static_cast<uint16_t>(length) + kWindowSize - 1U) / kWindowSize
     );
@@ -105,7 +105,7 @@ FLASHMEM bool openPatternEditor(
     sequencer.patternEditor.open(ownerTrack, start);
     sequencer.page.set(static_cast<uint8_t>(start / kWindowSize));
     const uint8_t windowEnd = static_cast<uint8_t>(std::min<uint16_t>(
-        sequencer.pattern().length.get(),
+        sequencer.pattern().length,
         static_cast<uint16_t>(start) + kWindowSize
     ));
     if (sequencer.focusedStep.get() < start ||
@@ -348,15 +348,15 @@ FLASHMEM int16_t patternEditorFieldValue(
                  index < PATTERN_STEPS_PER_BEAT_CHOICES.size();
                  ++index) {
                 if (PATTERN_STEPS_PER_BEAT_CHOICES[index] ==
-                    sequencer.pattern().stepsPerBeat.get()) {
+                    sequencer.pattern().stepsPerBeat) {
                     return index;
                 }
             }
             return 1;
         case SequencerPatternEditorField::SWING:
-            return sequencer.pattern().swingOffsetPercent.get();
+            return sequencer.pattern().swingOffsetPercent;
         case SequencerPatternEditorField::NUDGE:
-            return sequencer.pattern().patternNudgePercent.get();
+            return sequencer.pattern().patternNudgePercent;
         case SequencerPatternEditorField::PLAY_START:
             return region.playStart;
         case SequencerPatternEditorField::LOOP_START:
@@ -396,7 +396,7 @@ FLASHMEM bool setPatternEditorFieldValue(
                 sequencer.page.set(static_cast<uint8_t>(
                     editor.windowStart / kWindowSize
                 ));
-                if (sequencer.focusedStep.get() >= sequencer.pattern().length.get()) {
+                if (sequencer.focusedStep.get() >= sequencer.pattern().length) {
                     sequencer.focusedStep.set(editor.windowStart);
                 }
             }

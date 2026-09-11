@@ -494,7 +494,7 @@ void test_left_center_nav_retargets_root_steps_across_pages() {
     h.state.sequencer.page.set(0);
     oc::note::sequencer::StepBitMask128 enabled{};
     enabled.setBit(7);
-    h.state.sequencer.pattern().enabledMask.set(enabled);
+    h.state.sequencer.pattern().setEnabledMask(enabled);
 
     openStepEdit(h, 7);
     h.release(Config::MACRO_BUTTONS[7]);
@@ -507,7 +507,7 @@ void test_left_center_nav_retargets_root_steps_across_pages() {
     assert(h.state.sequencer.focusedStep.get() == 8);
     assert(h.state.sequencer.page.get() == 1);
     assert(h.state.sequencer.stepEdit.focusedRow.get() == NOTE_ROW);
-    assert(!h.state.sequencer.pattern().enabledMask.get().test(8));
+    assert(!h.state.sequencer.pattern().enabledMask.test(8));
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencer.stepEdit.visible.get());
 

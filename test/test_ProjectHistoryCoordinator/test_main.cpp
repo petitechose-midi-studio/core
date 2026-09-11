@@ -178,7 +178,7 @@ void recordCcLane(core::state::CoreState& state) {
     draft.initialValue = 64;
     assert(seq::createSequencerCcLane(*bank, 0, draft).changed());
     assert(seq::setSequencerCcLaneEvent(*bank, 0, 2, 91).changed());
-    state.sequencer.pattern().ccLaneRevision.set(bank->revision);
+    state.sequencer.pattern().setCcLaneRevision(bank->revision);
 
     assert(seq::captureHistorySnapshot(state.sequencer, after));
     assert(tx::commitAdmittedPattern(

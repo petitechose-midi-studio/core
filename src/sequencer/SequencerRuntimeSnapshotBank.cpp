@@ -79,7 +79,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
                 : core::state::sequencer::sequencerCcLaneView(residentPattern);
             const uint32_t sourceRevision = clipSource.document != nullptr
                 ? clipSource.generation
-                : residentPattern.ccLaneRevision.get();
+                : residentPattern.ccLaneRevision;
             auto& signature = laneSourceSignatures[i];
             if (forceRefresh && source == nullptr) {
                 signature.identity = nullptr;

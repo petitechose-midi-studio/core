@@ -62,7 +62,7 @@ void test_fields_use_canonical_pattern_authorities_and_exact_marker_ranges() {
         seq::SequencerPatternEditorField::LENGTH,
         12
     ));
-    assert(state.pattern().length.get() == 12);
+    assert(state.pattern().length == 12);
     assert(seq::clipPlaybackRegion(state.pattern(), state.clip()).loopEnd == 12);
 
     assert(seq::setClipPlaybackRegion(state, {12, 2, 4, 10}));
@@ -95,14 +95,14 @@ void test_fields_use_canonical_pattern_authorities_and_exact_marker_ranges() {
         seq::SequencerPatternEditorField::SWING,
         99
     ));
-    assert(state.pattern().swingOffsetPercent.get() ==
+    assert(state.pattern().swingOffsetPercent ==
            seq::SequencerPatternState::MAX_PATTERN_SWING_OFFSET_PERCENT);
     assert(seq::setPatternEditorFieldValue(
         state,
         seq::SequencerPatternEditorField::NUDGE,
         -99
     ));
-    assert(state.pattern().patternNudgePercent.get() ==
+    assert(state.pattern().patternNudgePercent ==
            seq::SequencerPatternState::MIN_PATTERN_NUDGE_PERCENT);
 
     const auto countRange = seq::patternEditorValueRange(
@@ -130,7 +130,7 @@ void test_division_is_direct_and_length_repairs_window() {
         seq::SequencerPatternEditorField::DIVISION,
         5
     ));
-    assert(state.pattern().stepsPerBeat.get() == 8U);
+    assert(state.pattern().stepsPerBeat == 8U);
 
     assert(seq::setPatternEditorFieldValue(
         state,

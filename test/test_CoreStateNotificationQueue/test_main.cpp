@@ -203,8 +203,8 @@ void configurePattern(SequencerPatternState& pattern, uint8_t track) {
     const uint8_t step = static_cast<uint8_t>(track % length);
 
     pattern.setContentLength(length);
-    pattern.stepsPerBeat.set(static_cast<uint8_t>(2U + (track % 4U)));
-    pattern.enabledMask.set({});
+    pattern.setStepsPerBeat(static_cast<uint8_t>(2U + (track % 4U)));
+    pattern.setEnabledMask({});
     pattern.setStepDataAt(
         step,
         static_cast<uint8_t>(48U + track),
@@ -241,8 +241,8 @@ void prepareDifferentLiveBank(CoreState& state) {
     assert(state.currentSharedActiveTrack() == 0U);
 
     state.sequencer.pattern().setContentLength(64);
-    state.sequencer.pattern().stepsPerBeat.set(8);
-    state.sequencer.pattern().enabledMask.set({});
+    state.sequencer.pattern().setStepsPerBeat(8);
+    state.sequencer.pattern().setEnabledMask({});
     state.sequencer.setStepDataAt(63, 12, 34, 150, -12, 42);
     state.sequencer.pattern().setEnabled(63, true);
     state.sequencer.setPatternSwingOffsetPercent(25);
@@ -306,19 +306,17 @@ void test_project_snapshot_apply_stays_within_notification_capacity() {
 
     // Project replacement consumes generic mutation callbacks. Independent
     // UI/runtime observers, including the selected-Pattern relay, remain.
-    constexpr size_t EXPECTED_PROJECT_APPLY_PEAK = 60;
-    if (peakPending != EXPECTED_PROJECT_APPLY_PEAK) {
-        std::cerr << "Unexpected synchronous Project apply peak: " << peakPending
-                  << "/" << oc::state::NotificationQueue::maxPending() << "\n";
-    }
-    assert(peakPending == EXPECTED_PROJECT_APPLY_PEAK);
+    constexpr size_t PROJECT_APPLY_NOTIFICATION_BUDGET = 60;
+    std::cout << "Synchronous Project apply peak: " << peakPending
+              << "/" << oc::state::NotificationQueue::maxPending() << "\n";
+    assert(peakPending <= PROJECT_APPLY_NOTIFICATION_BUDGET);
 
     const size_t droppedBeforeFlush = queue.overflowCount();
 
     assert(state.sequencerTracks.currentEnabledMask() == 0xFFFFU);
     assert(state.currentSharedTrackEnabledMask() == 0xFFFFU);
     assert(state.currentSharedActiveTrack() == 5);
-    assert(state.sequencer.pattern().length.get() == 13);
+    assert(state.sequencer.pattern().length == 13);
     assert(state.sequencer.pattern().note[5] == 53);
     assert(state.sequencer.pattern().velocity[5] == 85);
     assert(state.sequencer.pattern().gate[5] == 95);

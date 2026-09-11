@@ -918,7 +918,7 @@ void test_new_project_resets_musical_project_state() {
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 0U);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
-    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(h.state.sequencer.pattern().length == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(h.state.sequencer.pattern().note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
     assert(h.state.pages.activePageData().cc[0] == 0);
@@ -953,7 +953,7 @@ void test_new_project_confirmation_cancel_preserves_state() {
 
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
     assert(h.state.projectNavigation.focusedRow.get() == 3U);
-    assert(h.state.sequencer.pattern().length.get() == 24);
+    assert(h.state.sequencer.pattern().length == 24);
     assert(near(h.state.macros.slots[0].value.get(), 0.77f));
     assert(h.state.statusBar.tempo.get() == 132.0f);
 
@@ -1027,7 +1027,7 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(std::strcmp(h.state.project.metadata.name.data(), "untitled") == 0);
     assert(h.state.statusBar.tempo.get() == 120.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
-    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(h.state.sequencer.pattern().length == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(!h.state.sequencer.pattern().isEnabled(2));
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
 
@@ -1042,7 +1042,7 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(!restored.state.project.metadata.dirty);
     assert(restored.state.statusBar.tempo.get() == 171.0f);
     assert(restored.state.projectNavigation.transportSwingPercent == 24);
-    assert(restored.state.sequencer.pattern().length.get() == 9);
+    assert(restored.state.sequencer.pattern().length == 9);
     assert(restored.state.sequencer.pattern().isEnabled(2));
     assert(restored.state.sequencer.pattern().note[2] == 75);
     assert(restored.state.sequencer.pattern().velocity[2] == 99);
@@ -1081,7 +1081,7 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     assert(!h.state.project.metadata.hasSavedIdentity);
     assert(h.state.project.metadata.id[0] == '\0');
     assert(h.state.statusBar.tempo.get() == 120.0f);
-    assert(h.state.sequencer.pattern().length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    assert(h.state.sequencer.pattern().length == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(!h.state.sequencer.pattern().isEnabled(7));
 
     core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
@@ -1091,7 +1091,7 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     RestoredProjectHarness restored{saved};
     assert(std::strcmp(restored.state.project.metadata.id.data(), "p002") == 0);
     assert(restored.state.statusBar.tempo.get() == 188.0f);
-    assert(restored.state.sequencer.pattern().length.get() == 13);
+    assert(restored.state.sequencer.pattern().length == 13);
     assert(restored.state.sequencer.pattern().isEnabled(7));
     assert(restored.state.sequencer.pattern().note[7] == 82);
     assert(restored.state.sequencer.pattern().velocity[7] == 115);
@@ -1228,7 +1228,7 @@ void test_storage_save_and_load_roundtrip_project_file() {
     assert(std::strcmp(h.state.project.metadata.name.data(), "p001") == 0);
     assert(h.state.statusBar.tempo.get() == 149.0f);
     assert(h.state.projectNavigation.transportSwingPercent == 19);
-    assert(h.state.sequencer.pattern().length.get() == 11);
+    assert(h.state.sequencer.pattern().length == 11);
     assert(h.state.sequencer.pattern().note[2] == 67);
     assert(h.state.sequencer.pattern().velocity[2] == 101);
     assert(h.state.sequencer.pattern().gate[2] == 75);

@@ -27,7 +27,7 @@ FLASHMEM uint8_t ticksPerStep(
 ) {
     const uint8_t stepsPerBeat = std::max<uint8_t>(
         1U,
-        pattern.stepsPerBeat.get()
+        pattern.stepsPerBeat
     );
     return std::max<uint8_t>(
         1U,
@@ -444,7 +444,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
                 tile.contentBadges,
                 resolved.gate,
                 core::state::sequencer::authoringPattern(sequencer)
-                    .stepsPerBeat.get(),
+                    .stepsPerBeat,
                 sequencer.playheadStepTickOffset.get(),
                 sequencer.expandedVariationTelemetry,
                 absoluteStep

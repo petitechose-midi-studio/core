@@ -136,7 +136,7 @@ FLASHMEM bool ownsChordDraftNode(
 }
 
 FLASHMEM uint32_t publishedRevisionFor(const SequencerState& sequencer) {
-    return sequencer.pattern().graphRevision.get() + 1U;
+    return sequencer.pattern().graphRevision + 1U;
 }
 
 }  // namespace
@@ -398,7 +398,7 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
             return false;
         }
         if (prepared) sequencer.pattern().graph = std::move(prepared);
-        sequencer.pattern().graphRevision.set(revision);
+        sequencer.pattern().setGraphRevision(revision);
         sequencer.invalidateVariationTelemetry();
         sequencer.stepContentDraft.resetSession();
         return true;
@@ -440,7 +440,7 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
             sequencer.bumpClipRevision();
         }
     }
-    sequencer.pattern().graphRevision.set(revision);
+    sequencer.pattern().setGraphRevision(revision);
     sequencer.invalidateVariationTelemetry();
     sequencer.stepContentDraft.resetSession();
     return true;
