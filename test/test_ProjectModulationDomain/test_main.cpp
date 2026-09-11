@@ -528,6 +528,54 @@ void testDestinationScaleValidatorRejectsOrphanUnityAndUnsortedEntries() {
     assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 
+void testDestinationValidationKeepsAutomationAndBindingsIndependent() {
+    Fixture fixture;
+    const auto source = addLfo(fixture);
+    const auto first = destination(0, 0, 0);
+    const auto last = destination(15, 15, 7);
+    mod::ProjectAutomationCurveDirectory automation{};
+    const std::array<mod::ProjectPackedCurvePoint, 2> points{{{0, 0}, {1, 32767}}};
+    mod::ProjectCurveSpec spec{};
+    spec.valueDomain = mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR;
+    for (const auto target : {first, last}) {
+        addBinding(fixture, source, target);
+        assert(mod::setProjectModulationDestinationScale(*fixture.state, target, 16384).changed());
+        assert(mod::setProjectAutomationCurve(automation, *fixture.arena, target,
+                                             spec, points.data(), points.size(), true).changed());
+    }
+    const auto valid = [&] {
+        return mod::validProjectModulationDomain(*fixture.state, *fixture.arena, &automation);
+    };
+    assert(valid());
+    // Automation on a destination does not authorize an orphan modulation scale.
+    --fixture.state->outputBindingCount;
+    assert(!valid());
+    ++fixture.state->outputBindingCount;
+    assert(valid());
+    automation.entries[1].destination = first;
+    assert(!valid());
+    automation.entries[1].destination = last;
+    std::swap(automation.entries[0], automation.entries[1]);
+    std::swap(fixture.state->outputBindings[0], fixture.state->outputBindings[1]);
+    assert(valid()); // Neither directory is required to be sorted by destination.
+    const std::array<mod::ModulationDestination, 5> malformed{{
+        {static_cast<mod::ModulationDestinationKind>(1), 0, 0, 0},
+        destination(0, 0, 8), destination(0, 16, 0),
+        destination(16, 0, 0), destination(255, 255, 255)
+    }};
+    for (const auto bad : malformed) {
+        for (auto* target : {&automation.entries[0].destination,
+                             &fixture.state->outputBindings[0].destination,
+                             &fixture.state->destinationScales[0].destination}) {
+            const auto saved = *target;
+            *target = bad;
+            assert(!valid());
+            *target = saved;
+        }
+    }
+    assert(valid());
+}
+
 void testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp() {
     Fixture fixture;
     const auto target = destination(0, 0, 0);
@@ -1386,6 +1434,7 @@ int main() {
     testAdsrTriggerRangesAreStrictAndAtomic();
     testDestinationScaleIsSparseOrderedAndPrunedWithLastBinding();
     testDestinationScaleValidatorRejectsOrphanUnityAndUnsortedEntries();
+    testDestinationValidationKeepsAutomationAndBindingsIndependent();
     testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp();
     testCurveContractPreservesLongLoopWindowsAndSameTickPoints();
     testStableIdsDuplicateAndDelete();

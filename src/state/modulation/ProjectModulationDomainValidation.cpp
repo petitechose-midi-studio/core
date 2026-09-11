@@ -1,8 +1,6 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
-#include <algorithm>
-#include <cstdio>
-#include <cstring>
+#include <bitset>
 #include <limits>
 
 #include <config/PlatformCompat.hpp>
@@ -31,20 +29,8 @@ FLASHMEM bool validProjectModulationDomain(
         return false;
     }
 
-    uint16_t previousScaleAddress = 0U;
-    for (uint16_t index = 0; index < state.destinationScaleCount; ++index) {
-        const auto& entry = state.destinationScales[index];
-        const uint16_t address = modulationDestinationStableAddress(
-            entry.destination
-        );
-        if (!modulationDestinationValid(entry.destination) ||
-            entry.scaleQ15 == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 ||
-            !destinationHasBinding(state, entry.destination) ||
-            (index > 0U && address <= previousScaleAddress)) {
-            return false;
-        }
-        previousScaleAddress = address;
-    }
+    std::bitset<PROJECT_MODULATION_TRACK_COUNT * PROJECT_MODULATION_PAGE_COUNT *
+                PROJECT_MODULATION_MACRO_COUNT> destinations;
 
     if (automation != nullptr) {
         for (uint16_t entry = 0; entry < automation->entryCount; ++entry) {
@@ -58,12 +44,9 @@ FLASHMEM bool validProjectModulationDomain(
                 )) {
                 return false;
             }
-            for (uint16_t prior = 0; prior < entry; ++prior) {
-                if (automation->entries[prior].destination ==
-                    current.destination) {
-                    return false;
-                }
-            }
+            const auto address = modulationDestinationStableAddress(current.destination);
+            if (destinations[address]) return false;
+            destinations[address] = true;
         }
     }
 
@@ -112,6 +95,7 @@ FLASHMEM bool validProjectModulationDomain(
         }
     }
 
+    destinations.reset();
     for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
         const auto& binding = state.outputBindings[index];
         const auto* source = findProjectModulator(state, binding.sourceId);
@@ -127,6 +111,7 @@ FLASHMEM bool validProjectModulationDomain(
              binding.id.value >= state.nextBindingId)) {
             return false;
         }
+        destinations[modulationDestinationStableAddress(binding.destination)] = true;
         for (uint16_t prior = 0; prior < index; ++prior) {
             const auto& other = state.outputBindings[prior];
             if (other.id == binding.id ||
@@ -135,6 +120,21 @@ FLASHMEM bool validProjectModulationDomain(
                 return false;
             }
         }
+    }
+
+    uint16_t previousScaleAddress = 0U;
+    for (uint16_t index = 0; index < state.destinationScaleCount; ++index) {
+        const auto& entry = state.destinationScales[index];
+        const uint16_t address = modulationDestinationStableAddress(
+            entry.destination
+        );
+        if (!modulationDestinationValid(entry.destination) ||
+            entry.scaleQ15 == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 ||
+            !destinations[address] ||
+            (index > 0U && address <= previousScaleAddress)) {
+            return false;
+        }
+        previousScaleAddress = address;
     }
 
     for (uint16_t index = 0; index < state.triggerBindingCount; ++index) {
