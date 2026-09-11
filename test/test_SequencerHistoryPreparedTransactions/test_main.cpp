@@ -2265,8 +2265,7 @@ void prepareMaximumCoupledStructureReplay(
     macroTrack.activePage = 1U;
     macroTrack.pages[1U].cc[0U] = 99U;
     if (distinctControl) {
-        ++h.state.pages.control.authored().curves.nextCurveId;
-        h.state.pages.control.markAuthoredMutation();
+        ++prepared.change->macroStructure->control.candidate()->curves.nextCurveId;
     }
     assert(h.state.refreshSharedTrackStateFromSequencer());
     h.state.pages.syncActiveTrackCache();
@@ -2276,8 +2275,13 @@ void prepareMaximumCoupledStructureReplay(
         h.state.sequencerTracks,
         h.state.sequencer,
         *prepared.change));
-    assert(seq::captureMacroTrackStructureHistoryAfter(
-        h.state.pages, *prepared.change));
+    auto& macroPayload = *prepared.change->macroStructure;
+    macroPayload.afterTracks[0U] = h.state.pages.tracks[0U];
+    assert(macroPayload.control.sealCandidate(h.state.pages.control.authored()));
+    if (macroPayload.control.changed()) {
+        macroPayload.control.apply(h.state.pages.control);
+        h.state.pages.control.markAuthoredMutation();
+    }
 
     expected.after = captureBankSnapshotMusicalProof(h);
     expected.macroTracksAfter = macroTrackFingerprint(h);
@@ -2894,7 +2898,8 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     assert(equalPayload != nullptr);
     assert(equalPayload->affectedTrackIndex == 2U);
     pages.tracks[2U].activePage = 1U;
-    assert(seq::captureMacroTrackStructureHistoryAfter(pages, *equalControl));
+    equalPayload->afterTracks[2U] = pages.tracks[2U];
+    assert(equalPayload->control.sealCandidate(pages.control.authored()));
     assert(!equalPayload->control.changed());
 
     const uint32_t equalRevision = pages.control.authoredRevision;
@@ -2930,8 +2935,10 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     ));
     auto* distinctPayload = distinctControl->macroStructure.get();
     assert(distinctPayload != nullptr);
-    ++pages.control.authored().curves.nextCurveId;
-    assert(seq::captureMacroTrackStructureHistoryAfter(pages, *distinctControl));
+    ++distinctPayload->control.candidate()->curves.nextCurveId;
+    distinctPayload->afterTracks[2U] = pages.tracks[2U];
+    assert(distinctPayload->control.sealCandidate(pages.control.authored()));
+    distinctPayload->control.apply(pages.control);
     assert(distinctPayload->control.changed());
     const uint32_t distinctRevision = pages.control.authoredRevision;
     assert(seq::validateMacroTrackStructureHistoryReplay(
@@ -2967,7 +2974,8 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     pages.tracks[0U].activePage = 1U;
     pages.tracks[0U].enabledPageMask = 0x0003U;
     pages.tracks[0U].pages[1U].cc[0U] = 99U;
-    assert(seq::captureMacroTrackStructureHistoryAfter(pages, *cacheBoundary));
+    cachePayload->afterTracks[0U] = pages.tracks[0U];
+    assert(cachePayload->control.sealCandidate(pages.control.authored()));
     pages.syncActiveTrackCache();
     pages.updateActiveConfigs();
     assert(pages.currentActivePage() == 1U);

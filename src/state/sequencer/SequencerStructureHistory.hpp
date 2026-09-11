@@ -255,10 +255,6 @@ bool captureMacroTrackStructureHistoryBefore(
     uint8_t affectedTrackIndex =
         SequencerHistoryMacroTrackStructurePayload::INVALID_AFFECTED_TRACK
 );
-bool captureMacroTrackStructureHistoryAfter(
-    const core::state::macro::MacroPagesState& pages,
-    SequencerHistoryTrackStructureChange& change
-);
 bool macroTrackStructureHistoryChanged(
     const SequencerHistoryTrackStructureChange& change
 );
