@@ -9,6 +9,45 @@
 namespace core::state::sequencer {
 using namespace content_view_internal;
 
+namespace {
+
+FLASHMEM void populateStepProjection(
+    SequencerContentStepProjection& out,
+    const ResolvedStep& base,
+    const ResolvedStep& resolved,
+    const oc::note::sequencer::StepSequencerGraph* graph,
+    const Node* node,
+    bool drumChild = false
+) {
+    out.valid = true;
+    out.enabled = resolved.enabled;
+    out.parentEnabled = base.enabled;
+    out.parentNote = base.note;
+    out.note = drumChild ? base.note : resolved.note;
+    out.parentVelocity = base.velocity;
+    out.velocity = resolved.velocity;
+    out.parentGate = base.gate;
+    out.gate = resolved.gate;
+    out.parentNudge = base.nudge;
+    out.nudge = resolved.nudge;
+    out.parentProbability = base.probability;
+    out.probability = resolved.probability;
+    out.inheritedChord = drumChild
+        ? oc::note::sequencer::StepSequencerInheritedChord{}
+        : resolved.inheritedChord;
+    if (node != nullptr) {
+        out.noteOffset = drumChild ? 0 : node->noteOffset;
+        out.velocityOffset = node->velocityOffset;
+        out.gateOffset = node->gateOffset;
+        out.nudgeOffset = node->nudgeOffset;
+        out.probabilityOffset = node->probabilityOffset;
+        out.hasMicroSequence = nodeHasMicroSequence(*graph, *node);
+        out.hasCycleStates = nodeHasCycleStates(*graph, *node);
+    }
+}
+
+}  // namespace
+
 FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     const SequencerState& sequencer,
     uint8_t step,
@@ -43,31 +82,9 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
             : base;
         if (!resolved.valid) return out;
 
-        out.valid = true;
         out.rootStep = step;
         out.nodeId = nodeId;
-        out.enabled = resolved.enabled;
-        out.parentEnabled = base.enabled;
-        out.parentNote = base.note;
-        out.note = resolved.note;
-        out.parentVelocity = base.velocity;
-        out.velocity = resolved.velocity;
-        out.parentGate = base.gate;
-        out.gate = resolved.gate;
-        out.parentNudge = base.nudge;
-        out.nudge = resolved.nudge;
-        out.parentProbability = base.probability;
-        out.probability = resolved.probability;
-        out.inheritedChord = resolved.inheritedChord;
-        if (node != nullptr) {
-            out.noteOffset = node->noteOffset;
-            out.velocityOffset = node->velocityOffset;
-            out.gateOffset = node->gateOffset;
-            out.nudgeOffset = node->nudgeOffset;
-            out.probabilityOffset = node->probabilityOffset;
-            out.hasMicroSequence = nodeHasMicroSequence(*graph, *node);
-            out.hasCycleStates = nodeHasCycleStates(*graph, *node);
-        }
+        populateStepProjection(out, base, resolved, graph, node);
         return out;
     }
 
@@ -92,33 +109,11 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     );
     if (!base.valid || !resolved.valid) return out;
 
-    out.valid = true;
-    out.rootContext = false;
     out.rootStep = frame->ownerRootStep;
-    out.localStep = step;
     out.nodeId = nodeId;
-    out.enabled = resolved.enabled;
-    out.parentEnabled = base.enabled;
-    out.parentNote = base.note;
-    out.note = sequencer.contentView.drumOwnerActive ? base.note : resolved.note;
-    out.parentVelocity = base.velocity;
-    out.velocity = resolved.velocity;
-    out.parentGate = base.gate;
-    out.gate = resolved.gate;
-    out.parentNudge = base.nudge;
-    out.nudge = resolved.nudge;
-    out.parentProbability = base.probability;
-    out.probability = resolved.probability;
-    out.inheritedChord = sequencer.contentView.drumOwnerActive
-        ? oc::note::sequencer::StepSequencerInheritedChord{}
-        : resolved.inheritedChord;
-    out.noteOffset = sequencer.contentView.drumOwnerActive ? 0 : node->noteOffset;
-    out.velocityOffset = node->velocityOffset;
-    out.gateOffset = node->gateOffset;
-    out.nudgeOffset = node->nudgeOffset;
-    out.probabilityOffset = node->probabilityOffset;
-    out.hasMicroSequence = nodeHasMicroSequence(*graph, *node);
-    out.hasCycleStates = nodeHasCycleStates(*graph, *node);
+    populateStepProjection(
+        out, base, resolved, graph, node, sequencer.contentView.drumOwnerActive
+    );
     return out;
 }
 
@@ -131,53 +126,9 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentOwnerProjection(
         return resolveActiveContentStepProjection(sequencer, sequencer.focusedStep.get(), scaleSettings);
     }
 
-    SequencerContentStepProjection out{};
-    const auto* frame = sequencer.contentView.currentFrame();
-    const auto* graph = graphView(authoringPattern(sequencer));
-    if (frame == nullptr || graph == nullptr) return out;
-
-    const bool noteOffsetsUseScaleDegrees = pitchContextUsesScaleDegrees(
-        authoringPattern(sequencer).pitchEditMode,
-        scaleSettings
+    return resolveContentFrameOwnerProjection(
+        sequencer, sequencer.contentView.stackDepth, scaleSettings
     );
-    const ResolvedStep owner = resolveOwnerStep(
-        sequencer,
-        scaleSettings,
-        noteOffsetsUseScaleDegrees
-    );
-    if (!owner.valid) return out;
-
-    out.valid = true;
-    out.rootContext = false;
-    out.rootStep = frame->ownerRootStep;
-    out.localStep = frame->ownerLocalStep;
-    out.nodeId = frame->ownerNodeId;
-    out.enabled = owner.enabled;
-    out.parentEnabled = owner.enabled;
-    out.parentNote = owner.note;
-    out.note = owner.note;
-    out.parentVelocity = owner.velocity;
-    out.velocity = owner.velocity;
-    out.parentGate = owner.gate;
-    out.gate = owner.gate;
-    out.parentNudge = owner.nudge;
-    out.nudge = owner.nudge;
-    out.parentProbability = owner.probability;
-    out.probability = owner.probability;
-    out.inheritedChord = owner.inheritedChord;
-
-    const auto* node = graph->stepNode(frame->ownerNodeId);
-    if (node != nullptr) {
-        out.noteOffset = node->noteOffset;
-        out.velocityOffset = node->velocityOffset;
-        out.gateOffset = node->gateOffset;
-        out.nudgeOffset = node->nudgeOffset;
-        out.probabilityOffset = node->probabilityOffset;
-        out.hasMicroSequence = nodeHasMicroSequence(*graph, *node);
-        out.hasCycleStates = nodeHasCycleStates(*graph, *node);
-    }
-
-    return out;
 }
 
 FLASHMEM SequencerContentStepProjection resolveContentFrameOwnerProjection(
@@ -210,36 +161,11 @@ FLASHMEM SequencerContentStepProjection resolveContentFrameOwnerProjection(
     );
     if (!owner.valid) return out;
 
-    out.valid = true;
     out.rootContext = false;
     out.rootStep = frame.ownerRootStep;
     out.localStep = frame.ownerLocalStep;
     out.nodeId = frame.ownerNodeId;
-    out.enabled = owner.enabled;
-    out.parentEnabled = owner.enabled;
-    out.parentNote = owner.note;
-    out.note = owner.note;
-    out.parentVelocity = owner.velocity;
-    out.velocity = owner.velocity;
-    out.parentGate = owner.gate;
-    out.gate = owner.gate;
-    out.parentNudge = owner.nudge;
-    out.nudge = owner.nudge;
-    out.parentProbability = owner.probability;
-    out.probability = owner.probability;
-    out.inheritedChord = owner.inheritedChord;
-
-    const auto* node = graph->stepNode(frame.ownerNodeId);
-    if (node != nullptr) {
-        out.noteOffset = node->noteOffset;
-        out.velocityOffset = node->velocityOffset;
-        out.gateOffset = node->gateOffset;
-        out.nudgeOffset = node->nudgeOffset;
-        out.probabilityOffset = node->probabilityOffset;
-        out.hasMicroSequence = nodeHasMicroSequence(*graph, *node);
-        out.hasCycleStates = nodeHasCycleStates(*graph, *node);
-    }
-
+    populateStepProjection(out, owner, owner, graph, graph->stepNode(frame.ownerNodeId));
     return out;
 }
 
