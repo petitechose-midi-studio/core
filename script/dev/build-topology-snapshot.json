@@ -37,7 +37,7 @@
     ],
     "coreNativePins": {
       "oc-framework": "24037dcee919f955cb3626b92853fd963ead87aa",
-      "oc-note": "267a9272ef20261926b23d48c791a9020ed27980"
+      "oc-note": "fc7b7a321ba18adc58ecb22d3cfc8df8afa76afb"
     },
     "coreReleaseLibraries": [
       "${oc_sdk_deps.lib_deps}",
@@ -48,7 +48,7 @@
       "oc-framework": "24037dcee919f955cb3626b92853fd963ead87aa",
       "oc-hal-common": "5567103c878e3c9e5be8929d1301a15b4bfa02aa",
       "oc-hal-teensy": "617769b086b385aa3a035611e217efda3144eb57",
-      "oc-note": "267a9272ef20261926b23d48c791a9020ed27980",
+      "oc-note": "fc7b7a321ba18adc58ecb22d3cfc8df8afa76afb",
       "oc-ui-lvgl": "4d6276976b7db31f4af0b3dd6ffc8c8589cb6dba",
       "oc-ui-lvgl-components": "5bad36e8a81237bd5ab25c277c9f27ebb6735066"
     },
@@ -77,14 +77,14 @@
     "core/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "6625c666b37bf63f659abe3d1568b8ebbedc95bdf2cbba368334fc455b33622e",
+    "core/.github/workflows/ci.yml": "82cff0b00c6b2297ff43cf489f720fc823fe13e9d4f46753712e240cbffb2b8c",
     "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
     "core/cmake/MsCoreProductSources.cmake": "3541ca6ccce9dfb4d66675cc9e9be29ae84c776860d668338cfd7f6611a7af45",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
     "core/cmake/MsCoreSources.cmake": "c96fd895088255ac8e06900976bf26f8cebbd99f92a4277b0b144cae48c5c32f",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
-    "core/oc-native-sdk.ini": "0c9523eba59a1b5950e42febed736298c7a542d415852312b95e121be3c94382",
-    "core/oc-sdk.ini": "0d35b7967d2da722b5ea57665455ab6cecccd74fa888ccf910757c102edc3670",
+    "core/oc-native-sdk.ini": "9947ff9d606c8d7e86f821614c5290fe757f8dc69ea62d0211f67df41c470f94",
+    "core/oc-sdk.ini": "590763c669e0e94443a54967e68415ab6add44c40e573398d3fff1c8fba5be13",
     "core/platformio.ini": "9cd5eddeec0bede71d3160acf37165d088c8244927011b061cb66d82f08b2342",
     "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
     "core/sdl/CMakeLists.txt": "3035159be113b55bcce4c7383c6d98bf10cac27a74679d066b58a170d00b4901",
@@ -225,7 +225,7 @@
     },
     "note": {
       "cleanExpected": true,
-      "commit": "267a9272ef20261926b23d48c791a9020ed27980",
+      "commit": "fc7b7a321ba18adc58ecb22d3cfc8df8afa76afb",
       "tree": "dfe0960087dc293ab667a782d3782e5d1d59de25"
     },
     "ui": {
@@ -2993,7 +2993,7 @@
         "OPEN_CONTROL_HAL_NET_SHA": "2207e6befc4b18fad5e4db870ba5ca8aab13aa29",
         "OPEN_CONTROL_HAL_SDL_SHA": "f8755529b4240bf05547d3ab6eadc92d823882c3",
         "OPEN_CONTROL_HAL_TEENSY_SHA": "617769b086b385aa3a035611e217efda3144eb57",
-        "OPEN_CONTROL_NOTE_SHA": "267a9272ef20261926b23d48c791a9020ed27980",
+        "OPEN_CONTROL_NOTE_SHA": "fc7b7a321ba18adc58ecb22d3cfc8df8afa76afb",
         "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "5bad36e8a81237bd5ab25c277c9f27ebb6735066",
         "OPEN_CONTROL_UI_LVGL_SHA": "4d6276976b7db31f4af0b3dd6ffc8c8589cb6dba"
       },
