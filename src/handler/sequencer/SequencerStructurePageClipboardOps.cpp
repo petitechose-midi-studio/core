@@ -17,7 +17,7 @@ FLASHMEM bool capturePageClipboard(
     const uint8_t start = static_cast<uint8_t>(
         page * core::state::sequencer::SequencerState::STEPS_PER_PAGE
     );
-    const uint8_t len = sequencer.pattern().length.get();
+    const uint8_t len = sequencer.pattern().length;
     const uint8_t count = (start >= len)
         ? 0
         : static_cast<uint8_t>(std::min<uint16_t>(

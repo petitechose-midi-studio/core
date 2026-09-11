@@ -10,7 +10,7 @@
 namespace {
 
 using core::state::sequencer::SequencerClipPlaybackRegion;
-using core::state::sequencer::SequencerClipSnapshot;
+using core::state::sequencer::SequencerClipState;
 using core::state::sequencer::SequencerClipState;
 using core::state::sequencer::SequencerPatternSnapshot;
 using core::state::sequencer::SequencerPatternState;
@@ -40,12 +40,12 @@ void test_default_and_rejected_regions_leave_state_canonical() {
     SequencerClipState clip;
     expectRegion(clipPlaybackRegion(pattern, clip), 8, 0, 0, 8);
 
-    const uint32_t revision = pattern.patternTimingRevision.get();
+    const uint32_t revision = pattern.patternTimingRevision;
     assert(!setClipPlaybackRegion(pattern, clip, {16, 9, 8, 16}));
     assert(!setClipPlaybackRegion(pattern, clip, {16, 0, 8, 8}));
     assert(!setClipPlaybackRegion(pattern, clip, {0, 0, 0, 0}));
     expectRegion(clipPlaybackRegion(pattern, clip), 8, 0, 0, 8);
-    assert(pattern.patternTimingRevision.get() == revision);
+    assert(pattern.patternTimingRevision == revision);
 }
 
 void test_division_conversion_rejects_noncanonical_values() {
@@ -56,7 +56,7 @@ void test_division_conversion_rejects_noncanonical_values() {
 
     SequencerPatternState pattern;
     SequencerClipState clip;
-    const uint8_t division = pattern.stepsPerBeat.get();
+    const uint8_t division = pattern.stepsPerBeat;
     assert(!core::state::sequencer::setClipPatternStepsPerBeat(
         pattern,
         clip,
@@ -67,7 +67,7 @@ void test_division_conversion_rejects_noncanonical_values() {
         clip,
         25U
     ));
-    assert(pattern.stepsPerBeat.get() == division);
+    assert(pattern.stepsPerBeat == division);
 }
 
 void test_set_and_resize_are_single_timing_mutations() {
@@ -138,15 +138,15 @@ void test_snapshot_round_trip_preserves_region_exactly() {
     assert(setClipPlaybackRegion(source, sourceClip, {24, 3, 7, 19}));
 
     SequencerPatternSnapshot snapshot{};
-    SequencerClipSnapshot clipSnapshot{};
+    SequencerClipState clipSnapshot{};
     core::state::sequencer::captureSnapshot(source, snapshot);
-    core::state::sequencer::captureSnapshot(sourceClip, clipSnapshot);
+    clipSnapshot = sourceClip;
     assert(snapshot.length == 24);
 
     SequencerPatternState restored;
     SequencerClipState restoredClip;
     core::state::sequencer::applySnapshot(restored, snapshot);
-    core::state::sequencer::applySnapshot(restoredClip, clipSnapshot);
+    restoredClip = clipSnapshot;
     expectRegion(clipPlaybackRegion(restored, restoredClip), 24, 3, 7, 19);
 }
 

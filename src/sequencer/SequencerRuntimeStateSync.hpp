@@ -91,12 +91,12 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
     const core::state::sequencer::SequencerPatternSnapshot& source,
-    const core::state::sequencer::SequencerClipSnapshot& clip
+    const core::state::sequencer::SequencerClipState& clip
 );
 
 oc::note::sequencer::StepSequencerPlaybackRegion runtimePlaybackRegion(
     const core::state::sequencer::SequencerPatternSnapshot& source,
-    const core::state::sequencer::SequencerClipSnapshot& clip
+    const core::state::sequencer::SequencerClipState& clip
 );
 
 void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,

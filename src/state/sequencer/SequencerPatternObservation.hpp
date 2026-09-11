@@ -1,6 +1,6 @@
 #pragma once
 
-#include <oc/state/FixedSubscriptionList.hpp>
+#include <oc/state/Signal.hpp>
 #include <config/PlatformCompat.hpp>
 #include <cstdlib>
 
@@ -18,20 +18,15 @@ public:
     Revision ccLaneRevision, patternVariationRevision, patternScaleRevision;
     Revision patternTimingRevision;
 
+    oc::state::Signal<uint32_t, 1> authoredRevision;
+
+    ~SequencerPatternObservation();
     void bind(SequencerPatternState& pattern);
 
 private:
-    template <typename Source>
-    OC_ALWAYS_INLINE void watch(Source& source, Revision& revision) {
-        if (!subscriptions_.tryAdd(source.subscribe([&revision](const auto&) {
-                revision.set(revision.get() + 1U);
-            }))) {
-            // Partial observation would leave retained controls stale.
-            std::abort();
-        }
-    }
-
-    oc::state::FixedSubscriptionList<11> subscriptions_;
+    void publish(SequencerPatternChange change);
+    SequencerPatternState* pattern_ = nullptr;
+    friend struct SequencerPatternState;
 };
 
 } // namespace core::state::sequencer

@@ -318,7 +318,7 @@ FLASHMEM void DrumLaneEditorHandler::update(uint32_t nowMs) {
         overlays_.isCurrent(core::ui::OverlayType::SEQ_DRUM_LANE_EDIT);
     if (drumUi.laneEditor.active &&
         (!current || !drumUi.gridVisible() ||
-         drumUi.drumTrack == nullptr)) {
+         drumUi.drumTrack() == nullptr)) {
         close();
         return;
     }
@@ -576,7 +576,7 @@ FLASHMEM void DrumLaneEditorHandler::updateNoteAudition(uint32_t nowMs) {
 FLASHMEM void DrumLaneEditorHandler::configureOpt() {
     const auto& drumUi = sequencer_.drumSequencer;
     const auto& editor = drumUi.laneEditor;
-    if (!editor.active || drumUi.drumTrack == nullptr) return;
+    if (!editor.active || drumUi.drumTrack() == nullptr) return;
 
     if (editor.textEditing) {
         encoders_.setMode(
@@ -646,7 +646,7 @@ FLASHMEM void DrumLaneEditorHandler::configureOpt() {
             index = editor.draft.midiNote;
             break;
         case seq::DrumLaneEditorField::POSITION: {
-            const int laneCount = drumUi.drumTrack->kit.laneCount;
+            const int laneCount = drumUi.drumTrack()->kit.laneCount;
             count = editor.mode == seq::DrumLaneEditorMode::CREATE
                 ? laneCount + 1
                 : laneCount;

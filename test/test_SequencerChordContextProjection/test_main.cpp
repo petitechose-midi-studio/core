@@ -102,7 +102,7 @@ void test_chromatic_formula_projects_exactly_to_scale_degrees() {
         0,
         customChord(Basis::ChromaticSemitones, 3, 5)
     );
-    const uint32_t revision = pattern.graphRevision.get();
+    const uint32_t revision = pattern.graphRevision;
 
     const auto stats =
         core::state::sequencer::projectPatternChordContext(
@@ -122,7 +122,7 @@ void test_chromatic_formula_projects_exactly_to_scale_degrees() {
     assert(stats.changed == 1);
     assert(stats.exact == 1);
     assert(stats.adapted == 0);
-    assert(pattern.graphRevision.get() == revision + 1U);
+    assert(pattern.graphRevision == revision + 1U);
 
     std::cout
         << "[PASS] chromatic formula projects exactly to degrees\n";
@@ -202,7 +202,7 @@ void test_scale_to_scale_preserves_raw_degree_formula() {
     auto target = fHarmonicMinor();
     target.root = 7;
     target.type = ScaleType::NaturalMinor;
-    const uint32_t revision = pattern.graphRevision.get();
+    const uint32_t revision = pattern.graphRevision;
 
     const auto stats =
         core::state::sequencer::projectPatternChordContext(
@@ -215,7 +215,7 @@ void test_scale_to_scale_preserves_raw_degree_formula() {
     assert(stats.projected == 1);
     assert(stats.exact == 1);
     assert(stats.changed == 0);
-    assert(pattern.graphRevision.get() == revision);
+    assert(pattern.graphRevision == revision);
 
     std::cout
         << "[PASS] scale-to-scale preserves degree formula\n";

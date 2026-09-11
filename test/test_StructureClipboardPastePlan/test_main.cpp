@@ -17,7 +17,7 @@ void storeSingleTrackClipboard(
     uint8_t sourceTrack
 ) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::SequencerClipSnapshot clip;
+    core::state::sequencer::SequencerClipState clip;
     assert(clipboard.storeSequencerTrack(
         snapshot,
         clip,

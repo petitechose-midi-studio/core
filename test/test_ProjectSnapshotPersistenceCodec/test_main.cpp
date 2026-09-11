@@ -399,7 +399,7 @@ void testCurrentSnapshotRoundTripAndDeterminism() {
     ].get();
     assert(loadedInstrumentClip != nullptr);
     assert(loadedInstrumentClip->pattern.note[0U] == 71U);
-    assert(loadedInstrumentClip->graph != nullptr);
+    assert(loadedInstrumentClip->pattern.graph != nullptr);
     const auto* loadedDrumClip = loaded.clips.documents[
         sequencer::SequencerClipGridState::cellIndex({6U, 2U})
     ].get();

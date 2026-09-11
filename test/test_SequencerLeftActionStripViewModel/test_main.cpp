@@ -156,7 +156,7 @@ void test_drum_pattern_lane_and_step_actions_are_distinct() {
         core::state::sequencer::DrumKitPreset::GENERAL_MIDI
     ));
     auto& drum = state.sequencer.drumSequencer;
-    drum.bindTrack(0U, state.sequencerTracks.drumTrack(0U), state.sequencerTracks);
+    drum.bindTrack(0U, state.sequencerTracks);
     drum.enterGrid();
 
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);

@@ -128,7 +128,7 @@ void test_root_retarget_wraps_pages_and_separates_step_history() {
     h.state.sequencer.page.set(0);
     oc::note::sequencer::StepBitMask128 enabled{};
     enabled.setBit(7, true);
-    h.state.sequencer.pattern().enabledMask.set(enabled);
+    h.state.sequencer.pattern().setEnabledMask(enabled);
 
     assert(session_workflow::openForMacroInPage(h.state.sequencer, h.history, h.overlays, 7));
     applyRootStepEdit(h, 7, [&]() { return h.state.sequencer.setStepNoteAt(7, 72); });
@@ -137,7 +137,7 @@ void test_root_retarget_wraps_pages_and_separates_step_history() {
     assert(h.state.sequencer.stepEdit.stepIndex.get() == 8);
     assert(h.state.sequencer.focusedStep.get() == 8);
     assert(h.state.sequencer.page.get() == 1);
-    assert(!h.state.sequencer.pattern().enabledMask.get().test(8));
+    assert(!h.state.sequencer.pattern().enabledMask.test(8));
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     applyRootStepEdit(h, 8, [&]() { return h.state.sequencer.setStepVelocityAt(8, 31); });
@@ -167,7 +167,7 @@ void test_failed_generic_commit_keeps_retarget_ui_exact_and_retryable() {
     h.state.sequencer.page.set(0);
     oc::note::sequencer::StepBitMask128 enabled{};
     enabled.setBit(7, true);
-    h.state.sequencer.pattern().enabledMask.set(enabled);
+    h.state.sequencer.pattern().setEnabledMask(enabled);
 
     assert(session_workflow::openForMacroInPage(h.state.sequencer, h.history, h.overlays, 7));
 

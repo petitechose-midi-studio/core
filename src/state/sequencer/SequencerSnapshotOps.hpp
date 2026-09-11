@@ -59,15 +59,14 @@ static_assert(sizeof(SequencerSnapshotBatchMutationResult) <= 8U);
 oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length);
 
 void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out);
-void captureSnapshot(const SequencerClipState& source, SequencerClipSnapshot& out);
+void capturePatternData(const SequencerPatternData& source, SequencerPatternData& out);
 
-void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot);
-void applySnapshot(SequencerClipState& target, const SequencerClipSnapshot& snapshot);
+void applySnapshot(SequencerPatternState& target, const SequencerPatternData& snapshot);
 
 // Applies scalar pattern state without replacing the graph allocation.
 void applySnapshotPreservingGraph(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 );
 
 /** Copies only the Pattern-owned CC revision on a cold publication path. */
@@ -83,7 +82,7 @@ void copySequencerCcLaneRevision(
 
 [[nodiscard]] bool applySnapshotWithGraph(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot,
+    const SequencerPatternData& snapshot,
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
@@ -91,8 +90,8 @@ void copySequencerCcLaneRevision(
 void installTrackContentSnapshotWithOwnedGraph(
     SequencerPatternState& target,
     SequencerClipState& targetClip,
-    const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerPatternData& snapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 );
 
@@ -100,30 +99,30 @@ void installTrackContentSnapshotWithOwnedGraph(
 void installTrackContentSnapshotWithOwnedPayload(
     SequencerPatternState& target,
     SequencerClipState& targetClip,
-    const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerPatternData& snapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes
 );
 
-void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot);
+void applySnapshotToEditor(SequencerState& target, const SequencerPatternData& snapshot);
 
 void applySnapshotToEditorPreservingGraph(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot
+    const SequencerPatternData& snapshot
 );
 
 void installTrackContentSnapshotToEditorWithOwnedGraph(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerPatternData& snapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 );
 
 void installTrackContentSnapshotToEditorWithOwnedPayload(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
-    const SequencerClipSnapshot& clipSnapshot,
+    const SequencerPatternData& snapshot,
+    const SequencerClipState& clipSnapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph,
     SequencerCcLaneBankPtr ccLanes
 );

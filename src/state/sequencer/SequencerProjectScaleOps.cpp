@@ -113,14 +113,14 @@ FLASHMEM SequencerHistoryProjectScaleChangePtr prepareHistoryProjectScaleChange(
         };
         for (uint8_t track = 0U; track < SequencerTrackBankState::TRACK_COUNT; ++track) {
             const auto& pattern = bank.track(track);
-            visit({track, clips.residentSlot(track)}, pattern.note, pattern.length.get(),
+            visit({track, clips.residentSlot(track)}, pattern.note, pattern.length,
                   pattern.graph.get(), pattern.pitchEditMode, pattern.scalePolicy,
-                  pattern.graphRevision.get(), pattern.patternScaleRevision.get());
+                  pattern.graphRevision, pattern.patternScaleRevision);
             for (uint8_t slot = 0U; slot < SequencerClipGridState::SLOT_COUNT; ++slot) {
                 const SequencerClipAddress address{track, slot};
                 const auto* doc = clips.inactiveDocument(address);
                 if (doc == nullptr) continue;
-                visit(address, doc->pattern.note, doc->pattern.length, doc->graph.get(),
+                visit(address, doc->pattern.note, doc->pattern.length, doc->pattern.graph.get(),
                       doc->pattern.pitchEditMode, doc->pattern.scalePolicy,
                       doc->pattern.graphRevision, doc->pattern.patternScaleRevision);
             }

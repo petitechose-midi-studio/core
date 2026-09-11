@@ -35,10 +35,10 @@ struct TimelinePatternSource {
 ) {
     return {
         .region = seq::clipPlaybackRegion(pattern, clip),
-        .enabledMask = pattern.enabledMask.get(),
-        .stepDataRevision = pattern.stepDataRevision.get(),
-        .patternTimingRevision = pattern.patternTimingRevision.get(),
-        .ccLaneRevision = pattern.ccLaneRevision.get(),
+        .enabledMask = pattern.enabledMask,
+        .stepDataRevision = pattern.stepDataRevision,
+        .patternTimingRevision = pattern.patternTimingRevision,
+        .ccLaneRevision = pattern.ccLaneRevision,
         .sourceFingerprint = 0U,
         .note = pattern.note.data(),
         .velocity = pattern.velocity.data(),
@@ -88,7 +88,7 @@ void hashU64(uint32_t& hash, uint64_t value) {
 
 [[nodiscard]] TimelinePatternSource timelineSource(
     const seq::SequencerPatternSnapshot& snapshot,
-    const seq::SequencerClipSnapshot& clip
+    const seq::SequencerClipState& clip
 ) {
     const uint16_t ticksPerStep = seq::sequencerTicksPerStep(
         snapshot.stepsPerBeat
@@ -526,7 +526,7 @@ FLASHMEM bool makeSequencerPatternTimelineRebuildKey(
 
 FLASHMEM bool makeSequencerPatternTimelineRebuildKey(
     const seq::SequencerPatternSnapshot& snapshot,
-    const seq::SequencerClipSnapshot& clip,
+    const seq::SequencerClipState& clip,
     const seq::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineRebuildKey& out
@@ -556,7 +556,7 @@ FLASHMEM bool rebuildSequencerPatternTimelineGeometry(
 
 FLASHMEM bool rebuildSequencerPatternTimelineGeometry(
     const seq::SequencerPatternSnapshot& snapshot,
-    const seq::SequencerClipSnapshot& clip,
+    const seq::SequencerClipState& clip,
     const seq::SequencerCcLaneBank* ccLanes,
     const SequencerPatternTimelineViewport& viewport,
     SequencerPatternTimelineGeometry& out

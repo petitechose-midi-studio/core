@@ -228,10 +228,10 @@ FLASHMEM bool validLiveGraph(const seq::SequencerPatternState& pattern) noexcept
 }
 
 FLASHMEM bool validPattern(const seq::SequencerState& sequencer) noexcept {
-    const uint8_t length = sequencer.pattern().length.get();
+    const uint8_t length = sequencer.pattern().length;
     if (length == 0U || length > seq::SequencerState::MAX_STEPS ||
         !seq::validClipRegion(sequencer.pattern(), sequencer.clip()) ||
-        (sequencer.pattern().enabledMask.get() & ~seq::lengthMask(length)) !=
+        (sequencer.pattern().enabledMask & ~seq::lengthMask(length)) !=
             oc::note::sequencer::StepBitMask128{} ||
         !validLiveGraph(sequencer.pattern())) {
         return false;
@@ -264,7 +264,7 @@ FLASHMEM bool beginPlan(
     const auto context = contentContextFor(out.contentPath);
     if (context == ContentContext::Invalid) return false;
 
-    out.patternLength = sequencer.pattern().length.get();
+    out.patternLength = sequencer.pattern().length;
     out.contentLength = seq::preparedSequencerContentLength(
         sequencer, out.contentPath);
     if (out.contentLength == 0U) return false;
@@ -276,10 +276,10 @@ FLASHMEM bool beginPlan(
         return false;
     }
     out.finalFocus = out.initialFocus;
-    out.stepDataRevision = sequencer.pattern().stepDataRevision.get();
-    out.graphRevision = sequencer.pattern().graphRevision.get();
-    out.ccLaneRevision = sequencer.pattern().ccLaneRevision.get();
-    out.timingRevision = sequencer.pattern().patternTimingRevision.get();
+    out.stepDataRevision = sequencer.pattern().stepDataRevision;
+    out.graphRevision = sequencer.pattern().graphRevision;
+    out.ccLaneRevision = sequencer.pattern().ccLaneRevision;
+    out.timingRevision = sequencer.pattern().patternTimingRevision;
     if (sequencer.pattern().graph) out.flags |= kFlagLiveGraphOwnerPresent;
     if (context == ContentContext::Root) out.flags |= kFlagRootContext;
     if (seq::graphView(sequencer.pattern()) != nullptr) {
@@ -1177,11 +1177,11 @@ FLASHMEM bool validatePlanShape(
     if (!plan.ready() ||
         plan.expectedTrack >= seq::SequencerTrackBankState::TRACK_COUNT ||
         !validPattern(sequencer) ||
-        sequencer.pattern().length.get() != plan.patternLength ||
-        sequencer.pattern().stepDataRevision.get() != plan.stepDataRevision ||
-        sequencer.pattern().graphRevision.get() != plan.graphRevision ||
-        sequencer.pattern().ccLaneRevision.get() != plan.ccLaneRevision ||
-        sequencer.pattern().patternTimingRevision.get() != plan.timingRevision ||
+        sequencer.pattern().length != plan.patternLength ||
+        sequencer.pattern().stepDataRevision != plan.stepDataRevision ||
+        sequencer.pattern().graphRevision != plan.graphRevision ||
+        sequencer.pattern().ccLaneRevision != plan.ccLaneRevision ||
+        sequencer.pattern().patternTimingRevision != plan.timingRevision ||
         sequencer.page.get() != plan.initialPage ||
         sequencer.focusedStep.get() != plan.initialFocus) {
         return false;
@@ -1455,7 +1455,7 @@ FLASHMEM bool writeMappedFlatTargets(
     MutationAccumulator& mutation
 ) noexcept {
     if (!flag(plan, kFlagRootContext)) return true;
-    auto enabledMask = sequencer.pattern().enabledMask.get();
+    auto enabledMask = sequencer.pattern().enabledMask;
     bool changed = false;
     for (uint16_t target = 0U; target < plan.targetToSource.size(); ++target) {
         const uint8_t encoded = plan.targetToSource[target];
@@ -1507,7 +1507,7 @@ FLASHMEM bool writeMappedFlatTargets(
         }
     }
     if (changed) {
-        sequencer.pattern().enabledMask.set(enabledMask);
+        sequencer.pattern().setEnabledMask(enabledMask);
         mutation.domains.stepData = true;
     }
     return true;

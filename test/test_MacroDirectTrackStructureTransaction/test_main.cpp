@@ -286,7 +286,7 @@ void seedOwnerShape(
                    0U,
                    91U
                ).changed());
-        pattern.ccLaneRevision.set(cc->revision);
+        pattern.setCcLaneRevision(cc->revision);
     }
 }
 

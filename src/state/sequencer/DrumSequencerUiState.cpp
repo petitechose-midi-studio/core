@@ -81,30 +81,31 @@ FLASHMEM void DrumSequencerState::reset() {
     resolvedPage.reset();
     playbackActive = false;
     playbackRevision.set(playbackRevision.get() + 1U);
-    drumTrack = nullptr;
     drumTrackBank = nullptr;
     bump();
 }
 
+FLASHMEM DrumTrackState* DrumSequencerState::drumTrack() const {
+    return drumTrackBank && targetTrack < SequencerTrackBankState::TRACK_COUNT
+        ? drumTrackBank->drumTrackIfPresent(targetTrack) : nullptr;
+}
+
 FLASHMEM void DrumSequencerState::bindTrack(
     uint8_t track,
-    DrumTrackState& state,
     SequencerTrackBankState& bank
 ) {
-    const bool changed = drumTrack != &state || drumTrackBank != &bank ||
+    const bool changed = drumTrackBank != &bank ||
         targetTrack != track;
     if (changed) laneSelection.reset();
-    drumTrack = &state;
     drumTrackBank = &bank;
     targetTrack = track;
     if (changed) bump();
 }
 
 FLASHMEM void DrumSequencerState::unbindTrack() {
-    const bool changed = drumTrack != nullptr || drumTrackBank != nullptr ||
+    const bool changed = drumTrack() != nullptr || drumTrackBank != nullptr ||
         phase != DrumSequencerPhase::INACTIVE ||
         targetTrack != INVALID_TRACK || selector != DrumSequencerSelector::NONE;
-    drumTrack = nullptr;
     drumTrackBank = nullptr;
     phase = DrumSequencerPhase::INACTIVE;
     selector = DrumSequencerSelector::NONE;
@@ -166,9 +167,9 @@ FLASHMEM void DrumSequencerState::returnToTypePicker() {
 }
 
 FLASHMEM void DrumSequencerState::enterGrid() {
-    if (!drumTrack) return;
+    if (!drumTrack()) return;
     selectedLane = 0;
-    laneAddSlotSelected = drumTrack->kit.laneCount == 0U;
+    laneAddSlotSelected = drumTrack()->kit.laneCount == 0U;
     laneWindowStart = 0;
     focusedStep = 0;
     page = 0;
@@ -187,9 +188,9 @@ FLASHMEM void DrumSequencerState::close() {
 }
 
 FLASHMEM void DrumSequencerState::moveLane(float delta) {
-    if (!gridVisible() || !drumTrack || delta == 0.0f) return;
+    if (!gridVisible() || !drumTrack() || delta == 0.0f) return;
     const uint8_t laneCount = std::min<uint8_t>(
-        drumTrack->kit.laneCount,
+        drumTrack()->kit.laneCount,
         LANE_COUNT
     );
     const bool addVisible = laneCount < LANE_COUNT;
@@ -215,7 +216,7 @@ FLASHMEM void DrumSequencerState::moveLane(float delta) {
         bump();
         return;
     }
-    const uint8_t length = drumTrack->pattern.effectiveLength(selectedLane);
+    const uint8_t length = drumTrack()->pattern.effectiveLength(selectedLane);
     const uint8_t pageStart = static_cast<uint8_t>(page * STEPS_PER_PAGE);
     if (pageStart < length) {
         const uint8_t pageEnd = std::min<uint8_t>(
@@ -230,12 +231,12 @@ FLASHMEM void DrumSequencerState::moveLane(float delta) {
 }
 
 FLASHMEM void DrumSequencerState::ensureSelectedLaneVisible() {
-    if (!drumTrack) {
+    if (!drumTrack()) {
         laneWindowStart = 0U;
         return;
     }
     const uint8_t laneCount = std::min<uint8_t>(
-        drumTrack->kit.laneCount,
+        drumTrack()->kit.laneCount,
         LANE_COUNT
     );
     const bool addVisible = laneCount < LANE_COUNT;
@@ -269,18 +270,18 @@ FLASHMEM void DrumSequencerState::ensureSelectedLaneVisible() {
 }
 
 FLASHMEM uint8_t DrumSequencerState::overviewLength() const {
-    if (drumTrack == nullptr) return 1U;
+    if (drumTrack() == nullptr) return 1U;
     const uint8_t laneCount = std::min<uint8_t>(
-        drumTrack->kit.laneCount,
+        drumTrack()->kit.laneCount,
         LANE_COUNT
     );
     uint8_t length = laneCount == 0U
-        ? drumTrack->pattern.defaultLength
+        ? drumTrack()->pattern.defaultLength
         : 1U;
     for (uint8_t lane = 0U; lane < laneCount; ++lane) {
         length = std::max<uint8_t>(
             length,
-            drumTrack->pattern.effectiveLength(lane)
+            drumTrack()->pattern.effectiveLength(lane)
         );
     }
     return std::max<uint8_t>(1U, length);
@@ -303,7 +304,7 @@ FLASHMEM void DrumSequencerState::clampOverviewPage() {
 }
 
 FLASHMEM bool DrumSequencerState::focusAuthoredLane() {
-    if (!gridVisible() || !drumTrack || drumTrack->kit.laneCount == 0U) {
+    if (!gridVisible() || !drumTrack() || drumTrack()->kit.laneCount == 0U) {
         return false;
     }
     bool changed = false;
@@ -311,12 +312,12 @@ FLASHMEM bool DrumSequencerState::focusAuthoredLane() {
         laneAddSlotSelected = false;
         selectedLane = std::min<uint8_t>(
             selectedLane,
-            static_cast<uint8_t>(drumTrack->kit.laneCount - 1U)
+            static_cast<uint8_t>(drumTrack()->kit.laneCount - 1U)
         );
         ensureSelectedLaneVisible();
         changed = true;
     }
-    const uint8_t length = drumTrack->pattern.effectiveLength(selectedLane);
+    const uint8_t length = drumTrack()->pattern.effectiveLength(selectedLane);
     const uint8_t pageStart = static_cast<uint8_t>(page * STEPS_PER_PAGE);
     // Pattern paging belongs to the complete polymetric overview. A shorter
     // Lane can therefore be empty on the current page; do not silently jump
@@ -341,9 +342,9 @@ FLASHMEM bool DrumSequencerState::focusAuthoredLane() {
 }
 
 FLASHMEM void DrumSequencerState::moveFocusedStep(float delta) {
-    if (!gridVisible() || !drumTrack || laneAddSlotFocused() ||
+    if (!gridVisible() || !drumTrack() || laneAddSlotFocused() ||
         delta == 0.0f) return;
-    const uint8_t length = drumTrack->pattern.effectiveLength(selectedLane);
+    const uint8_t length = drumTrack()->pattern.effectiveLength(selectedLane);
     if (length == 0U) return;
     const int direction = delta > 0.0f ? 1 : -1;
     const int next = static_cast<int>(focusedStep) + direction;
@@ -355,7 +356,7 @@ FLASHMEM void DrumSequencerState::moveFocusedStep(float delta) {
 }
 
 FLASHMEM void DrumSequencerState::movePage(int direction) {
-    if (!gridVisible() || !drumTrack || direction == 0) return;
+    if (!gridVisible() || !drumTrack() || direction == 0) return;
     const uint8_t pageCount = overviewPageCount();
     const int next = static_cast<int>(page) + (direction > 0 ? 1 : -1);
     page = static_cast<uint8_t>(
@@ -365,12 +366,12 @@ FLASHMEM void DrumSequencerState::movePage(int direction) {
 }
 
 FLASHMEM void DrumSequencerState::openDimensionSelector() {
-    if (!gridVisible() || !drumTrack || laneAddSlotFocused() ||
+    if (!gridVisible() || !drumTrack() || laneAddSlotFocused() ||
         selectorVisible()) return;
     selectorSnapshotProperty = property;
     selectorSnapshotDimension = dimension;
     selectorSnapshotLane = selectedLane;
-    const auto& timing = drumTrack->pattern.lanes[selectedLane].timing;
+    const auto& timing = drumTrack()->pattern.lanes[selectedLane].timing;
     selectorSnapshotTimingMode = static_cast<uint8_t>(timing.mode);
     selectorSnapshotLength = timing.length;
     selectorSnapshotStepsPerBeat = timing.stepsPerBeat;
@@ -379,12 +380,12 @@ FLASHMEM void DrumSequencerState::openDimensionSelector() {
 }
 
 FLASHMEM void DrumSequencerState::openPropertySelector() {
-    if (!gridVisible() || !drumTrack || laneAddSlotFocused() ||
+    if (!gridVisible() || !drumTrack() || laneAddSlotFocused() ||
         selectorVisible()) return;
     selectorSnapshotProperty = property;
     selectorSnapshotDimension = dimension;
     selectorSnapshotLane = selectedLane;
-    const auto& timing = drumTrack->pattern.lanes[selectedLane].timing;
+    const auto& timing = drumTrack()->pattern.lanes[selectedLane].timing;
     selectorSnapshotTimingMode = static_cast<uint8_t>(timing.mode);
     selectorSnapshotLength = timing.length;
     selectorSnapshotStepsPerBeat = timing.stepsPerBeat;
@@ -393,9 +394,9 @@ FLASHMEM void DrumSequencerState::openPropertySelector() {
 }
 
 FLASHMEM bool DrumSequencerState::openLaneEditor(bool create) {
-    if (!gridVisible() || !drumTrack || selectorVisible()) return false;
+    if (!gridVisible() || !drumTrack() || selectorVisible()) return false;
     const uint8_t laneCount = std::min<uint8_t>(
-        drumTrack->kit.laneCount,
+        drumTrack()->kit.laneCount,
         DRUM_MAX_LANES
     );
     if (create && laneCount >= DRUM_MAX_LANES) return false;
@@ -421,7 +422,7 @@ FLASHMEM bool DrumSequencerState::openLaneEditor(bool create) {
             static_cast<uint8_t>(laneCount % DRUM_LANE_COLOR_COUNT)
         );
     } else {
-        laneEditor.draft = drumTrack->kit.lanes[selectedLane];
+        laneEditor.draft = drumTrack()->kit.lanes[selectedLane];
     }
     selector = DrumSequencerSelector::LANE_EDITOR;
     bump();
@@ -430,12 +431,12 @@ FLASHMEM bool DrumSequencerState::openLaneEditor(bool create) {
 
 FLASHMEM bool DrumSequencerState::retargetLaneEditor(float delta) {
     if (!laneEditor.active || laneEditor.dirty || laneEditor.textEditing ||
-        laneEditor.mode != DrumLaneEditorMode::EDIT || !drumTrack ||
+        laneEditor.mode != DrumLaneEditorMode::EDIT || !drumTrack() ||
         delta == 0.0f) {
         return false;
     }
     const uint8_t laneCount = std::min<uint8_t>(
-        drumTrack->kit.laneCount,
+        drumTrack()->kit.laneCount,
         DRUM_MAX_LANES
     );
     if (laneCount <= 1U) return false;
@@ -447,7 +448,7 @@ FLASHMEM bool DrumSequencerState::retargetLaneEditor(float delta) {
     );
     laneEditor.sourceLane = next;
     laneEditor.targetLane = next;
-    laneEditor.draft = drumTrack->kit.lanes[next];
+    laneEditor.draft = drumTrack()->kit.lanes[next];
     selectedLane = next;
     ensureSelectedLaneVisible();
     bump();
@@ -635,7 +636,7 @@ FLASHMEM void DrumSequencerState::cancelLaneNameEditing() {
 }
 
 FLASHMEM void DrumSequencerState::editLaneEditorValue(float normalized) {
-    if (!laneEditor.active || !drumTrack) return;
+    if (!laneEditor.active || !drumTrack()) return;
     const float value = std::clamp(normalized, 0.0f, 1.0f);
     bool changed = false;
     const auto index = [value](uint16_t count) -> uint16_t {
@@ -688,7 +689,7 @@ FLASHMEM void DrumSequencerState::editLaneEditorValue(float normalized) {
         }
         case DrumLaneEditorField::POSITION: {
             const uint8_t laneCount = std::min<uint8_t>(
-                drumTrack->kit.laneCount,
+                drumTrack()->kit.laneCount,
                 DRUM_MAX_LANES
             );
             const uint16_t positions = laneEditor.mode == DrumLaneEditorMode::CREATE
@@ -709,21 +710,21 @@ FLASHMEM void DrumSequencerState::editLaneEditorValue(float normalized) {
 }
 
 FLASHMEM bool DrumSequencerState::applyLaneEditor() {
-    if (!laneEditor.active || !drumTrack) return false;
+    if (!laneEditor.active || !drumTrack()) return false;
     bool changed = false;
     uint8_t selected = laneEditor.targetLane;
     if (laneEditor.mode == DrumLaneEditorMode::CREATE) {
-        changed = drumTrack->insertLane(
+        changed = drumTrack()->insertLane(
             laneEditor.targetLane,
             laneEditor.draft
         );
     } else {
-        changed = drumTrack->kit.setLane(
+        changed = drumTrack()->kit.setLane(
             laneEditor.sourceLane,
             laneEditor.draft
         );
         if (laneEditor.targetLane != laneEditor.sourceLane) {
-            changed = drumTrack->moveLane(
+            changed = drumTrack()->moveLane(
                 laneEditor.sourceLane,
                 laneEditor.targetLane
             ) || changed;
@@ -741,7 +742,7 @@ FLASHMEM bool DrumSequencerState::applyLaneEditor() {
             page * STEPS_PER_PAGE
         );
         const uint8_t length =
-            drumTrack->pattern.effectiveLength(selectedLane);
+            drumTrack()->pattern.effectiveLength(selectedLane);
         focusedStep = std::min<uint8_t>(
             focusedStep,
             static_cast<uint8_t>(length - 1U)
@@ -757,15 +758,15 @@ FLASHMEM bool DrumSequencerState::applyLaneEditor() {
 }
 
 FLASHMEM bool DrumSequencerState::removeLaneFromEditor() {
-    if (!laneEditor.active || !drumTrack ||
+    if (!laneEditor.active || !drumTrack() ||
         laneEditor.mode != DrumLaneEditorMode::EDIT) {
         return false;
     }
     const uint8_t removed = laneEditor.sourceLane;
-    if (!drumTrack->removeLane(removed)) return false;
+    if (!drumTrack()->removeLane(removed)) return false;
     laneEditor = {};
     selector = DrumSequencerSelector::NONE;
-    const uint8_t laneCount = drumTrack->kit.laneCount;
+    const uint8_t laneCount = drumTrack()->kit.laneCount;
     laneAddSlotSelected = laneCount == 0U;
     selectedLane = laneCount == 0U
         ? 0U
@@ -776,7 +777,7 @@ FLASHMEM bool DrumSequencerState::removeLaneFromEditor() {
         focusedStep = 0U;
     } else {
         const uint8_t length =
-            drumTrack->pattern.effectiveLength(selectedLane);
+            drumTrack()->pattern.effectiveLength(selectedLane);
         const uint8_t pageStart = static_cast<uint8_t>(
             page * STEPS_PER_PAGE
         );
@@ -808,10 +809,10 @@ FLASHMEM void DrumSequencerState::cancelLaneEditor() {
 }
 
 FLASHMEM void DrumSequencerState::openPatternDefaults() {
-    if (!gridVisible() || !drumTrack || selectorVisible()) return;
+    if (!gridVisible() || !drumTrack() || selectorVisible()) return;
     patternDefaultField = DrumPatternDefaultField::LENGTH;
-    patternDefaultSnapshotLength = drumTrack->pattern.defaultLength;
-    patternDefaultSnapshotStepsPerBeat = drumTrack->pattern.defaultStepsPerBeat;
+    patternDefaultSnapshotLength = drumTrack()->pattern.defaultLength;
+    patternDefaultSnapshotStepsPerBeat = drumTrack()->pattern.defaultStepsPerBeat;
     selector = DrumSequencerSelector::PATTERN_DEFAULTS;
     bump();
 }
@@ -833,12 +834,12 @@ FLASHMEM void DrumSequencerState::editPatternDefaultValue(
     float normalized
 ) {
     if (selector != DrumSequencerSelector::PATTERN_DEFAULTS ||
-        !drumTrack) {
+        !drumTrack()) {
         return;
     }
     const float value = std::clamp(normalized, 0.0f, 1.0f);
-    uint8_t length = drumTrack->pattern.defaultLength;
-    uint8_t stepsPerBeat = drumTrack->pattern.defaultStepsPerBeat;
+    uint8_t length = drumTrack()->pattern.defaultLength;
+    uint8_t stepsPerBeat = drumTrack()->pattern.defaultStepsPerBeat;
     if (patternDefaultField == DrumPatternDefaultField::LENGTH) {
         length = static_cast<uint8_t>(
             std::min<int>(
@@ -854,11 +855,11 @@ FLASHMEM void DrumSequencerState::editPatternDefaultValue(
         );
         stepsPerBeat = choices[index];
     }
-    if (drumTrack->pattern.setDefaults(length, stepsPerBeat)) {
+    if (drumTrack()->pattern.setDefaults(length, stepsPerBeat)) {
         clampOverviewPage();
-        if (drumTrack->kit.laneCount > 0U) {
+        if (drumTrack()->kit.laneCount > 0U) {
             const uint8_t laneLength =
-                drumTrack->pattern.effectiveLength(selectedLane);
+                drumTrack()->pattern.effectiveLength(selectedLane);
             focusedStep = std::min<uint8_t>(
                 focusedStep,
                 static_cast<uint8_t>(laneLength - 1U)
@@ -918,8 +919,8 @@ FLASHMEM void DrumSequencerState::cancelSelector() {
         return;
     }
     if (selector == DrumSequencerSelector::PATTERN_DEFAULTS) {
-        const bool restored = drumTrack != nullptr &&
-            drumTrack->pattern.setDefaults(
+        const bool restored = drumTrack() != nullptr &&
+            drumTrack()->pattern.setDefaults(
                 patternDefaultSnapshotLength,
                 patternDefaultSnapshotStepsPerBeat
             );
@@ -934,17 +935,17 @@ FLASHMEM void DrumSequencerState::cancelSelector() {
     dimension = selectorSnapshotDimension;
     bool authoredChanged = false;
     if (closingSelector == DrumSequencerSelector::DIMENSION &&
-        drumTrack && selectorSnapshotLane < DRUM_MAX_LANES) {
+        drumTrack() && selectorSnapshotLane < DRUM_MAX_LANES) {
         if (selectorSnapshotTimingMode == static_cast<uint8_t>(
                 DrumLaneTimingMode::CUSTOM
             )) {
-            authoredChanged = drumTrack->pattern.setLaneTimingCustom(
+            authoredChanged = drumTrack()->pattern.setLaneTimingCustom(
                 selectorSnapshotLane,
                 selectorSnapshotLength,
                 selectorSnapshotStepsPerBeat
             );
         } else {
-            authoredChanged = drumTrack->pattern.setLaneTimingInherited(
+            authoredChanged = drumTrack()->pattern.setLaneTimingInherited(
                 selectorSnapshotLane
             );
         }
@@ -956,17 +957,17 @@ FLASHMEM void DrumSequencerState::cancelSelector() {
 FLASHMEM void DrumSequencerState::setSelectedLaneTimingCustom(
     bool custom
 ) {
-    if (!gridVisible() || !drumTrack || laneAddSlotFocused()) return;
+    if (!gridVisible() || !drumTrack() || laneAddSlotFocused()) return;
     const bool changed = custom
-        ? drumTrack->pattern.setLaneTimingCustom(
+        ? drumTrack()->pattern.setLaneTimingCustom(
               selectedLane,
-              drumTrack->pattern.effectiveLength(selectedLane),
-              drumTrack->pattern.effectiveStepsPerBeat(selectedLane)
+              drumTrack()->pattern.effectiveLength(selectedLane),
+              drumTrack()->pattern.effectiveStepsPerBeat(selectedLane)
           )
-        : drumTrack->pattern.setLaneTimingInherited(selectedLane);
+        : drumTrack()->pattern.setLaneTimingInherited(selectedLane);
     if (!changed) return;
     clampOverviewPage();
-    const uint8_t length = drumTrack->pattern.effectiveLength(selectedLane);
+    const uint8_t length = drumTrack()->pattern.effectiveLength(selectedLane);
     focusedStep = std::min<uint8_t>(
         focusedStep,
         static_cast<uint8_t>(length - 1U)
@@ -977,16 +978,16 @@ FLASHMEM void DrumSequencerState::setSelectedLaneTimingCustom(
 FLASHMEM void DrumSequencerState::setSelectedLaneLength(
     uint8_t length
 ) {
-    if (!gridVisible() || !drumTrack || laneAddSlotFocused()) return;
-    if (!drumTrack->pattern.setLaneTimingCustom(
+    if (!gridVisible() || !drumTrack() || laneAddSlotFocused()) return;
+    if (!drumTrack()->pattern.setLaneTimingCustom(
             selectedLane,
             length,
-            drumTrack->pattern.effectiveStepsPerBeat(selectedLane)
+            drumTrack()->pattern.effectiveStepsPerBeat(selectedLane)
         )) {
         return;
     }
     const uint8_t effectiveLength =
-        drumTrack->pattern.effectiveLength(selectedLane);
+        drumTrack()->pattern.effectiveLength(selectedLane);
     focusedStep = std::min<uint8_t>(
         focusedStep,
         static_cast<uint8_t>(effectiveLength - 1U)
@@ -998,10 +999,10 @@ FLASHMEM void DrumSequencerState::setSelectedLaneLength(
 FLASHMEM void DrumSequencerState::setSelectedLaneStepsPerBeat(
     uint8_t stepsPerBeat
 ) {
-    if (!gridVisible() || !drumTrack || laneAddSlotFocused()) return;
-    if (!drumTrack->pattern.setLaneTimingCustom(
+    if (!gridVisible() || !drumTrack() || laneAddSlotFocused()) return;
+    if (!drumTrack()->pattern.setLaneTimingCustom(
             selectedLane,
-            drumTrack->pattern.effectiveLength(selectedLane),
+            drumTrack()->pattern.effectiveLength(selectedLane),
             stepsPerBeat
         )) {
         return;
@@ -1030,9 +1031,9 @@ FLASHMEM void DrumSequencerState::toggleVisibleStep(
     if (!gridVisible() || laneAddSlotFocused() ||
         indexInPage >= STEPS_PER_PAGE) return;
     const uint8_t step = visibleStep(indexInPage);
-    if (!drumTrack ||
-        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
-    if (!drumTrack->pattern.toggleStep(selectedLane, step)) return;
+    if (!drumTrack() ||
+        step >= drumTrack()->pattern.effectiveLength(selectedLane)) return;
+    if (!drumTrack()->pattern.toggleStep(selectedLane, step)) return;
     publishAuthoredMutation();
 }
 
@@ -1091,8 +1092,8 @@ FLASHMEM bool DrumSequencerState::stepInRange(
     uint8_t step
 ) const {
     return gridVisible() && lane < LANE_COUNT && step < MAX_STEPS &&
-           lane < drumTrack->kit.laneCount &&
-           step < drumTrack->pattern.effectiveLength(lane);
+           lane < drumTrack()->kit.laneCount &&
+           step < drumTrack()->pattern.effectiveLength(lane);
 }
 
 FLASHMEM bool DrumSequencerState::adjacentLaneForStep(
@@ -1103,7 +1104,7 @@ FLASHMEM bool DrumSequencerState::adjacentLaneForStep(
 ) const {
     if (!gridVisible() || direction == 0 || step >= MAX_STEPS) return false;
     const uint8_t laneCount = std::min<uint8_t>(
-        drumTrack->kit.laneCount,
+        drumTrack()->kit.laneCount,
         LANE_COUNT
     );
     if (laneCount <= 1U || lane >= laneCount) return false;
@@ -1115,7 +1116,7 @@ FLASHMEM bool DrumSequencerState::adjacentLaneForStep(
         const uint8_t candidate = static_cast<uint8_t>(
             (static_cast<int>(lane) + offset + laneCount) % laneCount
         );
-        if (step < drumTrack->pattern.effectiveLength(candidate)) {
+        if (step < drumTrack()->pattern.effectiveLength(candidate)) {
             adjacentLane = candidate;
             return true;
         }
@@ -1146,7 +1147,7 @@ FLASHMEM bool DrumSequencerState::setStepEnabled(
     bool enabled
 ) {
     if (!stepInRange(lane, step) ||
-        !drumTrack->pattern.setStepEnabled(lane, step, enabled)) {
+        !drumTrack()->pattern.setStepEnabled(lane, step, enabled)) {
         return false;
     }
     publishAuthoredMutation();
@@ -1159,7 +1160,7 @@ FLASHMEM bool DrumSequencerState::setStepVelocity(
     uint8_t velocity
 ) {
     if (!stepInRange(lane, step) ||
-        !drumTrack->pattern.setStepVelocity(lane, step, velocity)) {
+        !drumTrack()->pattern.setStepVelocity(lane, step, velocity)) {
         return false;
     }
     publishAuthoredMutation();
@@ -1172,7 +1173,7 @@ FLASHMEM bool DrumSequencerState::setStepGate(
     uint16_t gatePercent
 ) {
     if (!stepInRange(lane, step) ||
-        !drumTrack->pattern.setStepGate(lane, step, gatePercent)) {
+        !drumTrack()->pattern.setStepGate(lane, step, gatePercent)) {
         return false;
     }
     publishAuthoredMutation();
@@ -1185,7 +1186,7 @@ FLASHMEM bool DrumSequencerState::setStepNudge(
     int8_t nudgePercent
 ) {
     if (!stepInRange(lane, step) ||
-        !drumTrack->pattern.setStepNudge(lane, step, nudgePercent)) {
+        !drumTrack()->pattern.setStepNudge(lane, step, nudgePercent)) {
         return false;
     }
     publishAuthoredMutation();
@@ -1198,7 +1199,7 @@ FLASHMEM bool DrumSequencerState::setStepProbability(
     uint8_t probability
 ) {
     if (!stepInRange(lane, step) ||
-        !drumTrack->pattern.setStepProbability(lane, step, probability)) {
+        !drumTrack()->pattern.setStepProbability(lane, step, probability)) {
         return false;
     }
     publishAuthoredMutation();

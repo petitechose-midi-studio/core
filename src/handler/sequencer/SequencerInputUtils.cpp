@@ -112,18 +112,18 @@ FLASHMEM float drumStepPropertyToNormalized(
     uint8_t step,
     DrumProperty property
 ) {
-    if (!drumUi.drumTrack || laneIndex >= drumUi.LANE_COUNT ||
+    if (!drumUi.drumTrack() || laneIndex >= drumUi.LANE_COUNT ||
         step >= drumUi.MAX_STEPS) {
         return 0.0f;
     }
     if (property == DrumProperty::STATE) {
-        return drumUi.drumTrack->pattern.stepEnabled(laneIndex, step)
+        return drumUi.drumTrack()->pattern.stepEnabled(laneIndex, step)
             ? 1.0f
             : 0.0f;
     }
 
-    const auto& descriptor = drumUi.drumTrack->kit.lanes[laneIndex];
-    const auto& lane = drumUi.drumTrack->pattern.lanes[laneIndex];
+    const auto& descriptor = drumUi.drumTrack()->kit.lanes[laneIndex];
+    const auto& lane = drumUi.drumTrack()->pattern.lanes[laneIndex];
     return stepPropertyToNormalized(
         drumStepProperty(property),
         descriptor.midiNote,
@@ -200,17 +200,17 @@ FLASHMEM float quickControlToNormalized(
         case core::state::sequencer::PatternQuickControlItem::OFFSET:
             return 0.5f;
         case core::state::sequencer::PatternQuickControlItem::SWING:
-            return swingOffsetToNormalized(pattern.swingOffsetPercent.get());
+            return swingOffsetToNormalized(pattern.swingOffsetPercent);
         case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            return nudgeToNormalized(pattern.patternNudgePercent.get());
+            return nudgeToNormalized(pattern.patternNudgePercent);
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
             return indexToNormalized(
-                findStepsPerBeatChoiceIndex(pattern.stepsPerBeat.get()),
+                findStepsPerBeatChoiceIndex(pattern.stepsPerBeat),
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
-            const uint8_t len = pattern.length.get();
+            const uint8_t len = pattern.length;
             const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
             return indexToNormalized(idx, static_cast<int>(SequencerState::MAX_STEPS));
         }

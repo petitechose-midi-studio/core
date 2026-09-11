@@ -58,7 +58,7 @@ FLASHMEM bool SequencerQuickControlsDraftSession::begin(
     captureSnapshot(published, flat);
     applySnapshot(candidate->pattern, flat);
     candidate->pattern.graph = std::move(graph);
-    candidate->pattern.graphRevision.set(published.graphRevision.get());
+    candidate->pattern.setGraphRevision(published.graphRevision);
     candidate->pattern.ccLanes = std::move(ccLanes);
     copySequencerCcLaneRevision(candidate->pattern, published);
     candidate->clip = publishedClip;

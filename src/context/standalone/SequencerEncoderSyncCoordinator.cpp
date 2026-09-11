@@ -133,8 +133,8 @@ FLASHMEM input_utils::StepPropertyEncoderConfig drumDimensionEncoderConfig(
 FLASHMEM float drumDimensionToNormalized(
     const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!drumUi.drumTrack) return 0.0f;
-    const auto& pattern = drumUi.drumTrack->pattern;
+    if (!drumUi.drumTrack()) return 0.0f;
+    const auto& pattern = drumUi.drumTrack()->pattern;
     switch (drumUi.dimension) {
         case DrumDimension::MODE:
             return pattern.lanes[drumUi.selectedLane].timing.mode ==
@@ -174,8 +174,8 @@ FLASHMEM input_utils::StepPropertyEncoderConfig drumPatternDefaultEncoderConfig(
 FLASHMEM float drumPatternDefaultToNormalized(
     const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!drumUi.drumTrack) return 0.0f;
-    const auto& pattern = drumUi.drumTrack->pattern;
+    if (!drumUi.drumTrack()) return 0.0f;
+    const auto& pattern = drumUi.drumTrack()->pattern;
     if (drumUi.patternDefaultField ==
         core::state::sequencer::DrumPatternDefaultField::DIVISION) {
         return input_utils::indexToNormalized(

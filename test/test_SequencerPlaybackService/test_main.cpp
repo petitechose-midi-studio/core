@@ -130,9 +130,9 @@ public:
 };
 
 void enableStep(SequencerState& state, uint8_t step) {
-    auto mask = state.pattern().enabledMask.get();
+    auto mask = state.pattern().enabledMask;
     mask.setBit(step, true);
-    state.pattern().enabledMask.set(mask);
+    state.pattern().setEnabledMask(mask);
 }
 
 const core::sequencer::SequencerRuntimeSnapshotBank::Snapshot& refreshSnapshot(
@@ -160,7 +160,7 @@ void setRootStep(core::state::sequencer::SequencerPatternState& pattern,
                  uint8_t note,
                  uint8_t length) {
     pattern.setContentLength(length);
-    pattern.stepsPerBeat.set(4);
+    pattern.setStepsPerBeat(4);
     pattern.note[0] = note;
     pattern.velocity[0] = 100;
     pattern.gate[0] = 100;
@@ -355,7 +355,7 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
         sequencer.pattern(), seq::rootStepNodeId(0U), 2U).ok);
     assert(drum.bindAdvancedRootSlot(0U, 0U, 0U));
     bank.publishDrumMutation(0U);
-    sequencer.drumSequencer.bindTrack(0U, drum, bank);
+    sequencer.drumSequencer.bindTrack(0U, bank);
     sequencer.drumSequencer.enterGrid();
     SequencerTrackFixturePlaybackAdapter service{
         sequencer, status, queue, graphBank,
@@ -391,7 +391,7 @@ void test_drum_preview_uses_captured_inputs_after_timer_stop() {
     sequencer.drumSequencer.close();
     service.publishUiState(4U);
     assert(sequencer.drumSequencer.resolvedPage.matches({}));
-    sequencer.drumSequencer.bindTrack(0U, drum, bank);
+    sequencer.drumSequencer.bindTrack(0U, bank);
     sequencer.drumSequencer.enterGrid();
     service.publishUiState(5U);
     assert(sequencer.drumSequencer.resolvedPage.microLength[0] == 2U);
@@ -471,9 +471,9 @@ void storeTrackClipboard(
     const core::state::sequencer::SequencerState& editor
 ) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::SequencerClipSnapshot clip;
+    core::state::sequencer::SequencerClipState clip;
     core::state::sequencer::captureSnapshot(editor.pattern(), snapshot);
-    core::state::sequencer::captureSnapshot(editor.clip(), clip);
+    clip = editor.clip();
     assert(clipboard.storeSequencerTrack(
         snapshot,
         clip,
@@ -555,7 +555,7 @@ void test_project_track_note_delay_positive_and_predictive_negative() {
             sequencer, bank, navigation,
         };
         sequencer.pattern().setContentLength(2U);
-        sequencer.pattern().stepsPerBeat.set(4U);
+        sequencer.pattern().setStepsPerBeat(4U);
         sequencer.pattern().note[0] = 60U;
         sequencer.pattern().velocity[0] = 100U;
         sequencer.pattern().gate[0] = 100U;
@@ -608,7 +608,7 @@ void test_project_track_note_delay_positive_and_predictive_negative() {
             sequencer, bank, navigation,
         };
         sequencer.pattern().setContentLength(2U);
-        sequencer.pattern().stepsPerBeat.set(4U);
+        sequencer.pattern().setStepsPerBeat(4U);
         sequencer.pattern().note[1] = 61U;
         sequencer.pattern().velocity[1] = 100U;
         sequencer.pattern().gate[1] = 100U;
@@ -670,7 +670,7 @@ void test_negative_delay_tempo_change_rebuilds_future_plan_once() {
     };
 
     sequencer.pattern().setContentLength(2U);
-    sequencer.pattern().stepsPerBeat.set(4U);
+    sequencer.pattern().setStepsPerBeat(4U);
     sequencer.pattern().note[1] = 61U;
     sequencer.pattern().velocity[1] = 100U;
     sequencer.pattern().gate[1] = 100U;
@@ -759,7 +759,7 @@ void test_delay_change_during_active_gate_panics_then_resyncs() {
     };
 
     sequencer.pattern().setContentLength(4U);
-    sequencer.pattern().stepsPerBeat.set(4U);
+    sequencer.pattern().setStepsPerBeat(4U);
     sequencer.pattern().note[0] = 60U;
     sequencer.pattern().note[1] = 61U;
     sequencer.pattern().velocity[0] = 100U;
@@ -851,7 +851,7 @@ void test_graph_revision_change_resyncs_playback_service_graph() {
     };
 
     sequencer.pattern().setContentLength(4);
-    sequencer.pattern().stepsPerBeat.set(4);
+    sequencer.pattern().setStepsPerBeat(4);
     sequencer.pattern().note[0] = 60;
     sequencer.pattern().velocity[0] = 96;
     sequencer.pattern().gate[0] = 100;
@@ -935,7 +935,7 @@ void test_playback_service_uses_one_shot_prelude_then_internal_loop() {
     };
 
     sequencer.pattern().setContentLength(8);
-    sequencer.pattern().stepsPerBeat.set(4);
+    sequencer.pattern().setStepsPerBeat(4);
     assert(core::state::sequencer::setClipPlaybackRegion(
         sequencer,
         {8, 2, 4, 6}
@@ -1045,7 +1045,7 @@ void test_muted_track_does_not_emit_note_events() {
     };
 
     sequencer.pattern().setContentLength(4);
-    sequencer.pattern().stepsPerBeat.set(4);
+    sequencer.pattern().setStepsPerBeat(4);
     sequencer.pattern().note[0] = 60;
     sequencer.pattern().velocity[0] = 96;
     sequencer.pattern().gate[0] = 100;
@@ -1309,7 +1309,7 @@ void test_cc_lane_runtime_is_integrated_once_per_tick_before_note_on() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 0, 91).changed());
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -1679,7 +1679,7 @@ void test_track_three_channel_five_cc74_precedes_note_on() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 0, 96).changed());
-    pattern.ccLaneRevision.set(lanes->revision);
+    pattern.setCcLaneRevision(lanes->revision);
     bank.syncSharedTrackState(
         static_cast<uint16_t>((1U << 0U) | (1U << trackThree)),
         0
@@ -1932,7 +1932,7 @@ void test_cc_lane_event_is_emitted_on_note_off_only_step() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 1, 91).changed());
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2022,7 +2022,7 @@ void test_editing_future_cc_step_waits_for_playhead() {
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     sequencer.pattern().setContentLength(4);
-    sequencer.pattern().stepsPerBeat.set(4);
+    sequencer.pattern().setStepsPerBeat(4);
     auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
@@ -2037,7 +2037,7 @@ void test_editing_future_cc_step_waits_for_playhead() {
         .initialValue = 0,
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2066,7 +2066,7 @@ void test_editing_future_cc_step_waits_for_playhead() {
     lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 2, 99).changed());
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
     const auto& edited = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank
     );
@@ -2136,7 +2136,7 @@ void test_negative_project_delay_predicts_cc_lane_without_advancing_live_hold() 
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     sequencer.pattern().setContentLength(4);
-    sequencer.pattern().stepsPerBeat.set(4);
+    sequencer.pattern().setStepsPerBeat(4);
     auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     const seq::SequencerCcLaneDraft laneDraft{
@@ -2150,7 +2150,7 @@ void test_negative_project_delay_predicts_cc_lane_without_advancing_live_hold() 
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 1, 99).changed());
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2236,7 +2236,7 @@ void test_negative_cc_lookahead_crosses_uint32_tick_wrap() {
     assert(future.stepIndex != current.playback.stepIndex);
 
     sequencer.pattern().setContentLength(8U);
-    sequencer.pattern().stepsPerBeat.set(4U);
+    sequencer.pattern().setStepsPerBeat(4U);
     auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     seq::SequencerCcLaneDraft laneDraft{};
@@ -2326,7 +2326,7 @@ void test_failed_negative_cc_projection_falls_back_due_now() {
     core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     sequencer.pattern().setContentLength(8U);
-    sequencer.pattern().stepsPerBeat.set(4U);
+    sequencer.pattern().setStepsPerBeat(4U);
     auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern());
     assert(lanes != nullptr);
     seq::SequencerCcLaneDraft laneDraft{};
@@ -2397,7 +2397,7 @@ void test_sixteen_track_negative_cc_lookahead_uses_one_complete_pass() {
     for (uint8_t track = 0U; track < 16U; ++track) {
         auto& pattern = track == 0U ? sequencer.pattern() : bank.track(track);
         pattern.setContentLength(8U);
-        pattern.stepsPerBeat.set(4U);
+        pattern.setStepsPerBeat(4U);
         auto* lanes = seq::ensureSequencerCcLaneBank(pattern);
         assert(lanes != nullptr);
         for (uint8_t lane = 0U; lane < 4U; ++lane) {
@@ -2528,7 +2528,7 @@ void test_transport_stop_keeps_lane_winner_without_macro_fallback_or_reemit() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 0, 91).changed());
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
     const shared::MidiCcCandidate macro{
         .destination = shared::MidiCcDestination{
             .identity = shared::MidiCcDestinationIdentity{
@@ -2647,7 +2647,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
     };
     assert(seq::createSequencerCcLane(*lanes, 0, laneDraft).changed());
     assert(seq::setSequencerCcLaneEvent(*lanes, 0, 0, 91).changed());
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
 
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
@@ -2707,7 +2707,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
     lanes->lanes[0].destination.pinnedPort = 0;
     lanes->lanes[0].destination.pinnedChannel = 6;
     ++lanes->revision;
-    sequencer.pattern().ccLaneRevision.set(lanes->revision);
+    sequencer.pattern().setCcLaneRevision(lanes->revision);
     auto& pinned = refreshSnapshot(
         snapshotBank, runtimeGraphBank, sequencer, bank
     );
@@ -2815,7 +2815,7 @@ void test_cc_composition_switches_between_current_predictive_and_fallback() {
     for (const auto track : tracks) {
         auto& pattern = track == 0U ? sequencer.pattern() : bank.track(track);
         pattern.setContentLength(4U);
-        pattern.stepsPerBeat.set(4U);
+        pattern.setStepsPerBeat(4U);
         auto* lanes = seq::ensureSequencerCcLaneBank(pattern);
         assert(lanes);
         seq::SequencerCcLaneDraft draft;

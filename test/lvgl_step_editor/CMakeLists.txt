@@ -42,6 +42,9 @@ add_executable(macro_knob macro_knob.cpp ../../src/ui/widget/MacroKnobWidget.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
 add_executable(font_registry font_registry.cpp ../../../ui/src/ms/ui/font/CoreFonts.cpp)
 add_executable(drum_surface drum_surface.cpp ../../src/ui/sequencer/DrumOverviewSurface.cpp
+    ../../src/state/sequencer/SequencerTrackBankState.cpp
+    ../../src/state/sequencer/SequencerState.cpp
+    "${OC_ROOT}/note/src/oc/note/sequencer/StepSequencerState.cpp"
     ../../src/state/sequencer/DrumSequencerUiState.cpp
     ../../src/state/sequencer/DrumPatternState.cpp
     ../../../ui/src/ms/ui/widget/TextOverflow.cpp

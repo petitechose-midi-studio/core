@@ -200,6 +200,7 @@ FLASHMEM PreparedSequencerTrackStructureTransaction::
       plan_(other.plan_),
       change_(std::move(other.change_)),
       ownerIdentities_(other.ownerIdentities_),
+      drumOwners_(std::move(other.drumOwners_)),
       activationGuard_(other.activationGuard_),
       settlementCheckpoint_(other.settlementCheckpoint_),
       tracks_(other.tracks_),
@@ -226,6 +227,7 @@ PreparedSequencerTrackStructureTransaction::operator=(
     plan_ = other.plan_;
     change_ = std::move(other.change_);
     ownerIdentities_ = other.ownerIdentities_;
+    drumOwners_ = std::move(other.drumOwners_);
     activationGuard_ = other.activationGuard_;
     settlementCheckpoint_ = other.settlementCheckpoint_;
     tracks_ = other.tracks_;
@@ -455,6 +457,16 @@ prepareSequencerTrackStructureTransaction(
         return prepared;
     }
 
+    for (uint8_t i = 0; i < trackCount(prepared.plan_.capturedTrackMask); ++i) {
+        const auto& source = prepared.change_->after.drumTracks[prepared.ownerIdentities_[i].track];
+        if (!source || state.tracks.matchesDrumTrack(
+                prepared.ownerIdentities_[i].track, source.get())) continue;
+        prepared.drumOwners_[i] = core::app::makeExtmemUniqueCopy(*source);
+        if (!prepared.drumOwners_[i]) {
+            prepared.status_ = Status::AllocationUnavailable;
+            return prepared;
+        }
+    }
     if (!state.history.canCommitAdmittedStructure(*prepared.change_)) {
         prepared.status_ = Status::HistoryUnavailable;
         return prepared;
@@ -601,10 +613,11 @@ FLASHMEM Result commitPreparedSequencerTrackStructureTransaction(
             *macroPayload
         );
     }
-    core::state::sequencer::commitHistoryStructureDrumSnapshot(
-        *prepared.tracks_,
-        prepared.change_->after
-    );
+    for (uint8_t i = 0; i < trackCount(prepared.plan_.capturedTrackMask); ++i) {
+        const auto track = prepared.ownerIdentities_[i].track;
+        if (!prepared.drumOwners_[i] && prepared.change_->after.drumTracks[track]) continue;
+        prepared.tracks_->installDrumTrack(track, std::move(prepared.drumOwners_[i]));
+    }
     prepared.sharedTracks_.publishPreparedSequencerState(
         prepared.plan_.afterEnabledMask,
         prepared.plan_.afterActiveTrack

@@ -42,7 +42,7 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
     };
     const uint8_t length = std::max<uint8_t>(
         1U,
-        pattern.length.get()
+        pattern.length
     );
     const auto region = seq::clipPlaybackRegion(pattern, clip);
     const uint8_t start = static_cast<uint8_t>(

@@ -105,10 +105,10 @@ FLASHMEM bool SequencerStructureNavigationWorkflow::selectedItemsAvailable() con
     }
     if (sequencer_.drumSequencer.laneSelection.active) {
         const auto& drumUi = sequencer_.drumSequencer;
-        const uint8_t laneCount = drumUi.drumTrack == nullptr
+        const uint8_t laneCount = drumUi.drumTrack() == nullptr
             ? 0U
             : std::min<uint8_t>(
-                  drumUi.drumTrack->kit.laneCount,
+                  drumUi.drumTrack()->kit.laneCount,
                   core::state::sequencer::DRUM_MAX_LANES
               );
         const uint16_t activeMask = laneCount >= 16U
@@ -168,8 +168,8 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
         case core::state::StructureNavigationFocus::LANE: {
             auto& drumUi = sequencer_.drumSequencer;
             if (core::state::sequencer::isDrumOverviewActive(sequencer_) &&
-                drumUi.drumTrack != nullptr &&
-                drumUi.drumTrack->kit.laneCount > 0U &&
+                drumUi.drumTrack() != nullptr &&
+                drumUi.drumTrack()->kit.laneCount > 0U &&
                 !drumUi.laneAddSlotFocused()) {
                 auto& selection = drumUi.laneSelection;
                 selection.reset(drumUi.selectedLane);
@@ -292,9 +292,9 @@ FLASHMEM void SequencerStructureNavigationWorkflow::toggleSelectionAtCursor() {
         auto& drumUi = sequencer_.drumSequencer;
         auto& selection = drumUi.laneSelection;
         if (selection.placing || selection.moving ||
-            drumUi.drumTrack == nullptr) return;
+            drumUi.drumTrack() == nullptr) return;
         const uint8_t laneCount = std::min<uint8_t>(
-            drumUi.drumTrack->kit.laneCount,
+            drumUi.drumTrack()->kit.laneCount,
             core::state::sequencer::DRUM_MAX_LANES
         );
         if (selection.cursorLane >= laneCount) return;
@@ -364,9 +364,9 @@ FLASHMEM void SequencerStructureNavigationWorkflow::navigateSelection(float delt
     if (sequencer_.drumSequencer.laneSelection.active) {
         auto& drumUi = sequencer_.drumSequencer;
         auto& selection = drumUi.laneSelection;
-        if (drumUi.drumTrack == nullptr) return;
+        if (drumUi.drumTrack() == nullptr) return;
         const uint8_t laneCount = std::min<uint8_t>(
-            drumUi.drumTrack->kit.laneCount,
+            drumUi.drumTrack()->kit.laneCount,
             core::state::sequencer::DRUM_MAX_LANES
         );
         if (laneCount == 0U) return;

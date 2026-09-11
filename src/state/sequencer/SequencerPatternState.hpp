@@ -9,7 +9,7 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
-#include <oc/note/sequencer/StepSequencerState.hpp>
+#include "SequencerPatternData.hpp"
 
 #include "app/ExtmemAllocator.hpp"
 #include "SequencerCcLaneDomain.hpp"
@@ -24,7 +24,7 @@ inline constexpr std::array<uint8_t, 6> PATTERN_STEPS_PER_BEAT_CHOICES = {
 
 using oc::state::Signal;
 
-struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
+struct SequencerPatternState : public SequencerPatternData {
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t MAX_STEPS = oc::note::sequencer::StepSequencerState::MAX_STEPS;
     static constexpr uint8_t PAGE_COUNT = (MAX_STEPS + STEPS_PER_PAGE - 1) / STEPS_PER_PAGE;
@@ -42,34 +42,62 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     static constexpr int8_t MIN_PATTERN_NUDGE_PERCENT = -50;
     static constexpr int8_t MAX_PATTERN_NUDGE_PERCENT = 50;
 
-    /// Bumps when non-signal step arrays change (note/velocity/gate/nudge/probability).
-    Signal<uint32_t> stepDataRevision{0};
+    SequencerPatternState() { resetStepData(); }
+    SequencerPatternState(const SequencerPatternState&) = delete;
+    SequencerPatternState& operator=(const SequencerPatternState&) = delete;
+    uint32_t ccLaneRevision = 0U;
 
-    /// Bumps when pattern-level variation ranges change.
-    Signal<uint32_t> patternVariationRevision{0};
+    void setLength(uint8_t value) {
+        if (length == value) return;
+        length = value;
+        publishChange(SequencerPatternChange::LENGTH);
+    }
+    void setStepsPerBeat(uint8_t value) {
+        if (stepsPerBeat == value) return;
+        stepsPerBeat = value;
+        publishChange(SequencerPatternChange::TIMING);
+    }
+    void setEnabledMask(oc::note::sequencer::StepBitMask128 value) {
+        if (enabledMask == value) return;
+        enabledMask = value;
+        publishChange(SequencerPatternChange::ENABLED);
+    }
+    void setStepDataRevision(uint32_t value) {
+        if (stepDataRevision == value) return;
+        stepDataRevision = value;
+        publishChange(SequencerPatternChange::STEPS);
+    }
+    void setPatternVariationRevision(uint32_t value) {
+        if (patternVariationRevision == value) return;
+        patternVariationRevision = value;
+        publishChange(SequencerPatternChange::VARIATION);
+    }
+    void setPatternScaleRevision(uint32_t value) {
+        if (patternScaleRevision == value) return;
+        patternScaleRevision = value;
+        publishChange(SequencerPatternChange::SCALE);
+    }
+    void setGraphRevision(uint32_t value) {
+        if (graphRevision == value) return;
+        graphRevision = value;
+        publishChange(SequencerPatternChange::GRAPH);
+    }
+    void setCcLaneRevision(uint32_t value) {
+        if (ccLaneRevision == value) return;
+        ccLaneRevision = value;
+        publishChange(SequencerPatternChange::CC);
+    }
+    void setPatternTimingRevision(uint32_t value) {
+        if (patternTimingRevision == value) return;
+        patternTimingRevision = value;
+        publishChange(SequencerPatternChange::TIMING);
+    }
+    void setSwingOffsetPercent(int8_t value) {
+        if (swingOffsetPercent == value) return;
+        swingOffsetPercent = value;
+        publishChange(SequencerPatternChange::TIMING);
+    }
 
-    /// Bumps when pattern scale inheritance or override settings change.
-    // Retained UI observes the editor hub; only that hub and autosave bind here.
-    Signal<uint32_t, 2> patternScaleRevision{0};
-
-    /// Bumps when hierarchical step content changes.
-    Signal<uint32_t> graphRevision{0};
-
-    /// Bumps when Pattern-owned CC lane content or settings change.
-    Signal<uint32_t> ccLaneRevision{0};
-
-    /// Signed delta added to the project swing for this pattern.
-    Signal<int8_t, 2> swingOffsetPercent{0};
-
-    /// Signed temporal offset applied to every step in this pattern.
-    Signal<int8_t, 2> patternNudgePercent{0};
-
-    /// Bumps when pattern timing context changes.
-    Signal<uint32_t> patternTimingRevision{0};
-
-    SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
-    oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
-    SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
     // Four sparse lanes are materialized only when used. The editor and every
     // bank Track live in EXTMEM, while each 840-byte bank is independently
@@ -115,32 +143,32 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     }
 
     void bumpStepDataRevision() {
-        stepDataRevision.set(stepDataRevision.get() + 1);
+        setStepDataRevision(stepDataRevision + 1);
     }
 
     void bumpPatternVariationRevision() {
-        patternVariationRevision.set(patternVariationRevision.get() + 1);
+        setPatternVariationRevision(patternVariationRevision + 1);
     }
 
     void bumpPatternScaleRevision() {
-        patternScaleRevision.set(patternScaleRevision.get() + 1);
+        setPatternScaleRevision(patternScaleRevision + 1);
     }
 
     void bumpGraphRevision() {
-        graphRevision.set(graphRevision.get() + 1);
+        setGraphRevision(graphRevision + 1);
     }
 
     void bumpCcLaneRevision() {
-        ccLaneRevision.set(ccLaneRevision.get() + 1);
+        setCcLaneRevision(ccLaneRevision + 1);
     }
 
     void bumpPatternTimingRevision() {
-        patternTimingRevision.set(patternTimingRevision.get() + 1);
+        setPatternTimingRevision(patternTimingRevision + 1);
     }
 
     uint8_t effectiveSwingPercent(uint8_t projectSwingPercent) const {
         return clampEffectiveSwingPercent(
-            static_cast<int>(projectSwingPercent) + static_cast<int>(swingOffsetPercent.get())
+            static_cast<int>(projectSwingPercent) + static_cast<int>(swingOffsetPercent)
         );
     }
 
@@ -254,10 +282,25 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         return true;
     }
 
+    uint8_t patternLength() const { return std::min(length, MAX_STEPS); }
+    bool isEnabled(uint8_t step) const { return step < MAX_STEPS && enabledMask.test(step); }
+    void setEnabled(uint8_t step, bool enabled) {
+        if (step >= MAX_STEPS) return;
+        auto next = enabledMask;
+        next.setBit(step, enabled);
+        setEnabledMask(next);
+    }
+    void toggle(uint8_t step) {
+        if (step >= MAX_STEPS) return;
+        auto next = enabledMask;
+        next.toggleBit(step);
+        setEnabledMask(next);
+    }
+
     void reset();
 
     uint8_t activePageCount() const {
-        const uint8_t len = length.get();
+        const uint8_t len = length;
         if (len == 0) return 0;
         const uint8_t pages = static_cast<uint8_t>((len + STEPS_PER_PAGE - 1) / STEPS_PER_PAGE);
         return (pages > PAGE_COUNT) ? PAGE_COUNT : pages;
@@ -293,15 +336,19 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
 
         const uint8_t safePage = normalizePage(page);
         const uint16_t abs = static_cast<uint16_t>(safePage) * STEPS_PER_PAGE + indexInPage;
-        if (abs >= length.get() || abs >= MAX_STEPS) return false;
+        if (abs >= length || abs >= MAX_STEPS) return false;
 
         outStep = static_cast<uint8_t>(abs);
         return true;
     }
 
     bool isInPattern(uint8_t step) const {
-        return step < length.get();
+        return step < length;
     }
+private:
+    void publishChange(SequencerPatternChange change);
+    SequencerPatternObservation* observation_ = nullptr;
+    friend class SequencerPatternObservation;
 };
 
 }  // namespace core::state::sequencer

@@ -203,7 +203,7 @@ void test_failed_post_precompaction_mutation_aborts_without_ui_publication() {
     auto* const graphOwner = h.state.sequencer.pattern().graph.get();
     assert(graphOwner != nullptr);
     const uint64_t graphHash = byteHash(graphOwner, sizeof(*graphOwner));
-    const uint32_t graphRevision = h.state.sequencer.pattern().graphRevision.get();
+    const uint32_t graphRevision = h.state.sequencer.pattern().graphRevision;
     const uint32_t viewRevision = h.state.sequencer.contentView.revision.get();
     const auto frame = *h.state.sequencer.contentView.currentFrame();
 
@@ -223,7 +223,7 @@ void test_failed_post_precompaction_mutation_aborts_without_ui_publication() {
     assert(mutation.finalizeCount == 0U);
     assert(h.state.sequencer.pattern().graph.get() == graphOwner);
     assert(byteHash(graphOwner, sizeof(*graphOwner)) == graphHash);
-    assert(h.state.sequencer.pattern().graphRevision.get() == graphRevision);
+    assert(h.state.sequencer.pattern().graphRevision == graphRevision);
     assert(h.state.sequencer.contentView.revision.get() == viewRevision);
     assert(h.state.sequencer.contentView.stackDepth == 1U);
     assert(h.state.sequencer.contentView.currentFrame() != nullptr);

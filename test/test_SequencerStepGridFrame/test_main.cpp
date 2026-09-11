@@ -149,7 +149,7 @@ void test_root_grid_projects_micro_rail_and_current_substep() {
     applyMicroSequencePlaybackProjection(
         rail,
         sequencer.pattern().gate[0U],
-        sequencer.pattern().stepsPerBeat.get(),
+        sequencer.pattern().stepsPerBeat,
         sequencer.playheadStepTickOffset.get(),
         sequencer.expandedVariationTelemetry,
         0U
@@ -168,7 +168,7 @@ void test_root_grid_projects_micro_rail_and_current_substep() {
     applyMicroSequencePlaybackProjection(
         rail,
         sequencer.pattern().gate[0U],
-        sequencer.pattern().stepsPerBeat.get(),
+        sequencer.pattern().stepsPerBeat,
         sequencer.playheadStepTickOffset.get(),
         sequencer.expandedVariationTelemetry,
         0U

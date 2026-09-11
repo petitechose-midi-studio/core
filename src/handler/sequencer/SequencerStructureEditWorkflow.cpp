@@ -180,7 +180,7 @@ SequencerStructureEditWorkflow::drumStepActionsAvailable() const {
     const auto& drumUi = sequencer_.drumSequencer;
     return drumUi.gridVisible() && !drumUi.selectorVisible() &&
            !sequencer_.contextSelector.visible &&
-           !drumUi.laneAddSlotFocused() && drumUi.drumTrack != nullptr &&
+           !drumUi.laneAddSlotFocused() && drumUi.drumTrack() != nullptr &&
            navigation_focus_.get() ==
                core::state::StructureNavigationFocus::STEP &&
            drumUi.stepInRange(drumUi.selectedLane, drumUi.focusedStep);
@@ -214,7 +214,7 @@ FLASHMEM bool
 SequencerStructureEditWorkflow::canPasteDrumLaneSelection() const {
     const auto& drumUi = sequencer_.drumSequencer;
     const auto& selection = drumUi.laneSelection;
-    if (!drumUi.gridVisible() || drumUi.drumTrack == nullptr ||
+    if (!drumUi.gridVisible() || drumUi.drumTrack() == nullptr ||
         navigation_focus_.get() !=
             core::state::StructureNavigationFocus::LANE ||
         !selection.placementActive() || selection.pasteBlocked ||
@@ -225,7 +225,7 @@ SequencerStructureEditWorkflow::canPasteDrumLaneSelection() const {
         return false;
     }
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         seq::DRUM_MAX_LANES
     );
     if (selection.cursorLane >= laneCount ||
@@ -264,7 +264,7 @@ SequencerStructureEditWorkflow::clearDrumLaneAdvancedContent(
     bool& changed
 ) {
     auto& drumUi = sequencer_.drumSequencer;
-    if (drumUi.drumTrack == nullptr) return false;
+    if (drumUi.drumTrack() == nullptr) return false;
     auto& pattern = seq::authoringPattern(sequencer_);
     bool graphChanged = false;
     for (uint8_t lane = 0U; lane < seq::DRUM_MAX_LANES; ++lane) {
@@ -273,7 +273,7 @@ SequencerStructureEditWorkflow::clearDrumLaneAdvancedContent(
         }
         for (uint8_t step = 0U; step < seq::DRUM_MAX_STEPS; ++step) {
             const int16_t slot =
-                drumUi.drumTrack->advancedRootSlot(lane, step);
+                drumUi.drumTrack()->advancedRootSlot(lane, step);
             if (slot < 0) continue;
             const auto nodeId =
                 seq::rootStepNodeId(static_cast<uint8_t>(slot));
@@ -287,7 +287,7 @@ SequencerStructureEditWorkflow::clearDrumLaneAdvancedContent(
                 graphChanged = true;
                 changed = true;
             }
-            if (!drumUi.drumTrack->releaseAdvancedRootSlot(lane, step)) {
+            if (!drumUi.drumTrack()->releaseAdvancedRootSlot(lane, step)) {
                 return false;
             }
             changed = true;
@@ -315,13 +315,13 @@ SequencerStructureEditWorkflow::drumLaneSelectionPasteMatches() const {
         }
         if (!seq::sameDrumLanePattern(
                 source.pattern.lanes[sourceLane],
-                drumUi.drumTrack->pattern.lanes[destination])) {
+                drumUi.drumTrack()->pattern.lanes[destination])) {
             return false;
         }
         for (uint8_t step = 0U; step < seq::DRUM_MAX_STEPS; ++step) {
             const int16_t sourceSlot = source.advancedRootSlot(sourceLane, step);
             const int16_t targetSlot =
-                drumUi.drumTrack->advancedRootSlot(destination, step);
+                drumUi.drumTrack()->advancedRootSlot(destination, step);
             if ((sourceSlot < 0) != (targetSlot < 0)) return false;
             if (sourceSlot < 0) continue;
             if (sourceGraph == nullptr || targetGraph == nullptr) return false;
@@ -343,11 +343,11 @@ FLASHMEM void SequencerStructureEditWorkflow::clearDrumLaneSelection() {
     auto& drumUi = sequencer_.drumSequencer;
     auto& selection = drumUi.laneSelection;
     if (!selection.active || selection.placing || selection.moving ||
-        drumUi.drumTrack == nullptr) {
+        drumUi.drumTrack() == nullptr) {
         return;
     }
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         seq::DRUM_MAX_LANES
     );
     const uint16_t selectedMask = static_cast<uint16_t>(
@@ -370,7 +370,7 @@ FLASHMEM void SequencerStructureEditWorkflow::clearDrumLaneSelection() {
         if ((selectedMask & static_cast<uint16_t>(1U << lane)) == 0U) {
             continue;
         }
-        changed = drumUi.drumTrack->pattern.replaceLanePattern(lane, empty) ||
+        changed = drumUi.drumTrack()->pattern.replaceLanePattern(lane, empty) ||
             changed;
     }
     if (!clearDrumLaneAdvancedContent(selectedMask, changed)) {
@@ -389,11 +389,11 @@ FLASHMEM void SequencerStructureEditWorkflow::copyDrumLaneSelection() {
     auto& drumUi = sequencer_.drumSequencer;
     auto& selection = drumUi.laneSelection;
     if (!selection.active || selection.placing || selection.moving ||
-        drumUi.drumTrack == nullptr) {
+        drumUi.drumTrack() == nullptr) {
         return;
     }
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         seq::DRUM_MAX_LANES
     );
     const uint16_t selectedMask = static_cast<uint16_t>(
@@ -401,7 +401,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyDrumLaneSelection() {
     );
     if (selectedMask == 0U ||
         !structure_clipboard_.storeSequencerDrumLaneSelection(
-            *drumUi.drumTrack,
+            *drumUi.drumTrack(),
             selectedMask,
             seq::graphView(seq::authoringPattern(sequencer_))
         )) {
@@ -434,7 +434,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteDrumLaneSelection() {
     const uint16_t destinationMask = drumLaneDestinationMask(
         selection.cursorLane,
         selection.clipboardCount,
-        drumUi.drumTrack->kit.laneCount
+        drumUi.drumTrack()->kit.laneCount
     );
 
     auto descriptor = drumStepActionDescriptor(
@@ -458,7 +458,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteDrumLaneSelection() {
         if ((sourceMask & static_cast<uint16_t>(1U << sourceLane)) == 0U) {
             continue;
         }
-        changed = drumUi.drumTrack->pattern.replaceLanePattern(
+        changed = drumUi.drumTrack()->pattern.replaceLanePattern(
             destination,
             source.pattern.lanes[sourceLane]
         ) || changed;
@@ -467,7 +467,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteDrumLaneSelection() {
             if (sourceSlot < 0) continue;
             bool mappingChanged = false;
             const int16_t targetSlot = seq::ensureDrumAdvancedRootSlot(
-                *drumUi.drumTrack,
+                *drumUi.drumTrack(),
                 seq::authoringPattern(sequencer_),
                 destination,
                 step,
@@ -542,8 +542,8 @@ FLASHMEM bool SequencerStructureEditWorkflow::clearDrumAdvancedStep(
     bool& changed
 ) {
     auto& drumUi = sequencer_.drumSequencer;
-    if (drumUi.drumTrack == nullptr) return false;
-    const int16_t slot = drumUi.drumTrack->advancedRootSlot(lane, step);
+    if (drumUi.drumTrack() == nullptr) return false;
+    const int16_t slot = drumUi.drumTrack()->advancedRootSlot(lane, step);
     if (slot < 0) return true;
 
     auto& pattern = seq::authoringPattern(sequencer_);
@@ -559,7 +559,7 @@ FLASHMEM bool SequencerStructureEditWorkflow::clearDrumAdvancedStep(
             changed = true;
         }
     }
-    if (!drumUi.drumTrack->releaseAdvancedRootSlot(lane, step)) {
+    if (!drumUi.drumTrack()->releaseAdvancedRootSlot(lane, step)) {
         return false;
     }
     changed = true;
@@ -582,7 +582,7 @@ FLASHMEM void SequencerStructureEditWorkflow::resetDrumFocusedStep(bool deep) {
     if (!beginDrumStepActionHistory(descriptor)) return;
 
     bool changed = applyDrumStepClipboardEntry(
-        drumUi.drumTrack->pattern,
+        drumUi.drumTrack()->pattern,
         lane,
         step,
         defaultDrumStepEntry()
@@ -604,7 +604,7 @@ FLASHMEM void SequencerStructureEditWorkflow::copyDrumFocusedStep() {
     const auto& drumUi = sequencer_.drumSequencer;
     const uint8_t lane = drumUi.selectedLane;
     const uint8_t step = drumUi.focusedStep;
-    const auto& authored = drumUi.drumTrack->pattern.lanes[lane];
+    const auto& authored = drumUi.drumTrack()->pattern.lanes[lane];
 
     core::state::SequencerStepsClipboard clipboard{};
     clipboard.valid = true;
@@ -614,13 +614,13 @@ FLASHMEM void SequencerStructureEditWorkflow::copyDrumFocusedStep() {
     clipboard.span = 1U;
     auto& entry = clipboard.entries[0];
     entry.valid = true;
-    entry.enabled = drumUi.drumTrack->pattern.stepEnabled(lane, step);
+    entry.enabled = drumUi.drumTrack()->pattern.stepEnabled(lane, step);
     entry.velocity = authored.velocity[step];
     entry.gate = authored.gate[step];
     entry.nudge = authored.nudge[step];
     entry.probability = authored.probability[step];
 
-    const int16_t slot = drumUi.drumTrack->advancedRootSlot(lane, step);
+    const int16_t slot = drumUi.drumTrack()->advancedRootSlot(lane, step);
     const oc::note::sequencer::StepSequencerGraph* graph = nullptr;
     if (slot >= 0) {
         entry.sourceNodeId = seq::rootStepNodeId(static_cast<uint8_t>(slot));
@@ -647,7 +647,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteDrumFocusedStep() {
         drumUi,
         entry.sourceNodeId ==
                 oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID &&
-                drumUi.drumTrack->advancedRootSlot(lane, step) < 0
+                drumUi.drumTrack()->advancedRootSlot(lane, step) < 0
             ? seq::SequencerHistoryActionKind::DrumStepPropertyEdit
             : seq::SequencerHistoryActionKind::DrumAdvancedContent,
         lane,
@@ -661,7 +661,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteDrumFocusedStep() {
         return;
     }
     changed = applyDrumStepClipboardEntry(
-        drumUi.drumTrack->pattern,
+        drumUi.drumTrack()->pattern,
         lane,
         step,
         entry
@@ -671,7 +671,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteDrumFocusedStep() {
         oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID) {
         bool mappingChanged = false;
         const int16_t slot = seq::ensureDrumAdvancedRootSlot(
-            *drumUi.drumTrack,
+            *drumUi.drumTrack(),
             seq::authoringPattern(sequencer_),
             lane,
             step,
@@ -1129,11 +1129,11 @@ SequencerStructureEditWorkflow::canMoveDrumLaneSelection() const {
     const auto& drumUi = sequencer_.drumSequencer;
     const auto& selection = drumUi.laneSelection;
     if (!selection.active || selection.placing || selection.moving ||
-        drumUi.drumTrack == nullptr) {
+        drumUi.drumTrack() == nullptr) {
         return false;
     }
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         seq::DRUM_MAX_LANES
     );
     const uint16_t selectedMask = static_cast<uint16_t>(
@@ -1165,10 +1165,10 @@ FLASHMEM void SequencerStructureEditWorkflow::beginDrumLaneMove() {
 FLASHMEM void SequencerStructureEditWorkflow::applyDrumLaneMove() {
     auto& drumUi = sequencer_.drumSequencer;
     auto& selection = drumUi.laneSelection;
-    if (!selection.moveActive() || drumUi.drumTrack == nullptr) return;
+    if (!selection.moveActive() || drumUi.drumTrack() == nullptr) return;
 
     const uint8_t laneCount = std::min<uint8_t>(
-        drumUi.drumTrack->kit.laneCount,
+        drumUi.drumTrack()->kit.laneCount,
         seq::DRUM_MAX_LANES
     );
     const uint16_t sourceMask = static_cast<uint16_t>(
@@ -1189,7 +1189,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applyDrumLaneMove() {
             target
         );
         if (!beginDrumStepActionHistory(descriptor)) return;
-        const bool changed = drumUi.drumTrack->moveLane(source, target);
+        const bool changed = drumUi.drumTrack()->moveLane(source, target);
         if (changed) drumUi.publishAuthoredMutation();
         if (!sealDrumStepActionHistory(changed, descriptor)) return;
     }
@@ -1204,7 +1204,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applyDrumLaneMove() {
     drumUi.ensureSelectedLaneVisible();
     drumUi.clampOverviewPage();
     const uint8_t laneLength =
-        drumUi.drumTrack->pattern.effectiveLength(target);
+        drumUi.drumTrack()->pattern.effectiveLength(target);
     const uint8_t pageStart = static_cast<uint8_t>(
         drumUi.page * seq::DrumSequencerState::STEPS_PER_PAGE
     );
@@ -1256,9 +1256,9 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshStructureSelectionPastePrev
     const uint16_t previousDestination = drumSelection.destinationMask;
     const uint16_t previousOverwrite = drumSelection.overwriteMask;
     const bool previousBlocked = drumSelection.pasteBlocked;
-    if (drumSelection.placementActive() && drumUi.drumTrack != nullptr) {
+    if (drumSelection.placementActive() && drumUi.drumTrack() != nullptr) {
         const uint8_t laneCount = std::min<uint8_t>(
-            drumUi.drumTrack->kit.laneCount,
+            drumUi.drumTrack()->kit.laneCount,
             seq::DRUM_MAX_LANES
         );
         const bool compatible =
@@ -1767,9 +1767,9 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         core::state::sequencer::SequencerPatternSnapshot snapshot;
-        core::state::sequencer::SequencerClipSnapshot clip;
+        core::state::sequencer::SequencerClipState clip;
         core::state::sequencer::captureSnapshot(sequencer_.pattern(), snapshot);
-        core::state::sequencer::captureSnapshot(sequencer_.clip(), clip);
+        clip = sequencer_.clip();
         if (!structure_clipboard_.storeSequencerTrack(
                 snapshot, clip,
                 core::state::sequencer::graphView(sequencer_.pattern()),

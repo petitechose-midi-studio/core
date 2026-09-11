@@ -37,7 +37,7 @@
     ],
     "coreNativePins": {
       "oc-framework": "24037dcee919f955cb3626b92853fd963ead87aa",
-      "oc-note": "ca8bb368e092a78ece270a5d6d31416f966fed44"
+      "oc-note": "23e8ed882b10640b1bab4a17d165196511fa6fbc"
     },
     "coreReleaseLibraries": [
       "${oc_sdk_deps.lib_deps}",
@@ -48,7 +48,7 @@
       "oc-framework": "24037dcee919f955cb3626b92853fd963ead87aa",
       "oc-hal-common": "5567103c878e3c9e5be8929d1301a15b4bfa02aa",
       "oc-hal-teensy": "617769b086b385aa3a035611e217efda3144eb57",
-      "oc-note": "ca8bb368e092a78ece270a5d6d31416f966fed44",
+      "oc-note": "23e8ed882b10640b1bab4a17d165196511fa6fbc",
       "oc-ui-lvgl": "4d6276976b7db31f4af0b3dd6ffc8c8589cb6dba",
       "oc-ui-lvgl-components": "5bad36e8a81237bd5ab25c277c9f27ebb6735066"
     },
@@ -67,24 +67,24 @@
     "teensyImplementations": 381
   },
   "inputSha256": {
-    "bitwig/.github/release-tooling.json": "af598e493bb64edde1362fcd74f4db564fc6dc5be9a2ea85f143daa643999fe0",
+    "bitwig/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "bitwig/.github/workflows/candidate-firmware.yml": "ca3cc93317ea5994ad3f86e25eac351135ac1c5c81b49039d1e225fd2c99b622",
-    "bitwig/.github/workflows/ci.yml": "6bda6ceb5b977546a9165e437be72524a97be608312a0a506f3cffb1916dc0b5",
+    "bitwig/.github/workflows/ci.yml": "2b72320f0841e719e5bcaa1428032d89d2e4fd3ed6fbc9183c3aaa42a7b7accd",
     "bitwig/CMakeLists.txt": "2a6e5998a2bced40d5d3cef5f1ce2239f44bfedf1429850ce7d9f7f1aed14920",
     "bitwig/cmake/MidiStudioBitwigSources.cmake": "3cf5ed1ec09e37f0204445721244a4056db25b20b1a85082128b1677d893b174",
-    "bitwig/platformio.ini": "12a2ea56f76573c7df457c1c39415904b771d6fd978cb0390058f3fe9966eea0",
+    "bitwig/platformio.ini": "a8e32c325b388b28a0ceb9375e2f4cc11e64ddddb0c3c5e967b8ca2de2144a12",
     "bitwig/sdl/app.cmake": "1fb132597404331082690c7f7af6cd71f3f878262f77e2183ad6c1aa851676a8",
     "core/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "063fc45b73b3f02aaf8bf5abbd3c494ad60492e570c08865fb64612319db8dc0",
+    "core/.github/workflows/ci.yml": "46c2d03214339de60423de1856ec18d8b11feeafbb1d58fc0f73de38e0589f40",
     "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
     "core/cmake/MsCoreProductSources.cmake": "5526d4fde1fbbd4fd623ac3258e074855a33993debed33753259d0be730a2439",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
     "core/cmake/MsCoreSources.cmake": "38e68246d11f7831ee6408cb35475c644a56b95b81357ce8e1ce8d17e14783e1",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
-    "core/oc-native-sdk.ini": "e07fac41553e41b784c1c2b1ed804f187a39d7b34320dbcd431b670e11c68136",
-    "core/oc-sdk.ini": "a1f3125ef79a7b098364916fda724b8b6e0c2817d3ed970599c90d8b0884bd56",
+    "core/oc-native-sdk.ini": "a1cfecf1fbadecade89ea711565f19870a65e4967d6c06c186d83c5deeba6ba3",
+    "core/oc-sdk.ini": "3df4ee8884454582454f76a5591b1c1e56bdd727d35c8138f3bc51fae6ceed6e",
     "core/platformio.ini": "9cd5eddeec0bede71d3160acf37165d088c8244927011b061cb66d82f08b2342",
     "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
     "core/sdl/CMakeLists.txt": "3035159be113b55bcce4c7383c6d98bf10cac27a74679d066b58a170d00b4901",
@@ -115,8 +115,8 @@
       "explicitLinkerDeclared": false,
       "linker": null,
       "pendingNotifications": 64,
-      "platform": "teensy",
-      "platformPinned": false,
+      "platform": "platformio/teensy@5.2.0",
+      "platformPinned": true,
       "postLinkMemoryGate": false
     },
     "coreNativeCmake": {
@@ -181,8 +181,8 @@
   "repositories": {
     "bitwig": {
       "cleanExpected": true,
-      "commit": "bb81912399ee5db82395dd864e7ed481efeeff92",
-      "tree": "63fb97c8a12274cbf9377cd821047ca369d16a10"
+      "commit": "f872b345fd268e1e4d247c8588da4e0eba212096",
+      "tree": "0c72262afcf1d5002cf614f6922eb3a4768b9ef5"
     },
     "core": {
       "cleanExpected": true,
@@ -225,8 +225,8 @@
     },
     "note": {
       "cleanExpected": true,
-      "commit": "ca8bb368e092a78ece270a5d6d31416f966fed44",
-      "tree": "62a5cb2c9c96907e3284511f2e4c078c7572a1c7"
+      "commit": "23e8ed882b10640b1bab4a17d165196511fa6fbc",
+      "tree": "d68a12df5701c418c5502829990ac17b15f5d105"
     },
     "ui": {
       "cleanExpected": true,
@@ -1510,7 +1510,7 @@
       "sha256": "3c179c2d56a2ab27c935ace1d801e111494d315629535d3479c2bd1382c1965a"
     },
     "coreTotalHeaders": {
-      "count": 485,
+      "count": 487,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1825,6 +1825,7 @@
         "src/state/sequencer/SequencerChordProjectionWorkspace.hpp",
         "src/state/sequencer/SequencerChordState.hpp",
         "src/state/sequencer/SequencerChordUiOps.hpp",
+        "src/state/sequencer/SequencerClipDocument.hpp",
         "src/state/sequencer/SequencerClipGridState.hpp",
         "src/state/sequencer/SequencerClipLaunchQueue.hpp",
         "src/state/sequencer/SequencerClipRegionOps.hpp",
@@ -1842,6 +1843,7 @@
         "src/state/sequencer/SequencerInteractionContextOps.hpp",
         "src/state/sequencer/SequencerInteractionPolicy.hpp",
         "src/state/sequencer/SequencerNoteSpelling.hpp",
+        "src/state/sequencer/SequencerPatternData.hpp",
         "src/state/sequencer/SequencerPatternEditorOps.hpp",
         "src/state/sequencer/SequencerPatternEditorState.hpp",
         "src/state/sequencer/SequencerPatternObservation.hpp",
@@ -1998,7 +2000,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "05c69c8685a3e83337e693517ac760ad1ea4788c72720cfeb18cd55b07dfd4e4"
+      "sha256": "bf3d28f8205b5b19aace0b56ac9c9d7d03f86b375f43ebbb32b47e068c9d8831"
     },
     "coreTotalImplementations": {
       "count": 423,
@@ -2960,7 +2962,7 @@
       "releaseTooling": {
         "ref": "main",
         "repo": "petitechose-midi-studio/ms-dev-env",
-        "sha": "35f0fb397eded334328ff7c2a43bf673ac02e2f8"
+        "sha": "3dff6acacd84dd9fefbafbafabf07b19479d1f8d"
       }
     },
     "cmakeMinimum": {
@@ -2981,7 +2983,7 @@
       "declaredRepositoryPins": {
         "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
-        "MIDI_STUDIO_BITWIG_SHA": "bb81912399ee5db82395dd864e7ed481efeeff92",
+        "MIDI_STUDIO_BITWIG_SHA": "f872b345fd268e1e4d247c8588da4e0eba212096",
         "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "20c328431f55ef86546947b74efd66865d2ad2d9",
         "MIDI_STUDIO_UI_SHA": "f880f20a9eb258a584c11ad93cdfa918ef5bb8f2",
         "MS_DEV_ENV_SHA": "3dff6acacd84dd9fefbafbafabf07b19479d1f8d",
@@ -2991,7 +2993,7 @@
         "OPEN_CONTROL_HAL_NET_SHA": "2207e6befc4b18fad5e4db870ba5ca8aab13aa29",
         "OPEN_CONTROL_HAL_SDL_SHA": "f8755529b4240bf05547d3ab6eadc92d823882c3",
         "OPEN_CONTROL_HAL_TEENSY_SHA": "617769b086b385aa3a035611e217efda3144eb57",
-        "OPEN_CONTROL_NOTE_SHA": "ca8bb368e092a78ece270a5d6d31416f966fed44",
+        "OPEN_CONTROL_NOTE_SHA": "23e8ed882b10640b1bab4a17d165196511fa6fbc",
         "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "5bad36e8a81237bd5ab25c277c9f27ebb6735066",
         "OPEN_CONTROL_UI_LVGL_SHA": "4d6276976b7db31f4af0b3dd6ffc8c8589cb6dba"
       },

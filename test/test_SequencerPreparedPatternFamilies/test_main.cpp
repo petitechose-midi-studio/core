@@ -91,12 +91,12 @@ void authorFullPayload(Harness& h) {
 
 void assertEditorRevisionVector(const Harness& h, const tx::StateInvariant& expected) {
     const auto& pattern = h.state.sequencer.pattern();
-    assert(pattern.stepDataRevision.get() == expected.editorStepDataRevision);
-    assert(pattern.patternVariationRevision.get() == expected.editorPatternVariationRevision);
-    assert(pattern.patternScaleRevision.get() == expected.editorPatternScaleRevision);
-    assert(pattern.patternTimingRevision.get() == expected.editorPatternTimingRevision);
-    assert(pattern.graphRevision.get() == expected.editorGraphRevision);
-    assert(pattern.ccLaneRevision.get() == expected.editorCcRevision);
+    assert(pattern.stepDataRevision == expected.editorStepDataRevision);
+    assert(pattern.patternVariationRevision == expected.editorPatternVariationRevision);
+    assert(pattern.patternScaleRevision == expected.editorPatternScaleRevision);
+    assert(pattern.patternTimingRevision == expected.editorPatternTimingRevision);
+    assert(pattern.graphRevision == expected.editorGraphRevision);
+    assert(pattern.ccLaneRevision == expected.editorCcRevision);
 }
 
 void test_all_eight_owners_publish_one_exact_undo() {
@@ -225,7 +225,7 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         h.state.sequencer.pattern().graph = std::move(replacementGraph);
         const auto* replacementOwner = h.state.sequencer.pattern().graph.get();
         const uint32_t liveStepRevision =
-            h.state.sequencer.pattern().stepDataRevision.get();
+            h.state.sequencer.pattern().stepDataRevision;
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -237,7 +237,7 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
         assert(h.state.sequencer.pattern().graph.get() == replacementOwner);
         assert(h.state.sequencer.pattern().note[kStep] == 77U);
-        assert(h.state.sequencer.pattern().stepDataRevision.get() == liveStepRevision);
+        assert(h.state.sequencer.pattern().stepDataRevision == liveStepRevision);
 
         replacementGraph = std::move(h.state.sequencer.pattern().graph);
         h.state.sequencer.pattern().graph = std::move(originalGraph);
@@ -266,9 +266,9 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         h.state.sequencer.pattern().ccLanes = std::move(replacementCc);
         const auto* replacementOwner = h.state.sequencer.pattern().ccLanes.get();
         const uint32_t liveStepRevision =
-            h.state.sequencer.pattern().stepDataRevision.get();
+            h.state.sequencer.pattern().stepDataRevision;
         const uint32_t liveGraphRevision =
-            h.state.sequencer.pattern().graphRevision.get();
+            h.state.sequencer.pattern().graphRevision;
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -280,8 +280,8 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
         assert(h.state.sequencer.pattern().ccLanes.get() == replacementOwner);
         assert(h.state.sequencer.pattern().note[kStep] == 78U);
-        assert(h.state.sequencer.pattern().stepDataRevision.get() == liveStepRevision);
-        assert(h.state.sequencer.pattern().graphRevision.get() == liveGraphRevision);
+        assert(h.state.sequencer.pattern().stepDataRevision == liveStepRevision);
+        assert(h.state.sequencer.pattern().graphRevision == liveGraphRevision);
         assert(seq::graphView(h.state.sequencer.pattern())
                    ->stepNodes[seq::rootStepNodeId(kStep)]
                    .noteOffset == 11);
@@ -317,8 +317,8 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         auto originalCc = std::move(frozenTrack.ccLanes);
         frozenTrack.ccLanes = std::move(replacementCc);
         const auto* replacementOwner = frozenTrack.ccLanes.get();
-        const uint32_t liveStepRevision = frozenTrack.stepDataRevision.get();
-        const uint32_t liveGraphRevision = frozenTrack.graphRevision.get();
+        const uint32_t liveStepRevision = frozenTrack.stepDataRevision;
+        const uint32_t liveGraphRevision = frozenTrack.graphRevision;
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -330,8 +330,8 @@ void test_failed_full_abort_is_write_atomic_and_retryable() {
         assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
         assert(frozenTrack.ccLanes.get() == replacementOwner);
         assert(frozenTrack.note[kStep] == 79U);
-        assert(frozenTrack.stepDataRevision.get() == liveStepRevision);
-        assert(frozenTrack.graphRevision.get() == liveGraphRevision);
+        assert(frozenTrack.stepDataRevision == liveStepRevision);
+        assert(frozenTrack.graphRevision == liveGraphRevision);
         assert(seq::graphView(frozenTrack)
                    ->stepNodes[seq::rootStepNodeId(kStep)]
                    .noteOffset == 12);
@@ -821,15 +821,15 @@ void test_full_post_write_failure_rolls_back_without_allocation() {
     const auto& restoredTrack = h.state.sequencerTracks.track(0U);
     assert(restoredTrack.graph.get() == graphOwner);
     assert(restoredTrack.ccLanes.get() == ccOwner);
-    assert(restoredTrack.stepDataRevision.get() == invariantBefore.editorStepDataRevision);
-    assert(restoredTrack.patternVariationRevision.get() ==
+    assert(restoredTrack.stepDataRevision == invariantBefore.editorStepDataRevision);
+    assert(restoredTrack.patternVariationRevision ==
            invariantBefore.editorPatternVariationRevision);
-    assert(restoredTrack.patternScaleRevision.get() ==
+    assert(restoredTrack.patternScaleRevision ==
            invariantBefore.editorPatternScaleRevision);
-    assert(restoredTrack.patternTimingRevision.get() ==
+    assert(restoredTrack.patternTimingRevision ==
            invariantBefore.editorPatternTimingRevision);
-    assert(restoredTrack.graphRevision.get() == invariantBefore.editorGraphRevision);
-    assert(restoredTrack.ccLaneRevision.get() == invariantBefore.editorCcRevision);
+    assert(restoredTrack.graphRevision == invariantBefore.editorGraphRevision);
+    assert(restoredTrack.ccLaneRevision == invariantBefore.editorCcRevision);
     seq::SequencerHistoryPatternSnapshot restoredMusical;
     assert(seq::captureHistorySnapshot(
         h.state.sequencerTracks, h.state.sequencer, 0U, restoredMusical));
@@ -879,15 +879,15 @@ void test_full_continuation_failure_rolls_back_whole_transaction() {
     const auto& restoredTrack = h.state.sequencerTracks.track(0U);
     assert(restoredTrack.graph.get() == graphOwner);
     assert(restoredTrack.ccLanes.get() == ccOwner);
-    assert(restoredTrack.stepDataRevision.get() == invariantBefore.editorStepDataRevision);
-    assert(restoredTrack.patternVariationRevision.get() ==
+    assert(restoredTrack.stepDataRevision == invariantBefore.editorStepDataRevision);
+    assert(restoredTrack.patternVariationRevision ==
            invariantBefore.editorPatternVariationRevision);
-    assert(restoredTrack.patternScaleRevision.get() ==
+    assert(restoredTrack.patternScaleRevision ==
            invariantBefore.editorPatternScaleRevision);
-    assert(restoredTrack.patternTimingRevision.get() ==
+    assert(restoredTrack.patternTimingRevision ==
            invariantBefore.editorPatternTimingRevision);
-    assert(restoredTrack.graphRevision.get() == invariantBefore.editorGraphRevision);
-    assert(restoredTrack.ccLaneRevision.get() == invariantBefore.editorCcRevision);
+    assert(restoredTrack.graphRevision == invariantBefore.editorGraphRevision);
+    assert(restoredTrack.ccLaneRevision == invariantBefore.editorCcRevision);
     seq::SequencerHistoryPatternSnapshot restoredMusical;
     assert(seq::captureHistorySnapshot(
         h.state.sequencerTracks, h.state.sequencer, 0U, restoredMusical));

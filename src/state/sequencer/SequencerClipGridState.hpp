@@ -123,27 +123,6 @@ constexpr bool operator==(
     return lhs.track == rhs.track && lhs.slot == rhs.slot;
 }
 
-/** Plain, non-reactive Pattern document retained only for an inactive Clip. */
-struct SequencerClipDocument {
-    SequencerPatternSnapshot pattern{};
-    SequencerClipSnapshot clip{};
-    uint32_t ccLaneRevision = 0U;
-    SequencerTrackKind trackKind = SequencerTrackKind::INSTRUMENT;
-    core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
-    SequencerCcLaneBankPtr ccLanes;
-    core::app::ExtmemUniquePtr<DrumTrackState> drum;
-
-    SequencerClipDocument();
-    ~SequencerClipDocument();
-    SequencerClipDocument(const SequencerClipDocument&) = delete;
-    SequencerClipDocument& operator=(const SequencerClipDocument&) = delete;
-    SequencerClipDocument(SequencerClipDocument&&) noexcept;
-    SequencerClipDocument& operator=(SequencerClipDocument&&) noexcept;
-};
-
-using SequencerClipDocumentPtr =
-    core::app::ExtmemUniquePtr<SequencerClipDocument>;
-
 /** Strong-guarantee clone of one complete Clip document into PSRAM. */
 [[nodiscard]] bool captureSequencerClipDocument(
     const SequencerPatternState& pattern,
@@ -200,9 +179,9 @@ struct SequencerClipGridSnapshot {
 /**
  * Sparse launcher ownership.
  *
- * Each non-empty enabled Track keeps one Clip resident in the existing
- * reactive Track bank. The other occupied slots own plain PSRAM documents
- * here. Eight rows are addressable while at most sixteen inactive documents
+ * The Track bank owns the selected document; other occupied slots own the
+ * same document type here. Selection transfers owners, never musical bytes.
+ * Eight rows are addressable while at most sixteen other documents
  * may coexist; this keeps the 4 x 2 viewport independent from retained-memory
  * capacity. An enabled Track may stay empty without losing its routing.
  */

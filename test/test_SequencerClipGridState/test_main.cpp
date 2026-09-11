@@ -30,7 +30,7 @@ void seed(
 ) {
     pattern.reset();
     pattern.setStepNoteAt(0U, note);
-    pattern.enabledMask.set(oc::note::sequencer::StepBitMask128::prefixMask(1U));
+    pattern.setEnabledMask(oc::note::sequencer::StepBitMask128::prefixMask(1U));
     clip.reset();
 }
 
@@ -134,6 +134,50 @@ void test_capture_and_snapshot_fail_without_mutating_destination() {
         seq::SequencerClipGridState::cellIndex({0U, 1U})
     ].get() == outputIdentity);
     std::cout << "[PASS] allocation failures preserve destinations\n";
+}
+
+void test_empty_document_matches_live_defaults_and_preserves_destination_on_failure() {
+    seq::SequencerPatternState pattern;
+    pattern.reset();
+    seq::SequencerClipState clip;
+    seq::DrumTrackState drum;
+    drum.reset();
+    assert(drum.pattern.setStepEnabled(0U, 3U, true));
+    assert(drum.bindAdvancedRootSlot(0U, 0U, 3U));
+    const auto originalDrum = drum;
+
+    for (const auto kind : {seq::SequencerTrackKind::INSTRUMENT,
+                           seq::SequencerTrackKind::DRUM}) {
+        const auto* sourceDrum = kind == seq::SequencerTrackKind::DRUM ? &drum : nullptr;
+        seq::SequencerClipDocumentPtr expected;
+        assert(seq::captureSequencerClipDocument(pattern, clip, kind, sourceDrum, expected));
+        if (expected->drum) {
+            expected->drum->pattern.reset();
+            expected->drum->advancedStepKeys.fill(seq::DRUM_ADVANCED_STEP_KEY_INVALID);
+        }
+        seq::SequencerClipDocumentPtr actual;
+        const size_t allocations = sourceDrum ? 2U : 1U;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1024U);
+            assert(seq::createEmptySequencerClipDocument(kind, sourceDrum, actual));
+            assert(core::app::testing::extmemAllocationAttempt == allocations);
+        }
+        assert(seq::sameSequencerClipDocument(*expected, *actual));
+        assert(seq::validSequencerClipDocument(*actual, kind));
+        const auto* identity = actual.get();
+        for (size_t ordinal = 1U; ordinal <= allocations; ++ordinal) {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            assert(!seq::createEmptySequencerClipDocument(kind, sourceDrum, actual));
+            assert(actual.get() == identity);
+            assert(seq::sameSequencerClipDocument(*expected, *actual));
+        }
+        assert(!seq::createEmptySequencerClipDocument(kind, sourceDrum ? nullptr : &drum, actual));
+        assert(actual.get() == identity);
+        std::cout << "[PASS] empty document allocations=" << allocations
+                  << " temporary Pattern bytes removed=" << sizeof(pattern) << '\n';
+    }
+    assert(drum.pattern.stepEnabled(0U, 3U));
+    assert(drum.advancedStepKeys == originalDrum.advancedStepKeys);
 }
 
 void test_grid_rejects_malformed_documents() {
@@ -304,6 +348,100 @@ void test_resident_switch_preserves_both_clip_documents() {
     std::cout << "[PASS] resident switching preserves both Clips without allocation\n";
 }
 
+void test_sparse_drum_owners_and_failure_atomicity() {
+    seq::SequencerTrackBankState bank;
+    seq::SequencerState active{bank.track(0U), bank.clip(0U)};
+    active.drumSequencer.bindTrack(0U, bank);
+    for (uint8_t i = 0U; i < bank.TRACK_COUNT; ++i) {
+        assert(!bank.drumTrackIfPresent(i));
+    }
+    assert(bank.setTrackKind(0U, seq::SequencerTrackKind::DRUM));
+    auto* original = bank.drumTrackIfPresent(0U);
+    original->kit.lanes[0U].midiNote = 49U;
+    const auto revision = bank.drumTrackRevision(0U);
+    for (uint8_t target : {0U, 1U}) {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(!bank.setTrackKind(target, seq::SequencerTrackKind::DRUM, true));
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+        assert(bank.drumTrackIfPresent(0U) == original);
+        assert(bank.drumTrackMask() == 1U);
+        assert(bank.drumTrackRevision(0U) == revision);
+        assert(original->kit.lanes[0U].midiNote == 49U);
+    }
+    seq::SequencerHistoryDescriptor descriptor{};
+    descriptor.kind = seq::SequencerHistoryActionKind::DrumTrackKind;
+    for (unsigned ordinal : {1U, 2U}) {
+        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+        assert(!seq::prepareHistoryDrumChangeBefore(bank, active, 0U, descriptor));
+        assert(core::app::testing::extmemAllocationAttempt == ordinal);
+        assert(bank.drumTrackIfPresent(0U) == original);
+        assert(bank.drumTrackRevision(0U) == revision);
+    }
+    auto change = seq::prepareHistoryDrumChangeBefore(bank, active, 0U, descriptor);
+    assert(change && change->kindRollback);
+    const auto* rollback = change->kindRollback.get();
+    assert(bank.setTrackKind(0U, seq::SequencerTrackKind::INSTRUMENT));
+    assert(!active.drumSequencer.drumTrack());
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(seq::restorePreparedHistoryDrumBefore(bank, active, *change));
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    assert(bank.drumTrackIfPresent(0U) == rollback);
+    assert(active.drumSequencer.drumTrack() == rollback);
+    assert(rollback->kit.lanes[0U].midiNote == 49U);
+    assert(!change->kindRollback);
+
+    assert(bank.setTrackKind(15U, seq::SequencerTrackKind::DRUM));
+    auto snapshot = std::make_unique<seq::DrumTrackBankSnapshot>();
+    bank.captureDrumTrackBank(*snapshot);
+    seq::DrumTrackOwners prepared;
+    prepared[3U] = core::app::makeExtmemUnique<seq::DrumTrackState>();
+    const auto* sentinel = prepared[3U].get();
+    for (unsigned ordinal : {1U, 2U}) {
+        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+        assert(!seq::prepareDrumTrackBank(*snapshot, prepared));
+        assert(core::app::testing::extmemAllocationAttempt == ordinal);
+        assert(prepared[3U].get() == sentinel);
+        assert(bank.drumTrackIfPresent(0U) == rollback);
+    }
+    assert(seq::prepareDrumTrackBank(*snapshot, prepared));
+    const auto* incoming = prepared[0U].get();
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        bank.installDrumTracks(std::move(prepared));
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    assert(bank.drumTrackMask() == 0x8001U);
+    assert(bank.drumTrackIfPresent(0U) == incoming);
+    assert(active.drumSequencer.drumTrack() == incoming);
+    assert(incoming->kit.lanes[0U].midiNote == 49U);
+    for (uint8_t i = 1U; i < 15U; ++i) {
+        assert(bank.setTrackKind(i, seq::SequencerTrackKind::DRUM));
+    }
+    assert(bank.drumTrackMask() == 0xffffU);
+    bank.clearDrumTrackBank();
+    assert(bank.drumTrackMask() == 0U);
+    for (uint8_t i = 0U; i < bank.TRACK_COUNT; ++i) {
+        assert(!bank.drumTrackIfPresent(i));
+    }
+    assert(!active.drumSequencer.drumTrack());
+    std::cout << "[PASS] sparse Drum owners, prepare failures and kind rollback are atomic\n";
+}
+
+void test_document_bank_initialization_reports_allocation_failure() {
+    for (size_t ordinal = 1U; ordinal <= seq::SequencerTrackBankState::TRACK_COUNT; ++ordinal) {
+        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+        seq::SequencerTrackBankState bank;
+        assert(!bank.ready());
+        assert(core::app::testing::extmemAllocationAttempt == ordinal);
+    }
+    core::app::testing::ScopedExtmemAllocationFailure failure(17U);
+    seq::SequencerTrackBankState bank;
+    assert(bank.ready());
+    assert(core::app::testing::extmemAllocationAttempt == 16U);
+}
+
 void test_document_installation_publishes_final_owners_and_editor_state() {
     // Exercise both consumers of document installation, on both canonical
     // locations and with each cold-payload policy. Two installs precede one
@@ -324,6 +462,9 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                 seed(pattern, clip, 60U);
                 assert(seq::ensureGraphRoot(pattern));
                 const auto* originalGraph = pattern.graph.get();
+                const auto* originalDocument = &bank.document(track);
+                const auto* originalDrum = bank.drumTrackIfPresent(track);
+                active.drumSequencer.bindTrack(track, bank);
                 if (promote) assert(grid.clearResident({track, 0U}));
 
                 seq::SequencerPatternState source;
@@ -336,7 +477,7 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                 }
                 for (uint8_t slot : {1U, 2U}) {
                     source.setStepNoteAt(0U, static_cast<uint8_t>(72U + slot));
-                    source.ccLaneRevision.set(40U + slot);
+                    source.setCcLaneRevision(40U + slot);
                     seq::SequencerClipDocumentPtr document;
                     assert(seq::captureSequencerClipDocument(
                         source, sourceClip, bank.trackKind(track),
@@ -344,8 +485,12 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                     if (drum) document->drum->kit.lanes[0].midiNote = 42U + slot;
                     assert(grid.installInactiveDocument({track, slot}, std::move(document)));
                 }
-                const auto* finalGraph = grid.inactiveDocument({track, 2U})->graph.get();
-                const auto* finalCc = grid.inactiveDocument({track, 2U})->ccLanes.get();
+                const auto* firstDrum = grid.inactiveDocument({track, 1U})->drum.get();
+                const auto* finalDocument = grid.inactiveDocument({track, 2U});
+                const auto finalStepRevision = finalDocument->pattern.stepDataRevision;
+                const auto* finalDrum = grid.inactiveDocument({track, 2U})->drum.get();
+                const auto* finalGraph = grid.inactiveDocument({track, 2U})->pattern.graph.get();
+                const auto* finalCc = grid.inactiveDocument({track, 2U})->pattern.ccLanes.get();
                 active.focusedStep.set(63U);
                 active.page.set(7U);
                 active.stepEdit.visible.set(true);
@@ -362,6 +507,7 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                     uint8_t track;
                     const oc::note::sequencer::StepSequencerGraph* graph;
                     const seq::SequencerCcLaneBank* cc;
+                    const seq::DrumTrackState* drum;
                     unsigned calls = 0U;
                     void render() {
                         ++calls;
@@ -370,16 +516,19 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                         assert(current.note[0] == 74U);
                         assert(current.graph.get() == graph);
                         assert(current.ccLanes.get() == cc);
-                        assert(current.ccLaneRevision.get() == 42U);
+                        assert(bank.drumTrackIfPresent(track) == drum);
+                        assert(active.drumSequencer.drumTrack() == drum);
+                        assert(current.ccLaneRevision == 42U);
                         if (bank.isDrumTrack(track)) {
                             assert(bank.drumTrack(track).kit.lanes[0].midiNote == 44U);
                         }
                     }
-                } observer{bank, active, grid, track, finalGraph, finalCc};
+                } observer{bank, active, grid, track, finalGraph, finalCc, finalDrum};
                 oc::state::StaticWatchGroup<5> watcher;
                 watcher.bind<&Observer::render>(observer, 0U);
-                assert(watcher.watchAll(pattern.stepDataRevision, pattern.graphRevision,
-                    pattern.ccLaneRevision, grid.revisionSignal(), bank.drumRevisionSignal()));
+                assert(watcher.watchAll(active.patternChanges.stepDataRevision,
+                    active.patternChanges.graphRevision, active.patternChanges.ccLaneRevision,
+                    grid.revisionSignal(), bank.drumRevisionSignal()));
                 pattern.setStepNoteAt(0U, 61U); // Pending work from the outgoing source.
                 {
                     core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -388,6 +537,9 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                     assert(core::app::testing::extmemAllocationAttempt == 0U);
                 }
                 assert(observer.calls == 0U);
+                assert(&bank.document(track) == finalDocument);
+                assert(&bank.track(track) == &finalDocument->pattern);
+                assert(bank.track(track).stepDataRevision == finalStepRevision);
                 test_support::drainNotifications();
                 assert(observer.calls == 1U);
                 assert(active.focusedStep.get() == (track == 0U ? 7U : 63U));
@@ -399,11 +551,14 @@ void test_document_installation_publishes_final_owners_and_editor_state() {
                 assert(bank.drumTrackRevision(track) == drumRevision + (drum ? 2U : 0U));
                 const auto* previous = grid.inactiveDocument({track, 1U});
                 assert(previous && previous->pattern.note[0] == 73U);
+                assert(previous->drum.get() == firstDrum);
                 if (drum) assert(previous->drum->kit.lanes[0].midiNote == 43U);
                 if (!promote) {
                     const auto* original = grid.inactiveDocument({track, 0U});
+                    assert(original == originalDocument);
                     assert(original && original->pattern.note[0] == 61U);
-                    assert(original->graph.get() == originalGraph);
+                    assert(original->pattern.graph.get() == originalGraph);
+                    assert(original->drum.get() == originalDrum);
                 }
             }
         }
@@ -737,9 +892,12 @@ void test_core_clip_api_keeps_structure_and_history_coherent() {
 }  // namespace
 
 int main() {
+    test_document_bank_initialization_reports_allocation_failure();
+    test_sparse_drum_owners_and_failure_atomicity();
     test_document_installation_publishes_final_owners_and_editor_state();
     test_sparse_grid_capacity_and_snapshot_are_exact();
     test_capture_and_snapshot_fail_without_mutating_destination();
+    test_empty_document_matches_live_defaults_and_preserves_destination_on_failure();
     test_grid_rejects_malformed_documents();
     test_grid_enforces_the_aggregate_psram_budget();
     test_launcher_metadata_survives_snapshot_move_and_history();

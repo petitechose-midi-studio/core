@@ -127,15 +127,15 @@ FLASHMEM PatternEncodeView patternEncodeView(
     const sequencer::SequencerPatternState& source
 ) {
     return {
-        .length = source.length.get(),
-        .stepsPerBeat = source.stepsPerBeat.get(),
+        .length = source.length,
+        .stepsPerBeat = source.stepsPerBeat,
         .pitchEditMode = source.pitchEditMode,
         .variationRanges = source.variationRanges,
-        .swingOffsetPercent = source.swingOffsetPercent.get(),
-        .patternNudgePercent = source.patternNudgePercent.get(),
+        .swingOffsetPercent = source.swingOffsetPercent,
+        .patternNudgePercent = source.patternNudgePercent,
         .scalePolicy = source.scalePolicy,
         .scaleOverride = source.scaleOverride,
-        .enabledMask = source.enabledMask.get(),
+        .enabledMask = source.enabledMask,
         .note = &source.note[0],
         .velocity = &source.velocity[0],
         .gate = &source.gate[0],
@@ -433,7 +433,7 @@ FLASHMEM bool readPattern(binary::Reader& reader,
     if (!readPatternHeader(reader, header)) return false;
 
     target.setContentLength(header.length);
-    target.stepsPerBeat.set(header.stepsPerBeat);
+    target.setStepsPerBeat(header.stepsPerBeat);
     target.setPitchEditMode(
         static_cast<sequencer::SequencerPitchEditMode>(header.pitchEditMode)
     );
@@ -446,7 +446,7 @@ FLASHMEM bool readPattern(binary::Reader& reader,
         )
     );
     target.setPatternScaleOverride(header.scaleOverride);
-    target.enabledMask.set(header.enabledMask);
+    target.setEnabledMask(header.enabledMask);
 
     if (!readPatternData(reader, target)) return false;
 

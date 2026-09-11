@@ -41,20 +41,20 @@ FLASHMEM void formatDrumPropertyValue(
     size_t size,
     const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!buffer || size == 0U || !drumUi.drumTrack) return;
+    if (!buffer || size == 0U || !drumUi.drumTrack()) return;
     const uint8_t step = std::min<uint8_t>(
         drumUi.focusedStep,
         static_cast<uint8_t>(drumUi.MAX_STEPS - 1U)
     );
     const auto& lane =
-        drumUi.drumTrack->pattern.lanes[drumUi.selectedLane];
+        drumUi.drumTrack()->pattern.lanes[drumUi.selectedLane];
     switch (drumUi.property) {
         case DrumProperty::STATE:
             std::snprintf(
                 buffer,
                 size,
                 "%s",
-                drumUi.drumTrack->pattern.stepEnabled(
+                drumUi.drumTrack()->pattern.stepEnabled(
                     drumUi.selectedLane,
                     step
                 ) ? "On" : "Off"
@@ -134,8 +134,8 @@ FLASHMEM void formatDrumDimensionValue(
     size_t size,
     const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!buffer || size == 0U || !drumUi.drumTrack) return;
-    const auto& pattern = drumUi.drumTrack->pattern;
+    if (!buffer || size == 0U || !drumUi.drumTrack()) return;
+    const auto& pattern = drumUi.drumTrack()->pattern;
     switch (drumUi.dimension) {
         case DrumDimension::MODE:
             std::snprintf(
@@ -196,14 +196,14 @@ FLASHMEM void formatDrumPatternFieldValue(
     size_t size,
     const core::state::sequencer::DrumSequencerState& drumUi
 ) {
-    if (!buffer || size == 0U || !drumUi.drumTrack) return;
+    if (!buffer || size == 0U || !drumUi.drumTrack()) return;
     if (drumUi.patternDefaultField == DrumPatternField::DIVISION) {
         std::snprintf(
             buffer,
             size,
             "1/%u",
             static_cast<unsigned>(
-                drumUi.drumTrack->pattern.defaultStepsPerBeat * 4U
+                drumUi.drumTrack()->pattern.defaultStepsPerBeat * 4U
             )
         );
     } else {
@@ -211,7 +211,7 @@ FLASHMEM void formatDrumPatternFieldValue(
             buffer,
             size,
             "%u steps",
-            static_cast<unsigned>(drumUi.drumTrack->pattern.defaultLength)
+            static_cast<unsigned>(drumUi.drumTrack()->pattern.defaultLength)
         );
     }
 }
@@ -403,7 +403,7 @@ void formatQuickControlValue(
                 size,
                 1U,
                 static_cast<unsigned>(
-                    4U * static_cast<uint16_t>(pattern.stepsPerBeat.get())
+                    4U * static_cast<uint16_t>(pattern.stepsPerBeat)
                 )
             );
             return;
@@ -424,7 +424,7 @@ void formatQuickControlValue(
                 buffer,
                 size,
                 "%+d%%",
-                static_cast<int>(pattern.patternNudgePercent.get())
+                static_cast<int>(pattern.patternNudgePercent)
             );
             return;
         case QuickItem::LENGTH:

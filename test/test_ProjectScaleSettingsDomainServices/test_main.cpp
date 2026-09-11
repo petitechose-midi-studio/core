@@ -121,7 +121,7 @@ void test_project_scale_choices_update_track_bank() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern().patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision;
     assert(applyProjectScaleChoice(trackBank, sequencer, 0, 9).changed);
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 2).changed);
     assert(!applyProjectScaleChoice(trackBank, sequencer, 2, 1).changed);
@@ -135,7 +135,7 @@ void test_project_scale_choices_update_track_bank() {
     assert(services.currentChoiceIndex(2) == 1);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 2U);
-    assert(sequencer.pattern().patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision ==
            activeScaleRevisionBefore + 2U);
 
     std::cout << "[PASS] test_project_scale_choices_update_track_bank\n";
@@ -149,7 +149,7 @@ void test_project_scale_choices_are_clamped() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern().patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision;
     assert(applyProjectScaleChoice(trackBank, sequencer, 0, 99).changed);
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 99).changed);
     assert(applyProjectScaleChoice(trackBank, sequencer, 2, 99).changed);
@@ -160,7 +160,7 @@ void test_project_scale_choices_are_clamped() {
     assert(settings.mode == StepSequencerScaleConstraintMode::ConstrainDown);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 3U);
-    assert(sequencer.pattern().patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision ==
            activeScaleRevisionBefore + 3U);
 
     std::cout << "[PASS] test_project_scale_choices_are_clamped\n";
@@ -217,14 +217,14 @@ void test_project_scale_invalidates_inherited_active_telemetry() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern().patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision;
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 1).changed);
 
     assert(!sequencer.cycleVariationTelemetry.validMask.test(0));
     assert(sequencer.variationTelemetryRevision.get() == before + 1U);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 1U);
-    assert(sequencer.pattern().patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision ==
            activeScaleRevisionBefore + 1U);
 
     std::cout << "[PASS] test_project_scale_invalidates_inherited_active_telemetry\n";
@@ -242,14 +242,14 @@ void test_project_scale_keeps_override_active_telemetry() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern().patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision;
     assert(applyProjectScaleChoice(trackBank, sequencer, 1, 1).changed);
 
     assert(sequencer.cycleVariationTelemetry.validMask.test(0));
     assert(sequencer.variationTelemetryRevision.get() == before);
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 1U);
-    assert(sequencer.pattern().patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision ==
            activeScaleRevisionBefore);
 
     std::cout << "[PASS] test_project_scale_keeps_override_active_telemetry\n";
@@ -269,7 +269,7 @@ void test_project_scale_boundary_projects_inherited_chords() {
     const uint32_t projectRevisionBefore =
         trackBank.projectScaleRevisionSignal().get();
     const uint32_t activeScaleRevisionBefore =
-        sequencer.pattern().patternScaleRevision.get();
+        sequencer.pattern().patternScaleRevision;
     const auto mutation = applyProjectScaleChoice(trackBank, sequencer, 2, 1);
     const auto projection = mutation.projection;
 
@@ -283,7 +283,7 @@ void test_project_scale_boundary_projects_inherited_chords() {
     assert(!projection.hasAdaptations());
     assert(trackBank.projectScaleRevisionSignal().get() ==
            projectRevisionBefore + 1U);
-    assert(sequencer.pattern().patternScaleRevision.get() ==
+    assert(sequencer.pattern().patternScaleRevision ==
            activeScaleRevisionBefore + 1U);
 
     std::cout

@@ -326,7 +326,7 @@ FLASHMEM bool fillFocus(
     if (plan.beforeActiveTrack == plan.afterActiveTrack) return true;
 
     const uint8_t incomingLength =
-        context.state.sequencerTracks.track(plan.afterActiveTrack).length.get();
+        context.state.sequencerTracks.track(plan.afterActiveTrack).length;
     if (incomingLength == 0U ||
         incomingLength > core::state::sequencer::SequencerState::MAX_STEPS) {
         return false;

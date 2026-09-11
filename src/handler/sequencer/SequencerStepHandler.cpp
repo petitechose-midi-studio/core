@@ -87,13 +87,13 @@ FLASHMEM int32_t drumStepHistoryValue(
     uint8_t step,
     seq::DrumSequencerProperty property
 ) {
-    if (!drumUi.stepInRange(lane, step) || drumUi.drumTrack == nullptr) {
+    if (!drumUi.stepInRange(lane, step) || drumUi.drumTrack() == nullptr) {
         return 0;
     }
-    const auto& pattern = drumUi.drumTrack->pattern.lanes[lane];
+    const auto& pattern = drumUi.drumTrack()->pattern.lanes[lane];
     switch (property) {
         case seq::DrumSequencerProperty::STATE:
-            return drumUi.drumTrack->pattern.stepEnabled(lane, step) ? 1 : 0;
+            return drumUi.drumTrack()->pattern.stepEnabled(lane, step) ? 1 : 0;
         case seq::DrumSequencerProperty::PROBABILITY:
             return pattern.probability[step];
         case seq::DrumSequencerProperty::GATE:
@@ -198,8 +198,8 @@ FLASHMEM void SequencerStepHandler::syncDrumSequencerToActiveTrack() {
 
     auto& authored = tracks_.drumTrack(activeTrack);
     const bool needsEntry = !drumUi.gridVisible() ||
-        drumUi.targetTrack != activeTrack || drumUi.drumTrack != &authored;
-    drumUi.bindTrack(activeTrack, authored, tracks_);
+        drumUi.targetTrack != activeTrack || drumUi.drumTrack() != &authored;
+    drumUi.bindTrack(activeTrack, tracks_);
     if (needsEntry) {
         drumUi.enterGrid();
         navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
@@ -230,7 +230,7 @@ FLASHMEM void SequencerStepHandler::confirmDrumSequencerType() {
         ? requestedTrack
         : tracks_.activeTrackIndex();
     if (drum) {
-        drumUi.bindTrack(createdTrack, tracks_.drumTrack(createdTrack), tracks_);
+        drumUi.bindTrack(createdTrack, tracks_);
         drumUi.enterGrid();
         navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
     } else {
@@ -299,7 +299,7 @@ FLASHMEM void SequencerStepHandler::handleDrumSequencerNavPress() {
             ? drumUi.focusedStep
             : focus == core::state::StructureNavigationFocus::LANE
                 ? (drumUi.laneAddSlotFocused()
-                    ? drumUi.drumTrack->kit.laneCount
+                    ? drumUi.drumTrack()->kit.laneCount
                     : drumUi.selectedLane)
                 : drumUi.page;
     context_selector_workflow_.press(
@@ -574,16 +574,16 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
         );
         descriptor.hasValue = true;
         descriptor.beforeValue = field == seq::DrumPatternDefaultField::LENGTH
-            ? drumUi.drumTrack->pattern.defaultLength
-            : drumUi.drumTrack->pattern.defaultStepsPerBeat;
+            ? drumUi.drumTrack()->pattern.defaultLength
+            : drumUi.drumTrack()->pattern.defaultStepsPerBeat;
         if (!beginDrumHistory(descriptor)) return;
-        const uint32_t beforeRevision = drumUi.drumTrack->pattern.revision;
+        const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
         drumUi.editPatternDefaultValue(normalized);
         descriptor.afterValue = field == seq::DrumPatternDefaultField::LENGTH
-            ? drumUi.drumTrack->pattern.defaultLength
-            : drumUi.drumTrack->pattern.defaultStepsPerBeat;
+            ? drumUi.drumTrack()->pattern.defaultLength
+            : drumUi.drumTrack()->pattern.defaultStepsPerBeat;
         (void)sealDrumHistory(
-            drumUi.drumTrack->pattern.revision != beforeRevision,
+            drumUi.drumTrack()->pattern.revision != beforeRevision,
             descriptor,
             false
         );
@@ -620,18 +620,18 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
             );
             descriptor.hasValue = true;
             descriptor.beforeValue = static_cast<int32_t>(
-                drumUi.drumTrack->pattern.lanes[drumUi.selectedLane]
+                drumUi.drumTrack()->pattern.lanes[drumUi.selectedLane]
                     .timing.mode);
             if (!beginDrumHistory(descriptor)) return;
-            const uint32_t beforeRevision = drumUi.drumTrack->pattern.revision;
+            const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
             drumUi.setSelectedLaneTimingCustom(
                 input_utils::clampNormalized(normalized) >= 0.5f
             );
             descriptor.afterValue = static_cast<int32_t>(
-                drumUi.drumTrack->pattern.lanes[drumUi.selectedLane]
+                drumUi.drumTrack()->pattern.lanes[drumUi.selectedLane]
                     .timing.mode);
             (void)sealDrumHistory(
-                drumUi.drumTrack->pattern.revision != beforeRevision,
+                drumUi.drumTrack()->pattern.revision != beforeRevision,
                 descriptor,
                 false
             );
@@ -645,10 +645,10 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
                 static_cast<uint8_t>(drumUi.dimension)
             );
             descriptor.hasValue = true;
-            descriptor.beforeValue = drumUi.drumTrack->pattern
+            descriptor.beforeValue = drumUi.drumTrack()->pattern
                 .effectiveStepsPerBeat(drumUi.selectedLane);
             if (!beginDrumHistory(descriptor)) return;
-            const uint32_t beforeRevision = drumUi.drumTrack->pattern.revision;
+            const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
             const int index = input_utils::normalizedToIndex(
                 normalized,
                 static_cast<int>(input_utils::STEPS_PER_BEAT_CHOICES.size())
@@ -658,10 +658,10 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
                     static_cast<size_t>(index)
                 ]
             );
-            descriptor.afterValue = drumUi.drumTrack->pattern
+            descriptor.afterValue = drumUi.drumTrack()->pattern
                 .effectiveStepsPerBeat(drumUi.selectedLane);
             (void)sealDrumHistory(
-                drumUi.drumTrack->pattern.revision != beforeRevision,
+                drumUi.drumTrack()->pattern.revision != beforeRevision,
                 descriptor,
                 false
             );
@@ -677,20 +677,20 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
                 static_cast<uint8_t>(drumUi.dimension)
             );
             descriptor.hasValue = true;
-            descriptor.beforeValue = drumUi.drumTrack->pattern
+            descriptor.beforeValue = drumUi.drumTrack()->pattern
                 .effectiveLength(drumUi.selectedLane);
             if (!beginDrumHistory(descriptor)) return;
-            const uint32_t beforeRevision = drumUi.drumTrack->pattern.revision;
+            const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
             drumUi.setSelectedLaneLength(static_cast<uint8_t>(
                 input_utils::normalizedToInclusiveInt(
                     normalized,
                     drumUi.MAX_STEPS - 1U
                 ) + 1
             ));
-            descriptor.afterValue = drumUi.drumTrack->pattern
+            descriptor.afterValue = drumUi.drumTrack()->pattern
                 .effectiveLength(drumUi.selectedLane);
             (void)sealDrumHistory(
-                drumUi.drumTrack->pattern.revision != beforeRevision,
+                drumUi.drumTrack()->pattern.revision != beforeRevision,
                 descriptor,
                 false
             );
@@ -1056,7 +1056,7 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                     seq::DrumSequencerProperty::STATE
                 );
                 if (!beginDrumHistory(descriptor)) return;
-                const uint32_t beforeRevision = drumUi.drumTrack->pattern.revision;
+                const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
                 drumUi.toggleVisibleStep(i);
                 descriptor.afterValue = drumStepHistoryValue(
                     drumUi,
@@ -1065,7 +1065,7 @@ FLASHMEM void SequencerStepHandler::setupDrumBindings() {
                     seq::DrumSequencerProperty::STATE
                 );
                 (void)sealDrumHistory(
-                    drumUi.drumTrack->pattern.revision != beforeRevision,
+                    drumUi.drumTrack()->pattern.revision != beforeRevision,
                     descriptor,
                     true
                 );

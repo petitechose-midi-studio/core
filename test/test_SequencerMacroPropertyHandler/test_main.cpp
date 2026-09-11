@@ -580,7 +580,7 @@ void test_direct_edit_retires_runtime_projection_before_authored_revision() {
                     if (callbackCount < 2U) callbackOrder[callbackCount++] = 1U;
                 }
             );
-        auto authoredSubscription = h.state.sequencer.pattern().stepDataRevision.subscribe(
+        auto authoredSubscription = h.state.sequencer.patternChanges.stepDataRevision.subscribe(
             [&](const uint32_t&) {
                 if (callbackCount < 2U) callbackOrder[callbackCount++] = 2U;
                 authoredRevisionSawCoherentState =

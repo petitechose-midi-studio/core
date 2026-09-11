@@ -580,9 +580,9 @@ void test_return_to_before_cancels_the_session_exactly() {
     const auto invariantBefore = tx::captureStateInvariant(h.state);
     seq::SequencerHistoryPatternSnapshot musicalBefore;
     tx::captureMusicalSnapshot(h.state, musicalBefore);
-    const uint32_t stepDataRevisionBefore = h.state.sequencer.pattern().stepDataRevision.get();
+    const uint32_t stepDataRevisionBefore = h.state.sequencer.pattern().stepDataRevision;
     const uint32_t bankStepDataRevisionBefore =
-        h.state.sequencerTracks.track(0U).stepDataRevision.get();
+        h.state.sequencerTracks.track(0U).stepDataRevision;
 
     beginFlat(h.state, 100U);
     mutateFlatAndSeal(h.state, 65U);
@@ -597,8 +597,8 @@ void test_return_to_before_cancels_the_session_exactly() {
 
     tx::assertStateInvariant(h.state, invariantBefore);
     tx::assertMusicalSnapshot(h.state, musicalBefore);
-    assert(h.state.sequencer.pattern().stepDataRevision.get() == stepDataRevisionBefore);
-    assert(h.state.sequencerTracks.track(0U).stepDataRevision.get() == bankStepDataRevisionBefore);
+    assert(h.state.sequencer.pattern().stepDataRevision == stepDataRevisionBefore);
+    assert(h.state.sequencerTracks.track(0U).stepDataRevision == bankStepDataRevisionBefore);
 
     std::cout << "[PASS] returning to before cancels the session exactly\n";
 }

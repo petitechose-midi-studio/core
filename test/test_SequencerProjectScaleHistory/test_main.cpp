@@ -173,8 +173,8 @@ bool samePatternSnapshot(
 }
 
 bool sameClipSnapshot(
-    const seq::SequencerClipSnapshot& lhs,
-    const seq::SequencerClipSnapshot& rhs
+    const seq::SequencerClipState& lhs,
+    const seq::SequencerClipState& rhs
 ) {
     return lhs.playStartTick == rhs.playStartTick &&
            lhs.loopStartTick == rhs.loopStartTick &&
@@ -229,7 +229,7 @@ void authorPayload(
     PayloadKind kind,
     uint8_t salt = 0U
 ) {
-    if (pattern.length.get() != 8U) {
+    if (pattern.length != 8U) {
         assert(pattern.setContentLength(8U));
     }
     assert(pattern.setStepDataAt(
@@ -305,12 +305,12 @@ struct RevisionVector {
 
 RevisionVector revisions(const seq::SequencerPatternState& pattern) {
     return {
-        .step = pattern.stepDataRevision.get(),
-        .variation = pattern.patternVariationRevision.get(),
-        .scale = pattern.patternScaleRevision.get(),
-        .timing = pattern.patternTimingRevision.get(),
-        .graph = pattern.graphRevision.get(),
-        .cc = pattern.ccLaneRevision.get(),
+        .step = pattern.stepDataRevision,
+        .variation = pattern.patternVariationRevision,
+        .scale = pattern.patternScaleRevision,
+        .timing = pattern.patternTimingRevision,
+        .graph = pattern.graphRevision,
+        .cc = pattern.ccLaneRevision,
     };
 }
 
@@ -342,7 +342,7 @@ PatternProof capturePatternProof(const seq::SequencerPatternState& pattern) {
     seq::captureSnapshot(pattern, proof.flat);
     proof.graphOwner = pattern.graph.get();
     proof.ccOwner = pattern.ccLanes.get();
-    proof.ccRevision = pattern.ccLaneRevision.get();
+    proof.ccRevision = pattern.ccLaneRevision;
     proof.graphContent = graphHash(pattern);
     proof.ccContent = ccHash(pattern);
     return proof;
@@ -357,7 +357,7 @@ void assertPatternProof(
     assert(samePatternSnapshot(actual, expected.flat));
     assert(pattern.graph.get() == expected.graphOwner);
     assert(pattern.ccLanes.get() == expected.ccOwner);
-    assert(pattern.ccLaneRevision.get() == expected.ccRevision);
+    assert(pattern.ccLaneRevision == expected.ccRevision);
     assert(graphHash(pattern) == expected.graphContent);
     assert(ccHash(pattern) == expected.ccContent);
 }
@@ -1030,13 +1030,13 @@ void test_nonresident_clips_and_navigation_replay() {
     assert(h.state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
     auto* inactive = h.state.sequencerClips.inactiveDocument({0U, 1U});
     assert(inactive);
-    const auto inactiveBefore = hashBytes(inactive->graph.get(), sizeof(*inactive->graph));
+    const auto inactiveBefore = hashBytes(inactive->pattern.graph.get(), sizeof(*inactive->pattern.graph));
     const auto residentBefore = graphHash(h.state.sequencer.pattern());
     assert(h.state.clearProjectHistory());
     settle(h);
     auto result = h.state.applyPreparedProjectScaleChoice(Owner::ProjectScale, 1U, chromaticChoice());
     assert(result.outcome == Outcome::Committed && result.projection.changed == 17U);
-    const auto inactiveAfter = hashBytes(inactive->graph.get(), sizeof(*inactive->graph));
+    const auto inactiveAfter = hashBytes(inactive->pattern.graph.get(), sizeof(*inactive->pattern.graph));
     const auto residentAfter = graphHash(h.state.sequencer.pattern());
     assert(inactiveBefore != inactiveAfter);
     assert(h.state.switchSequencerClipForEditing({0U, 1U}));
@@ -1053,10 +1053,10 @@ void test_nonresident_clips_and_navigation_replay() {
         assert(h.state.sequencer.focusedStep.get() == 3U);
         assert(graphHash(h.state.sequencerTracks.track(0U)) == inactiveBefore);
         auto* doc = h.state.sequencerClips.inactiveDocument({0U, 0U});
-        assert(hashBytes(doc->graph.get(), sizeof(*doc->graph)) == residentBefore);
+        assert(hashBytes(doc->pattern.graph.get(), sizeof(*doc->pattern.graph)) == residentBefore);
         assert(h.state.redoSequencerHistory());
         assert(graphHash(h.state.sequencerTracks.track(0U)) == inactiveAfter);
-        assert(hashBytes(doc->graph.get(), sizeof(*doc->graph)) == residentAfter);
+        assert(hashBytes(doc->pattern.graph.get(), sizeof(*doc->pattern.graph)) == residentAfter);
         assert(h.state.sequencerTracks.track(0U).graph.get() == owner);
         tx::assertMaxPlusOneStillArmed(0U);
     }
@@ -1096,7 +1096,7 @@ void test_dense_chords_and_retained_budget() {
         assert(seq::captureSequencerClipDocument(pattern,
             h.state.sequencerTracks.clip(track),
             seq::SequencerTrackKind::INSTRUMENT, nullptr, doc));
-        doc->ccLanes.reset();
+        doc->pattern.ccLanes.reset();
         assert(h.state.sequencerClips.installInactiveDocument({track, 1U}, std::move(doc)));
     }
     settle(h);
@@ -1108,14 +1108,14 @@ void test_dense_chords_and_retained_budget() {
         assert(result.outcome == Outcome::Committed && result.projection.changed == 16384U);
         assert(h.state.sequencerHistory.retainedBytes() <= seq::SequencerHistoryService::RETAINED_BYTE_BUDGET);
     }
-    const auto lastHash = hashBytes(last->graph.get(), sizeof(*last->graph));
+    const auto lastHash = hashBytes(last->pattern.graph.get(), sizeof(*last->pattern.graph));
     assert(h.state.sequencerHistory.undoCount() == 3U);
     assert(h.state.projectHistory.undoCount() == 3U);
     assert(h.state.sequencerHistory.retainedSpans() == 6U);
     for (unsigned edit = 0U; edit < 3U; ++edit) assert(h.state.undoSequencerHistory());
     assert(!h.state.undoSequencerHistory());
     for (unsigned edit = 0U; edit < 3U; ++edit) assert(h.state.redoSequencerHistory());
-    assert(hashBytes(last->graph.get(), sizeof(*last->graph)) == lastHash);
+    assert(hashBytes(last->pattern.graph.get(), sizeof(*last->pattern.graph)) == lastHash);
     std::cout << "[PASS] 32 dense patterns prune exactly at the retained-byte budget\n";
 }
 

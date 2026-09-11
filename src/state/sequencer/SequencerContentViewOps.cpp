@@ -171,7 +171,7 @@ FLASHMEM StepContentOpenResult openOrCreateActiveContentChild(SequencerState& se
     }
 
     auto& pattern = authoringPattern(sequencer);
-    const uint32_t graphRevisionBefore = pattern.graphRevision.get();
+    const uint32_t graphRevisionBefore = pattern.graphRevision;
     const auto created = childKind == StepContentChildKind::MICRO_SEQUENCE
                              ? createMicroSequence(pattern, ownerNodeId, length)
                              : createCycleStateSet(pattern, ownerNodeId, length);
@@ -193,7 +193,7 @@ FLASHMEM StepContentOpenResult openOrCreateActiveContentChild(SequencerState& se
     }
 
     result.opened = true;
-    result.created = pattern.graphRevision.get() != graphRevisionBefore;
+    result.created = pattern.graphRevision != graphRevisionBefore;
     result.draft = sequencer.stepContentDraft.active.get();
     if (startedDraft) markStepContentDraftPristine(sequencer);
     result.blockedReason = StepContentCreationBlockReason::NONE;
@@ -533,7 +533,7 @@ FLASHMEM uint8_t preparedSequencerContentLength(
     const SequencerPreparedGraphContentPath& path
 ) {
     if (!path.valid || path.stackDepth > path.frames.size()) return 0U;
-    if (path.stackDepth == 0U) return sequencer.pattern().length.get();
+    if (path.stackDepth == 0U) return sequencer.pattern().length;
     return path.frames[path.stackDepth - 1U].length;
 }
 
@@ -642,7 +642,7 @@ FLASHMEM void finalizePreparedSequencerGraphMutation(SequencerState& sequencer,
 }
 
 FLASHMEM uint8_t activeContentLength(const SequencerState& sequencer) {
-    if (isRootContentView(sequencer)) { return authoringPattern(sequencer).length.get(); }
+    if (isRootContentView(sequencer)) { return authoringPattern(sequencer).length; }
     return sequencer.contentView.length.get();
 }
 

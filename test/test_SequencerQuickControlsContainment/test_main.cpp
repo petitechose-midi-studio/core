@@ -573,9 +573,9 @@ void test_preview_offset_keeps_live_immutable_then_cancel_is_no_write() {
         const auto* liveGraph = h.state.sequencer.pattern().graph.get();
         const auto* liveCc = h.state.sequencer.pattern().ccLanes.get();
         const uint32_t graphRevision =
-            h.state.sequencer.pattern().graphRevision.get();
+            h.state.sequencer.pattern().graphRevision;
         const uint32_t ccRevision =
-            h.state.sequencer.pattern().ccLaneRevision.get();
+            h.state.sequencer.pattern().ccLaneRevision;
         h.state.sequencer.page.set(3U);
         h.state.sequencer.focusedStep.set(7U);
 
@@ -597,10 +597,10 @@ void test_preview_offset_keeps_live_immutable_then_cancel_is_no_write() {
                 assert(h.state.sequencer.pattern().graph.get() == liveGraph);
                 assert(h.state.sequencer.pattern().ccLanes.get() == liveCc);
                 assert(
-                    h.state.sequencer.pattern().graphRevision.get() ==
+                    h.state.sequencer.pattern().graphRevision ==
                     graphRevision);
                 assert(
-                    h.state.sequencer.pattern().ccLaneRevision.get() ==
+                    h.state.sequencer.pattern().ccLaneRevision ==
                     ccRevision);
             }
             h.tap(Config::ButtonID::LEFT_TOP);
@@ -694,22 +694,22 @@ void test_flat_dimensions_preview_and_apply_once() {
         settlePreparedFixture(h);
         seq::SequencerHistoryPatternSnapshot before;
         captureMusical(h, before);
-        const uint8_t liveLength = h.state.sequencer.pattern().length.get();
+        const uint8_t liveLength = h.state.sequencer.pattern().length;
         const uint8_t liveDivision =
-            h.state.sequencer.pattern().stepsPerBeat.get();
+            h.state.sequencer.pattern().stepsPerBeat;
 
         holdOpen(h);
         if (testCase.item == seq::PatternQuickControlItem::DIVISION) {
             navigateToDivision(h);
         }
         h.turn(Config::EncoderID::OPT, testCase.value);
-        assert(h.state.sequencer.pattern().length.get() == liveLength);
+        assert(h.state.sequencer.pattern().length == liveLength);
         assert(
-            h.state.sequencer.pattern().stepsPerBeat.get() == liveDivision);
+            h.state.sequencer.pattern().stepsPerBeat == liveDivision);
         if (testCase.item == seq::PatternQuickControlItem::LENGTH) {
-            assert(previewPattern(h).length.get() == 4U);
+            assert(previewPattern(h).length == 4U);
         } else {
-            assert(previewPattern(h).stepsPerBeat.get() != liveDivision);
+            assert(previewPattern(h).stepsPerBeat != liveDivision);
         }
 
         h.release(Config::ButtonID::LEFT_CENTER);
@@ -773,8 +773,8 @@ void test_failed_apply_rearms_without_losing_draft() {
     captureMusical(h, before);
     holdOpen(h);
     h.turn(Config::EncoderID::OPT, normalizedRootLength(4U));
-    assert(previewPattern(h).length.get() == 4U);
-    assert(h.state.sequencer.pattern().length.get() == 8U);
+    assert(previewPattern(h).length == 4U);
+    assert(h.state.sequencer.pattern().length == 8U);
     assert(
         h.state.abortSequencerPreparedPatternEdit(
             seq::SequencerPreparedPatternEditOwner::QuickControls,
@@ -787,7 +787,7 @@ void test_failed_apply_rearms_without_losing_draft() {
         h.release(Config::ButtonID::LEFT_CENTER);
         assert(h.state.sequencer.patternQuickControls.selecting.get());
         assert(h.state.sequencer.quickControlsDraft.active());
-        assert(previewPattern(h).length.get() == 4U);
+        assert(previewPattern(h).length == 4U);
         assertMusicalEquals(h, before);
         test_support::sequencer_transaction::assertFailureConsumed(1U);
     }
@@ -797,7 +797,7 @@ void test_failed_apply_rearms_without_losing_draft() {
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
     assert(!h.state.sequencer.quickControlsDraft.active());
-    assert(h.state.sequencer.pattern().length.get() == 4U);
+    assert(h.state.sequencer.pattern().length == 4U);
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.undoSequencerHistory());
     assertMusicalEquals(h, before);
@@ -836,8 +836,8 @@ void test_nested_step_draft_is_transactional_without_live_history() {
     };
     assert(sequenceLength(*parent) == 2U);
 
-    const uint32_t parentGraphRevision = parent->graphRevision.get();
-    const uint32_t parentCcRevision = parent->ccLaneRevision.get();
+    const uint32_t parentGraphRevision = parent->graphRevision;
+    const uint32_t parentCcRevision = parent->ccLaneRevision;
     const auto* parentGraphOwner = parent->graph.get();
     const auto* parentCcOwner = parent->ccLanes.get();
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -847,8 +847,8 @@ void test_nested_step_draft_is_transactional_without_live_history() {
     assert(seq::sameMusicalPatternState(*parent, previewPattern(h)));
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
-    assert(parent->graphRevision.get() == parentGraphRevision);
-    assert(parent->ccLaneRevision.get() == parentCcRevision);
+    assert(parent->graphRevision == parentGraphRevision);
+    assert(parent->ccLaneRevision == parentCcRevision);
     assert(parent->graph.get() == parentGraphOwner);
     assert(parent->ccLanes.get() == parentCcOwner);
     assert(sequenceLength(*parent) == 2U);

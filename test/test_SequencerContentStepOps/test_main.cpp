@@ -131,7 +131,7 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
 
     assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
-    const uint32_t graphRevisionBeforeReopen = sequencer.pattern().graphRevision.get();
+    const uint32_t graphRevisionBeforeReopen = sequencer.pattern().graphRevision;
     const auto reopenedMicro = core::state::sequencer::openOrCreateActiveContentChild(
         sequencer,
         0,
@@ -141,7 +141,7 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
     assert(reopenedMicro.opened);
     assert(!reopenedMicro.created);
     assert(reopenedMicro.contentId == createdMicro.contentId);
-    assert(sequencer.pattern().graphRevision.get() == graphRevisionBeforeReopen);
+    assert(sequencer.pattern().graphRevision == graphRevisionBeforeReopen);
 
     assert(core::state::sequencer::leaveContentView(sequencer));
     const auto createdCycle = core::state::sequencer::openOrCreateActiveContentChild(

@@ -291,7 +291,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         );
         const uint8_t length = std::max<uint8_t>(
             1U,
-            state_.sequencer.pattern().length.get()
+            state_.sequencer.pattern().length
         );
         const uint8_t start = static_cast<uint8_t>(
             (ui.focusedStep / GRID_WINDOW) * GRID_WINDOW

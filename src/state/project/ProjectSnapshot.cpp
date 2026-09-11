@@ -350,11 +350,11 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
                     };
                 }
                 workBytes = sizeof(*document);
-                if (document->graph != nullptr) {
-                    workBytes += sizeof(*document->graph);
+                if (document->pattern.graph != nullptr) {
+                    workBytes += sizeof(*document->pattern.graph);
                 }
-                if (document->ccLanes != nullptr) {
-                    workBytes += sizeof(*document->ccLanes);
+                if (document->pattern.ccLanes != nullptr) {
+                    workBytes += sizeof(*document->pattern.ccLanes);
                 }
                 if (document->drum != nullptr) {
                     workBytes += sizeof(*document->drum);
@@ -492,6 +492,9 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     const uint16_t snapshotDrumMask = snapshot.drumTracks != nullptr
         ? snapshot.drumTracks->drumTrackMask
         : 0U;
+    core::state::sequencer::DrumTrackOwners preparedDrums;
+    if (snapshot.drumTracks && !core::state::sequencer::prepareDrumTrackBank(
+            *snapshot.drumTracks, preparedDrums)) return false;
     core::state::sequencer::SequencerClipGridSnapshot preparedClips;
     if (state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) ||
         state.projectTrackHistory.hasPendingGesture() ||
@@ -526,13 +529,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         )) {
         return false;
     }
-    if (snapshot.drumTracks != nullptr) {
-        if (!state.sequencerTracks.applyDrumTrackBank(*snapshot.drumTracks)) {
-            return false;
-        }
-    } else {
-        state.sequencerTracks.clearDrumTrackBank();
-    }
+    state.sequencerTracks.installDrumTracks(std::move(preparedDrums));
     if (!core::state::sequencer::restoreSequencerClipGridSnapshot(
             state.sequencerClips,
             std::move(preparedClips),

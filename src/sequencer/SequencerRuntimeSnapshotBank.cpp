@@ -48,7 +48,7 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
          ++i) {
         const auto& clipSource = sources[i];
         const auto* lanes = clipSource.document != nullptr
-            ? clipSource.document->ccLanes.get()
+            ? clipSource.document->pattern.ccLanes.get()
             : core::state::sequencer::sequencerCcLaneView(
                   i == activeTrack ? activePattern : track_bank_.track(i));
         if (lanes != nullptr) {
@@ -75,11 +75,11 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
                 ? activePattern
                 : track_bank_.track(i);
             const auto* source = clipSource.document != nullptr
-                ? clipSource.document->ccLanes.get()
+                ? clipSource.document->pattern.ccLanes.get()
                 : core::state::sequencer::sequencerCcLaneView(residentPattern);
             const uint32_t sourceRevision = clipSource.document != nullptr
                 ? clipSource.generation
-                : residentPattern.ccLaneRevision.get();
+                : residentPattern.ccLaneRevision;
             auto& signature = laneSourceSignatures[i];
             if (forceRefresh && source == nullptr) {
                 signature.identity = nullptr;
@@ -120,35 +120,17 @@ FLASHMEM uint8_t SequencerRuntimeSnapshotBank::refresh(
         const auto* document = clipSource.document;
         const auto& source = i == activeTrack ? activePattern : track_bank_.track(i);
         const auto& sourceClip = i == activeTrack ? activeClip : track_bank_.clip(i);
-        auto signature = document != nullptr
-            ? captureRuntimeStateSignature(document->pattern, document->clip)
-            : captureRuntimeStateSignature(source, sourceClip,
-                  runtimeSnapshot.projectScaleSettings, projectTiming);
-        if (document != nullptr) {
-            signature.effectiveScaleSettings =
-                core::state::sequencer::resolveEffectiveScaleSettings(
-                    runtimeSnapshot.projectScaleSettings,
-                    document->pattern.scalePolicy,
-                    document->pattern.scaleOverride);
-            signature.effectiveSwingPercent =
-                core::state::sequencer::SequencerPatternState::clampEffectiveSwingPercent(
-                    static_cast<int16_t>(runtimeSnapshot.projectSwingPercent) +
-                    document->pattern.swingOffsetPercent);
-        }
+        const auto& pattern = document ? document->pattern : source;
+        const auto& clip = document ? document->clip : sourceClip;
+        const auto signature = captureRuntimeStateSignature(
+            pattern, clip, runtimeSnapshot.projectScaleSettings, projectTiming);
         if (!forceRefresh && clipSourceSignatures[i].matches(clipSource) &&
             writeSignatures[i].matches(signature)) {
             continue;
         }
 
-        // Both residences publish the same runtime representation. Inspect only
-        // the signature on a cache hit; copy musical arrays only on a miss.
-        if (document != nullptr) {
-            runtimeSnapshot.tracks[i] = document->pattern;
-            runtimeSnapshot.clips[i] = document->clip;
-        } else {
-            core::state::sequencer::captureSnapshot(source, runtimeSnapshot.tracks[i]);
-            core::state::sequencer::captureSnapshot(sourceClip, runtimeSnapshot.clips[i]);
-        }
+        core::state::sequencer::captureSnapshot(pattern, runtimeSnapshot.tracks[i]);
+        runtimeSnapshot.clips[i] = clip;
         runtimeSnapshot.tracks[i].effectiveScaleSettings = signature.effectiveScaleSettings;
         runtimeSnapshot.tracks[i].effectiveSwingPercent = signature.effectiveSwingPercent;
         clipSourceSignatures[i] = {

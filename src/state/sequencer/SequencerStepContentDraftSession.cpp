@@ -142,15 +142,15 @@ FLASHMEM bool SequencerStepContentDraftSession::begin(
         // sessions. Reset its payload, not its PSRAM ownership.
         applySnapshotPreservingGraph(*scratch, flat);
         if (scratch->graph) scratch->graph->reset();
-        scratch->graphRevision.set(flat.graphRevision);
+        scratch->setGraphRevision(flat.graphRevision);
     }
     // Step-content drafts never author CC data. Do not retain a stale Lane
     // allocation left by any future scratch reuse path.
     scratch->ccLanes.reset();
-    scratch->ccLaneRevision.set(0);
+    scratch->setCcLaneRevision(0);
     scratchClip = publishedClip;
 
-    pristineGraphRevision = scratch->graphRevision.get();
+    pristineGraphRevision = scratch->graphRevision;
     pristineGraphFingerprint = graphFingerprint(*scratch);
     active.set(true);
     touch();
@@ -163,7 +163,7 @@ FLASHMEM bool SequencerStepContentDraftSession::modified() const {
         return chord.modified();
     }
     if (!scratch) return false;
-    if (scratch->graphRevision.get() == pristineGraphRevision) return false;
+    if (scratch->graphRevision == pristineGraphRevision) return false;
     return graphFingerprint(*scratch) != pristineGraphFingerprint;
 }
 
@@ -195,7 +195,7 @@ FLASHMEM void SequencerStepContentDraftSession::markPristine() {
         return;
     }
     if (!scratch) return;
-    pristineGraphRevision = scratch->graphRevision.get();
+    pristineGraphRevision = scratch->graphRevision;
     pristineGraphFingerprint = graphFingerprint(*scratch);
     touch();
 }

@@ -31,7 +31,7 @@ constexpr uint64_t kClipboardFingerprintPrime = 1099511628211ULL;
 
 struct SourcePayload {
     const PatternSnapshot* snapshot = nullptr;
-    const core::state::sequencer::SequencerClipSnapshot* clip = nullptr;
+    const core::state::sequencer::SequencerClipState* clip = nullptr;
     const Graph* graph = nullptr;
     const core::state::sequencer::SequencerCcLaneBank* ccLanes = nullptr;
     const core::state::sequencer::DrumTrackState* drumTrack = nullptr;
@@ -670,6 +670,11 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         return prepared;
     }
 
+    if (!core::state::sequencer::prepareHistoryStructureDrumOwners(
+            prepared.history->after, tracks, prepared.drumOwners)) {
+        prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
+        return prepared;
+    }
     prepared.status = SequencerTrackTransferStatus::READY;
     return prepared;
 }
@@ -809,7 +814,7 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
 
     core::state::sequencer::commitHistoryStructureDrumSnapshot(
         tracks,
-        prepared.history->after
+        prepared.history->after, std::move(prepared.drumOwners)
     );
 
     sharedTracks.publishPreparedSequencerState(

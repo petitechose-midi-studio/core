@@ -92,8 +92,8 @@ void testInstrumentAndDrumEncodeThroughCanonicalCodec() {
         decoded.pattern(),
         nullptr
     ));
-    assert(decoded.pattern().length.get() == 16U);
-    assert(decoded.pattern().enabledMask.get().test(0U));
+    assert(decoded.pattern().length == 16U);
+    assert(decoded.pattern().enabledMask.test(0U));
     assert(decoded.pattern().note[0U] == 60U);
     assert(decoded.pattern().note[7U] == 72U);
 

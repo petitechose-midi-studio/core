@@ -406,7 +406,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
 
     ProjectionTraversal traversal{
         .notes = pattern.note,
-        .length = pattern.length.get(),
+        .length = pattern.length,
         .graph = *graph,
         .destination = graph,
         .sourceScale = sourceScale,
@@ -480,7 +480,7 @@ FLASHMEM SequencerChordContextProjectionStats projectPatternChordContext(
 
     ProjectionTraversal traversal{
         .notes = sequencer.pattern().note,
-        .length = sequencer.pattern().length.get(),
+        .length = sequencer.pattern().length,
         .graph = *graph,
         .destination = graph,
         .sourceScale = sourceScale,

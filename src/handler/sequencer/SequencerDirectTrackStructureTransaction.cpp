@@ -455,7 +455,7 @@ FLASHMEM PlanOutcome buildPlan(
         );
         if (!fillActiveChangeFocus(
                 context,
-                context.state.tracks.track(mutation.nextActive).length.get(),
+                context.state.tracks.track(mutation.nextActive).length,
                 plan
             )) {
             return PlanOutcome::Invalid;
@@ -480,7 +480,7 @@ FLASHMEM PlanOutcome buildPlan(
             oldActiveBit |
             core::state::shared::slotBit(mutation.nextActive)
         );
-        const uint8_t incomingLength = context.state.tracks.track(mutation.nextActive).length.get();
+        const uint8_t incomingLength = context.state.tracks.track(mutation.nextActive).length;
         if (!fillActiveChangeFocus(
                 context,
                 incomingLength,

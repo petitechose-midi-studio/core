@@ -1171,9 +1171,8 @@ struct DrumSequencerState {
         DrumPatternDefaultField::LENGTH;
     uint8_t patternDefaultSnapshotLength = DRUM_DEFAULT_LENGTH;
     uint8_t patternDefaultSnapshotStepsPerBeat = DRUM_DEFAULT_STEPS_PER_BEAT;
-    // Non-owning editor projection. Persistent ownership belongs to the
-    // selected slot in SequencerTrackBankState.
-    DrumTrackState* drumTrack = nullptr;
+    // Resolve the current owner on access, including after Clip/history swaps.
+    [[nodiscard]] DrumTrackState* drumTrack() const;
     SequencerTrackBankState* drumTrackBank = nullptr;
     Signal<uint32_t, 8> revision{0};
     // Realtime playback publishes only a bounded lane-position projection.
@@ -1205,14 +1204,14 @@ struct DrumSequencerState {
         return typePickerVisible() || kitPickerVisible();
     }
     [[nodiscard]] bool gridVisible() const {
-        return phase == DrumSequencerPhase::GRID && drumTrack != nullptr;
+        return phase == DrumSequencerPhase::GRID && drumTrack() != nullptr;
     }
     [[nodiscard]] bool selectorVisible() const {
         return selector != DrumSequencerSelector::NONE;
     }
     [[nodiscard]] bool laneAddSlotVisible() const {
-        return gridVisible() && drumTrack != nullptr &&
-            drumTrack->kit.laneCount < LANE_COUNT;
+        return gridVisible() && drumTrack() != nullptr &&
+            drumTrack()->kit.laneCount < LANE_COUNT;
     }
     [[nodiscard]] bool laneAddSlotFocused() const {
         return laneAddSlotSelected && laneAddSlotVisible();
@@ -1221,7 +1220,6 @@ struct DrumSequencerState {
     void reset();
     void bindTrack(
         uint8_t track,
-        DrumTrackState& state,
         SequencerTrackBankState& bank
     );
     void unbindTrack();

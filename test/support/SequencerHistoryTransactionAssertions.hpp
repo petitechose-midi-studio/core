@@ -158,7 +158,7 @@ inline uint64_t flatPatternFingerprint(
         mixFingerprintValue(hash, snapshot.patternScaleRevision);
         mixFingerprintValue(hash, snapshot.patternTimingRevision);
         mixFingerprintValue(hash, snapshot.graphRevision);
-        const uint32_t ccLaneRevision = pattern.ccLaneRevision.get();
+        const uint32_t ccLaneRevision = pattern.ccLaneRevision;
         mixFingerprintValue(hash, ccLaneRevision);
     }
     mixFingerprintValue(hash, snapshot.swingOffsetPercent);
@@ -232,18 +232,18 @@ inline StateInvariant captureStateInvariant(const core::state::CoreState& state)
         .editorCcOwner = editor.ccLanes.get(),
         .bankGraphOwner = bank.graph.get(),
         .bankCcOwner = bank.ccLanes.get(),
-        .editorStepDataRevision = editor.stepDataRevision.get(),
-        .editorPatternVariationRevision = editor.patternVariationRevision.get(),
-        .editorPatternScaleRevision = editor.patternScaleRevision.get(),
-        .editorPatternTimingRevision = editor.patternTimingRevision.get(),
-        .editorGraphRevision = editor.graphRevision.get(),
-        .editorCcRevision = editor.ccLaneRevision.get(),
-        .bankStepDataRevision = bank.stepDataRevision.get(),
-        .bankPatternVariationRevision = bank.patternVariationRevision.get(),
-        .bankPatternScaleRevision = bank.patternScaleRevision.get(),
-        .bankPatternTimingRevision = bank.patternTimingRevision.get(),
-        .bankGraphRevision = bank.graphRevision.get(),
-        .bankCcRevision = bank.ccLaneRevision.get(),
+        .editorStepDataRevision = editor.stepDataRevision,
+        .editorPatternVariationRevision = editor.patternVariationRevision,
+        .editorPatternScaleRevision = editor.patternScaleRevision,
+        .editorPatternTimingRevision = editor.patternTimingRevision,
+        .editorGraphRevision = editor.graphRevision,
+        .editorCcRevision = editor.ccLaneRevision,
+        .bankStepDataRevision = bank.stepDataRevision,
+        .bankPatternVariationRevision = bank.patternVariationRevision,
+        .bankPatternScaleRevision = bank.patternScaleRevision,
+        .bankPatternTimingRevision = bank.patternTimingRevision,
+        .bankGraphRevision = bank.graphRevision,
+        .bankCcRevision = bank.ccLaneRevision,
         .modifiedCounter = state.project.metadata.modifiedCounter,
         .dirty = state.project.metadata.dirty,
         .sessionSavePending = state.hasPendingProjectSessionSave(),

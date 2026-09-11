@@ -280,8 +280,8 @@ FLASHMEM bool SequencerStepEditHandler::openDrumStepEditor(
     edit.drumContext = true;
     edit.drumLane = lane;
     edit.drumStep = step;
-    const int16_t rootSlot = drumUi.drumTrack != nullptr
-        ? drumUi.drumTrack->advancedRootSlot(lane, step)
+    const int16_t rootSlot = drumUi.drumTrack() != nullptr
+        ? drumUi.drumTrack()->advancedRootSlot(lane, step)
         : -1;
     edit.drumRootSlot = rootSlot >= 0
         ? static_cast<uint8_t>(rootSlot)
@@ -338,7 +338,7 @@ FLASHMEM bool SequencerStepEditHandler::resolveDrumRootNodeId(
     core::state::sequencer::SequencerGraphNodeId& nodeId
 ) const {
     const auto& drumUi = sequencer_.drumSequencer;
-    if (!drumUi.drumTrack ||
+    if (!drumUi.drumTrack() ||
         drumUi.targetTrack != tracks_.activeTrackIndex() ||
         !drumUi.stepInRange(
             sequencer_.stepEdit.drumLane,
@@ -346,7 +346,7 @@ FLASHMEM bool SequencerStepEditHandler::resolveDrumRootNodeId(
         )) {
         return false;
     }
-    const int16_t slot = drumUi.drumTrack->advancedRootSlot(
+    const int16_t slot = drumUi.drumTrack()->advancedRootSlot(
         sequencer_.stepEdit.drumLane,
         sequencer_.stepEdit.drumStep
     );
@@ -365,7 +365,7 @@ FLASHMEM bool SequencerStepEditHandler::ensureDrumRootNodeId(
     if (resolveDrumRootNodeId(nodeId)) return true;
 
     auto& drumUi = sequencer_.drumSequencer;
-    if (!drumUi.drumTrack ||
+    if (!drumUi.drumTrack() ||
         drumUi.targetTrack != tracks_.activeTrackIndex() ||
         !drumUi.stepInRange(
             sequencer_.stepEdit.drumLane,
@@ -376,7 +376,7 @@ FLASHMEM bool SequencerStepEditHandler::ensureDrumRootNodeId(
 
     const int16_t freeSlot =
         core::state::sequencer::ensureDrumAdvancedRootSlot(
-            *drumUi.drumTrack,
+            *drumUi.drumTrack(),
             core::state::sequencer::authoringPattern(sequencer_),
             sequencer_.stepEdit.drumLane,
             sequencer_.stepEdit.drumStep,
@@ -558,16 +558,16 @@ FLASHMEM int32_t SequencerStepEditHandler::drumStepHistoryValue() const {
     const auto& drumUi = sequencer_.drumSequencer;
     const uint8_t lane = sequencer_.stepEdit.drumLane;
     const uint8_t step = sequencer_.stepEdit.drumStep;
-    if (!drumUi.stepInRange(lane, step) || drumUi.drumTrack == nullptr) {
+    if (!drumUi.stepInRange(lane, step) || drumUi.drumTrack() == nullptr) {
         return 0;
     }
     const auto property = drumPropertyForEditorRow(
         sequencer_.stepEdit.focusedRow.get()
     );
-    const auto& authored = drumUi.drumTrack->pattern.lanes[lane];
+    const auto& authored = drumUi.drumTrack()->pattern.lanes[lane];
     switch (property) {
         case DrumProperty::STATE:
-            return drumUi.drumTrack->pattern.stepEnabled(lane, step) ? 1 : 0;
+            return drumUi.drumTrack()->pattern.stepEnabled(lane, step) ? 1 : 0;
         case DrumProperty::PROBABILITY: return authored.probability[step];
         case DrumProperty::GATE: return authored.gate[step];
         case DrumProperty::NUDGE: return authored.nudge[step];
@@ -724,7 +724,7 @@ FLASHMEM void SequencerStepEditHandler::configureDrumOpt() {
         encoders_.setDiscreteSteps(encoder, 2U);
         encoders_.setPosition(
             encoder,
-            drumUi.drumTrack->pattern.stepEnabled(lane, step) ? 1.0f : 0.0f
+            drumUi.drumTrack()->pattern.stepEnabled(lane, step) ? 1.0f : 0.0f
         );
         return;
     }
@@ -784,7 +784,7 @@ FLASHMEM void SequencerStepEditHandler::resetDrumFocusedValue() {
     descriptor.hasValue = true;
     descriptor.beforeValue = drumStepHistoryValue();
     if (!beginDrumStepHistory(descriptor)) return;
-    const uint32_t beforeRevision = drumUi.drumTrack->pattern.revision;
+    const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
     switch (property) {
         case DrumProperty::STATE:
             (void)drumUi.setStepEnabled(lane, step, false);
@@ -818,7 +818,7 @@ FLASHMEM void SequencerStepEditHandler::resetDrumFocusedValue() {
     }
     descriptor.afterValue = drumStepHistoryValue();
     if (!sealDrumStepHistory(
-            drumUi.drumTrack->pattern.revision != beforeRevision,
+            drumUi.drumTrack()->pattern.revision != beforeRevision,
             descriptor,
             true
         )) {
@@ -1010,8 +1010,8 @@ FLASHMEM void SequencerStepEditHandler::retargetEditedStep(float delta) {
         }
         auto& drumUi = sequencer_.drumSequencer;
         const uint8_t lane = sequencer_.stepEdit.drumLane;
-        if (!drumUi.drumTrack || lane >= drumUi.LANE_COUNT) return;
-        const uint8_t length = drumUi.drumTrack->pattern.effectiveLength(lane);
+        if (!drumUi.drumTrack() || lane >= drumUi.LANE_COUNT) return;
+        const uint8_t length = drumUi.drumTrack()->pattern.effectiveLength(lane);
         if (length == 0U) return;
         const uint8_t current = std::min<uint8_t>(
             sequencer_.stepEdit.stepIndex.get(),
@@ -1026,7 +1026,7 @@ FLASHMEM void SequencerStepEditHandler::retargetEditedStep(float delta) {
         if (next == current || !drumUi.focusStep(lane, next)) return;
         sequencer_.stepEdit.drumStep = next;
         sequencer_.stepEdit.stepIndex.set(next);
-        const int16_t rootSlot = drumUi.drumTrack->advancedRootSlot(lane, next);
+        const int16_t rootSlot = drumUi.drumTrack()->advancedRootSlot(lane, next);
         sequencer_.stepEdit.drumRootSlot = rootSlot >= 0
             ? static_cast<uint8_t>(rootSlot)
             : 0xFFU;
@@ -1071,7 +1071,7 @@ FLASHMEM void SequencerStepEditHandler::retargetEditedDrumLane(float delta) {
 
     edit.drumLane = nextLane;
     edit.stepIndex.set(edit.drumStep);
-    const int16_t rootSlot = drumUi.drumTrack->advancedRootSlot(
+    const int16_t rootSlot = drumUi.drumTrack()->advancedRootSlot(
         nextLane,
         edit.drumStep
     );
@@ -1133,7 +1133,7 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
             const bool changed = drumUi.setStepEnabled(
                 lane,
                 step,
-                !drumUi.drumTrack->pattern.stepEnabled(lane, step)
+                !drumUi.drumTrack()->pattern.stepEnabled(lane, step)
             );
             descriptor.afterValue = drumStepHistoryValue();
             if (!sealDrumStepHistory(changed, descriptor, true)) return;
@@ -1570,7 +1570,7 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
                     if (!core::state::sequencer::stepNodeHasAnyChildContent(
                             pattern, nodeId
                         )) {
-                        mappingChanged = sequencer_.drumSequencer.drumTrack
+                        mappingChanged = sequencer_.drumSequencer.drumTrack()
                             ->releaseAdvancedRootSlot(
                                 sequencer_.stepEdit.drumLane,
                                 sequencer_.stepEdit.drumStep

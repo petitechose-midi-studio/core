@@ -35,7 +35,7 @@ std::unique_ptr<PatternBytes> encodePattern(
 void testPatternRoundTripIsExact() {
     sequencer::SequencerPatternState source{};
     assert(source.setContentLength(16U));
-    source.stepsPerBeat.set(6U);
+    source.setStepsPerBeat(6U);
     source.setPitchEditMode(sequencer::SequencerPitchEditMode::CHROMATIC);
     source.setPatternVariationRanges({
         .pitchSemitones = 12U,
@@ -68,9 +68,9 @@ void testPatternRoundTripIsExact() {
         static_cast<uint16_t>(bytes->size()),
         decoded
     ));
-    assert(decoded.length.get() == 16U);
-    assert(decoded.stepsPerBeat.get() == 6U);
-    assert(decoded.enabledMask.get().test(9U));
+    assert(decoded.length == 16U);
+    assert(decoded.stepsPerBeat == 6U);
+    assert(decoded.enabledMask.test(9U));
     assert(decoded.note[9] == 73U);
     assert(decoded.velocity[9] == 101U);
     assert(decoded.gate[9] == 725U);
@@ -85,25 +85,25 @@ void testPatternEncoderRejectsInsteadOfRepairing() {
     auto bytes = std::make_unique<PatternBytes>();
     assert(bytes);
 
-    source.length.set(0U);
+    source.setLength(0U);
     assert(!codec::fillPatternPayload(
         source,
         bytes->data(),
         static_cast<uint16_t>(bytes->size())
     ));
-    source.length.set(sequencer::SequencerPatternState::DEFAULT_LENGTH);
+    source.setLength(sequencer::SequencerPatternState::DEFAULT_LENGTH);
 
-    source.stepsPerBeat.set(5U);
+    source.setStepsPerBeat(5U);
     assert(!codec::fillPatternPayload(
         source,
         bytes->data(),
         static_cast<uint16_t>(bytes->size())
     ));
-    source.stepsPerBeat.set(
+    source.setStepsPerBeat(
         sequencer::SequencerPatternState::DEFAULT_STEPS_PER_BEAT
     );
 
-    source.enabledMask.set(
+    source.setEnabledMask(
         oc::note::sequencer::StepBitMask128::fromLower64(1ULL << 9U)
     );
     assert(!codec::fillPatternPayload(
@@ -111,7 +111,7 @@ void testPatternEncoderRejectsInsteadOfRepairing() {
         bytes->data(),
         static_cast<uint16_t>(bytes->size())
     ));
-    source.enabledMask.set({});
+    source.setEnabledMask({});
 
     source.note[0] = 200U;
     assert(!codec::fillPatternPayload(
@@ -147,7 +147,7 @@ void testPatternDecoderRejectsAtomically() {
         static_cast<uint16_t>(malformed->size()),
         target
     ));
-    assert(target.length.get() == 16U);
+    assert(target.length == 16U);
     assert(target.note[0] == 31U);
 
     *malformed = *canonical;
@@ -157,7 +157,7 @@ void testPatternDecoderRejectsAtomically() {
         static_cast<uint16_t>(malformed->size()),
         target
     ));
-    assert(target.length.get() == 16U);
+    assert(target.length == 16U);
     assert(target.note[0] == 31U);
 
     std::cout << "[PASS] malformed Pattern payload is rejected atomically\n";

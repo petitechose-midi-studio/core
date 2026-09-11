@@ -449,9 +449,9 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         core::state::sequencer::activeContentPageForStep(
             sequencer.focusedStep.get()
         );
-    if (drumGridContext && drumUi.drumTrack != nullptr) {
+    if (drumGridContext && drumUi.drumTrack() != nullptr) {
         const uint8_t laneCount = std::min<uint8_t>(
-            drumUi.drumTrack->kit.laneCount,
+            drumUi.drumTrack()->kit.laneCount,
             core::state::sequencer::DRUM_MAX_LANES
         );
         if (laneCount > 0U) {
@@ -459,7 +459,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 drumUi.selectedLane,
                 static_cast<uint8_t>(laneCount - 1U)
             );
-            const auto& pattern = drumUi.drumTrack->pattern;
+            const auto& pattern = drumUi.drumTrack()->pattern;
             const auto& lanePattern = pattern.lanes[lane];
             const bool laneMetrics = focusingLane || focusingStep ||
                 selectingDrumLanes || selectingStep;
@@ -542,15 +542,15 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 badgeText.data(), badgeText.size(), "%s", "No lanes"
             );
         }
-    } else if (drumChild && drumUi.drumTrack != nullptr &&
+    } else if (drumChild && drumUi.drumTrack() != nullptr &&
                sequencer.contentView.drumOwnerLane <
-                   drumUi.drumTrack->kit.laneCount &&
+                   drumUi.drumTrack()->kit.laneCount &&
                sequencer.contentView.drumOwnerLane <
                    core::state::sequencer::DRUM_MAX_LANES) {
         copyText(
             badgeText,
             core::state::sequencer::drumLaneDisplayName(
-                drumUi.drumTrack->kit.lanes[
+                drumUi.drumTrack()->kit.lanes[
                     sequencer.contentView.drumOwnerLane]
             )
         );

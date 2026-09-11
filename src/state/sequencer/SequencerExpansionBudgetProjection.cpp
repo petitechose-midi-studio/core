@@ -43,9 +43,9 @@ FLASHMEM void prepareRuntimeState(
     uint8_t rootStep
 ) {
     runtime.reset();
-    runtime.length = pattern.length.get();
-    runtime.stepsPerBeat = pattern.stepsPerBeat.get();
-    runtime.enabledMask = pattern.enabledMask.get();
+    runtime.length = pattern.length;
+    runtime.stepsPerBeat = pattern.stepsPerBeat;
+    runtime.enabledMask = pattern.enabledMask;
     // This is an authoring-capacity preview. Show what will happen when the
     // edited root is enabled, independently of its current mute/probability.
     runtime.enabledMask.setBit(rootStep, true);
@@ -88,7 +88,7 @@ FLASHMEM SequencerExpansionBudgetProjection projectSequencerExpansionBudget(
 ) {
     const auto& pattern = authoringPattern(sequencer);
     const uint8_t rootStep = owningRootStep(sequencer, activeContentStep);
-    if (rootStep >= pattern.length.get() ||
+    if (rootStep >= pattern.length ||
         rootStep >= oc::note::sequencer::StepSequencerRuntimeState::MAX_STEPS) {
         return {};
     }

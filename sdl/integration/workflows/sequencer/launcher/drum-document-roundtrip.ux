@@ -1,0 +1,35 @@
+# Purpose: create a cold Drum Clip and preserve the resident Pattern across visits.
+# Expect: semantic:drum_first:mode=sequencer.pattern, semantic:drum_first:target_track=1, semantic:drum_first:target_index=0
+# Expect: semantic:drum_create:effect=open_slot_actions, semantic:drum_create:target_track=1, semantic:drum_create:target_index=4
+# Expect: semantic:drum_created:effect=apply_slot_action, semantic:drum_created:outcome=applied
+# Expect: semantic:drum_cold:mode=sequencer.pattern, semantic:drum_cold:target_track=1, semantic:drum_cold:target_index=4
+# Expect: semantic:drum_returned:mode=sequencer.pattern, semantic:drum_returned:target_track=1, semantic:drum_returned:target_index=0
+# Expect: capture_match:drum_first=drum_returned
+
+0 scenario clip-launcher-v3
+180 encoder NAV 0.01
+260 encoder NAV 0.01
+420 tap LEFT_BOTTOM 60
+760 capture screen drum_first
+900 tap LEFT_TOP 60
+
+# T2/C5 is empty. Creation preserves the Track kit and starts a fresh Pattern.
+1080 encoder OPT 0.01
+1160 encoder OPT 0.01
+1240 encoder OPT 0.01
+1320 encoder OPT 0.01
+1500 tap NAV 60
+1760 capture screen drum_create
+1860 tap NAV 60
+2120 capture screen drum_created
+2280 tap LEFT_BOTTOM 60
+2620 capture screen drum_cold
+2780 tap LEFT_TOP 60
+
+# Return to T2/C1: the retained musical projection must be identical.
+2960 encoder OPT -0.01
+3040 encoder OPT -0.01
+3120 encoder OPT -0.01
+3200 encoder OPT -0.01
+3380 tap LEFT_BOTTOM 60
+3720 capture screen drum_returned

@@ -2181,7 +2181,7 @@ FLASHMEM bool SequencerPatternEditorUxSurface::captureSemanticUxContext(
             core::state::sequencer::SequencerState::STEPS_PER_PAGE
     );
     out.targetStep = sequencer_.patternEditor.windowStart;
-    out.targetCount = sequencer_.pattern().length.get();
+    out.targetCount = sequencer_.pattern().length;
     out.hasDraftActive = true;
     out.draftActive = randomize_.active;
 
@@ -2570,7 +2570,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         navigation_focus_.get() ==
             core::state::StructureNavigationFocus::LANE) {
         const uint8_t laneCount = std::min<uint8_t>(
-            drumUi.drumTrack->kit.laneCount,
+            drumUi.drumTrack()->kit.laneCount,
             core::state::sequencer::DRUM_MAX_LANES
         );
         if (drumUi.laneSelection.active) {
@@ -2597,7 +2597,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
                 copyValueLabel(
                     out.valueLabel,
                     core::state::sequencer::drumLaneDisplayName(
-                        drumUi.drumTrack->kit.lanes[selection.cursorLane]
+                        drumUi.drumTrack()->kit.lanes[selection.cursorLane]
                     )
                 );
             }
@@ -2627,7 +2627,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
             copyValueLabel(
                 out.valueLabel,
                 core::state::sequencer::drumLaneDisplayName(
-                    drumUi.drumTrack->kit.lanes[drumUi.selectedLane]
+                    drumUi.drumTrack()->kit.lanes[drumUi.selectedLane]
                 )
             );
         }
@@ -3087,8 +3087,8 @@ FLASHMEM bool DrumLaneEditorUxSurface::captureSemanticUxContext(
         observed_mode_ = static_cast<uint8_t>(editor.mode);
         observed_source_lane_ = editor.sourceLane;
         observed_target_lane_ = editor.targetLane;
-        observed_lane_count_ = drumUi.drumTrack != nullptr
-            ? drumUi.drumTrack->kit.laneCount
+        observed_lane_count_ = drumUi.drumTrack() != nullptr
+            ? drumUi.drumTrack()->kit.laneCount
             : 0U;
         observed_field_ = static_cast<uint8_t>(editor.field);
         observed_text_key_ = editor.textKeyIndex;

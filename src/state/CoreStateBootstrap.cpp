@@ -20,7 +20,6 @@ namespace {
 // continuously enqueue session saves.
 constexpr uint32_t MACRO_VALUE_PROJECT_SAVE_DELAY_MS = 5000;
 constexpr uint32_t SEQUENCER_PROJECT_SAVE_DELAY_MS = 300;
-constexpr size_t SEQUENCER_STABLE_SAVE_SUBSCRIPTIONS = 8;
 
 [[noreturn]] FLASHMEM void failSequencerCoalescerSetup() {
     OC_LOG_ERROR("{}", "[CoreState] Sequencer mutation coalescer setup failed");
@@ -38,44 +37,24 @@ FLASHMEM void CoreStateBootstrap::configureMacroMutationCoalescing_(CoreState& s
 }
 
 FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreState& state) {
-    if (!state.sequencerDomain_.mutationCoalescer) {
-        state.sequencerDomain_.mutationCoalescer =
+    if (state.sequencerDomain_.mutationCoalescer) return;
+    state.sequencerDomain_.mutationCoalescer =
         std::make_unique<oc::state::ChangeCoalescer<
             SequencerDomainState::MUTATION_COALESCER_SUBSCRIPTION_COUNT>>(
             [&state]() { state.markProjectMutated(); },
             SEQUENCER_PROJECT_SAVE_DELAY_MS
         );
-        state.sequencer.setPatternSelectionCallback(&state, [](void* context) {
-            configureSequencerMutationCoalescing_(*static_cast<CoreState*>(context));
-        });
-        // Stable project/editor sources keep their handles and queued changes
-        // across selection. Only the selected Pattern's suffix is rebound.
-        auto& coalescer = *state.sequencerDomain_.mutationCoalescer;
-        coalescer.watch(state.sequencer.page);
-        coalescer.watch(state.sequencer.focusedStep);
-        coalescer.watch(state.sequencer.activeStepProperty);
-        coalescer.watch(state.sequencerTracks.activeTrackSignal());
-        coalescer.watch(state.sequencerTracks.enabledMaskSignal());
-        coalescer.watch(state.sequencerTracks.projectScaleRevisionSignal());
-        coalescer.watch(state.sequencerTracks.drumRevisionSignal());
-        coalescer.watch(state.sequencerClips.revisionSignal());
-        if (!coalescer.valid() ||
-            coalescer.subscriptionCount() != SEQUENCER_STABLE_SAVE_SUBSCRIPTIONS) {
-            failSequencerCoalescerSetup();
-        }
-    }
-
+    // These subscriptions survive document selection and deletion.
     auto& coalescer = *state.sequencerDomain_.mutationCoalescer;
-    coalescer.clearSubscriptions(SEQUENCER_STABLE_SAVE_SUBSCRIPTIONS);
-    coalescer.watch(state.sequencer.pattern().length);
-    coalescer.watch(state.sequencer.pattern().stepsPerBeat);
-    coalescer.watch(state.sequencer.pattern().enabledMask);
-    coalescer.watch(state.sequencer.pattern().stepDataRevision);
-    coalescer.watch(state.sequencer.pattern().patternVariationRevision);
-    coalescer.watch(state.sequencer.pattern().patternScaleRevision);
-    coalescer.watch(state.sequencer.pattern().patternTimingRevision);
-    coalescer.watch(state.sequencer.pattern().swingOffsetPercent);
-    coalescer.watch(state.sequencer.pattern().patternNudgePercent);
+    coalescer.watch(state.sequencer.page);
+    coalescer.watch(state.sequencer.focusedStep);
+    coalescer.watch(state.sequencer.activeStepProperty);
+    coalescer.watch(state.sequencerTracks.activeTrackSignal());
+    coalescer.watch(state.sequencerTracks.enabledMaskSignal());
+    coalescer.watch(state.sequencerTracks.projectScaleRevisionSignal());
+    coalescer.watch(state.sequencerTracks.drumRevisionSignal());
+    coalescer.watch(state.sequencerClips.revisionSignal());
+    coalescer.watch(state.sequencer.patternChanges.authoredRevision);
     // Project Track channel/mute mirrors are intentionally absent: their
     // canonical service already publishes dirty and runtime revisions once at
     // gesture commit. Watching the projected mirrors would duplicate it.

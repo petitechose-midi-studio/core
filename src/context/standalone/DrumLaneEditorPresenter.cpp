@@ -186,7 +186,7 @@ FLASHMEM void DrumLaneEditorPresenter::render() {
         drumUi.selector == seq::DrumSequencerSelector::LANE_EDITOR;
     observed_revision_ = drumUi.revision.get();
     observed_visible_ = visible;
-    if (!visible || drumUi.drumTrack == nullptr) {
+    if (!visible || drumUi.drumTrack() == nullptr) {
         keyboard_.setVisible(false);
         overlay_.setContentVisible(true);
         if (!sequencer_.stepEdit.visible.get()) {

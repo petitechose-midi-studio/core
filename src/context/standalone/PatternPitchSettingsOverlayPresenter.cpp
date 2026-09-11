@@ -138,7 +138,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
         .visible = true,
         .dataRevision = 1U |
             (static_cast<uint32_t>(selectedRow) << 4) |
-            (static_cast<uint32_t>(state_refs_.sequencer.pattern().patternScaleRevision.get()) << 8) |
+            (static_cast<uint32_t>(state_refs_.sequencer.pattern().patternScaleRevision) << 8) |
             (static_cast<uint32_t>(state_refs_.trackBank.projectScaleRevisionSignal().get()) << 16),
         .visualTokens = &::standalone::theme::CONTROLLER_LIST_VISUALS,
     });

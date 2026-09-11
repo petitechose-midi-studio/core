@@ -136,7 +136,7 @@ struct MacroDomainState {
 
 /** Owns the editable sequencer state, per-track bank, and history. */
 struct SequencerDomainState {
-    static constexpr size_t MUTATION_COALESCER_SUBSCRIPTION_COUNT = 17U;
+    static constexpr size_t MUTATION_COALESCER_SUBSCRIPTION_COUNT = 9U;
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_JOIN_MS = 32;
     static constexpr uint32_t COALESCED_CC_LANE_HISTORY_IDLE_MS = 320;

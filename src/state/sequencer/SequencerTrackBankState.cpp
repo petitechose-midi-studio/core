@@ -1,5 +1,7 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::state::sequencer {
@@ -27,8 +29,11 @@ FLASHMEM SequencerTrackBankState::SequencerTrackBankState()
     , enabled_mask_{0x0001}
     , project_scale_revision_{0}
     , project_scale_settings_{defaultProjectScaleSettings()}
-    , tracks_{} {
-    for (auto& drumTrack : drum_tracks_) drumTrack.reset();
+    , documents_{} {
+    for (auto& document : documents_) {
+        document = core::app::makeExtmemUniqueCold<SequencerClipDocument>();
+        if (!document) return;
+    }
     drum_track_revisions_.fill(1U);
 }
 
@@ -75,7 +80,7 @@ FLASHMEM bool SequencerTrackBankState::setProjectScaleSettings(
     project_scale_settings_ = settings;
     project_scale_revision_.set(project_scale_revision_.get() + 1U);
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        auto& track = tracks_[i];
+        auto& track = this->track(i);
         if (!isPatternScaleOverride(track.scalePolicy)) {
             track.bumpPatternScaleRevision();
         }
@@ -90,39 +95,50 @@ FLASHMEM void SequencerTrackBankState::publishDrumMutation(uint8_t index) {
     drum_revision_.set(nextRevision(drum_revision_.get()));
 }
 
+FLASHMEM bool SequencerTrackBankState::matchesDrumTrack(
+    uint8_t index, const DrumTrackState* source
+) const noexcept {
+    const auto* live = drumTrackIfPresent(index);
+    return live && source ? std::memcmp(live, source, sizeof(*live)) == 0 : live == source;
+}
+
+FLASHMEM void SequencerTrackBankState::exchangeDocument(
+    uint8_t index, SequencerClipDocumentPtr& owner
+) noexcept {
+    const auto track = clampTrackIndex(index);
+    assert(owner && owner->trackKind == trackKind(track));
+    documents_[track].swap(owner);
+    if (isDrumTrack(track)) publishDrumMutation(track);
+}
+
 FLASHMEM bool SequencerTrackBankState::setTrackKind(
     uint8_t index,
     SequencerTrackKind kind,
     bool resetPayload,
     DrumKitPreset drumPreset
 ) {
-    const uint8_t trackIndex = clampTrackIndex(index);
-    const uint16_t bit = static_cast<uint16_t>(1U << trackIndex);
-    const uint16_t nextMask = kind == SequencerTrackKind::DRUM
-        ? static_cast<uint16_t>(drum_track_mask_ | bit)
-        : static_cast<uint16_t>(drum_track_mask_ & static_cast<uint16_t>(~bit));
-    const bool kindChanged = nextMask != drum_track_mask_;
-    if (resetPayload) {
-        drum_tracks_[trackIndex].reset(drumPreset);
+    if (!resetPayload && trackKind(index) == kind) return false;
+    DrumTrackPtr owner;
+    if (kind == SequencerTrackKind::DRUM) {
+        owner = core::app::makeExtmemUniqueCold<DrumTrackState>();
+        if (!owner) return false;
+        owner->reset(drumPreset);
     }
-    if (!kindChanged && !resetPayload) return false;
-    drum_track_mask_ = nextMask;
-    publishDrumMutation(trackIndex);
+    installDrumTrack(index, std::move(owner));
     return true;
 }
 
-FLASHMEM void SequencerTrackBankState::restoreDrumTrack(
-    uint8_t index,
-    SequencerTrackKind kind,
-    const DrumTrackState& state
-) {
+FLASHMEM void SequencerTrackBankState::exchangeDrumTrack(
+    uint8_t index, DrumTrackPtr& owner
+) noexcept {
     const uint8_t trackIndex = clampTrackIndex(index);
     const uint16_t bit = static_cast<uint16_t>(1U << trackIndex);
-    drum_track_mask_ = kind == SequencerTrackKind::DRUM
+    documents_[trackIndex]->drum.swap(owner);
+    documents_[trackIndex]->trackKind = documents_[trackIndex]->drum
+        ? SequencerTrackKind::DRUM : SequencerTrackKind::INSTRUMENT;
+    drum_track_mask_ = documents_[trackIndex]->drum
         ? static_cast<uint16_t>(drum_track_mask_ | bit)
-        : static_cast<uint16_t>(
-              drum_track_mask_ & static_cast<uint16_t>(~bit));
-    drum_tracks_[trackIndex] = state;
+        : static_cast<uint16_t>(drum_track_mask_ & ~bit);
     publishDrumMutation(trackIndex);
 }
 
@@ -130,30 +146,41 @@ FLASHMEM void SequencerTrackBankState::captureDrumTrackBank(
     DrumTrackBankSnapshot& out
 ) const {
     out.drumTrackMask = drum_track_mask_;
-    out.tracks = drum_tracks_;
+    for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
+        if (const auto* drum = drumTrackIfPresent(i)) out.tracks[i] = *drum;
+        else out.tracks[i].reset();
+    }
 }
 
-FLASHMEM bool SequencerTrackBankState::applyDrumTrackBank(
-    const DrumTrackBankSnapshot& snapshot
+FLASHMEM bool prepareDrumTrackBank(
+    const DrumTrackBankSnapshot& snapshot, DrumTrackOwners& out
 ) {
-    drum_track_mask_ = snapshot.drumTrackMask;
-    drum_tracks_ = snapshot.tracks;
-    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
-        drum_track_revisions_[track] = nextRevision(
-            drum_track_revisions_[track]);
+    DrumTrackOwners next;
+    for (uint8_t i = 0; i < next.size(); ++i) {
+        if ((snapshot.drumTrackMask & (1U << i)) == 0U) continue;
+        next[i] = core::app::makeExtmemUniqueCopy(snapshot.tracks[i]);
+        if (!next[i]) return false;
     }
-    drum_revision_.set(nextRevision(drum_revision_.get()));
+    out = std::move(next);
     return true;
 }
 
-FLASHMEM void SequencerTrackBankState::clearDrumTrackBank() {
+FLASHMEM void SequencerTrackBankState::installDrumTracks(
+    DrumTrackOwners owners
+) noexcept {
     drum_track_mask_ = 0U;
-    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
-        drum_tracks_[track].reset();
-        drum_track_revisions_[track] = nextRevision(
-            drum_track_revisions_[track]);
+    for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
+        documents_[i]->drum = std::move(owners[i]);
+        documents_[i]->trackKind = documents_[i]->drum
+            ? SequencerTrackKind::DRUM : SequencerTrackKind::INSTRUMENT;
+        if (documents_[i]->drum) drum_track_mask_ |= static_cast<uint16_t>(1U << i);
+        drum_track_revisions_[i] = nextRevision(drum_track_revisions_[i]);
     }
     drum_revision_.set(nextRevision(drum_revision_.get()));
+}
+
+FLASHMEM void SequencerTrackBankState::clearDrumTrackBank() {
+    installDrumTracks({});
 }
 
 FLASHMEM void SequencerTrackBankState::reset() {
@@ -162,9 +189,9 @@ FLASHMEM void SequencerTrackBankState::reset() {
     project_scale_revision_.set(0);
 
     for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
-        auto& seq = tracks_[i];
+        auto& seq = track(i);
         seq.reset();
-        clips_[i].reset();
+        clip(i).reset();
     }
     clearDrumTrackBank();
 }

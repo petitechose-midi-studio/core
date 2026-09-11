@@ -232,7 +232,7 @@ void test_selection_strip_projection_contract() {
 
     auto& drum = state.sequencer.drumSequencer;
     drum.phase = core::state::sequencer::DrumSequencerPhase::GRID;
-    drum.drumTrack = &drumTrack;
+    drum.bindTrack(0U, state.sequencerTracks);
     drum.laneSelection.active = true;
     drum.laneSelection.placing = true;
     drum.laneSelection.selectedMask = 0x0003U;

@@ -96,9 +96,9 @@ constexpr core::handler::SequencerHistoryDomainServices::Operations kPreparedHis
 void storeSourceClipboard(core::state::StructureClipboardState& clipboard,
                           const core::state::sequencer::SequencerState& editor) {
     core::state::sequencer::SequencerPatternSnapshot snapshot;
-    core::state::sequencer::SequencerClipSnapshot clip;
+    core::state::sequencer::SequencerClipState clip;
     core::state::sequencer::captureSnapshot(editor.pattern(), snapshot);
-    core::state::sequencer::captureSnapshot(editor.clip(), clip);
+    clip = editor.clip();
     assert(clipboard.storeSequencerTrack(
         snapshot,
         clip,
@@ -681,7 +681,7 @@ void test_second_paste_same_track_is_blocked_by_canonical_pending_plan() {
     assert(first.operationId != 0);
     assert(first.activationGeneration == state.sequencerTrackActivations.telemetry(1).generation);
     assert(state.sequencerHistory.undoCount() == 1);
-    const uint32_t editorRevision = state.sequencer.pattern().stepDataRevision.get();
+    const uint32_t editorRevision = state.sequencer.pattern().stepDataRevision;
 
     const auto second = core::handler::executeSequencerTrackTransfer(
         state.sequencerTracks, state.projectTracks, state.sequencer, state.structureClipboard,
@@ -691,7 +691,7 @@ void test_second_paste_same_track_is_blocked_by_canonical_pending_plan() {
     assert(!second.applied());
     assert(second.plan.reason == core::state::ClipboardTransferReason::PASTE_PENDING);
     assert(state.sequencerHistory.undoCount() == 1);
-    assert(state.sequencer.pattern().stepDataRevision.get() == editorRevision);
+    assert(state.sequencer.pattern().stepDataRevision == editorRevision);
     test_support::drainNotifications();
 
     std::cout << "[PASS] test_second_paste_same_track_is_blocked_by_canonical_pending_plan\n";
@@ -1031,9 +1031,9 @@ void test_drum_track_copy_paste_is_detached_and_history_exact() {
     const seq::DrumTrackState expected = source;
 
     seq::SequencerPatternSnapshot snapshot{};
-    seq::SequencerClipSnapshot clip{};
+    seq::SequencerClipState clip{};
     seq::captureSnapshot(state.sequencer.pattern(), snapshot);
-    seq::captureSnapshot(state.sequencer.clip(), clip);
+    clip = state.sequencer.clip();
     assert(state.structureClipboard.storeSequencerTrack(
         snapshot,
         clip,

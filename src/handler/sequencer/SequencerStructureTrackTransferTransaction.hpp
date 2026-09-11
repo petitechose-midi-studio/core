@@ -68,6 +68,8 @@ struct PreparedSequencerTrackTransfer {
     std::array<GraphPtr, core::state::ClipboardTransferPlan::MAX_ENTRIES> destinationGraphs{};
     std::array<CcLanePtr, core::state::ClipboardTransferPlan::MAX_ENTRIES> destinationCcLanes{};
 
+    core::state::sequencer::DrumTrackOwners drumOwners{};
+
     PreparedSequencerTrackTransfer() = default;
     ~PreparedSequencerTrackTransfer();
     PreparedSequencerTrackTransfer(const PreparedSequencerTrackTransfer&) = delete;

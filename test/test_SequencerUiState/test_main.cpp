@@ -127,7 +127,7 @@ void test_drum_unbind_releases_track_creation_input_scope() {
     assert(!state.active());
     assert(!state.pickerVisible());
     assert(state.targetTrack == State::INVALID_TRACK);
-    assert(state.drumTrack == nullptr);
+    assert(state.drumTrack() == nullptr);
     assert(state.drumTrackBank == nullptr);
 }
 

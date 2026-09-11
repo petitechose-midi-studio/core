@@ -307,7 +307,7 @@ FLASHMEM bool addClipRegionSection(
 
 FLASHMEM state::sequencer::SequencerClipPlaybackRegion snapshotPlaybackRegion(
     const state::sequencer::SequencerPatternSnapshot& snapshot,
-    const state::sequencer::SequencerClipSnapshot& clip
+    const state::sequencer::SequencerClipState& clip
 ) {
     const uint16_t ticksPerStep = state::sequencer::sequencerTicksPerStep(
         snapshot.stepsPerBeat
@@ -502,8 +502,8 @@ FLASHMEM bool addClipGridSections(
 
         uint16_t patternSize = 0U;
         if (!measurePatternEnvelope(
-                document->graph.get(),
-                document->ccLanes.get(),
+                document->pattern.graph.get(),
+                document->pattern.ccLanes.get(),
                 patternSize
             )) {
             return false;
@@ -511,7 +511,7 @@ FLASHMEM bool addClipGridSections(
         const bool drum = document->trackKind ==
             state::sequencer::SequencerTrackKind::DRUM;
         if (drum != (document->drum != nullptr) ||
-            (drum && document->ccLanes != nullptr)) {
+            (drum && document->pattern.ccLanes != nullptr)) {
             return false;
         }
         const uint16_t drumSize = drum ? DRUM_TRACK_RECORD_SIZE : 0U;
@@ -548,8 +548,6 @@ FLASHMEM bool addClipGridSections(
         }
         const auto pattern = fillPatternEnvelope(
             document->pattern,
-            document->graph.get(),
-            document->ccLanes.get(),
             patternData,
             patternSize
         );
@@ -919,7 +917,7 @@ FLASHMEM bool decodeClipDocument(
     uint8_t reserved = 0U;
     uint16_t patternSize = 0U;
     uint16_t drumSize = 0U;
-    state::sequencer::SequencerClipSnapshot clip{};
+    state::sequencer::SequencerClipState clip{};
     if (!reader.readU8(kindRaw) || !reader.readU8(reserved) ||
         !reader.readU16(patternSize) || !reader.readU16(drumSize) ||
         !reader.readU16(clip.playStartTick) ||
@@ -932,10 +930,10 @@ FLASHMEM bool decodeClipDocument(
         return false;
     }
 
-    auto pattern = core::app::makeExtmemUnique<
-        state::sequencer::SequencerPatternState>();
-    if (!pattern ||
-        !applyPatternEnvelope(reader.current(), patternSize, *pattern) ||
+    auto document = core::app::makeExtmemUniqueCold<
+        state::sequencer::SequencerClipDocument>();
+    if (!document ||
+        !applyPatternEnvelope(reader.current(), patternSize, document->pattern) ||
         !reader.skip(patternSize)) {
         return false;
     }
@@ -943,19 +941,12 @@ FLASHMEM bool decodeClipDocument(
     const bool drum = expectedKind == state::sequencer::SequencerTrackKind::DRUM;
     if ((drum && drumSize != DRUM_TRACK_RECORD_SIZE) ||
         (!drum && drumSize != 0U) ||
-        (drum && pattern->ccLanes != nullptr)) {
+        (drum && document->pattern.ccLanes != nullptr)) {
         return false;
     }
 
-    auto document = core::app::makeExtmemUniqueCold<
-        state::sequencer::SequencerClipDocument>();
-    if (!document) return false;
-    state::sequencer::captureSnapshot(*pattern, document->pattern);
     document->clip = clip;
-    document->ccLaneRevision = pattern->ccLaneRevision.get();
     document->trackKind = expectedKind;
-    document->graph = std::move(pattern->graph);
-    document->ccLanes = std::move(pattern->ccLanes);
     if (drum) {
         document->drum = core::app::makeExtmemUnique<
             state::sequencer::DrumTrackState>();

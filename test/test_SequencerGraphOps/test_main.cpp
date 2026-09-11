@@ -91,9 +91,9 @@ uint64_t byteHash(const void* data, std::size_t size) {
 }
 
 void enableStep(SequencerState& state, uint8_t step) {
-    auto mask = state.pattern().enabledMask.get();
+    auto mask = state.pattern().enabledMask;
     mask.setBit(step, true);
-    state.pattern().enabledMask.set(mask);
+    state.pattern().setEnabledMask(mask);
 }
 
 StepSequencerRuntimeState makeRuntime(const SequencerPatternSnapshot& snapshot) {
@@ -106,7 +106,7 @@ void test_graph_root_is_allocated_once() {
     core::state::sequencer::SequencerDetachedEditor state;
 
     assert(core::state::sequencer::ensureGraphRoot(state.pattern()));
-    const uint32_t revision = state.pattern().graphRevision.get();
+    const uint32_t revision = state.pattern().graphRevision;
     const auto* graph = core::state::sequencer::graphView(state.pattern());
     assert(graph != nullptr);
     assert(graph->enabled);
@@ -115,7 +115,7 @@ void test_graph_root_is_allocated_once() {
     assert(graph->stepNodeCount == SequencerState::MAX_STEPS);
 
     assert(core::state::sequencer::ensureGraphRoot(state.pattern()));
-    assert(state.pattern().graphRevision.get() == revision);
+    assert(state.pattern().graphRevision == revision);
 
     std::cout << "[PASS] test_graph_root_is_allocated_once\n";
 }
@@ -225,7 +225,7 @@ void test_pattern_copy_preserves_graph() {
     core::state::sequencer::SequencerDetachedEditor target;
     assert(core::state::sequencer::copyPatternState(target.pattern(), source.pattern()));
 
-    assert(target.pattern().graphRevision.get() == source.pattern().graphRevision.get());
+    assert(target.pattern().graphRevision == source.pattern().graphRevision);
     const auto* targetGraph = core::state::sequencer::graphView(target.pattern());
     assert(targetGraph != nullptr);
     assert(targetGraph->enabled);
@@ -238,7 +238,7 @@ void test_pattern_copy_preserves_graph() {
 
 void test_runtime_signature_tracks_graph_revision() {
     core::state::sequencer::SequencerDetachedEditor state;
-    const seq::SequencerClipSnapshot clip{};
+    const seq::SequencerClipState clip{};
     SequencerPatternSnapshot before;
     core::state::sequencer::captureSnapshot(state.pattern(), before);
     auto beforeSignature = core::sequencer::captureRuntimeStateSignature(
@@ -258,16 +258,16 @@ void test_runtime_signature_tracks_graph_revision() {
     );
 
     assert(!beforeSignature.matches(afterSignature));
-    assert(afterSignature.graphRevision == state.pattern().graphRevision.get());
+    assert(afterSignature.graphRevision == state.pattern().graphRevision);
 
     std::cout << "[PASS] test_runtime_signature_tracks_graph_revision\n";
 }
 
 void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
     core::state::sequencer::SequencerDetachedEditor state;
-    const seq::SequencerClipSnapshot clip{};
+    const seq::SequencerClipState clip{};
     assert(core::state::sequencer::ensureGraphRoot(state.pattern()));
-    const uint32_t graphRevision = state.pattern().graphRevision.get();
+    const uint32_t graphRevision = state.pattern().graphRevision;
 
     SequencerPatternSnapshot followSnapshot;
     core::state::sequencer::captureSnapshot(state.pattern(), followSnapshot);
@@ -280,7 +280,7 @@ void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
     assert(runtime.pitchFollowsScale);
 
     assert(state.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::CHROMATIC));
-    assert(state.pattern().graphRevision.get() == graphRevision);
+    assert(state.pattern().graphRevision == graphRevision);
 
     SequencerPatternSnapshot chromaticSnapshot;
     core::state::sequencer::captureSnapshot(state.pattern(), chromaticSnapshot);
@@ -420,7 +420,7 @@ void test_clear_node_children_detaches_links_and_bumps_revision_once() {
     const auto cycleSet = core::state::sequencer::createCycleStateSet(state.pattern(), rootNode, 2);
     assert(cycleSet.ok);
 
-    const uint32_t revisionBeforeClear = state.pattern().graphRevision.get();
+    const uint32_t revisionBeforeClear = state.pattern().graphRevision;
     assert(core::state::sequencer::clearNodeChildren(state.pattern(), rootNode));
     const auto* graph = core::state::sequencer::graphView(state.pattern());
     assert(graph != nullptr);
@@ -428,10 +428,10 @@ void test_clear_node_children_detaches_links_and_bumps_revision_once() {
     assert(!graph->stepNodes[rootNode].has(STEP_NODE_CYCLE_SET));
     assert(graph->stepNodes[rootNode].childSequenceId == StepSequencerGraphLimits::INVALID_ID);
     assert(graph->stepNodes[rootNode].cycleSetId == StepSequencerGraphLimits::INVALID_ID);
-    assert(state.pattern().graphRevision.get() == revisionBeforeClear + 1U);
+    assert(state.pattern().graphRevision == revisionBeforeClear + 1U);
 
     assert(!core::state::sequencer::clearNodeChildren(state.pattern(), rootNode));
-    assert(state.pattern().graphRevision.get() == revisionBeforeClear + 1U);
+    assert(state.pattern().graphRevision == revisionBeforeClear + 1U);
 
     std::cout << "[PASS] test_clear_node_children_detaches_links_and_bumps_revision_once\n";
 }
@@ -520,7 +520,7 @@ void test_reserved_compaction_preserves_owner_and_allocates_zero() {
            SequencerState::MAX_STEPS + StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
     assert(liveOwner->stepNodes[secondRoot].childSequenceId == 1U);
 
-    const auto revisionBeforeAliasAttempt = state.pattern().graphRevision.get();
+    const auto revisionBeforeAliasAttempt = state.pattern().graphRevision;
     const auto sequenceCountBeforeAliasAttempt = liveOwner->sequenceCount;
     const auto stepNodeCountBeforeAliasAttempt = liveOwner->stepNodeCount;
     const auto aliasResult =
@@ -528,7 +528,7 @@ void test_reserved_compaction_preserves_owner_and_allocates_zero() {
     assert(!aliasResult.ok);
     assert(!aliasResult.compacted);
     assert(state.pattern().graph.get() == liveOwner);
-    assert(state.pattern().graphRevision.get() == revisionBeforeAliasAttempt);
+    assert(state.pattern().graphRevision == revisionBeforeAliasAttempt);
     assert(liveOwner->sequenceCount == sequenceCountBeforeAliasAttempt);
     assert(liveOwner->stepNodeCount == stepNodeCountBeforeAliasAttempt);
 
@@ -564,7 +564,7 @@ void test_global_graph_validation_rejects_alias_cycle_and_overlap() {
         auto reserved = core::app::makeExtmemUnique<StepSequencerGraph>();
         assert(reserved);
         const uint64_t liveHash = byteHash(graph, sizeof(*graph));
-        const uint32_t revision = state.pattern().graphRevision.get();
+        const uint32_t revision = state.pattern().graphRevision;
         seq::SequencerGraphCompactionRemap remap;
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
@@ -574,7 +574,7 @@ void test_global_graph_validation_rejects_alias_cycle_and_overlap() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
         }
         assert(byteHash(graph, sizeof(*graph)) == liveHash);
-        assert(state.pattern().graphRevision.get() == revision);
+        assert(state.pattern().graphRevision == revision);
     }
 
     {
@@ -657,7 +657,7 @@ void test_versioned_graph_copy_wrappers_prevalidate_and_publish_once() {
     for (const auto copy : copyFunctions) {
         core::state::sequencer::SequencerDetachedEditor invalidTarget;
         const uint32_t invalidRevision =
-            invalidTarget.pattern().graphRevision.get();
+            invalidTarget.pattern().graphRevision;
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
             assert(!copy(
@@ -668,11 +668,11 @@ void test_versioned_graph_copy_wrappers_prevalidate_and_publish_once() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
         }
         assert(invalidTarget.pattern().graph == nullptr);
-        assert(invalidTarget.pattern().graphRevision.get() == invalidRevision);
+        assert(invalidTarget.pattern().graphRevision == invalidRevision);
 
         core::state::sequencer::SequencerDetachedEditor graphlessTarget;
         const uint32_t graphlessRevision =
-            graphlessTarget.pattern().graphRevision.get();
+            graphlessTarget.pattern().graphRevision;
         assert(copy(
             graphlessTarget.pattern(),
             seq::rootStepNodeId(0U),
@@ -682,7 +682,7 @@ void test_versioned_graph_copy_wrappers_prevalidate_and_publish_once() {
         assert(seq::validInitializedSequencerGraph(
             *graphlessTarget.pattern().graph));
         assert(
-            graphlessTarget.pattern().graphRevision.get() ==
+            graphlessTarget.pattern().graphRevision ==
             graphlessRevision + 1U);
 
         core::state::sequencer::SequencerDetachedEditor disabledTarget;
@@ -692,7 +692,7 @@ void test_versioned_graph_copy_wrappers_prevalidate_and_publish_once() {
         auto* disabledIdentity = disabledTarget.pattern().graph.get();
         assert(seq::isCanonicalDisabledSequencerGraph(*disabledIdentity));
         const uint32_t disabledRevision =
-            disabledTarget.pattern().graphRevision.get();
+            disabledTarget.pattern().graphRevision;
         assert(copy(
             disabledTarget.pattern(),
             seq::rootStepNodeId(0U),
@@ -701,7 +701,7 @@ void test_versioned_graph_copy_wrappers_prevalidate_and_publish_once() {
         assert(disabledTarget.pattern().graph.get() == disabledIdentity);
         assert(seq::validInitializedSequencerGraph(*disabledIdentity));
         assert(
-            disabledTarget.pattern().graphRevision.get() ==
+            disabledTarget.pattern().graphRevision ==
             disabledRevision + 1U);
 
         core::state::sequencer::SequencerDetachedEditor malformedTarget;
@@ -715,7 +715,7 @@ void test_versioned_graph_copy_wrappers_prevalidate_and_publish_once() {
         const uint64_t malformedHash =
             byteHash(malformedGraph, sizeof(*malformedGraph));
         const uint32_t malformedRevision =
-            malformedTarget.pattern().graphRevision.get();
+            malformedTarget.pattern().graphRevision;
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
             assert(!copy(
@@ -727,7 +727,7 @@ void test_versioned_graph_copy_wrappers_prevalidate_and_publish_once() {
         }
         assert(byteHash(malformedGraph, sizeof(*malformedGraph)) ==
                malformedHash);
-        assert(malformedTarget.pattern().graphRevision.get() ==
+        assert(malformedTarget.pattern().graphRevision ==
                malformedRevision);
     }
 
@@ -780,14 +780,14 @@ void test_versioned_graph_copy_accepts_compact_asset_source() {
     assert(comparison.same);
 
     const uint64_t targetHash = byteHash(targetGraph, sizeof(*targetGraph));
-    const uint32_t targetRevision = target.pattern().graphRevision.get();
+    const uint32_t targetRevision = target.pattern().graphRevision;
     assert(!seq::copyStepNodePayloadFromGraph(
         target.pattern(),
         seq::rootStepNodeId(0U),
         *targetGraph,
         seq::rootStepNodeId(0U)));
     assert(byteHash(targetGraph, sizeof(*targetGraph)) == targetHash);
-    assert(target.pattern().graphRevision.get() == targetRevision);
+    assert(target.pattern().graphRevision == targetRevision);
 
     std::cout <<
         "[PASS] versioned Graph copy accepts compact asset source\n";
@@ -851,7 +851,7 @@ void test_child_extension_preserves_logical_nodes_across_offsets() {
             cold.noteOffset = 63;
         }
 
-        const uint32_t revision = state.pattern().graphRevision.get();
+        const uint32_t revision = state.pattern().graphRevision;
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
             allocation_trace::Scope allocationScope;
@@ -860,7 +860,7 @@ void test_child_extension_preserves_logical_nodes_across_offsets() {
             assert(allocation_trace::count == 0U);
             assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
         }
-        assert(state.pattern().graphRevision.get() == revision);
+        assert(state.pattern().graphRevision == revision);
         sequence = graph->sequence(created.id);
         assert(sequence != nullptr && sequence->length == newLength);
         assert(sequence->offset == offset);
@@ -912,10 +912,10 @@ void test_child_extension_preserves_logical_nodes_across_offsets() {
             oldLogical[logical] = graph->stepNodes[
                 firstNode + physicalIndex(logical, offset, oldLength)];
         }
-        const uint32_t revision = state.pattern().graphRevision.get();
+        const uint32_t revision = state.pattern().graphRevision;
         assert(seq::extendCycleStateSetPreservingLogicalContentUnversioned(
             *graph, created.id, newLength));
-        assert(state.pattern().graphRevision.get() == revision);
+        assert(state.pattern().graphRevision == revision);
         cycleSet = graph->cycleSet(created.id);
         assert(cycleSet != nullptr && cycleSet->length == newLength);
         assert(cycleSet->offset == offset);
@@ -1154,17 +1154,17 @@ void test_canonical_disabled_proof_and_unversioned_root_initialization() {
 
     core::state::sequencer::SequencerDetachedEditor owner;
     owner.pattern().graph = std::move(graph);
-    const uint32_t revision = owner.pattern().graphRevision.get();
+    const uint32_t revision = owner.pattern().graphRevision;
     assert(core::state::sequencer::initializeSequencerGraphRootUnversioned(
         *owner.pattern().graph));
-    assert(owner.pattern().graphRevision.get() == revision);
+    assert(owner.pattern().graphRevision == revision);
     assert(owner.pattern().graph->enabled);
     assert(owner.pattern().graph->rootSequenceId == 0U);
     assert(owner.pattern().graph->sequenceCount == 1U);
     assert(owner.pattern().graph->stepNodeCount == SequencerState::MAX_STEPS);
     assert(core::state::sequencer::initializeSequencerGraphRootUnversioned(
         *owner.pattern().graph));
-    assert(owner.pattern().graphRevision.get() == revision);
+    assert(owner.pattern().graphRevision == revision);
 
     auto malformed = core::app::makeExtmemUnique<StepSequencerGraph>();
     assert(malformed);
@@ -1244,25 +1244,25 @@ void test_unversioned_copy_reset_and_resize_do_not_signal_revision() {
     assert(core::state::sequencer::ensureGraphRoot(target.pattern()));
     auto* targetGraph = target.pattern().graph.get();
     assert(targetGraph != nullptr);
-    const uint32_t revision = target.pattern().graphRevision.get();
+    const uint32_t revision = target.pattern().graphRevision;
     const uint16_t nodeCount = targetGraph->stepNodeCount;
     const uint8_t sequenceCount = targetGraph->sequenceCount;
     const uint8_t cycleSetCount = targetGraph->cycleSetCount;
     assert(core::state::sequencer::copyStepNodePayloadFromGraphUnversioned(
         *targetGraph, 0U, *sourceGraph, 0U, 0U));
-    assert(target.pattern().graphRevision.get() == revision);
+    assert(target.pattern().graphRevision == revision);
     assert(targetGraph->stepNodeCount == nodeCount + inspection.budget.stepNodes);
     assert(targetGraph->sequenceCount == sequenceCount + inspection.budget.sequences);
     assert(targetGraph->cycleSetCount == cycleSetCount + inspection.budget.cycleSets);
     assert(core::state::sequencer::resetStepNodePayloadUnversioned(*targetGraph, 0U));
-    assert(target.pattern().graphRevision.get() == revision);
+    assert(target.pattern().graphRevision == revision);
     assert(!core::state::sequencer::resetStepNodePayloadUnversioned(*targetGraph, 0U));
 
     const uint16_t retainedSequenceNode = static_cast<uint16_t>(
         sourceGraph->sequences[sequence.id].firstStepNode + 15U);
     sourceGraph->stepNodes[retainedSequenceNode].flags = STEP_NODE_NOTE_OFFSET;
     sourceGraph->stepNodes[retainedSequenceNode].noteOffset = 9;
-    const uint32_t sourceRevision = source.pattern().graphRevision.get();
+    const uint32_t sourceRevision = source.pattern().graphRevision;
     const uint8_t sequenceCapacity =
         core::state::sequencer::sequencerMicroSequenceReservedCapacity(
             *sourceGraph, sequence.id);
@@ -1272,7 +1272,7 @@ void test_unversioned_copy_reset_and_resize_do_not_signal_revision() {
     assert(core::state::sequencer::resizeMicroSequenceUnversioned(
         *sourceGraph, sequence.id, sequenceCapacity));
     assert(sourceGraph->stepNodes[retainedSequenceNode].noteOffset == 9);
-    assert(source.pattern().graphRevision.get() == sourceRevision);
+    assert(source.pattern().graphRevision == sourceRevision);
     assert(!core::state::sequencer::resizeMicroSequenceUnversioned(
         *sourceGraph, sequence.id, sequenceCapacity));
     assert(!core::state::sequencer::resizeMicroSequenceUnversioned(
@@ -1288,7 +1288,7 @@ void test_unversioned_copy_reset_and_resize_do_not_signal_revision() {
                *sourceGraph, StepSequencerGraphLimits::INVALID_ID) == 0U);
     assert(core::state::sequencer::resizeCycleStateSetUnversioned(
         *sourceGraph, cycle.id, cycleCapacity));
-    assert(source.pattern().graphRevision.get() == sourceRevision);
+    assert(source.pattern().graphRevision == sourceRevision);
     assert(!core::state::sequencer::resizeCycleStateSetUnversioned(
         *sourceGraph, cycle.id, cycleCapacity));
     assert(!core::state::sequencer::resizeCycleStateSetUnversioned(
@@ -1303,24 +1303,24 @@ void test_unversioned_copy_reset_and_resize_do_not_signal_revision() {
         core::state::sequencer::createCycleStateSet(versioned.pattern(), 0U, 2U);
     assert(versionedSequence.ok);
     assert(versionedCycle.ok);
-    const uint32_t beforeSequenceResize = versioned.pattern().graphRevision.get();
+    const uint32_t beforeSequenceResize = versioned.pattern().graphRevision;
     assert(core::state::sequencer::resizeMicroSequence(
         versioned.pattern(), versionedSequence.id, 3U));
-    assert(versioned.pattern().graphRevision.get() == beforeSequenceResize + 1U);
+    assert(versioned.pattern().graphRevision == beforeSequenceResize + 1U);
     assert(!core::state::sequencer::resizeMicroSequence(
         versioned.pattern(), versionedSequence.id, 3U));
-    assert(versioned.pattern().graphRevision.get() == beforeSequenceResize + 1U);
-    const uint32_t beforeCycleResize = versioned.pattern().graphRevision.get();
+    assert(versioned.pattern().graphRevision == beforeSequenceResize + 1U);
+    const uint32_t beforeCycleResize = versioned.pattern().graphRevision;
     assert(core::state::sequencer::resizeCycleStateSet(
         versioned.pattern(), versionedCycle.id, 3U));
-    assert(versioned.pattern().graphRevision.get() == beforeCycleResize + 1U);
+    assert(versioned.pattern().graphRevision == beforeCycleResize + 1U);
 
     core::state::sequencer::SequencerDetachedEditor versionedCopy;
     assert(core::state::sequencer::ensureGraphRoot(versionedCopy.pattern()));
-    const uint32_t beforeCopy = versionedCopy.pattern().graphRevision.get();
+    const uint32_t beforeCopy = versionedCopy.pattern().graphRevision;
     assert(core::state::sequencer::copyStepNodePayloadFromGraph(
         versionedCopy.pattern(), 0U, *sourceGraph, 0U));
-    assert(versionedCopy.pattern().graphRevision.get() == beforeCopy + 1U);
+    assert(versionedCopy.pattern().graphRevision == beforeCopy + 1U);
 
     std::cout << "[PASS] unversioned copy/reset/resize do not signal revision\n";
 }
@@ -1342,8 +1342,8 @@ void test_graph_preflight_and_unversioned_mutations_allocate_zero() {
     assert(core::state::sequencer::ensureGraphRoot(target.pattern()));
     auto* targetGraph = target.pattern().graph.get();
     assert(targetGraph != nullptr);
-    const uint32_t targetRevision = target.pattern().graphRevision.get();
-    const uint32_t sourceRevision = source.pattern().graphRevision.get();
+    const uint32_t targetRevision = target.pattern().graphRevision;
+    const uint32_t sourceRevision = source.pattern().graphRevision;
 
     auto disabled = core::app::makeExtmemUnique<StepSequencerGraph>();
     assert(disabled);
@@ -1384,8 +1384,8 @@ void test_graph_preflight_and_unversioned_mutations_allocate_zero() {
     }
 
     assert(allocation_trace::count == 0U);
-    assert(target.pattern().graphRevision.get() == targetRevision);
-    assert(source.pattern().graphRevision.get() == sourceRevision);
+    assert(target.pattern().graphRevision == targetRevision);
+    assert(source.pattern().graphRevision == sourceRevision);
 
     std::cout << "[PASS] graph preflight and unversioned mutations allocate zero\n";
 }
@@ -1395,14 +1395,14 @@ void test_clear_graph_releases_allocation_and_bumps_revision_once() {
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     assert(core::state::sequencer::createMicroSequence(state.pattern(), rootNode, 2).ok);
 
-    const uint32_t revisionBeforeClear = state.pattern().graphRevision.get();
+    const uint32_t revisionBeforeClear = state.pattern().graphRevision;
     core::state::sequencer::clearGraph(state.pattern());
     assert(state.pattern().graph.get() == nullptr);
     assert(core::state::sequencer::graphView(state.pattern()) == nullptr);
-    assert(state.pattern().graphRevision.get() == revisionBeforeClear + 1U);
+    assert(state.pattern().graphRevision == revisionBeforeClear + 1U);
 
     core::state::sequencer::clearGraph(state.pattern());
-    assert(state.pattern().graphRevision.get() == revisionBeforeClear + 1U);
+    assert(state.pattern().graphRevision == revisionBeforeClear + 1U);
 
     std::cout << "[PASS] test_clear_graph_releases_allocation_and_bumps_revision_once\n";
 }
@@ -1440,10 +1440,10 @@ void test_local_variation_ranges_are_per_node_and_clamped() {
 
     assert(core::state::sequencer::setNodeLocalVariationRange(
         state.pattern(), rootNode, core::state::sequencer::StepProperty::NOTE, 200));
-    const uint32_t revisionAfterPitch = state.pattern().graphRevision.get();
+    const uint32_t revisionAfterPitch = state.pattern().graphRevision;
     assert(!core::state::sequencer::setNodeLocalVariationRange(
         state.pattern(), rootNode, core::state::sequencer::StepProperty::NOTE, 255));
-    assert(state.pattern().graphRevision.get() == revisionAfterPitch);
+    assert(state.pattern().graphRevision == revisionAfterPitch);
 
     assert(core::state::sequencer::setNodeLocalVariationRange(
         state.pattern(), rootNode, core::state::sequencer::StepProperty::VELOCITY, 250));
@@ -1500,9 +1500,9 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
     assert(node->chordSpec.strum == StepSequencerChordSpec::MAX_STRUM);
     assert(node->chordSpec.velocityCurve == StepSequencerChordSpec::MIN_VELOCITY_CURVE);
 
-    const uint32_t revisionAfterSpec = state.pattern().graphRevision.get();
+    const uint32_t revisionAfterSpec = state.pattern().graphRevision;
     assert(!core::state::sequencer::setNodeChordSpec(state.pattern(), rootNode, node->chordSpec));
-    assert(state.pattern().graphRevision.get() == revisionAfterSpec);
+    assert(state.pattern().graphRevision == revisionAfterSpec);
 
     assert(core::state::sequencer::setNodeChordMode(state.pattern(), rootNode,
                                                     StepSequencerChordMode::Single));

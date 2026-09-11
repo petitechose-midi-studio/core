@@ -95,7 +95,7 @@ FLASHMEM grid::StepGridFrameState buildSequencerStepGridProps(
     );
     if (core::state::sequencer::isDrumContentView(source.sequencer)) {
         const auto& content = source.sequencer.contentView;
-        const auto* drumTrack = source.sequencer.drumSequencer.drumTrack;
+        const auto* drumTrack = source.sequencer.drumSequencer.drumTrack();
         if (drumTrack != nullptr &&
             content.drumOwnerLane < drumTrack->kit.laneCount &&
             content.drumOwnerLane < core::state::sequencer::DRUM_MAX_LANES) {
