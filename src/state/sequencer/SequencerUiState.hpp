@@ -141,13 +141,6 @@ struct SequencerContentViewState {
     using GraphLimits = oc::note::sequencer::StepSequencerGraphLimits;
     static constexpr uint8_t MAX_CHILD_DEPTH = GraphLimits::MAX_DEPTH;
 
-    Signal<SequencerContentViewKind, 8> kind{SequencerContentViewKind::ROOT};
-    Signal<uint8_t, 8> parentStep{0};
-    Signal<uint16_t, 8> ownerNodeId{GraphLimits::INVALID_ID};
-    Signal<uint16_t, 8> sequenceId{GraphLimits::INVALID_ID};
-    Signal<uint16_t, 8> cycleSetId{GraphLimits::INVALID_ID};
-    Signal<uint8_t, 8> length{0};
-    Signal<uint8_t, 8> depth{0};
     Signal<uint32_t, 8> revision{0};
 
     uint8_t rootPageSnapshot = 0;
@@ -168,13 +161,15 @@ struct SequencerContentViewState {
     ~SequencerContentViewState();
 
     bool isMicroSequence() const {
-        return kind.get() == SequencerContentViewKind::MICRO_SEQUENCE &&
-               sequenceId.get() != GraphLimits::INVALID_ID;
+        const auto* frame = currentFrame();
+        return frame && frame->kind == SequencerContentViewKind::MICRO_SEQUENCE &&
+               frame->sequenceId != GraphLimits::INVALID_ID;
     }
 
     bool isCycleStates() const {
-        return kind.get() == SequencerContentViewKind::CYCLE_STATES &&
-               cycleSetId.get() != GraphLimits::INVALID_ID;
+        const auto* frame = currentFrame();
+        return frame && frame->kind == SequencerContentViewKind::CYCLE_STATES &&
+               frame->cycleSetId != GraphLimits::INVALID_ID;
     }
 
     bool isChildContent() const {

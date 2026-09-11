@@ -433,11 +433,9 @@ struct LiveInvariant {
         uint32_t,
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
     > bankGraphRevisions{};
-    core::state::sequencer::SequencerContentViewKind contentKind =
-        core::state::sequencer::SequencerContentViewKind::ROOT;
-    uint16_t ownerNodeId = 0;
-    uint16_t sequenceId = 0;
-    uint16_t cycleSetId = 0;
+    uint8_t contentDepth = 0;
+    std::array<core::state::sequencer::SequencerContentViewFrame,
+        core::state::sequencer::SequencerContentViewState::MAX_CHILD_DEPTH> contentFrames{};
 };
 
 LiveInvariant captureInvariant(core::state::CoreState& state) {
@@ -472,10 +470,8 @@ LiveInvariant captureInvariant(core::state::CoreState& state) {
     snapshot.page = state.sequencer.page.get();
     snapshot.focusedStep = state.sequencer.focusedStep.get();
     snapshot.editorGraphRevision = state.sequencer.pattern().graphRevision;
-    snapshot.contentKind = state.sequencer.contentView.kind.get();
-    snapshot.ownerNodeId = state.sequencer.contentView.ownerNodeId.get();
-    snapshot.sequenceId = state.sequencer.contentView.sequenceId.get();
-    snapshot.cycleSetId = state.sequencer.contentView.cycleSetId.get();
+    snapshot.contentDepth = state.sequencer.contentView.stackDepth;
+    snapshot.contentFrames = state.sequencer.contentView.frames;
     return snapshot;
 }
 
@@ -530,10 +526,16 @@ void assertInvariantUnchanged(
         state.sequencer.pattern().graphRevision ==
         before.editorGraphRevision
     );
-    assert(state.sequencer.contentView.kind.get() == before.contentKind);
-    assert(state.sequencer.contentView.ownerNodeId.get() == before.ownerNodeId);
-    assert(state.sequencer.contentView.sequenceId.get() == before.sequenceId);
-    assert(state.sequencer.contentView.cycleSetId.get() == before.cycleSetId);
+    assert(state.sequencer.contentView.stackDepth == before.contentDepth);
+    for (size_t i = 0; i < before.contentFrames.size(); ++i) {
+        const auto& a = state.sequencer.contentView.frames[i];
+        const auto& b = before.contentFrames[i];
+        assert(a.kind == b.kind && a.ownerRootStep == b.ownerRootStep &&
+            a.ownerLocalStep == b.ownerLocalStep && a.pageSnapshot == b.pageSnapshot &&
+            a.focusSnapshot == b.focusSnapshot && a.length == b.length &&
+            a.ownerNodeId == b.ownerNodeId && a.sequenceId == b.sequenceId &&
+            a.cycleSetId == b.cycleSetId);
+    }
 }
 
 void applyPendingRuntimeGeneration(core::state::CoreState& state, uint8_t track) {

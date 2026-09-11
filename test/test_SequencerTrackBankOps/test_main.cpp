@@ -62,12 +62,11 @@ void seedTransientTrackState(seq::SequencerState& active) {
     active.patternQuickControls.offsetSteps.set(3);
     active.patternQuickControls.hideAtMs = 900U;
 
-    active.contentView.kind.set(seq::SequencerContentViewKind::MICRO_SEQUENCE);
-    active.contentView.parentStep.set(5U);
-    active.contentView.ownerNodeId.set(7U);
-    active.contentView.sequenceId.set(9U);
-    active.contentView.length.set(4U);
-    active.contentView.depth.set(1U);
+    active.contentView.frames[0].kind = seq::SequencerContentViewKind::MICRO_SEQUENCE;
+    active.contentView.frames[0].ownerRootStep = 5U;
+    active.contentView.frames[0].ownerNodeId = 7U;
+    active.contentView.frames[0].sequenceId = 9U;
+    active.contentView.frames[0].length = 4U;
     active.contentView.stackDepth = 1U;
 
     active.stepContentDraft.kind.set(seq::SequencerStepContentDraftKind::CHORD);
@@ -116,10 +115,8 @@ void assertTransientTrackStateReset(
     assert(active.patternQuickControls.offsetSteps.get() == 0);
     assert(active.patternQuickControls.hideAtMs == 0U);
 
-    assert(active.contentView.kind.get() == seq::SequencerContentViewKind::ROOT);
-    assert(active.contentView.parentStep.get() == 0U);
     assert(active.contentView.stackDepth == 0U);
-    assert(active.contentView.depth.get() == 0U);
+    assert(active.contentView.currentFrame() == nullptr);
 
     assert(!active.stepContentDraft.active.get());
     assert(active.stepContentDraft.kind.get() == seq::SequencerStepContentDraftKind::NONE);

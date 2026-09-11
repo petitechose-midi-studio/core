@@ -22,7 +22,7 @@ FLASHMEM core::state::SequencerStepContentClipboardKind clipboardKindForChild(
 }  // namespace
 
 FLASHMEM bool isRootContentView(const SequencerState& sequencer) {
-    return !sequencer.contentView.isChildContent();
+    return sequencer.contentView.stackDepth == 0;
 }
 
 FLASHMEM bool isChildContentView(const SequencerState& sequencer) {
@@ -47,7 +47,7 @@ FLASHMEM bool isCycleStatesContentView(const SequencerState& sequencer) {
 }
 
 FLASHMEM uint8_t activeContentDepth(const SequencerState& sequencer) {
-    return sequencer.contentView.depth.get();
+    return sequencer.contentView.stackDepth;
 }
 
 FLASHMEM SequencerGraphNodeId activeContentStepNodeId(const SequencerState& sequencer,
@@ -421,11 +421,14 @@ FLASHMEM bool enterCycleStatesContentView(SequencerState& sequencer,
 FLASHMEM bool leaveContentView(SequencerState& sequencer) {
     auto& view = sequencer.contentView;
     if (view.stackDepth == 0) return false;
+    if (view.stackDepth > view.frames.size()) {
+        view.reset();
+        return false;
+    }
 
     const auto frame = view.frames[view.stackDepth - 1U];
     view.frames[view.stackDepth - 1U] = {};
     --view.stackDepth;
-    syncPublicViewFields(view);
 
     sequencer.page.set(frame.pageSnapshot);
     const uint8_t length = activeContentLength(sequencer);
@@ -446,11 +449,13 @@ FLASHMEM bool leaveContentView(SequencerState& sequencer) {
 
 FLASHMEM void refreshContentView(SequencerState& sequencer) {
     auto& view = sequencer.contentView;
-    if (view.stackDepth == 0) {
-        syncPublicViewFields(view);
+    if (view.stackDepth == 0) return;
+    if (view.stackDepth > view.frames.size()) {
+        view.reset();
         return;
     }
-
+    const auto previousDepth = view.stackDepth;
+    const auto previousLength = view.currentFrame()->length;
     while (view.stackDepth > 0) {
         auto& frame = view.frames[view.stackDepth - 1U];
         if (validateFrame(sequencer, frame)) break;
@@ -461,18 +466,15 @@ FLASHMEM void refreshContentView(SequencerState& sequencer) {
         view.drumOwnerActive = false;
         view.drumOwnerRootSlot = 0xFFU;
     }
-    syncPublicViewFields(view);
 
     const uint8_t length = activeContentLength(sequencer);
-    if (length == 0) {
-        sequencer.page.set(0);
-        sequencer.focusedStep.set(0);
-        return;
-    }
     sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
-    if (sequencer.focusedStep.get() >= length) {
-        sequencer.focusedStep.set(static_cast<uint8_t>(length - 1U));
+    if (length == 0 || sequencer.focusedStep.get() >= length) {
+        sequencer.focusedStep.set(length > 0 ? static_cast<uint8_t>(length - 1U) : 0);
     }
+    // The frame stack is authoritative; publish only after its readers can
+    // observe a coherent path, length and selection.
+    if (view.stackDepth != previousDepth || length != previousLength) view.bump();
 }
 
 FLASHMEM bool compactSequencerGraph(SequencerState& sequencer) {
@@ -644,7 +646,8 @@ FLASHMEM void finalizePreparedSequencerGraphMutation(SequencerState& sequencer,
 
 FLASHMEM uint8_t activeContentLength(const SequencerState& sequencer) {
     if (isRootContentView(sequencer)) { return authoringPattern(sequencer).length; }
-    return sequencer.contentView.length.get();
+    const auto* frame = sequencer.contentView.currentFrame();
+    return frame ? frame->length : 0;
 }
 
 FLASHMEM uint8_t activeContentPageCount(const SequencerState& sequencer) {

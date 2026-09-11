@@ -183,7 +183,7 @@ void test_precompaction_remaps_detached_path_and_publishes_after_commit() {
     assert(mutation.finalizeCount == 1U);
     assert(mutation.path.compacted);
     assert(mutation.path.frames[0].sequenceId < h.originalSequence);
-    assert(h.state.sequencer.contentView.sequenceId.get() ==
+    assert(h.state.sequencer.contentView.currentFrame()->sequenceId ==
            mutation.path.frames[0].sequenceId);
     assert(h.state.sequencer.contentView.currentFrame() != nullptr);
     assert(h.state.sequencer.contentView.currentFrame()->sequenceId ==

@@ -1,17 +1,128 @@
 #include <cassert>
 #include <iostream>
 
+#include <oc/state/StaticSignalWatcher.hpp>
+
 #include "state/CoreState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "support/CoreStorages.hpp"
+#include "support/NotificationTestUtils.hpp"
 
 namespace {
+
+namespace seq = core::state::sequencer;
+
+struct ContentViewObserver {
+    seq::SequencerState& sequencer;
+    size_t calls = 0;
+    uint8_t expectedDepth = 0;
+    uint8_t expectedLength = 0;
+    oc::state::StaticWatchGroup<3> watcher;
+
+    explicit ContentViewObserver(seq::SequencerState& state) : sequencer(state) {
+        watcher.bind<&ContentViewObserver::onChanged>(*this, 0, "test.contentView");
+        assert(watcher.watchAll(state.contentView.revision, state.page, state.focusedStep));
+    }
+
+    void onChanged() {
+        ++calls;
+        assert(seq::activeContentDepth(sequencer) == expectedDepth);
+        assert(seq::activeContentLength(sequencer) == expectedLength);
+        assert(sequencer.focusedStep.get() < expectedLength);
+        assert(sequencer.page.get() ==
+            seq::normalizeActiveContentPage(sequencer, sequencer.page.get()));
+    }
+
+    void expect(uint8_t depth, uint8_t length, bool changed = true) {
+        expectedDepth = depth;
+        expectedLength = length;
+        const auto before = calls;
+        test_support::drainNotifications();
+        assert(calls == before + (changed ? 1U : 0U));
+    }
+};
 
 core::state::CoreState makeState(test_support::CoreStorages& storage) {
     return core::state::CoreState(
         storage.settings
     );
+}
+
+void test_content_navigation_publishes_coherent_changes() {
+    for (const bool micro : {true, false}) {
+        test_support::CoreStorages storage;
+        auto state = makeState(storage);
+        auto& sequencer = state.sequencer;
+        sequencer.pattern().setContentLength(8);
+        test_support::drainNotifications();
+        ContentViewObserver observer(sequencer);
+        const auto root = seq::rootStepNodeId(0);
+        const auto child = micro ? seq::createMicroSequence(sequencer.pattern(), root, 4)
+                                 : seq::createCycleStateSet(sequencer.pattern(), root, 4);
+        assert(child.ok);
+        assert(micro ? seq::enterMicroSequenceContentView(sequencer, root, child.id)
+                     : seq::enterCycleStatesContentView(sequencer, root, child.id));
+        observer.expect(1, 4);
+
+        const auto revision = sequencer.contentView.revision.get();
+        seq::refreshContentView(sequencer);
+        observer.expect(1, 4, false);
+        assert(sequencer.contentView.revision.get() == revision);
+        sequencer.focusedStep.set(3);
+        observer.expect(1, 4);
+
+        assert(micro ? seq::resizeActiveMicroSequenceContent(sequencer, 2)
+                     : seq::resizeActiveCycleStatesContent(sequencer, 2));
+        observer.expect(1, 2);
+        assert(sequencer.focusedStep.get() == 1);
+        assert(sequencer.contentView.revision.get() == revision + 1U);
+        assert(!(micro ? seq::resizeActiveMicroSequenceContent(sequencer, 2)
+                       : seq::resizeActiveCycleStatesContent(sequencer, 2)));
+        observer.expect(1, 2, false);
+
+        // Refresh must publish a graph change even without a higher-level caller's bump.
+        assert(micro ? seq::resizeMicroSequence(sequencer.pattern(), child.id, 3)
+                     : seq::resizeCycleStateSet(sequencer.pattern(), child.id, 3));
+        seq::refreshContentView(sequencer);
+        observer.expect(1, 3);
+        assert(seq::leaveContentView(sequencer));
+        observer.expect(0, 8);
+        assert(micro ? seq::enterMicroSequenceContentView(sequencer, root, child.id)
+                     : seq::enterCycleStatesContentView(sequencer, root, child.id));
+        observer.expect(1, 3);
+
+        // An invalid child owner closes the path and also wakes revision-only readers.
+        assert(micro ? seq::clearNodeChildSequence(sequencer.pattern(), root)
+                     : seq::clearNodeCycleStateSet(sequencer.pattern(), root));
+        seq::refreshContentView(sequencer);
+        observer.expect(0, 8);
+        seq::refreshContentView(sequencer);
+        observer.expect(0, 8, false);
+        sequencer.contentView.reset();
+        observer.expect(0, 8);
+    }
+    std::cout << "[PASS] content navigation publishes coherent micro/cycle changes\n";
+}
+
+void test_invalid_content_depth_cannot_address_root_steps() {
+    test_support::CoreStorages storage;
+    auto state = makeState(storage);
+    auto& sequencer = state.sequencer;
+    for (const bool refresh : {true, false}) {
+        sequencer.contentView.stackDepth = 255;
+        assert(!seq::isRootContentView(sequencer));
+        assert(!seq::isChildContentView(sequencer));
+        assert(seq::activeContentLength(sequencer) == 0);
+        assert(seq::activeContentStepNodeId(sequencer, 0) ==
+            oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID);
+        assert(!seq::resizeActiveMicroSequenceContent(sequencer, 2));
+        if (refresh) seq::refreshContentView(sequencer);
+        else assert(!seq::leaveContentView(sequencer));
+        assert(seq::isRootContentView(sequencer));
+        assert(sequencer.contentView.currentFrame() == nullptr);
+    }
+    std::cout << "[PASS] invalid content depth is bounded and cannot address root steps\n";
 }
 
 void test_reset_root_property_to_default_also_resets_local_variation() {
@@ -254,6 +365,8 @@ void test_copy_paste_and_clear_active_child_content() {
 }  // namespace
 
 int main() {
+    test_content_navigation_publishes_coherent_changes();
+    test_invalid_content_depth_cannot_address_root_steps();
     test_reset_root_property_to_default_also_resets_local_variation();
     test_reset_child_property_to_default_preserves_existing_revision_behavior();
     test_open_or_create_child_context_opens_existing_without_graph_mutation();

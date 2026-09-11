@@ -910,7 +910,6 @@ struct PatternTraversalInteractionInvariant {
     uint16_t contentSequenceId = 0U;
     uint16_t contentCycleSetId = 0U;
     uint8_t contentLength = 0U;
-    uint8_t contentDepth = 0U;
     uint32_t contentRevision = 0U;
     uint8_t contentRootPageSnapshot = 0U;
     uint8_t contentRootFocusSnapshot = 0U;
@@ -927,18 +926,19 @@ PatternTraversalInteractionInvariant capturePatternTraversalInteractionInvariant
     const Harness& h
 ) {
     const auto& content = h.state.sequencer.contentView;
+    const auto frame = content.currentFrame() ? *content.currentFrame()
+                                              : seq::SequencerContentViewFrame{};
     const auto& feedback = h.state.sequencer.historyFeedback;
     return {
         .focusedStep = h.state.sequencer.focusedStep.get(),
         .page = h.state.sequencer.page.get(),
         .activeStepProperty = h.state.sequencer.activeStepProperty.get(),
-        .contentKind = content.kind.get(),
-        .contentParentStep = content.parentStep.get(),
-        .contentOwnerNodeId = content.ownerNodeId.get(),
-        .contentSequenceId = content.sequenceId.get(),
-        .contentCycleSetId = content.cycleSetId.get(),
-        .contentLength = content.length.get(),
-        .contentDepth = content.depth.get(),
+        .contentKind = frame.kind,
+        .contentParentStep = frame.ownerRootStep,
+        .contentOwnerNodeId = frame.ownerNodeId,
+        .contentSequenceId = frame.sequenceId,
+        .contentCycleSetId = frame.cycleSetId,
+        .contentLength = frame.length,
         .contentRevision = content.revision.get(),
         .contentRootPageSnapshot = content.rootPageSnapshot,
         .contentRootFocusSnapshot = content.rootFocusSnapshot,
@@ -966,7 +966,6 @@ void assertPatternTraversalInteractionInvariant(
     assert(actual.contentSequenceId == expected.contentSequenceId);
     assert(actual.contentCycleSetId == expected.contentCycleSetId);
     assert(actual.contentLength == expected.contentLength);
-    assert(actual.contentDepth == expected.contentDepth);
     assert(actual.contentRevision == expected.contentRevision);
     assert(actual.contentRootPageSnapshot == expected.contentRootPageSnapshot);
     assert(actual.contentRootFocusSnapshot == expected.contentRootFocusSnapshot);

@@ -47,13 +47,13 @@ const oc::log::Output diagnosticOutput{
 struct RepresentativeSequencerObservers {
     size_t callbackCount = 0;
 
-    oc::state::StaticWatchGroup<5> header;
-    oc::state::StaticWatchGroup<7> headerStrip;
-    oc::state::StaticWatchGroup<14> grid;
-    oc::state::StaticWatchGroup<8> selector;
+    oc::state::StaticWatchGroup<3> header;
+    oc::state::StaticWatchGroup<5> headerStrip;
+    oc::state::StaticWatchGroup<12> grid;
+    oc::state::StaticWatchGroup<6> selector;
     oc::state::StaticWatchGroup<2> leftStrip;
-    oc::state::StaticWatchGroup<4> bottomStrip;
-    oc::state::StaticWatchGroup<12> encoderSync;
+    oc::state::StaticWatchGroup<3> bottomStrip;
+    oc::state::StaticWatchGroup<10> encoderSync;
     oc::state::StaticWatchGroup<6> overlayPresenter;
     oc::state::StaticWatchGroup<1> trackSwitchReady;
     oc::state::StaticWatchGroup<2> retainedMacroView;
@@ -101,8 +101,6 @@ struct RepresentativeSequencerObservers {
         const bool headerBound = header.watchAll(
             state.sharedTrackActive,
             state.sharedTrackEnabledMask,
-            state.sequencer.contentView.kind,
-            state.sequencer.contentView.length,
             state.sequencer.contentView.revision
         );
         const bool headerStripBound = headerStrip.watchAll(
@@ -110,8 +108,6 @@ struct RepresentativeSequencerObservers {
             state.sharedTrackEnabledMask,
             state.sequencer.patternChanges.length,
             state.sequencer.page,
-            state.sequencer.contentView.kind,
-            state.sequencer.contentView.length,
             state.sequencer.contentView.revision
         );
         const bool gridBound = grid.watchAll(
@@ -126,8 +122,6 @@ struct RepresentativeSequencerObservers {
             state.sequencer.patternChanges.patternScaleRevision,
             state.sequencerTracks.projectScaleRevisionSignal(),
             state.sequencer.activeStepProperty,
-            state.sequencer.contentView.kind,
-            state.sequencer.contentView.length,
             state.sequencer.contentView.revision
         );
         const bool selectorBound = selector.watchAll(
@@ -135,19 +129,16 @@ struct RepresentativeSequencerObservers {
             state.sequencer.patternChanges.graphRevision,
             state.sequencer.patternChanges.patternTimingRevision,
             state.sequencer.patternChanges.length,
-            state.sequencer.contentView.kind,
-            state.sequencer.contentView.length,
             state.sequencer.contentView.revision,
             state.projectNavigation.contentRevision
         );
         const bool leftStripBound = leftStrip.watchAll(
             state.sequencer.activeStepProperty,
-            state.sequencer.contentView.kind
+            state.sequencer.contentView.revision
         );
         const bool bottomStripBound = bottomStrip.watchAll(
             state.sequencer.activeStepProperty,
             state.sequencer.patternChanges.patternVariationRevision,
-            state.sequencer.contentView.kind,
             state.sequencer.contentView.revision
         );
         const bool encoderSyncBound = encoderSync.watchAll(
@@ -156,8 +147,6 @@ struct RepresentativeSequencerObservers {
             state.sequencer.patternChanges.graphRevision,
             state.sequencer.focusedStep,
             state.sequencer.activeStepProperty,
-            state.sequencer.contentView.kind,
-            state.sequencer.contentView.length,
             state.sequencer.contentView.revision,
             state.sequencer.patternChanges.patternScaleRevision,
             state.sequencerTracks.projectScaleRevisionSignal(),
@@ -251,9 +240,8 @@ void prepareDifferentLiveBank(CoreState& state) {
     state.sequencer.focusedStep.set(63);
     state.sequencer.activeStepProperty.set(StepProperty::PROBABILITY);
 
-    state.sequencer.contentView.kind.set(SequencerContentViewKind::MICRO_SEQUENCE);
-    state.sequencer.contentView.length.set(4);
-    state.sequencer.contentView.depth.set(1);
+    state.sequencer.contentView.frames[0].kind = SequencerContentViewKind::MICRO_SEQUENCE;
+    state.sequencer.contentView.frames[0].length = 4;
     state.sequencer.contentView.stackDepth = 1;
     state.sequencer.contentView.bump();
 }
