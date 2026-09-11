@@ -45,6 +45,24 @@ static void checkFullDomainReplay() {
     }
 }
 
+static void checkInactivePointBitDrift() {
+    auto live = std::make_unique<ProjectControlDomainState>();
+    ProjectControlHistory history;
+    assert(history.prepare(*live) && history.sealCandidate(*live));
+    for (const size_t point : {size_t(0), live->curves.points.size() / 2U,
+                              live->curves.points.size() - 1U}) {
+        auto* bytes = reinterpret_cast<uint8_t*>(&live->curves.points[point]);
+        for (size_t byte = 0U; byte < sizeof(live->curves.points[point]); ++byte) {
+            for (uint8_t bit = 0U; bit < 8U; ++bit) {
+                bytes[byte] ^= uint8_t(1U << bit);
+                assert(!history.matches(*live, false) && !history.matches(*live, true));
+                bytes[byte] ^= uint8_t(1U << bit);
+                assert(history.matches(*live, false) && history.matches(*live, true));
+            }
+        }
+    }
+}
+
 int main() {
     {
         core::app::testing::ScopedExtmemAllocationFailure fail(1U);
@@ -53,6 +71,7 @@ int main() {
         unavailable.clear();
     }
     checkFullDomainReplay();
+    checkInactivePointBitDrift();
     auto before = std::make_unique<ProjectControlDomainState>();
     before->curves.points.back() = {257U, -1200};
     auto after = std::make_unique<ProjectControlDomainState>(*before);

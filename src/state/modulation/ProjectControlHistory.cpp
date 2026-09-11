@@ -8,10 +8,22 @@ namespace core::state::modulation {
 namespace {
 
 FLASHMEM uint64_t controlHash(const ProjectControlDomainState& state) {
+    constexpr uint64_t prime = 1099511628211ULL;
+    static_assert(sizeof(state) % sizeof(uint32_t) == 0U);
     uint64_t hash = 14695981039346656037ULL;
     const auto* bytes = reinterpret_cast<const uint8_t*>(&state);
-    for (size_t index = 0U; index < sizeof(state); ++index) {
-        hash = (hash ^ bytes[index]) * 1099511628211ULL;
+    for (size_t offset = 0U; offset < sizeof(state); offset += sizeof(uint32_t)) {
+        uint32_t word;
+        std::memcpy(&word, bytes + offset, sizeof(word));
+        if (word == 0U) {
+            // Four zero-byte FNV-1a steps, with exactly the same 64-bit result.
+            hash *= prime * prime * prime * prime;
+        } else {
+            const auto* wordBytes = reinterpret_cast<const uint8_t*>(&word);
+            for (size_t index = 0U; index < sizeof(word); ++index) {
+                hash = (hash ^ wordBytes[index]) * prime;
+            }
+        }
     }
     return hash;
 }
