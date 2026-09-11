@@ -13,7 +13,6 @@
 
 namespace core::handler {
 
-namespace encoder_defaults = core::handler::encoder_defaults;
 
 namespace seq = core::state::sequencer;
 using ButtonID = Config::ButtonID;

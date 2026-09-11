@@ -8,7 +8,6 @@
 
 namespace core::handler {
 
-namespace encoder_defaults = core::handler::encoder_defaults;
 
 FLASHMEM MacroPerformanceModeWorkflow::MacroPerformanceModeWorkflow(
     StateRefs state,

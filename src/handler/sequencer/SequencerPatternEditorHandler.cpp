@@ -21,7 +21,6 @@
 namespace core::handler {
 
 namespace normalized = core::state::normalized;
-namespace encoder_defaults = core::handler::encoder_defaults;
 namespace {
 
 namespace input_utils = core::handler::sequencer::input_utils;

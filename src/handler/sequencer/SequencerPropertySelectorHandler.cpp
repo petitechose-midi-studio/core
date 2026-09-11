@@ -17,7 +17,6 @@
 
 namespace core::handler {
 
-namespace encoder_defaults = core::handler::encoder_defaults;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;

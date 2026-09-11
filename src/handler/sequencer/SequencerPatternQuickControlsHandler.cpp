@@ -19,7 +19,6 @@
 namespace core::handler {
 
 namespace normalized = core::state::normalized;
-namespace encoder_defaults = core::handler::encoder_defaults;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;

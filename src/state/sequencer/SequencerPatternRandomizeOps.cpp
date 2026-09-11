@@ -7,7 +7,6 @@
 
 namespace core::state::sequencer {
 
-namespace pitch_edit = core::state::sequencer::pitch_edit;
 
 namespace {
 
