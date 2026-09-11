@@ -72,7 +72,6 @@ bool nodeHasCycleStates(
     const Node& node
 );
 
-uint8_t normalizeSequenceIndex(uint8_t playIndex, int8_t offset, uint8_t length);
 uint32_t boundaryTick(uint8_t playIndex, uint32_t spanTicks, uint8_t length);
 uint32_t effectiveGateSpan(uint32_t spanTicks, uint16_t gatePercent);
 bool resolveRepresentativeChildContentStep(

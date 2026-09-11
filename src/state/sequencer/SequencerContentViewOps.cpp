@@ -7,6 +7,7 @@
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::state::sequencer {
+namespace note = oc::note::sequencer;
 using namespace content_view_internal;
 
 namespace {
@@ -552,14 +553,14 @@ FLASHMEM SequencerGraphNodeId preparedSequencerContentStepNodeId(
     if (frame.kind == SequencerContentViewKind::MICRO_SEQUENCE) {
         const auto* sequence = graph->sequence(frame.sequenceId);
         if (sequence == nullptr || step >= sequence->length) return kInvalidId;
-        const uint8_t sourceIndex = normalizeSequenceIndex(
+        const uint8_t sourceIndex = note::normalizeSequenceIndex(
             step, sequence->offset, sequence->length);
         return static_cast<uint16_t>(sequence->firstStepNode + sourceIndex);
     }
     if (frame.kind == SequencerContentViewKind::CYCLE_STATES) {
         const auto* cycleSet = graph->cycleSet(frame.cycleSetId);
         if (cycleSet == nullptr || step >= cycleSet->length) return kInvalidId;
-        const uint8_t sourceIndex = normalizeSequenceIndex(
+        const uint8_t sourceIndex = note::normalizeSequenceIndex(
             step, cycleSet->offset, cycleSet->length);
         return static_cast<uint16_t>(cycleSet->firstStateNode + sourceIndex);
     }

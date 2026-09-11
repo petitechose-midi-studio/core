@@ -11,6 +11,7 @@
 #include "state/sequencer/DrumPatternState.hpp"
 
 namespace core::state::sequencer::content_view_internal {
+namespace note = oc::note::sequencer;
 
 namespace normalized = core::state::normalized;
 namespace pitch_edit = core::state::sequencer::pitch_edit;
@@ -76,11 +77,6 @@ FLASHMEM ResolvedStep contentBaseForKind(
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 );
 
-FLASHMEM uint8_t clampMidi7Offset(uint8_t base, int16_t offset) {
-    const int value = static_cast<int>(base) + static_cast<int>(offset);
-    return static_cast<uint8_t>(std::clamp(value, 0, 127));
-}
-
 FLASHMEM uint8_t applyNoteOffset(
     uint8_t base,
     int8_t offset,
@@ -92,24 +88,7 @@ FLASHMEM uint8_t applyNoteOffset(
         scaleSettings.clamp();
         return oc::note::sequencer::moveByScaleDegrees(base, offset, scaleSettings);
     }
-    return clampMidi7Offset(base, offset);
-}
-
-FLASHMEM uint16_t clampGateOffset(uint16_t base, int16_t offset) {
-    const int value = static_cast<int>(base) + static_cast<int>(offset);
-    return static_cast<uint16_t>(
-        std::clamp(value, 0, static_cast<int>(SequencerState::MAX_GATE_PERCENT))
-    );
-}
-
-FLASHMEM int8_t clampNudgeOffset(int8_t base, int8_t offset) {
-    const int value = static_cast<int>(base) + static_cast<int>(offset);
-    return static_cast<int8_t>(std::clamp(value, -50, 50));
-}
-
-FLASHMEM uint8_t clampProbabilityOffset(uint8_t base, int16_t offset) {
-    const int value = static_cast<int>(base) + static_cast<int>(offset);
-    return static_cast<uint8_t>(std::clamp(value, 0, 100));
+    return note::clampMidi7(static_cast<int>(base) + offset);
 }
 
 FLASHMEM oc::note::sequencer::StepSequencerInheritedChord activeChordForChildren(
@@ -156,16 +135,18 @@ FLASHMEM ResolvedStep applyNode(
         );
     }
     if (node.has(oc::note::sequencer::STEP_NODE_VELOCITY_OFFSET)) {
-        parent.velocity = clampMidi7Offset(parent.velocity, node.velocityOffset);
+        parent.velocity = note::clampMidi7(static_cast<int>(parent.velocity) + node.velocityOffset);
     }
     if (node.has(oc::note::sequencer::STEP_NODE_GATE_OFFSET)) {
-        parent.gate = clampGateOffset(parent.gate, node.gateOffset);
+        parent.gate = note::clampGatePercent(
+            static_cast<int>(parent.gate) + node.gateOffset, SequencerState::MAX_GATE_PERCENT
+        );
     }
     if (node.has(oc::note::sequencer::STEP_NODE_NUDGE_OFFSET)) {
-        parent.nudge = clampNudgeOffset(parent.nudge, node.nudgeOffset);
+        parent.nudge = note::clampNudge(static_cast<int>(parent.nudge) + node.nudgeOffset);
     }
     if (node.has(oc::note::sequencer::STEP_NODE_PROBABILITY_OFFSET)) {
-        parent.probability = clampProbabilityOffset(parent.probability, node.probabilityOffset);
+        parent.probability = note::clampProbability(static_cast<int>(parent.probability) + node.probabilityOffset);
     }
     if (node.has(oc::note::sequencer::STEP_NODE_CHORD_MODE)) {
         parent.chordState.mode = node.chordMode;
@@ -262,15 +243,6 @@ FLASHMEM bool ownsChildContent(const Node& node) {
            node.has(oc::note::sequencer::STEP_NODE_CYCLE_SET);
 }
 
-FLASHMEM uint8_t normalizeSequenceIndex(uint8_t playIndex, int8_t offset, uint8_t length) {
-    if (length == 0) return 0;
-    int value = static_cast<int>(playIndex) - static_cast<int>(offset);
-    const int len = static_cast<int>(length);
-    value %= len;
-    if (value < 0) value += len;
-    return static_cast<uint8_t>(value);
-}
-
 FLASHMEM uint32_t boundaryTick(uint8_t playIndex, uint32_t spanTicks, uint8_t length) {
     if (length == 0) return 0;
     return (static_cast<uint32_t>(playIndex) * spanTicks) / static_cast<uint32_t>(length);
@@ -289,7 +261,7 @@ FLASHMEM uint16_t selectCycleStateNode(
     const auto* cycleSet = graph.cycleSet(cycleSetId);
     if (cycleSet == nullptr || cycleSet->length == 0) return kInvalidId;
 
-    const uint8_t stateIndex = normalizeSequenceIndex(
+    const uint8_t stateIndex = note::normalizeSequenceIndex(
         static_cast<uint8_t>(cycleCursor % cycleSet->length),
         cycleSet->offset,
         cycleSet->length
@@ -305,35 +277,9 @@ FLASHMEM void captureRepresentativeNode(
     if (outSummary == nullptr) return;
 
     outSummary->nodeId = nodeId;
-    outSummary->localVariation.pitchSemitones = static_cast<uint8_t>(
-        std::min<uint16_t>(
-            static_cast<uint16_t>(outSummary->localVariation.pitchSemitones) +
-                node.localVariation.pitchSemitones,
-            oc::note::sequencer::StepSequencerVariationRanges::MAX_PITCH_SEMITONES
-        )
+    outSummary->localVariation = note::combineVariationRanges(
+        outSummary->localVariation, node.localVariation
     );
-    outSummary->localVariation.velocity = static_cast<uint8_t>(
-        std::min<uint16_t>(
-            static_cast<uint16_t>(outSummary->localVariation.velocity) +
-                node.localVariation.velocity,
-            oc::note::sequencer::StepSequencerVariationRanges::MAX_VELOCITY
-        )
-    );
-    outSummary->localVariation.gatePercent = static_cast<uint8_t>(
-        std::min<uint16_t>(
-            static_cast<uint16_t>(outSummary->localVariation.gatePercent) +
-                node.localVariation.gatePercent,
-            oc::note::sequencer::StepSequencerVariationRanges::MAX_GATE_PERCENT
-        )
-    );
-    outSummary->localVariation.nudge = static_cast<uint8_t>(
-        std::min<uint16_t>(
-            static_cast<uint16_t>(outSummary->localVariation.nudge) +
-                node.localVariation.nudge,
-            oc::note::sequencer::StepSequencerVariationRanges::MAX_NUDGE
-        )
-    );
-    outSummary->localVariation.clamp();
 }
 
 FLASHMEM bool resolveRepresentativeChildContentStep(
@@ -403,7 +349,7 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
         return touchedChild;
     }
 
-    const uint8_t sourceIndex = normalizeSequenceIndex(
+    const uint8_t sourceIndex = note::normalizeSequenceIndex(
         static_cast<uint8_t>(microPlayIndex % sequence->length),
         sequence->offset,
         sequence->length
@@ -639,14 +585,14 @@ FLASHMEM SequencerGraphNodeId stepNodeIdForFrame(
     if (frame.kind == SequencerContentViewKind::MICRO_SEQUENCE) {
         const auto* sequence = graph->sequence(frame.sequenceId);
         if (sequence == nullptr || step >= sequence->length) return kInvalidId;
-        const uint8_t sourceIndex = normalizeSequenceIndex(step, sequence->offset, sequence->length);
+        const uint8_t sourceIndex = note::normalizeSequenceIndex(step, sequence->offset, sequence->length);
         return static_cast<uint16_t>(sequence->firstStepNode + sourceIndex);
     }
 
     if (frame.kind == SequencerContentViewKind::CYCLE_STATES) {
         const auto* cycleSet = graph->cycleSet(frame.cycleSetId);
         if (cycleSet == nullptr || step >= cycleSet->length) return kInvalidId;
-        const uint8_t sourceIndex = normalizeSequenceIndex(step, cycleSet->offset, cycleSet->length);
+        const uint8_t sourceIndex = note::normalizeSequenceIndex(step, cycleSet->offset, cycleSet->length);
         return static_cast<uint16_t>(cycleSet->firstStateNode + sourceIndex);
     }
 

@@ -11,42 +11,6 @@ namespace core::state::sequencer {
 
 namespace {
 
-FLASHMEM oc::note::sequencer::StepSequencerVariationRanges combineVariationRanges(
-    oc::note::sequencer::StepSequencerVariationRanges global,
-    oc::note::sequencer::StepSequencerVariationRanges local
-) {
-    using Ranges = oc::note::sequencer::StepSequencerVariationRanges;
-
-    global.clamp();
-    local.clamp();
-    return {
-        .pitchSemitones = static_cast<uint8_t>(
-            std::min<uint16_t>(
-                static_cast<uint16_t>(global.pitchSemitones) + local.pitchSemitones,
-                Ranges::MAX_PITCH_SEMITONES
-            )
-        ),
-        .velocity = static_cast<uint8_t>(
-            std::min<uint16_t>(
-                static_cast<uint16_t>(global.velocity) + local.velocity,
-                Ranges::MAX_VELOCITY
-            )
-        ),
-        .gatePercent = static_cast<uint8_t>(
-            std::min<uint16_t>(
-                static_cast<uint16_t>(global.gatePercent) + local.gatePercent,
-                Ranges::MAX_GATE_PERCENT
-            )
-        ),
-        .nudge = static_cast<uint8_t>(
-            std::min<uint16_t>(
-                static_cast<uint16_t>(global.nudge) + local.nudge,
-                Ranges::MAX_NUDGE
-            )
-        ),
-    };
-}
-
 FLASHMEM oc::note::sequencer::StepSequencerVariationRanges localVariationForNode(
     const oc::note::sequencer::StepSequencerGraph* graph,
     SequencerGraphNodeId nodeId
@@ -74,7 +38,7 @@ FLASHMEM oc::note::sequencer::StepSequencerVariationRanges inheritedLocalVariati
         static_cast<uint8_t>(view.frames.size())
     );
     for (uint8_t i = 0; i < depth; ++i) {
-        ranges = combineVariationRanges(
+        ranges = oc::note::sequencer::combineVariationRanges(
             ranges,
             localVariationForNode(graph, view.frames[i].ownerNodeId)
         );
@@ -489,11 +453,11 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
     step.nodeId = projection.nodeId;
     step.runtimeNodeId = projection.nodeId;
 
-    const auto localVariation = combineVariationRanges(
+    const auto localVariation = oc::note::sequencer::combineVariationRanges(
         context.inheritedLocalVariation,
         localVariationForNode(context.graph, projection.nodeId)
     );
-    const auto effectiveVariationRanges = combineVariationRanges(
+    const auto effectiveVariationRanges = oc::note::sequencer::combineVariationRanges(
         authoringPattern(sequencer).variationRanges,
         localVariation
     );
@@ -515,7 +479,7 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
     const bool childSummaryChanged =
         childSummaryTouched && childSummaryDiffersFromProjection(projection, childSummary);
     const auto childSummaryEffectiveVariationRanges = childSummaryTouched
-        ? combineVariationRanges(effectiveVariationRanges, childSummary.localVariation)
+        ? oc::note::sequencer::combineVariationRanges(effectiveVariationRanges, childSummary.localVariation)
         : effectiveVariationRanges;
     const bool childSummaryHasVariationRanges =
         childSummaryTouched &&
