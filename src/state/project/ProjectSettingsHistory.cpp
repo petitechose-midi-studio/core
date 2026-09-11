@@ -95,40 +95,24 @@ FLASHMEM bool ProjectSettingsHistoryService::record(
 ) {
     if (sameProjectSettingsHistorySnapshot(before, after)) return false;
 
-    if (coalesce && coalescing_ && undo_count_ > 0U &&
+    if (coalesce && coalescing_ &&
         coalesced_kind_ == kind && coalesced_subject_ == subject) {
-        const uint8_t slot = undo_slots_[undo_count_ - 1U];
-        if (slot < ENTRY_LIMIT && entries_[slot].occupied &&
-            sameProjectSettingsHistorySnapshot(entries_[slot].after, before)) {
-            entries_[slot].after = after;
-            clearRedo_();
+        auto* previous = slots_.peek(ProjectHistoryDirection::Undo);
+        if (previous && sameProjectSettingsHistorySnapshot(previous->after, before)) {
+            previous->after = after;
+            slots_.discardRedo(project_history_sink_);
             return true;
         }
     }
 
     endCoalescing();
-    clearRedo_();
-    uint8_t slot = acquireSlot_();
-    if (slot == INVALID_SLOT) {
-        evictOldestUndo_();
-        slot = acquireSlot_();
-    }
-    if (slot == INVALID_SLOT || undo_count_ >= ENTRY_LIMIT) return false;
-    entries_[slot] = ProjectSettingsHistoryEntry{
-        .before = before,
-        .after = after,
-        .kind = kind,
-        .subject = subject,
-        .occupied = true,
-    };
-    undo_slots_[undo_count_++] = slot;
-    if (project_history_sink_ != nullptr) {
-        project_history_sink_->notifyCommitted(
-            ProjectHistoryDomain::Settings,
-            identity_(slot),
-            static_cast<uint8_t>(kind)
-        );
-    }
+    if (!slots_.record(static_cast<uint8_t>(kind), project_history_sink_,
+            [&](ProjectSettingsHistoryEntry& entry) noexcept {
+                entry.before = before;
+                entry.after = after;
+                entry.kind = kind;
+                entry.subject = subject;
+            })) return false;
     coalescing_ = coalesce;
     coalesced_kind_ = kind;
     coalesced_subject_ = subject;
@@ -139,139 +123,48 @@ FLASHMEM bool ProjectSettingsHistoryService::undo(
     StatusBarState& statusBar,
     ProjectNavigationState& navigation
 ) {
-    endCoalescing();
-    if (undo_count_ == 0U || redo_count_ >= ENTRY_LIMIT) return false;
-    const uint8_t slot = undo_slots_[undo_count_ - 1U];
-    if (slot >= ENTRY_LIMIT || !entries_[slot].occupied) return false;
-    auto& entry = entries_[slot];
-    if (!sameProjectSettingsHistorySnapshot(
-            captureProjectSettingsHistorySnapshot(statusBar, navigation),
-            entry.after
-        ) ||
-        !applyProjectSettingsHistorySnapshot(
-            statusBar,
-            navigation,
-            entry.before
-        )) {
-        return false;
-    }
-    --undo_count_;
-    undo_slots_[undo_count_] = INVALID_SLOT;
-    redo_slots_[redo_count_++] = slot;
-    if (project_history_sink_ != nullptr) {
-        project_history_sink_->notifyApplied(
-            ProjectHistoryDomain::Settings,
-            identity_(slot),
-            ProjectHistoryDirection::Undo
-        );
-    }
-    return true;
+    return apply_(statusBar, navigation, ProjectHistoryDirection::Undo);
 }
 
 FLASHMEM bool ProjectSettingsHistoryService::redo(
     StatusBarState& statusBar,
     ProjectNavigationState& navigation
 ) {
+    return apply_(statusBar, navigation, ProjectHistoryDirection::Redo);
+}
+
+FLASHMEM bool ProjectSettingsHistoryService::apply_(
+    StatusBarState& statusBar,
+    ProjectNavigationState& navigation,
+    ProjectHistoryDirection direction
+) {
     endCoalescing();
-    if (redo_count_ == 0U || undo_count_ >= ENTRY_LIMIT) return false;
-    const uint8_t slot = redo_slots_[redo_count_ - 1U];
-    if (slot >= ENTRY_LIMIT || !entries_[slot].occupied) return false;
-    auto& entry = entries_[slot];
-    if (!sameProjectSettingsHistorySnapshot(
-            captureProjectSettingsHistorySnapshot(statusBar, navigation),
-            entry.before
-        ) ||
-        !applyProjectSettingsHistorySnapshot(
-            statusBar,
-            navigation,
-            entry.after
-        )) {
-        return false;
-    }
-    --redo_count_;
-    redo_slots_[redo_count_] = INVALID_SLOT;
-    undo_slots_[undo_count_++] = slot;
-    if (project_history_sink_ != nullptr) {
-        project_history_sink_->notifyApplied(
-            ProjectHistoryDomain::Settings,
-            identity_(slot),
-            ProjectHistoryDirection::Redo
-        );
-    }
-    return true;
+    return slots_.apply(direction, project_history_sink_,
+        [&](const ProjectSettingsHistoryEntry& entry) {
+            const bool undo = direction == ProjectHistoryDirection::Undo;
+            return sameProjectSettingsHistorySnapshot(
+                       captureProjectSettingsHistorySnapshot(statusBar, navigation),
+                       undo ? entry.after : entry.before) &&
+                   applyProjectSettingsHistorySnapshot(
+                       statusBar, navigation, undo ? entry.before : entry.after);
+        });
 }
 
 FLASHMEM void ProjectSettingsHistoryService::clear() {
-    if (project_history_sink_ != nullptr) {
-        project_history_sink_->notifyCleared(ProjectHistoryDomain::Settings);
-    }
-    entries_ = {};
-    undo_slots_.fill(INVALID_SLOT);
-    redo_slots_.fill(INVALID_SLOT);
-    undo_count_ = 0U;
-    redo_count_ = 0U;
-    coalescing_ = false;
+    slots_.clear(project_history_sink_);
+    endCoalescing();
 }
 
 FLASHMEM void ProjectSettingsHistoryService::discardRedoBranch() {
-    clearRedo_();
+    slots_.discardRedo(project_history_sink_);
 }
 
 FLASHMEM uintptr_t ProjectSettingsHistoryService::projectHistoryUndoIdentity() const {
-    return undo_count_ == 0U ? 0U : identity_(undo_slots_[undo_count_ - 1U]);
+    return slots_.identity(ProjectHistoryDirection::Undo);
 }
 
 FLASHMEM uintptr_t ProjectSettingsHistoryService::projectHistoryRedoIdentity() const {
-    return redo_count_ == 0U ? 0U : identity_(redo_slots_[redo_count_ - 1U]);
-}
-
-FLASHMEM uint8_t ProjectSettingsHistoryService::acquireSlot_() const {
-    for (uint8_t slot = 0U; slot < ENTRY_LIMIT; ++slot) {
-        if (!entries_[slot].occupied) return slot;
-    }
-    return INVALID_SLOT;
-}
-
-FLASHMEM void ProjectSettingsHistoryService::releaseSlot_(uint8_t slot) {
-    if (slot < ENTRY_LIMIT) entries_[slot] = {};
-}
-
-FLASHMEM void ProjectSettingsHistoryService::evictOldestUndo_() {
-    if (undo_count_ == 0U) return;
-    const uint8_t slot = undo_slots_[0];
-    if (project_history_sink_ != nullptr && slot < ENTRY_LIMIT) {
-        project_history_sink_->notifyEvicted(
-            ProjectHistoryDomain::Settings,
-            identity_(slot)
-        );
-    }
-    for (uint8_t index = 1U; index < undo_count_; ++index) {
-        undo_slots_[index - 1U] = undo_slots_[index];
-    }
-    --undo_count_;
-    undo_slots_[undo_count_] = INVALID_SLOT;
-    releaseSlot_(slot);
-}
-
-FLASHMEM void ProjectSettingsHistoryService::clearRedo_() {
-    for (uint8_t index = 0U; index < redo_count_; ++index) {
-        const uint8_t slot = redo_slots_[index];
-        if (project_history_sink_ != nullptr && slot < ENTRY_LIMIT) {
-            project_history_sink_->notifyEvicted(
-                ProjectHistoryDomain::Settings,
-                identity_(slot)
-            );
-        }
-        releaseSlot_(slot);
-        redo_slots_[index] = INVALID_SLOT;
-    }
-    redo_count_ = 0U;
-}
-
-FLASHMEM uintptr_t ProjectSettingsHistoryService::identity_(uint8_t slot) const {
-    return slot < ENTRY_LIMIT
-        ? reinterpret_cast<uintptr_t>(&entries_[slot])
-        : 0U;
+    return slots_.identity(ProjectHistoryDirection::Redo);
 }
 
 }  // namespace core::state::project

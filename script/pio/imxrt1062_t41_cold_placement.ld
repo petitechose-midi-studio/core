@@ -58,6 +58,11 @@
 *SequencerStructureHistory.cpp.o(.text* .rodata*)
 *SequencerTrackBankOps.cpp.o(.text* .rodata*)
 
+/* Stable-slot history templates keep per-function COMDAT sections. Putting
+ * them in FLASHMEM directly conflicts with ordinary non-template functions. */
+*(.text._ZN4core5state7project19ProjectHistorySlots*)
+*(.text._ZNK4core5state7project19ProjectHistorySlots*)
+
 /* Project read/write workspace allocation is a storage-boundary operation.
  * These inline helpers may be emitted by more than one persistence unit. */
 *(.text._ZN4core11persistence24ProjectFileReadWorkspace7prepareEv*)

@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "state/StatusBarState.hpp"
-#include "state/project/ProjectHistoryEventSink.hpp"
+#include "state/project/ProjectHistorySlots.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 
 namespace core::state::project {
@@ -89,19 +89,11 @@ public:
     [[nodiscard]] uintptr_t projectHistoryRedoIdentity() const;
 
 private:
-    static constexpr uint8_t INVALID_SLOT = ENTRY_LIMIT;
+    [[nodiscard]] bool apply_(StatusBarState& statusBar,
+                              ProjectNavigationState& navigation,
+                              ProjectHistoryDirection direction);
 
-    [[nodiscard]] uint8_t acquireSlot_() const;
-    void releaseSlot_(uint8_t slot);
-    void evictOldestUndo_();
-    void clearRedo_();
-    [[nodiscard]] uintptr_t identity_(uint8_t slot) const;
-
-    std::array<ProjectSettingsHistoryEntry, ENTRY_LIMIT> entries_{};
-    std::array<uint8_t, ENTRY_LIMIT> undo_slots_{};
-    std::array<uint8_t, ENTRY_LIMIT> redo_slots_{};
-    uint8_t undo_count_ = 0U;
-    uint8_t redo_count_ = 0U;
+    ProjectHistorySlots<ProjectSettingsHistoryEntry, ProjectHistoryDomain::Settings, ENTRY_LIMIT> slots_{};
     bool coalescing_ = false;
     ProjectSettingsHistoryActionKind coalesced_kind_ =
         ProjectSettingsHistoryActionKind::Tempo;

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 
-#include "state/project/ProjectHistoryEventSink.hpp"
+#include "state/project/ProjectHistorySlots.hpp"
 #include "state/project/ProjectTrackState.hpp"
 
 namespace core::state::project {
@@ -62,30 +61,24 @@ public:
     void clear();
     void discardRedoBranch();
 
-    [[nodiscard]] uint8_t undoCount() const { return undo_count_; }
-    [[nodiscard]] uint8_t redoCount() const { return redo_count_; }
+    [[nodiscard]] uint8_t undoCount() const { return slots_.undoCount(); }
+    [[nodiscard]] uint8_t redoCount() const { return slots_.redoCount(); }
     [[nodiscard]] uintptr_t projectHistoryUndoIdentity() const;
     [[nodiscard]] uintptr_t projectHistoryRedoIdentity() const;
     [[nodiscard]] const ProjectTrackHistoryEntry* peekUndo() const;
     [[nodiscard]] const ProjectTrackHistoryEntry* peekRedo() const;
     [[nodiscard]] constexpr size_t retainedBytes() const {
-        return sizeof(entries_) + sizeof(undo_slots_) + sizeof(redo_slots_);
+        return slots_.retainedBytes();
     }
 
 private:
-    static constexpr uint8_t INVALID_SLOT = ENTRY_LIMIT;
-
-    [[nodiscard]] uint8_t acquireSlot_();
     [[nodiscard]] bool record_(
         const ProjectTrackSnapshot& before,
         const ProjectTrackSnapshot& after,
         ProjectTrackHistoryActionKind kind,
         uint8_t trackIndex
     );
-    void releaseSlot_(uint8_t slot);
-    void evictOldestUndo_();
-    void clearRedo_();
-    [[nodiscard]] uintptr_t identity_(uint8_t slot) const;
+    [[nodiscard]] bool apply_(ProjectTrackState& state, ProjectHistoryDirection direction);
 
     struct PendingGesture {
         ProjectTrackSnapshot before{};
@@ -95,11 +88,7 @@ private:
         bool active = false;
     };
 
-    std::array<ProjectTrackHistoryEntry, ENTRY_LIMIT> entries_{};
-    std::array<uint8_t, ENTRY_LIMIT> undo_slots_{};
-    std::array<uint8_t, ENTRY_LIMIT> redo_slots_{};
-    uint8_t undo_count_ = 0U;
-    uint8_t redo_count_ = 0U;
+    ProjectHistorySlots<ProjectTrackHistoryEntry, ProjectHistoryDomain::Track, ENTRY_LIMIT> slots_{};
     PendingGesture pending_gesture_{};
     const ProjectHistoryEventSink* project_history_sink_ = nullptr;
 };
