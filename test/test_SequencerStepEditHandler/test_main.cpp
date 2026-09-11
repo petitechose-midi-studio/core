@@ -840,8 +840,8 @@ void test_create_edit_and_commit_micro_sequence_context() {
     h.tap(Config::ButtonID::NAV);
     assert(!h.state.sequencer.stepEdit.visible.get());
     assert(core::state::sequencer::isMicroSequenceContentView(h.state.sequencer));
-    assert(h.state.sequencer.contentView.parentStep.get() == 3);
-    assert(h.state.sequencer.contentView.length.get() == 2);
+    assert(h.state.sequencer.contentView.currentFrame()->ownerRootStep == 3);
+    assert(h.state.sequencer.contentView.currentFrame()->length == 2);
     assert(h.state.sequencer.page.get() == 0);
     assert(h.state.sequencer.focusedStep.get() == 0);
     assert(!stepHasMicroSequence(h.state.sequencer.pattern(), 3));
@@ -874,7 +874,7 @@ void test_create_edit_and_commit_micro_sequence_context() {
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::LENGTH);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.contentView.length.get() == 16);
+    assert(h.state.sequencer.contentView.currentFrame()->length == 16);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
 
@@ -924,7 +924,7 @@ void test_step_edit_opens_nested_content_from_child_contexts() {
     h.tap(Config::ButtonID::NAV);
     assert(core::state::sequencer::isMicroSequenceContentView(h.state.sequencer));
     assert(core::state::sequencer::activeContentDepth(h.state.sequencer) == 2);
-    assert(h.state.sequencer.contentView.length.get() == 2);
+    assert(h.state.sequencer.contentView.currentFrame()->length == 2);
 
     assert(core::state::sequencer::leaveContentView(h.state.sequencer));
     assert(core::state::sequencer::isMicroSequenceContentView(h.state.sequencer));
@@ -936,7 +936,7 @@ void test_step_edit_opens_nested_content_from_child_contexts() {
     h.tap(Config::ButtonID::NAV);
     assert(core::state::sequencer::isCycleStatesContentView(h.state.sequencer));
     assert(core::state::sequencer::activeContentDepth(h.state.sequencer) == 2);
-    assert(h.state.sequencer.contentView.length.get() == 4);
+    assert(h.state.sequencer.contentView.currentFrame()->length == 4);
 
     assert(core::state::sequencer::leaveContentView(h.state.sequencer));
     assert(core::state::sequencer::isMicroSequenceContentView(h.state.sequencer));
@@ -1022,7 +1022,7 @@ void test_child_context_offset_wraps_steps_from_quick_controls() {
     h.turn(Config::EncoderID::OPT, 4.0f / 6.0f);
     graph = h.state.sequencer.pattern().graph.get();
     assert(graph != nullptr);
-    sequence = graph->sequence(h.state.sequencer.contentView.sequenceId.get());
+    sequence = graph->sequence(h.state.sequencer.contentView.currentFrame()->sequenceId);
     assert(sequence != nullptr);
     assert(sequence->offset == 0);
     h.release(Config::ButtonID::LEFT_CENTER);
@@ -1572,9 +1572,9 @@ void test_graph_compaction_remaps_or_closes_active_child_content_view() {
         assert(core::state::sequencer::compactSequencerGraph(state));
 
         assert(core::state::sequencer::isMicroSequenceContentView(state));
-        assert(state.contentView.ownerNodeId.get() == secondRoot);
-        assert(state.contentView.sequenceId.get() == 1);
-        assert(state.contentView.length.get() == 2);
+        assert(state.contentView.currentFrame()->ownerNodeId == secondRoot);
+        assert(state.contentView.currentFrame()->sequenceId == 1);
+        assert(state.contentView.currentFrame()->length == 2);
     }
 
     {
@@ -1588,8 +1588,7 @@ void test_graph_compaction_remaps_or_closes_active_child_content_view() {
         assert(core::state::sequencer::compactSequencerGraph(state));
 
         assert(core::state::sequencer::isRootContentView(state));
-        assert(state.contentView.ownerNodeId.get() ==
-               oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID);
+        assert(state.contentView.currentFrame() == nullptr);
     }
 
     std::cout << "[PASS] test_graph_compaction_remaps_or_closes_active_child_content_view\n";

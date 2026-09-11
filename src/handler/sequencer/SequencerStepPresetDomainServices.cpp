@@ -188,14 +188,6 @@ FLASHMEM bool samePresetBytesOutsideSemanticName(const uint8_t* before, uint16_t
 FLASHMEM void copyContentViewState(
     core::state::sequencer::SequencerContentViewState& target,
     const core::state::sequencer::SequencerContentViewState& source) {
-    target.kind.set(source.kind.get());
-    target.parentStep.set(source.parentStep.get());
-    target.ownerNodeId.set(source.ownerNodeId.get());
-    target.sequenceId.set(source.sequenceId.get());
-    target.cycleSetId.set(source.cycleSetId.get());
-    target.length.set(source.length.get());
-    target.depth.set(source.depth.get());
-    target.revision.set(source.revision.get());
     target.rootPageSnapshot = source.rootPageSnapshot;
     target.rootFocusSnapshot = source.rootFocusSnapshot;
     target.stackDepth = source.stackDepth;
@@ -205,6 +197,7 @@ FLASHMEM void copyContentViewState(
     target.drumOwnerLane = source.drumOwnerLane;
     target.drumOwnerStep = source.drumOwnerStep;
     target.drumOwnerRootSlot = source.drumOwnerRootSlot;
+    target.revision.set(source.revision.get());
 }
 
 FLASHMEM void copyEditorContextForStaging(core::state::sequencer::SequencerState& target,
@@ -710,7 +703,9 @@ FLASHMEM SequencerStepPresetTarget SequencerStepPresetDomainServices::captureTar
     const auto& sequencer = state_->sequencer;
     target.trackIndex = state_->sequencerTracks.activeTrackIndex();
     target.stepIndex = sequencer.stepEdit.stepIndex.get();
-    switch (sequencer.contentView.kind.get()) {
+    const auto* frame = sequencer.contentView.currentFrame();
+    if (sequencer.contentView.stackDepth > 0 && frame == nullptr) return target;
+    switch (frame ? frame->kind : core::state::sequencer::SequencerContentViewKind::ROOT) {
         case core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE:
             target.contentContext =
                 core::state::sequencer::SequencerStepPresetTargetContext::MICRO_SEQUENCE;
@@ -724,9 +719,11 @@ FLASHMEM SequencerStepPresetTarget SequencerStepPresetDomainServices::captureTar
             target.contentContext = core::state::sequencer::SequencerStepPresetTargetContext::ROOT;
             break;
     }
-    target.ownerNodeId = sequencer.contentView.ownerNodeId.get();
-    target.sequenceId = sequencer.contentView.sequenceId.get();
-    target.cycleSetId = sequencer.contentView.cycleSetId.get();
+    if (frame) {
+        target.ownerNodeId = frame->ownerNodeId;
+        target.sequenceId = frame->sequenceId;
+        target.cycleSetId = frame->cycleSetId;
+    }
     const bool drumContext = sequencer.stepEdit.drumContext &&
         state_->sequencerTracks.isDrumTrack(target.trackIndex);
     if (drumContext) {

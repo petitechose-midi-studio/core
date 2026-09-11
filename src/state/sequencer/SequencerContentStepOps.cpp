@@ -61,13 +61,13 @@ FLASHMEM bool rotateActiveContentSteps(SequencerState& sequencer, int offsetStep
     if (isMicroSequenceContentView(sequencer)) {
         changed = rotateMicroSequenceSteps(
             pattern,
-            sequencer.contentView.sequenceId.get(),
+            sequencer.contentView.currentFrame()->sequenceId,
             offsetSteps
         );
     } else if (isCycleStatesContentView(sequencer)) {
         changed = rotateCycleStateSetSteps(
             pattern,
-            sequencer.contentView.cycleSetId.get(),
+            sequencer.contentView.currentFrame()->cycleSetId,
             offsetSteps
         );
     }
@@ -230,20 +230,11 @@ FLASHMEM bool resizeActiveMicroSequenceContent(SequencerState& sequencer, uint8_
     const uint8_t clamped = std::clamp<uint8_t>(length, MICRO_LENGTH_MIN, MICRO_LENGTH_MAX);
     const bool changed = resizeMicroSequence(
         authoringPattern(sequencer),
-        sequencer.contentView.sequenceId.get(),
+        sequencer.contentView.currentFrame()->sequenceId,
         clamped
     );
     refreshContentView(sequencer);
-    const uint8_t nextLength = activeContentLength(sequencer);
-    if (nextLength == 0) return changed;
-    if (sequencer.focusedStep.get() >= nextLength) {
-        sequencer.focusedStep.set(static_cast<uint8_t>(nextLength - 1U));
-    }
-    sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
-    if (changed) {
-        sequencer.contentView.bump();
-        notifyStepContentDraftMutation(sequencer);
-    }
+    if (changed) notifyStepContentDraftMutation(sequencer);
     return changed;
 }
 
@@ -253,20 +244,11 @@ FLASHMEM bool resizeActiveCycleStatesContent(SequencerState& sequencer, uint8_t 
         std::clamp<uint8_t>(length, CYCLE_STATE_LENGTH_MIN, CYCLE_STATE_LENGTH_MAX);
     const bool changed = resizeCycleStateSet(
         authoringPattern(sequencer),
-        sequencer.contentView.cycleSetId.get(),
+        sequencer.contentView.currentFrame()->cycleSetId,
         clamped
     );
     refreshContentView(sequencer);
-    const uint8_t nextLength = activeContentLength(sequencer);
-    if (nextLength == 0) return changed;
-    if (sequencer.focusedStep.get() >= nextLength) {
-        sequencer.focusedStep.set(static_cast<uint8_t>(nextLength - 1U));
-    }
-    sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
-    if (changed) {
-        sequencer.contentView.bump();
-        notifyStepContentDraftMutation(sequencer);
-    }
+    if (changed) notifyStepContentDraftMutation(sequencer);
     return changed;
 }
 

@@ -419,33 +419,6 @@ FLASHMEM uint8_t ownerRootStepForNewFrame(
     return frame ? frame->ownerRootStep : 0;
 }
 
-FLASHMEM void syncPublicViewFields(SequencerContentViewState& view) {
-    if (view.stackDepth == 0) {
-        view.kind.set(SequencerContentViewKind::ROOT);
-        view.parentStep.set(0);
-        view.ownerNodeId.set(kInvalidId);
-        view.sequenceId.set(kInvalidId);
-        view.cycleSetId.set(kInvalidId);
-        view.length.set(0);
-        view.depth.set(0);
-        return;
-    }
-
-    const auto* frame = view.currentFrame();
-    if (frame == nullptr) {
-        view.reset();
-        return;
-    }
-
-    view.kind.set(frame->kind);
-    view.parentStep.set(frame->ownerRootStep);
-    view.ownerNodeId.set(frame->ownerNodeId);
-    view.sequenceId.set(frame->sequenceId);
-    view.cycleSetId.set(frame->cycleSetId);
-    view.length.set(frame->length);
-    view.depth.set(view.stackDepth);
-}
-
 FLASHMEM bool pushFrame(
     SequencerState& sequencer,
     SequencerContentViewKind kind,
@@ -478,7 +451,6 @@ FLASHMEM bool pushFrame(
         view.rootFocusSnapshot = sequencer.focusedStep.get();
     }
     ++view.stackDepth;
-    syncPublicViewFields(view);
     sequencer.page.set(0);
     sequencer.focusedStep.set(0);
     sequencer.structureUi.stepSelection.reset();

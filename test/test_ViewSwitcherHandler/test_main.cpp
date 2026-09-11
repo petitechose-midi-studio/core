@@ -659,12 +659,9 @@ void test_selector_waits_until_sequencer_child_has_backed_to_root() {
     ViewSwitcherHarness h;
     h.state.activeView.set(core::ui::ViewType::CLIPS);
     enterPatternRoute(h);
-    h.state.sequencer.contentView.kind.set(
-        core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE
-    );
+    h.state.sequencer.contentView.frames[0].kind = core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE;
     h.state.sequencer.contentView.stackDepth = 1;
-    h.state.sequencer.contentView.sequenceId.set(1);
-    h.state.sequencer.contentView.depth.set(1);
+    h.state.sequencer.contentView.frames[0].sequenceId = 1;
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.viewSelector.visible.get());
@@ -675,9 +672,9 @@ void test_selector_waits_until_sequencer_child_has_backed_to_root() {
     h.release(Config::ButtonID::LEFT_TOP);
     assert(!h.state.viewSelector.visible.get());
     assert(h.state.activeView.get() == core::ui::ViewType::CLIPS);
-    assert(h.state.sequencer.contentView.kind.get() ==
+    assert(h.state.sequencer.contentView.currentFrame()->kind ==
            core::state::sequencer::SequencerContentViewKind::MICRO_SEQUENCE);
-    assert(h.state.sequencer.contentView.depth.get() == 1U);
+    assert(h.state.sequencer.contentView.stackDepth == 1U);
 
     std::cout << "[PASS] Sequencer child owns LEFT_TOP until Back reaches root\n";
 }

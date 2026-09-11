@@ -304,8 +304,6 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         sequencer_.focusedStep,
         sequencer_.activeStepProperty,
         sequencer_.stepStatePropertyActive,
-        sequencer_.contentView.kind,
-        sequencer_.contentView.length,
         sequencer_.contentView.revision,
         sequencer_.patternChanges.patternScaleRevision,
         track_bank_.projectScaleRevisionSignal(),

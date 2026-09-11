@@ -85,7 +85,7 @@ private:
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     core::state::sequencer::SequencerClipGridState& clips_;
     oc::api::EncoderAPI& encoders_;
-    oc::state::StaticWatchGroup<28> watcher_;
+    oc::state::StaticWatchGroup<26> watcher_;
 
     uint8_t macro_steps_configured_ = 0;
     uint16_t macro_ticks_per_step_configured_ = 0;

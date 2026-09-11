@@ -1087,13 +1087,6 @@ struct PreparedEditorUiInvariant {
     uint8_t stepPastePreview = 0U;
     uint32_t stepSelectionClipboardRevision = 0U;
 
-    uint8_t contentViewKind = 0U;
-    uint8_t contentViewParentStep = 0U;
-    uint16_t contentViewOwnerNodeId = 0U;
-    uint16_t contentViewSequenceId = 0U;
-    uint16_t contentViewCycleSetId = 0U;
-    uint8_t contentViewLength = 0U;
-    uint8_t contentViewDepth = 0U;
     uint32_t contentViewRevision = 0U;
     uint8_t contentViewRootPage = 0U;
     uint8_t contentViewRootFocus = 0U;
@@ -1123,13 +1116,6 @@ struct PreparedEditorUiInvariant {
                         stepPastePreviewActive,
                         stepPastePreview,
                         stepSelectionClipboardRevision,
-                        contentViewKind,
-                        contentViewParentStep,
-                        contentViewOwnerNodeId,
-                        contentViewSequenceId,
-                        contentViewCycleSetId,
-                        contentViewLength,
-                        contentViewDepth,
                         contentViewRevision,
                         contentViewRootPage,
                         contentViewRootFocus,
@@ -1178,13 +1164,6 @@ PreparedEditorUiInvariant capturePreparedEditorUiInvariant(
     out.stepPastePreview = static_cast<uint8_t>(stepSelection.pastePreview.get());
     out.stepSelectionClipboardRevision = stepSelection.clipboardRevision.get();
 
-    out.contentViewKind = static_cast<uint8_t>(contentView.kind.get());
-    out.contentViewParentStep = contentView.parentStep.get();
-    out.contentViewOwnerNodeId = contentView.ownerNodeId.get();
-    out.contentViewSequenceId = contentView.sequenceId.get();
-    out.contentViewCycleSetId = contentView.cycleSetId.get();
-    out.contentViewLength = contentView.length.get();
-    out.contentViewDepth = contentView.depth.get();
     out.contentViewRevision = contentView.revision.get();
     out.contentViewRootPage = contentView.rootPageSnapshot;
     out.contentViewRootFocus = contentView.rootFocusSnapshot;
@@ -4291,9 +4270,8 @@ void test_undo_removed_active_child_context_returns_to_root() {
 
     assert(h.state.undoSequencerHistory());
     assert(core::state::sequencer::isRootContentView(h.state.sequencer));
-    assert(h.state.sequencer.contentView.depth.get() == 0);
-    assert(h.state.sequencer.contentView.ownerNodeId.get() ==
-           oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID);
+    assert(h.state.sequencer.contentView.stackDepth == 0);
+    assert(h.state.sequencer.contentView.currentFrame() == nullptr);
 
     std::cout << "[PASS] test_undo_removed_active_child_context_returns_to_root\n";
 }
@@ -5021,8 +4999,7 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         assert(!sequencer.structureUi.pageSelection.active.get());
         assert(!sequencer.structureUi.stepSelection.active.get());
         assert(sequencer.contentView.stackDepth == 0U);
-        assert(sequencer.contentView.kind.get() ==
-               seq::SequencerContentViewKind::ROOT);
+        assert(sequencer.contentView.currentFrame() == nullptr);
         assert(sequencer.contentView.revision.get() == contentViewRevision);
         assert(h.state.sequencerHistory.undoCount() == 0U);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -5106,8 +5083,7 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         assert(!sequencer.structureUi.pageSelection.active.get());
         assert(!sequencer.structureUi.stepSelection.active.get());
         assert(sequencer.contentView.stackDepth == 0U);
-        assert(sequencer.contentView.kind.get() ==
-               seq::SequencerContentViewKind::ROOT);
+        assert(sequencer.contentView.currentFrame() == nullptr);
         assert(sequencer.contentView.revision.get() == contentViewRevision);
         assert(h.state.sequencerHistory.undoCount() == 0U);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());

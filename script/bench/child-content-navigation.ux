@@ -1,0 +1,45 @@
+# RAM-only: create a Micro draft, edit child steps while playing, resize,
+# publish and return. Mode assertions ensure the workload reaches child UI.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_mode sequencer.clip_launcher
+1200 encoder_value NAV 0.010
+1600 tap LEFT_BOTTOM 60
+2000 assert_mode sequencer.pattern
+2200 button MACRO_1 down
+3300 button MACRO_1 up
+3600 assert_mode sequencer.step_edit
+3800 encoder_value NAV 0.010
+4000 encoder_value NAV 0.010
+4200 encoder_value NAV 0.010
+4400 encoder_value NAV 0.010
+4600 encoder_value NAV 0.010
+4800 encoder_value NAV 0.010
+5000 encoder_value NAV 0.010
+5200 tap NAV 60
+5600 assert_mode sequencer.child_pattern
+5800 marker child_edits
+6000 tap MACRO_1 60
+6300 tap MACRO_1 60
+6600 tap MACRO_1 60
+6900 tap MACRO_1 60
+7200 tap MACRO_1 60
+7500 encoder_value OPT 0.250
+7800 encoder_value OPT 0.750
+8100 encoder_value OPT 0.250
+8400 encoder_value OPT 0.750
+8800 marker child_resize
+9000 button LEFT_CENTER down
+9400 encoder_value OPT 0.500
+9800 encoder_value OPT 0.250
+10200 encoder_value OPT 0.125
+10600 button LEFT_CENTER up
+11000 assert_mode sequencer.child_pattern
+11200 tap LEFT_TOP 60
+11600 marker save_prompt
+11800 tap NAV 60
+12200 assert_mode sequencer.pattern
+13400 transport stop

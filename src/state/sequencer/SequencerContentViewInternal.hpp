@@ -96,7 +96,6 @@ bool ownsCycleSet(
     SequencerGraphNodeId ownerNodeId,
     SequencerGraphCycleSetId cycleSetId
 );
-void syncPublicViewFields(SequencerContentViewState& view);
 bool pushFrame(
     SequencerState& sequencer,
     SequencerContentViewKind kind,
