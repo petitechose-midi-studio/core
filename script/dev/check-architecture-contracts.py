@@ -58,6 +58,8 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
 )
 
 FORBIDDEN_LEGACY = (
+    "captureMacroTrackStructureHistoryAfter",
+    "ProjectControlHistory::captureAfter",
     "SequencerPreparedActiveTrackRotation",
     "SequencerActiveTrackIncomingOwnerPolicy",
     "SequencerTrackFlatSnapshotView",

@@ -699,24 +699,6 @@ FLASHMEM bool captureMacroTrackStructureHistoryBefore(
     return true;
 }
 
-FLASHMEM bool captureMacroTrackStructureHistoryAfter(
-    const core::state::macro::MacroPagesState& pages,
-    SequencerHistoryTrackStructureChange& change
-) {
-    auto* payload = change.macroStructure.get();
-    if (payload == nullptr || payload->capturedTrackMask == 0U ||
-        payload->control.candidate() == nullptr) {
-        return false;
-    }
-    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
-        if ((payload->capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
-            continue;
-        }
-        payload->afterTracks[track] = pages.tracks[track];
-    }
-    return payload->control.captureAfter(pages.control.authored());
-}
-
 FLASHMEM bool macroTrackStructureHistoryChanged(
     const SequencerHistoryTrackStructureChange& change
 ) {

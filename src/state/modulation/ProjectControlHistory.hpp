@@ -12,8 +12,7 @@ public:
     [[nodiscard]] bool prepare(const ProjectControlDomainState& before);
     ProjectControlDomainState* candidate() { return ready_ ? nullptr : data_.get(); }
 
-    /** Seal a live edit, or a detached candidate while live still holds Before. */
-    [[nodiscard]] bool captureAfter(const ProjectControlDomainState& after);
+    /** Seal the detached candidate while live still holds Before. */
     [[nodiscard]] bool sealCandidate(const ProjectControlDomainState& before);
     [[nodiscard]] bool matches(const ProjectControlDomainState& live, bool after) const;
     /** Caller validates the expected state before its no-fail commit boundary. */
@@ -24,7 +23,6 @@ public:
     bool changed() const { return ready_ && hasStorage(); }
 
 private:
-    bool seal_(const ProjectControlDomainState& other, uint64_t afterHash);
     // Applying a const history exchanges the retained side, without changing its command.
     mutable core::app::ExtmemUniquePtr<ProjectControlDomainState> data_{};
     uint64_t before_hash_ = 0U;

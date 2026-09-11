@@ -27,22 +27,12 @@ FLASHMEM bool ProjectControlHistory::prepare(const ProjectControlDomainState& be
     return true;
 }
 
-FLASHMEM bool ProjectControlHistory::seal_(
-    const ProjectControlDomainState& other, uint64_t afterHash
-) {
-    after_hash_ = afterHash;
-    if (std::memcmp(data_.get(), &other, sizeof(other)) == 0) data_.reset();
+FLASHMEM bool ProjectControlHistory::sealCandidate(const ProjectControlDomainState& before) {
+    if (candidate() == nullptr || before_hash_ != controlHash(before)) return false;
+    after_hash_ = controlHash(*data_);
+    if (std::memcmp(data_.get(), &before, sizeof(before)) == 0) data_.reset();
     ready_ = true;
     return true;
-}
-
-FLASHMEM bool ProjectControlHistory::captureAfter(const ProjectControlDomainState& after) {
-    return candidate() != nullptr && seal_(after, controlHash(after));
-}
-
-FLASHMEM bool ProjectControlHistory::sealCandidate(const ProjectControlDomainState& before) {
-    return candidate() != nullptr && before_hash_ == controlHash(before) &&
-        seal_(before, controlHash(*data_));
 }
 
 FLASHMEM bool ProjectControlHistory::matches(
