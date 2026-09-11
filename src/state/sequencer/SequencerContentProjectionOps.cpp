@@ -11,7 +11,7 @@ using namespace content_view_internal;
 
 namespace {
 
-FLASHMEM void populateStepProjection(
+OC_ALWAYS_INLINE void populateStepProjection(
     SequencerContentStepProjection& out,
     const ResolvedStep& base,
     const ResolvedStep& resolved,
