@@ -1,4 +1,6 @@
 #include "state/sequencer/SequencerDetachedEditor.hpp"
+#include "state/shared/NormalizedValue.hpp"
+#include "state/sequencer/SequencerPitchEditAuthority.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -48,6 +50,9 @@
 #include "../support/ProductFileTestMutation.hpp"
 
 namespace {
+
+namespace normalized = core::state::normalized;
+namespace pitch_edit = core::state::sequencer::pitch_edit;
 
 uint32_t g_now_ms = 0;
 uint32_t g_step_preset_time_lag_ms = 0;
@@ -457,8 +462,8 @@ core::state::sequencer::SequencerStepChordUiState resolveChordPreview(SequencerS
 
 float normalizedForScaleNote(uint8_t note,
                              oc::note::sequencer::StepSequencerScaleSettings settings) {
-    return input_utils::indexToNormalized(input_utils::scaleDegreeIndexForNote(note, settings),
-                                          input_utils::countScaleNotes(settings));
+    return normalized::indexToNormalized(pitch_edit::scaleDegreeIndexForNote(note, settings),
+                                          pitch_edit::countScaleNotes(settings));
 }
 
 void holdPatternQuickControls(SequencerStepEditHarness& h) {
@@ -1968,7 +1973,7 @@ void test_step_edit_chord_detail_edits_all_chord_fields() {
     auto chord = core::state::sequencer::resolveStepChordUiState(h.state.sequencer, 1);
     assert(chord.mode == oc::note::sequencer::StepSequencerChordMode::Local);
 
-    h.turn(Config::EncoderID::OPT, input_utils::indexToNormalized(8, 9));
+    h.turn(Config::EncoderID::OPT, normalized::indexToNormalized(8, 9));
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
@@ -2058,7 +2063,7 @@ void test_scale_context_drives_shape_formula_without_local_basis_toggle() {
     assert(chord.preview.voices[1].note == 68);
     assert(chord.preview.voices[2].note == 72);
 
-    h.turn(Config::EncoderID::OPT, input_utils::indexToNormalized(1, 4));
+    h.turn(Config::EncoderID::OPT, normalized::indexToNormalized(1, 4));
 
     chord = resolveChordPreview(h, 0);
     assert(chord.spec.intervalBasis() == Basis::ScaleDegrees);
@@ -2142,7 +2147,7 @@ void test_formula_editor_is_explicit_cancellable_and_edits_zero_three_five() {
     assert(chord.preview.voices[2].note == 72);
 
     // Voice 2 is always present. Set it to +3 semitones.
-    h.turn(Config::EncoderID::OPT, input_utils::indexToNormalized(2, 6));
+    h.turn(Config::EncoderID::OPT, normalized::indexToNormalized(2, 6));
     chord = resolveChordPreview(h, 0);
     assert(chord.spec.harmony() == Harmony::Minor);
 
@@ -2155,13 +2160,13 @@ void test_formula_editor_is_explicit_cancellable_and_edits_zero_three_five() {
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.sequencer.stepEdit.chordEditor.subEditor.get().formulaEditorActive);
-    h.turn(Config::EncoderID::OPT, input_utils::indexToNormalized(2, 6));
+    h.turn(Config::EncoderID::OPT, normalized::indexToNormalized(2, 6));
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.stepEdit.chordEditor.subEditor.get().focusedFormulaItem == 2);
 
     // Voice 3 only contains musical intervals. Choice 1 is +5 ST here;
     // add/remove are explicit rail actions rather than OPT sentinel values.
-    h.turn(Config::EncoderID::OPT, input_utils::indexToNormalized(1, 28));
+    h.turn(Config::EncoderID::OPT, normalized::indexToNormalized(1, 28));
     chord = resolveChordPreview(h, 0);
     assert(chord.spec.voices() == 3);
     assert(chord.spec.customInterval(1) == 3);
@@ -2303,7 +2308,7 @@ void test_step_edit_child_chord_detail_localizes_from_inherited_spec() {
     assert(h.state.sequencer.stepEdit.chordEditor.active.get());
     assert(h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
            core::state::sequencer::SequencerChordEditField::SHAPE);
-    h.turn(Config::EncoderID::OPT, input_utils::indexToNormalized(8, 9));
+    h.turn(Config::EncoderID::OPT, normalized::indexToNormalized(8, 9));
 
     const auto authoredChord =
         core::state::sequencer::resolveStepChordUiState(h.state.sequencer, 0);

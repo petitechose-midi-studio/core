@@ -11,7 +11,7 @@
 
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/ProjectTrackEditorHandler.hpp"
-#include "handler/sequencer/SequencerInputUtils.hpp"
+#include "state/shared/NormalizedValue.hpp"
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
@@ -27,7 +27,7 @@ FLASHMEM bool setNormalizedBehaviorValue(
     seq::ClipWorkspaceQuickAction action,
     float normalized
 ) {
-    namespace input = core::handler::sequencer::input_utils;
+    namespace input = core::state::normalized;
     switch (action) {
         case seq::ClipWorkspaceQuickAction::LENGTH:
             behavior.length = static_cast<uint8_t>(input::normalizedToIndex(

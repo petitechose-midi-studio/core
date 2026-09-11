@@ -1,4 +1,5 @@
 #include "SequencerStepHandler.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <config/App.hpp>
 #include <config/Timing.hpp>
@@ -20,6 +21,8 @@
 #endif
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
 
 namespace input_utils = core::handler::sequencer::input_utils;
 
@@ -625,7 +628,7 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
             if (!beginDrumHistory(descriptor)) return;
             const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
             drumUi.setSelectedLaneTimingCustom(
-                input_utils::clampNormalized(normalized) >= 0.5f
+                normalized::clampNormalized(normalized) >= 0.5f
             );
             descriptor.afterValue = static_cast<int32_t>(
                 drumUi.drumTrack()->pattern.lanes[drumUi.selectedLane]
@@ -649,7 +652,7 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
                 .effectiveStepsPerBeat(drumUi.selectedLane);
             if (!beginDrumHistory(descriptor)) return;
             const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
-            const int index = input_utils::normalizedToIndex(
+            const int index = normalized::normalizedToIndex(
                 normalized,
                 static_cast<int>(input_utils::STEPS_PER_BEAT_CHOICES.size())
             );
@@ -682,7 +685,7 @@ FLASHMEM void SequencerStepHandler::editDrumSequencerOpt(
             if (!beginDrumHistory(descriptor)) return;
             const uint32_t beforeRevision = drumUi.drumTrack()->pattern.revision;
             drumUi.setSelectedLaneLength(static_cast<uint8_t>(
-                input_utils::normalizedToInclusiveInt(
+                normalized::normalizedToInclusiveInt(
                     normalized,
                     drumUi.MAX_STEPS - 1U
                 ) + 1

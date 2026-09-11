@@ -1,4 +1,6 @@
 #include "context/standalone/SequencerEncoderSyncCoordinator.hpp"
+#include "handler/common/EncoderDefaults.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -20,6 +22,9 @@
 #endif
 
 namespace core::context::standalone {
+
+namespace normalized = core::state::normalized;
+namespace encoder_defaults = core::handler::encoder_defaults;
 
 namespace input_utils = core::handler::sequencer::input_utils;
 namespace interaction_policy = core::handler::sequencer::interaction_policy;
@@ -66,7 +71,7 @@ FLASHMEM float childLengthToNormalized(
 ) {
     const auto range = activeChildLengthRange(sequencer);
     const uint8_t clamped = std::clamp<uint8_t>(length, range.min, range.max);
-    return input_utils::indexToNormalized(
+    return normalized::indexToNormalized(
         static_cast<int>(clamped - range.min),
         static_cast<int>((range.max - range.min) + 1U)
     );
@@ -98,8 +103,8 @@ FLASHMEM input_utils::StepPropertyEncoderConfig offsetEncoderConfig(
     const core::state::sequencer::SequencerState& sequencer
 ) {
     input_utils::StepPropertyEncoderConfig config;
-    config.discreteTicksPerStep = input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-    config.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+    config.discreteTicksPerStep = encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
+    config.normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
     config.discreteSteps = static_cast<uint8_t>((currentOffsetMax(sequencer) * 2) + 1);
     return config;
 }
@@ -142,7 +147,7 @@ FLASHMEM float drumDimensionToNormalized(
                 ? 1.0f
                 : 0.0f;
         case DrumDimension::DIVISION:
-            return input_utils::indexToNormalized(
+            return normalized::indexToNormalized(
                 input_utils::findStepsPerBeatChoiceIndex(
                     pattern.effectiveStepsPerBeat(drumUi.selectedLane)
                 ),
@@ -151,7 +156,7 @@ FLASHMEM float drumDimensionToNormalized(
         case DrumDimension::LENGTH:
         case DrumDimension::COUNT:
         default:
-            return input_utils::indexToNormalized(
+            return normalized::indexToNormalized(
                 static_cast<int>(
                     pattern.effectiveLength(drumUi.selectedLane) - 1U
                 ),
@@ -178,14 +183,14 @@ FLASHMEM float drumPatternDefaultToNormalized(
     const auto& pattern = drumUi.drumTrack()->pattern;
     if (drumUi.patternDefaultField ==
         core::state::sequencer::DrumPatternDefaultField::DIVISION) {
-        return input_utils::indexToNormalized(
+        return normalized::indexToNormalized(
             input_utils::findStepsPerBeatChoiceIndex(
                 pattern.defaultStepsPerBeat
             ),
             static_cast<int>(input_utils::STEPS_PER_BEAT_CHOICES.size())
         );
     }
-    return input_utils::indexToNormalized(
+    return normalized::indexToNormalized(
         static_cast<int>(pattern.defaultLength - 1U),
         core::state::sequencer::DRUM_MAX_STEPS
     );
@@ -234,19 +239,19 @@ FLASHMEM float clipQuickValueToNormalized(
 ) {
     switch (action) {
         case ClipQuickAction::LENGTH:
-            return input_utils::indexToNormalized(
+            return normalized::indexToNormalized(
                 behavior.length,
                 static_cast<int>(LauncherBehavior::MAX_LENGTH) + 1
             );
         case ClipQuickAction::FOLLOW:
-            return input_utils::indexToNormalized(
+            return normalized::indexToNormalized(
                 core::state::sequencer::sequencerLauncherFollowChoiceIndex(
                     behavior.follow
                 ),
                 core::state::sequencer::sequencerLauncherFollowChoiceCount()
             );
         case ClipQuickAction::QUANTIZE:
-            return input_utils::indexToNormalized(
+            return normalized::indexToNormalized(
                 static_cast<uint8_t>(behavior.quantization),
                 3
             );
@@ -411,7 +416,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroEncoderValues(
             );
         }
 
-        normalized = input_utils::clampNormalized(normalized);
+        normalized = normalized::clampNormalized(normalized);
 
         if (!macro_position_valid_[i] ||
             hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
@@ -445,7 +450,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroLocalVariationValues(
             }
         }
 
-        normalized = input_utils::clampNormalized(normalized);
+        normalized = normalized::clampNormalized(normalized);
 
         if (!macro_position_valid_[i] ||
             hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
@@ -485,7 +490,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::invalidateOptEncoderCache() {
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::syncOptPosition(float normalized) {
-    normalized = input_utils::clampNormalized(normalized);
+    normalized = normalized::clampNormalized(normalized);
     if (!opt_position_valid_ ||
         hasMeaningfulEncoderDelta(opt_position_cache_, normalized)) {
         encoders_.setPosition(Config::EncoderID::OPT, normalized);
@@ -530,7 +535,7 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncFocusedStepOptValue(
             pattern.scaleOverride
         )
     );
-    normalized = input_utils::clampNormalized(normalized);
+    normalized = normalized::clampNormalized(normalized);
 
     syncOptPosition(normalized);
 }
@@ -548,8 +553,8 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
         }
 
         input_utils::StepPropertyEncoderConfig config;
-        config.discreteTicksPerStep = input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-        config.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+        config.discreteTicksPerStep = encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
+        config.normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
         config.discreteSteps = activeChildLengthStepCount(sequencer_);
         ensureOptEncoderConfig(config);
         syncOptPosition(childLengthToNormalized(
@@ -740,8 +745,8 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
             input_utils::StepPropertyEncoderConfig stateConfig;
             stateConfig.discreteSteps = 2;
             stateConfig.discreteTicksPerStep =
-                input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-            stateConfig.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+                encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
+            stateConfig.normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
             ensureMacroEncoderConfig(stateConfig);
             syncMacroStateValues(page);
             return;
@@ -769,8 +774,8 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
         input_utils::StepPropertyEncoderConfig stateConfig;
         stateConfig.discreteSteps = 2;
         stateConfig.discreteTicksPerStep =
-            input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-        stateConfig.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+            encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
+        stateConfig.normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
         ensureMacroEncoderConfig(stateConfig);
         syncMacroStateValues(page);
         if (policy.optTurn ==

@@ -1,4 +1,7 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "state/sequencer/SequencerValueMapping.hpp"
+#include "state/shared/NormalizedValue.hpp"
+#include "state/sequencer/SequencerPitchEditAuthority.hpp"
 
 #include <config/PlatformCompat.hpp>
 
@@ -8,37 +11,9 @@
 
 namespace core::handler::sequencer::input_utils {
 
-FLASHMEM float clampNormalized(float value) {
-    return std::clamp(value, 0.0f, 1.0f);
-}
-
-FLASHMEM int normalizedToInclusiveInt(float normalized, int maxInclusive) {
-    if (maxInclusive <= 0) return 0;
-
-    const float value = clampNormalized(normalized);
-    const int rounded = static_cast<int>(value * static_cast<float>(maxInclusive) + 0.5f);
-    return std::clamp(rounded, 0, maxInclusive);
-}
-
-FLASHMEM int normalizedToIndex(float normalized, int itemCount) {
-    if (itemCount <= 1) return 0;
-    return normalizedToInclusiveInt(normalized, itemCount - 1);
-}
-
-FLASHMEM float indexToNormalized(int index, int itemCount) {
-    if (itemCount <= 1) return 0.0f;
-
-    const int clamped = std::clamp(index, 0, itemCount - 1);
-    return static_cast<float>(clamped) / static_cast<float>(itemCount - 1);
-}
-
-FLASHMEM float nudgeToNormalized(int8_t nudge) {
-    const int clamped = std::clamp<int>(nudge, NUDGE_MIN, NUDGE_MAX);
-    return indexToNormalized(
-        clamped - NUDGE_MIN,
-        (NUDGE_MAX - NUDGE_MIN) + 1
-    );
-}
+namespace normalized = core::state::normalized;
+namespace pitch_edit = core::state::sequencer::pitch_edit;
+namespace value_mapping = core::state::sequencer::value_mapping;
 
 FLASHMEM StepPropertyEncoderConfig encoderConfigForProperty(
     StepProperty property
@@ -53,13 +28,13 @@ FLASHMEM StepPropertyEncoderConfig encoderConfigForProperty(
 
     if (property == StepProperty::NUDGE) {
         config.discreteSteps = static_cast<uint8_t>(
-            (NUDGE_MAX - NUDGE_MIN) + 1
+            (value_mapping::NUDGE_MAX - value_mapping::NUDGE_MIN) + 1
         );
         return config;
     }
 
     if (property == StepProperty::PROBABILITY) {
-        config.discreteSteps = static_cast<uint8_t>(PROBABILITY_MAX + 1);
+        config.discreteSteps = static_cast<uint8_t>(value_mapping::PROBABILITY_MAX + 1);
         return config;
     }
 
@@ -146,25 +121,25 @@ FLASHMEM bool applyNormalizedToDrumStep(
             return drumUi.setStepEnabled(
                 lane,
                 step,
-                clampNormalized(normalized) >= 0.5f
+                normalized::clampNormalized(normalized) >= 0.5f
             );
         case DrumProperty::PROBABILITY:
             return drumUi.setStepProbability(
                 lane,
                 step,
-                normalizedToProbability(normalized)
+                value_mapping::normalizedToProbability(normalized)
             );
         case DrumProperty::GATE:
             return drumUi.setStepGate(
                 lane,
                 step,
-                normalizedToGatePercent(normalized)
+                value_mapping::normalizedToGatePercent(normalized)
             );
         case DrumProperty::NUDGE:
             return drumUi.setStepNudge(
                 lane,
                 step,
-                normalizedToNudge(normalized)
+                value_mapping::normalizedToNudge(normalized)
             );
         case DrumProperty::VELOCITY:
         case DrumProperty::COUNT:
@@ -172,7 +147,7 @@ FLASHMEM bool applyNormalizedToDrumStep(
             return drumUi.setStepVelocity(
                 lane,
                 step,
-                normalizedToMidi7(normalized)
+                value_mapping::normalizedToMidi7(normalized)
             );
     }
 }
@@ -183,9 +158,9 @@ FLASHMEM StepPropertyEncoderConfig encoderConfigForProperty(
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
     auto config = encoderConfigForProperty(property);
-    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+    if (pitch_edit::usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
         config.discreteSteps = static_cast<uint8_t>(
-            std::min(countScaleNotes(scaleSettings), 255)
+            std::min(pitch_edit::countScaleNotes(scaleSettings), 255)
         );
     }
     return config;
@@ -202,9 +177,9 @@ FLASHMEM float quickControlToNormalized(
         case core::state::sequencer::PatternQuickControlItem::SWING:
             return swingOffsetToNormalized(pattern.swingOffsetPercent);
         case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            return nudgeToNormalized(pattern.patternNudgePercent);
+            return value_mapping::nudgeToNormalized(pattern.patternNudgePercent);
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
-            return indexToNormalized(
+            return normalized::indexToNormalized(
                 findStepsPerBeatChoiceIndex(pattern.stepsPerBeat),
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
@@ -212,7 +187,7 @@ FLASHMEM float quickControlToNormalized(
         default: {
             const uint8_t len = pattern.length;
             const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
-            return indexToNormalized(idx, static_cast<int>(SequencerState::MAX_STEPS));
+            return normalized::indexToNormalized(idx, static_cast<int>(SequencerState::MAX_STEPS));
         }
     }
 }
@@ -222,12 +197,12 @@ FLASHMEM void applyNormalizedToQuickControl(
     core::state::sequencer::PatternQuickControlItem item,
     float normalized
 ) {
-    const float value = clampNormalized(normalized);
+    const float value = normalized::clampNormalized(normalized);
     auto& pattern = core::state::sequencer::authoringPattern(state);
     const bool detached = &pattern != &state.pattern();
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::DIVISION: {
-            const int idx = normalizedToIndex(
+            const int idx = normalized::normalizedToIndex(
                 value,
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
@@ -252,12 +227,12 @@ FLASHMEM void applyNormalizedToQuickControl(
             else state.setPatternSwingOffsetPercent(normalizedToSwingOffset(value));
             return;
         case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            if (detached) pattern.setPatternNudgePercent(normalizedToNudge(value));
-            else state.setPatternNudgePercent(normalizedToNudge(value));
+            if (detached) pattern.setPatternNudgePercent(value_mapping::normalizedToNudge(value));
+            else state.setPatternNudgePercent(value_mapping::normalizedToNudge(value));
             return;
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
-            const int idx = normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
+            const int idx = normalized::normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
             const uint8_t length = static_cast<uint8_t>(idx + 1);
             if (detached) {
                 (void)core::state::sequencer::resizeClipPatternContent(

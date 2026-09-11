@@ -1,10 +1,14 @@
 #include <cmath>
 
+#include "state/shared/NormalizedValue.hpp"
+
 #include <config/PlatformCompat.hpp>
 
 #include "handler/project/ProjectHandlerInternals.hpp"
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
 
 using namespace project_handler_internal;
 
@@ -287,7 +291,7 @@ FLASHMEM bool ProjectHandler::setFocusedMusicSettingsValue(float normalized) {
     uint8_t subject = 0U;
     if (node == core::state::project::ProjectNodeId::MUSIC_ROOT && row == 3U) {
         const int current = static_cast<int>(navigation_.stepPasteMode);
-        const int next = normalizedToIndex(normalized, project::PROJECT_STEP_PASTE_MODE_COUNT);
+        const int next = normalized::normalizedToIndex(normalized, project::PROJECT_STEP_PASTE_MODE_COUNT);
         if (next == current) return true;
         navigation_.stepPasteMode =
             project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
@@ -297,7 +301,7 @@ FLASHMEM bool ProjectHandler::setFocusedMusicSettingsValue(float normalized) {
         kind = core::state::project::ProjectSettingsHistoryActionKind::CcLaneDefault;
         subject = lane;
         const int current = navigation_.ccLaneDefaultControllers[lane];
-        const int next = normalizedToIndex(normalized, project::PROJECT_MIDI_CC_COUNT);
+        const int next = normalized::normalizedToIndex(normalized, project::PROJECT_MIDI_CC_COUNT);
         if (next == current) return true;
         navigation_.ccLaneDefaultControllers[lane] = static_cast<uint8_t>(next);
     } else {
@@ -319,7 +323,7 @@ FLASHMEM bool ProjectHandler::setFocusedMusicScaleValue(float normalized) {
     if (count <= 0) return false;
 
     const int current = scale_settings_.currentChoiceIndex(row);
-    const int next = normalizedToIndex(normalized, count);
+    const int next = normalized::normalizedToIndex(normalized, count);
     if (next == current) return true;
 
     const auto result = history_.applyPreparedProjectScaleChoice(
@@ -353,7 +357,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
                 status_bar_, navigation_);
             const int current = navigation_.transportSwingPercent;
-            const int next = normalizedToIndex(normalized, project::PROJECT_SWING_STEPS);
+            const int next = normalized::normalizedToIndex(normalized, project::PROJECT_SWING_STEPS);
             if (next == current) return true;
             navigation_.transportSwingPercent = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
@@ -362,7 +366,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
         }
         case 2: {
             const int current = device_settings_.currentChoiceIndex(0U);
-            const int next = normalizedToIndex(normalized, 3);
+            const int next = normalized::normalizedToIndex(normalized, 3);
             if (next == current) return true;
             return acceptMidiSyncResult(
                 navigation_,
@@ -373,7 +377,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
                 status_bar_, navigation_);
             const int current = navigation_.transportRunMode;
-            const int next = normalizedToIndex(normalized, project::PROJECT_RUN_MODE_COUNT);
+            const int next = normalized::normalizedToIndex(normalized, project::PROJECT_RUN_MODE_COUNT);
             if (next == current) return true;
             navigation_.transportRunMode = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
@@ -394,7 +398,7 @@ FLASHMEM bool ProjectHandler::setFocusedRoutingValue(float normalized) {
 
     const uint8_t current = core::state::project::projectTrackMidiChannel(project_tracks_, track);
     const auto next =
-        static_cast<uint8_t>(normalizedToIndex(normalized, project::PROJECT_MIDI_CHANNEL_COUNT));
+        static_cast<uint8_t>(normalized::normalizedToIndex(normalized, project::PROJECT_MIDI_CHANNEL_COUNT));
     if (next == current) return true;
 
     if (!setRoutingMidiChannel(track, next)) return false;

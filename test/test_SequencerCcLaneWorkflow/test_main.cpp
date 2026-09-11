@@ -1,4 +1,6 @@
 #ifdef NDEBUG
+
+#include "handler/common/EncoderDefaults.hpp"
 #undef NDEBUG
 #endif
 
@@ -40,6 +42,8 @@
 #endif
 
 namespace {
+
+namespace encoder_defaults = core::handler::encoder_defaults;
 
 namespace seq = core::state::sequencer;
 namespace contextual = core::state::contextual;
@@ -924,9 +928,9 @@ void test_handler_owns_a_centered_directional_opt_contract() {
     assert(std::fabs(h.encoderHw.getBoundsMax(OPT) - 1.0f) < 0.0005f);
     assert(h.encoderHw.getDiscreteSteps(OPT) == 0);
     assert(h.encoderHw.getDiscreteTicksPerStep(OPT) ==
-           input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP);
+           encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
     assert(std::fabs(h.encoderHw.getNormalizedTurns(OPT) -
-                     input_utils::DEFAULT_NORMALIZED_TURNS) < 0.0005f);
+                     encoder_defaults::DEFAULT_NORMALIZED_TURNS) < 0.0005f);
     assert(std::fabs(h.encoderHw.getPosition(OPT) - 0.5f) < 0.0005f);
 
     const uint8_t controller = h.state.sequencer.ccLaneUi.draft.destination.controller;

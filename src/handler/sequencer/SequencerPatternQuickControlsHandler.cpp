@@ -1,5 +1,6 @@
 #include "SequencerPatternQuickControlsHandler.hpp"
-
+#include "handler/common/EncoderDefaults.hpp"
+#include "state/shared/NormalizedValue.hpp"
 #include "SequencerInputUtils.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
 
@@ -16,6 +17,8 @@
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -94,7 +97,7 @@ FLASHMEM uint8_t normalizedToChildLength(const core::state::sequencer::Sequencer
                                          float normalized) {
     const auto range = activeChildLengthRange(sequencer);
     const int count = static_cast<int>((range.max - range.min) + 1U);
-    const int idx = input_utils::normalizedToIndex(normalized, count);
+    const int idx = normalized::normalizedToIndex(normalized, count);
     return static_cast<uint8_t>(range.min + idx);
 }
 
@@ -102,7 +105,7 @@ FLASHMEM float childLengthToNormalized(const core::state::sequencer::SequencerSt
                                        uint8_t length) {
     const auto range = activeChildLengthRange(sequencer);
     const uint8_t clamped = std::clamp<uint8_t>(length, range.min, range.max);
-    return input_utils::indexToNormalized(static_cast<int>(clamped - range.min),
+    return normalized::indexToNormalized(static_cast<int>(clamped - range.min),
                                           static_cast<int>((range.max - range.min) + 1U));
 }
 
@@ -412,8 +415,8 @@ FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem()
     const auto item = sequencer_.patternQuickControls.focusedItem.get();
     if (core::state::sequencer::isChildContentView(sequencer_)) {
         input_utils::StepPropertyEncoderConfig config;
-        config.discreteTicksPerStep = input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-        config.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+        config.discreteTicksPerStep = encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
+        config.normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
         config.discreteSteps = item == Item::LENGTH
                                    ? activeChildLengthStepCount(sequencer_)
                                    : static_cast<uint8_t>((currentOffsetMax() * 2) + 1);
@@ -432,8 +435,8 @@ FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem()
     if (item == Item::OFFSET) {
         input_utils::StepPropertyEncoderConfig config;
         config.discreteSteps = static_cast<uint8_t>((currentOffsetMax() * 2) + 1);
-        config.discreteTicksPerStep = input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-        config.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+        config.discreteTicksPerStep = encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
+        config.normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
         encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
         encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
@@ -576,7 +579,7 @@ FLASHMEM int SequencerPatternQuickControlsHandler::normalizedToOffset(float norm
     const int maxOffset = currentOffsetMax();
     if (maxOffset <= 0) return 0;
     const int itemCount = (maxOffset * 2) + 1;
-    const int index = input_utils::normalizedToIndex(normalized, itemCount);
+    const int index = normalized::normalizedToIndex(normalized, itemCount);
     return index - maxOffset;
 }
 

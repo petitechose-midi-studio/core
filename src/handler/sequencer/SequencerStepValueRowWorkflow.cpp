@@ -1,4 +1,5 @@
 #include "handler/sequencer/SequencerStepValueRowWorkflow.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <config/PlatformCompat.hpp>
 
@@ -12,6 +13,8 @@
 #include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::handler::sequencer::step_value_row_workflow {
+
+namespace normalized = core::state::normalized;
 namespace chord_edit_ops = core::handler::sequencer::chord_edit_ops;
 namespace input_utils = core::handler::sequencer::input_utils;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
@@ -73,7 +76,7 @@ FLASHMEM bool setFocusedRowValue(core::state::sequencer::SequencerState& sequenc
 
     if (focusedRowIsChord(sequencer)) {
         const auto chord = core::state::sequencer::resolveStepChordUiState(sequencer, step);
-        const int choice = input_utils::normalizedToIndex(
+        const int choice = normalized::normalizedToIndex(
             normalized, chord_edit_ops::quickChoiceCount(chord.rootContext));
         return chord_edit_ops::applyQuickChoice(
             sequencer, step, choice,
@@ -119,7 +122,7 @@ FLASHMEM void configureFocusedRowEncoder(
         encoders.setNormalizedTurns(encoderId, 0.25f);
         encoders.setDiscreteSteps(
             encoderId, static_cast<uint8_t>(chord_edit_ops::quickChoiceCount(chord.rootContext)));
-        encoders.setPosition(encoderId, input_utils::indexToNormalized(
+        encoders.setPosition(encoderId, normalized::indexToNormalized(
                                             chord_edit_ops::quickChoiceIndex(chord),
                                             chord_edit_ops::quickChoiceCount(chord.rootContext)));
         return;

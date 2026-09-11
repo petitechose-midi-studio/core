@@ -1,5 +1,5 @@
 #include "SequencerChordEditOps.hpp"
-
+#include "state/shared/NormalizedValue.hpp"
 #include "SequencerChordEditOpsInternal.hpp"
 #include "SequencerInputUtils.hpp"
 
@@ -12,6 +12,8 @@
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler::sequencer::chord_edit_ops {
+
+namespace normalized = core::state::normalized;
 namespace detail {
 
 FLASHMEM Basis contextBasis(bool scaleBased) {
@@ -51,7 +53,7 @@ namespace input_utils = core::handler::sequencer::input_utils;
 using Spec = oc::note::sequencer::StepSequencerChordSpec;
 
 FLASHMEM int8_t signedFromNormalized(float normalized, int minValue, int maxValue) {
-    const int index = input_utils::normalizedToInclusiveInt(normalized, maxValue - minValue);
+    const int index = normalized::normalizedToInclusiveInt(normalized, maxValue - minValue);
     return static_cast<int8_t>(minValue + index);
 }
 
@@ -259,7 +261,7 @@ FLASHMEM bool applySpecField(core::state::sequencer::SequencerState& sequencer, 
         case Field::SHAPE: {
             const uint8_t count = oc::note::sequencer::chordPresetChoiceCount(scaleBased);
             const auto harmony = oc::note::sequencer::chordPresetForChoice(
-                static_cast<uint8_t>(input_utils::normalizedToIndex(normalized, count)),
+                static_cast<uint8_t>(normalized::normalizedToIndex(normalized, count)),
                 scaleBased);
             alignFormulaContext(spec, scaleBased);
             spec.setIntervalBasis(contextBasis(scaleBased));
@@ -272,13 +274,13 @@ FLASHMEM bool applySpecField(core::state::sequencer::SequencerState& sequencer, 
         }
         case Field::INVERSION:
             alignFormulaContext(spec, scaleBased);
-            spec.setInversion(static_cast<uint8_t>(input_utils::normalizedToInclusiveInt(
+            spec.setInversion(static_cast<uint8_t>(normalized::normalizedToInclusiveInt(
                 normalized, static_cast<int>(spec.voices()) - 1)));
             break;
         case Field::VOICING:
             alignFormulaContext(spec, scaleBased);
             spec.setVoicing(static_cast<oc::note::sequencer::StepSequencerChordVoicing>(
-                input_utils::normalizedToInclusiveInt(
+                normalized::normalizedToInclusiveInt(
                     normalized,
                     static_cast<int>(oc::note::sequencer::StepSequencerChordVoicing::Count) - 1)));
             break;
@@ -334,7 +336,7 @@ FLASHMEM bool resetSpecField(core::state::sequencer::SequencerState& sequencer, 
 
 FLASHMEM float signedToNormalized(int value, int minValue, int maxValue) {
     const int clamped = std::clamp(value, minValue, maxValue);
-    return input_utils::indexToNormalized(clamped - minValue, (maxValue - minValue) + 1);
+    return normalized::indexToNormalized(clamped - minValue, (maxValue - minValue) + 1);
 }
 
 }  // namespace core::handler::sequencer::chord_edit_ops

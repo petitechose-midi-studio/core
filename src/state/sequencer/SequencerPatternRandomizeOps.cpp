@@ -7,6 +7,7 @@
 
 namespace core::state::sequencer {
 
+
 namespace {
 
 constexpr uint32_t kSelectionSalt = 0xA511E9B3U;
@@ -95,7 +96,7 @@ FLASHMEM int32_t noteTargetValue(
 
     auto scale = base.effectiveScaleSettings;
     scale.clamp();
-    if (!content_view_internal::usesScaleDegreePitchEdit(
+    if (!pitch_edit::usesScaleDegreePitchEdit(
             StepProperty::NOTE,
             base.pitchEditMode,
             scale
@@ -106,11 +107,11 @@ FLASHMEM int32_t noteTargetValue(
         );
     }
 
-    const int sourceDegree = content_view_internal::scaleDegreeIndexForNote(
+    const int sourceDegree = pitch_edit::scaleDegreeIndexForNote(
         static_cast<uint8_t>(std::clamp<int32_t>(source, 0, 127)),
         scale
     );
-    return content_view_internal::scaleNoteForDegreeIndex(
+    return pitch_edit::scaleNoteForDegreeIndex(
         sourceDegree + static_cast<int>(delta),
         scale
     );
@@ -214,19 +215,19 @@ FLASHMEM SequencerPatternRandomizeStepProjection projectSanitizedDraftStep(
     if (out.delta != 0) {
         const int32_t nativeUnclamped = out.sourceValue + out.delta;
         if (draft.property == SequencerPatternRandomizeProperty::NOTE &&
-            content_view_internal::usesScaleDegreePitchEdit(
+            pitch_edit::usesScaleDegreePitchEdit(
                 StepProperty::NOTE,
                 base.pitchEditMode,
                 base.effectiveScaleSettings
             )) {
             const auto scale = sanitizedScaleSettings(base.effectiveScaleSettings);
-            const int degree = content_view_internal::scaleDegreeIndexForNote(
+            const int degree = pitch_edit::scaleDegreeIndexForNote(
                 static_cast<uint8_t>(std::clamp<int32_t>(out.sourceValue, 0, 127)),
                 scale
             );
             const int targetDegree = degree + static_cast<int>(out.delta);
             out.clamped = targetDegree < 0 ||
-                targetDegree >= content_view_internal::countScaleNotes(scale);
+                targetDegree >= pitch_edit::countScaleNotes(scale);
         } else {
             out.clamped = clampTargetValue(draft.property, nativeUnclamped) !=
                 nativeUnclamped;

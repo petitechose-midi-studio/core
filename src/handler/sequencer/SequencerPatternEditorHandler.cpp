@@ -1,4 +1,6 @@
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
+#include "handler/common/EncoderDefaults.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 
@@ -17,6 +19,8 @@
 #include "config/Timing.hpp"
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
 namespace {
 
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -31,14 +35,14 @@ FLASHMEM void showHistoryRejection(core::state::sequencer::SequencerState& seque
 FLASHMEM int16_t normalizedToRange(float normalized,
                                    core::state::sequencer::SequencerPatternEditorValueRange range) {
     if (!range.editable()) return 0;
-    const int index = input_utils::normalizedToIndex(normalized, static_cast<int>(range.count()));
+    const int index = normalized::normalizedToIndex(normalized, static_cast<int>(range.count()));
     return static_cast<int16_t>(range.minimum + index);
 }
 
 FLASHMEM float rangeValueToNormalized(
     int16_t value, core::state::sequencer::SequencerPatternEditorValueRange range) {
     if (!range.editable()) return 0.0f;
-    return input_utils::indexToNormalized(
+    return normalized::indexToNormalized(
         std::clamp<int>(value, range.minimum, range.maximum) - range.minimum,
         static_cast<int>(range.count()));
 }
@@ -57,7 +61,7 @@ FLASHMEM int32_t normalizedToRandomizeRange(
     float normalized, core::state::sequencer::SequencerPatternRandomizeValueRange range) {
     const uint32_t count = range.count();
     if (count == 0U) return range.minimum;
-    const int index = input_utils::normalizedToIndex(normalized, static_cast<int>(count));
+    const int index = normalized::normalizedToIndex(normalized, static_cast<int>(count));
     return range.minimum + index;
 }
 
@@ -65,7 +69,7 @@ FLASHMEM float randomizeValueToNormalized(
     int32_t value, core::state::sequencer::SequencerPatternRandomizeValueRange range) {
     const uint32_t count = range.count();
     if (count == 0U) return 0.0f;
-    return input_utils::indexToNormalized(
+    return normalized::indexToNormalized(
         static_cast<int>(std::clamp(value, range.minimum, range.maximum) - range.minimum),
         static_cast<int>(count));
 }
@@ -347,8 +351,8 @@ FLASHMEM void SequencerPatternEditorHandler::configureOptForFocusedField() {
         const auto range = core::state::sequencer::patternRandomizeValueRange(randomize_);
         const uint32_t count = range.count();
         encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
-                                          input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP);
-        encoders_.setNormalizedTurns(Config::EncoderID::OPT, input_utils::DEFAULT_NORMALIZED_TURNS);
+                                          encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
+        encoders_.setNormalizedTurns(Config::EncoderID::OPT, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
         encoders_.setDiscreteSteps(Config::EncoderID::OPT,
                                    static_cast<uint8_t>(std::min<uint32_t>(count, 255U)));
         encoders_.setPosition(
@@ -361,8 +365,8 @@ FLASHMEM void SequencerPatternEditorHandler::configureOptForFocusedField() {
     const auto range = core::state::sequencer::patternEditorValueRange(sequencer_, field);
     const uint16_t count = range.count();
     encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
-                                      input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP);
-    encoders_.setNormalizedTurns(Config::EncoderID::OPT, input_utils::DEFAULT_NORMALIZED_TURNS);
+                                      encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
+    encoders_.setNormalizedTurns(Config::EncoderID::OPT, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
     encoders_.setDiscreteSteps(Config::EncoderID::OPT,
                                static_cast<uint8_t>(std::min<uint16_t>(count, 255U)));
     encoders_.setPosition(

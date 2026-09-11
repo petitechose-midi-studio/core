@@ -1,4 +1,5 @@
 #include "SequencerChordFormulaEditOps.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,6 +10,8 @@
 #include "SequencerInputUtils.hpp"
 
 namespace core::handler::sequencer::chord_edit_ops {
+
+namespace normalized = core::state::normalized;
 namespace {
 
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -266,7 +269,7 @@ FLASHMEM bool applyFormulaVoice(
     uint8_t minimum = 0;
     uint8_t maximum = 0;
     customIntervalBounds(spec, voiceIndex, minimum, maximum);
-    const int choice = input_utils::normalizedToIndex(
+    const int choice = normalized::normalizedToIndex(
         normalized,
         static_cast<int>((maximum - minimum) + 1U)
     );
@@ -404,7 +407,7 @@ FLASHMEM float formulaVoiceToNormalized(
     const int count = static_cast<int>((maximum - minimum) + 1U);
     const int index =
         static_cast<int>(spec.customInterval(voiceIndex) - minimum);
-    return input_utils::indexToNormalized(index, count);
+    return normalized::indexToNormalized(index, count);
 }
 
 FLASHMEM uint8_t formulaVoiceChoiceCount(

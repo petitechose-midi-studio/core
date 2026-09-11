@@ -1,4 +1,5 @@
 #include "SequencerPropertySelectorHandler.hpp"
+#include "handler/common/EncoderDefaults.hpp"
 
 #include <algorithm>
 
@@ -15,6 +16,7 @@
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler {
+
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -517,8 +519,8 @@ FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty(
     if (core::state::sequencer::sequencerPropertySelectionIsState(
             sequencer_.stepPropertyInlineSelector.selectedIndex.get())) {
         encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
-                                          input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP);
-        encoders_.setNormalizedTurns(Config::EncoderID::OPT, input_utils::DEFAULT_NORMALIZED_TURNS);
+                                          encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
+        encoders_.setNormalizedTurns(Config::EncoderID::OPT, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, 2);
         const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
         const uint8_t step = length == 0 ? 0

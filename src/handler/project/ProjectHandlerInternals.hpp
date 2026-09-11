@@ -1,5 +1,7 @@
 #pragma once
 
+#include "handler/common/EncoderDefaults.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +11,6 @@
 #include <oc/api/EncoderAPI.hpp>
 
 #include "handler/project/ProjectHandler.hpp"
-#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/project/ProjectMenuModel.hpp"
@@ -18,14 +19,16 @@
 
 namespace core::handler::project_handler_internal {
 
+namespace encoder_defaults = core::handler::encoder_defaults;
+
 using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 namespace project = core::state::project;
 
 constexpr uint16_t PROJECT_OPT_TICKS_PER_STEP =
-    core::handler::sequencer::input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
+    encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
 constexpr float PROJECT_OPT_NORMALIZED_TURNS =
-    core::handler::sequencer::input_utils::DEFAULT_NORMALIZED_TURNS;
+    encoder_defaults::DEFAULT_NORMALIZED_TURNS;
 constexpr float PROJECT_OPT_TEMPO_STEPS_PER_TURN = 24.0f;
 constexpr float PROJECT_OPT_PERCENT_STEPS_PER_TURN = 18.0f;
 constexpr float PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW =
@@ -42,9 +45,6 @@ FLASHMEM uint8_t projectModulatorFreePeriodIndex(uint32_t periodMs);
 FLASHMEM int signedStepCount(float delta);
 FLASHMEM int clampInt(int value, int low, int high);
 FLASHMEM int wrapIndex(int value, int count);
-FLASHMEM float clampNormalized(float value);
-FLASHMEM int normalizedToIndex(float normalized, int count);
-FLASHMEM float indexToNormalized(int index, int count);
 FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node);
 FLASHMEM bool appendProjectNameKey(core::state::project::ProjectNavigationState& navigation);
 FLASHMEM bool backspaceProjectName(core::state::project::ProjectNavigationState& navigation);

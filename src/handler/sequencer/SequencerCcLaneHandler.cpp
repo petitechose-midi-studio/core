@@ -1,4 +1,5 @@
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
+#include "handler/common/EncoderDefaults.hpp"
 
 #include <cmath>
 
@@ -11,6 +12,7 @@
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
 
 namespace core::handler {
+
 
 namespace seq = core::state::sequencer;
 using ButtonID = Config::ButtonID;
@@ -279,11 +281,11 @@ FLASHMEM bool SequencerCcLaneHandler::configureTransitionEncoder(
     encoders_.setDiscreteSteps(encoder, 5);
     encoders_.setDiscreteTicksPerStep(
         encoder,
-        sequencer::input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
     );
     encoders_.setNormalizedTurns(
         encoder,
-        sequencer::input_utils::DEFAULT_NORMALIZED_TURNS
+        encoder_defaults::DEFAULT_NORMALIZED_TURNS
     );
     encoders_.setPosition(
         encoder,
@@ -372,11 +374,11 @@ FLASHMEM void SequencerCcLaneHandler::syncMacroEncoderContract(bool ownsGrid) {
             encoders_.setDiscreteSteps(encoder, 128);
             encoders_.setDiscreteTicksPerStep(
                 encoder,
-                sequencer::input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+                encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
             );
             encoders_.setNormalizedTurns(
                 encoder,
-                sequencer::input_utils::DEFAULT_NORMALIZED_TURNS
+                encoder_defaults::DEFAULT_NORMALIZED_TURNS
             );
         }
         macro_encoders_configured_ = true;
@@ -432,11 +434,11 @@ FLASHMEM void SequencerCcLaneHandler::configureDirectionalOpt() {
     encoders_.setBounds(EncoderID::OPT, 0.0f, 1.0f);
     encoders_.setDiscreteTicksPerStep(
         EncoderID::OPT,
-        sequencer::input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
     );
     encoders_.setNormalizedTurns(
         EncoderID::OPT,
-        sequencer::input_utils::DEFAULT_NORMALIZED_TURNS
+        encoder_defaults::DEFAULT_NORMALIZED_TURNS
     );
     encoders_.setContinuous(EncoderID::OPT);
     recenterDirectionalOpt();

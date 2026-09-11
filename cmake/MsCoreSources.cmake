@@ -124,7 +124,6 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRandomizeSession.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternEditorState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternEditorOps.cpp"
-    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPitchEditAuthority.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPresetMetadata.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerQuickControlsDraft.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerSnapshotOps.cpp"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerScale.hpp>
@@ -7,25 +8,71 @@
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/StepProperty.hpp"
 
-namespace core::state::sequencer::content_view_internal {
+namespace core::state::sequencer::pitch_edit {
 
-// Canonical integer pitch-edit helpers shared by every authoring domain that
-// needs to express a Note delta in semitones or effective-scale degrees. Their
-// implementation remains owned by SequencerContentViewInternal.cpp; this
-// lightweight declaration surface avoids importing SequencerState/UI state.
-bool usesScaleDegreePitchEdit(
+// One pure definition shared by all editors; inline preserves specialization
+// of scale settings at input and content conversion call sites.
+
+inline bool usesScaleDegreePitchEdit(
     StepProperty property,
     SequencerPitchEditMode mode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
-int countScaleNotes(oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
-int scaleDegreeIndexForNote(
+) {
+    scaleSettings.clamp();
+    return property == StepProperty::NOTE &&
+           pitchContextUsesScaleDegrees(mode, scaleSettings);
+}
+
+inline int countScaleNotes(oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {
+    scaleSettings.clamp();
+    int count = 0;
+    for (int note = 0; note <= 127; ++note) {
+        if (oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(note))) {
+            ++count;
+        }
+    }
+    return std::max(count, 1);
+}
+
+inline int scaleDegreeIndexForNote(
     uint8_t note,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
-uint8_t scaleNoteForDegreeIndex(
+) {
+    scaleSettings.clamp();
+    const uint8_t resolved =
+        oc::note::sequencer::resolveScaleNote(note, scaleSettings).outputNote;
+    int index = 0;
+    for (int candidate = 0; candidate <= 127; ++candidate) {
+        if (!oc::note::sequencer::scaleContainsNote(
+                scaleSettings,
+                static_cast<uint8_t>(candidate)
+            )) {
+            continue;
+        }
+        if (candidate >= resolved) return index;
+        ++index;
+    }
+    return std::max(0, index - 1);
+}
+
+inline uint8_t scaleNoteForDegreeIndex(
     int index,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
+) {
+    scaleSettings.clamp();
+    const int clampedIndex = std::clamp(index, 0, countScaleNotes(scaleSettings) - 1);
+    int current = 0;
+    for (int note = 0; note <= 127; ++note) {
+        if (!oc::note::sequencer::scaleContainsNote(
+                scaleSettings,
+                static_cast<uint8_t>(note)
+            )) {
+            continue;
+        }
+        if (current == clampedIndex) return static_cast<uint8_t>(note);
+        ++current;
+    }
+    return 0;
+}
 
-}  // namespace core::state::sequencer::content_view_internal
+}  // namespace core::state::sequencer::pitch_edit
