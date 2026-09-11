@@ -20,9 +20,10 @@ FLASHMEM uint64_t controlHash(const ProjectControlDomainState& state) {
             hash *= prime * prime * prime * prime;
         } else {
             const auto* wordBytes = reinterpret_cast<const uint8_t*>(&word);
-            for (size_t index = 0U; index < sizeof(word); ++index) {
-                hash = (hash ^ wordBytes[index]) * prime;
-            }
+            hash = (hash ^ wordBytes[0]) * prime;
+            hash = (hash ^ wordBytes[1]) * prime;
+            hash = (hash ^ wordBytes[2]) * prime;
+            hash = (hash ^ wordBytes[3]) * prime;
         }
     }
     return hash;
