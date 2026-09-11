@@ -1,4 +1,6 @@
 #include <cassert>
+
+#include "state/shared/NormalizedValue.hpp"
 #include <cmath>
 #include <iostream>
 
@@ -21,6 +23,8 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 
 namespace {
+
+namespace normalized = core::state::normalized;
 
 uint32_t mockTimeMs() {
     return 0;
@@ -290,7 +294,7 @@ void expects_clip_quick_property_to_publish_its_exact_opt_contract() {
     assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) == 17U);
     assert(almostEqual(
         h.encoderHw.getPosition(OPT_ENCODER_ID),
-        input_utils::indexToNormalized(8, 17)
+        normalized::indexToNormalized(8, 17)
     ));
 
     std::cout <<
@@ -349,7 +353,7 @@ void expects_clip_behavior_editor_to_follow_the_focused_field() {
     assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) == 17U);
     assert(almostEqual(
         h.encoderHw.getPosition(OPT_ENCODER_ID),
-        input_utils::indexToNormalized(8, 17)
+        normalized::indexToNormalized(8, 17)
     ));
 
     workspace.moveEditorField(1);
@@ -359,7 +363,7 @@ void expects_clip_behavior_editor_to_follow_the_focused_field() {
            core::state::sequencer::sequencerLauncherFollowChoiceCount());
     assert(almostEqual(
         h.encoderHw.getPosition(OPT_ENCODER_ID),
-        input_utils::indexToNormalized(
+        normalized::indexToNormalized(
             core::state::sequencer::sequencerLauncherFollowChoiceIndex(
                 core::state::sequencer::SequencerLauncherFollowChoice::NEXT),
             core::state::sequencer::sequencerLauncherFollowChoiceCount()
@@ -372,7 +376,7 @@ void expects_clip_behavior_editor_to_follow_the_focused_field() {
     assert(h.encoderHw.getDiscreteSteps(OPT_ENCODER_ID) == 3U);
     assert(almostEqual(
         h.encoderHw.getPosition(OPT_ENCODER_ID),
-        input_utils::indexToNormalized(2, 3)
+        normalized::indexToNormalized(2, 3)
     ));
 
     std::cout <<

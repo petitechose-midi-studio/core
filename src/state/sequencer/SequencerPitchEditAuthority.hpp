@@ -7,12 +7,10 @@
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/StepProperty.hpp"
 
-namespace core::state::sequencer::content_view_internal {
+namespace core::state::sequencer::pitch_edit {
 
-// Canonical integer pitch-edit helpers shared by every authoring domain that
-// needs to express a Note delta in semitones or effective-scale degrees. Their
-// implementation remains owned by SequencerContentViewInternal.cpp; this
-// lightweight declaration surface avoids importing SequencerState/UI state.
+// Pure pitch-edit authority for input, content editing and randomization.
+// Does not depend on SequencerState or UI state.
 bool usesScaleDegreePitchEdit(
     StepProperty property,
     SequencerPitchEditMode mode,
@@ -28,4 +26,4 @@ uint8_t scaleNoteForDegreeIndex(
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 );
 
-}  // namespace core::state::sequencer::content_view_internal
+}  // namespace core::state::sequencer::pitch_edit

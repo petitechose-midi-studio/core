@@ -1,4 +1,5 @@
 #include "app/RpcLifetime.hpp"
+#include "handler/common/EncoderDefaults.hpp"
 #include "StandaloneContext.hpp"
 
 #include <oc/log/Log.hpp>
@@ -36,6 +37,8 @@
 #endif
 
 namespace core::context {
+
+namespace encoder_defaults = core::handler::encoder_defaults;
 
 namespace input_utils = core::handler::sequencer::input_utils;
 
@@ -356,11 +359,11 @@ FLASHMEM void StandaloneContext::syncEncodersFromState() {
         // Macro view defaults: 0..1 continuous
         encoders().setDiscreteTicksPerStep(
             Config::MACRO_ENCODERS[i],
-            input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+            encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
         );
         encoders().setNormalizedTurns(
             Config::MACRO_ENCODERS[i],
-            input_utils::DEFAULT_NORMALIZED_TURNS
+            encoder_defaults::DEFAULT_NORMALIZED_TURNS
         );
         encoders().setContinuous(Config::MACRO_ENCODERS[i]);
         encoders().setPosition(Config::MACRO_ENCODERS[i], value);
@@ -368,7 +371,7 @@ FLASHMEM void StandaloneContext::syncEncodersFromState() {
 
     encoders().setDiscreteTicksPerStep(
         Config::EncoderID::OPT,
-        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
     );
     encoders().setMode(
         Config::EncoderID::OPT,
@@ -377,7 +380,7 @@ FLASHMEM void StandaloneContext::syncEncodersFromState() {
     encoders().setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
     encoders().setNormalizedTurns(
         Config::EncoderID::OPT,
-        input_utils::DEFAULT_NORMALIZED_TURNS
+        encoder_defaults::DEFAULT_NORMALIZED_TURNS
     );
     encoders().setContinuous(Config::EncoderID::OPT);
 

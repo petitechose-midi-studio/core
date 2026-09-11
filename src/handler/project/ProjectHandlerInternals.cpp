@@ -1,16 +1,18 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 #include <cstring>
 
 #include <oc/type/TextFormat.hpp>
 
-#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "persistence/ProjectLoadReport.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectSlug.hpp"
 
 namespace core::handler::project_handler_internal {
+
+namespace normalized = core::state::normalized;
 
 FLASHMEM uint8_t projectModulatorFreePeriodIndex(uint32_t periodMs) {
     uint8_t best = 0;
@@ -47,26 +49,6 @@ FLASHMEM int wrapIndex(int value, int count) {
     int wrapped = value % count;
     if (wrapped < 0) wrapped += count;
     return wrapped;
-}
-
-FLASHMEM float clampNormalized(float value) {
-    return std::clamp(value, 0.0f, 1.0f);
-}
-
-FLASHMEM int normalizedToIndex(float normalized, int count) {
-    if (count <= 1) return 0;
-    const float value = clampNormalized(normalized);
-    return std::clamp(
-        static_cast<int>(value * static_cast<float>(count - 1) + 0.5f),
-        0,
-        count - 1
-    );
-}
-
-FLASHMEM float indexToNormalized(int index, int count) {
-    if (count <= 1) return 0.0f;
-    const int clamped = clampInt(index, 0, count - 1);
-    return static_cast<float>(clamped) / static_cast<float>(count - 1);
 }
 
 FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) {
@@ -111,7 +93,7 @@ FLASHMEM bool clearProjectName(core::state::project::ProjectNavigationState& nav
 
 FLASHMEM int tempoFromNormalized(float normalized) {
     return static_cast<int>(project::PROJECT_TEMPO_MIN_BPM) +
-           normalizedToIndex(normalized, project::PROJECT_TEMPO_RANGE_STEPS);
+           normalized::normalizedToIndex(normalized, project::PROJECT_TEMPO_RANGE_STEPS);
 }
 
 FLASHMEM float tempoToNormalized(float tempoBpm) {
@@ -120,7 +102,7 @@ FLASHMEM float tempoToNormalized(float tempoBpm) {
         static_cast<int>(project::PROJECT_TEMPO_MIN_BPM),
         static_cast<int>(project::PROJECT_TEMPO_MAX_BPM)
     );
-    return indexToNormalized(
+    return normalized::indexToNormalized(
         tempo - static_cast<int>(project::PROJECT_TEMPO_MIN_BPM),
         project::PROJECT_TEMPO_RANGE_STEPS
     );
@@ -204,7 +186,7 @@ FLASHMEM void configureOptContinuous(oc::api::EncoderAPI& encoders,
     encoders.setDiscreteTicksPerStep(EncoderID::OPT, PROJECT_OPT_TICKS_PER_STEP);
     encoders.setNormalizedTurns(EncoderID::OPT, normalizedTurns);
     encoders.setContinuous(EncoderID::OPT);
-    encoders.setPosition(EncoderID::OPT, clampNormalized(position));
+    encoders.setPosition(EncoderID::OPT, normalized::clampNormalized(position));
 }
 
 FLASHMEM void configureOptRaw(oc::api::EncoderAPI& encoders) {
@@ -223,7 +205,7 @@ FLASHMEM void configureOptDiscrete(oc::api::EncoderAPI& encoders,
         EncoderID::OPT,
         static_cast<uint8_t>(clampInt(stepCount, 1, 255))
     );
-    encoders.setPosition(EncoderID::OPT, clampNormalized(position));
+    encoders.setPosition(EncoderID::OPT, normalized::clampNormalized(position));
 }
 
 }  // namespace core::handler::project_handler_internal

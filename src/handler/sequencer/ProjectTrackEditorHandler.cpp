@@ -1,4 +1,6 @@
 #include "handler/sequencer/ProjectTrackEditorHandler.hpp"
+#include "handler/common/EncoderDefaults.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 
@@ -12,6 +14,9 @@
 #include "state/project/ProjectTrackEditorOps.hpp"
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
+namespace encoder_defaults = core::handler::encoder_defaults;
 namespace {
 
 namespace input_utils = core::handler::sequencer::input_utils;
@@ -23,7 +28,7 @@ FLASHMEM int direction(float delta) {
 }
 
 FLASHMEM uint8_t channelFromNormalized(float normalized) {
-    return static_cast<uint8_t>(input_utils::normalizedToIndex(normalized, 16));
+    return static_cast<uint8_t>(normalized::normalizedToIndex(normalized, 16));
 }
 
 FLASHMEM int16_t delayFromNormalized(float normalized) {
@@ -32,7 +37,7 @@ FLASHMEM int16_t delayFromNormalized(float normalized) {
         core::state::project::PROJECT_TRACK_DELAY_MIN_MS + 1;
     return static_cast<int16_t>(
         core::state::project::PROJECT_TRACK_DELAY_MIN_MS +
-        input_utils::normalizedToIndex(normalized, count)
+        normalized::normalizedToIndex(normalized, count)
     );
 }
 
@@ -483,11 +488,11 @@ FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
     encoders_.setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
     encoders_.setDiscreteTicksPerStep(
         Config::EncoderID::OPT,
-        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
     );
     encoders_.setNormalizedTurns(
         Config::EncoderID::OPT,
-        input_utils::DEFAULT_NORMALIZED_TURNS
+        encoder_defaults::DEFAULT_NORMALIZED_TURNS
     );
 
     if (editor_.selectedProperty == EditorProperty::NAME) {
@@ -500,7 +505,7 @@ FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, 16U);
         encoders_.setPosition(
             Config::EncoderID::OPT,
-            input_utils::indexToNormalized(
+            normalized::indexToNormalized(
                 core::state::project::projectTrackMidiChannel(
                     tracks_,
                     editor_.trackIndex
@@ -531,7 +536,7 @@ FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
     );
     encoders_.setPosition(
         Config::EncoderID::OPT,
-        input_utils::indexToNormalized(
+        normalized::indexToNormalized(
             core::state::project::projectTrackDelayMs(
                 tracks_,
                 editor_.trackIndex

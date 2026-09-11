@@ -1,4 +1,5 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 
@@ -13,6 +14,8 @@
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
 
 using namespace project_handler_internal;
 namespace depth_parameter = core::state::modulation::depth;
@@ -82,7 +85,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(
                 encoders_,
                 count,
-                indexToNormalized(
+                normalized::indexToNormalized(
                     projectModulatorFreePeriodIndex(lfo.freePeriodMs),
                     count
                 )
@@ -91,7 +94,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(
                 encoders_,
                 lfo_parameter::RATE_COUNT,
-                indexToNormalized(
+                normalized::indexToNormalized(
                     lfo_parameter::rateIndex(lfo.periodTicks),
                     lfo_parameter::RATE_COUNT
                 )
@@ -140,7 +143,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(
                 encoders_,
                 16,
-                indexToNormalized(route.track, 16)
+                normalized::indexToNormalized(route.track, 16)
             );
         } else {
             const uint8_t current = item == TriggerDetailItem::NOTE_LOW
@@ -153,7 +156,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(
                 encoders_,
                 128,
-                indexToNormalized(current, 128)
+                normalized::indexToNormalized(current, 128)
             );
         }
         return;
@@ -197,7 +200,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     64
                 );
                 configureOptDiscrete(
-                    encoders_, 64, indexToNormalized(beats - 1, 64)
+                    encoders_, 64, normalized::indexToNormalized(beats - 1, 64)
                 );
                 return;
             }
@@ -213,7 +216,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     lfo_parameter::SHAPE_COUNT,
-                    indexToNormalized(
+                    normalized::indexToNormalized(
                         static_cast<int>(source->parameters.lfo.shape),
                         lfo_parameter::SHAPE_COUNT
                     )
@@ -228,7 +231,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     configureOptDiscrete(
                         encoders_,
                         count,
-                        indexToNormalized(
+                        normalized::indexToNormalized(
                             projectModulatorFreePeriodIndex(lfo.freePeriodMs),
                             count
                         )
@@ -237,7 +240,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     configureOptDiscrete(
                         encoders_,
                         lfo_parameter::RATE_COUNT,
-                        indexToNormalized(
+                        normalized::indexToNormalized(
                             lfo_parameter::rateIndex(
                                 lfo.periodTicks
                             ),
@@ -278,7 +281,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     configureOptDiscrete(
                         encoders_,
                         2,
-                        indexToNormalized(
+                        normalized::indexToNormalized(
                             static_cast<int>(
                                 modulatorAdsrRetrigger(
                                     source->parameters.adsr.traits
@@ -297,7 +300,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     2,
-                    indexToNormalized(
+                    normalized::indexToNormalized(
                         static_cast<int>(source->parameters.lfo.retrigger),
                         2
                     )
@@ -342,7 +345,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     count,
-                    indexToNormalized(
+                    normalized::indexToNormalized(
                         envelope_parameter::durationIndex(
                             modulatorEnvelopeDuration(
                                 source->parameters.adsr,
@@ -374,7 +377,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     3,
-                    indexToNormalized(
+                    normalized::indexToNormalized(
                         static_cast<int>(modulatorAdsrCurve(
                             source->parameters.adsr.traits
                         )),
@@ -409,7 +412,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(
                 encoders_,
                 count,
-                indexToNormalized(scale_settings_.currentChoiceIndex(row), count)
+                normalized::indexToNormalized(scale_settings_.currentChoiceIndex(row), count)
             );
         }
         return;
@@ -420,7 +423,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(
                 encoders_,
                 project::PROJECT_STEP_PASTE_MODE_COUNT,
-                indexToNormalized(
+                normalized::indexToNormalized(
                     static_cast<int>(navigation_.stepPasteMode),
                     project::PROJECT_STEP_PASTE_MODE_COUNT
                 )
@@ -435,7 +438,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         configureOptDiscrete(
             encoders_,
             project::PROJECT_MIDI_CC_COUNT,
-            indexToNormalized(
+            normalized::indexToNormalized(
                 navigation_.ccLaneDefaultControllers[lane],
                 project::PROJECT_MIDI_CC_COUNT
             )
@@ -459,7 +462,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     project::PROJECT_SWING_STEPS,
-                    indexToNormalized(navigation_.transportSwingPercent, project::PROJECT_SWING_STEPS),
+                    normalized::indexToNormalized(navigation_.transportSwingPercent, project::PROJECT_SWING_STEPS),
                     normalizedTurnsForStepRate(
                         project::PROJECT_SWING_STEPS,
                         PROJECT_OPT_PERCENT_STEPS_PER_TURN
@@ -470,14 +473,14 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     3,
-                    indexToNormalized(device_settings_.currentChoiceIndex(0U), 3)
+                    normalized::indexToNormalized(device_settings_.currentChoiceIndex(0U), 3)
                 );
                 return;
             case 3:
                 configureOptDiscrete(
                     encoders_,
                     project::PROJECT_RUN_MODE_COUNT,
-                    indexToNormalized(navigation_.transportRunMode, project::PROJECT_RUN_MODE_COUNT)
+                    normalized::indexToNormalized(navigation_.transportRunMode, project::PROJECT_RUN_MODE_COUNT)
                 );
                 return;
             default:
@@ -495,7 +498,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         configureOptDiscrete(
             encoders_,
             project::PROJECT_MIDI_CHANNEL_COUNT,
-            indexToNormalized(channel, project::PROJECT_MIDI_CHANNEL_COUNT)
+            normalized::indexToNormalized(channel, project::PROJECT_MIDI_CHANNEL_COUNT)
         );
         return;
     }

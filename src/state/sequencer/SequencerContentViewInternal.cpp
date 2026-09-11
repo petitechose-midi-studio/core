@@ -1,4 +1,7 @@
 #include "state/sequencer/SequencerContentViewInternal.hpp"
+#include "state/sequencer/SequencerValueMapping.hpp"
+#include "state/shared/NormalizedValue.hpp"
+#include "state/sequencer/SequencerPitchEditAuthority.hpp"
 
 #include <algorithm>
 
@@ -8,89 +11,34 @@
 #include "state/sequencer/DrumPatternState.hpp"
 
 namespace core::state::sequencer::content_view_internal {
-FLASHMEM int normalizedToInclusiveInt(float normalized, int maxInclusive) {
-    if (maxInclusive <= 0) return 0;
-    const float value = std::clamp(normalized, 0.0f, 1.0f);
-    return std::clamp(
-        static_cast<int>(value * static_cast<float>(maxInclusive) + 0.5f),
-        0,
-        maxInclusive
-    );
-}
 
-FLASHMEM int normalizedToIndex(float normalized, int itemCount) {
-    if (itemCount <= 1) return 0;
-    return normalizedToInclusiveInt(normalized, itemCount - 1);
-}
-
-FLASHMEM float indexToNormalized(int index, int itemCount) {
-    if (itemCount <= 1) return 0.0f;
-    return static_cast<float>(std::clamp(index, 0, itemCount - 1)) /
-           static_cast<float>(itemCount - 1);
-}
-
-FLASHMEM uint8_t normalizedToMidi7(float normalized) {
-    return static_cast<uint8_t>(normalizedToInclusiveInt(normalized, 127));
-}
-
-FLASHMEM float clampNormalized(float value) {
-    return std::clamp(value, 0.0f, 1.0f);
-}
-
-FLASHMEM uint16_t normalizedToGate(float normalized) {
-    constexpr float unitPoint = 0.5f;
-    constexpr uint16_t unitGate = SequencerState::DEFAULT_GATE_PERCENT;
-    constexpr uint16_t maxGate = SequencerState::MAX_GATE_PERCENT;
-    const float value = clampNormalized(normalized);
-    if constexpr (maxGate <= unitGate) {
-        return static_cast<uint16_t>(normalizedToInclusiveInt(value, maxGate));
-    }
-
-    if (value <= unitPoint) {
-        return static_cast<uint16_t>(
-            normalizedToInclusiveInt(value / unitPoint, unitGate)
-        );
-    }
-
-    const float scaled = (value - unitPoint) / (1.0f - unitPoint);
-    const int extended =
-        static_cast<int>(unitGate) +
-        normalizedToInclusiveInt(scaled, static_cast<int>(maxGate - unitGate));
-    return static_cast<uint16_t>(std::clamp(extended, 0, static_cast<int>(maxGate)));
-}
-
-FLASHMEM int8_t normalizedToNudge(float normalized) {
-    return static_cast<int8_t>(-50 + normalizedToInclusiveInt(normalized, 100));
-}
-
-FLASHMEM uint8_t normalizedToProbability(float normalized) {
-    return static_cast<uint8_t>(normalizedToInclusiveInt(normalized, 100));
-}
-
+namespace normalized = core::state::normalized;
+namespace pitch_edit = core::state::sequencer::pitch_edit;
+namespace value_mapping = core::state::sequencer::value_mapping;
 FLASHMEM int targetValueFromNormalized(
     StepProperty property,
     float normalized,
     SequencerPitchEditMode pitchEditMode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
-    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
-        return scaleNoteForDegreeIndex(
-            normalizedToIndex(normalized, countScaleNotes(scaleSettings)),
+    if (pitch_edit::usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+        return pitch_edit::scaleNoteForDegreeIndex(
+            normalized::normalizedToIndex(normalized, pitch_edit::countScaleNotes(scaleSettings)),
             scaleSettings
         );
     }
 
     switch (property) {
         case StepProperty::NOTE:
-            return normalizedToMidi7(normalized);
+            return value_mapping::normalizedToMidi7(normalized);
         case StepProperty::VELOCITY:
-            return normalizedToMidi7(normalized);
+            return value_mapping::normalizedToMidi7(normalized);
         case StepProperty::GATE:
-            return normalizedToGate(normalized);
+            return value_mapping::normalizedToGatePercent(normalized);
         case StepProperty::NUDGE:
-            return normalizedToNudge(normalized);
+            return value_mapping::normalizedToNudge(normalized);
         case StepProperty::PROBABILITY:
-            return normalizedToProbability(normalized);
+            return value_mapping::normalizedToProbability(normalized);
     }
     return 0;
 }
@@ -101,44 +49,23 @@ FLASHMEM float valueToNormalized(
     SequencerPitchEditMode pitchEditMode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
-    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
-        return indexToNormalized(
-            scaleDegreeIndexForNote(static_cast<uint8_t>(std::clamp(value, 0, 127)), scaleSettings),
-            countScaleNotes(scaleSettings)
+    if (pitch_edit::usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+        return normalized::indexToNormalized(
+            pitch_edit::scaleDegreeIndexForNote(static_cast<uint8_t>(std::clamp(value, 0, 127)), scaleSettings),
+            pitch_edit::countScaleNotes(scaleSettings)
         );
     }
 
     switch (property) {
         case StepProperty::NOTE:
         case StepProperty::VELOCITY:
-            return indexToNormalized(std::clamp(value, 0, 127), 128);
+            return normalized::indexToNormalized(std::clamp(value, 0, 127), 128);
         case StepProperty::GATE:
-            if (value <= static_cast<int>(SequencerState::DEFAULT_GATE_PERCENT)) {
-                constexpr int unitGate = static_cast<int>(SequencerState::DEFAULT_GATE_PERCENT);
-                return (static_cast<float>(std::clamp(value, 0, unitGate)) /
-                        static_cast<float>(unitGate)) *
-                       0.5f;
-            }
-            return 0.5f +
-                   (static_cast<float>(
-                        std::clamp(
-                            value - static_cast<int>(SequencerState::DEFAULT_GATE_PERCENT),
-                            0,
-                            static_cast<int>(
-                                SequencerState::MAX_GATE_PERCENT -
-                                SequencerState::DEFAULT_GATE_PERCENT
-                            )
-                        )
-                    ) /
-                    static_cast<float>(
-                        SequencerState::MAX_GATE_PERCENT -
-                        SequencerState::DEFAULT_GATE_PERCENT
-                    )) *
-                       0.5f;
+            return value_mapping::gatePercentToNormalized(value);
         case StepProperty::NUDGE:
-            return indexToNormalized(std::clamp(value, -50, 50) + 50, 101);
+            return value_mapping::nudgeToNormalized(value);
         case StepProperty::PROBABILITY:
-            return indexToNormalized(std::clamp(value, 0, 100), 101);
+            return value_mapping::probabilityToNormalized(value);
     }
     return 0.0f;
 }
@@ -733,11 +660,11 @@ FLASHMEM int offsetForTargetValue(
     SequencerPitchEditMode pitchEditMode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
-    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+    if (pitch_edit::usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
         const int parentDegree =
-            scaleDegreeIndexForNote(static_cast<uint8_t>(std::clamp(parentValue, 0, 127)), scaleSettings);
+            pitch_edit::scaleDegreeIndexForNote(static_cast<uint8_t>(std::clamp(parentValue, 0, 127)), scaleSettings);
         const int targetDegree =
-            scaleDegreeIndexForNote(static_cast<uint8_t>(std::clamp(targetValue, 0, 127)), scaleSettings);
+            pitch_edit::scaleDegreeIndexForNote(static_cast<uint8_t>(std::clamp(targetValue, 0, 127)), scaleSettings);
         return targetDegree - parentDegree;
     }
     return targetValue - parentValue;

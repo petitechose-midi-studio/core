@@ -1,4 +1,5 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,6 +16,8 @@
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
 
 using namespace project_handler_internal;
 namespace depth_parameter = core::state::modulation::depth;
@@ -93,7 +96,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             *binding
         );
         const int16_t amount = depth_parameter::amountQ15AtNormalized(
-            clampNormalized(normalized),
+            normalized::clampNormalized(normalized),
             scale
         );
         const int16_t percent =
@@ -128,7 +131,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             *binding
         );
         const int16_t amount = depth_parameter::amountQ15AtNormalized(
-            clampNormalized(normalized),
+            normalized::clampNormalized(normalized),
             scale
         );
         const float depth = static_cast<float>(amount) / 32767.0f;
@@ -173,8 +176,8 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         }
         const auto item = static_cast<TriggerDetailItem>(row);
         const int choice = item == TriggerDetailItem::TRACK
-            ? normalizedToIndex(clampNormalized(normalized), 16)
-            : normalizedToIndex(clampNormalized(normalized), 128);
+            ? normalized::normalizedToIndex(normalized::clampNormalized(normalized), 16)
+            : normalized::normalizedToIndex(normalized::clampNormalized(normalized), 128);
         uint8_t velocityMin = binding->velocityMin;
         uint8_t velocityMax = binding->velocityMax;
         if (item == TriggerDetailItem::TRACK) {
@@ -247,7 +250,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         return false;
     }
 
-    const float value = clampNormalized(normalized);
+    const float value = normalized::clampNormalized(normalized);
     if (item == Item::DEPTH) {
         auto* binding = findProjectModulationBinding(
             pages_.control.authored().modulation,
@@ -295,7 +298,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     }
     if (item == Item::LENGTH) {
         const uint8_t beats = static_cast<uint8_t>(
-            normalizedToIndex(value, 64) + 1
+            normalized::normalizedToIndex(value, 64) + 1
         );
         return resizeFocusedRecordedShape(beats);
     }
@@ -337,7 +340,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                     parameters,
                     parameter,
                     envelope_parameter::durationAt(
-                        static_cast<uint16_t>(normalizedToIndex(value, count)),
+                        static_cast<uint16_t>(normalized::normalizedToIndex(value, count)),
                         timing,
                         parameter
                     )
@@ -394,7 +397,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                 parameters.traits = withModulatorAdsrCurve(
                     parameters.traits,
                     static_cast<ModulatorAdsrCurve>(
-                        normalizedToIndex(value, 3)
+                        normalized::normalizedToIndex(value, 3)
                     )
                 );
                 break;
@@ -402,7 +405,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                 parameters.traits = withModulatorAdsrRetrigger(
                     parameters.traits,
                     static_cast<ModulatorAdsrRetriggerMode>(
-                        normalizedToIndex(value, 2)
+                        normalized::normalizedToIndex(value, 2)
                     )
                 );
                 break;
@@ -431,7 +434,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     switch (item) {
         case Item::SHAPE:
             parameters.shape = static_cast<ModulatorLfoShape>(
-                normalizedToIndex(
+                normalized::normalizedToIndex(
                     value,
                     lfo_parameter::SHAPE_COUNT
                 )
@@ -440,7 +443,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         case Item::RATE:
             if (parameters.timing == ModulatorTimingMode::FREE) {
                 parameters.freePeriodMs = PROJECT_MODULATOR_FREE_PERIODS_MS[
-                    static_cast<size_t>(normalizedToIndex(
+                    static_cast<size_t>(normalized::normalizedToIndex(
                         value,
                         static_cast<int>(PROJECT_MODULATOR_FREE_PERIODS_MS.size())
                     ))
@@ -448,7 +451,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             } else {
                 parameters.periodTicks =
                     lfo_parameter::ratePeriodTicks(
-                        static_cast<uint8_t>(normalizedToIndex(
+                        static_cast<uint8_t>(normalized::normalizedToIndex(
                             value,
                             lfo_parameter::RATE_COUNT
                         ))
@@ -474,7 +477,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                 return false;
             }
             parameters.retrigger = static_cast<ModulatorRetriggerPolicy>(
-                normalizedToIndex(value, 2)
+                normalized::normalizedToIndex(value, 2)
             );
             break;
         default:

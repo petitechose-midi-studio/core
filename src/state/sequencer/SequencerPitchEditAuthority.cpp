@@ -4,7 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
-namespace core::state::sequencer::content_view_internal {
+namespace core::state::sequencer::pitch_edit {
 
 FLASHMEM bool usesScaleDegreePitchEdit(
     StepProperty property,
@@ -68,4 +68,4 @@ FLASHMEM uint8_t scaleNoteForDegreeIndex(
     return 0;
 }
 
-}  // namespace core::state::sequencer::content_view_internal
+}  // namespace core::state::sequencer::pitch_edit

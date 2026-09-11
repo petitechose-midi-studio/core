@@ -1,4 +1,5 @@
 #include "SequencerStepChordEditorWorkflow.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 
@@ -13,6 +14,8 @@
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::handler::sequencer::step_chord_editor_workflow {
+
+namespace normalized = core::state::normalized;
 namespace chord_edit_ops = core::handler::sequencer::chord_edit_ops;
 namespace input_utils = core::handler::sequencer::input_utils;
 
@@ -410,7 +413,7 @@ FLASHMEM void configureFocusedFieldEncoder(
             encoders.setDiscreteSteps(encoderId, count);
             encoders.setPosition(
                 encoderId,
-                input_utils::indexToNormalized(
+                normalized::indexToNormalized(
                     oc::note::sequencer::chordPresetChoiceIndex(
                         harmony,
                         scaleBased
@@ -437,7 +440,7 @@ FLASHMEM void configureFocusedFieldEncoder(
             encoders.setDiscreteSteps(encoderId, count);
             encoders.setPosition(
                 encoderId,
-                input_utils::indexToNormalized(inversion, count)
+                normalized::indexToNormalized(inversion, count)
             );
             return;
         }
@@ -449,7 +452,7 @@ FLASHMEM void configureFocusedFieldEncoder(
             encoders.setDiscreteSteps(encoderId, count);
             encoders.setPosition(
                 encoderId,
-                input_utils::indexToNormalized(
+                normalized::indexToNormalized(
                     static_cast<int>(voicing),
                     count
                 )

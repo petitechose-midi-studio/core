@@ -1,4 +1,7 @@
 #ifdef NDEBUG
+
+#include "state/shared/NormalizedValue.hpp"
+#include "state/sequencer/SequencerPitchEditAuthority.hpp"
 #undef NDEBUG
 #endif
 
@@ -36,6 +39,9 @@
 #endif
 
 namespace {
+
+namespace normalized = core::state::normalized;
+namespace pitch_edit = core::state::sequencer::pitch_edit;
 
 uint32_t g_now_ms = 0;
 
@@ -625,9 +631,9 @@ void test_follow_scale_pitch_edit_writes_scale_degree_note() {
         core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
     );
 
-    const float b4AsScaleDegree = input_utils::indexToNormalized(
-        input_utils::scaleDegreeIndexForNote(71, settings),
-        input_utils::countScaleNotes(settings)
+    const float b4AsScaleDegree = normalized::indexToNormalized(
+        pitch_edit::scaleDegreeIndexForNote(71, settings),
+        pitch_edit::countScaleNotes(settings)
     );
 
     h.turn(Config::EncoderID::MACRO_1, b4AsScaleDegree);
@@ -848,7 +854,6 @@ void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
     assert(core::state::sequencer::setSequencerCcLaneEvent(
         *cc, 0U, 0U, 91U).changed());
     pattern.bumpCcLaneRevision();
-
 
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();

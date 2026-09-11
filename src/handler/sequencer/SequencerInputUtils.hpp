@@ -1,5 +1,10 @@
 #pragma once
 
+#include "handler/common/EncoderDefaults.hpp"
+#include "state/sequencer/SequencerValueMapping.hpp"
+#include "state/shared/NormalizedValue.hpp"
+#include "state/sequencer/SequencerPitchEditAuthority.hpp"
+
 /**
  * @file SequencerInputUtils.hpp
  * @brief Shared helpers for sequencer input value conversions.
@@ -13,18 +18,17 @@
 
 namespace core::handler::sequencer::input_utils {
 
+namespace normalized = core::state::normalized;
+namespace pitch_edit = core::state::sequencer::pitch_edit;
+namespace value_mapping = core::state::sequencer::value_mapping;
+namespace encoder_defaults = core::handler::encoder_defaults;
+
 using StepProperty = core::state::sequencer::StepProperty;
 using SequencerState = core::state::sequencer::SequencerState;
 
-inline constexpr uint16_t DEFAULT_DISCRETE_TICKS_PER_STEP = 2;
-inline constexpr float DEFAULT_NORMALIZED_TURNS = 0.0f;
 // Matches the previous "16 ticks/step on macro encoders" feel, but in physical turns.
 inline constexpr float NOTE_NORMALIZED_TURNS = 64.0f / 3.0f;
 inline constexpr float GATE_NORMALIZED_TURNS = 4.0f;
-inline constexpr float GATE_UNIT_NORMALIZED_POINT = 0.5f;
-inline constexpr int PROBABILITY_MAX = 100;
-inline constexpr int NUDGE_MIN = -50;
-inline constexpr int NUDGE_MAX = 50;
 inline constexpr int SWING_OFFSET_MIN =
     core::state::sequencer::SequencerPatternState::MIN_PATTERN_SWING_OFFSET_PERCENT;
 inline constexpr int SWING_OFFSET_MAX =
@@ -34,86 +38,18 @@ inline constexpr const auto& STEPS_PER_BEAT_CHOICES =
 
 struct StepPropertyEncoderConfig {
     uint8_t discreteSteps = 128;
-    uint16_t discreteTicksPerStep = DEFAULT_DISCRETE_TICKS_PER_STEP;
-    float normalizedTurns = DEFAULT_NORMALIZED_TURNS;
+    uint16_t discreteTicksPerStep = encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
+    float normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
 };
 
-float clampNormalized(float value);
-
-int normalizedToInclusiveInt(float normalized, int maxInclusive);
-
-int normalizedToIndex(float normalized, int itemCount);
-
-float indexToNormalized(int index, int itemCount);
-
-inline uint8_t normalizedToMidi7(float normalized) {
-    return static_cast<uint8_t>(normalizedToInclusiveInt(normalized, 127));
-}
-
-inline uint16_t normalizedToGatePercent(float normalized) {
-    const float value = clampNormalized(normalized);
-    constexpr uint16_t unitGate = SequencerState::DEFAULT_GATE_PERCENT;
-    constexpr uint16_t maxGate = SequencerState::MAX_GATE_PERCENT;
-    if constexpr (maxGate <= unitGate) {
-        return static_cast<uint16_t>(normalizedToInclusiveInt(value, maxGate));
-    }
-
-    if (value <= GATE_UNIT_NORMALIZED_POINT) {
-        const float scaled = value / GATE_UNIT_NORMALIZED_POINT;
-        return static_cast<uint16_t>(normalizedToInclusiveInt(scaled, unitGate));
-    }
-
-    const float scaled =
-        (value - GATE_UNIT_NORMALIZED_POINT) / (1.0f - GATE_UNIT_NORMALIZED_POINT);
-    const int extended =
-        static_cast<int>(unitGate) +
-        normalizedToInclusiveInt(scaled, static_cast<int>(maxGate - unitGate));
-    return static_cast<uint16_t>(std::clamp(extended, 0, static_cast<int>(maxGate)));
-}
-
-inline uint8_t normalizedToProbability(float normalized) {
-    return static_cast<uint8_t>(normalizedToInclusiveInt(normalized, PROBABILITY_MAX));
-}
-
-inline float gatePercentToNormalized(uint16_t gatePercent) {
-    constexpr uint16_t unitGate = SequencerState::DEFAULT_GATE_PERCENT;
-    constexpr uint16_t maxGate = SequencerState::MAX_GATE_PERCENT;
-    const uint16_t clamped = SequencerState::clampGatePercent(gatePercent);
-    if constexpr (maxGate <= unitGate) {
-        return indexToNormalized(clamped, static_cast<int>(maxGate) + 1);
-    }
-    if (clamped <= unitGate) {
-        return (static_cast<float>(clamped) / static_cast<float>(unitGate)) *
-               GATE_UNIT_NORMALIZED_POINT;
-    }
-    const float extended =
-        static_cast<float>(clamped - unitGate) / static_cast<float>(maxGate - unitGate);
-    return GATE_UNIT_NORMALIZED_POINT +
-           extended * (1.0f - GATE_UNIT_NORMALIZED_POINT);
-}
-
-inline float probabilityToNormalized(uint8_t probability) {
-    return indexToNormalized(
-        SequencerState::clampProbability(probability),
-        PROBABILITY_MAX + 1
-    );
-}
-
-inline int8_t normalizedToNudge(float normalized) {
-    const int index = normalizedToInclusiveInt(normalized, NUDGE_MAX - NUDGE_MIN);
-    return static_cast<int8_t>(NUDGE_MIN + index);
-}
-
 inline int8_t normalizedToSwingOffset(float normalized) {
-    const int index = normalizedToInclusiveInt(normalized, SWING_OFFSET_MAX - SWING_OFFSET_MIN);
+    const int index = normalized::normalizedToInclusiveInt(normalized, SWING_OFFSET_MAX - SWING_OFFSET_MIN);
     return static_cast<int8_t>(SWING_OFFSET_MIN + index);
 }
 
-float nudgeToNormalized(int8_t nudge);
-
 inline float swingOffsetToNormalized(int8_t offset) {
     const int clamped = std::clamp<int>(offset, SWING_OFFSET_MIN, SWING_OFFSET_MAX);
-    return indexToNormalized(
+    return normalized::indexToNormalized(
         clamped - SWING_OFFSET_MIN,
         (SWING_OFFSET_MAX - SWING_OFFSET_MIN) + 1
     );
@@ -148,67 +84,6 @@ bool applyNormalizedToDrumStep(
     float normalized
 );
 
-inline bool usesScaleDegreePitchEdit(
-    StepProperty property,
-    core::state::sequencer::SequencerPitchEditMode mode,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    return property == StepProperty::NOTE &&
-           core::state::sequencer::pitchContextUsesScaleDegrees(
-               mode,
-               scaleSettings
-           );
-}
-
-inline int countScaleNotes(oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {
-    scaleSettings.clamp();
-    int count = 0;
-    for (int note = 0; note <= 127; ++note) {
-        if (oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(note))) {
-            ++count;
-        }
-    }
-    return std::max(count, 1);
-}
-
-inline int scaleDegreeIndexForNote(
-    uint8_t note,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    scaleSettings.clamp();
-    const uint8_t resolved =
-        oc::note::sequencer::resolveScaleNote(note, scaleSettings).outputNote;
-    int index = 0;
-    for (int candidate = 0; candidate <= 127; ++candidate) {
-        if (!oc::note::sequencer::scaleContainsNote(
-                scaleSettings,
-                static_cast<uint8_t>(candidate)
-            )) {
-            continue;
-        }
-        if (candidate >= resolved) return index;
-        ++index;
-    }
-    return std::max(0, index - 1);
-}
-
-inline uint8_t scaleNoteForDegreeIndex(
-    int index,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    scaleSettings.clamp();
-    const int clampedIndex = std::clamp(index, 0, countScaleNotes(scaleSettings) - 1);
-    int current = 0;
-    for (int note = 0; note <= 127; ++note) {
-        if (!oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(note))) {
-            continue;
-        }
-        if (current == clampedIndex) return static_cast<uint8_t>(note);
-        ++current;
-    }
-    return 0;
-}
-
 StepPropertyEncoderConfig encoderConfigForProperty(
     StepProperty property,
     core::state::sequencer::SequencerPitchEditMode pitchEditMode,
@@ -239,7 +114,7 @@ inline StepPropertyEncoderConfig encoderConfigForQuickControl(
             config.discreteSteps = static_cast<uint8_t>((SWING_OFFSET_MAX - SWING_OFFSET_MIN) + 1);
             return config;
         case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            config.discreteSteps = static_cast<uint8_t>((NUDGE_MAX - NUDGE_MIN) + 1);
+            config.discreteSteps = static_cast<uint8_t>((value_mapping::NUDGE_MAX - value_mapping::NUDGE_MIN) + 1);
             return config;
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default:
@@ -275,13 +150,13 @@ inline uint8_t variationRangeMaxForProperty(StepProperty property) {
 
 inline uint8_t normalizedToVariationRange(StepProperty property, float normalized) {
     return static_cast<uint8_t>(
-        normalizedToInclusiveInt(normalized, variationRangeMaxForProperty(property))
+        normalized::normalizedToInclusiveInt(normalized, variationRangeMaxForProperty(property))
     );
 }
 
 inline float variationRangeToNormalized(StepProperty property, uint8_t range) {
     const uint8_t maxRange = variationRangeMaxForProperty(property);
-    return indexToNormalized(std::min<uint8_t>(range, maxRange), static_cast<int>(maxRange) + 1);
+    return normalized::indexToNormalized(std::min<uint8_t>(range, maxRange), static_cast<int>(maxRange) + 1);
 }
 
 inline StepPropertyEncoderConfig encoderConfigForVariationRange(StepProperty property) {
@@ -325,22 +200,22 @@ inline float stepPropertyToNormalized(StepProperty property,
                                       int8_t nudge,
                                       uint8_t probability = SequencerState::DEFAULT_PROBABILITY) {
     if (property == StepProperty::NOTE) {
-        return indexToNormalized(note, 128);
+        return normalized::indexToNormalized(note, 128);
     }
 
     if (property == StepProperty::VELOCITY) {
-        return indexToNormalized(velocity, 128);
+        return normalized::indexToNormalized(velocity, 128);
     }
 
     if (property == StepProperty::NUDGE) {
-        return nudgeToNormalized(nudge);
+        return value_mapping::nudgeToNormalized(nudge);
     }
 
     if (property == StepProperty::PROBABILITY) {
-        return probabilityToNormalized(probability);
+        return value_mapping::probabilityToNormalized(probability);
     }
 
-    return gatePercentToNormalized(gatePercent);
+    return value_mapping::gatePercentToNormalized(gatePercent);
 }
 
 inline float stepPropertyToNormalized(const SequencerState& state, uint8_t step, StepProperty property) {
@@ -365,10 +240,10 @@ inline float stepPropertyToNormalized(
 ) {
     if (step >= SequencerState::MAX_STEPS) return 0.0f;
 
-    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
-        return indexToNormalized(
-            scaleDegreeIndexForNote(state.pattern().note[step], scaleSettings),
-            countScaleNotes(scaleSettings)
+    if (pitch_edit::usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+        return normalized::indexToNormalized(
+            pitch_edit::scaleDegreeIndexForNote(state.pattern().note[step], scaleSettings),
+            pitch_edit::countScaleNotes(scaleSettings)
         );
     }
 
@@ -381,19 +256,19 @@ inline bool applyNormalizedToStep(
     StepProperty property,
     float normalized
 ) {
-    const float value = clampNormalized(normalized);
+    const float value = normalized::clampNormalized(normalized);
 
     switch (property) {
         case StepProperty::NOTE:
-            return state.setStepNoteAt(step, normalizedToMidi7(value));
+            return state.setStepNoteAt(step, value_mapping::normalizedToMidi7(value));
         case StepProperty::VELOCITY:
-            return state.setStepVelocityAt(step, normalizedToMidi7(value));
+            return state.setStepVelocityAt(step, value_mapping::normalizedToMidi7(value));
         case StepProperty::GATE:
-            return state.setStepGateAt(step, normalizedToGatePercent(value));
+            return state.setStepGateAt(step, value_mapping::normalizedToGatePercent(value));
         case StepProperty::NUDGE:
-            return state.setStepNudgeAt(step, normalizedToNudge(value));
+            return state.setStepNudgeAt(step, value_mapping::normalizedToNudge(value));
         case StepProperty::PROBABILITY:
-            return state.setStepProbabilityAt(step, normalizedToProbability(value));
+            return state.setStepProbabilityAt(step, value_mapping::normalizedToProbability(value));
     }
 
     return false;
@@ -407,9 +282,9 @@ inline bool applyNormalizedToStep(
     core::state::sequencer::SequencerPitchEditMode pitchEditMode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
-    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
-        const int index = normalizedToIndex(normalized, countScaleNotes(scaleSettings));
-        return state.setStepNoteAt(step, scaleNoteForDegreeIndex(index, scaleSettings));
+    if (pitch_edit::usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
+        const int index = normalized::normalizedToIndex(normalized, pitch_edit::countScaleNotes(scaleSettings));
+        return state.setStepNoteAt(step, pitch_edit::scaleNoteForDegreeIndex(index, scaleSettings));
     }
 
     return applyNormalizedToStep(state, step, property, normalized);

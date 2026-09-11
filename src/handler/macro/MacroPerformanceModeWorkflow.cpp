@@ -1,14 +1,14 @@
 #include "handler/macro/MacroPerformanceModeWorkflow.hpp"
+#include "handler/common/EncoderDefaults.hpp"
 
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 
 #include "handler/common/NavigationUtils.hpp"
-#include "handler/sequencer/SequencerInputUtils.hpp"
 
 namespace core::handler {
 
-namespace input_utils = core::handler::sequencer::input_utils;
+namespace encoder_defaults = core::handler::encoder_defaults;
 
 FLASHMEM MacroPerformanceModeWorkflow::MacroPerformanceModeWorkflow(
     StateRefs state,
@@ -77,8 +77,8 @@ FLASHMEM void MacroPerformanceModeWorkflow::configureValueEncoders() {
 }
 
 FLASHMEM void MacroPerformanceModeWorkflow::configureNormalizedEncoder(Config::EncoderID id) {
-    encoders_.setDiscreteTicksPerStep(id, input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP);
-    encoders_.setNormalizedTurns(id, input_utils::DEFAULT_NORMALIZED_TURNS);
+    encoders_.setDiscreteTicksPerStep(id, encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
+    encoders_.setNormalizedTurns(id, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
 }
 
 }  // namespace core::handler

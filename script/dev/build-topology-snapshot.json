@@ -1510,7 +1510,7 @@
       "sha256": "3c179c2d56a2ab27c935ace1d801e111494d315629535d3479c2bd1382c1965a"
     },
     "coreTotalHeaders": {
-      "count": 488,
+      "count": 491,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1561,6 +1561,7 @@
         "src/diagnostics/PsramSpanTracker.hpp",
         "src/diagnostics/StorageQualificationProbe.hpp",
         "src/handler/common/ButtonReleaseLatch.hpp",
+        "src/handler/common/EncoderDefaults.hpp",
         "src/handler/common/ModalSelectionUtils.hpp",
         "src/handler/common/ModulatorNavigationWorkflow.hpp",
         "src/handler/common/NavigationUtils.hpp",
@@ -1878,10 +1879,12 @@
         "src/state/sequencer/SequencerTrackTransferAction.hpp",
         "src/state/sequencer/SequencerUiState.hpp",
         "src/state/sequencer/SequencerUiStateFwd.hpp",
+        "src/state/sequencer/SequencerValueMapping.hpp",
         "src/state/sequencer/StepProperty.hpp",
         "src/state/sequencer/StepPropertyDisplay.hpp",
         "src/state/settings/DeviceSettingsMenuModel.hpp",
         "src/state/shared/MidiCcDestinationResolver.hpp",
+        "src/state/shared/NormalizedValue.hpp",
         "src/state/shared/SharedTrackCoordinator.hpp",
         "src/state/shared/StructureSlotOps.hpp",
         "src/ui/common/AddSlotIcon.hpp",
@@ -2001,7 +2004,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "767ee436b42182d3a0c431d8c02363bb2542724144fd1d21929eadc5d3d16d60"
+      "sha256": "d2c21d85ce51862a1dcd5dbf3e3546487ce2a12bf8885c424610d63d4c6f5695"
     },
     "coreTotalImplementations": {
       "count": 423,

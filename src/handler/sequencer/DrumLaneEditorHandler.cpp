@@ -1,4 +1,6 @@
 #include "handler/sequencer/DrumLaneEditorHandler.hpp"
+#include "handler/common/EncoderDefaults.hpp"
+#include "state/shared/NormalizedValue.hpp"
 
 #include <algorithm>
 
@@ -18,6 +20,9 @@
 #endif
 
 namespace core::handler {
+
+namespace normalized = core::state::normalized;
+namespace encoder_defaults = core::handler::encoder_defaults;
 namespace {
 
 namespace seq = core::state::sequencer;
@@ -611,11 +616,11 @@ FLASHMEM void DrumLaneEditorHandler::configureOpt() {
     encoders_.setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
     encoders_.setDiscreteTicksPerStep(
         Config::EncoderID::OPT,
-        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
     );
     encoders_.setNormalizedTurns(
         Config::EncoderID::OPT,
-        input_utils::DEFAULT_NORMALIZED_TURNS
+        encoder_defaults::DEFAULT_NORMALIZED_TURNS
     );
 
     int count = 1;
@@ -658,7 +663,7 @@ FLASHMEM void DrumLaneEditorHandler::configureOpt() {
             break;
     }
     const auto discreteSteps = static_cast<uint8_t>(count);
-    const float position = input_utils::indexToNormalized(index, count);
+    const float position = normalized::indexToNormalized(index, count);
     encoders_.setDiscreteSteps(Config::EncoderID::OPT, discreteSteps);
     encoders_.setPosition(Config::EncoderID::OPT, position);
 #if defined(MS_UX_RECORDER)
@@ -669,8 +674,8 @@ FLASHMEM void DrumLaneEditorHandler::configureOpt() {
         0.0f,
         1.0f,
         discreteSteps,
-        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP,
-        input_utils::DEFAULT_NORMALIZED_TURNS,
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP,
+        encoder_defaults::DEFAULT_NORMALIZED_TURNS,
         position
     );
 #endif
