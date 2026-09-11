@@ -111,23 +111,16 @@ SequencerGraphNodeId activeContentStepNodeId(const SequencerState& sequencer, ui
 SequencerContentStepProjection resolveActiveContentStepProjection(
     const SequencerState& sequencer, uint8_t step,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
-SequencerContentStepProjection resolveActiveContentOwnerProjection(
-    const SequencerState& sequencer, oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 SequencerContentStepProjection resolveContentFrameOwnerProjection(
     const SequencerState& sequencer, uint8_t frameDepth,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 SequencerContentPlaybackProjection resolveActiveContentPlaybackProjection(
     const SequencerState& sequencer, oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
-bool resolveRepresentativeChildContentNote(
-    const SequencerState& sequencer, const SequencerContentStepProjection& projection,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings, uint8_t& outNote);
 bool resolveRepresentativeChildContentSummary(
     const SequencerState& sequencer, const SequencerContentStepProjection& projection,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
     SequencerChildContentSummary& outSummary);
 bool stepContentProjectionHasAnyChild(const SequencerContentStepProjection& projection);
-bool stepContentProjectionHasChild(const SequencerContentStepProjection& projection,
-                                   StepContentChildKind childKind);
 int16_t stepContentProjectionOffsetForProperty(const SequencerContentStepProjection& projection,
                                                StepProperty property);
 StepContentCreationAvailability activeContentChildCreationAvailability(
