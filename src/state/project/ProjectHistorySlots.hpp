@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <type_traits>
 
-#include <config/PlatformCompat.hpp>
-
 #include "state/project/ProjectHistoryEventSink.hpp"
 
 namespace core::state::project {
@@ -33,23 +31,23 @@ public:
         return sizeof(entries_) + sizeof(undo_slots_) + sizeof(redo_slots_);
     }
 
-    FLASHMEM uintptr_t identity(ProjectHistoryDirection direction) const {
+    uintptr_t identity(ProjectHistoryDirection direction) const {
         return identity_(topSlot_(direction));
     }
 
-    FLASHMEM const Entry* peek(ProjectHistoryDirection direction) const {
+    const Entry* peek(ProjectHistoryDirection direction) const {
         const uint8_t slot = topSlot_(direction);
         return slot < Capacity && entries_[slot].occupied ? &entries_[slot] : nullptr;
     }
 
-    FLASHMEM Entry* peek(ProjectHistoryDirection direction) {
+    Entry* peek(ProjectHistoryDirection direction) {
         const auto& self = static_cast<const ProjectHistorySlots&>(*this);
         return const_cast<Entry*>(self.peek(direction));
     }
 
     /** Fill the admitted slot in place, without a second payload on the stack. */
     template <typename Fill>
-    FLASHMEM bool record(uint8_t kind, const ProjectHistoryEventSink* sink, Fill&& fillEntry) {
+    bool record(uint8_t kind, const ProjectHistoryEventSink* sink, Fill&& fillEntry) {
         static_assert(std::is_nothrow_invocable_v<Fill, Entry&>);
         discardRedo(sink);
         uint8_t slot = acquireSlot_();
@@ -73,7 +71,7 @@ public:
 
     /** Failed application leaves both stacks and their chronology unchanged. */
     template <typename Apply>
-    FLASHMEM bool apply(ProjectHistoryDirection direction,
+    bool apply(ProjectHistoryDirection direction,
                         const ProjectHistoryEventSink* sink, Apply&& applyEntry) {
         const bool undo = direction == ProjectHistoryDirection::Undo;
         auto& from = undo ? undo_slots_ : redo_slots_;
@@ -91,7 +89,7 @@ public:
         return true;
     }
 
-    FLASHMEM void discardRedo(const ProjectHistoryEventSink* sink) {
+    void discardRedo(const ProjectHistoryEventSink* sink) {
         for (uint8_t index = 0U; index < redo_count_; ++index) {
             const uint8_t slot = redo_slots_[index];
             if (sink) sink->notifyEvicted(Domain, identity_(slot));
@@ -103,7 +101,7 @@ public:
         redo_count_ = 0U;
     }
 
-    FLASHMEM void clear(const ProjectHistoryEventSink* sink) {
+    void clear(const ProjectHistoryEventSink* sink) {
         if (sink) sink->notifyCleared(Domain);
         entries_ = {};
         undo_slots_.fill(INVALID_SLOT);
@@ -112,18 +110,18 @@ public:
     }
 
 private:
-    FLASHMEM uint8_t topSlot_(ProjectHistoryDirection direction) const {
+    uint8_t topSlot_(ProjectHistoryDirection direction) const {
         const bool undo = direction == ProjectHistoryDirection::Undo;
         const auto& slots = undo ? undo_slots_ : redo_slots_;
         const uint8_t count = undo ? undo_count_ : redo_count_;
         return count == 0U ? INVALID_SLOT : slots[count - 1U];
     }
 
-    FLASHMEM uintptr_t identity_(uint8_t slot) const {
+    uintptr_t identity_(uint8_t slot) const {
         return slot < Capacity ? reinterpret_cast<uintptr_t>(&entries_[slot]) : 0U;
     }
 
-    FLASHMEM uint8_t acquireSlot_() const {
+    uint8_t acquireSlot_() const {
         for (uint8_t slot = 0U; slot < Capacity; ++slot) {
             if (!entries_[slot].occupied) return slot;
         }
