@@ -117,20 +117,6 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     return out;
 }
 
-FLASHMEM SequencerContentStepProjection resolveActiveContentOwnerProjection(
-    const SequencerState& sequencer,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    scaleSettings.clamp();
-    if (isRootContentView(sequencer)) {
-        return resolveActiveContentStepProjection(sequencer, sequencer.focusedStep.get(), scaleSettings);
-    }
-
-    return resolveContentFrameOwnerProjection(
-        sequencer, sequencer.contentView.stackDepth, scaleSettings
-    );
-}
-
 FLASHMEM SequencerContentStepProjection resolveContentFrameOwnerProjection(
     const SequencerState& sequencer,
     uint8_t frameDepth,
@@ -531,36 +517,10 @@ FLASHMEM bool resolveRepresentativeChildContentSummary(
     return touchedChild;
 }
 
-FLASHMEM bool resolveRepresentativeChildContentNote(
-    const SequencerState& sequencer,
-    const SequencerContentStepProjection& projection,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    uint8_t& outNote
-) {
-    SequencerChildContentSummary summary{};
-    const bool touchedChild = resolveRepresentativeChildContentSummary(
-        sequencer,
-        projection,
-        scaleSettings,
-        summary
-    );
-    outNote = summary.note;
-    return touchedChild && outNote != projection.note;
-}
-
 FLASHMEM bool stepContentProjectionHasAnyChild(
     const SequencerContentStepProjection& projection
 ) {
     return projection.hasMicroSequence || projection.hasCycleStates;
-}
-
-FLASHMEM bool stepContentProjectionHasChild(
-    const SequencerContentStepProjection& projection,
-    StepContentChildKind childKind
-) {
-    return childKind == StepContentChildKind::MICRO_SEQUENCE
-        ? projection.hasMicroSequence
-        : projection.hasCycleStates;
 }
 
 FLASHMEM int16_t stepContentProjectionOffsetForProperty(

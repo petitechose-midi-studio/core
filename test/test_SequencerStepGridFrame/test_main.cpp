@@ -494,19 +494,19 @@ void test_parent_grid_summarizes_final_child_pitch() {
     const auto microNode = microSequence->firstStepNode;
     assert(setNodeNoteOffset(sequencer.pattern(), microNode, 2));
 
-    uint8_t childNote = 0;
+    core::state::sequencer::SequencerChildContentSummary childSummary{};
     auto projection = core::state::sequencer::resolveActiveContentStepProjection(
         sequencer,
         1,
         {}
     );
-    assert(core::state::sequencer::resolveRepresentativeChildContentNote(
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
         sequencer,
         projection,
         {},
-        childNote
+        childSummary
     ));
-    assert(childNote == 62);
+    assert(childSummary.note == 62);
 
     sequencer.pattern().note[2] = 60;
     const auto cycle = createCycleStateSet(sequencer.pattern(), rootStepNodeId(2), 4);
@@ -527,13 +527,13 @@ void test_parent_grid_summarizes_final_child_pitch() {
         2,
         {}
     );
-    assert(core::state::sequencer::resolveRepresentativeChildContentNote(
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
         sequencer,
         projection,
         {},
-        childNote
+        childSummary
     ));
-    assert(childNote == 63);
+    assert(childSummary.note == 63);
 
     sequencer.pattern().note[3] = 60;
     const auto nestedMicro = createMicroSequence(sequencer.pattern(), rootStepNodeId(3), 2);
@@ -562,13 +562,13 @@ void test_parent_grid_summarizes_final_child_pitch() {
         3,
         {}
     );
-    assert(core::state::sequencer::resolveRepresentativeChildContentNote(
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
         sequencer,
         projection,
         {},
-        childNote
+        childSummary
     ));
-    assert(childNote == 65);
+    assert(childSummary.note == 65);
 
     std::cout << "[PASS] test_parent_grid_summarizes_final_child_pitch\n";
 }
@@ -608,19 +608,19 @@ void test_parent_tile_displays_final_child_pitch_across_nested_cycles() {
 
     sequencer.probabilityCycleIndex = 7;
 
-    uint8_t childNote = 0;
+    core::state::sequencer::SequencerChildContentSummary childSummary{};
     const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
         sequencer,
         0,
         {}
     );
-    assert(core::state::sequencer::resolveRepresentativeChildContentNote(
+    assert(core::state::sequencer::resolveRepresentativeChildContentSummary(
         sequencer,
         projection,
         {},
-        childNote
+        childSummary
     ));
-    assert(childNote == 66);
+    assert(childSummary.note == 66);
 
     std::cout << "[PASS] test_parent_tile_displays_final_child_pitch_across_nested_cycles\n";
 }
