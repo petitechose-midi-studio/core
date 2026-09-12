@@ -436,7 +436,6 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.projectTrackEditor,
                 stateRefs.projectTracks,
                 stateRefs.sharedTrackEnabledMask,
-                stateRefs.sharedTrackActive,
             },
             *track_editor_overlay_,
             *track_name_keyboard_,
@@ -729,14 +728,8 @@ void SequencerFeatureModule::update(uint32_t nowMs) {
     if (track_editor_handler_) {
         track_editor_handler_->update(nowMs);
     }
-    if (track_editor_presenter_) {
-        track_editor_presenter_->update();
-    }
     if (drum_lane_editor_handler_) {
         drum_lane_editor_handler_->update(nowMs);
-    }
-    if (drum_lane_editor_presenter_) {
-        drum_lane_editor_presenter_->update();
     }
     if (cc_lane_handler_) {
         cc_lane_handler_->update(nowMs);

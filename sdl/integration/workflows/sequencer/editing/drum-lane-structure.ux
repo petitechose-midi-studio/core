@@ -18,10 +18,8 @@
 # Track structure now belongs to the Clip Launcher. Return to the matrix,
 # move up to the T1 header, then horizontally to the sole +T2 add header.
 150 tap LEFT_TOP 60
-500 encoder NAV -0.01
-620 button LEFT_CENTER down
+500 encoder OPT -0.01
 700 encoder NAV 0.01
-780 button LEFT_CENTER up
 1280 capture screen launcher_track_add
 1530 tap NAV 60
 1730 capture screen type_instrument
