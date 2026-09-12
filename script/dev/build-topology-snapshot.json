@@ -77,7 +77,7 @@
     "core/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "82cff0b00c6b2297ff43cf489f720fc823fe13e9d4f46753712e240cbffb2b8c",
+    "core/.github/workflows/ci.yml": "7767edf93249a32d0ff92fc8213f7ef8f78b4c595f7d185aece703254d9d1470",
     "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
     "core/cmake/MsCoreProductSources.cmake": "3541ca6ccce9dfb4d66675cc9e9be29ae84c776860d668338cfd7f6611a7af45",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
