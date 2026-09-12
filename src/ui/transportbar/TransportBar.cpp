@@ -39,6 +39,8 @@ FLASHMEM TransportBar::TransportBar(
 
 FLASHMEM TransportBar::~TransportBar() {
     subs_.clear();
+    // The indicator owns an LVGL child; release it before deleting its parent.
+    beat_indicator_.reset();
     if (container_) {
         lv_obj_delete(container_);
     }

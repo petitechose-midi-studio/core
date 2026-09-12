@@ -335,7 +335,7 @@ jobs:
             libusb-1.0-0-dev \
             ninja-build
 
-      - name: Build SDL native
+      - name: Build SDL native with AddressSanitizer
         shell: bash
         run: |
           set -euo pipefail
@@ -345,7 +345,10 @@ jobs:
             -G Ninja \
             -DAPP_PATH="${GITHUB_WORKSPACE}/workspace/midi-studio/core/sdl" \
             -DBIN_OUTPUT_DIR="${GITHUB_WORKSPACE}/workspace/bin" \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
             -DOPEN_CONTROL_FRAMEWORK_DIR="${GITHUB_WORKSPACE}/workspace/open-control/framework" \
             -DOPEN_CONTROL_UI_LVGL_DIR="${GITHUB_WORKSPACE}/workspace/open-control/ui-lvgl" \
             -DOPEN_CONTROL_UI_COMPONENTS_DIR="${GITHUB_WORKSPACE}/workspace/open-control/ui-lvgl-components" \
@@ -358,6 +361,29 @@ jobs:
             -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
           cmake --build workspace/.build/core-sdl-native --parallel
           test -x workspace/bin/core/native/midi_studio_core
+
+      - name: Exercise UI lifetime through complete UX workflows
+        shell: bash
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          # This gate checks invalid accesses, including C++/LVGL teardown.
+          # SDL/LVGL still retain process-lifetime resources at normal exit.
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+        run: |
+          set -euo pipefail
+          core="${GITHUB_WORKSPACE}/workspace/midi-studio/core"
+          binary="${GITHUB_WORKSPACE}/workspace/bin/core/native/midi_studio_core"
+          for workflow in \
+            smoke/view-selector-roundtrip \
+            sequencer/editing/drum-track-pattern-parity \
+            sequencer/launcher/drum-document-roundtrip; do
+            run="${GITHUB_WORKSPACE}/workspace/.build/ux-lifetime/${workflow}"
+            mkdir -p "$run"
+            (cd "$run" && timeout 90s "$binary" \
+              --ux-script "$core/sdl/integration/workflows/${workflow}.ux" \
+              --ux-output "$run/captures")
+          done
 
   sdl_wasm:
     name: SDL WASM
