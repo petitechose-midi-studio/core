@@ -1,0 +1,29 @@
+# RAM-only: open, edit, retarget and close the Track editor during playback.
+# Includes idle intervals with the editor both visible and hidden.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.010
+600 button LEFT_TOP up
+1000 assert_mode sequencer.clip_launcher
+1200 encoder_value NAV 0.010
+1400 encoder_value OPT -0.010
+1800 tap LEFT_CENTER 60
+2400 assert_mode sequencer.track_editor
+2600 encoder_value OPT 0.600
+3000 encoder_value NAV 0.010
+3400 encoder_value OPT 0.750
+3800 tap BOTTOM_LEFT 60
+4200 tap BOTTOM_RIGHT 60
+4800 marker editor_idle
+6000 button LEFT_CENTER down
+6300 encoder_value NAV 0.010
+6700 button LEFT_CENTER up
+7200 assert_mode sequencer.track_editor
+7400 tap LEFT_TOP 60
+8000 assert_mode sequencer.clip_launcher
+8200 tap LEFT_CENTER 60
+8800 assert_mode sequencer.track_editor
+9200 tap LEFT_TOP 60
+10000 assert_mode sequencer.clip_launcher
+13000 transport stop

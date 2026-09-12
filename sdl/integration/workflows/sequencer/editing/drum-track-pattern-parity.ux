@@ -1,19 +1,19 @@
 # Purpose: validates Drum Pattern/Track ownership through one musical grid and a matrix-owned Track editor.
 # Expect: capture_changed:drum_pattern_grid=launcher_track_header
-# Expect: semantic:track_editor_playing:mode=sequencer.clip_launcher, semantic:track_editor_playing:effect=open_track_settings, semantic:track_editor_playing:target_track=1
+# Expect: semantic:drum_pattern_grid:mode=sequencer.lane, semantic:drum_pattern_returned:mode=sequencer.context_selector, semantic:drum_pattern_reopened:mode=sequencer.pattern
+# Expect: semantic:track_editor_playing:mode=sequencer.track_editor, semantic:track_editor_playing:effect=open_track_settings, semantic:track_editor_playing:target_track=1
 # Expect: semantic:track_muted_playing:effect=toggle_track_mute, semantic:track_muted_playing:property=mute, semantic:track_muted_playing:authored_value=1
 # Expect: semantic:track_soloed_playing:effect=toggle_track_solo, semantic:track_soloed_playing:property=solo, semantic:track_soloed_playing:authored_value=1
 
-0 scenario clip-launcher
+0 scenario clip-launcher-v3
 
-# Move horizontally from the Scene rail to the resident T2/C1 Drum Clip, open
-# its Pattern editor, then close that editor onto the Pattern root.
+# Move horizontally from the Scene rail to the resident T2/C1 Drum Clip,
+# then open its Pattern content directly.
 150 button NAV down
 230 encoder NAV 0.01
 270 encoder NAV 0.01
 310 button NAV up
-400 tap LEFT_CENTER 60
-700 tap LEFT_TOP 60
+400 tap LEFT_BOTTOM 60
 
 # Enter the explicit Lane scope before authoring or moving between Drum voices.
 4120 button NAV down
@@ -36,12 +36,11 @@
 # header opens the shared Track Editor for Mute and Solo.
 6400 tap BOTTOM_CENTER 60
 6500 tap LEFT_TOP 60
-6600 encoder NAV -0.01
+6600 encoder OPT -0.01
 6700 capture screen launcher_track_header
-6800 button NAV down
+6800 tap LEFT_CENTER 60
 7860 tick
 7920 capture screen track_editor_playing
-7980 button NAV up
 8100 tap BOTTOM_LEFT 60
 8300 capture screen track_muted_playing
 8450 tap BOTTOM_RIGHT 60
@@ -50,7 +49,6 @@
 8950 tap LEFT_TOP 60
 
 # Return through the same header to the authored Drum Pattern.
-9100 encoder NAV 0.01
-9200 tap LEFT_CENTER 60
-9500 tap LEFT_TOP 60
+9100 encoder OPT 0.01
+9200 tap LEFT_BOTTOM 60
 9800 capture screen drum_pattern_reopened

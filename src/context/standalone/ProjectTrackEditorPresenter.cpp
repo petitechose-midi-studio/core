@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/project/ProjectTrackEditorViewModel.hpp"
@@ -22,52 +23,32 @@ FLASHMEM ProjectTrackEditorPresenter::ProjectTrackEditorPresenter(
     , overlay_(overlay)
     , keyboard_(keyboard)
     , action_strip_(actionStrip)
-    , render_scheduler_(
-          core::ui::renderSchedulerDebugLabel("TrackEditor"),
-          &ProjectTrackEditorPresenter::drainRender,
+    , frame_timer_(
+          Config::Timing::UI_FRAME_PERIOD_MS,
+          &ProjectTrackEditorPresenter::onFrame,
           this
       ) {}
 
 FLASHMEM bool ProjectTrackEditorPresenter::bind() {
-    if (!render_scheduler_.valid()) return false;
-    requestRender();
+    if (!frame_timer_.valid()) return false;
+    frame_timer_.resume(true);
     return true;
 }
 
-void ProjectTrackEditorPresenter::requestRender() {
-    render_scheduler_.request(RENDER);
-}
-
-void ProjectTrackEditorPresenter::update() {
-    const uint32_t tracksRevision = state_.tracks.revision.get();
-    const uint16_t enabledMask = state_.enabledMask.get();
-    const uint8_t activeTrack = state_.activeTrack.get();
-    if (observed_editor_revision_ == state_.editor.revision &&
-        observed_tracks_revision_ == tracksRevision &&
-        observed_enabled_mask_ == enabledMask &&
-        observed_active_track_ == activeTrack) {
+void ProjectTrackEditorPresenter::onFrame(lv_timer_t* timer) {
+    auto& self = *static_cast<ProjectTrackEditorPresenter*>(lv_timer_get_user_data(timer));
+    if (self.observed_editor_revision_ == self.state_.editor.revision &&
+        self.observed_tracks_revision_ == self.state_.tracks.revision.get() &&
+        self.observed_enabled_mask_ == self.state_.enabledMask.get()) {
         return;
     }
-    observed_editor_revision_ = state_.editor.revision;
-    observed_tracks_revision_ = tracksRevision;
-    observed_enabled_mask_ = enabledMask;
-    observed_active_track_ = activeTrack;
-    requestRender();
-}
-
-void ProjectTrackEditorPresenter::drainRender(
-    void* context,
-    uint32_t flags
-) {
-    auto* self = static_cast<ProjectTrackEditorPresenter*>(context);
-    if (self && (flags & RENDER) != 0U) self->render();
+    self.render();
 }
 
 FLASHMEM void ProjectTrackEditorPresenter::render() {
     observed_editor_revision_ = state_.editor.revision;
     observed_tracks_revision_ = state_.tracks.revision.get();
     observed_enabled_mask_ = state_.enabledMask.get();
-    observed_active_track_ = state_.activeTrack.get();
     const auto viewModel = core::ui::project::buildProjectTrackEditorViewModel(
         state_.editor,
         state_.tracks,

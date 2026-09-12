@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 
 #include "midi/MidiUtils.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -144,39 +145,26 @@ FLASHMEM DrumLaneEditorPresenter::DrumLaneEditorPresenter(
     , overlay_(overlay)
     , keyboard_(keyboard)
     , action_strip_(actionStrip)
-    , render_scheduler_(
-          core::ui::renderSchedulerDebugLabel("DrumLaneEditor"),
-          &DrumLaneEditorPresenter::drainRender,
+    , frame_timer_(
+          Config::Timing::UI_FRAME_PERIOD_MS,
+          &DrumLaneEditorPresenter::onFrame,
           this
       ) {}
 
 FLASHMEM bool DrumLaneEditorPresenter::bind() {
-    if (!render_scheduler_.valid()) return false;
-    requestRender();
+    if (!frame_timer_.valid()) return false;
+    frame_timer_.resume(true);
     return true;
 }
 
-FLASHMEM void DrumLaneEditorPresenter::update() {
-    const auto& drumUi = sequencer_.drumSequencer;
+FLASHMEM void DrumLaneEditorPresenter::onFrame(lv_timer_t* timer) {
+    auto& self = *static_cast<DrumLaneEditorPresenter*>(lv_timer_get_user_data(timer));
+    const auto& drumUi = self.sequencer_.drumSequencer;
     const uint32_t revision = drumUi.revision.get();
     const bool visible = drumUi.laneEditor.active &&
         drumUi.selector == seq::DrumSequencerSelector::LANE_EDITOR;
-    if (observed_revision_ == revision && observed_visible_ == visible) return;
-    observed_revision_ = revision;
-    observed_visible_ = visible;
-    requestRender();
-}
-
-FLASHMEM void DrumLaneEditorPresenter::requestRender() {
-    render_scheduler_.request(RENDER);
-}
-
-FLASHMEM void DrumLaneEditorPresenter::drainRender(
-    void* context,
-    uint32_t flags
-) {
-    auto* self = static_cast<DrumLaneEditorPresenter*>(context);
-    if (self && (flags & RENDER) != 0U) self->render();
+    if (self.observed_revision_ == revision && self.observed_visible_ == visible) return;
+    self.render();
 }
 
 FLASHMEM void DrumLaneEditorPresenter::render() {
