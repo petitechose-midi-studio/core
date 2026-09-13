@@ -234,26 +234,14 @@ FLASHMEM void MacroEditHandler::setupBindings() {
         });
 
     // ===== MAIN MACRO EDIT OVERLAY SCOPE =====
-    encoders_.encoder(static_cast<oc::type::EncoderID>(Config::EncoderID::NAV))
+    encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(mainScope)
-        .when([this]() {
-            return !macro_edit_.contextSelectorActive.get() &&
-                   !macro_edit_.macroCycleActive.get();
-        })
-        .then([this](float delta) { moveFocus(delta); });
-
-    encoders_.encoder(static_cast<oc::type::EncoderID>(Config::EncoderID::NAV))
-        .turn()
-        .scope(mainScope)
-        .when([this]() { return macro_edit_.contextSelectorActive.get(); })
-        .then([this](float delta) { navigateContextProperty(delta); });
-
-    encoders_.encoder(static_cast<oc::type::EncoderID>(Config::EncoderID::NAV))
-        .turn()
-        .scope(mainScope)
-        .when([this]() { return macro_edit_.macroCycleActive.get(); })
-        .then([this](float delta) { cycleActiveMacro(delta); });
+        .then([this](float delta) {
+            if (macro_edit_.contextSelectorActive.get()) navigateContextProperty(delta);
+            else if (macro_edit_.macroCycleActive.get()) cycleActiveMacro(delta);
+            else moveFocus(delta);
+        });
 
     encoders_.encoder(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT))
         .turn()

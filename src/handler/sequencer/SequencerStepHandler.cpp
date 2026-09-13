@@ -1211,26 +1211,9 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return core::state::sequencer::isChildContentView(sequencer_) &&
-                   !context_selector_workflow_.ownsGesture() &&
-                   navigation_workflow_.allowsMainBindings() &&
-                   !edit_workflow_.trackPasteNavigationBlocked() &&
-                   !edit_workflow_.trackRemoveNavigationBlocked() &&
-                   navigation_workflow_.stepFocusActive();
-        })
-        .then([this](float delta) {
-            if (!publishPatternHistoryBarrier(
-                    sequencer_, commitPatternHistoryBarrier(sequencer_, history_))) {
-                return;
-            }
-            navigation_workflow_.moveByFocus(delta);
-        });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(scope_id_)
-        .when([this]() {
-            return core::state::sequencer::isRootContentView(sequencer_) &&
+            return (core::state::sequencer::isRootContentView(sequencer_) ||
+                    (core::state::sequencer::isChildContentView(sequencer_) &&
+                     navigation_workflow_.stepFocusActive())) &&
                    !context_selector_workflow_.ownsGesture() &&
                    navigation_workflow_.allowsMainBindings() &&
                    !edit_workflow_.trackPasteNavigationBlocked() &&

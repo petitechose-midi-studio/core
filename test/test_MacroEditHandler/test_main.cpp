@@ -284,8 +284,12 @@ void test_macro_edit_cycles_active_macros_and_contextual_destination_props() {
     h.press(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.macroEdit.contextSelectorActive.get());
     assert(h.state.macroEdit.contextPropertyIndex.get() == 0U);
+    // Context navigation wins over Macro cycling if both states overlap.
+    h.state.macroEdit.macroCycleActive.set(true);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroEdit.contextPropertyIndex.get() == 1U);
+    assert(h.state.macroEdit.editingIndex.get() == 3U);
+    h.state.macroEdit.macroCycleActive.set(false);
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.state.projectTracks.authored.midiChannels[
         h.state.pages.currentActiveTrack()

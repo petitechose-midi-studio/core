@@ -119,8 +119,29 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return context_selector_gesture_.active(); })
-        .then([this](float delta) { moveContextSelector(delta); });
+        .when([this]() {
+            // Without an overlay, NAV policy always owns a route. An acquired
+            // selector/selection retains its original admission until released.
+            return context_selector_gesture_.active() ||
+                   structure_workflow_.selectionActive() || !overlays_.hasVisible();
+        })
+        .then([this](float delta) {
+            if (context_selector_gesture_.active()) {
+                moveContextSelector(delta);
+                return;
+            }
+            const auto action = MacroPolicy::navTurn(interactionContext());
+            if (action == MacroAction::MOVE_SLOT_PROPERTY) {
+                if (performance_services_.automationTakeArmed()) {
+                    performance_workflow_.navigateTakeTiming(delta);
+                }
+            } else if (structure_workflow_.selectionActive()) {
+                structure_workflow_.navigateSelection(delta);
+            } else if (action == MacroAction::MOVE_STRUCTURE) {
+                structure_workflow_.moveByFocus(delta);
+                performance_workflow_.refreshEncoders();
+            }
+        });
 
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
@@ -134,8 +155,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .when([this]() {
             return context_selector_gesture_.active() ||
                    structure_workflow_.selectionActive() ||
-                   policyAllows(MacroAction::COMMIT_OR_CYCLE_STRUCTURE) ||
-                   policyAllows(MacroAction::CREATE_PREVIEWED_STRUCTURE);
+                   MacroPolicy::navRelease(interactionContext()) != MacroAction::NONE;
         })
         .then([this]() {
             if (context_selector_gesture_.active()) {
@@ -174,40 +194,6 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
                 policyAllows(MacroAction::APPLY_SLOT_PROPERTIES)) {
                 performance_workflow_.closePerformanceOverlay();
             }
-        });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::MOVE_SLOT_PROPERTY); })
-        .then([this](float delta) {
-            if (performance_services_.automationTakeArmed()) {
-                performance_workflow_.navigateTakeTiming(delta);
-            }
-        });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(scope_id_)
-        .when([this]() {
-            return !structure_workflow_.selectionActive() &&
-                   !context_selector_gesture_.active() &&
-                   policyAllows(MacroAction::MOVE_STRUCTURE);
-        })
-        .then([this](float delta) {
-            structure_workflow_.moveByFocus(delta);
-            performance_workflow_.refreshEncoders();
-        });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(scope_id_)
-        .when([this]() {
-            return structure_workflow_.selectionInteractionPolicy().navTurn ==
-                   SelectionAction::MOVE_CURSOR;
-        })
-        .then([this](float delta) {
-            structure_workflow_.navigateSelection(delta);
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
@@ -611,16 +597,6 @@ FLASHMEM bool MacroPerformanceHandler::policyAllows(
 ) const {
     const auto context = interactionContext();
     switch (action) {
-        case MacroAction::MOVE_STRUCTURE:
-            return MacroPolicy::navTurn(context) == action;
-        case MacroAction::MOVE_SLOT_PROPERTY:
-            return MacroPolicy::navTurn(context) == action;
-        case MacroAction::COMMIT_OR_CYCLE_STRUCTURE:
-            return MacroPolicy::navRelease(context) == action;
-        case MacroAction::CREATE_PREVIEWED_STRUCTURE:
-            return MacroPolicy::navRelease(context) == action;
-        case MacroAction::EDIT_SLOT_PROPERTY:
-            return MacroPolicy::optTurn(context) == action;
         case MacroAction::CANCEL_SLOT_PROPERTIES:
             return MacroPolicy::leftTopRelease(context) == action;
         case MacroAction::OPEN_SLOT_PROPERTIES:

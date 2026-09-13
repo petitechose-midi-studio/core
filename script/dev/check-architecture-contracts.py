@@ -4409,8 +4409,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         SEQUENCER_STEP_HANDLER,
         "SequencerStepHandler::setupNavigationBindings",
         r"\btrackRemoveNavigationBlocked\s*\(\s*\)",
-        "Track Remove must block one NAV press and the three NAV turn routes",
-        count=4,
+        "Track Remove must block NAV press, child paging and shared root/child focus navigation",
+        count=3,
     )
     require_in_function(
         PAGE_STRUCTURE_NAVIGATION_WORKFLOW,

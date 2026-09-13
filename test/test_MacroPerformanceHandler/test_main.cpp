@@ -1866,9 +1866,52 @@ void test_macro_track_selection_copies_the_complete_global_track() {
         << "[PASS] Track selection is global from the Macro view\n";
 }
 
+void test_nav_routing_preserves_overlap_precedence_and_fallback() {
+    using Mode = core::state::macro::MacroPerformanceOverlayMode;
+    using Focus = core::state::StructureNavigationFocus;
+    using Stage = oc::core::input::InputBindingTraceStage;
+    for (bool selector : {false, true})
+    for (bool selection : {false, true})
+    for (bool edit : {false, true})
+    for (bool blocked : {false, true}) {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(Focus::PAGE);
+        h.state.pages.activeTrackData().enabledPageMask = 0x0003U;
+        // Acquire the gesture before introducing overlapping UI states.
+        if (selector) h.press(Config::ButtonID::NAV);
+        h.state.macroUi.pageSelection.active.set(selection);
+        h.state.macroUi.pageSelection.cursorIndex.set(0U);
+        h.state.macroUi.performanceOverlayMode.set(edit ? Mode::EDIT : Mode::NONE);
+        if (blocked) {
+            h.overlays.registerCleanup(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, 402U);
+            h.overlays.show(core::ui::OverlayType::PATTERN_PITCH_SETTINGS);
+        }
+        unsigned fallback = 0;
+        h.encoders.encoder(Config::EncoderID::NAV).turn().then([&](float) { ++fallback; });
+        unsigned dispatches = 0;
+        h.inputBinding.setTraceCallback([&](const auto& event) {
+            if (event.stage == Stage::Dispatch) ++dispatches;
+        });
+        const auto preview = h.state.macroUi.contextSelector.previewFocus;
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        assert(dispatches == 1U);
+        assert(fallback == (blocked ? 1U : 0U));
+        if (!blocked && selector) {
+            assert(h.state.macroUi.contextSelector.previewFocus != preview);
+            assert(h.state.macroUi.pageSelection.cursorIndex.get() == 0U);
+        } else if (!blocked && selection) {
+            // Edit intent precedes selection, even when no take is armed.
+            assert(h.state.macroUi.pageSelection.cursorIndex.get() == (edit ? 0U : 1U));
+        }
+        h.inputBinding.setTraceCallback({});
+    }
+    std::cout << "[PASS] NAV overlap precedence and global fallback are preserved\n";
+}
+
 }  // namespace
 
 int main() {
+    test_nav_routing_preserves_overlap_precedence_and_fallback();
     test_nav_turn_switches_enabled_macro_page_directly();
     test_nav_focus_track_turn_switches_context_to_highlighted_macro_track();
     test_macro_track_cursor_can_cross_gaps_and_reach_any_track();
