@@ -420,9 +420,8 @@ FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem()
         config.discreteSteps = item == Item::LENGTH
                                    ? activeChildLengthStepCount(sequencer_)
                                    : static_cast<uint8_t>((currentOffsetMax() * 2) + 1);
-        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
-        encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
+        encoders_.configureResolution(Config::EncoderID::OPT, config.discreteSteps,
+            config.discreteTicksPerStep, config.normalizedTurns);
         encoders_.setPosition(
             Config::EncoderID::OPT,
             item == Item::LENGTH
@@ -437,9 +436,8 @@ FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem()
         config.discreteSteps = static_cast<uint8_t>((currentOffsetMax() * 2) + 1);
         config.discreteTicksPerStep = encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP;
         config.normalizedTurns = encoder_defaults::DEFAULT_NORMALIZED_TURNS;
-        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
-        encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
+        encoders_.configureResolution(Config::EncoderID::OPT, config.discreteSteps,
+            config.discreteTicksPerStep, config.normalizedTurns);
         encoders_.setPosition(
             Config::EncoderID::OPT,
             offsetToNormalized(sequencer_.patternQuickControls.offsetSteps.get()));
@@ -447,9 +445,8 @@ FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem()
     }
 
     const auto config = input_utils::encoderConfigForQuickControl(item);
-    encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
-    encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
-    encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
+    encoders_.configureResolution(Config::EncoderID::OPT, config.discreteSteps,
+        config.discreteTicksPerStep, config.normalizedTurns);
     encoders_.setPosition(Config::EncoderID::OPT,
                           input_utils::quickControlToNormalized(sequencer_, item));
 }

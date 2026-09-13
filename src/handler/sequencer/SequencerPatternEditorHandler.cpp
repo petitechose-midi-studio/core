@@ -350,11 +350,8 @@ FLASHMEM void SequencerPatternEditorHandler::configureOptForFocusedField() {
     if (randomize_.active) {
         const auto range = core::state::sequencer::patternRandomizeValueRange(randomize_);
         const uint32_t count = range.count();
-        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
-                                          encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
-        encoders_.setNormalizedTurns(Config::EncoderID::OPT, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT,
-                                   static_cast<uint8_t>(std::min<uint32_t>(count, 255U)));
+        encoders_.configureResolution(Config::EncoderID::OPT, static_cast<uint8_t>(std::min<uint32_t>(count, 255U)),
+            encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
         encoders_.setPosition(
             Config::EncoderID::OPT,
             randomizeValueToNormalized(
@@ -364,11 +361,8 @@ FLASHMEM void SequencerPatternEditorHandler::configureOptForFocusedField() {
     const auto field = sequencer_.patternEditor.focusedField;
     const auto range = core::state::sequencer::patternEditorValueRange(sequencer_, field);
     const uint16_t count = range.count();
-    encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
-                                      encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
-    encoders_.setNormalizedTurns(Config::EncoderID::OPT, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
-    encoders_.setDiscreteSteps(Config::EncoderID::OPT,
-                               static_cast<uint8_t>(std::min<uint16_t>(count, 255U)));
+    encoders_.configureResolution(Config::EncoderID::OPT, static_cast<uint8_t>(std::min<uint16_t>(count, 255U)),
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
     encoders_.setPosition(
         Config::EncoderID::OPT,
         rangeValueToNormalized(core::state::sequencer::patternEditorFieldValue(sequencer_, field),

@@ -70,14 +70,9 @@ FLASHMEM void MacroPerformanceModeWorkflow::configureMacroEncoders() {
 
 FLASHMEM void MacroPerformanceModeWorkflow::configureValueEncoders() {
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        configureNormalizedEncoder(Config::MACRO_ENCODERS[i]);
-        encoders_.setContinuous(Config::MACRO_ENCODERS[i]);
+        encoders_.configureResolution(Config::MACRO_ENCODERS[i], 0,
+            encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
     }
-}
-
-FLASHMEM void MacroPerformanceModeWorkflow::configureNormalizedEncoder(Config::EncoderID id) {
-    encoders_.setDiscreteTicksPerStep(id, encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
-    encoders_.setNormalizedTurns(id, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
 }
 
 }  // namespace core::handler

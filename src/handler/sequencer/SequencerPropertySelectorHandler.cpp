@@ -518,10 +518,8 @@ FLASHMEM void SequencerPropertySelectorHandler::setDrumOwnedActiveVariationRange
 FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty() {
     if (core::state::sequencer::sequencerPropertySelectionIsState(
             sequencer_.stepPropertyInlineSelector.selectedIndex.get())) {
-        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
-                                          encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP);
-        encoders_.setNormalizedTurns(Config::EncoderID::OPT, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 2);
+        encoders_.configureResolution(Config::EncoderID::OPT, 2,
+            encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
         const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
         const uint8_t step = length == 0 ? 0
                                          : std::min<uint8_t>(sequencer_.focusedStep.get(),
@@ -544,9 +542,8 @@ FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty(
         sequencer_.activeStepProperty.set(property);
     }
     const auto config = input_utils::encoderConfigForVariationRange(property);
-    encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT, config.discreteTicksPerStep);
-    encoders_.setNormalizedTurns(Config::EncoderID::OPT, config.normalizedTurns);
-    encoders_.setDiscreteSteps(Config::EncoderID::OPT, config.discreteSteps);
+    encoders_.configureResolution(Config::EncoderID::OPT, config.discreteSteps,
+        config.discreteTicksPerStep, config.normalizedTurns);
     const auto& pattern = core::state::sequencer::authoringPattern(sequencer_);
     encoders_.setPosition(
         Config::EncoderID::OPT,
