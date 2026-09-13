@@ -11,6 +11,7 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectTrackState.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 
 namespace core::handler::modulator_navigation {
 
@@ -22,6 +23,27 @@ struct StateRefs {
     core::state::macro::MacroPagesState& pages;
     const core::state::project::ProjectTrackState& projectTracks;
 };
+
+/**
+ * Resume a validated Macro target without materializing its hidden parent.
+ * prepare runs synchronously after old visibility is cleared and config is
+ * loaded, before either the target view or its detail overlay is published.
+ * The caller retains the policy for panel, focus and feedback; Back restores
+ * the parent, and the existing handler restores OPT on phase/view entry.
+ */
+template <typename Prepare>
+void resumeMacroEditor(StateRefs state, uint8_t macroIndex, Prepare&& prepare) {
+    state.overlays.hideAll();
+    state.macroEdit.loadActiveConfig(
+        macroIndex,
+        core::state::project::projectTrackMidiChannel(
+            state.projectTracks, state.pages.currentActiveTrack()),
+        state.pages.activeConfigs[macroIndex].cc
+    );
+    prepare();
+    state.activeView.set(core::ui::ViewType::MACRO);
+    state.overlays.show(core::ui::OverlayType::MACRO_AUTOMATION, false);
+}
 
 /** Opens the source owning one exact Macro modulation assignment. */
 [[nodiscard]] bool openSourceFromMacro(

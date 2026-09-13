@@ -2760,7 +2760,23 @@ void test_macro_deep_link_back_restores_exact_assignment() {
     // Track route.
     h.state.activeView.set(core::ui::ViewType::PROJECT);
 
+    struct PresentationProbe { ProjectHandlerHarness& h; unsigned shown = 0; } probe{h};
+    h.overlays.setPresentationCallback(&probe, [](void* context, auto type, bool shown) {
+        if (!shown) return;
+        auto& probe = *static_cast<PresentationProbe*>(context);
+        const auto& state = probe.h.state;
+        // The first visible surface must already have its final session data.
+        assert(type == core::ui::OverlayType::MACRO_AUTOMATION);
+        assert(state.activeView.get() == core::ui::ViewType::MACRO);
+        assert(state.macroEdit.visible.get());
+        assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::MODULATION);
+        assert(state.macroEdit.tempChannel.get() == 9U);
+        assert(state.macroEdit.modulationFocusedRow.get() == 2U);
+        ++probe.shown;
+    });
     h.tap(Config::ButtonID::LEFT_TOP);
+    h.overlays.setPresentationCallback(nullptr, nullptr);
+    assert(probe.shown == 1U);
 
     assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
     assert(h.state.overlays.current() ==

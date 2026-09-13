@@ -63,15 +63,6 @@ constexpr uint8_t rowForOrdinal(uint16_t count, int ordinal) {
     return static_cast<uint8_t>(first + std::max(ordinal, 0));
 }
 
-FLASHMEM void restoreMacroOverlayStack(StateRefs state) {
-    state.activeView.set(core::ui::ViewType::MACRO);
-    // Restore only the visible child. Rebuilding parent + child in the same
-    // notification wave can expose the transparent parent for one frame. The
-    // parent state is prepared before this call, but remains untracked and
-    // parked until Back materializes it.
-    state.overlays.show(core::ui::OverlayType::MACRO_AUTOMATION, false);
-}
-
 FLASHMEM void publishMacroAuditionFeedback(
     core::state::MacroEditState& macroEdit,
     const core::state::project::ModulatorReturnContext& returnContext,
@@ -356,22 +347,10 @@ FLASHMEM bool returnToMacro(StateRefs state, uint32_t nowMs) {
             ASSIGNMENT_UNAVAILABLE;
     }
 
-    // Clear Project presentation before preparing Macro state. hideAll() also
-    // reconciles every registered visibility signal, so doing it after
-    // openModulation() would leave a visually present but inactive orphan
-    // child.
-    state.overlays.hideAll();
-    state.macroEdit.loadActiveConfig(
-        currentAddress.macro,
-        core::state::project::projectTrackMidiChannel(
-            state.projectTracks,
-            currentAddress.track
-        ),
-        state.pages.activeConfigs[currentAddress.macro].cc
-    );
-    state.macroEdit.openModulation(focusedRow);
-    state.macroEdit.setModulatorNavigationFeedback(feedback, nowMs);
-    restoreMacroOverlayStack(state);
+    resumeMacroEditor(state, currentAddress.macro, [&] {
+        state.macroEdit.openModulation(focusedRow);
+        state.macroEdit.setModulatorNavigationFeedback(feedback, nowMs);
+    });
     return true;
 }
 
@@ -400,59 +379,51 @@ FLASHMEM bool returnToMacroFromAudition(
             currentAddress,
             returnContext.macroAddress
         );
-        state.overlays.hideAll();
-        state.macroEdit.loadActiveConfig(
-            currentAddress.macro,
-            core::state::project::projectTrackMidiChannel(
-                state.projectTracks,
-                currentAddress.track
-            ),
-            state.pages.activeConfigs[currentAddress.macro].cc
-        );
-        if (contextUnchanged && returnContext.target ==
-                core::state::project::
-                    ModulatorMacroReturnTarget::MODULATOR_CREATE) {
-            state.macroEdit.openModulatorCreate(
-                std::min<uint8_t>(returnContext.focusedRow, 1U)
-            );
-        } else if (contextUnchanged && returnContext.target ==
-                       core::state::project::
-                           ModulatorMacroReturnTarget::MODULATOR_PICKER) {
-            const auto& graph = state.pages.control.authored().modulation;
-            int selected = -1;
-            for (uint16_t index = 0U; index < graph.sourceCount; ++index) {
-                if (graph.sources[index].id == returnContext.sourceId) {
-                    selected = static_cast<int>(index);
-                    break;
+        resumeMacroEditor(state, currentAddress.macro, [&] {
+            if (contextUnchanged && returnContext.target ==
+                    core::state::project::
+                        ModulatorMacroReturnTarget::MODULATOR_CREATE) {
+                state.macroEdit.openModulatorCreate(
+                    std::min<uint8_t>(returnContext.focusedRow, 1U)
+                );
+            } else if (contextUnchanged && returnContext.target ==
+                           core::state::project::
+                               ModulatorMacroReturnTarget::MODULATOR_PICKER) {
+                const auto& graph = state.pages.control.authored().modulation;
+                int selected = -1;
+                for (uint16_t index = 0U; index < graph.sourceCount; ++index) {
+                    if (graph.sources[index].id == returnContext.sourceId) {
+                        selected = static_cast<int>(index);
+                        break;
+                    }
                 }
-            }
-            if (selected >= 0) {
-                state.macroEdit.openModulatorPicker(selected);
+                if (selected >= 0) {
+                    state.macroEdit.openModulatorPicker(selected);
+                } else {
+                    state.macroEdit.openModulation(0U);
+                    state.macroEdit.setModulatorNavigationFeedback(
+                        core::state::MacroModulatorNavigationFeedback::
+                            SOURCE_UNAVAILABLE,
+                        nowMs
+                    );
+                }
             } else {
                 state.macroEdit.openModulation(0U);
-                state.macroEdit.setModulatorNavigationFeedback(
-                    core::state::MacroModulatorNavigationFeedback::
-                        SOURCE_UNAVAILABLE,
-                    nowMs
-                );
+                if (!contextUnchanged) {
+                    state.macroEdit.setModulatorNavigationFeedback(
+                        core::state::MacroModulatorNavigationFeedback::
+                            CONTEXT_CHANGED,
+                        nowMs
+                    );
+                }
             }
-        } else {
-            state.macroEdit.openModulation(0U);
-            if (!contextUnchanged) {
-                state.macroEdit.setModulatorNavigationFeedback(
-                    core::state::MacroModulatorNavigationFeedback::
-                        CONTEXT_CHANGED,
-                    nowMs
-                );
-            }
-        }
-        publishMacroAuditionFeedback(
-            state.macroEdit,
-            returnContext,
-            false,
-            nowMs
-        );
-        restoreMacroOverlayStack(state);
+            publishMacroAuditionFeedback(
+                state.macroEdit,
+                returnContext,
+                false,
+                nowMs
+            );
+        });
         return true;
     }
     state.projectNavigation.modulatorReturn.caller = core::state::project::

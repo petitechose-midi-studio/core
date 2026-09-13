@@ -1,4 +1,5 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
+#include "handler/common/ModulatorNavigationWorkflow.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -418,18 +419,11 @@ FLASHMEM void ProjectHandler::openFocusedModulationDestination() {
 
     navigation_.modulatorReturn = {};
     navigation_.clearLifecycleFeedback();
-    overlays_.hideAll();
-    macro_edit_.loadActiveConfig(
+    modulator_navigation::resumeMacroEditor(
+        {overlays_, active_view_, navigation_, macro_edit_, pages_, project_tracks_},
         destination.macro,
-        core::state::project::projectTrackMidiChannel(
-            project_tracks_,
-            destination.track
-        ),
-        pages_.activeConfigs[destination.macro].cc
+        [&] { macro_edit_.openModulation(focusedRow); }
     );
-    macro_edit_.openModulation(focusedRow);
-    active_view_.set(core::ui::ViewType::MACRO);
-    overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, false);
 }
 
 FLASHMEM void ProjectHandler::setFocusedValue(float normalized) {
