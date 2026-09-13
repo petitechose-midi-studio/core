@@ -15,7 +15,6 @@
 #include "handler/macro/MacroValueHandler.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/macro/MacroEditorOverlay.hpp"
-#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
 
@@ -98,16 +97,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!edit_action_strip_ || !edit_action_strip_->getElement()) return;
-    if (auto* strip = edit_action_strip_->getElement()) {
-        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(
-            strip,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
-        );
-        lv_obj_move_foreground(strip);
-    }
+    edit_action_strip_->alignAboveTransport();
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,
@@ -124,16 +114,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
             core::ui::ContextActionStripOrientation::HORIZONTAL
         );
     if (!automation_action_strip_ || !automation_action_strip_->getElement()) return;
-    if (auto* strip = automation_action_strip_->getElement()) {
-        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(
-            strip,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
-        );
-        lv_obj_move_foreground(strip);
-    }
+    automation_action_strip_->alignAboveTransport();
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,

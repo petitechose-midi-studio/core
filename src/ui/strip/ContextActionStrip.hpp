@@ -120,6 +120,7 @@ public:
     ContextActionStrip& operator=(const ContextActionStrip&) = delete;
 
     void render(const ContextActionStripProps& props);
+    void alignAboveTransport();
 
     lv_obj_t* getElement() const override { return container_; }
 
