@@ -347,7 +347,7 @@ FLASHMEM bool returnToMacro(StateRefs state, uint32_t nowMs) {
             ASSIGNMENT_UNAVAILABLE;
     }
 
-    resumeMacroEditor(state, currentAddress.macro, [&] {
+    resumeMacroEditor(state, currentAddress, [&] {
         state.macroEdit.openModulation(focusedRow);
         state.macroEdit.setModulatorNavigationFeedback(feedback, nowMs);
     });
@@ -379,7 +379,7 @@ FLASHMEM bool returnToMacroFromAudition(
             currentAddress,
             returnContext.macroAddress
         );
-        resumeMacroEditor(state, currentAddress.macro, [&] {
+        resumeMacroEditor(state, currentAddress, [&] {
             if (contextUnchanged && returnContext.target ==
                     core::state::project::
                         ModulatorMacroReturnTarget::MODULATOR_CREATE) {

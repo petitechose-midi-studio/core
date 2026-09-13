@@ -32,13 +32,15 @@ struct StateRefs {
  * the parent, and the existing handler restores OPT on phase/view entry.
  */
 template <typename Prepare>
-void resumeMacroEditor(StateRefs state, uint8_t macroIndex, Prepare&& prepare) {
+void resumeMacroEditor(StateRefs state,
+                       core::state::macro::MacroAutomationSlotAddress address,
+                       Prepare&& prepare) {
     state.overlays.hideAll();
     state.macroEdit.loadActiveConfig(
-        macroIndex,
+        address.macro,
         core::state::project::projectTrackMidiChannel(
-            state.projectTracks, state.pages.currentActiveTrack()),
-        state.pages.activeConfigs[macroIndex].cc
+            state.projectTracks, address.track),
+        state.pages.activeConfigs[address.macro].cc
     );
     prepare();
     state.activeView.set(core::ui::ViewType::MACRO);

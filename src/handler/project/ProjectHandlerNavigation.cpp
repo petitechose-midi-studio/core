@@ -421,7 +421,7 @@ FLASHMEM void ProjectHandler::openFocusedModulationDestination() {
     navigation_.clearLifecycleFeedback();
     modulator_navigation::resumeMacroEditor(
         {overlays_, active_view_, navigation_, macro_edit_, pages_, project_tracks_},
-        destination.macro,
+        address,
         [&] { macro_edit_.openModulation(focusedRow); }
     );
 }
