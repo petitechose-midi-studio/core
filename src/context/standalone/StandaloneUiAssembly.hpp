@@ -105,7 +105,7 @@ private:
     lv_obj_t* device_settings_view_parking_host_ = nullptr;
     lv_obj_t* views_host_ = nullptr;
     lv_obj_t* full_view_host_ = nullptr;
-    lv_obj_t* overlay_curtain_ = nullptr;
+    lv_obj_t* overlay_host_ = nullptr;
     lv_obj_t* global_track_strip_container_ = nullptr;
     core::app::ExtmemUniquePtr<core::ui::TrackNavigationStrip> global_track_strip_;
     core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>

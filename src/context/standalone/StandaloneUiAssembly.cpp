@@ -42,7 +42,8 @@ FLASHMEM bool StandaloneUiAssembly::initialize() {
     // views read geometry, so they settle against the final frame before drawing.
     if (!createGlobalTrackStrip()) return false;
 
-    if (overlay_curtain_) lv_obj_move_foreground(overlay_curtain_);
+    // Overlays may reorder within their host; Transport always stays above it.
+    lv_obj_move_foreground(view_container_->getBottomZone());
 
     if (!createBottomBar()) return false;
 
@@ -90,7 +91,7 @@ FLASHMEM lv_obj_t* StandaloneUiAssembly::mainZone() const {
 }
 
 FLASHMEM lv_obj_t* StandaloneUiAssembly::overlayRoot() const {
-    return view_container_->getContainer();
+    return overlay_host_;
 }
 
 FLASHMEM oc::type::ScopeID StandaloneUiAssembly::macroViewScope() const {
@@ -241,27 +242,26 @@ FLASHMEM bool StandaloneUiAssembly::createViewContainer() {
     lv_obj_add_flag(full_view_host_, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_remove_flag(full_view_host_, LV_OBJ_FLAG_CLICKABLE);
 
-    // Cover the same bounds as the overlays, including the opaque bottom bar.
-    // A main-zone-only curtain cannot occlude a full-height invalidation: LVGL
-    // would draw the active view before covering it. The bottom bar stays above.
-    overlay_curtain_ = lv_obj_create(overlayRoot());
-    if (!overlay_curtain_) {
-        OC_LOG_ERROR("StandaloneUiAssembly: overlay curtain allocation failed");
+    // One full-height layer owns overlay ordering and occludes inactive views.
+    // Transport is a sibling above this host, outside every overlay's z-order.
+    overlay_host_ = lv_obj_create(view_container_->getContainer());
+    if (!overlay_host_) {
+        OC_LOG_ERROR("StandaloneUiAssembly: overlay host allocation failed");
         return false;
     }
-    style::apply(overlay_curtain_)
+    style::apply(overlay_host_)
         .fullSize()
         .bgColor(theme::color::BACKGROUND)
         .noBorder()
         .pad(0)
         .noScroll();
     lv_obj_add_flag(
-        overlay_curtain_,
+        overlay_host_,
         static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_IGNORE_LAYOUT)
     );
-    lv_obj_remove_flag(overlay_curtain_, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_opa(overlay_curtain_, LV_OPA_TRANSP, 0);
-    lv_obj_align(overlay_curtain_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_remove_flag(overlay_host_, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(overlay_host_, LV_OPA_TRANSP, 0);
+    lv_obj_align(overlay_host_, LV_ALIGN_CENTER, 0, 0);
     return true;
 }
 
@@ -488,20 +488,14 @@ FLASHMEM void StandaloneUiAssembly::applyOverlayExclusivity() {
     OC_PERF_SCOPE(perfExclusivity, "ui.overlay-exclusivity");
     OC_PERF_UNITS(perfExclusivity, hasOverlay ? 1U : 0U, 0U);
     overlay_exclusive_mode_ = hasOverlay;
-    lv_obj_t* bottomZone = view_container_ ? view_container_->getBottomZone() : nullptr;
 
-    if (overlay_curtain_) {
-        // Fixed, effect-free leaf: only its pixels change, not its geometry.
-        // Keep this scope separate from the bottom bar's visibility callbacks.
-        oc::ui::lvgl::StaticSurfaceInvalidationBatch<1> damage(overlay_curtain_);
-        damage.include(overlay_curtain_);
+    if (overlay_host_) {
+        // The layer bounds stay fixed; only its background opacity changes.
+        oc::ui::lvgl::StaticSurfaceInvalidationBatch<1> damage(overlay_host_);
+        damage.include(overlay_host_);
         lv_obj_set_style_bg_opa(
-            overlay_curtain_, hasOverlay ? LV_OPA_COVER : LV_OPA_TRANSP, 0
+            overlay_host_, hasOverlay ? LV_OPA_COVER : LV_OPA_TRANSP, 0
         );
-    }
-    if (bottomZone) {
-        lv_obj_clear_flag(bottomZone, LV_OBJ_FLAG_HIDDEN);
-        if (hasOverlay) lv_obj_move_foreground(bottomZone);
     }
 }
 

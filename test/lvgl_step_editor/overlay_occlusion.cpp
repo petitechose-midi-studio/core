@@ -16,8 +16,8 @@ int main() {
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(display, pixels.data(), nullptr, sizeof(pixels), LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(display, [](lv_display_t* d, const lv_area_t*, uint8_t*) { lv_display_flush_ready(d); });
-    unsigned draws[2]{};
-    for (unsigned variant = 0; variant < 2; ++variant) {
+    unsigned draws[3]{};
+    for (unsigned variant = 0; variant < 3; ++variant) {
         ms::ui::ViewContainer zones(lv_screen_active());
         auto* root = zones.getContainer();
         auto* main = zones.getMainZone();
@@ -34,7 +34,7 @@ int main() {
         }, LV_EVENT_DRAW_MAIN, &draws[variant]);
         auto* curtain = box(variant ? root : main, LV_PCT(100), LV_PCT(100), 0, LV_OPA_TRANSP);
         lv_obj_add_flag(curtain, static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_IGNORE_LAYOUT));
-        auto* overlay = box(root, LV_PCT(100), LV_PCT(100), 0, LV_OPA_90);
+        auto* overlay = box(variant == 2 ? curtain : root, LV_PCT(100), LV_PCT(100), 0, LV_OPA_90);
         lv_obj_add_flag(overlay, LV_OBJ_FLAG_FLOATING);
         box(overlay, 70, 40, 0x2070a0, LV_OPA_COVER);
         box(bottom, LV_PCT(100), 20, 0, LV_OPA_COVER);
@@ -61,6 +61,15 @@ int main() {
             } else {
                 reference[state] = pixels;
                 assert(draws[variant] == 1);
+            }
+            if (variant && open && state != 2) {
+                lv_obj_move_foreground(overlay);
+                lv_obj_invalidate(lv_screen_active());
+                lv_refr_now(display);
+                const bool stable = reference[state] == pixels;
+                assert(stable == (variant == 2));
+                std::printf("reopen variant=%u state=%u footer_stable=%u\n", variant, state, stable);
+                lv_obj_move_foreground(bottom);
             }
             std::printf("curtain=%u state=%u view_draws=%u\n", variant, state, draws[variant]);
         }
