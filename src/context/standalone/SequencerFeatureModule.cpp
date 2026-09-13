@@ -38,7 +38,6 @@
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
 #include "ui/interaction/TextKeyboardView.hpp"
 #include "ui/project/ProjectTrackEditorOverlay.hpp"
-#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
 
@@ -211,16 +210,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
     if (!pattern_editor_action_strip_ ||
         !pattern_editor_action_strip_->getElement()) return;
-    if (auto* strip = pattern_editor_action_strip_->getElement()) {
-        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(
-            strip,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
-        );
-        lv_obj_move_foreground(strip);
-    }
+    pattern_editor_action_strip_->alignAboveTransport();
     track_editor_overlay_ = core::app::makeExtmemUnique<
         core::ui::project::ProjectTrackEditorOverlay>(overlayRoot);
     if (!track_editor_overlay_ || !track_editor_overlay_->getElement()) return;
@@ -236,16 +226,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
     if (!track_editor_action_strip_ ||
         !track_editor_action_strip_->getElement()) return;
-    if (auto* strip = track_editor_action_strip_->getElement()) {
-        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(
-            strip,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
-        );
-        lv_obj_move_foreground(strip);
-    }
+    track_editor_action_strip_->alignAboveTransport();
     step_edit_overlay_ =
         core::app::makeExtmemUnique<core::ui::SequencerStepEditOverlay>(overlayRoot);
     if (!step_edit_overlay_ || !step_edit_overlay_->getElement()) return;
@@ -259,16 +240,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!step_edit_action_strip_ || !step_edit_action_strip_->getElement()) return;
-    if (auto* strip = step_edit_action_strip_->getElement()) {
-        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(
-            strip,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
-        );
-        lv_obj_move_foreground(strip);
-    }
+    step_edit_action_strip_->alignAboveTransport();
     preset_library_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(overlayRoot);
     if (!preset_library_overlay_ || !preset_library_overlay_->getElement()) return;
@@ -291,16 +263,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!preset_library_action_strip_ || !preset_library_action_strip_->getElement()) return;
-    if (auto* strip = preset_library_action_strip_->getElement()) {
-        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(
-            strip,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
-        );
-        lv_obj_move_foreground(strip);
-    }
+    preset_library_action_strip_->alignAboveTransport();
     preset_library_chord_voice_rail_ =
         core::app::makeExtmemUnique<core::ui::SequencerChordVoiceRail>();
     if (!preset_library_chord_voice_rail_) return;
@@ -335,16 +298,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!cc_lane_action_strip_ || !cc_lane_action_strip_->getElement()) return;
-    if (auto* strip = cc_lane_action_strip_->getElement()) {
-        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
-        lv_obj_align(
-            strip,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
-        );
-        lv_obj_move_foreground(strip);
-    }
+    cc_lane_action_strip_->alignAboveTransport();
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,

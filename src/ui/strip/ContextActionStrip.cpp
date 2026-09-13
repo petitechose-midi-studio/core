@@ -150,6 +150,13 @@ FLASHMEM ContextActionStrip::~ContextActionStrip() {
     }
 }
 
+FLASHMEM void ContextActionStrip::alignAboveTransport() {
+    if (!container_) return;
+    lv_obj_add_flag(container_, LV_OBJ_FLAG_FLOATING);
+    lv_obj_align(container_, LV_ALIGN_BOTTOM_MID, 0, -theme::layout::TRANSPORT_BAR_HEIGHT);
+    lv_obj_move_foreground(container_);
+}
+
 FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
     if (!parent) return;
 
