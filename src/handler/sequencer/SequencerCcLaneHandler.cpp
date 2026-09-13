@@ -56,128 +56,60 @@ FLASHMEM SequencerCcLaneHandler::SequencerCcLaneHandler(
 }
 
 FLASHMEM void SequencerCcLaneHandler::setupBindings() {
-    encoders_.encoder(EncoderID::NAV)
-        .turn()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this](float delta) { onNavTurn(delta); });
+    // Share declarations, not ownership: the overlay still has its own scope,
+    // while the view is gated by both CC mode and overlay visibility.
+    const auto encoder = [this](EncoderID id, oc::type::ScopeID scope) {
+        auto binding = encoders_.encoder(id);
+        binding.turn().scope(scope);
+        if (scope == view_scope_) binding.when([this]() { return mainGridOwnsInput(); });
+        return binding;
+    };
+    const auto button = [this](ButtonID id, oc::type::ScopeID scope) {
+        auto binding = buttons_.button(id);
+        binding.scope(scope);
+        if (scope == view_scope_) binding.when([this]() { return mainGridOwnsInput(); });
+        return binding;
+    };
+    const auto onBack = [this]() { back(); };
+    const auto onProperty = [this]() { openPropertyGrammar(); };
+    for (const auto scope : {view_scope_, overlay_scope_}) {
+        encoder(EncoderID::NAV, scope).then([this](float delta) { onNavTurn(delta); });
+        encoder(EncoderID::OPT, scope).then([this](float delta) { onOptTurn(delta); });
+        button(ButtonID::NAV, scope).release().then([this]() { onNavRelease(); });
 
-    encoders_.encoder(EncoderID::OPT)
-        .turn()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this](float delta) { onOptTurn(delta); });
-
-    buttons_.button(ButtonID::NAV)
-        .release()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() { onNavRelease(); });
-
-    buttons_.button(ButtonID::LEFT_TOP)
-        .release()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() { back(); });
-
-    buttons_.button(ButtonID::LEFT_BOTTOM)
-        .press()
-        .latch()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() { openPropertyGrammar(); });
-
-    buttons_.button(ButtonID::BOTTOM_LEFT)
-        .press()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() {
-            onActionPress(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT);
-        });
-    buttons_.button(ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() {
-            onActionRelease(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT);
-        });
-    buttons_.button(ButtonID::BOTTOM_RIGHT)
-        .press()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() {
-            onActionPress(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT);
-        });
-    buttons_.button(ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(view_scope_)
-        .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() {
-            onActionRelease(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT);
-        });
-
-    encoders_.encoder(EncoderID::NAV)
-        .turn()
-        .scope(overlay_scope_)
-        .then([this](float delta) { onNavTurn(delta); });
-
-    encoders_.encoder(EncoderID::OPT)
-        .turn()
-        .scope(overlay_scope_)
-        .then([this](float delta) { onOptTurn(delta); });
-
-    buttons_.button(ButtonID::NAV)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { onNavRelease(); });
-
-    buttons_.button(ButtonID::BOTTOM_LEFT)
-        .press()
-        .scope(overlay_scope_)
-        .then([this]() { onActionPress(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT); });
-    buttons_.button(ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { onActionRelease(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT); });
-
-    buttons_.button(ButtonID::BOTTOM_RIGHT)
-        .press()
-        .scope(overlay_scope_)
-        .then([this]() { onActionPress(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT); });
-    buttons_.button(ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { onActionRelease(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT); });
-
-    buttons_.button(ButtonID::LEFT_TOP)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { back(); });
-
-    buttons_.button(ButtonID::LEFT_CENTER)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(overlay_scope_)
-        .when([this]() {
-            return sequencer_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID;
-        })
-        .then([this]() { openPropertyGrammar(); });
+        // Keep the original registration order and the two distinct entry gestures.
+        if (scope == view_scope_) {
+            button(ButtonID::LEFT_TOP, scope).release().then(onBack);
+            button(ButtonID::LEFT_BOTTOM, scope).press().latch().then(onProperty);
+        }
+        for (const auto id : {ButtonID::BOTTOM_LEFT, ButtonID::BOTTOM_RIGHT}) {
+            const auto slot = id == ButtonID::BOTTOM_LEFT
+                ? seq::SequencerCcLaneActionSlot::BOTTOM_LEFT
+                : seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT;
+            button(id, scope).press().then([this, slot]() { onActionPress(slot); });
+            button(id, scope).release().then([this, slot]() { onActionRelease(slot); });
+        }
+        if (scope == overlay_scope_) {
+            button(ButtonID::LEFT_TOP, scope).release().then(onBack);
+            button(ButtonID::LEFT_CENTER, scope)
+                .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+                .when([this]() {
+                    return sequencer_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID;
+                })
+                .then(onProperty);
+        }
+    }
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        encoders_.encoder(Config::MACRO_ENCODERS[i])
-            .turn()
-            .scope(view_scope_)
-            .when([this]() { return mainGridOwnsInput(); })
-            .then([this, i](float value) { onMacroTurn(i, value); });
-
-        encoders_.encoder(Config::MACRO_ENCODERS[i])
-            .turn()
-            .scope(overlay_scope_)
+        const auto onTurn = [this, i](float value) { onMacroTurn(i, value); };
+        encoder(Config::MACRO_ENCODERS[i], view_scope_).then(onTurn);
+        encoder(Config::MACRO_ENCODERS[i], overlay_scope_)
             .when([this]() {
                 const auto mode = sequencer_.ccLaneUi.mode;
                 return mode == seq::SequencerCcLaneUiMode::LANE_GRID ||
                        mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER;
             })
-            .then([this, i](float value) { onMacroTurn(i, value); });
+            .then(onTurn);
     }
 }
 
@@ -278,15 +210,8 @@ FLASHMEM bool SequencerCcLaneHandler::configureTransitionEncoder(
     const auto encoder = Config::MACRO_ENCODERS[indexInWindow];
     encoders_.setMode(encoder, oc::interface::EncoderMode::NORMALIZED);
     encoders_.setBounds(encoder, 0.0f, 1.0f);
-    encoders_.setDiscreteSteps(encoder, 5);
-    encoders_.setDiscreteTicksPerStep(
-        encoder,
-        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
-    );
-    encoders_.setNormalizedTurns(
-        encoder,
-        encoder_defaults::DEFAULT_NORMALIZED_TURNS
-    );
+    encoders_.configureResolution(encoder, 5,
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
     encoders_.setPosition(
         encoder,
         static_cast<float>(transition) / 4.0f
@@ -371,15 +296,8 @@ FLASHMEM void SequencerCcLaneHandler::syncMacroEncoderContract(bool ownsGrid) {
             const auto encoder = Config::MACRO_ENCODERS[i];
             encoders_.setMode(encoder, oc::interface::EncoderMode::NORMALIZED);
             encoders_.setBounds(encoder, 0.0f, 1.0f);
-            encoders_.setDiscreteSteps(encoder, 128);
-            encoders_.setDiscreteTicksPerStep(
-                encoder,
-                encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
-            );
-            encoders_.setNormalizedTurns(
-                encoder,
-                encoder_defaults::DEFAULT_NORMALIZED_TURNS
-            );
+            encoders_.configureResolution(encoder, 128,
+                encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
         }
         macro_encoders_configured_ = true;
     }
@@ -432,15 +350,8 @@ FLASHMEM void SequencerCcLaneHandler::syncOptEncoderContract(bool ownsOpt) {
 FLASHMEM void SequencerCcLaneHandler::configureDirectionalOpt() {
     encoders_.setMode(EncoderID::OPT, oc::interface::EncoderMode::NORMALIZED);
     encoders_.setBounds(EncoderID::OPT, 0.0f, 1.0f);
-    encoders_.setDiscreteTicksPerStep(
-        EncoderID::OPT,
-        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
-    );
-    encoders_.setNormalizedTurns(
-        EncoderID::OPT,
-        encoder_defaults::DEFAULT_NORMALIZED_TURNS
-    );
-    encoders_.setContinuous(EncoderID::OPT);
+    encoders_.configureResolution(EncoderID::OPT, 0,
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
     recenterDirectionalOpt();
 }
 

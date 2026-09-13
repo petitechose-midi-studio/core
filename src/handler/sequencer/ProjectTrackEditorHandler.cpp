@@ -485,64 +485,31 @@ FLASHMEM void ProjectTrackEditorHandler::configureOpt() {
         oc::interface::EncoderMode::NORMALIZED
     );
     encoders_.setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
-    encoders_.setDiscreteTicksPerStep(
-        Config::EncoderID::OPT,
-        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
-    );
-    encoders_.setNormalizedTurns(
-        Config::EncoderID::OPT,
-        encoder_defaults::DEFAULT_NORMALIZED_TURNS
-    );
-
-    if (editor_.selectedProperty == EditorProperty::NAME) {
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 1U);
-        encoders_.setPosition(Config::EncoderID::OPT, 0.0f);
-        return;
+    uint8_t steps = 1;
+    float position = 0.0f;
+    switch (editor_.selectedProperty) {
+        case EditorProperty::NAME:
+            break;
+        case EditorProperty::CHANNEL:
+            steps = 16;
+            position = normalized::indexToNormalized(
+                core::state::project::projectTrackMidiChannel(tracks_, editor_.trackIndex), steps);
+            break;
+        case EditorProperty::TYPE:
+            steps = 2;
+            position = editor_.draftKind == core::state::project::ProjectTrackEditorKind::DRUM ? 1.0f : 0.0f;
+            break;
+        default:
+            steps = static_cast<uint8_t>(core::state::project::PROJECT_TRACK_DELAY_MAX_MS -
+                                        core::state::project::PROJECT_TRACK_DELAY_MIN_MS + 1);
+            position = normalized::indexToNormalized(
+                core::state::project::projectTrackDelayMs(tracks_, editor_.trackIndex) -
+                    core::state::project::PROJECT_TRACK_DELAY_MIN_MS, steps);
+            break;
     }
-
-    if (editor_.selectedProperty == EditorProperty::CHANNEL) {
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 16U);
-        encoders_.setPosition(
-            Config::EncoderID::OPT,
-            normalized::indexToNormalized(
-                core::state::project::projectTrackMidiChannel(
-                    tracks_,
-                    editor_.trackIndex
-                ),
-                16
-            )
-        );
-        return;
-    }
-
-    if (editor_.selectedProperty == EditorProperty::TYPE) {
-        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 2U);
-        encoders_.setPosition(
-            Config::EncoderID::OPT,
-            editor_.draftKind == core::state::project::ProjectTrackEditorKind::DRUM
-                ? 1.0f
-                : 0.0f
-        );
-        return;
-    }
-
-    constexpr int delayCount =
-        core::state::project::PROJECT_TRACK_DELAY_MAX_MS -
-        core::state::project::PROJECT_TRACK_DELAY_MIN_MS + 1;
-    encoders_.setDiscreteSteps(
-        Config::EncoderID::OPT,
-        static_cast<uint8_t>(delayCount)
-    );
-    encoders_.setPosition(
-        Config::EncoderID::OPT,
-        normalized::indexToNormalized(
-            core::state::project::projectTrackDelayMs(
-                tracks_,
-                editor_.trackIndex
-            ) - core::state::project::PROJECT_TRACK_DELAY_MIN_MS,
-            delayCount
-        )
-    );
+    encoders_.configureResolution(Config::EncoderID::OPT, steps,
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
+    encoders_.setPosition(Config::EncoderID::OPT, position);
 }
 
 FLASHMEM void ProjectTrackEditorHandler::commitPendingGesture() {

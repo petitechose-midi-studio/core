@@ -45,9 +45,8 @@ FLASHMEM void configureStepPropertyEncoder(
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {
     const auto config = input_utils::encoderConfigForProperty(
         property, sequencer.pattern().pitchEditMode, scaleSettings);
-    encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
-    encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
-    encoders.setDiscreteSteps(encoderId, config.discreteSteps);
+    encoders.configureResolution(encoderId, config.discreteSteps,
+        config.discreteTicksPerStep, config.normalizedTurns);
     encoders.setPosition(
         encoderId, core::state::sequencer::activeContentStepPropertyToNormalized(
                        sequencer, step, property, sequencer.pattern().pitchEditMode, scaleSettings));
@@ -109,19 +108,15 @@ FLASHMEM void configureFocusedRowEncoder(
         const auto projection = core::state::sequencer::resolveActiveContentStepProjection(
             sequencer, step, scaleSettings);
         if (!projection.valid) return;
-        encoders.setDiscreteTicksPerStep(encoderId, 8);
-        encoders.setNormalizedTurns(encoderId, 0.25f);
-        encoders.setDiscreteSteps(encoderId, 2);
+        encoders.configureResolution(encoderId, 2, 8, 0.25f);
         encoders.setPosition(encoderId, projection.enabled ? 1.0f : 0.0f);
         return;
     }
 
     if (focusedRowIsChord(sequencer)) {
         const auto chord = core::state::sequencer::resolveStepChordUiState(sequencer, step);
-        encoders.setDiscreteTicksPerStep(encoderId, 8);
-        encoders.setNormalizedTurns(encoderId, 0.25f);
-        encoders.setDiscreteSteps(
-            encoderId, static_cast<uint8_t>(chord_edit_ops::quickChoiceCount(chord.rootContext)));
+        encoders.configureResolution(encoderId, static_cast<uint8_t>(chord_edit_ops::quickChoiceCount(chord.rootContext)),
+            8, 0.25f);
         encoders.setPosition(encoderId, normalized::indexToNormalized(
                                             chord_edit_ops::quickChoiceIndex(chord),
                                             chord_edit_ops::quickChoiceCount(chord.rootContext)));
@@ -134,9 +129,8 @@ FLASHMEM void configureFocusedRowEncoder(
     if (sequencer.stepEdit.localVariationEditActive.get() &&
         core::state::sequencer::stepPropertySupportsLocalVariation(property)) {
         const auto config = input_utils::encoderConfigForVariationRange(property);
-        encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
-        encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
-        encoders.setDiscreteSteps(encoderId, config.discreteSteps);
+        encoders.configureResolution(encoderId, config.discreteSteps,
+            config.discreteTicksPerStep, config.normalizedTurns);
 
         uint8_t range = 0;
         const auto* graph = core::state::sequencer::graphView(sequencer.pattern());

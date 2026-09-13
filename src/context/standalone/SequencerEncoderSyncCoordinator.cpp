@@ -270,9 +270,8 @@ inline void applySequencerEncoderConfig(
 ) {
     encoders.setMode(encoderId, oc::interface::EncoderMode::NORMALIZED);
     encoders.setBounds(encoderId, 0.0f, 1.0f);
-    encoders.setDiscreteTicksPerStep(encoderId, config.discreteTicksPerStep);
-    encoders.setNormalizedTurns(encoderId, config.normalizedTurns);
-    encoders.setDiscreteSteps(encoderId, config.discreteSteps);
+    encoders.configureResolution(encoderId, config.discreteSteps,
+        config.discreteTicksPerStep, config.normalizedTurns);
 }
 
 }  // namespace

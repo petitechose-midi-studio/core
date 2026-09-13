@@ -375,29 +375,24 @@ FLASHMEM void configureFocusedFieldEncoder(
     const auto& editor = sequencer.stepEdit.chordEditor;
     const auto& subEditor = editor.subEditor.get();
 
-    encoders.setDiscreteTicksPerStep(encoderId, 4);
-    encoders.setNormalizedTurns(encoderId, 0.5f);
+    const auto configure = [&](uint8_t steps, float position, float turns = 0.5f) {
+        encoders.configureResolution(encoderId, steps, 4, turns);
+        encoders.setPosition(encoderId, position);
+    };
 
     if (subEditor.sourceSelectorActive) {
-        encoders.setDiscreteSteps(encoderId, 1);
-        encoders.setPosition(encoderId, 0.0f);
+        configure(1, 0.0f);
         return;
     }
     if (subEditor.formulaEditorActive) {
         const uint8_t voiceIndex = subEditor.focusedFormulaItem;
         if (formulaItemIsAdd(chord, voiceIndex)) {
-            encoders.setDiscreteSteps(encoderId, 1);
-            encoders.setPosition(encoderId, 0.0f);
+            configure(1, 0.0f);
             return;
         }
-        encoders.setDiscreteSteps(
-            encoderId,
-            chord_edit_ops::formulaVoiceChoiceCount(chord, voiceIndex)
-        );
-        encoders.setPosition(
-            encoderId,
-            chord_edit_ops::formulaVoiceToNormalized(chord, voiceIndex)
-        );
+        configure(
+            chord_edit_ops::formulaVoiceChoiceCount(chord, voiceIndex),
+            chord_edit_ops::formulaVoiceToNormalized(chord, voiceIndex));
         return;
     }
 
@@ -410,9 +405,8 @@ FLASHMEM void configureFocusedFieldEncoder(
             const auto harmony = chord.preview.valid
                 ? chord.preview.harmony
                 : chord.spec.harmony();
-            encoders.setDiscreteSteps(encoderId, count);
-            encoders.setPosition(
-                encoderId,
+            configure(
+                count,
                 normalized::indexToNormalized(
                     oc::note::sequencer::chordPresetChoiceIndex(
                         harmony,
@@ -425,8 +419,7 @@ FLASHMEM void configureFocusedFieldEncoder(
         }
         case Field::FORMULA:
         case Field::PITCH_CONTEXT:
-            encoders.setDiscreteSteps(encoderId, 1);
-            encoders.setPosition(encoderId, 0.0f);
+            configure(1, 0.0f);
             return;
         case Field::INVERSION: {
             const uint8_t count = std::max<uint8_t>(
@@ -437,11 +430,7 @@ FLASHMEM void configureFocusedFieldEncoder(
                 chord.spec.inversion(),
                 count - 1U
             );
-            encoders.setDiscreteSteps(encoderId, count);
-            encoders.setPosition(
-                encoderId,
-                normalized::indexToNormalized(inversion, count)
-            );
+            configure(count, normalized::indexToNormalized(inversion, count));
             return;
         }
         case Field::VOICING: {
@@ -449,9 +438,8 @@ FLASHMEM void configureFocusedFieldEncoder(
                 oc::note::sequencer::StepSequencerChordVoicing::Count
             );
             const auto voicing = chord.spec.voicing();
-            encoders.setDiscreteSteps(encoderId, count);
-            encoders.setPosition(
-                encoderId,
+            configure(
+                count,
                 normalized::indexToNormalized(
                     static_cast<int>(voicing),
                     count
@@ -460,42 +448,34 @@ FLASHMEM void configureFocusedFieldEncoder(
             return;
         }
         case Field::STRUM:
-            encoders.setDiscreteSteps(
-                encoderId,
+            configure(
                 static_cast<uint8_t>(
                     (ChordSpec::MAX_STRUM - ChordSpec::MIN_STRUM) + 1
-                )
-            );
-            encoders.setNormalizedTurns(encoderId, 2.0f);
-            encoders.setPosition(
-                encoderId,
+                ),
                 chord_edit_ops::signedToNormalized(
                     chord.spec.strum,
                     ChordSpec::MIN_STRUM,
                     ChordSpec::MAX_STRUM
-                )
+                ), 2.0f
             );
             return;
         case Field::VELOCITY_CONTOUR:
-            encoders.setDiscreteSteps(
-                encoderId,
+            configure(
                 static_cast<uint8_t>(
                     (ChordSpec::MAX_VELOCITY_CURVE -
                      ChordSpec::MIN_VELOCITY_CURVE) + 1
-                )
-            );
-            encoders.setNormalizedTurns(encoderId, 2.0f);
-            encoders.setPosition(
-                encoderId,
+                ),
                 chord_edit_ops::signedToNormalized(
                     chord.spec.velocityCurve,
                     ChordSpec::MIN_VELOCITY_CURVE,
                     ChordSpec::MAX_VELOCITY_CURVE
-                )
+                ), 2.0f
             );
             return;
         case Field::COUNT:
         default:
+            encoders.setDiscreteTicksPerStep(encoderId, 4);
+            encoders.setNormalizedTurns(encoderId, 0.5f);
             return;
     }
 }

@@ -719,9 +719,7 @@ FLASHMEM void SequencerStepEditHandler::configureDrumOpt() {
     const auto encoder = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
     const auto property = drumPropertyForEditorRow(row);
     if (property == DrumProperty::STATE) {
-        encoders_.setDiscreteTicksPerStep(encoder, 8U);
-        encoders_.setNormalizedTurns(encoder, 0.25f);
-        encoders_.setDiscreteSteps(encoder, 2U);
+        encoders_.configureResolution(encoder, 2U, 8U, 0.25f);
         encoders_.setPosition(
             encoder,
             drumUi.drumTrack()->pattern.stepEnabled(lane, step) ? 1.0f : 0.0f
@@ -730,9 +728,8 @@ FLASHMEM void SequencerStepEditHandler::configureDrumOpt() {
     }
 
     const auto config = input_utils::encoderConfigForDrumProperty(property);
-    encoders_.setDiscreteTicksPerStep(encoder, config.discreteTicksPerStep);
-    encoders_.setNormalizedTurns(encoder, config.normalizedTurns);
-    encoders_.setDiscreteSteps(encoder, config.discreteSteps);
+    encoders_.configureResolution(encoder, config.discreteSteps,
+        config.discreteTicksPerStep, config.normalizedTurns);
     encoders_.setPosition(
         encoder,
         input_utils::drumStepPropertyToNormalized(

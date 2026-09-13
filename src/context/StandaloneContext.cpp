@@ -357,32 +357,18 @@ FLASHMEM void StandaloneContext::syncEncodersFromState() {
     for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
         float value = core_state_.macros.slots[i].value.get();
         // Macro view defaults: 0..1 continuous
-        encoders().setDiscreteTicksPerStep(
-            Config::MACRO_ENCODERS[i],
-            encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
-        );
-        encoders().setNormalizedTurns(
-            Config::MACRO_ENCODERS[i],
-            encoder_defaults::DEFAULT_NORMALIZED_TURNS
-        );
-        encoders().setContinuous(Config::MACRO_ENCODERS[i]);
+        encoders().configureResolution(Config::MACRO_ENCODERS[i], 0,
+            encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
         encoders().setPosition(Config::MACRO_ENCODERS[i], value);
     }
 
-    encoders().setDiscreteTicksPerStep(
-        Config::EncoderID::OPT,
-        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
-    );
     encoders().setMode(
         Config::EncoderID::OPT,
         oc::interface::EncoderMode::NORMALIZED
     );
     encoders().setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
-    encoders().setNormalizedTurns(
-        Config::EncoderID::OPT,
-        encoder_defaults::DEFAULT_NORMALIZED_TURNS
-    );
-    encoders().setContinuous(Config::EncoderID::OPT);
+    encoders().configureResolution(Config::EncoderID::OPT, 0,
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
 
     // The Macro root owns a normalized continuous OPT contract. Reset the
     // Sequencer's cache as well so a later return reapplies its own contract.

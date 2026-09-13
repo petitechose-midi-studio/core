@@ -613,14 +613,6 @@ FLASHMEM void DrumLaneEditorHandler::configureOpt() {
         oc::interface::EncoderMode::NORMALIZED
     );
     encoders_.setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
-    encoders_.setDiscreteTicksPerStep(
-        Config::EncoderID::OPT,
-        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP
-    );
-    encoders_.setNormalizedTurns(
-        Config::EncoderID::OPT,
-        encoder_defaults::DEFAULT_NORMALIZED_TURNS
-    );
 
     int count = 1;
     int index = 0;
@@ -663,7 +655,8 @@ FLASHMEM void DrumLaneEditorHandler::configureOpt() {
     }
     const auto discreteSteps = static_cast<uint8_t>(count);
     const float position = normalized::indexToNormalized(index, count);
-    encoders_.setDiscreteSteps(Config::EncoderID::OPT, discreteSteps);
+    encoders_.configureResolution(Config::EncoderID::OPT, discreteSteps,
+        encoder_defaults::DEFAULT_DISCRETE_TICKS_PER_STEP, encoder_defaults::DEFAULT_NORMALIZED_TURNS);
     encoders_.setPosition(Config::EncoderID::OPT, position);
 #if defined(MS_UX_RECORDER)
     core::validation::ux::recordEncoderContractTrace(

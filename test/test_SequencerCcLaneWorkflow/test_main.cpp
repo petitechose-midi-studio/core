@@ -1094,9 +1094,63 @@ void test_handler_registers_only_guard_capable_action_presses() {
     constexpr std::size_t CC_LANE_BINDINGS = 14U;
     assert(h.inputBinding.buttonBindingCount() ==
            PROPERTY_SELECTOR_BINDINGS + CC_LANE_BINDINGS);
+    assert(h.inputBinding.encoderBindingCount() == 2U + 20U);
 
     test_support::drainNotifications();
     std::cout << "[PASS] CC-lane action bindings stay bounded\n";
+}
+
+void test_cc_encoder_routes_preserve_scope_and_mode_gates() {
+    using Mode = seq::SequencerCcLaneUiMode;
+    using Stage = oc::core::input::InputBindingTraceStage;
+    using Domain = oc::core::input::InputBindingTraceDomain;
+    for (const auto mode : {Mode::CLOSED, Mode::LANE_SELECTOR, Mode::LANE_GRID,
+                            Mode::LANE_SETTINGS, Mode::TRANSITION_PICKER}) {
+        for (bool overlay : {false, true}) {
+            Harness h;
+            createDefaultLane(h);
+            h.state.sequencer.ccLaneUi.mode = mode;
+            if (overlay) h.overlays.show(core::ui::OverlayType::SEQ_CC_LANE);
+            unsigned dispatches = 0;
+            h.inputBinding.setTraceCallback([&](const auto& event) {
+                if (event.stage != Stage::Dispatch || event.domain != Domain::Encoder) return;
+                ++dispatches;
+                assert(event.scopeId == (overlay ? Harness::CC_LANE_SCOPE : Harness::SEQUENCER_SCOPE));
+            });
+            const bool macroEnabled = mode == Mode::LANE_GRID ||
+                (overlay && mode == Mode::TRANSITION_PICKER);
+            for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+                dispatches = 0;
+                h.turnMacro(i, 0.75f);
+                assert(dispatches == (macroEnabled ? 1U : 0U));
+            }
+            // NAV and OPT retain the overlay's full grammar in every mode.
+            dispatches = 0;
+            h.turnNav(1.0f);
+            h.turnOpt(0.55f);
+            assert(dispatches == (overlay || mode == Mode::LANE_GRID ? 2U : 0U));
+            h.inputBinding.setTraceCallback({});
+            test_support::drainNotifications();
+        }
+    }
+
+    Harness h;
+    createDefaultLane(h);
+    h.overlays.registerCleanup(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, 1803);
+    h.overlays.show(core::ui::OverlayType::PATTERN_PITCH_SETTINGS);
+    unsigned dispatches = 0;
+    h.inputBinding.setTraceCallback([&](const auto& event) {
+        if (event.stage == Stage::Dispatch) ++dispatches;
+    });
+    h.turnNav(1.0f);
+    h.turnOpt(0.55f);
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) h.turnMacro(i, 0.75f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(dispatches == 0U);
+    h.inputBinding.setTraceCallback({});
+    test_support::drainNotifications();
+    std::cout << "[PASS] CC routes dispatch once in their scope and never through another overlay\n";
 }
 
 }  // namespace
@@ -1119,6 +1173,7 @@ int main() {
     test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape();
     test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar();
     test_handler_registers_only_guard_capable_action_presses();
+    test_cc_encoder_routes_preserve_scope_and_mode_gates();
     test_semantic_gesture_classifier_never_claims_early_hold_mutation();
     test_guard_release_promotes_elapsed_hold_without_periodic_update();
     std::cout << "All Sequencer CC lane workflow tests passed.\n";

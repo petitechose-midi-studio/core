@@ -60,6 +60,11 @@ public:
     void setDelta(oc::type::EncoderID id, float delta) override {
         deltas_[id] = delta;
     }
+    void configureResolution(oc::type::EncoderID id, uint8_t steps, uint16_t ticks, float turns) override {
+        setDiscreteTicksPerStep(id, ticks);
+        setNormalizedTurns(id, turns);
+        setDiscreteSteps(id, steps);
+    }
     void setDiscreteSteps(oc::type::EncoderID id, uint8_t steps) override {
         discrete_steps_[id] = steps;
     }

@@ -43,7 +43,6 @@ public:
 private:
     void configureMacroEncoders();
     void configureValueEncoders();
-    void configureNormalizedEncoder(Config::EncoderID id);
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::TrackNavigationState& track_ui_;
