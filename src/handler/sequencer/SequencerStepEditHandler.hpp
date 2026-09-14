@@ -179,7 +179,7 @@ private:
     void returnPatternPresetWorkflowToGrid();
 
     ButtonReleaseLatch<2> context_release_latch_;
-    ButtonReleaseLatch<1> preset_open_release_latch_;
+    ButtonReleaseLatch<2> preset_release_latch_;
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlay_state_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;

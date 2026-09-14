@@ -315,11 +315,23 @@ void testInstrumentLifecycleAndSingleUndo() {
         renamedInspect.descriptor.metadata.semanticName,
         "Broken Beat"
     ) == 0);
+    const auto storageBeforeNoop = h.files.storageIdentity();
+    assert(h.presets.renamePreset(
+        "pattern-preset-0001", "Broken Beat", "Broken Beat"
+    ).ok());
+    assert(h.files.storageIdentity() == storageBeforeNoop);
+    assert(h.presets.renamePreset(
+        "pattern-preset-0001", "Stale", "Stale"
+    ).status == SequencerPatternPresetDomainStatus::STALE_TARGET);
+    assert(h.files.storageIdentity() == storageBeforeNoop);
     const auto removed = h.presets.deletePreset(
         "pattern-preset-0001",
         "Broken Beat"
     );
     assert(removed.ok());
+    assert(!h.presets.renamePreset(
+        "pattern-preset-0001", "Broken Beat", "Broken Beat"
+    ).ok());
 
     std::cout << "[PASS] Instrument Pattern preset lifecycle and single Undo\n";
 }

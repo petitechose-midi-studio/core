@@ -117,8 +117,29 @@ receives directional deltas and uses `textKeyboardMoveRow` directly.
 
 Owners retain their publication boundary: Track applies through project history,
 Drum Lane accepts into its parent draft, and Project/Preset validate and persist
-names. Back returns locally and does not publish text. A shared closing callback
-must not assume that these operations have equivalent success/failure contracts.
+names. Every keyboard follows the same completion contract:
+
+| Result | Keyboard and parent |
+|---|---|
+| Rejected or awaiting retry | Keep the draft and keyboard; retain the encoder mode and target. |
+| Accepted without changes | Return to the parent without an Undo entry or redundant write. |
+| Accepted into a Drum Lane draft | Return to the lane editor; only its later Apply publishes history. |
+| Committed | Return to the parent after the domain has accepted the operation. |
+| Back | Discard only the child draft; preserve the parent's prior dirty state and history. |
+
+Track and Modulator name services return their domain result with `accepted()`
+and `changed()` predicates. A boolean meaning "changed" cannot decide whether
+to close. Track name submission owns a complete history transaction and never
+joins another caller's pending gesture. Modulator name validation operates on a
+prepared source before allocating history. Preset storage validates the current
+target before accepting an unchanged rename; navigating after a successful write
+cannot turn that write into a reported failure.
+
+Closure remains a direct call in each owner, using these explicit results; there
+is no second modal stack or generic publication callback. Pure keyboard input and
+the retained keyboard view stay shared. For Preset, `ButtonReleaseLatch` retains
+ownership of Shift acquired in a keyboard until release, even if that keyboard
+has already closed. A fresh press belongs to the new context.
 
 ## Handoff rule
 

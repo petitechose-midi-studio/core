@@ -311,7 +311,7 @@ private:
     void beginTextEditing(
         core::state::sequencer::SequencerPatternPresetTextEdit purpose
     );
-    void cancelTextEditing();
+    void closeTextEditing();
     SequencerPresetLibraryResult confirmTextEditing(uint32_t nowMs);
     SequencerPresetLibraryResult executeManagementAction(uint32_t nowMs);
     SequencerPresetLibraryResult executeMove(uint32_t nowMs);

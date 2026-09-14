@@ -1,0 +1,46 @@
+# Purpose: unchanged folder rename accepts locally; the keyboard keeps ownership
+# of Shift's release even after returning to the parent Load browser.
+# Expect: semantic:rename:mode=sequencer.pattern_preset.rename
+# Expect: semantic:user_folder:value_label=user
+# Expect: semantic:accepted:mode=sequencer.pattern_preset.load
+# Expect: semantic:shift_released:mode=sequencer.pattern_preset.load
+# Expect: semantic:shift_released:value_label=user, semantic:next_filter:value_label=all
+# Expect: capture_changed:rename=accepted, capture_match:accepted=shift_released
+# Expect: capture_changed:shift_released=next_filter
+
+0 scenario sequencer
+100 tap NAV 60
+300 button NAV down
+1400 tick
+1450 button NAV up
+1650 tap BOTTOM_LEFT 60
+1850 encoder NAV 0.01
+2050 tap BOTTOM_RIGHT 60
+2250 tap NAV 60
+2400 tap BOTTOM_RIGHT 60
+
+# Inside the new folder, return to Load, then back to its parent and manage it.
+3400 capture screen created
+3550 tap BOTTOM_LEFT 60
+3850 capture screen load_in_folder
+4000 tap LEFT_TOP 60
+4850 capture screen folder_parent
+# Root Load includes Factory entries. Select User explicitly before management.
+5000 tap LEFT_CENTER 60
+5300 tap LEFT_CENTER 60
+6100 capture screen user_folder
+6250 tap BOTTOM_LEFT 60
+6500 capture screen management
+6650 tap BOTTOM_RIGHT 60
+6950 button LEFT_CENTER down
+7200 capture screen rename
+7350 tap BOTTOM_RIGHT 60
+# Let the transient Renamed notice expire before comparing the stable browser.
+9350 capture screen accepted
+9500 button LEFT_CENTER up
+9750 capture screen shift_released
+
+# A fresh press/release belongs to the parent and still cycles its source filter.
+9900 tap LEFT_CENTER 60
+10750 capture screen next_filter
+10900 tap LEFT_TOP 60

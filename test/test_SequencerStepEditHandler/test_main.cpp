@@ -310,6 +310,8 @@ struct SequencerStepEditHarness {
                   core::handler::SequencerChordPresetDomainServices::fromCoreState(state,
                                                                                    productFiles,
                                                                                    *productCatalog),
+                  core::handler::SequencerPatternPresetDomainServices::fromCoreState(
+                      state, productFiles, *productCatalog),
               },
               overlays, encoders, buttons, SEQUENCER_SCOPE, OVERLAY_SCOPE, PRESET_LIBRARY_SCOPE,
               mockStepPresetTimeMs),
@@ -3426,9 +3428,41 @@ void test_step_and_chord_preset_libraries_share_the_navigation_contract() {
     std::cout << "[PASS] Step and Chord preset libraries share one navigation contract\n";
 }
 
+void test_keyboard_shift_release_cannot_become_a_parent_filter_action() {
+    SequencerStepEditHarness h;
+    namespace seq = core::state::sequencer;
+    h.state.sequencer.patternEditor.active.set(true);
+    h.handler.openPatternPresetLibrary();
+    h.settlePresetCatalog();
+    auto& picker = h.state.sequencer.presetLibrary;
+    assert(picker.visible.get());
+    auto& pattern = picker.pattern();
+    // Capture a folder's management context as the adapter does on entry.
+    pattern.panel = seq::SequencerPatternPresetLibraryPanel::MANAGE;
+    pattern.managedEntryKind = seq::SequencerPresetLibraryEntryKind::FOLDER;
+    std::strcpy(pattern.managedEntryId.data(), "Beats");
+    std::strcpy(pattern.managedEntryName.data(), "Beats");
+    pattern.textEdit = seq::SequencerPatternPresetTextEdit::RENAME;
+    std::strcpy(pattern.textDraft.data(), "Beats");
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(pattern.textShiftActive);
+    h.tap(Config::ButtonID::LEFT_TOP); // Cancel the child.
+    assert(pattern.textEdit == seq::SequencerPatternPresetTextEdit::NONE);
+    h.tap(Config::ButtonID::LEFT_TOP); // Back to the list while Shift is held.
+    h.settlePresetCatalog();
+    assert(pattern.panel == seq::SequencerPatternPresetLibraryPanel::BROWSE);
+    const auto filter = pattern.sourceFilter;
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(pattern.sourceFilter == filter);
+    // The next deliberate parent gesture still works.
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(pattern.sourceFilter != filter);
+}
+
 }  // namespace
 
 int main() {
+    test_keyboard_shift_release_cannot_become_a_parent_filter_action();
     test_empty_save_catalog_focuses_new_asset_command();
     test_focused_step_entry_keeps_next_nav_tap_available();
     test_direct_step_content_entry_opens_detail_or_child_without_intermediate_editor();

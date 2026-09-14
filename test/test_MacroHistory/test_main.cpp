@@ -1499,6 +1499,37 @@ void test_project_source_edits_coalesce_and_restore_exact_source() {
     std::cout << "[PASS] Project source edits coalesce and Undo exactly\n";
 }
 
+void test_project_source_name_noop_and_allocation_rejection_are_atomic() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto sourceId = addProjectLfo(pages, "Motion");
+    const auto before = *findProjectModulator(pages.control.authored().modulation, sourceId);
+    {
+        core::app::testing::ScopedExtmemAllocationFailure fail(1U);
+        for (unsigned i = 0; i < 4096U; ++i) {
+            const auto result = history.setProjectModulatorName(pages, sourceId, "Motion");
+            assert(result.accepted() && !result.changed());
+        }
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+        assert(history.setProjectModulatorName(pages, sourceId, "Changed").status ==
+               ProjectModulationStatus::HISTORY_UNAVAILABLE);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+    }
+    assert(std::memcmp(findProjectModulator(pages.control.authored().modulation, sourceId),
+                       &before, sizeof(before)) == 0);
+    assert(history.undoCount() == 0U);
+    assert(history.setProjectModulatorName(pages, sourceId, nullptr).status == ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(history.setProjectModulatorName(pages, {65535U}, "Missing").status == ProjectModulationStatus::INVALID_ID);
+    assert(history.setProjectModulatorName(pages, sourceId, "Changed").changed());
+    assert(history.undo(pages));
+    assert(history.setProjectModulatorName(pages, sourceId, "Motion").accepted());
+    assert(history.redoCount() == 1U);
+    assert(history.redo(pages));
+    std::cout << "[MEASURE] 4096 unchanged modulator validations: 0 EXTMEM allocations; "
+              << "avoided payload=" << sizeof(macro::MacroHistoryChange) << " bytes per validation\n";
+}
+
 void test_project_source_rename_is_one_exact_undo_action() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
@@ -1516,7 +1547,7 @@ void test_project_source_rename_is_one_exact_undo_action() {
         pages,
         sourceId,
         "Shared Motion"
-    ));
+    ).changed());
     assert(history.undoCount() == 1U);
     assert(std::strcmp(
         pages.control.authored().modulation.sources[0].name.data(),
@@ -3768,6 +3799,7 @@ void test_track_config_history_is_atomic_and_scoped() {
 }
 
 int main() {
+    test_project_source_name_noop_and_allocation_rejection_are_atomic();
     testAuthoredPublicationIsValidatedAtomicAndExact();
     test_detached_page_commit_rejects_stale_and_invalid_candidates();
     test_track_config_history_is_atomic_and_scoped();

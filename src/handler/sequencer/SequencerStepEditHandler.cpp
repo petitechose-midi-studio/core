@@ -299,7 +299,7 @@ FLASHMEM bool SequencerStepEditHandler::openDrumStepEditor(
 FLASHMEM void SequencerStepEditHandler::closeDrumStepEditor() {
     if (drumChildEditActive() && sequencer_.stepContentDraft.active.get()) {
         context_release_latch_.clear();
-        preset_open_release_latch_.clear();
+        preset_release_latch_.clear();
         step_retarget_active_ = false;
         lane_retarget_active_ = false;
         overlays_.hide();
@@ -308,7 +308,7 @@ FLASHMEM void SequencerStepEditHandler::closeDrumStepEditor() {
     }
     if (!commitDrumStepHistory()) return;
     context_release_latch_.clear();
-    preset_open_release_latch_.clear();
+    preset_release_latch_.clear();
     step_retarget_active_ = false;
     lane_retarget_active_ = false;
     overlays_.hide();

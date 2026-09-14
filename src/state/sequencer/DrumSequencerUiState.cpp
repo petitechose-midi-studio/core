@@ -596,6 +596,11 @@ FLASHMEM void DrumSequencerState::acceptLaneNameEditing() {
         laneEditor.draft,
         laneEditor.draft.name.data()
     );
+    // Compare the canonical result, not keystrokes: reverting the text must
+    // restore a clean child without clearing changes already made by its parent.
+    laneEditor.dirty = laneEditor.dirtyBeforeTextEditing ||
+        laneEditor.draft.name != laneEditor.nameBeforeTextEditing ||
+        laneEditor.draft.overrideMask != laneEditor.overrideMaskBeforeTextEditing;
     laneEditor.textEditing = false;
     laneEditor.textShiftActive = false;
     bump();

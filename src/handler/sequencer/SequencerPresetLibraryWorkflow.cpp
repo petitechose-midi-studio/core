@@ -146,7 +146,7 @@ FLASHMEM bool SequencerPresetLibraryWorkflow::back(uint32_t nowMs) {
     }
     if (operationPending()) return false;
     if (textEditing()) {
-        cancelTextEditing();
+        closeTextEditing();
         return false;
     }
     if (actionGuardEngaged()) {
@@ -908,7 +908,7 @@ SequencerPresetLibraryWorkflow::beginTextEditing(
 }
 
 FLASHMEM void
-SequencerPresetLibraryWorkflow::cancelTextEditing() {
+SequencerPresetLibraryWorkflow::closeTextEditing() {
     auto& picker = sequencer_.presetLibrary;
     if (picker.libraryKind.get() !=
         core::state::sequencer::SequencerPresetLibraryKind::PATTERN) {
@@ -978,7 +978,7 @@ SequencerPresetLibraryWorkflow::confirmTextEditing(uint32_t nowMs) {
         return result;
     }
 
-    cancelTextEditing();
+    closeTextEditing();
     if (purpose == core::state::sequencer::
             SequencerPatternPresetTextEdit::RENAME) {
         std::strncpy(
@@ -1021,16 +1021,14 @@ SequencerPresetLibraryWorkflow::confirmTextEditing(uint32_t nowMs) {
         core::state::sequencer::
             SequencerPatternPresetLocation::MAX_FOLDER_NAME_SIZE + 2U
     ]{};
-    if (!core::state::sequencer::formatSequencerPatternPresetFolderId(
+    // The write has succeeded. Entering the new folder is a separate UI step;
+    // a failed navigation must not report a failed create or invite a second write.
+    if (core::state::sequencer::formatSequencerPatternPresetFolderId(
             editedName,
             entryId,
             sizeof(entryId)
-        )) {
-        return blockedResult(contextual::ContextActionReason::FAILED);
-    }
-    if (adapter_.enterFolder == nullptr ||
-        !adapter_.enterFolder(adapter_.context, entryId)) {
-        return blockedResult(contextual::ContextActionReason::FAILED);
+        ) && adapter_.enterFolder != nullptr) {
+        (void)adapter_.enterFolder(adapter_.context, entryId);
     }
     (void)refreshPage(
         nullptr,

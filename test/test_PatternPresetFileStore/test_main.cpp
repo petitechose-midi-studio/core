@@ -232,6 +232,11 @@ void testPatternPresetFolderLifecycle() {
     assert(std::strcmp(folders[1].id, "@Beats") == 0);
 
     assert(root.renameFolder("Archive", "Collections"));
+    const auto storageBeforeNoop = files.storageIdentity();
+    assert(root.renameFolder("Collections", "Collections"));
+    assert(files.storageIdentity() == storageBeforeNoop);
+    assert(!root.renameFolder("Missing", "Missing"));
+    assert(!root.renameFolder("..", ".."));
     seq::SequencerPatternPresetLocation beatsLocation{};
     assert(beatsLocation.enter("Beats"));
     PatternPresetFileStore beats(files, catalog, beatsLocation);
