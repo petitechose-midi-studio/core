@@ -128,6 +128,36 @@ void test_shared_text_editing_is_bounded() {
     std::cout << "[PASS] test_shared_text_editing_is_bounded\n";
 }
 
+void test_raw_rows_keep_fractional_motion_and_nearest_column() {
+    core::state::interaction::TextKeyboardRowInput rows;
+    uint8_t key = 19;  // p, above the short row's missing tenth column
+    assert(!rows.move(key, -300.0f));
+    assert(key == 19);
+    assert(rows.move(key, -900.0f));
+    assert(textKeyboardCharacterAt(key, false) == 'l');
+    assert(!rows.move(key, -600.0f));  // reverse the remaining half-row
+    assert(rows.remainder == 0.0f);
+    assert(rows.move(key, 0.0f));
+    assert(textKeyboardCharacterAt(key, false) == 'o');
+    assert(!rows.move(key, 2400.0f));  // complete cycle has no visible change
+    assert(rows.remainder == 0.0f);
+    rows = {};  // owner also resets the physical RAW position on re-entry
+    assert(rows.move(key, -600.0f));
+    assert(textKeyboardCharacterAt(key, false) == 'l');
+}
+
+void test_raw_rows_are_session_local() {
+    core::state::interaction::TextKeyboardRowInput first, second;
+    uint8_t firstKey = TEXT_KEYBOARD_DEFAULT_INDEX, secondKey = firstKey;
+    assert(!first.move(firstKey, -450.0f));
+    assert(!second.move(secondKey, -150.0f));
+    assert(first.move(firstKey, -600.0f));
+    assert(textKeyboardCharacterAt(firstKey, false) == 'a');
+    assert(secondKey == TEXT_KEYBOARD_DEFAULT_INDEX);
+    assert(!second.move(secondKey, 0.0f));
+    assert(second.remainder == 0.0f);
+}
+
 }  // namespace
 
 int main() {
@@ -139,6 +169,8 @@ int main() {
     test_character_grid_includes_space_without_button_binding();
     test_invalid_index_falls_back_to_default_key();
     test_shared_text_editing_is_bounded();
+    test_raw_rows_keep_fractional_motion_and_nearest_column();
+    test_raw_rows_are_session_local();
 
     std::cout << "\nAll TextKeyboardLayout tests passed.\n";
     return 0;

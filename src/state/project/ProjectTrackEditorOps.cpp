@@ -1,6 +1,5 @@
 #include "state/project/ProjectTrackEditorOps.hpp"
 
-#include <cmath>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
@@ -264,8 +263,7 @@ FLASHMEM ProjectTrackEditorMutationResult beginProjectTrackNameEditing(
     editor.nameDraft[PROJECT_TRACK_NAME_MAX_LENGTH] = '\0';
     editor.textKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    editor.textOptRawPosition = 0.0f;
-    editor.textOptRowAccumulator = 0.0f;
+    editor.textRows = {};
     editor.textEditing = true;
     editor.textShiftActive = false;
     bumpRevision(editor);
@@ -301,31 +299,9 @@ FLASHMEM ProjectTrackEditorMutationResult moveProjectTrackNameRow(
     if (!editor.active || !editor.textEditing) {
         return result(ProjectTrackEditorMutationStatus::INACTIVE, editor.trackIndex);
     }
-    const float delta = rawPosition - editor.textOptRawPosition;
-    editor.textOptRawPosition = rawPosition;
-    if (delta == 0.0f) {
+    if (!editor.textRows.move(editor.textKeyIndex, rawPosition)) {
         return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
     }
-    constexpr float ticksPerRow = (600.0f * 4.0f) /
-        static_cast<float>(core::state::interaction::TEXT_KEYBOARD_ROW_COUNT);
-    editor.textOptRowAccumulator += delta / ticksPerRow;
-    const float absolute = std::fabs(editor.textOptRowAccumulator);
-    if (absolute < 1.0f) {
-        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
-    }
-    const int steps = static_cast<int>(absolute);
-    const bool increasing = editor.textOptRowAccumulator > 0.0f;
-    editor.textOptRowAccumulator += increasing
-        ? -static_cast<float>(steps)
-        : static_cast<float>(steps);
-    const uint8_t next = core::state::interaction::textKeyboardMoveRow(
-        editor.textKeyIndex,
-        increasing ? -steps : steps
-    );
-    if (next == editor.textKeyIndex) {
-        return result(ProjectTrackEditorMutationStatus::NO_CHANGE, editor.trackIndex);
-    }
-    editor.textKeyIndex = next;
     bumpRevision(editor);
     return result(ProjectTrackEditorMutationStatus::OK, editor.trackIndex);
 }

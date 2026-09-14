@@ -106,6 +106,20 @@ Cancelling a Macro child neither publishes nor discards the parent's CC buffer.
 New equivalent selectors must use this lifecycle rather than reproduce bindings
 and close logic. Live controls and selection/placement use their own contracts.
 
+## Text keyboards
+
+The grid and bounded text operations live in `state/interaction/TextKeyboardLayout`.
+Project (Save As, Rename and Modulator name), Track and Drum Lane use its
+`TextKeyboardRowInput` for RAW OPT positions: accumulate partial rows, move up
+on positive motion, then notify only when the selected key changes. Reset this
+input whenever the owner resets the encoder position. Preset Library already
+receives directional deltas and uses `textKeyboardMoveRow` directly.
+
+Owners retain their publication boundary: Track applies through project history,
+Drum Lane accepts into its parent draft, and Project/Preset validate and persist
+names. Back returns locally and does not publish text. A shared closing callback
+must not assume that these operations have equivalent success/failure contracts.
+
 ## Handoff rule
 
 Use `handoffPress(button, targetScope)` only when the same physical gesture

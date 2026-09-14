@@ -1073,8 +1073,7 @@ struct DrumLaneEditorState {
     uint8_t targetLane = 0U;
     uint8_t textKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    float textOptRawPosition = 0.0f;
-    float textOptRowAccumulator = 0.0f;
+    core::state::interaction::TextKeyboardRowInput textRows;
     uint8_t overrideMaskBeforeTextEditing = 0U;
     std::array<char, DRUM_LANE_NAME_MAX_LENGTH + 1U> nameBeforeTextEditing{};
     DrumLaneDescriptor draft{};

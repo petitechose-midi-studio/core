@@ -421,8 +421,7 @@ FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
     }
     navigation.projectNameKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    navigation.projectNameOptRawPosition = 0.0f;
-    navigation.projectNameOptRowAccumulator = 0.0f;
+    navigation.projectNameRows = {};
     navigation.projectNameShiftActive = false;
 
     navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();

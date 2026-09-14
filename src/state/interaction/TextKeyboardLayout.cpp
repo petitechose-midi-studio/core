@@ -1,6 +1,7 @@
 #include "state/interaction/TextKeyboardLayout.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
@@ -142,6 +143,23 @@ FLASHMEM bool textKeyboardBackspace(char* buffer) {
 FLASHMEM bool textKeyboardClear(char* buffer) {
     if (!buffer || buffer[0] == '\0') return false;
     buffer[0] = '\0';
+    return true;
+}
+
+FLASHMEM bool TextKeyboardRowInput::move(uint8_t& keyIndex, float rawPosition) {
+    const float delta = rawPosition - position;
+    position = rawPosition;
+    if (delta == 0.0f) return false;
+    constexpr float ticksPerRow = (600.0f * 4.0f) / TEXT_KEYBOARD_ROW_COUNT;
+    remainder += delta / ticksPerRow;
+    const float absolute = std::fabs(remainder);
+    if (absolute < 1.0f) return false;
+    const int steps = static_cast<int>(absolute);
+    const bool increasing = remainder > 0.0f;
+    remainder += increasing ? -static_cast<float>(steps) : static_cast<float>(steps);
+    const uint8_t next = textKeyboardMoveRow(keyIndex, increasing ? -steps : steps);
+    if (next == keyIndex) return false;
+    keyIndex = next;
     return true;
 }
 

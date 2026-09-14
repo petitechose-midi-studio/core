@@ -1,5 +1,3 @@
-#include <cmath>
-
 #include "state/shared/NormalizedValue.hpp"
 
 #include <config/PlatformCompat.hpp>
@@ -251,29 +249,9 @@ FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
 FLASHMEM bool ProjectHandler::setFocusedNameEditorValue(float normalized) {
     if (!isProjectNameEditorNode(navigation_.currentNode.get())) { return false; }
 
-    const float delta = normalized - navigation_.projectNameOptRawPosition;
-    navigation_.projectNameOptRawPosition = normalized;
-    if (delta == 0.0f) return true;
-
-    navigation_.projectNameOptRowAccumulator += delta / PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW;
-    const float absolute = std::fabs(navigation_.projectNameOptRowAccumulator);
-    if (absolute < 1.0f) return true;
-
-    const int steps = static_cast<int>(absolute);
-    const bool increasing = navigation_.projectNameOptRowAccumulator > 0.0f;
-    navigation_.projectNameOptRowAccumulator +=
-        increasing ? -static_cast<float>(steps) : static_cast<float>(steps);
-
-    const int rowDelta = increasing ? -steps : steps;
-    const auto next =
-        core::state::interaction::textKeyboardMoveRow(
-            navigation_.projectNameKeyIndex,
-            rowDelta
-        );
-    if (next == navigation_.projectNameKeyIndex) return true;
-
-    navigation_.projectNameKeyIndex = next;
-    navigation_.notifyContentChanged();
+    if (navigation_.projectNameRows.move(navigation_.projectNameKeyIndex, normalized)) {
+        navigation_.notifyContentChanged();
+    }
     return true;
 }
 

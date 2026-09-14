@@ -58,8 +58,7 @@ FLASHMEM void ProjectNavigationState::resetTransient() {
     editingProjectSlug = {};
     projectNameKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    projectNameOptRawPosition = 0.0f;
-    projectNameOptRowAccumulator = 0.0f;
+    projectNameRows = {};
     projectNameShiftActive = false;
     pendingLoadCanSaveCurrent = false;
     loadProjects.clear();

@@ -504,8 +504,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
     }
 
     if (isProjectNameEditorNode(node)) {
-        navigation_.projectNameOptRawPosition = 0.0f;
-        navigation_.projectNameOptRowAccumulator = 0.0f;
+        navigation_.projectNameRows = {};
         configureOptRaw(encoders_);
         return;
     }

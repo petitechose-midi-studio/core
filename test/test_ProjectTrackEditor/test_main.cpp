@@ -73,6 +73,13 @@ void testNameEditingUsesTheSharedBoundedKeyboardContract() {
     const uint8_t initialKey = editor.textKeyIndex;
     assert(project::moveProjectTrackNameKey(editor, 1).changed());
     assert(editor.textKeyIndex != initialKey);
+    const auto beforeRows = editor;
+    assert(!project::moveProjectTrackNameRow(editor, -300.0f).changed());
+    assert(editor.revision == beforeRows.revision);
+    assert(editor.nameDraft == beforeRows.nameDraft);
+    assert(project::moveProjectTrackNameRow(editor, -600.0f).changed());
+    assert(editor.textKeyIndex == 21U);  // w -> s
+    assert(editor.nameDraft == beforeRows.nameDraft);
     assert(project::setProjectTrackNameShift(editor, true).changed());
     assert(project::insertProjectTrackNameKey(editor).changed());
     assert(std::strlen(editor.nameDraft.data()) ==
