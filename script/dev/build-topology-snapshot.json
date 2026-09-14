@@ -77,7 +77,7 @@
     "core/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "b25c8bb74b36da5adb59ef4954b5d950f45f285107108f1bd86c75eb96fc7ead",
+    "core/.github/workflows/ci.yml": "60030a5960f0babcc7024e690b27e11106933cdd1d851c6f80727ff26a2d520f",
     "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
     "core/cmake/MsCoreProductSources.cmake": "3541ca6ccce9dfb4d66675cc9e9be29ae84c776860d668338cfd7f6611a7af45",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
@@ -1507,7 +1507,7 @@
       "sha256": "6ac26efd6b8f64acfe5a7a752ebb820e48c74b0e6b0fe6c80f1de517c073cd46"
     },
     "coreTotalHeaders": {
-      "count": 491,
+      "count": 493,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1566,6 +1566,7 @@
         "src/handler/common/ProjectRecordedShapeCaptureWorkflow.hpp",
         "src/handler/common/ProjectRecordedShapeCaptureWorkflowInternals.hpp",
         "src/handler/common/SharedTrackDomainServices.hpp",
+        "src/handler/common/ValueSelectorInput.hpp",
         "src/handler/macro/MacroAutomationClipboardOps.hpp",
         "src/handler/macro/MacroAutomationEditorModel.hpp",
         "src/handler/macro/MacroAutomationHandler.hpp",
@@ -1795,6 +1796,7 @@
         "src/state/modulation/ProjectRecordedShapeCaptureState.hpp",
         "src/state/modulation/ProjectRecordedShapeTake.hpp",
         "src/state/project/ProjectDomainRules.hpp",
+        "src/state/project/ProjectHistoryAccess.hpp",
         "src/state/project/ProjectHistoryCoordinator.hpp",
         "src/state/project/ProjectHistoryEventSink.hpp",
         "src/state/project/ProjectHistorySlots.hpp",
@@ -2001,7 +2003,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "d2c21d85ce51862a1dcd5dbf3e3546487ce2a12bf8885c424610d63d4c6f5695"
+      "sha256": "6a7a7e2c1d77e4e57ce0b4346f0cb6c16e59975e7e414f586a012680e94f8d28"
     },
     "coreTotalImplementations": {
       "count": 422,
@@ -2986,7 +2988,7 @@
         "MIDI_STUDIO_BITWIG_SHA": "f872b345fd268e1e4d247c8588da4e0eba212096",
         "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "20c328431f55ef86546947b74efd66865d2ad2d9",
         "MIDI_STUDIO_UI_SHA": "f880f20a9eb258a584c11ad93cdfa918ef5bb8f2",
-        "MS_DEV_ENV_SHA": "3dff6acacd84dd9fefbafbafabf07b19479d1f8d",
+        "MS_DEV_ENV_SHA": "75ec6ebf9789cdec145ed8e7d47f6d337539535e",
         "OPEN_CONTROL_FRAMEWORK_SHA": "7ea536b533c1a8740ac41519a17b18c9f9dd46b0",
         "OPEN_CONTROL_HAL_COMMON_SHA": "5567103c878e3c9e5be8929d1301a15b4bfa02aa",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
@@ -2999,7 +3001,7 @@
       },
       "emsdkVersion": "4.0.23",
       "finalWasmLink": true,
-      "msDevEnv": "3dff6acacd84dd9fefbafbafabf07b19479d1f8d",
+      "msDevEnv": "75ec6ebf9789cdec145ed8e7d47f6d337539535e",
       "platformio": "6.1.18"
     }
   }
