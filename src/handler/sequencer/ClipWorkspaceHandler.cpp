@@ -149,6 +149,7 @@ FLASHMEM bool ClipWorkspaceHandler::trackHeaderAvailable() const {
 
 FLASHMEM bool ClipWorkspaceHandler::matrixAvailable() const {
     return core_.sequencer.clipWorkspace.matrixVisible() &&
+        !core_.sequencer.structureUi.trackPaste.navigationBlocked() &&
         !core_.trackNavigation.hold.active() &&
         !core_.sequencer.clipWorkspace.editorActive() &&
         !overlays_.hasVisible() &&
@@ -325,7 +326,9 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
             return quick_selector_gesture_.active() ||
                 (matrixAvailable() &&
                     (core_.sequencer.clipWorkspace.selectionActive() ||
-                     focusedClipAvailable() || trackHeaderAvailable())) ||
+                     focusedClipAvailable() ||
+                     (trackHeaderAvailable() &&
+                      !core_.sequencer.structureUi.trackPaste.detailsAvailable()))) ||
                 release_latch_.isArmed(Config::ButtonID::LEFT_CENTER);
         })
         .then([this]() {
@@ -435,6 +438,7 @@ FLASHMEM void ClipWorkspaceHandler::beginHorizontalNavigation() {
 }
 
 FLASHMEM void ClipWorkspaceHandler::moveHorizontal(float delta) {
+    if (core_.sequencer.structureUi.trackPaste.navigationBlocked()) return;
     const bool hasTurn = nav::hasTurnDelta(delta);
     if (!hasTurn ||
         (horizontal_navigation_gesture_.active() &&

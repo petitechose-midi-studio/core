@@ -981,6 +981,12 @@ struct SequencerTrackPasteUiState {
                    core::state::contextual::GuardedActionPhase::ARMED;
     }
     [[nodiscard]] bool inspectable() const { return plan.hasEntries(); }
+    [[nodiscard]] bool detailsAvailable() const {
+        return inspectable() && plan.canCommit() && feedback.active;
+    }
+    [[nodiscard]] bool navigationBlocked() const {
+        return buttonOwned || gestureActive() || detailVisible;
+    }
     void bump();
     void reset();
 };

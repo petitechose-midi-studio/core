@@ -1452,11 +1452,6 @@ FLASHMEM bool SequencerStructureEditWorkflow::cancelTrackPasteAction(uint32_t no
     return changed;
 }
 
-FLASHMEM bool SequencerStructureEditWorkflow::trackPasteNavigationBlocked() const {
-    const auto& paste = sequencer_.structureUi.trackPaste;
-    return paste.buttonOwned || paste.gestureActive() || paste.detailVisible;
-}
-
 FLASHMEM bool SequencerStructureEditWorkflow::trackRemoveNavigationBlocked() const {
     return trackRemoveHoldPending();
 }
@@ -1535,14 +1530,9 @@ SequencerStructureEditWorkflow::settleRejectedSelectionTrackRemoveLongPress() {
     if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
 }
 
-FLASHMEM bool SequencerStructureEditWorkflow::trackPastePlanInspectable() const {
-    const auto& paste = sequencer_.structureUi.trackPaste;
-    return paste.inspectable() && paste.plan.canCommit() && paste.feedback.active;
-}
-
 FLASHMEM void SequencerStructureEditWorkflow::toggleTrackPasteDetails() {
     auto& paste = sequencer_.structureUi.trackPaste;
-    if (!trackPastePlanInspectable()) return;
+    if (!paste.detailsAvailable()) return;
     paste.detailVisible = !paste.detailVisible;
     paste.bump();
 }

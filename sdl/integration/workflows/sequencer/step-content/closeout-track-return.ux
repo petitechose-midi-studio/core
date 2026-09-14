@@ -4,6 +4,15 @@
 # regression where nested contexts disappeared after track navigation.
 # Expect: capture_changed:t02_created=t01_returned_after_track_switch, capture_changed:t01_step_edit_after_return=t01_micro_context_reopened_after_return
 
+# Expect: semantic:t01_micro_step_note_offset:property=Pitch, semantic:t01_micro_step_note_offset:resolved_note=49
+# Expect: semantic:t02_created:view=clips, semantic:t02_created:shared_track=1
+# Expect: semantic:t01_returned_after_track_switch:view=clips, semantic:t01_returned_after_track_switch:shared_track=0
+# Expect: semantic:t01_micro_row_still_present:mode=sequencer.step_edit, semantic:t01_micro_row_still_present:published=1
+# Expect: semantic:t01_micro_context_reopened_after_return:overlay=none, semantic:t01_micro_context_reopened_after_return:shared_track=0
+
+# Expect: semantic:t01_restored_child_pitch:mode=sequencer.step_edit, semantic:t01_restored_child_pitch:target_count=2
+# Expect: semantic:t01_restored_child_pitch:property=Pitch, semantic:t01_restored_child_pitch:resolved_note=49, semantic:t01_restored_child_pitch:shared_track=0
+
 0 scenario sequencer
 50 capture screen sequencer_ready
 
@@ -31,6 +40,7 @@
 3880 capture screen t01_micro_step_edit_open
 3940 button MACRO_1 up
 4040 encoder NAV 0.01
+4080 encoder NAV 0.01
 4140 encoder OPT 0.72
 4360 capture screen t01_micro_step_note_offset
 4460 tap NAV 60
@@ -47,21 +57,17 @@
 # matrix, move from the T1 header to the T2 add header, create an Instrument
 # Track, then move back from T2/C1 to T1/C1 and reopen it.
 5680 tap LEFT_TOP 60
-5900 encoder NAV -0.01
-5980 button LEFT_CENTER down
+5900 encoder OPT -0.01
 6060 encoder NAV 0.01
-6140 button LEFT_CENTER up
 6180 capture screen t02_add_preview
 6280 tap NAV 60
 6580 capture screen t02_type_instrument
 6680 tap NAV 60
 7080 capture screen t02_created
 7180 tap LEFT_TOP 60
-7380 button LEFT_CENTER down
 7460 encoder NAV -0.01
-7540 button LEFT_CENTER up
-7640 tap LEFT_CENTER 60
-7800 tap LEFT_TOP 60
+7640 tap LEFT_BOTTOM 60
+7800 tick
 7980 capture screen t01_returned_after_track_switch
 
 # Re-open Track 1 step 1. The micro-sequence row must still be present and
@@ -80,3 +86,11 @@
 10020 capture screen t01_micro_row_still_present
 10120 tap NAV 60
 10420 capture screen t01_micro_context_reopened_after_return
+
+# Read the restored child itself, including its length and edited pitch.
+10520 button MACRO_1 down
+11570 tick
+11620 button MACRO_1 up
+11720 encoder NAV 0.01
+11800 encoder NAV 0.01
+12020 capture screen t01_restored_child_pitch

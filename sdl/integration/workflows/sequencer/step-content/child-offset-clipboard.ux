@@ -3,6 +3,12 @@
 # offset through quick controls and that row-level clipboard actions only paste
 # matching child kinds.
 # Expect: capture_changed:micro_step_edit_open=micro_step_pitch_offset, capture_changed:child_quick_offset=child_offset_shifted, capture_changed:micro_row_paste_ready=micro_row_pasted
+# Expect: semantic:micro_pitch_offset_applied:mode=sequencer.child_pattern, semantic:micro_context_open:draft_kind=micro_sequence
+# Expect: semantic:child_quick_offset:mode=sequencer.quick_controls, semantic:child_quick_offset:property=Offset
+# Expect: semantic:child_offset_shifted:effect=edit_quick_control, semantic:child_offset_shifted:draft_active=1
+# Expect: semantic:micro_row_copied:published=1, semantic:micro_row_copied:target_step=0
+# Expect: semantic:cycle_row_after_wrong_paste:property=Cycle state, semantic:cycle_row_after_wrong_paste:published=0, semantic:cycle_row_after_wrong_paste:target_step=1
+# Expect: semantic:micro_row_pasted:property=Micro sequence, semantic:micro_row_pasted:published=1, semantic:micro_row_pasted:target_step=1
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -34,7 +40,8 @@
 4100 encoder NAV 0.01
 4180 encoder OPT 0.72
 4360 capture screen micro_step_pitch_offset
-4460 tap NAV 60
+# A scalar NAV confirmation keeps the editor open; the owning pad closes it.
+4460 tap MACRO_1 60
 4700 capture screen micro_pitch_offset_applied
 
 # The child retained Pattern focus while its Step Editor was open. Quick

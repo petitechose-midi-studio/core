@@ -1123,13 +1123,13 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .release()
         .scope(scope_id_)
-        .when([this]() { return edit_workflow_.trackPastePlanInspectable(); })
+        .when([this]() { return sequencer_.structureUi.trackPaste.detailsAvailable(); })
         .then([this]() { edit_workflow_.toggleTrackPasteDetails(); });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when([this]() { return edit_workflow_.trackPasteNavigationBlocked(); })
+        .when([this]() { return sequencer_.structureUi.trackPaste.navigationBlocked(); })
         .then([this]() { edit_workflow_.cancelTrackPasteAction(core::time_compat::millis()); });
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
@@ -1181,7 +1181,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
             return core::state::sequencer::isChildContentView(sequencer_) &&
                    !context_selector_workflow_.ownsGesture() &&
                    navigation_workflow_.allowsMainBindings() &&
-                   !edit_workflow_.trackPasteNavigationBlocked() &&
+                   !sequencer_.structureUi.trackPaste.navigationBlocked() &&
                    !navigation_workflow_.stepFocusActive();
         })
         .then([this](float delta) {
@@ -1202,7 +1202,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .when([this]() {
             return selectionInteractionPolicy().navTurn == SelectionAction::MOVE_CURSOR &&
                    !context_selector_workflow_.ownsGesture() &&
-                   !edit_workflow_.trackPasteNavigationBlocked() &&
+                   !sequencer_.structureUi.trackPaste.navigationBlocked() &&
                    !edit_workflow_.trackRemoveNavigationBlocked();
         })
         .then([this](float delta) { navigation_workflow_.navigateSelection(delta); });
@@ -1216,7 +1216,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
                      navigation_workflow_.stepFocusActive())) &&
                    !context_selector_workflow_.ownsGesture() &&
                    navigation_workflow_.allowsMainBindings() &&
-                   !edit_workflow_.trackPasteNavigationBlocked() &&
+                   !sequencer_.structureUi.trackPaste.navigationBlocked() &&
                    !edit_workflow_.trackRemoveNavigationBlocked();
         })
         .then([this](float delta) {
@@ -1233,7 +1233,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .when([this]() {
             return navigation_workflow_.allowsMainBindings() &&
                    !navigation_workflow_.selectionActive() &&
-                   !edit_workflow_.trackPasteNavigationBlocked() &&
+                   !sequencer_.structureUi.trackPaste.navigationBlocked() &&
                    !edit_workflow_.trackRemoveNavigationBlocked();
         })
         .then([this]() {
@@ -1275,7 +1275,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .scope(scope_id_)
         .when([this]() {
             return context_selector_workflow_.ownsGesture() &&
-                !edit_workflow_.trackPasteNavigationBlocked();
+                !sequencer_.structureUi.trackPaste.navigationBlocked();
         })
         .then([this]() {
             if (context_selector_workflow_.ownsGesture()) {
@@ -1288,7 +1288,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
         .scope(scope_id_)
         .when([this]() {
             return selectionInteractionPolicy().navRelease == SelectionAction::TOGGLE_ITEM &&
-                   !edit_workflow_.trackPasteNavigationBlocked();
+                   !sequencer_.structureUi.trackPaste.navigationBlocked();
         })
         .then([this]() { navigation_workflow_.toggleSelectionAtCursor(); });
 
@@ -1300,7 +1300,7 @@ FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
                 instrumentPatternBackAvailable() ||
                 (navigation_workflow_.allowsMainBindings() &&
                  core::state::sequencer::isChildContentView(sequencer_) &&
-                 !edit_workflow_.trackPasteNavigationBlocked());
+                 !sequencer_.structureUi.trackPaste.navigationBlocked());
         })
         .then([this]() {
             if (sequencer_.patternPresetPreview.active()) {
@@ -1385,7 +1385,7 @@ FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {
         .scope(scope_id_)
         .when([this]() {
             return selectionInteractionPolicy().leftTopRelease != SelectionAction::NONE &&
-                   !edit_workflow_.trackPasteNavigationBlocked();
+                   !sequencer_.structureUi.trackPaste.navigationBlocked();
         })
         .then([this]() {
             edit_workflow_.clearHoldAction();

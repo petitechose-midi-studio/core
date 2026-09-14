@@ -90,8 +90,8 @@
 15300 tap LEFT_CENTER 60
 16800 capture screen selector_preset_redo_ready
 16900 tap LEFT_TOP 60
-17000 tap LEFT_CENTER 60
-17100 tap LEFT_TOP 60
+17000 tap LEFT_BOTTOM 60
+17100 tick
 17300 capture screen step_2_after_preset_undo
 
 # While transport is running, applying to another empty step stays explicit as

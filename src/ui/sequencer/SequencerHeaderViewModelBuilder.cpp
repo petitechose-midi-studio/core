@@ -279,8 +279,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         source.navigationFocus.get() == core::state::StructureNavigationFocus::LANE;
     const auto& trackPaste = sequencer.structureUi.trackPaste;
     const bool trackPasteDetailsAvailable =
-        focusingTrack && trackPaste.inspectable() &&
-        trackPaste.plan.canCommit() && trackPaste.feedback.active;
+        focusingTrack && trackPaste.detailsAvailable();
     const bool previewAddTrackSlot =
         !selectingTrack && source.trackNavigation.previewAddSlot.get();
     const uint8_t addTrackIndex =

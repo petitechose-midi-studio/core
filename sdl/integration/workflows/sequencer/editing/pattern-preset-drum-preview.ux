@@ -12,10 +12,8 @@
 # Create Track 2 as a General MIDI Drum Track from the Clip Launcher's add
 # header, then author a visible phrase.
 150 tap LEFT_TOP 60
-500 encoder NAV -0.01
-620 button LEFT_CENTER down
+500 encoder OPT -0.01
 700 encoder NAV 0.01
-780 button LEFT_CENTER up
 1530 tap NAV 60
 1830 encoder NAV 0.01
 2300 tap NAV 60

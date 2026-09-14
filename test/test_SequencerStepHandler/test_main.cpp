@@ -1743,6 +1743,48 @@ void moveToAdjacentTrackHeader(SequencerStepHarness& h, int direction) {
     assert(h.state.sequencer.clipWorkspace.trackHeaderFocused());
 }
 
+void test_track_paste_details_own_matrix_input_until_closed() {
+    g_now_ms = 0;
+    SequencerStepHarness h(true);
+    h.state.sequencerTracks.reset();
+    assert(h.state.setSharedTrackState(0x0011, 0));
+    h.state.sequencer.pattern().note[0] = 76;
+    h.state.sequencer.pattern().setEnabled(0, true);
+    focusTrackNavigation(h);
+    h.tick(1);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasSequencerTrack());
+    h.turn(Config::EncoderID::NAV, 0.01f);
+    h.tick(2);
+
+    auto& launcher = h.state.sequencer.clipWorkspace;
+    auto& paste = h.state.sequencer.structureUi.trackPaste;
+    assert(launcher.trackHeaderFocused() && launcher.focusedTrack == 4);
+    assert(paste.plan.canCommit() && paste.plan.entries[0].targetTrack == 4);
+    const auto revision = h.state.project.metadata.modifiedCounter;
+    h.press(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(paste.detailVisible);
+    assert(!launcher.editorActive() && !h.state.overlays.hasVisible());
+
+    h.turn(Config::EncoderID::NAV, 0.01f);
+    h.turn(Config::EncoderID::OPT, 0.01f);
+    h.release(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::NAV);
+    h.tick(3);
+    assert(launcher.trackHeaderFocused() && launcher.focusedTrack == 4);
+    assert(paste.plan.entries[0].targetTrack == 4);
+    assert(h.state.project.metadata.modifiedCounter == revision);
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(h.state.statusBar.playing.get());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!paste.detailVisible);
+    assert(launcher.trackHeaderFocused() && launcher.focusedTrack == 4);
+    h.turn(Config::EncoderID::NAV, -0.01f);
+    assert(launcher.focusedTrack == 0);
+    std::cout << "[PASS] test_track_paste_details_own_matrix_input_until_closed\n";
+}
+
 using TrackGraph = oc::note::sequencer::StepSequencerGraph;
 using TrackCcBank = seq::SequencerCcLaneBank;
 using TrackBank = seq::SequencerTrackBankState;
@@ -9532,6 +9574,7 @@ int main() {
     test_undo_removed_active_child_context_returns_to_root();
     test_sequencer_track_copy_and_long_press_paste_to_add_slot();
     test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute();
+    test_track_paste_details_own_matrix_input_until_closed();
     test_track_paste_global_undo_redo_restores_content_and_reports_outcome();
     test_track_paste_clamps_focus_to_short_source_before_history_commit();
     test_track_paste_mid_hold_release_cancels_without_mutation_or_history();

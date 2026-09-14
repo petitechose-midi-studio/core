@@ -13,10 +13,11 @@
 0 scenario seq-cc-macro-conflict
 80 capture screen cc_conflict_ready
 
-# Enter the focused Clip with LEFT_CENTER, close its region editor one level,
-# then open the shared Pattern property selector and reach CC Lanes.
-160 tap LEFT_CENTER 60
-300 tap LEFT_TOP 60
+# Focus the Clip from the Scene rail and enter its Pattern directly.
+# Then open the shared Pattern property selector and reach CC Lanes.
+160 encoder NAV 0.01
+240 tap LEFT_BOTTOM 60
+300 tick
 420 button LEFT_BOTTOM down
 500 encoder NAV 0.01
 580 encoder NAV 0.01

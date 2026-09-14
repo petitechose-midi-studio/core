@@ -4237,12 +4237,12 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"invalidateTrackRemoveHoldIntent\s*\(\s*\)\s*;",
         "physical release must preserve a foreign replacement hold",
     )
-    require_in_function(
-        PAGE_STRUCTURE_EDIT_WORKFLOW,
-        "SequencerStructureEditWorkflow::trackPasteNavigationBlocked",
-        r"\bhold\b",
+    require_in_type(
+        "src/state/sequencer/SequencerUiState.hpp",
+        "SequencerTrackPasteUiState",
+        r"bool\s+navigationBlocked\s*\(\s*\)\s*const\s*\{\s*"
+        r"return\s+buttonOwned\s*\|\|\s*gestureActive\s*\(\s*\)\s*\|\|\s*detailVisible\s*;\s*\}",
         "Track Remove hold must not broaden paste-owned release blocking",
-        count=0,
     )
     require_in_function(
         PAGE_STRUCTURE_EDIT_WORKFLOW,
@@ -4402,7 +4402,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "SequencerStepHandler::setupNavigationBindings",
         r"\.button\s*\(\s*Config::ButtonID::NAV\s*\)\s*"
         r"\.press\s*\(\s*\).*?"
-        r"!\s*edit_workflow_\.trackPasteNavigationBlocked\s*\(\s*\)\s*&&\s*"
+        r"!\s*sequencer_\.structureUi\.trackPaste\.navigationBlocked\s*\(\s*\)\s*&&\s*"
         r"!\s*edit_workflow_\.trackRemoveNavigationBlocked\s*\(\s*\).*?"
         r"context_selector_workflow_\.press\s*\(",
         "new NAV selector acquisition must be rejected during Track Remove",

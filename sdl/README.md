@@ -184,8 +184,13 @@ Supported expectations:
 | `overlay_exclusive` | The standard early/late selector captures remain visually stable within the exclusive-overlay tolerance. |
 | `capture_match:<left>=<right>` | The two named BMP captures are byte-identical. |
 | `capture_changed:<left>=<right>` | The two named BMP captures differ by at least 16 bytes. |
+| `semantic:<capture>:<field>=<value>` | The named capture contains the exact semantic fact; `*` requires a non-null value. |
 
 Multiple expectations can be comma-separated on the same `# Expect:` line.
+Unknown expectations fail the run. Expectation keywords are case-insensitive;
+capture labels, field names and string values retain their exact case.
+Pair visual comparisons with semantic assertions for the intended context and
+publication state: a changed image alone does not prove that a gesture worked.
 
 Supported commands:
 

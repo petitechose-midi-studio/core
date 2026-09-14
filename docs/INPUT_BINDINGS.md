@@ -85,6 +85,12 @@ remain valid.
 availability, and hold guard must be projected by the visible action strip.
 There is no hidden fallback for an action absent from that strip.
 
+On a Clips Track header with an inspectable paste plan, `LEFT_CENTER` belongs
+to Summary/Details. It opens Track settings when that plan is absent. Details
+and an acquired paste gesture suspend matrix input so NAV/OPT cannot move the
+destination or activate another Clip. `LEFT_TOP` closes Details; Transport stays
+available. Routing and presentation use the same paste-state eligibility.
+
 ## Provisional value selectors
 
 Macro Destination, Pattern Pitch and Device Settings use

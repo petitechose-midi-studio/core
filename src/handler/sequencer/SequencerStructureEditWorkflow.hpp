@@ -76,12 +76,10 @@ public:
         uint32_t nowMs
     );
     bool cancelTrackPasteAction(uint32_t nowMs);
-    bool trackPasteNavigationBlocked() const;
     bool trackRemoveNavigationBlocked() const;
     bool trackRemoveHoldPending() const;
     bool currentTrackRemoveHoldPending() const;
     bool selectionTrackRemoveHoldPending() const;
-    bool trackPastePlanInspectable() const;
     void toggleTrackPasteDetails();
     void applyLatchedCurrentTrackShortPress();
     void applyLatchedTrackSelectionShortPress();
