@@ -10,6 +10,7 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <config/App.hpp>
 #include <config/InputIDs.hpp>
 #include "../../src/handler/settings/DeviceSettingsDomainServices.hpp"
 #include "../../src/handler/settings/DeviceSettingsHandler.hpp"
@@ -61,7 +62,7 @@ struct DeviceSettingsHarness {
               midiNoteDisplay,
               settingsStore,
           })
-        , inputBinding(eventBus, mockTimeMs)
+        , inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(overlayState, buttons)
@@ -81,6 +82,7 @@ struct DeviceSettingsHarness {
             deviceSettings.selector.visible
         );
         overlays.registerCleanup(core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR, SELECTOR_SCOPE);
+        overlays.setActiveViewProvider([]() { return SETTINGS_SCOPE; });
     }
 
     void tick(uint32_t nowMs) {
@@ -157,6 +159,8 @@ void test_selector_navigation_and_apply_follow_real_bindings() {
     assert(!h.deviceSettings.selector.visible.get());
     assert(h.deviceSettings.flowPhase.get() == core::state::DeviceSettingsFlowPhase::VIEW);
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
+    h.release(Config::ButtonID::NAV);
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
 
     std::cout << "[PASS] test_selector_navigation_and_apply_follow_real_bindings\n";
 }
@@ -175,11 +179,16 @@ void test_selector_cancel_restores_parent_overlay_without_applying() {
     assert(h.deviceSettings.selector.selectedIndex.get() !=
            h.services.currentChoiceIndex(h.deviceSettings.selector.editingRow.get()));
 
-    h.tap(Config::ButtonID::LEFT_TOP);
+    h.press(Config::ButtonID::LEFT_TOP);
+    assert(h.overlays.current() == core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
+    h.release(Config::ButtonID::LEFT_TOP);
     assert(h.midiSync.mode.get() == beforeMode);
     assert(!h.deviceSettings.selector.visible.get());
     assert(h.deviceSettings.flowPhase.get() == core::state::DeviceSettingsFlowPhase::VIEW);
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.deviceSettings.selector.selectedIndex.get() == h.services.currentChoiceIndex(0));
+    h.tap(Config::ButtonID::LEFT_TOP);
 
     std::cout << "[PASS] test_selector_cancel_restores_parent_overlay_without_applying\n";
 }

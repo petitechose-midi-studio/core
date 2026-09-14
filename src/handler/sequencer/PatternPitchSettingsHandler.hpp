@@ -39,9 +39,7 @@ private:
     void closeSettings();
     void moveFocus(float delta);
     void openValueSelector();
-    void navigateSelector(float delta);
-    void applySelectorAndClose();
-    void closeSelectorCancel();
+    bool applyChoice(uint8_t row, int selectedIndex);
 
     core::state::PatternPitchSettingsState& settings_;
     core::state::sequencer::SequencerState& sequencer_;

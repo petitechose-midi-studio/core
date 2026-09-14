@@ -1440,25 +1440,27 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
                 "commit failures must return structured persistence failure"
             )
 
-    handler_bodies = cpp_function_bodies(
-        files.get(DEVICE_SETTINGS_HANDLER_SOURCE, ""),
-        "DeviceSettingsHandler::applySelectorAndClose",
-    )
-    if len(handler_bodies) != 1:
-        errors.append(
-            f"{DEVICE_SETTINGS_HANDLER_SOURCE}: applySelectorAndClose must "
-            f"have one balanced definition (found {len(handler_bodies)})"
-        )
-    else:
-        handler_body = cpp_code_mask(handler_bodies[0])
-        apply_pos = handler_body.find("services_.applyChoice")
-        guard_pos = handler_body.find("if (!result.success()) return;")
-        close_pos = handler_body.find("modal::hideIfCurrent")
-        if not (0 <= apply_pos < guard_pos < close_pos):
-            errors.append(
-                f"{DEVICE_SETTINGS_HANDLER_SOURCE}: selector must consume the "
-                "result and remain open on persistence failure"
-            )
+    # Device persistence rejection now feeds the shared selector lifecycle.
+    # Keep every equivalent consumer on that lifecycle, including Back routing.
+    for source in (
+        DEVICE_SETTINGS_HANDLER_SOURCE,
+        "src/handler/macro/MacroEditHandler.cpp",
+        "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
+    ):
+        body = cpp_code_mask(files.get(source, ""))
+        if body.count("modal::bindValueSelectorInputs(") != 1 or "input.handle(" not in body:
+            errors.append(f"{source}: value selector must use the shared input lifecycle")
+        if "applySelectorAndClose" in body or "navigateValueSelector" in body:
+            errors.append(f"{source}: replaced selector routes must not return")
+    device_body = cpp_code_mask(files.get(DEVICE_SETTINGS_HANDLER_SOURCE, ""))
+    if "return services_.applyChoice(row, choice).success();" not in device_body:
+        errors.append(f"{DEVICE_SETTINGS_HANDLER_SOURCE}: persistence success must decide acceptance")
+    selector_source = "src/handler/common/ValueSelectorInput.hpp"
+    selector_body = cpp_code_mask(files.get(selector_source, ""))
+    guard_pos = selector_body.find("!apply(")
+    close_pos = selector_body.find("hideIfCurrent(")
+    if not (0 <= guard_pos < close_pos):
+        errors.append(f"{selector_source}: failed acceptance must not close the selector")
 
     project_header = files.get(PROJECT_HANDLER_HEADER, "")
     for marker in (

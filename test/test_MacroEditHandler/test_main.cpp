@@ -211,6 +211,64 @@ void test_macro_press_alone_is_inert_and_edit_release_never_closes() {
     std::cout << "[PASS] Macro press is inert and Edit release is stable\n";
 }
 
+void test_selector_back_preserves_parent_buffer_and_does_not_publish() {
+    MacroEditHarness h;
+    openMacroEdit(h, 0U, Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 200U);
+    const auto authored = h.services.activeConfig(0U).cc;
+    const auto historyCount = h.state.projectHistory.undoCount();
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.macroEdit.tempCC.get() == 64U);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.selector.selectedIndex.get() == 65);
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT_SELECTOR);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
+    assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
+    assert(h.state.macroEdit.tempCC.get() == 64U);
+    assert(h.services.activeConfig(0U).cc == authored);
+    assert(h.state.projectHistory.undoCount() == historyCount);
+
+    // Re-entering starts from the parent buffer, not the discarded child value.
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.selector.selectedIndex.get() == 64);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
+    assert(h.state.macroEdit.tempCC.get() == 65U);
+    assert(h.services.activeConfig(0U).cc == authored);
+
+    // Only leaving the parent publishes the accepted value, once.
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
+    assert(h.services.activeConfig(0U).cc == 65U);
+    assert(h.state.projectHistory.undoCount() == historyCount + 1U);
+    assert(h.state.undoProjectHistory());
+    assert(h.services.activeConfig(0U).cc == authored);
+    h.flushState();
+    std::cout << "[PASS] Macro selector Back preserves parent and publication boundary\n";
+}
+
+void test_selector_requires_its_owner_phase_as_well_as_visibility() {
+    MacroEditHarness h;
+    openMacroEdit(h, 0U, Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 200U);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    // Session and stack have distinct owners. A stale visual surface cannot
+    // accept, cancel or navigate a session that has already left selection.
+    h.state.macroEdit.flowPhase.set(core::state::MacroEditFlowPhase::EDIT);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT_SELECTOR);
+    assert(h.state.macroEdit.selector.selectedIndex.get() == 1);
+    assert(h.state.macroEdit.tempCC.get() == 0U);
+    h.flushState();
+    std::cout << "[PASS] Macro selector rejects a stale owner phase\n";
+}
+
 void test_edit_intent_nav_opens_the_focused_macro() {
     MacroEditHarness h;
     h.state.pages.setMacroSlotActive(2U, true);
@@ -721,6 +779,8 @@ void test_macro_handler_does_not_cancel_project_owned_recorded_shape_capture() {
 }  // namespace
 
 int main() {
+    test_selector_requires_its_owner_phase_as_well_as_visibility();
+    test_selector_back_preserves_parent_buffer_and_does_not_publish();
     test_quick_release_keeps_macro_edit_open_and_left_top_closes();
     test_macro_press_alone_is_inert_and_edit_release_never_closes();
     test_edit_intent_nav_opens_the_focused_macro();

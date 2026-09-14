@@ -4,7 +4,7 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/time/Time.hpp>
 
-#include "handler/common/ModalSelectionUtils.hpp"
+#include "handler/common/ValueSelectorInput.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/SequencerChordProjectionFeedback.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -69,18 +69,15 @@ FLASHMEM void PatternPitchSettingsHandler::setupBindings() {
         closeSettings();
     });
 
-    encoders_.encoder(EncoderID::NAV)
-        .turn()
-        .scope(selector_overlay_scope_)
-        .then([this](float delta) { navigateSelector(delta); });
-
-    buttons_.button(ButtonID::NAV).release().scope(selector_overlay_scope_).then([this]() {
-        applySelectorAndClose();
-    });
-
-    buttons_.button(ButtonID::LEFT_TOP).release().scope(selector_overlay_scope_).then([this]() {
-        closeSelectorCancel();
-    });
+    modal::bindValueSelectorInputs(encoders_, buttons_, selector_overlay_scope_,
+        [this](modal::ValueSelectorInput input) {
+            input.handle(overlays_, core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR,
+                settings_.selector,
+                settings_.flowPhase.get() == core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR,
+                services_.choiceCount(settings_.selector.editingRow.get()),
+                [this](uint8_t row, int choice) { return applyChoice(row, choice); },
+                [this]() { settings_.closeSelector(); });
+        });
 }
 
 FLASHMEM void PatternPitchSettingsHandler::openSettings() {
@@ -114,27 +111,7 @@ FLASHMEM void PatternPitchSettingsHandler::openValueSelector() {
     overlays_.show(core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR, true);
 }
 
-FLASHMEM void PatternPitchSettingsHandler::navigateSelector(float delta) {
-    if (settings_.flowPhase.get() != core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR) {
-        return;
-    }
-
-    const uint8_t row = settings_.selector.editingRow.get();
-    const int count = services_.choiceCount(row);
-    if (count <= 0) return;
-
-    int next = settings_.selector.selectedIndex.get();
-    if (!modal::advanceWrappedSelection(delta, settings_.selector, count, next)) return;
-    settings_.selector.selectedIndex.set(next);
-}
-
-FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
-    if (settings_.flowPhase.get() != core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR) {
-        return;
-    }
-
-    const uint8_t row = settings_.selector.editingRow.get();
-    const int selectedIndex = settings_.selector.selectedIndex.get();
+FLASHMEM bool PatternPitchSettingsHandler::applyChoice(uint8_t row, int selectedIndex) {
     const uint8_t editKey = pitchSettingKey(row, selectedIndex);
     const bool choiceChanged = services_.currentChoiceIndex(row) != selectedIndex;
     const auto payloadPlan = core::state::sequencer::graphView(sequencer_.pattern()) == nullptr
@@ -147,7 +124,7 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
                                                                 editKey, payloadPlan, descriptor);
     if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
         sequencer_.historyFeedback.showRejection(beginOutcome, oc::time::millis());
-        return;
+        return false;
     }
 
     const auto projection = services_.applyChoice(row, selectedIndex);
@@ -158,7 +135,7 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
         sequencer_.historyFeedback.showRejection(
             core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
             oc::time::millis());
-        return;
+        return false;
     }
 
     const auto commitOutcome = history_.commitPreparedPatternEdit(PreparedOwner::PatternPitch);
@@ -170,17 +147,11 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
         sequencer_.historyFeedback.showRejection(
             core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
             oc::time::millis());
-        return;
+        return false;
     }
     showChordProjectionFeedback(sequencer_.historyFeedback, projection, oc::time::millis());
 
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR);
-    settings_.closeSelector();
-}
-
-FLASHMEM void PatternPitchSettingsHandler::closeSelectorCancel() {
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR);
-    settings_.closeSelector();
+    return true;
 }
 
 }  // namespace core::handler

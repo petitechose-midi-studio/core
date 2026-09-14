@@ -85,6 +85,21 @@ remain valid.
 availability, and hold guard must be projected by the visible action strip.
 There is no hidden fallback for an action absent from that strip.
 
+## Provisional value selectors
+
+Macro Destination, Pattern Pitch and Device Settings use
+`handler/common/ValueSelectorInput.hpp` for their scoped NAV turn, NAV release
+and LEFT_TOP release routes. NAV changes only the child preview; acceptance
+revalidates the choice range and asks the domain to apply it. A rejection keeps
+the same selector open. Back discards only that preview. Both exits pop exactly
+the current selector and restore its parent; domain callbacks do not navigate.
+
+The publication boundary remains explicit: Macro accepts into the parent CC
+buffer, Pitch records a prepared history edit, and Device persists its setting.
+Cancelling a Macro child neither publishes nor discards the parent's CC buffer.
+New equivalent selectors must use this lifecycle rather than reproduce bindings
+and close logic. Live controls and selection/placement use their own contracts.
+
 ## Handoff rule
 
 Use `handoffPress(button, targetScope)` only when the same physical gesture

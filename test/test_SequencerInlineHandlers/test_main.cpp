@@ -8,6 +8,7 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <config/App.hpp>
 
 #include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "../../src/handler/sequencer/PatternPitchSettingsHandler.hpp"
@@ -85,7 +86,7 @@ struct SequencerInlineHarness {
 
     explicit SequencerInlineHarness(bool rejectPreparedEdits = false)
         : state(storages.settings), navigationFocus(core::state::StructureNavigationFocus::PAGE),
-          inputBinding(eventBus, mockTimeMs), buttons(inputBinding, buttonHw),
+          inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG), buttons(inputBinding, buttonHw),
           encoders(inputBinding, encoderHw), overlayManager(state.overlays, buttons),
           propertySelectorHandler(
               core::handler::SequencerPropertySelectorHandler::StateRefs{
@@ -670,6 +671,11 @@ void test_pattern_pitch_settings_are_undoable() {
     assert(h.state.sequencer.pattern().scalePolicy ==
            core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.overlayManager.current() == core::ui::OverlayType::PATTERN_PITCH_SETTINGS);
+    // A repeated release from the old child gesture must not open another picker.
+    h.release(Config::ButtonID::NAV);
+    assert(h.overlayManager.current() == core::ui::OverlayType::PATTERN_PITCH_SETTINGS);
+    assert(h.state.sequencerHistory.undoCount() == 1);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.patternPitchSettings.visible.get());
@@ -684,6 +690,28 @@ void test_pattern_pitch_settings_are_undoable() {
            core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
 
     std::cout << "[PASS] test_pattern_pitch_settings_are_undoable\n";
+}
+
+void test_pattern_pitch_selector_back_discards_only_child_preview() {
+    SequencerInlineHarness h;
+    openPatternPitchSettings(h);
+    const auto original = h.state.sequencer.pattern().scalePolicy;
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.patternPitchSettings.selector.selectedIndex.get() == 1);
+    h.press(Config::ButtonID::LEFT_TOP);
+    assert(h.overlayManager.current() == core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.overlayManager.current() == core::ui::OverlayType::PATTERN_PITCH_SETTINGS);
+    assert(h.state.patternPitchSettings.flowPhase.get() == core::state::PatternPitchSettingsFlowPhase::OVERLAY);
+    assert(h.state.sequencer.pattern().scalePolicy == original);
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.patternPitchSettings.selector.selectedIndex.get() == 0);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.overlayManager.current() == core::ui::OverlayType::NONE);
+    std::cout << "[PASS] Pitch selector Back discards only the child preview\n";
 }
 
 void test_pattern_pitch_rejected_prepare_blocks_projection_and_feedback() {
@@ -1026,7 +1054,9 @@ void test_pattern_quick_controls_opt_edits_focused_pattern_prop_without_hold() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::SWING);
-    h.release(Config::ButtonID::LEFT_CENTER);
+    // The first tap latched the picker. Close with a second physical tap,
+    // not an orphan release that product routing deliberately consumes.
+    h.tap(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::SWING);
@@ -1089,6 +1119,7 @@ void test_pattern_quick_controls_respect_blocking_states() {
 }  // namespace
 
 int main() {
+    test_pattern_pitch_selector_back_discards_only_child_preview();
     test_property_selector_left_top_closes_without_reverting_selected_property();
     test_property_selector_stays_open_when_history_barrier_fails();
     test_property_selector_apply_keeps_selected_property();

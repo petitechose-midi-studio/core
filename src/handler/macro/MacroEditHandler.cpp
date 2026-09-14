@@ -9,6 +9,7 @@
 #include <config/Timing.hpp>
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/common/ValueSelectorInput.hpp"
 #include "handler/macro/MacroAutomationTakeInputWorkflow.hpp"
 #include "handler/macro/MacroGuardedActionWorkflow.hpp"
 #include "state/macro/MacroEditMenuModel.hpp"
@@ -309,20 +310,21 @@ FLASHMEM void MacroEditHandler::setupBindings() {
         .then([this]() { releaseBottomLeftAction(); });
 
     // ===== VALUE SELECTOR OVERLAY SCOPE =====
-    encoders_.encoder(static_cast<oc::type::EncoderID>(Config::EncoderID::NAV))
-        .turn()
-        .scope(valueScope)
-        .then([this](float delta) { navigateValueSelector(delta); });
-
-    buttons_.button(navButton)
-        .release()
-        .scope(valueScope)
-        .then([this]() { applyValueSelectorAndClose(); });
-
-    buttons_.button(leftTopButton)
-        .release()
-        .scope(valueScope)
-        .then([this]() { closeOverlay(); });
+    modal::bindValueSelectorInputs(encoders_, buttons_, valueScope,
+        [this](modal::ValueSelectorInput input) {
+            input.handle(overlays_, core::ui::OverlayType::MACRO_EDIT_SELECTOR,
+                macro_edit_.selector,
+                macro_edit_.flowPhase.get() == core::state::MacroEditFlowPhase::VALUE_SELECTOR,
+                valueCountForRow(menu::macroRootItemAt(macro_edit_.selector.editingRow.get())),
+                [this](uint8_t row, int choice) {
+                    setValueForRow(menu::macroRootItemAt(row), choice);
+                    return true;
+                },
+                [this]() {
+                    macro_edit_.closeValueSelector();
+                    configureOptForFocusedRow();
+                });
+        });
 
 }
 
@@ -352,6 +354,7 @@ FLASHMEM void MacroEditHandler::openEdit(uint8_t macroIndex) {
 }
 
 FLASHMEM void MacroEditHandler::closeOverlay() {
+    if (overlays_.current() != core::ui::OverlayType::MACRO_EDIT) return;
     if (track_channel_gesture_active_) {
         (void)performance_services_.endTrackChannelGesture();
         track_channel_gesture_active_ = false;
@@ -370,14 +373,6 @@ FLASHMEM void MacroEditHandler::closeOverlay() {
     services_.endDepthGesture();
     commitEditedConfig();
 
-    // Close any stacked macro-edit related selector first, then the main overlay.
-    modal::hideWhileCurrentIn(
-        overlays_,
-        std::array{
-            core::ui::OverlayType::MACRO_EDIT_SELECTOR,
-            core::ui::OverlayType::MACRO_AUTOMATION,
-        }
-    );
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT);
 
     macro_edit_.closeEditor();
@@ -475,34 +470,6 @@ FLASHMEM void MacroEditHandler::openValueSelector() {
 
     edit.openValueSelector(row, valueForRow(item));
     overlays_.show(core::ui::OverlayType::MACRO_EDIT_SELECTOR, true);
-}
-
-FLASHMEM void MacroEditHandler::navigateValueSelector(float delta) {
-    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::VALUE_SELECTOR) return;
-    auto& selector = macro_edit_.selector;
-    const int count = valueCountForRow(
-        menu::macroRootItemAt(selector.editingRow.get())
-    );
-    int next = selector.selectedIndex.get();
-    if (!modal::advanceWrappedSelection(delta, selector, count, next)) {
-        return;
-    }
-    selector.selectedIndex.set(next);
-}
-
-FLASHMEM void MacroEditHandler::applyValueSelectorAndClose() {
-    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::VALUE_SELECTOR) return;
-    auto& selector = macro_edit_.selector;
-    if (!selector.visible.get()) return;
-
-    setValueForRow(
-        menu::macroRootItemAt(selector.editingRow.get()),
-        selector.selectedIndex.get()
-    );
-
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT_SELECTOR);
-    macro_edit_.closeValueSelector();
-    configureOptForFocusedRow();
 }
 
 FLASHMEM void MacroEditHandler::setValueForRow(

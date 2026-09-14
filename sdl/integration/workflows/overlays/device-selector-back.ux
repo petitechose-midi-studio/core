@@ -1,0 +1,24 @@
+# UX workflow: Device choice returns to the settings view on Back or Accept.
+# Purpose: verify one-level navigation and discard of the provisional choice.
+# Expect: semantic:child:overlay=device_settings_selector, semantic:cancelled:view=device_settings
+# Expect: semantic:cancelled:overlay=none, capture_match:parent=cancelled, capture_match:child=reopened
+# Expect: semantic:accepted:overlay=none, capture_changed:parent=accepted
+
+0 scenario macro
+150 button LEFT_TOP down
+300 encoder NAV 0.01
+400 encoder NAV 0.01
+500 encoder NAV 0.01
+600 encoder NAV 0.01
+750 button LEFT_TOP up
+1100 capture screen parent
+1250 tap NAV 60
+1550 capture screen child
+1700 encoder NAV 0.01
+2000 tap LEFT_TOP 60
+2350 capture screen cancelled
+2500 tap NAV 60
+2850 capture screen reopened
+3000 encoder NAV 0.01
+3200 tap NAV 60
+3550 capture screen accepted
