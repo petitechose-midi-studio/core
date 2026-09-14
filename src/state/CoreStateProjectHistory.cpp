@@ -108,13 +108,114 @@ FLASHMEM bool applyMacroProjectHistory(CoreState& state, bool redo,
 
 }  // namespace
 
+FLASHMEM const char* project::projectHistoryBlockLabel(ProjectHistoryBlockReason reason) {
+    switch (reason) {
+        case ProjectHistoryBlockReason::NONE: return "";
+        case ProjectHistoryBlockReason::DRAFT: return "Finish draft";
+        case ProjectHistoryBlockReason::AUDITION: return "Finish audition";
+        case ProjectHistoryBlockReason::CAPTURE: return "Finish capture";
+        case ProjectHistoryBlockReason::GESTURE: return "Release gesture";
+        case ProjectHistoryBlockReason::SELECTION: return "Exit selection";
+        case ProjectHistoryBlockReason::PRESET_PREVIEW: return "Finish preview";
+        case ProjectHistoryBlockReason::LOCAL_EDITOR: return "Finish edit";
+        case ProjectHistoryBlockReason::PROJECT_CHANGE: return "Finish Project action";
+    }
+    return "Unavailable";
+}
+
+FLASHMEM project::ProjectHistoryBlockReason CoreState::projectHistoryBlockReason() const {
+    using Reason = project::ProjectHistoryBlockReason;
+    const auto& seq = sequencer;
+    const auto& drum = seq.drumSequencer;
+    const auto& nav = projectNavigation;
+    const auto& clips = seq.clipWorkspace;
+    const auto guardHeld = [](const contextual::GuardedActionState& guard) {
+        return guard.phase == contextual::GuardedActionPhase::PRESSED ||
+               guard.phase == contextual::GuardedActionPhase::ARMED;
+    };
+
+    // Check semantic owners even when a child has hidden its parent overlay.
+    if (seq.stepContentDraft.active.get() || seq.quickControlsDraft.active() ||
+        seq.ccLaneUi.mode == sequencer::SequencerCcLaneUiMode::LANE_SETTINGS ||
+        seq.ccLaneUi.mode == sequencer::SequencerCcLaneUiMode::TRANSITION_PICKER ||
+        drum.laneEditor.active || projectTrackEditor.textEditing ||
+        (projectTrackEditor.active &&
+         projectTrackEditor.draftKind != projectTrackEditor.currentKind)) {
+        return Reason::DRAFT;
+    }
+    if (macroHistory.hasPendingModulatorAuditionTransaction(pages) ||
+        pages.control.audition.active()) return Reason::AUDITION;
+    if (macroUi.automationTake.phase != macro::MacroAutomationTakePhase::IDLE ||
+        macroUi.recordedShapeCapture.active() || macroUi.automationTakeHistory ||
+        macroUi.automationTakeDomain) return Reason::CAPTURE;
+    if (seq.patternPresetPreview.active()) return Reason::PRESET_PREVIEW;
+
+    // Published Track activations and Clip launches already have exact history
+    // transitions. Do not mistake their realtime queue for an uncommitted draft.
+    if (trackNavigation.selection.active.get() || macroUi.pageSelection.active.get() ||
+        macroUi.slotSelection.active.get() || seq.structureUi.pageSelection.active.get() ||
+        seq.structureUi.stepSelection.active.get() || drum.laneSelection.active ||
+        clips.selectionActive()) return Reason::SELECTION;
+    if (projectTrackHistory.hasPendingGesture() || trackNavigation.hold.active() ||
+        macroUi.pageHold.active() || seq.structureUi.pageHold.active() ||
+        seq.structureUi.trackPaste.navigationBlocked() || nav.physicalHoldActive.get() ||
+        macroUi.contextSelector.visible || seq.contextSelector.visible ||
+        macroUi.performanceOverlayMode.get() != macro::MacroPerformanceOverlayMode::NONE ||
+        seq.patternQuickControls.selecting.get() || seq.stepContentSelector.selecting.get() ||
+        seq.stepPropertyInlineSelector.selecting.get() || drum.selectorVisible() ||
+        clips.quickSelectorVisible || clips.stopLayerActive || clips.removeHoldActive ||
+        guardHeld(seq.ccLaneUi.actionGuard.get()) || guardHeld(seq.presetLibrary.actionGuard.get()) ||
+        guardHeld(macroEdit.contextGuard.get()) || guardHeld(nav.modulatorGuard.get()) ||
+        guardHeld(nav.modulatorClipboardGuard.get())) {
+        return Reason::GESTURE;
+    }
+    if (nav.currentNode.get() == project::ProjectNodeId::NEW_PROJECT_CONFIRM ||
+        nav.currentNode.get() == project::ProjectNodeId::LOAD_PROJECT_CONFIRM ||
+        nav.currentNode.get() == project::ProjectNodeId::LOAD_PROJECT) {
+        return Reason::PROJECT_CHANGE;
+    }
+    // These owners retain a local buffer/preview or a private publication
+    // boundary. Finish through the owner; Undo must never close/flush it for us.
+    if (macroEdit.flowPhase.get() != MacroEditFlowPhase::CLOSED ||
+        seq.patternEditor.active.get() || seq.presetLibrary.visible.get() ||
+        deviceSettings.selector.visible.get() || patternPitchSettings.selector.visible.get() ||
+        drum.pickerVisible() || nav.creatingModulatorSource || nav.modulatorReturn.active() ||
+        nav.currentNode.get() == project::ProjectNodeId::SAVE_AS_PROJECT_NAME ||
+        nav.currentNode.get() == project::ProjectNodeId::RENAME_PROJECT_NAME ||
+        nav.currentNode.get() == project::ProjectNodeId::MODULATOR_SOURCE_RENAME ||
+        clips.editorActive()) return Reason::LOCAL_EDITOR;
+
+    // Fail closed for a newly introduced overlay until its owner is qualified.
+    // The live editors listed here already reconcile history and disappearing targets.
+    switch (overlays.current()) {
+        case core::ui::OverlayType::NONE:
+        case core::ui::OverlayType::VIEW_SELECTOR:
+        case core::ui::OverlayType::SEQ_CC_LANE:
+        case core::ui::OverlayType::SEQ_TRACK_EDIT:
+        case core::ui::OverlayType::SEQ_STEP_EDIT:
+        case core::ui::OverlayType::PATTERN_PITCH_SETTINGS: return Reason::NONE;
+        default: return Reason::LOCAL_EDITOR;
+    }
+}
+
+FLASHMEM void CoreState::formatProjectHistoryLabel(
+    project::ProjectHistoryDirection direction, char* out, size_t capacity
+) const {
+    if (!out || capacity == 0U) return;
+    const bool undo = direction == project::ProjectHistoryDirection::Undo;
+    const auto reason = projectHistoryBlockReason();
+    if (reason != project::ProjectHistoryBlockReason::NONE) {
+        std::snprintf(out, capacity, "%s: %s", undo ? "Undo" : "Redo",
+                      project::projectHistoryBlockLabel(reason));
+    } else if (undo) {
+        projectHistory.formatUndoLabel(out, capacity);
+    } else {
+        projectHistory.formatRedoLabel(out, capacity);
+    }
+}
+
 FLASHMEM bool CoreState::prepareProjectHistoryInteraction() {
-    // A destination-first audition owns one reserved Macro history delta.
-    // Global Undo/Redo must never consume or reorder the surrounding Project
-    // chronology until that transaction is explicitly applied or cancelled.
-    // The predicate is deliberately fail-closed for malformed transient pairs.
-    if (macroHistory.hasPendingModulatorAuditionTransaction(pages)) return false;
-    if (projectTrackHistory.hasPendingGesture()) return false;
+    if (projectHistoryBlockReason() != project::ProjectHistoryBlockReason::NONE) return false;
 
     if (commitSequencerPatternHistoryCoalescingOutcome() ==
         sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
@@ -155,63 +256,48 @@ CoreState::openSequencerTrackStructureChronologyBoundary() {
 }
 
 FLASHMEM bool CoreState::undoProjectHistory() {
-    if (sequencer.stepContentDraft.rejectTransitionIfActive(
-            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
-        return false;
-    }
-    if (!prepareProjectHistoryInteraction()) return false;
-    const auto* entry = projectHistory.peekUndo();
-    if (entry == nullptr) return false;
-
-    if (entry->domain == project::ProjectHistoryDomain::Macro) {
-        return macroHistory.projectHistoryUndoIdentity() == entry->identity &&
-               applyMacroProjectHistory(
-                   *this, false, static_cast<macro::MacroHistoryActionKind>(entry->actionKind));
-    }
-    if (entry->domain == project::ProjectHistoryDomain::Sequencer) {
-        return sequencerHistory.projectHistoryUndoIdentity() == entry->identity &&
-               undoSequencerHistory();
-    }
-    if (entry->domain == project::ProjectHistoryDomain::Settings) {
-        if (projectSettingsHistory.projectHistoryUndoIdentity() != entry->identity ||
-            !projectSettingsHistory.undo(statusBar, projectNavigation)) {
-            return false;
-        }
-        markProjectMutated();
-        return true;
-    }
-    return projectTrackHistory.projectHistoryUndoIdentity() == entry->identity &&
-           project::ProjectTrackDomainServices::fromCoreState(*this).undo();
+    return applyProjectHistory(project::ProjectHistoryDirection::Undo);
 }
 
 FLASHMEM bool CoreState::redoProjectHistory() {
+    return applyProjectHistory(project::ProjectHistoryDirection::Redo);
+}
+
+FLASHMEM bool CoreState::applyProjectHistory(project::ProjectHistoryDirection direction) {
     if (sequencer.stepContentDraft.rejectTransitionIfActive(
             sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
         return false;
     }
     if (!prepareProjectHistoryInteraction()) return false;
-    const auto* entry = projectHistory.peekRedo();
+    const bool redo = direction == project::ProjectHistoryDirection::Redo;
+    const auto* entry = redo ? projectHistory.peekRedo() : projectHistory.peekUndo();
     if (entry == nullptr) return false;
 
     if (entry->domain == project::ProjectHistoryDomain::Macro) {
-        return macroHistory.projectHistoryRedoIdentity() == entry->identity &&
+        return (redo ? macroHistory.projectHistoryRedoIdentity()
+                     : macroHistory.projectHistoryUndoIdentity()) == entry->identity &&
                applyMacroProjectHistory(
-                   *this, true, static_cast<macro::MacroHistoryActionKind>(entry->actionKind));
+                   *this, redo, static_cast<macro::MacroHistoryActionKind>(entry->actionKind));
     }
     if (entry->domain == project::ProjectHistoryDomain::Sequencer) {
-        return sequencerHistory.projectHistoryRedoIdentity() == entry->identity &&
-               redoSequencerHistory();
+        return (redo ? sequencerHistory.projectHistoryRedoIdentity()
+                     : sequencerHistory.projectHistoryUndoIdentity()) == entry->identity &&
+               (redo ? redoSequencerHistory() : undoSequencerHistory());
     }
     if (entry->domain == project::ProjectHistoryDomain::Settings) {
-        if (projectSettingsHistory.projectHistoryRedoIdentity() != entry->identity ||
-            !projectSettingsHistory.redo(statusBar, projectNavigation)) {
+        if ((redo ? projectSettingsHistory.projectHistoryRedoIdentity()
+                  : projectSettingsHistory.projectHistoryUndoIdentity()) != entry->identity ||
+            !(redo ? projectSettingsHistory.redo(statusBar, projectNavigation)
+                   : projectSettingsHistory.undo(statusBar, projectNavigation))) {
             return false;
         }
         markProjectMutated();
         return true;
     }
-    return projectTrackHistory.projectHistoryRedoIdentity() == entry->identity &&
-           project::ProjectTrackDomainServices::fromCoreState(*this).redo();
+    if ((redo ? projectTrackHistory.projectHistoryRedoIdentity()
+              : projectTrackHistory.projectHistoryUndoIdentity()) != entry->identity) return false;
+    auto tracks = project::ProjectTrackDomainServices::fromCoreState(*this);
+    return redo ? tracks.redo() : tracks.undo();
 }
 
 FLASHMEM bool CoreState::clearProjectHistory() {

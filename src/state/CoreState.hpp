@@ -46,6 +46,7 @@
 #include "persistence/DeviceSettingsStore.hpp"
 #include "persistence/PersistenceStatus.hpp"
 #include "state/project/ProjectHistoryCoordinator.hpp"
+#include "state/project/ProjectHistoryAccess.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectSettingsHistory.hpp"
 #include "state/project/ProjectSaveToken.hpp"
@@ -567,9 +568,16 @@ public:
     [[nodiscard]] bool duplicateSequencerClip(
         sequencer::SequencerClipAddress source,
         sequencer::SequencerClipAddress destination);
+    /** Never seals edits or changes a draft; execution rechecks this decision. */
+    [[nodiscard]] project::ProjectHistoryBlockReason projectHistoryBlockReason() const;
+    void formatProjectHistoryLabel(project::ProjectHistoryDirection direction,
+                                   char* out, size_t capacity) const;
     [[nodiscard]] bool prepareProjectHistoryInteraction();
     bool undoProjectHistory();
     bool redoProjectHistory();
+private:
+    bool applyProjectHistory(project::ProjectHistoryDirection direction);
+public:
     [[nodiscard]] bool clearProjectHistory();
     uint16_t currentSharedTrackEnabledMask() const;
     uint8_t currentSharedActiveTrack() const;

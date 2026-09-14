@@ -396,6 +396,59 @@ void test_device_settings_item_switches_to_device_settings_view() {
     std::cout << "[PASS] test_device_settings_item_switches_to_device_settings_view\n";
 }
 
+void test_selector_rechecks_admission_between_press_and_release() {
+    for (const auto key : {Config::ButtonID::LEFT_CENTER, Config::ButtonID::LEFT_BOTTOM}) {
+        ViewSwitcherHarness h;
+        recordMacroDestination(h, 74U);
+        recordMacroDestination(h, 75U);
+        assert(h.state.undoProjectHistory());
+        openSelector(h);
+        const auto revision = h.state.projectHistory.revision.get();
+        h.press(key);
+        h.state.sequencer.ccLaneUi.mode =
+            core::state::sequencer::SequencerCcLaneUiMode::LANE_SETTINGS;
+        h.release(key);
+        assert(h.state.projectHistory.revision.get() == revision);
+        assert(h.state.pages.pageData(0U, 0U).cc[1] == 74U);
+        assert(h.state.viewSelector.visible.get());
+        char label[40]{};
+        h.state.formatProjectHistoryLabel(core::state::project::ProjectHistoryDirection::Undo,
+                                         label, sizeof(label));
+        assert(std::strcmp(label, "Undo: Finish draft") == 0);
+        h.state.sequencer.ccLaneUi.mode =
+            core::state::sequencer::SequencerCcLaneUiMode::CLOSED;
+        // The rejected release is consumed. A fresh press is required to retry.
+        h.advance(100U);
+        assert(h.state.projectHistory.revision.get() == revision);
+        h.tap(key);
+        assert(h.state.projectHistory.revision.get() != revision);
+        assert(h.state.viewSelector.visible.get());
+    }
+}
+
+void test_held_selector_history_is_consistent_at_every_root() {
+    for (const auto view : {core::ui::ViewType::MACRO, core::ui::ViewType::CLIPS,
+                           core::ui::ViewType::PROJECT, core::ui::ViewType::MODULATORS,
+                           core::ui::ViewType::DEVICE_SETTINGS}) {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(view);
+        recordMacroDestination(h, 74U);
+        for (const auto key : {Config::ButtonID::LEFT_CENTER, Config::ButtonID::LEFT_BOTTOM}) {
+            h.press(Config::ButtonID::LEFT_TOP);
+            assert(h.state.viewSelector.visible.get());
+            h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+            h.tap(key);
+            const bool applied = key == Config::ButtonID::LEFT_BOTTOM;
+            assert(h.state.pages.pageData(0U, 0U).isMacroActive(1U) == applied);
+            h.release(Config::ButtonID::LEFT_TOP);
+            assert(!h.state.viewSelector.visible.get());
+            assert(h.state.activeView.get() == view);
+            assert(h.state.macroUi.automationTake.phase ==
+                   core::state::macro::MacroAutomationTakePhase::IDLE);
+        }
+    }
+}
+
 void test_selector_exposes_global_undo_redo_without_changing_view() {
     ViewSwitcherHarness h;
     h.state.activeView.set(core::ui::ViewType::MACRO);
@@ -837,6 +890,8 @@ int main() {
     test_selector_uses_project_active_view_scope();
     test_modulators_route_applies_while_project_view_is_already_active();
     test_device_settings_item_switches_to_device_settings_view();
+    test_selector_rechecks_admission_between_press_and_release();
+    test_held_selector_history_is_consistent_at_every_root();
     test_selector_exposes_global_undo_redo_without_changing_view();
     test_selector_undo_redo_uses_real_macro_gestures_with_value_coalescing();
     test_selector_physically_restores_project_settings_history();

@@ -2995,9 +2995,7 @@ void test_track_selection_skips_gaps_and_mutes_atomically() {
     assert(h.state.projectTrackHistory.undoCount() == historyBefore + 1U);
     assert(h.state.trackNavigation.selection.active.get());
 
-    assert(h.state.undoProjectHistory());
-    assert(h.state.projectTracks.authored.mutedMask == 0U);
-    assert(h.state.redoProjectHistory());
+    assert(!h.state.undoProjectHistory());
     assert(h.state.projectTracks.authored.mutedMask == 0x0005U);
 
     h.tap(Config::ButtonID::BOTTOM_LEFT);
@@ -3007,6 +3005,16 @@ void test_track_selection_skips_gaps_and_mutes_atomically() {
     assert(h.state.trackNavigation.selection.selectedMask.get() == 0U);
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.trackNavigation.selection.active.get());
+
+    // History traverses published edits after the selection owner exits.
+    assert(h.state.undoProjectHistory());
+    assert(h.state.projectTracks.authored.mutedMask == 0x0005U);
+    assert(h.state.undoProjectHistory());
+    assert(h.state.projectTracks.authored.mutedMask == 0U);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.projectTracks.authored.mutedMask == 0x0005U);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.projectTracks.authored.mutedMask == 0U);
 
     std::cout << "[PASS] test_track_selection_skips_gaps_and_mutes_atomically\n";
 }
@@ -3116,6 +3124,14 @@ void test_track_selection_copy_is_global_from_sequencer_view() {
     assert((h.state.projectTracks.authored.mutedMask & static_cast<uint16_t>(1U << 6U)) != 0U);
     assert(h.state.trackNavigation.selection.placementActive());
 
+    assert(!h.state.undoProjectHistory());
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.trackNavigation.selection.active.get());
+    assert(!h.state.trackNavigation.selection.placementActive());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.trackNavigation.selection.active.get());
+
     assert(h.state.undoProjectHistory());
     assert(h.state.currentSharedTrackEnabledMask() == 0x0005U);
     assert(!h.state.pages.pageData(4U, 0U).isMacroActive(2U));
@@ -3133,12 +3149,6 @@ void test_track_selection_copy_is_global_from_sequencer_view() {
                h.state.pages.control, {.track = 4U, .page = 0U, .macro = 2U}) == 1U);
     assert(test_support::project_control::outputBindingCountAt(
                h.state.pages.control, {.track = 6U, .page = 0U, .macro = 5U}) == 1U);
-
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.trackNavigation.selection.active.get());
-    assert(!h.state.trackNavigation.selection.placementActive());
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(!h.state.trackNavigation.selection.active.get());
 
     std::cout << "[PASS] sparse Track selection copies Sequencer, Macro and Modulators\n";
 }
@@ -3175,6 +3185,10 @@ void test_page_selection_clear_and_delete_are_undoable() {
     assert(h.state.sequencer.focusedStep.get() == resetFocus);
     assert(h.state.sequencerHistory.undoCount() == 1U);
     assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
+    assert(!h.state.undoProjectHistory());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.structureUi.pageSelection.active.get());
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern().note[0] == 72U);
     assert(h.state.sequencer.pattern().note[8] == 84U);
@@ -3188,6 +3202,16 @@ void test_page_selection_clear_and_delete_are_undoable() {
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern().note[0] == 72U);
     assert(h.state.sequencer.pattern().note[8] == 84U);
+
+    // Re-enter the same sparse selection to exercise its independent Delete.
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencer.structureUi.pageSelection.selectedMask.get() == 0x0003U);
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -5157,7 +5181,7 @@ void test_direct_track_selection_remove_sparse_and_max_masks_replay_exactly() {
             trackFlatHash(h.state.sequencerTracks.track(0U));
         const uint64_t untouchedGraphHash = objectHash(untouchedGraph);
         const uint64_t untouchedCcHash = objectHash(untouchedCc);
-        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+        auto beforeLogical = captureCanonicalTrackLogicalProof(h);
         const auto beforePublication = tx::captureStateInvariant(h.state);
         const auto beforeMacros = captureTrackMacroInvariant(h);
         const uint64_t projectTracksBefore = byteHash(
@@ -5240,7 +5264,16 @@ void test_direct_track_selection_remove_sparse_and_max_masks_replay_exactly() {
                beforeMacros.runtimeOwnerRevision);
         assertSingleTrackStructurePublication(h, beforePublication);
 
-        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        // The fixture deliberately retains a foreign Macro selector to prove
+        // transaction isolation. Its owner must exit before global history.
+        assert(!h.state.undoProjectHistory());
+        h.state.macroUi.contextSelector.hide();
+        // Only this explicit UI exit changes the reference. Every musical,
+        // ownership and history assertion below remains exact.
+        beforeLogical.macros.contextSelectorHash =
+            afterLogical.macros.contextSelectorHash =
+                captureTrackMacroInvariant(h).contextSelectorHash;
         assert(h.state.undoProjectHistory());
         test_support::drainNotifications();
         assertCanonicalTrackLogicalProof(h, beforeLogical);
@@ -5821,6 +5854,8 @@ void test_direct_track_global_history_and_redo_branch_are_exact() {
          }) {
         SequencerStepHarness h;
         configureDirectTrackFixture(h, kind);
+        // Settle the unrelated synthetic Macro selector before testing history.
+        h.state.macroUi.contextSelector.hide();
         const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
 
         const auto commit = [&]() {
@@ -5924,6 +5959,8 @@ void test_direct_track_global_history_and_redo_branch_are_exact() {
             kDirectTrackSparseMask,
             selectedMask
         );
+        // Settle the unrelated synthetic Macro selector before testing history.
+        h.state.macroUi.contextSelector.hide();
         const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
         const auto commit = [&]() {
             return core::handler::executeSequencerRemoveSelectionTrackStructure(
@@ -9530,7 +9567,37 @@ void test_drum_advanced_creation_oom_restores_mapping_and_graph() {
 
 }  // namespace
 
+void test_history_preserves_drum_lane_draft_until_back() {
+    SequencerStepHarness h;
+    createDrumTrackFromAddSlot(h, 1U, seq::DrumKitPreset::GENERAL_MIDI);
+    auto& ui = h.state.sequencer.drumSequencer;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::LANE);
+    h.tap(Config::ButtonID::NAV);
+    assert(ui.laneEditor.active);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(ui.laneEditor.field == seq::DrumLaneEditorField::NOTE);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(ui.laneEditor.dirty);
+    const auto note = ui.laneEditor.draft.midiNote;
+    const auto identity = h.state.projectHistory.peekUndo()->identity;
+    assert(!h.state.undoProjectHistory());
+    assert(!h.state.redoProjectHistory());
+    h.drumLaneEditorHandler.update(1U);
+    assert(ui.laneEditor.active && ui.laneEditor.dirty);
+    assert(ui.laneEditor.draft.midiNote == note);
+    assert(h.state.projectHistory.peekUndo()->identity == identity);
+    assert(h.state.sequencerTracks.isDrumTrack(1U));
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!ui.laneEditor.active);
+    assert(h.state.undoProjectHistory());
+    assert(!h.state.sequencerTracks.isDrumTrack(1U));
+    assert(h.state.redoProjectHistory());
+    assert(h.state.sequencerTracks.isDrumTrack(1U));
+    test_support::drainNotifications();
+}
+
 int main() {
+    test_history_preserves_drum_lane_draft_until_back();
     test_clip_launcher_gestures_separate_selection_properties_and_pattern();
     test_clip_launcher_encoders_navigate_cartesian_axes();
     test_clip_launcher_left_center_arms_quick_property_for_opt();

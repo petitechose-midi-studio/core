@@ -91,6 +91,19 @@ and an acquired paste gesture suspend matrix input so NAV/OPT cannot move the
 destination or activate another Clip. `LEFT_TOP` closes Details; Transport stays
 available. Routing and presentation use the same paste-state eligibility.
 
+## Global Undo/Redo
+
+The View Selector and the Core command facade share the admission described in
+[PROJECT_HISTORY.md](PROJECT_HISTORY.md). A draft, capture, selection or active
+gesture must finish through its owner before global history can run. Refusal
+preserves the work and never queues an automatic retry. Live edits and already
+published Track activations retain their checked coalescing and exact history.
+
+At a safe root, hold `LEFT_TOP`, use `LEFT_CENTER` for Undo or `LEFT_BOTTOM` for
+Redo, then release `LEFT_TOP` after the hold threshold to return to the same
+view. Reversing the press order keeps the original local action. Back below a
+root remains local; it never becomes an implicit Undo.
+
 ## Provisional value selectors
 
 Macro Destination, Pattern Pitch and Device Settings use

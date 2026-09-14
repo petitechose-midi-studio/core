@@ -2584,9 +2584,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         )
 
     history_guards = (
-        ("src/state/CoreStateProjectHistory.cpp", "CoreState::undoProjectHistory",
-         "sequencer"),
-        ("src/state/CoreStateProjectHistory.cpp", "CoreState::redoProjectHistory",
+        ("src/state/CoreStateProjectHistory.cpp", "CoreState::applyProjectHistory",
          "sequencer"),
         ("src/state/CoreStateSequencerHistoryTraversal.cpp",
          "CoreState::traverseSequencerHistory_", "sequencer"),
@@ -2608,10 +2606,25 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         for rel, content in files.items()
         if rel.startswith("src/")
     )
-    if history_count != 4:
+    if history_count != 3:
         errors.append(
-            f"src: expected exactly four production HISTORY guards, found {history_count}"
+            f"src: expected exactly three production HISTORY guards, found {history_count}"
         )
+
+    for method, direction in (("undoProjectHistory", "Undo"), ("redoProjectHistory", "Redo")):
+        require(
+            CORE_STATE_PROJECT_HISTORY_SOURCE,
+            rf"\bCoreState::{method}\s*\(\s*\)\s*\{{\s*return\s+"
+            rf"applyProjectHistory\s*\(\s*project::ProjectHistoryDirection::{direction}\s*\)\s*;\s*\}}",
+            f"{method} must delegate only to the shared guarded traversal",
+        )
+    require(
+        CORE_STATE_PROJECT_HISTORY_SOURCE,
+        r"\bCoreState::prepareProjectHistoryInteraction\s*\(\s*\)\s*\{\s*"
+        r"if\s*\(projectHistoryBlockReason\(\)\s*!=\s*"
+        r"project::ProjectHistoryBlockReason::NONE\)\s*return\s+false\s*;",
+        "global interaction admission must precede every coalescing boundary",
+    )
 
     require(
         PAGE_STRUCTURE_TRANSACTION,

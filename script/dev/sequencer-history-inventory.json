@@ -837,7 +837,7 @@
     "allowedTestUses": {
       "test/support/SequencerHistoryTransactionAssertions.hpp": 1,
       "test/test_ProjectFileStore/test_main.cpp": 1,
-      "test/test_ProjectHistoryCoordinator/test_main.cpp": 1,
+      "test/test_ProjectHistoryCoordinator/test_main.cpp": 3,
       "test/test_ProjectSessionAutosaveService/test_main.cpp": 1,
       "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 10,
       "test/test_SequencerClipGridState/test_main.cpp": 1,

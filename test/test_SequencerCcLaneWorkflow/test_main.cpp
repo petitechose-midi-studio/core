@@ -629,6 +629,32 @@ void test_clear_settings_cancel_and_guarded_remove_are_exact_history() {
     std::cout << "[PASS] clear/cancel/remove semantics and exact history\n";
 }
 
+void test_global_history_preserves_cc_settings_until_local_exit() {
+    Harness h;
+    createDefaultLane(h);
+    assert(h.workflow.openSettings());
+    h.workflow.editDraft(1.0f);
+    const auto draft = h.state.sequencer.ccLaneUi.draft.destination.controller;
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern());
+    const auto revision = h.state.projectHistory.revision.get();
+    const auto identity = h.state.projectHistory.peekUndo()->identity;
+    assert(draft != bank->lanes[0].destination.controller);
+    assert(!h.state.undoProjectHistory());
+    assert(!h.state.redoProjectHistory());
+    assert(h.state.projectHistory.revision.get() == revision);
+    assert(h.state.projectHistory.peekUndo()->identity == identity);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == bank);
+    assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS);
+    assert(h.state.sequencer.ccLaneUi.draft.destination.controller == draft);
+    h.workflow.closeOneLevel(100U);
+    assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
+    assert(h.state.undoProjectHistory());
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == nullptr);
+    assert(h.state.redoProjectHistory());
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern())->lanes[0].occupied);
+    test_support::drainNotifications();
+}
+
 void test_global_history_closes_a_cc_lane_session_when_its_lane_disappears() {
     Harness createUndoRedo;
     createDefaultLane(createUndoRedo);
@@ -1186,6 +1212,7 @@ int main() {
     test_slot_defaults_reuse_and_local_override_are_exact();
     test_nav_grammar_toggles_events_and_reveals_advanced_settings();
     test_clear_settings_cancel_and_guarded_remove_are_exact_history();
+    test_global_history_preserves_cc_settings_until_local_exit();
     test_global_history_closes_a_cc_lane_session_when_its_lane_disappears();
     test_slot_defaults_conflicts_and_macro_arbitration_are_direct();
     test_live_projection_requires_the_lane_in_committed_runtime_telemetry();
