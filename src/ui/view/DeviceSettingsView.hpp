@@ -55,6 +55,7 @@ private:
     lv_obj_t* center_column_ = nullptr;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
         left_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::MenuListView> menu_;
     std::array<ms::ui::MenuRow, core::state::settings::DeviceSettingsMenuPage::MAX_ROWS> rows_{};
     bool initialized_ = false;

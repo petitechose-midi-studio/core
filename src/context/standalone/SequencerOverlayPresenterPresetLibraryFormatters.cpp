@@ -90,6 +90,12 @@ FLASHMEM core::ui::ContextActionStripProps buildPresetLibraryActionStripProps(
     props.slots[2].holdActive = action.holdActive;
     props.slots[2].holdStartedAtMs = action.holdStartedAtMs;
     props.slots[2].holdDurationMs = action.holdDurationMs;
+    props.slots[0].showLabel = props.slots[2].showLabel = true;
+    props.slots[0].label = managementPanel || factoryCopyPending ? "Back"
+        : factoryDetail ? "Copy" : userDetail || focusedFolder ? "Manage"
+        : action.saveMode ? "Load mode" : "Save mode";
+    props.slots[2].label = action.primaryLabel;
+    props.slots[2].holdOnly = action.holdOnly;
     return props;
 }
 

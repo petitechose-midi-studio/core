@@ -16,6 +16,9 @@ Read these first, in order:
 Then follow [one CC Lane edit through Core](CC_LANE_FEATURE.md) for a concrete
 example of input ownership, mutation, history, playback and rendering.
 
+For visual changes, see [Context presentation](CONTEXT_PRESENTATION.md): action
+vocabulary, footer composition, overlay ownership and retained rendering.
+
 Architecture contracts should live as close as possible to the code they
 constrain. Put durable "why" comments in `.hpp` files when a reader needs the
 contract before editing an API. Keep `.cpp` comments short and local to

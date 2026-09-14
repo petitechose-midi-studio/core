@@ -362,7 +362,7 @@ jobs:
           cmake --build workspace/.build/core-sdl-native --parallel
           test -x workspace/bin/core/native/midi_studio_core
 
-      - name: Check overlay layer ordering with AddressSanitizer
+      - name: Check overlay and context footer contracts with AddressSanitizer
         shell: bash
         env:
           ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
@@ -375,8 +375,8 @@ jobs:
             -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
             -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
-          cmake --build workspace/.build/core-lvgl-contract --target overlay_occlusion --parallel
-          ctest --test-dir workspace/.build/core-lvgl-contract -R '^overlay_occlusion$' --output-on-failure
+          cmake --build workspace/.build/core-lvgl-contract --target overlay_occlusion context_action_strip context_footer --parallel
+          ctest --test-dir workspace/.build/core-lvgl-contract -R '^(overlay_occlusion|context_action_strip|context_footer)$' --output-on-failure
 
       - name: Exercise UI lifetime through complete UX workflows
         shell: bash
@@ -403,7 +403,8 @@ jobs:
           done
           captures="${GITHUB_WORKSPACE}/workspace/.build/ux-lifetime/sequencer/editing/drum-lane-keyboard-return/captures"
           for frame in lane_root identity keyboard; do
-            python3 "$core/script/ux_assert_capture_equal.py" "$captures" overview "$frame" --bottom-rows 20
+            # Context commands can change; the central transport keeps one owner.
+            python3 "$core/script/ux_assert_capture_equal.py" "$captures" overview "$frame" --region 102 220 116 20
           done
 
   sdl_wasm:

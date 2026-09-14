@@ -1,8 +1,11 @@
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 
 #include <array>
+#include <cstdio>
 
 #include <config/PlatformCompat.hpp>
+#include <ms/ui/font/CoreFonts.hpp>
+#include <ms/ui/widget/TextOverflow.hpp>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
@@ -102,10 +105,29 @@ FLASHMEM bool StandaloneOverlayAssembly::createOverlayController(
     return true;
 }
 
+void StandaloneOverlayAssembly::renderViewSelectorHistory(const char* undo, const char* redo) {
+    if (!history_strip_) return;
+    char left[48]{};
+    char right[48]{};
+    char text[64]{};
+    std::snprintf(text, sizeof(text), "LC: %s", undo ? undo : "Undo");
+    ms::ui::text::formatEllipsized(left, sizeof(left), text, fonts.compact_label(), 148);
+    std::snprintf(text, sizeof(text), "LB: %s", redo ? redo : "Redo");
+    ms::ui::text::formatEllipsized(right, sizeof(right), text, fonts.compact_label(), 148);
+    core::ui::ContextActionStripProps props{.visible = true};
+    props.hintLeft = left;
+    props.hintRight = right;
+    history_strip_->render(props);
+}
+
 FLASHMEM bool StandaloneOverlayAssembly::createViewSelectorOverlay(lv_obj_t* overlayRoot) {
     view_selector_ = core::app::makeExtmemUnique<
         ms::ui::VirtualListSelectorOverlay>(overlayRoot);
     if (!view_selector_ || !view_selector_->getElement()) return false;
+    history_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
+        view_selector_->getElement(), core::ui::ContextActionStripOrientation::HORIZONTAL);
+    if (!history_strip_ || !history_strip_->getElement()) return false;
+    history_strip_->alignToFooter();
     view_selector_->render({.visible = false});
     view_selector_scope_ = oc::ui::lvgl::scopeID(view_selector_->getElement());
     return registerOverlaySurface(

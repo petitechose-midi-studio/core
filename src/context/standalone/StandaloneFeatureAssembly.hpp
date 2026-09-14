@@ -19,11 +19,6 @@ class ProductDirectoryCatalog;
 class ProductFileService;
 }
 
-namespace core::ui {
-class ContextSoftkeyBar;
-class TransportBar;
-}  // namespace core::ui
-
 namespace oc::api {
 class ButtonAPI;
 class EncoderAPI;
@@ -71,8 +66,6 @@ public:
                               lv_obj_t* macroViewElement,
                               lv_obj_t* sequencerViewElement,
                               lv_obj_t* projectViewElement,
-                              core::ui::ContextSoftkeyBar& contextSoftkeyBar,
-                              core::ui::TransportBar& transportBar,
                               oc::type::ScopeID macroViewScope,
                               oc::type::ScopeID sequencerViewScope,
                               oc::type::ScopeID deviceSettingsViewScope

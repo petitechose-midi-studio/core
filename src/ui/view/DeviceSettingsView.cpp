@@ -30,7 +30,8 @@ FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stat
     createLayout(parent);
     if (!frame_ || !frame_->valid() || !container_ || !body_container_ ||
         !interaction_container_ || !center_column_ || !left_action_strip_ ||
-        !left_action_strip_->getElement() || !menu_ || !menu_->getElement()) {
+        !left_action_strip_->getElement() || !bottom_action_strip_ ||
+        !bottom_action_strip_->getElement() || !menu_ || !menu_->getElement()) {
         return;
     }
     render_scheduler_ =
@@ -47,6 +48,7 @@ FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stat
 FLASHMEM DeviceSettingsView::~DeviceSettingsView() {
     render_scheduler_.reset();
     menu_.reset();
+    bottom_action_strip_.reset();
     left_action_strip_.reset();
     frame_.reset();
     container_ = nullptr;
@@ -98,6 +100,8 @@ FLASHMEM void DeviceSettingsView::createLayout(lv_obj_t* parent) {
         lv_obj_set_height(menu_->getElement(), 0);
         lv_obj_set_flex_grow(menu_->getElement(), 1);
     }
+    bottom_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
+        body_container_, ContextActionStripOrientation::HORIZONTAL);
 }
 
 FLASHMEM bool DeviceSettingsView::bindToState() {
@@ -152,6 +156,7 @@ void DeviceSettingsView::render() {
         ContextActionStripVisualState::ACTIVE
     );
     left_action_strip_->render(left);
+    bottom_action_strip_->render({.visible = true, .hintLeft = "NAV: setting", .hintRight = "OPT: value"});
 
     menu_->render(ms::ui::MenuListViewProps{
         .title = page.title,

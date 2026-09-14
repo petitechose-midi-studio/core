@@ -470,6 +470,11 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
                 : core::ui::ContextActionStripVisualState::DISABLED,
             core::ui::ContextActionStripTone::CONSTRUCTIVE
         );
+        actions.slots[0].showLabel = actions.slots[2].showLabel = true;
+        actions.slots[0].label = "Reroll";
+        actions.slots[2].label = "Apply";
+        actions.hintLeft = "Preview: not applied";
+        actions.hintRight = "Back: cancel";
         action_strip_.render(actions);
     } else {
         core::ui::ContextActionStripProps actions{.visible = true};
@@ -484,6 +489,11 @@ FLASHMEM void SequencerPatternEditorPresenter::renderStatic() {
                 : core::ui::ContextActionStripVisualState::DISABLED,
             core::ui::ContextActionStripTone::CONSTRUCTIVE
         );
+        actions.slots[0].showLabel = actions.slots[2].showLabel = true;
+        actions.slots[0].label = "Randomize";
+        actions.slots[2].label = "Add page";
+        actions.hintLeft = "NAV: property";
+        actions.hintRight = "OPT: value";
         action_strip_.render(actions);
     }
 }

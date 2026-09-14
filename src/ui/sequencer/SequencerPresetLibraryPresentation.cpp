@@ -469,6 +469,10 @@ buildSequencerPresetLibraryActionPresentation(const Picker& picker) {
     );
     data.tone = action_visual::stripTone(visualPolicy.tone);
     data.primaryIcon = action_visual::iconGlyph(visualPolicy.icon);
+    data.primaryLabel = variant.action == feedback.action
+        ? core::ui::contextActionFeedbackLabel(feedback) : nullptr;
+    if (!data.primaryLabel) data.primaryLabel = core::ui::contextActionPresentation(variant.action).label;
+    data.holdOnly = !contextual::hasTapAction(action) && contextual::hasHoldAction(action);
 
     using Guard = contextual::GuardedActionPhase;
     const bool holdFeedbackMatches =

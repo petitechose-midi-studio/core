@@ -21,9 +21,19 @@ add_executable(main_view_frame main_view_frame.cpp ../../src/ui/view/MainViewFra
     ../../../ui/src/ms/ui/component/LayoutView.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/RetainedSurfaceParkingLot.cpp")
 add_executable(context_action_strip context_action_strip.cpp ../../src/ui/strip/ContextActionStrip.cpp
+    ../../../ui/src/ms/ui/widget/TextOverflow.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/PausableTimer.cpp"
     "${OC_ROOT}/framework/src/oc/time/Time.cpp")
 add_executable(overlay_occlusion overlay_occlusion.cpp ../../../ui/src/ms/ui/ViewContainer.cpp)
+add_executable(context_footer context_footer.cpp
+    ../../../ui/src/ms/ui/widget/TextOverflow.cpp
+    ../../src/ui/strip/ContextActionStrip.cpp ../../src/ui/transportbar/TransportBar.cpp
+    ../../src/state/StateConstructors.cpp
+    "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/PausableTimer.cpp"
+    "${OC_ROOT}/framework/src/oc/state/Signal.cpp"
+    "${OC_ROOT}/framework/src/oc/state/NotificationQueue.cpp"
+    "${OC_ROOT}/framework/src/oc/time/Time.cpp")
+set_property(TARGET context_footer PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 add_executable(pattern_preset_preview pattern_preset_preview.cpp)
 add_executable(cc_lane_grid cc_lane_grid.cpp ../../src/state/sequencer/SequencerCcLaneDomain.cpp
     ../../../ui/src/ms/ui/widget/TextOverflow.cpp
@@ -53,7 +63,7 @@ add_executable(drum_surface drum_surface.cpp ../../src/ui/sequencer/DrumOverview
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
 # Discard unused editing services while retaining the real projection/model.
 set_property(TARGET drum_surface PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text property_selection_overlay macro_knob font_registry drum_surface)
+foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip context_footer overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text property_selection_overlay macro_knob font_registry drum_surface)
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
         "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
@@ -101,6 +111,7 @@ add_test(NAME track_navigation_strip COMMAND track_navigation_strip)
 add_test(NAME step_grid_widgets COMMAND step_grid_widgets)
 add_test(NAME main_view_frame COMMAND main_view_frame)
 add_test(NAME context_action_strip COMMAND context_action_strip)
+add_test(NAME context_footer COMMAND context_footer)
 add_test(NAME overlay_occlusion COMMAND overlay_occlusion)
 add_test(NAME pattern_preset_preview COMMAND pattern_preset_preview)
 add_test(NAME cc_lane_grid COMMAND cc_lane_grid)

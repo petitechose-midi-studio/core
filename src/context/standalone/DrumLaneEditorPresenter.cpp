@@ -320,7 +320,7 @@ FLASHMEM void DrumLaneEditorPresenter::render() {
         });
         action_strip_.render(
             core::ui::interaction::TextKeyboardView::
-                bottomActionStripProps(true, false)
+                bottomActionStripProps(true)
         );
         return;
     }
@@ -342,6 +342,13 @@ FLASHMEM void DrumLaneEditorPresenter::render() {
         core::ui::ContextActionStripVisualState::AVAILABLE,
         core::ui::ContextActionStripTone::POSITIVE
     );
+    actions.slots[0].showLabel = true;
+    actions.slots[0].label = "Remove";
+    actions.slots[0].holdOnly = true;
+    actions.slots[2].showLabel = true;
+    actions.slots[2].label = "Apply";
+    actions.hintLeft = "NAV: property";
+    actions.hintRight = "OPT: value";
     action_strip_.render(actions);
 }
 

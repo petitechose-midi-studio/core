@@ -210,7 +210,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
     if (!pattern_editor_action_strip_ ||
         !pattern_editor_action_strip_->getElement()) return;
-    pattern_editor_action_strip_->alignAboveTransport();
+    pattern_editor_action_strip_->alignToFooter();
     track_editor_overlay_ = core::app::makeExtmemUnique<
         core::ui::project::ProjectTrackEditorOverlay>(overlayRoot);
     if (!track_editor_overlay_ || !track_editor_overlay_->getElement()) return;
@@ -226,7 +226,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
     if (!track_editor_action_strip_ ||
         !track_editor_action_strip_->getElement()) return;
-    track_editor_action_strip_->alignAboveTransport();
+    track_editor_action_strip_->alignToFooter();
     step_edit_overlay_ =
         core::app::makeExtmemUnique<core::ui::SequencerStepEditOverlay>(overlayRoot);
     if (!step_edit_overlay_ || !step_edit_overlay_->getElement()) return;
@@ -240,7 +240,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!step_edit_action_strip_ || !step_edit_action_strip_->getElement()) return;
-    step_edit_action_strip_->alignAboveTransport();
+    step_edit_action_strip_->alignToFooter();
     preset_library_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(overlayRoot);
     if (!preset_library_overlay_ || !preset_library_overlay_->getElement()) return;
@@ -263,7 +263,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!preset_library_action_strip_ || !preset_library_action_strip_->getElement()) return;
-    preset_library_action_strip_->alignAboveTransport();
+    preset_library_action_strip_->alignToFooter();
     preset_library_chord_voice_rail_ =
         core::app::makeExtmemUnique<core::ui::SequencerChordVoiceRail>();
     if (!preset_library_chord_voice_rail_) return;
@@ -298,7 +298,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!cc_lane_action_strip_ || !cc_lane_action_strip_->getElement()) return;
-    cc_lane_action_strip_->alignAboveTransport();
+    cc_lane_action_strip_->alignToFooter();
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,

@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
+#include "ui/common/ContextSurfaceDraw.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/interaction/InteractiveSurfaceVisual.hpp"
@@ -28,45 +29,6 @@ FLASHMEM void copyText(std::array<char, N>& destination, const char* source) {
     const char* text = source ? source : "";
     std::strncpy(destination.data(), text, N - 1U);
     destination[N - 1U] = '\0';
-}
-
-FLASHMEM void drawRect(
-    lv_layer_t* layer,
-    const lv_area_t& area,
-    uint32_t color,
-    lv_opa_t fillOpacity,
-    lv_coord_t borderWidth = 0,
-    lv_opa_t borderOpacity = LV_OPA_TRANSP,
-    lv_coord_t radius = 0
-) {
-    lv_draw_rect_dsc_t descriptor;
-    lv_draw_rect_dsc_init(&descriptor);
-    descriptor.bg_color = lv_color_hex(color);
-    descriptor.bg_opa = fillOpacity;
-    descriptor.border_color = lv_color_hex(color);
-    descriptor.border_width = borderWidth;
-    descriptor.border_opa = borderOpacity;
-    descriptor.radius = radius;
-    lv_draw_rect(layer, &descriptor, &area);
-}
-
-FLASHMEM void drawLabel(
-    lv_layer_t* layer,
-    const lv_area_t& area,
-    const char* text,
-    const lv_font_t* font,
-    uint32_t color,
-    lv_opa_t opacity = LV_OPA_COVER,
-    lv_text_align_t align = LV_TEXT_ALIGN_LEFT
-) {
-    lv_draw_label_dsc_t descriptor;
-    lv_draw_label_dsc_init(&descriptor);
-    descriptor.text = text ? text : "";
-    descriptor.font = font ? font : LV_FONT_DEFAULT;
-    descriptor.color = lv_color_hex(color);
-    descriptor.opa = opacity;
-    descriptor.align = align;
-    lv_draw_label(layer, &descriptor, &area);
 }
 
 FLASHMEM void drawInteractiveSurface(
@@ -94,21 +56,6 @@ FLASHMEM void drawInteractiveSurface(
     lv_draw_rect(layer, &descriptor, &area);
 }
 
-FLASHMEM lv_area_t translated(
-    const lv_area_t& origin,
-    lv_coord_t x,
-    lv_coord_t y,
-    lv_coord_t width,
-    lv_coord_t height
-) {
-    return {
-        .x1 = static_cast<lv_coord_t>(origin.x1 + x),
-        .y1 = static_cast<lv_coord_t>(origin.y1 + y),
-        .x2 = static_cast<lv_coord_t>(origin.x1 + x + width - 1),
-        .y2 = static_cast<lv_coord_t>(origin.y1 + y + height - 1),
-    };
-}
-
 FLASHMEM void drawPropertyCard(
     lv_layer_t* layer,
     const lv_area_t& origin,
@@ -121,12 +68,12 @@ FLASHMEM void drawPropertyCard(
     bool enabled,
     bool activate = false
 ) {
-    const auto card = translated(origin, 0, y, SURFACE_WIDTH, 36);
+    const auto card = surface::area(origin, 0, y, SURFACE_WIDTH, 36);
     const uint32_t effectiveColor = enabled ? color : theme::color::INACTIVE;
     drawInteractiveSurface(layer, card, selected, enabled);
 
-    const auto iconArea = translated(origin, 12, y + 9, 18, 18);
-    drawLabel(
+    const auto iconArea = surface::area(origin, 12, y + 9, 18, 18);
+    surface::text(
         layer,
         iconArea,
         icon,
@@ -135,17 +82,17 @@ FLASHMEM void drawPropertyCard(
         enabled ? LV_OPA_COVER : OPACITY_55,
         LV_TEXT_ALIGN_CENTER
     );
-    drawLabel(
+    surface::text(
         layer,
-        translated(origin, 40, y + 5, 78, 24),
+        surface::area(origin, 40, y + 5, 78, 24),
         key,
         fonts.meta_label(),
         theme::color::TEXT_SECONDARY,
         enabled ? LV_OPA_80 : OPACITY_55
     );
-    drawLabel(
+    surface::text(
         layer,
-        translated(origin, 122, y + 5, 126, 24),
+        surface::area(origin, 122, y + 5, 126, 24),
         value,
         fonts.compact_selected(),
         enabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,
@@ -153,9 +100,9 @@ FLASHMEM void drawPropertyCard(
         LV_TEXT_ALIGN_RIGHT
     );
     if (selected) {
-        drawLabel(
+        surface::text(
             layer,
-            translated(origin, 258, y + 5, 32, 24),
+            surface::area(origin, 258, y + 5, 32, 24),
             activate ? ">" : "OPT",
             activate ? fonts.primary_value() : fonts.meta_label(),
             theme::color::FOCUS_EDIT,
@@ -254,28 +201,26 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
 
     lv_area_t origin{};
     lv_obj_get_coords(surface_, &origin);
-    drawRect(layer, origin, theme::color::BACKGROUND, LV_OPA_COVER);
+    surface::fill(layer, origin, theme::color::BACKGROUND, LV_OPA_COVER);
 
-    drawRect(
+    surface::fill(
         layer,
-        translated(origin, 0, 3, 3, 20),
+        surface::area(origin, 0, 3, 3, 20),
         cache_.trackEnabled ? cache_.trackColor : theme::color::INACTIVE,
         cache_.trackEnabled ? LV_OPA_COVER : OPACITY_55,
-        0,
-        LV_OPA_TRANSP,
         2
     );
 
-    drawLabel(
+    surface::text(
         layer,
-        translated(origin, 10, 2, 174, 24),
+        surface::area(origin, 10, 2, 174, 24),
         cache_.title.data(),
         fonts.context_title(),
         cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE
     );
-    drawLabel(
+    surface::text(
         layer,
-        translated(origin, 184, 4, 120, 18),
+        surface::area(origin, 184, 4, 120, 18),
         cache_.status.data(),
         fonts.meta_label(),
         cache_.trackEnabled ? cache_.statusColor : theme::color::INACTIVE,

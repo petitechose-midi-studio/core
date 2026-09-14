@@ -401,7 +401,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/sequencer/StepPropertySelectionOverlay.cpp
     src/ui/sequencer/StepPropertyVisuals.cpp
     src/ui/strip/ContextActionStrip.cpp
-    src/ui/transportbar/ContextSoftkeyBar.cpp
     src/ui/transportbar/TransportBar.cpp
     src/ui/view/DeviceSettingsView.cpp
     src/ui/view/MacroView.cpp

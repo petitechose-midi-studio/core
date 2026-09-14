@@ -5,15 +5,16 @@
 #include <ms/ui/font/CoreFonts.hpp>
 #include <oc/time/Time.hpp>
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 CoreFonts fonts;
 StandaloneFonts standalone_fonts;
+static uint32_t now_ms = 1500;
 
-int main(int argc, char** argv) {
+int main() {
     using namespace core::ui;
-    const bool reference = argc > 1 && std::strcmp(argv[1], "--reference") == 0;
     lv_init();
-    oc::time::setProvider([] { return 1500U; });
+    oc::time::setProvider([] { return now_ms; });
     auto* font = const_cast<lv_font_t*>(LV_FONT_DEFAULT);
     fonts.inter_13_medium = fonts.inter_13_bold = font;
     standalone_fonts.icons_12 = standalone_fonts.icons_14 = standalone_fonts.icons_16 = font;
@@ -22,9 +23,10 @@ int main(int argc, char** argv) {
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(display, pixels.data(), nullptr, sizeof(pixels), LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(display, [](lv_display_t* d, const lv_area_t*, uint8_t*) { lv_display_flush_ready(d); });
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), 0);
     auto* parent = lv_obj_create(lv_screen_active());
     lv_obj_remove_style_all(parent);
-    lv_obj_set_size(parent, 320, 210);
+    lv_obj_set_size(parent, 320, 240);
     {
         auto* icon = lv_label_create(parent);
         lv_font_t alternate = *font;
@@ -60,6 +62,10 @@ int main(int argc, char** argv) {
     }
     for (const auto orientation : {ContextActionStripOrientation::HORIZONTAL, ContextActionStripOrientation::VERTICAL}) {
         ContextActionStrip strip(parent, orientation, ContextActionStripVerticalLayout::SPREAD);
+        unsigned draws = 0;
+        lv_obj_add_event_cb(strip.getElement(), [](lv_event_t* event) {
+            ++*static_cast<unsigned*>(lv_event_get_user_data(event));
+        }, LV_EVENT_DRAW_MAIN, &draws);
         for (unsigned state = 0; state <= 7; ++state) {
             ContextActionStripProps props{.visible = true};
             props.slots[0] = makeStandaloneIconStripSlot("X", static_cast<ContextActionStripVisualState>(state), ContextActionStripTone::DESTRUCTIVE);
@@ -79,18 +85,12 @@ int main(int argc, char** argv) {
                 uint64_t hash = 14695981039346656037ULL;
                 for (auto pixel : pixels) hash = ((hash ^ (pixel & 255U)) * 1099511628211ULL ^ (pixel >> 8U)) * 1099511628211ULL;
                 std::printf("strip=%u state=%u pass=%d rgb565=%016llx\n", unsigned(orientation), state, pass, static_cast<unsigned long long>(hash));
-                auto* slot = lv_obj_get_child(strip.getElement(), 0);
-                // The slot itself centers its content; no oversized wrapper.
-                assert(lv_obj_get_child_count(slot) == 3);
-                for (unsigned child = 1; child < 3; ++child) {
-                    auto* content = lv_obj_get_child(slot, child);
-                    assert(lv_obj_check_type(content, &lv_label_class));
-                }
-                assert(lv_obj_get_style_bg_opa(slot, LV_PART_MAIN) == LV_OPA_TRANSP);
-                if (!reference) {
-                    lv_style_value_t value{};
-                    assert(lv_obj_get_local_style_prop(slot, LV_STYLE_BG_COLOR, &value, 0) == LV_STYLE_RES_NOT_FOUND);
-                }
+                // Fixed object budget and no repaint for identical presentation.
+                assert(lv_obj_get_child_count(strip.getElement()) == 0);
+                draws = 0;
+                strip.render(props);
+                lv_refr_now(display);
+                assert(draws == 0);
                 if (pass == 0) {
                     strip.render({.visible = false});
                     lv_refr_now(display);
@@ -98,6 +98,68 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        ContextActionStripProps props{.visible = true};
+        char command[] = "C";
+        props.slots[0] = {.visualState = ContextActionStripVisualState::ACTIVE,
+                          .showLabel = true, .label = command};
+        props.hintLeft = "NAV: select";
+        strip.render(props);
+        lv_refr_now(display);
+        const auto owned_text = pixels;
+        command[0] = 'X';
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(display);
+        assert(pixels == owned_text); // The renderer owns transient caller text.
+        strip.render(props);
+        lv_refr_now(display);
+        assert(pixels != owned_text);
+
+        props.slots[0].holdActive = true;
+        props.slots[0].holdStartedAtMs = now_ms;
+        props.slots[0].holdDurationMs = 1000;
+        strip.render(props);
+        lv_refr_now(display);
+        const auto hold_start = pixels;
+        now_ms += 500;
+        lv_tick_inc(40);
+        lv_timer_handler();
+        lv_refr_now(display);
+        assert(pixels != hold_start);
+        lv_obj_add_flag(parent, LV_OBJ_FLAG_HIDDEN);
+        lv_refr_now(display);
+        draws = 0;
+        now_ms += 200;
+        lv_tick_inc(40);
+        lv_timer_handler();
+        lv_refr_now(display);
+        assert(draws == 0);
+        lv_obj_clear_flag(parent, LV_OBJ_FLAG_HIDDEN);
+        strip.render(props);
+        lv_refr_now(display);
+        const auto reopened = pixels;
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(display);
+        assert(pixels == reopened);
+
+        // Wrapped clocks must still report a partially completed hold.
+        props.slots[0].holdStartedAtMs = UINT32_MAX - 99U;
+        now_ms = 150U;
+        strip.render(props);
+        lv_refr_now(display);
+        const auto wrapped = pixels;
+        props.slots[0].holdStartedAtMs = now_ms;
+        strip.render(props);
+        lv_refr_now(display);
+        assert(pixels != wrapped);
+        props.slots[0].holdActive = false;
+        strip.render(props);
+        lv_obj_set_width(parent, 260);
+        lv_refr_now(display);
+        const auto resized = pixels;
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(display);
+        assert(pixels == resized);
+        lv_obj_set_width(parent, 320);
     }
     lv_display_delete(display);
     lv_deinit();

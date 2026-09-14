@@ -475,13 +475,10 @@ void ProjectView::renderProjectActionStrips(bool keyboardActive) {
         }
     }
     if (bottom_action_strip_) {
-        bottom_action_strip_->render(
-            core::ui::interaction::TextKeyboardView::
-                bottomActionStripProps(
-                    keyboardActive,
-                    state_refs_.statusBar.playing.get()
-                )
-        );
+        auto props = core::ui::interaction::TextKeyboardView::bottomActionStripProps(keyboardActive);
+        props.visible = true;
+        if (!keyboardActive) props.hintLeft = "NAV: navigate";
+        bottom_action_strip_->render(props);
     }
 }
 

@@ -358,11 +358,13 @@ void expectsOverlayBlocksMainSurfaceEditing() {
 }
 
 void expectsDestructiveAndMuteIconsToRemainSemanticallyDistinct() {
-    using core::ui::sequencer::interactionActionIcon;
-    const char* mute = interactionActionIcon(Action::MUTE_CURRENT_TRACK);
-    const char* clear = interactionActionIcon(Action::CLEAR_STEP_CONTENT);
-    const char* reset = interactionActionIcon(Action::RESET_CURRENT_STEP_SHALLOW);
-    const char* remove = interactionActionIcon(Action::REMOVE_CURRENT_STRUCTURE);
+    const auto icon = [](Action action) {
+        return core::ui::contextActionPresentation(core::ui::sequencer::interactionActionId(action)).icon;
+    };
+    const char* mute = icon(Action::MUTE_CURRENT_TRACK);
+    const char* clear = icon(Action::CLEAR_STEP_CONTENT);
+    const char* reset = icon(Action::RESET_CURRENT_STEP_SHALLOW);
+    const char* remove = icon(Action::REMOVE_CURRENT_STRUCTURE);
 
     assert(mute && clear && reset && remove);
     assert(std::strcmp(mute, clear) != 0);

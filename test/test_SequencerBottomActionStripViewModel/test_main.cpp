@@ -170,7 +170,9 @@ void expectPlacementStrip(
     assert(props.slots[2].visualState == pasteVisual);
     assert(props.slots[2].tone == ContextActionStripTone::WARNING);
     assert(props.slots[2].icon == standalone::icons::ACTION_PASTE);
-    assert(!props.slots[2].showLabel);
+    assert(props.slots[2].showLabel);
+    assert(std::strcmp(props.slots[2].label, "Paste") == 0);
+    assert(props.slots[2].holdOnly);
 }
 
 void test_selection_strip_projection_contract() {
@@ -214,7 +216,9 @@ void test_selection_strip_projection_contract() {
     assert(props.slots[2].visualState == ContextActionStripVisualState::DISABLED);
     assert(props.slots[2].tone == ContextActionStripTone::DESTRUCTIVE);
     assert(props.slots[2].icon == standalone::icons::ACTION_PASTE);
-    assert(!props.slots[2].showLabel);
+    assert(props.slots[2].showLabel);
+    assert(std::strcmp(props.slots[2].label, "Paste") == 0);
+    assert(props.slots[2].holdOnly);
     stepSelection.reset();
 
     assert(state.sequencerTracks.setTrackKind(

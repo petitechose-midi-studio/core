@@ -428,6 +428,8 @@ void ProjectView::renderModulatorActionStrips(
             ContextActionStripVisualState::ACTIVE,
             ContextActionStripTone::POSITIVE
         );
+        bottom.slots[2].showLabel = true;
+        bottom.slots[2].label = "Apply";
     } else if (!destinationPicker && source != nullptr &&
         (!destinations || binding != nullptr)) {
         bottom.visible = true;
@@ -464,6 +466,8 @@ void ProjectView::renderModulatorActionStrips(
                           : ContextActionStripVisualState::DIM,
                   ContextActionStripTone::NEUTRAL
               );
+        bottom.slots[0].showLabel = true;
+        bottom.slots[0].label = recordedShapeRecordFocus ? "Record" : enabled ? "Pause" : "Resume";
         if (!destinations) {
             bottom.slots[2] = makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_COPY,
@@ -481,6 +485,8 @@ void ProjectView::renderModulatorActionStrips(
             );
         }
 
+        bottom.slots[2].showLabel = true;
+        bottom.slots[2].label = destinations ? "Independent" : "Copy";
         const auto guard = state_refs_.navigation.modulatorGuard.get();
         const bool guardMatches =
             state_refs_.navigation.guardedModulator == source->id &&
@@ -501,6 +507,8 @@ void ProjectView::renderModulatorActionStrips(
                 bottom.slots[0].holdActive = true;
                 bottom.slots[0].holdStartedAtMs = guard.armedAtMs;
                 bottom.slots[0].holdDurationMs = guard.guardDurationMs;
+                bottom.slots[0].showLabel = true;
+                bottom.slots[0].label = "Remove";
             }
         }
         const auto clipboardGuard =
@@ -527,9 +535,14 @@ void ProjectView::renderModulatorActionStrips(
                 bottom.slots[2].holdActive = true;
                 bottom.slots[2].holdStartedAtMs = clipboardGuard.armedAtMs;
                 bottom.slots[2].holdDurationMs = clipboardGuard.guardDurationMs;
+                bottom.slots[2].showLabel = true;
+                bottom.slots[2].label = "Paste";
             }
         }
     }
+    bottom.visible = true;
+    bottom.hintLeft = auditioning ? "Preview: not applied" : "NAV: focus";
+    bottom.hintRight = auditioning ? "Back: cancel" : backAvailable ? "Back: return" : "Back: views";
     if (left_action_strip_) left_action_strip_->render(left);
     if (bottom_action_strip_) bottom_action_strip_->render(bottom);
 }

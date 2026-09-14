@@ -118,7 +118,7 @@ private:
     void requestRender(uint32_t flags, bool ready = false);
     void resumePendingRender();
     void requestHeaderAndLeftRender();
-    void requestHeaderStripAndLeftRender();
+    void requestStructureStripsRender();
     void requestStructureSelectionRender();
     void requestSelectorOverlayRender();
     void requestLeftActionStripRender();

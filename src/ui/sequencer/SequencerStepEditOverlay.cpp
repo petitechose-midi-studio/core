@@ -306,7 +306,6 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_style_pad_bottom(
         panel_,
         static_cast<lv_coord_t>(
-            theme::layout::TRANSPORT_BAR_HEIGHT +
             theme::layout::CONTEXT_ACTION_STRIP_HEIGHT +
             PANEL_PAD_BOTTOM
         ),

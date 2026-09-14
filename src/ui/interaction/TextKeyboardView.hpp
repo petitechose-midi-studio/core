@@ -34,8 +34,7 @@ public:
         bool shiftActive
     );
     [[nodiscard]] static ContextActionStripProps bottomActionStripProps(
-        bool visible,
-        bool playing
+        bool visible
     );
 
 private:

@@ -19,7 +19,6 @@ class ViewContainer;
 }  // namespace ms::ui
 
 namespace core::ui {
-class ContextSoftkeyBar;
 class DeviceSettingsView;
 class MacroView;
 class CoalescedLvglRenderScheduler;
@@ -34,7 +33,7 @@ namespace core::context::standalone {
  * Owns the standalone LVGL view tree.
  *
  * This assembly creates the root view container, macro/sequencer views, global
- * track strip, transport bar, and context softkey bar. Feature handlers and
+ * track strip and persistent transport. Feature handlers and
  * realtime sequencer runtime are wired outside this class.
  */
 class StandaloneUiAssembly {
@@ -59,7 +58,6 @@ public:
     lv_obj_t* projectViewElement() const;
     lv_obj_t* deviceSettingsViewElement() const;
     core::ui::TransportBar& transportBar() const;
-    core::ui::ContextSoftkeyBar& contextSoftkeyBar() const;
     void activateMacroView() const;
     void deactivateMacroView() const;
     void activateSequencerView() const;
@@ -117,7 +115,6 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ProjectView> project_view_;
     core::app::ExtmemUniquePtr<core::ui::DeviceSettingsView> device_settings_view_;
     core::app::ExtmemUniquePtr<core::ui::TransportBar> transport_bar_;
-    core::app::ExtmemUniquePtr<core::ui::ContextSoftkeyBar> context_softkey_bar_;
     bool initialized_ = false;
 };
 

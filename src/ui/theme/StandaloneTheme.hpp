@@ -134,7 +134,13 @@ constexpr uint32_t trackColor(uint8_t index) {
 namespace layout {
 
 constexpr int16_t TRANSPORT_BAR_HEIGHT = 20;
-constexpr int16_t CONTEXT_ACTION_STRIP_HEIGHT = 20;
+// Every surface reserves the same footer: contextual explanation, then the
+// physical softkeys flanking the one global transport. Views own their actions;
+// the transport is drawn above their central gap, without another context stack.
+constexpr int16_t CONTEXT_HINT_HEIGHT = 20;
+constexpr int16_t CONTEXT_ACTION_STRIP_HEIGHT =
+    CONTEXT_HINT_HEIGHT + TRANSPORT_BAR_HEIGHT;
+constexpr int16_t TRANSPORT_CENTER_WIDTH = 116;
 
 constexpr int16_t INDICATOR_SIZE = 12;  // Same as plugin-bitwig
 

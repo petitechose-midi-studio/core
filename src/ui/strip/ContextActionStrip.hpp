@@ -3,7 +3,6 @@
 #include <array>
 #include <cstdio>
 #include <cstdint>
-#include <limits>
 #include <optional>
 
 #include <lvgl.h>
@@ -16,10 +15,12 @@
 namespace core::ui {
 
 /**
- * Shared three-slot action strip for contextual controls.
- *
- * Props describe slot visibility, tone, labels/icons, and hold progress.
- * Rendering caches slot state and owns the hold timer used for visual countdown.
+ * Retained action presentation shared by views and overlays.
+ * Horizontal surfaces own the footer's side commands and the explanation row;
+ * their middle slot is contextual information, never a replacement for Play.
+ * Vertical surfaces keep the physical three-button arrangement. One draw object
+ * and bounded text caches replace per-slot widget trees. The timer runs only
+ * while a visible hold needs visual progress; it never commits a command.
  */
 enum class ContextActionStripOrientation : uint8_t {
     HORIZONTAL = 0,
@@ -58,10 +59,10 @@ struct ContextActionStripSlotProps {
     const char* icon = nullptr;
     bool iconUsesStandaloneFont = true;
     standalone::icons::Size iconSize = standalone::icons::Size::L;
-    bool iconRotated180 = false;
     bool showLabel = false;
     const char* label = nullptr;
     std::array<char, 16> labelText{};
+    bool holdOnly = false;
     bool holdActive = false;
     uint32_t holdStartedAtMs = 0;
     uint32_t holdDurationMs = 0;
@@ -70,6 +71,8 @@ struct ContextActionStripSlotProps {
 struct ContextActionStripProps {
     bool visible = false;
     std::array<ContextActionStripSlotProps, 3> slots{};
+    const char* hintLeft = nullptr;
+    const char* hintRight = nullptr;
 };
 
 inline ContextActionStripSlotProps makeStandaloneIconStripSlot(
@@ -120,46 +123,29 @@ public:
     ContextActionStrip& operator=(const ContextActionStrip&) = delete;
 
     void render(const ContextActionStripProps& props);
-    void alignAboveTransport();
+    void alignToFooter();
 
     lv_obj_t* getElement() const override { return container_; }
 
 private:
-    struct SlotWidgets {
-        lv_obj_t* container = nullptr;
-        lv_obj_t* indicator = nullptr;
-        lv_obj_t* icon = nullptr;
-        lv_obj_t* label = nullptr;
-        bool hold_geometry_initialized = false;
-        lv_coord_t indicator_long = -1;
-        bool indicator_fill_mode = false;
-        std::array<char, 16> label_text{};
-        lv_opa_t indicator_opa = LV_OPA_TRANSP;
-        const lv_font_t* label_font = nullptr;
-        uint32_t label_color = 0;
-        lv_opa_t label_opa = LV_OPA_TRANSP;
-    };
-
     void createUI(lv_obj_t* parent);
-    void createHoldFeedback(lv_obj_t* parent);
-    void renderSlot(size_t index, const ContextActionStripSlotProps& props);
-    void refreshHoldIndicators();
-    void refreshHoldFeedback(uint32_t nowMs);
+    void draw(lv_layer_t* layer) const;
+    void drawSlot(lv_layer_t* layer, size_t index, const lv_area_t& bounds) const;
+    void refreshHoldProgress();
     void updateHoldTimer();
     static void onHoldTimer(lv_timer_t* timer);
+    static void onDraw(lv_event_t* event);
 
     ContextActionStripOrientation orientation_;
     ContextActionStripVerticalLayout vertical_layout_;
     lv_obj_t* container_ = nullptr;
-    lv_obj_t* hold_feedback_ = nullptr;
-    lv_obj_t* hold_feedback_icon_ = nullptr;
-    lv_obj_t* hold_feedback_label_ = nullptr;
     std::optional<oc::ui::lvgl::PausableTimer> hold_timer_;
-    std::array<SlotWidgets, 3> slots_{};
-    std::array<char, 8> hold_feedback_text_{};
-    const char* hold_feedback_icon_value_ = nullptr;
-    uint16_t hold_feedback_tenths_ = std::numeric_limits<uint16_t>::max();
-    uint32_t hold_feedback_color_ = 0;
+    std::array<std::array<char, 24>, 3> label_text_{};
+    std::array<std::array<char, 32>, 3> command_text_{};
+    std::array<char, 48> hint_left_{};
+    std::array<char, 48> hint_right_{};
+    std::array<uint16_t, 3> hold_progress_{};
+    std::array<char, 48> hold_text_{};
     bool has_rendered_ = false;
     ContextActionStripProps rendered_props_{};
 };
