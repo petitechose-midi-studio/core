@@ -129,7 +129,13 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
             return true;
         }
         const auto sourceId = navigation_.selectedModulator;
-        if (!macro_history_.setProjectModulatorName(pages_, sourceId, slug)) {
+        const auto result = macro_history_.setProjectModulatorName(pages_, sourceId, slug);
+        if (!result.accepted()) {
+            navigation_.setLifecycleFeedback("Rename unavailable");
+            return true;
+        }
+        if (!result.changed()) {
+            back();
             navigation_.setLifecycleFeedback(SOURCE_NAME_UNCHANGED);
             return true;
         }

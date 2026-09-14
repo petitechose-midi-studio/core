@@ -278,7 +278,7 @@ void expects_clip_quick_property_to_publish_its_exact_opt_contract() {
     workspace.focus(0U, 0U);
     workspace.showQuickSelector();
     workspace.moveQuickAction(1);
-    workspace.armQuickProperty(0U);
+    workspace.armQuickProperty();
     assert(workspace.quickAction ==
            core::state::sequencer::ClipWorkspaceQuickAction::LENGTH);
     assert(h.state.sequencerClips.setClipBehavior({0U, 0U}, {
@@ -315,15 +315,13 @@ void expects_clip_matrix_to_borrow_opt_only_for_quick_editing() {
 
     workspace.showQuickSelector();
     workspace.moveQuickAction(1);
-    workspace.armQuickProperty(0U);
+    workspace.armQuickProperty();
     test_support::drainNotifications();
     h.sync.syncNow();
     assert(h.encoderHw.getMode(OPT_ENCODER_ID) ==
            oc::interface::EncoderMode::NORMALIZED);
 
-    workspace.updateQuickFeedback(
-        Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
-    );
+    workspace.clearQuickControl();
     test_support::drainNotifications();
     h.sync.syncNow();
     assert(h.encoderHw.getMode(OPT_ENCODER_ID) ==

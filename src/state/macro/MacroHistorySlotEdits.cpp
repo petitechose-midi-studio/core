@@ -157,38 +157,38 @@ FLASHMEM bool MacroHistoryService::setProjectModulatorEnabled(
     return commitProjectSourceEdit_(pages, std::move(change), false);
 }
 
-FLASHMEM bool MacroHistoryService::setProjectModulatorName(
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroHistoryService::setProjectModulatorName(
     MacroPagesState& pages,
     core::state::modulation::ModulatorId sourceId,
     const char* name
 ) {
     using namespace core::state::modulation;
     if (pendingModulatorSlot_() != nullptr || pages.control.audition.active()) {
-        return false;
+        return {.status = ProjectModulationStatus::HISTORY_UNAVAILABLE, .sourceId = sourceId};
     }
     auto* source = findProjectModulator(
         pages.control.authored().modulation,
         sourceId
     );
-    if (!source) return false;
+    if (!source) return {.status = ProjectModulationStatus::INVALID_ID, .sourceId = sourceId};
+    auto next = *source;
+    const auto result = core::state::modulation::setProjectModulatorName(next, name);
+    if (!result.changed()) return result;
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
-    if (!change) return false;
+    if (!change) return {.status = ProjectModulationStatus::HISTORY_UNAVAILABLE, .sourceId = sourceId};
     change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
     change->sourceEdit.before = *source;
-    const auto result = core::state::modulation::setProjectModulatorName(
-        pages.control.authored().modulation,
-        sourceId,
-        name
-    );
-    if (!result.changed()) return false;
-    pages.control.markAuthoredMutation();
-    change->sourceEdit.after = *findProjectModulator(
-        pages.control.authored().modulation,
-        sourceId
-    );
+    change->sourceEdit.after = next;
     change->sourceEdit.valid = true;
+    std::swap(*source, next);
     endCoalescing();
-    return commitProjectSourceEdit_(pages, std::move(change), false);
+    if (!commitProjectSourceEdit_(pages, std::move(change), false)) {
+        *source = next;
+        return {.status = ProjectModulationStatus::HISTORY_UNAVAILABLE, .sourceId = sourceId};
+    }
+    pages.control.markAuthoredMutation();
+    return result;
 }
 
 FLASHMEM bool MacroHistoryService::setProjectLfoParametersCoalesced(

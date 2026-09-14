@@ -1901,6 +1901,12 @@ SequencerPatternPresetDomainServices::renamePreset(
         return result;
     }
 
+    // Revalidate the stored target first, but do not rewrite identical content.
+    if (std::strcmp(expectedSemanticName, newSemanticName) == 0) {
+        result.activation = SequencerPatternPresetActivation::APPLIED;
+        return result;
+    }
+
     copyText(
         loaded.metadata.semanticName,
         sizeof(loaded.metadata.semanticName),

@@ -9,7 +9,7 @@
 # Expect: semantic:step_1_editor:mode=sequencer.step_edit, semantic:step_1_editor:effect=open_step_editor, semantic:step_1_editor:target_step=0, semantic:step_1_editor:target_count=8, semantic:step_1_editor:target_page=0, semantic:step_1_editor:step_on=1
 # Expect: semantic:step_2_retargeted:mode=sequencer.step_edit, semantic:step_2_retargeted:effect=retarget_step, semantic:step_2_retargeted:target_step=1, semantic:step_2_retargeted:target_count=8, semantic:step_2_retargeted:target_page=0, semantic:step_2_retargeted:step_on=0
 # Expect: semantic:step_1_retargeted_back:effect=retarget_step, semantic:step_1_retargeted_back:target_step=0, semantic:step_1_retargeted_back:step_on=1
-# Expect: semantic:track_editor_open:mode=sequencer.clip_launcher, semantic:track_editor_open:effect=open_track_settings, semantic:track_editor_open:target_track=0, semantic:track_editor_open:property=enabled
+# Expect: semantic:track_editor_open:mode=sequencer.track_editor, semantic:track_editor_open:effect=open_track_settings, semantic:track_editor_open:target_track=0, semantic:track_editor_open:property=channel
 # Expect: semantic:track_header:mode=sequencer.clip_launcher, semantic:track_header:target=track, semantic:track_header:target_track=0, semantic:track_header:projection=track_header
 # Expect: capture_changed:step_context_preview=pattern_context_preview, capture_changed:step_1_editor=step_2_retargeted, capture_match:step_1_editor=step_1_retargeted_back
 
@@ -46,18 +46,17 @@
 2900 tap LEFT_TOP 60
 
 # Step -> Pattern is the only musical ascent. Back then returns to the exact
-# matrix Clip; one reverse turn reaches its Track header and opens the editor.
+# matrix Clip; OPT moves up to its Track header and LEFT_CENTER opens settings.
 3100 button NAV down
 3160 encoder NAV -0.01
 3220 button NAV up
 3440 capture screen pattern_context_applied
 3540 tap LEFT_TOP 60
 3780 capture screen launcher_returned
-3900 encoder NAV -0.01
+3900 encoder OPT -0.01
 4100 capture screen track_header
-4200 button NAV down
+4200 tap LEFT_CENTER 60
 5260 tick
 5320 capture screen track_editor_open
-5380 button NAV up
 5500 tap LEFT_TOP 60
 5740 capture screen track_header_restored

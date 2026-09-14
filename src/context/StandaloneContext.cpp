@@ -129,6 +129,13 @@ void StandaloneContext::update() {
     if (feature_assembly_) {
         feature_assembly_->update(core::time_compat::millis());
     }
+    // Owner state can change without an authored history revision (for example
+    // an asynchronous preset preview). Poll only while the selector is visible;
+    // the one-byte presentation cache avoids subscriptions and unchanged redraws.
+    if (core_state_.viewSelector.visible.get() &&
+        core_state_.projectHistoryBlockReason() != view_selector_history_block_) {
+        syncViewSelectorChrome();
+    }
 }
 
 void StandaloneContext::advancePersistence(uint32_t nowMs, bool playbackActive) {
@@ -421,8 +428,11 @@ FLASHMEM void StandaloneContext::syncViewSelectorChrome() {
     if (core_state_.viewSelector.visible.get()) {
         char undoLabel[40]{};
         char redoLabel[40]{};
-        core_state_.projectHistory.formatUndoLabel(undoLabel, sizeof(undoLabel));
-        core_state_.projectHistory.formatRedoLabel(redoLabel, sizeof(redoLabel));
+        view_selector_history_block_ = core_state_.projectHistoryBlockReason();
+        core_state_.formatProjectHistoryLabel(
+            core::state::project::ProjectHistoryDirection::Undo, undoLabel, sizeof(undoLabel));
+        core_state_.formatProjectHistoryLabel(
+            core::state::project::ProjectHistoryDirection::Redo, redoLabel, sizeof(redoLabel));
         ui_assembly_->contextSoftkeyBar().setLabels(
             undoLabel,
             redoLabel,

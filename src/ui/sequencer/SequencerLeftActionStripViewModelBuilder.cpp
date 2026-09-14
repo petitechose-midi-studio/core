@@ -116,7 +116,7 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         props.visible = true;
         for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
         const auto& launcher = source.sequencer.clipWorkspace;
-        if (launcher.editorActive() || launcher.selectionActive() ||
+        if (launcher.editorActive() || launcher.selectionActive() || launcher.quickPropertyArmed ||
             source.trackNavigation.selection.active.get()) {
             props.slots[0] = core::ui::makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_BACKWARD,

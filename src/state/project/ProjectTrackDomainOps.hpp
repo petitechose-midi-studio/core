@@ -15,6 +15,7 @@ enum class ProjectTrackMutationStatus : uint8_t {
     INVALID_DELAY,
     INVALID_NAME,
     INVALID_SNAPSHOT,
+    HISTORY_UNAVAILABLE,
 };
 
 struct ProjectTrackMutationResult {
@@ -24,6 +25,10 @@ struct ProjectTrackMutationResult {
 
     [[nodiscard]] bool changed() const {
         return status == ProjectTrackMutationStatus::OK;
+    }
+
+    [[nodiscard]] bool accepted() const {
+        return changed() || status == ProjectTrackMutationStatus::NO_CHANGE;
     }
 };
 

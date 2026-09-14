@@ -1,0 +1,25 @@
+# UX workflow: cancel a child choice without publishing or leaving Macro Edit.
+# Purpose: preserve the parent buffer; native tests also assert authored data and history.
+# Expect: semantic:child:overlay=macro_edit_selector, semantic:cancelled:overlay=macro_edit
+# Expect: capture_match:parent=cancelled, capture_match:child=reopened
+# Expect: semantic:accepted:overlay=macro_edit, capture_changed:parent=accepted
+
+0 scenario macro
+150 button LEFT_BOTTOM down
+300 tap MACRO_1 60
+600 button LEFT_BOTTOM up
+800 encoder OPT 0.50
+1100 capture screen parent
+1250 tap NAV 60
+1550 capture screen child
+1700 encoder NAV 0.01
+2000 capture screen child_preview
+2150 tap LEFT_TOP 60
+2500 capture screen cancelled
+2650 tap NAV 60
+3000 capture screen reopened
+3150 encoder NAV 0.01
+3350 tap NAV 60
+3700 capture screen accepted
+3850 tap LEFT_TOP 60
+4200 capture screen closed

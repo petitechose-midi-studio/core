@@ -1,0 +1,27 @@
+# Purpose: Track name acceptance without changes returns to its parent;
+# cancelling an edited name preserves the authored text when reopening.
+# Expect: semantic:parent:overlay=seq_track_edit
+# Expect: semantic:accepted:overlay=seq_track_edit
+# Expect: capture_changed:initial=accepted, capture_match:initial=reopened
+# Expect: capture_changed:reopened=edited, capture_match:initial=after_cancel
+
+0 scenario macro-automation-clean
+180 button NAV down
+260 encoder NAV -0.01
+420 button NAV up
+660 tap NAV 60
+900 encoder NAV -0.01
+1050 capture screen parent
+1200 tap NAV 60
+1450 capture screen initial
+1600 tap BOTTOM_RIGHT 60
+1850 capture screen accepted
+2000 tap NAV 60
+2250 capture screen reopened
+2400 tap BOTTOM_LEFT 60
+2650 capture screen edited
+2800 tap LEFT_TOP 60
+3050 tap NAV 60
+3300 capture screen after_cancel
+3450 tap LEFT_TOP 60
+3650 tap LEFT_TOP 60

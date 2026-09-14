@@ -3023,9 +3023,55 @@ void test_project_recorded_shape_hold_turn_commit_noop_cancel_and_length() {
     std::cout << "[PASS] Recorded Shape hold/turn is transactional and Length is exact\n";
 }
 
+void test_modulator_name_acceptance_and_rejection_keep_the_right_owner() {
+    ProjectHandlerHarness h;
+    namespace mod = core::state::modulation;
+    namespace project = core::state::project;
+    auto& navigation = h.state.projectNavigation;
+    auto& graph = h.state.pages.control.authored().modulation;
+    mod::ModulatorLfoDraft draft{};
+    draft.name = "Motion";
+    const auto created = mod::createLfoModulator(graph, draft);
+    assert(created.changed());
+    project::openProjectRootTab(navigation, ProjectTab::MODULATORS);
+    assert(project::openProjectModulatorDetail(navigation, created.sourceId));
+    const auto parent = navigation.currentNode.get();
+    const auto depth = navigation.depth.get();
+    const auto history = h.state.projectHistory.undoCount();
+    const auto original = *mod::findProjectModulator(graph, created.sourceId);
+
+    assert(project::openProjectNameEditor(navigation, ProjectNodeId::MODULATOR_SOURCE_RENAME, "Motion"));
+    validateProjectNameEditor(h);
+    assert(navigation.currentNode.get() == parent);
+    assert(navigation.depth.get() == depth);
+    assert(h.state.projectHistory.undoCount() == history);
+    assert(!navigation.projectNameShiftActive);
+
+    assert(project::openProjectNameEditor(navigation, ProjectNodeId::MODULATOR_SOURCE_RENAME, ""));
+    validateProjectNameEditor(h);
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_RENAME);
+    assert(h.state.projectHistory.undoCount() == history);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(navigation.currentNode.get() == parent);
+
+    assert(project::openProjectNameEditor(navigation, ProjectNodeId::MODULATOR_SOURCE_RENAME, "Changed"));
+    navigation.selectedModulator = {65535U};
+    validateProjectNameEditor(h);
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_RENAME);
+    assert(std::strcmp(navigation.editingProjectSlug.data(), "Changed") == 0);
+    assert(std::memcmp(mod::findProjectModulator(graph, created.sourceId), &original, sizeof(original)) == 0);
+    navigation.selectedModulator = created.sourceId;
+    validateProjectNameEditor(h);
+    assert(navigation.currentNode.get() == parent);
+    assert(h.state.projectHistory.undoCount() == history + 1U);
+    assert(h.state.undoProjectHistory());
+    assert(std::strcmp(mod::findProjectModulator(graph, created.sourceId)->name.data(), "Motion") == 0);
+}
+
 }  // namespace
 
 int main() {
+    test_modulator_name_acceptance_and_rejection_keep_the_right_owner();
     test_nav_turn_on_overview_summary();
     test_left_top_backs_out_of_nested_project_folder();
     test_left_top_does_not_back_at_project_tab_root();

@@ -1,0 +1,23 @@
+# UX workflow: the Pitch choice returns to exactly its parent on Back or Accept.
+# Purpose: verify one-level navigation and discard of the provisional choice.
+# Expect: semantic:child:overlay=pattern_pitch_settings_selector, semantic:cancelled:overlay=pattern_pitch_settings
+# Expect: capture_match:parent=cancelled, capture_match:child=reopened
+# Expect: semantic:accepted:overlay=pattern_pitch_settings, capture_changed:parent=accepted
+
+0 scenario sequencer
+150 button LEFT_BOTTOM down
+300 tap BOTTOM_LEFT 60
+500 button LEFT_BOTTOM up
+800 capture screen parent
+950 tap NAV 60
+1250 capture screen child
+1400 encoder NAV 0.01
+1700 tap LEFT_TOP 60
+2050 capture screen cancelled
+2200 tap NAV 60
+2550 capture screen reopened
+2700 encoder NAV 0.01
+2900 tap NAV 60
+3250 capture screen accepted
+3400 tap LEFT_TOP 60
+3750 capture screen closed

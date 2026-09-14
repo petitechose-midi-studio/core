@@ -99,7 +99,6 @@ FLASHMEM void ClipWorkspaceHandler::update() {
     // matrix must never overwrite the context owned by the visible view.
     auto& workspace = core_.sequencer.clipWorkspace;
     const uint32_t nowMs = core::time_compat::millis();
-    workspace.updateQuickFeedback(nowMs);
     workspace.updateFeedback(nowMs);
     if (workspace.removePending()) finishPendingRemove();
     if (core_.activeView.get() != core::ui::ViewType::CLIPS) {
@@ -149,6 +148,7 @@ FLASHMEM bool ClipWorkspaceHandler::trackHeaderAvailable() const {
 
 FLASHMEM bool ClipWorkspaceHandler::matrixAvailable() const {
     return core_.sequencer.clipWorkspace.matrixVisible() &&
+        !core_.sequencer.structureUi.trackPaste.navigationBlocked() &&
         !core_.trackNavigation.hold.active() &&
         !core_.sequencer.clipWorkspace.editorActive() &&
         !overlays_.hasVisible() &&
@@ -325,7 +325,9 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
             return quick_selector_gesture_.active() ||
                 (matrixAvailable() &&
                     (core_.sequencer.clipWorkspace.selectionActive() ||
-                     focusedClipAvailable() || trackHeaderAvailable())) ||
+                     focusedClipAvailable() ||
+                     (trackHeaderAvailable() &&
+                      !core_.sequencer.structureUi.trackPaste.detailsAvailable()))) ||
                 release_latch_.isArmed(Config::ButtonID::LEFT_CENTER);
         })
         .then([this]() {
@@ -361,7 +363,8 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
         .scope(scope_id_)
         .priority(120)
         .when([this]() {
-            return operationBackAvailable() || editorAvailable();
+            return operationBackAvailable() || editorAvailable() ||
+                (matrixAvailable() && core_.sequencer.clipWorkspace.quickPropertyArmed);
         })
         .then([this]() {
             if (editorAvailable()) {
@@ -435,6 +438,7 @@ FLASHMEM void ClipWorkspaceHandler::beginHorizontalNavigation() {
 }
 
 FLASHMEM void ClipWorkspaceHandler::moveHorizontal(float delta) {
+    if (core_.sequencer.structureUi.trackPaste.navigationBlocked()) return;
     const bool hasTurn = nav::hasTurnDelta(delta);
     if (!hasTurn ||
         (horizontal_navigation_gesture_.active() &&
@@ -485,7 +489,7 @@ FLASHMEM void ClipWorkspaceHandler::releaseQuickSelector() {
         openFocusedEditor();
         return;
     }
-    ui.armQuickProperty(core::time_compat::millis());
+    ui.armQuickProperty();
 }
 
 FLASHMEM void ClipWorkspaceHandler::openFocusedPattern() {
@@ -553,9 +557,8 @@ FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float normalized) {
         : behavior == core_.sequencerClips.clipBehavior(address) ||
             core_.setSequencerClipBehavior(address, behavior);
     if (accepted) {
-        const uint32_t nowMs = core::time_compat::millis();
         showFeedback(seq::ClipWorkspaceFeedback::NONE);
-        ui.showQuickFeedback(nowMs);
+        ui.bump();
     } else {
         showFeedback(seq::ClipWorkspaceFeedback::FAILED);
         ui.clearQuickControl();
@@ -1118,6 +1121,10 @@ FLASHMEM void ClipWorkspaceHandler::finishPendingRemove() {
 }
 
 FLASHMEM void ClipWorkspaceHandler::back() {
+    if (core_.sequencer.clipWorkspace.quickPropertyArmed) {
+        core_.sequencer.clipWorkspace.clearQuickControl();
+        return;
+    }
     if (operationBackAvailable()) {
         (void)core_.sequencer.clipWorkspace.backOperation();
         syncNavigationFocus();

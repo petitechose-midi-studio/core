@@ -118,7 +118,7 @@ FLASHMEM void ProjectTrackEditorHandler::setupBindings() {
         .when([this]() { return editor_.active; })
         .then([this]() {
             if (editor_.textEditing) {
-                cancelNameEditing();
+                closeNameEditing();
             } else {
                 close();
             }
@@ -316,17 +316,17 @@ FLASHMEM void ProjectTrackEditorHandler::activateFocusedProperty() {
     }
 }
 
-FLASHMEM void ProjectTrackEditorHandler::cancelNameEditing() {
+FLASHMEM void ProjectTrackEditorHandler::closeNameEditing() {
     if (!editor_.textEditing) return;
     (void)core::state::project::endProjectTrackNameEditing(editor_);
     configureOpt();
 }
 
 FLASHMEM void ProjectTrackEditorHandler::applyNameEditing() {
-    if (!editor_.textEditing) return;
-    (void)track_domain_.setName(editor_.trackIndex, editor_.nameDraft.data());
-    (void)core::state::project::endProjectTrackNameEditing(editor_);
-    configureOpt();
+    if (editor_.textEditing &&
+        track_domain_.setName(editor_.trackIndex, editor_.nameDraft.data()).accepted()) {
+        closeNameEditing();
+    }
 }
 
 FLASHMEM void ProjectTrackEditorHandler::setFocusedValue(float normalized) {

@@ -72,6 +72,7 @@ remain valid.
 | Surface | Bindings |
 |---|---|
 | View Selector | `NAV` select/confirm, `LEFT_CENTER` Undo, `LEFT_BOTTOM` Redo, `LEFT_TOP` apply/close |
+| Clips / Scene quick property | hold `LEFT_CENTER`, turn `NAV`, release; `OPT` edits the visible property until `LEFT_TOP` or a context change; a second `LEFT_TOP` opens the View Selector |
 | Track Editor | `NAV` field, `OPT` value/type draft, `LEFT_CENTER + NAV` changes Track only with a clean type draft, `LEFT_TOP` Back/Cancel, `BOTTOM_LEFT` Mute, `BOTTOM_RIGHT` Solo or Apply type |
 | Track Paste preflight | `LEFT_CENTER` Summary/Details, `BOTTOM_RIGHT` Copy/Paste and guard |
 | Step Editor | short `NAV` focused-row action; long `NAV` opens the Step Preset library |
@@ -84,6 +85,75 @@ remain valid.
 `BOTTOM_LEFT` and `BOTTOM_RIGHT` are contextual action slots. Their icon, tone,
 availability, and hold guard must be projected by the visible action strip.
 There is no hidden fallback for an action absent from that strip.
+
+On a Clips Track header with an inspectable paste plan, `LEFT_CENTER` belongs
+to Summary/Details. It opens Track settings when that plan is absent. Details
+and an acquired paste gesture suspend matrix input so NAV/OPT cannot move the
+destination or activate another Clip. `LEFT_TOP` closes Details; Transport stays
+available. Routing and presentation use the same paste-state eligibility.
+
+## Global Undo/Redo
+
+The View Selector and the Core command facade share the admission described in
+[PROJECT_HISTORY.md](PROJECT_HISTORY.md). A draft, capture, selection or active
+gesture must finish through its owner before global history can run. Refusal
+preserves the work and never queues an automatic retry. Live edits and already
+published Track activations retain their checked coalescing and exact history.
+
+At a safe root, hold `LEFT_TOP`, use `LEFT_CENTER` for Undo or `LEFT_BOTTOM` for
+Redo, then release `LEFT_TOP` after the hold threshold to return to the same
+view. Reversing the press order keeps the original local action. Back below a
+root remains local; it never becomes an implicit Undo.
+
+## Provisional value selectors
+
+Macro Destination, Pattern Pitch and Device Settings use
+`handler/common/ValueSelectorInput.hpp` for their scoped NAV turn, NAV release
+and LEFT_TOP release routes. NAV changes only the child preview; acceptance
+revalidates the choice range and asks the domain to apply it. A rejection keeps
+the same selector open. Back discards only that preview. Both exits pop exactly
+the current selector and restore its parent; domain callbacks do not navigate.
+
+The publication boundary remains explicit: Macro accepts into the parent CC
+buffer, Pitch records a prepared history edit, and Device persists its setting.
+Cancelling a Macro child neither publishes nor discards the parent's CC buffer.
+New equivalent selectors must use this lifecycle rather than reproduce bindings
+and close logic. Live controls and selection/placement use their own contracts.
+
+## Text keyboards
+
+The grid and bounded text operations live in `state/interaction/TextKeyboardLayout`.
+Project (Save As, Rename and Modulator name), Track and Drum Lane use its
+`TextKeyboardRowInput` for RAW OPT positions: accumulate partial rows, move up
+on positive motion, then notify only when the selected key changes. Reset this
+input whenever the owner resets the encoder position. Preset Library already
+receives directional deltas and uses `textKeyboardMoveRow` directly.
+
+Owners retain their publication boundary: Track applies through project history,
+Drum Lane accepts into its parent draft, and Project/Preset validate and persist
+names. Every keyboard follows the same completion contract:
+
+| Result | Keyboard and parent |
+|---|---|
+| Rejected or awaiting retry | Keep the draft and keyboard; retain the encoder mode and target. |
+| Accepted without changes | Return to the parent without an Undo entry or redundant write. |
+| Accepted into a Drum Lane draft | Return to the lane editor; only its later Apply publishes history. |
+| Committed | Return to the parent after the domain has accepted the operation. |
+| Back | Discard only the child draft; preserve the parent's prior dirty state and history. |
+
+Track and Modulator name services return their domain result with `accepted()`
+and `changed()` predicates. A boolean meaning "changed" cannot decide whether
+to close. Track name submission owns a complete history transaction and never
+joins another caller's pending gesture. Modulator name validation operates on a
+prepared source before allocating history. Preset storage validates the current
+target before accepting an unchanged rename; navigating after a successful write
+cannot turn that write into a reported failure.
+
+Closure remains a direct call in each owner, using these explicit results; there
+is no second modal stack or generic publication callback. Pure keyboard input and
+the retained keyboard view stay shared. For Preset, `ButtonReleaseLatch` retains
+ownership of Shift acquired in a keyboard until release, even if that keyboard
+has already closed. A fresh press belongs to the new context.
 
 ## Handoff rule
 

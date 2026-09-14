@@ -42,10 +42,6 @@ private:
     void moveFocus(float delta);
     void openValueSelector();
 
-    void navigateSelector(float delta);
-    void applySelectorAndClose();
-    void closeSelectorCancel();
-
     core::state::DeviceSettingsState& device_settings_;
     DeviceSettingsDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;

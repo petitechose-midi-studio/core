@@ -288,9 +288,96 @@ void test_name_keyboard_applies_once_and_cancel_stays_local() {
     )[0] == '\0');
 }
 
+void test_name_rejection_keeps_draft_and_does_not_take_another_gesture() {
+    Harness h;
+    assert(h.handler.openActiveTrack());
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    const auto draft = h.state.projectTrackEditor.nameDraft;
+    auto domain = core::state::project::ProjectTrackDomainServices::fromCoreState(h.state);
+    using Kind = core::state::project::ProjectTrackHistoryActionKind;
+    // Even a Name gesture on the same Track belongs to its original caller.
+    for (const auto kind : {Kind::Delay, Kind::Name}) {
+        assert(domain.beginGesture(kind, 0U));
+        const auto before = h.state.projectTracks.authored;
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.state.projectTrackEditor.textEditing);
+        assert(h.state.projectTrackEditor.nameDraft == draft);
+        assert(h.state.projectTrackHistory.gestureMatches(kind, 0U));
+        assert(core::state::project::sameProjectTrackSnapshot(before, h.state.projectTracks.authored));
+        assert(h.state.projectHistory.undoCount() == 0U);
+        assert(h.encoderHw.getMode(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) ==
+               oc::interface::EncoderMode::RAW);
+        (void)domain.cancelGesture();
+    }
+    // Retrying the same draft after admission becomes available commits once.
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.projectTrackEditor.textEditing);
+    assert(h.state.projectTrackEditor.active);
+    assert(h.state.projectHistory.undoCount() == 1U);
+    assert(h.state.undoProjectHistory());
+    assert(h.state.projectTracks.authored.names[0U][0] == '\0');
+}
+
+void test_unchanged_name_accepts_without_history_and_preserves_redo() {
+    Harness h;
+    auto domain = core::state::project::ProjectTrackDomainServices::fromCoreState(h.state);
+    assert(domain.setMuted(0U, true));
+    assert(domain.undo());
+    assert(h.handler.openActiveTrack());
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    const auto revision = h.state.projectTracks.revision.get();
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.projectTrackEditor.textEditing);
+    assert(h.state.projectTrackEditor.active);
+    assert(h.state.projectTracks.revision.get() == revision);
+    assert(h.state.projectHistory.undoCount() == 0U);
+    assert(h.state.projectHistory.redoCount() == 1U);
+    assert(h.encoderHw.getMode(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) ==
+           oc::interface::EncoderMode::NORMALIZED);
+    assert(h.state.redoProjectHistory());
+}
+
 }  // namespace
 
+void test_history_preserves_type_draft_until_back() {
+    Harness h;
+    assert(h.handler.openActiveTrack());
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(core::state::project::projectTrackMuted(h.state.projectTracks, 0U));
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    const auto before = h.state.projectTrackEditor;
+    const auto identity = h.state.projectHistory.peekUndo()->identity;
+    assert(core::state::project::projectTrackEditorKindDraftDirty(before));
+    assert(!h.state.undoProjectHistory());
+    assert(!h.state.redoProjectHistory());
+    h.handler.update(1U);
+    assert(h.state.projectTrackEditor == before);
+    assert(h.state.projectHistory.peekUndo()->identity == identity);
+    assert(core::state::project::projectTrackMuted(h.state.projectTracks, 0U));
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.undoProjectHistory());
+    assert(!core::state::project::projectTrackMuted(h.state.projectTracks, 0U));
+    assert(h.state.redoProjectHistory());
+    assert(core::state::project::projectTrackMuted(h.state.projectTracks, 0U));
+}
+
 int main() {
+    test_history_preserves_type_draft_until_back();
+    test_name_rejection_keeps_draft_and_does_not_take_another_gesture();
+    test_unchanged_name_accepts_without_history_and_preserves_redo();
     test_open_and_modifier_track_switch_wrap_enabled_tracks();
     test_property_selection_opt_edit_and_history_coalescing();
     test_bottom_mute_and_solo_are_global_history_commands();

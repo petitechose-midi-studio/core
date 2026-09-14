@@ -27,6 +27,7 @@
 #include <memory>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/project/ProjectHistoryAccess.hpp"
 #include <oc/context/ContextBase.hpp>
 #include <oc/context/Requirements.hpp>
 #include <oc/state/StaticSignalWatcher.hpp>
@@ -154,6 +155,8 @@ private:
     oc::state::StaticWatchGroup<3> view_selector_watcher_;
     oc::state::StaticWatchGroup<1> active_view_watcher_;
     bool view_selector_was_visible_ = false;
+    core::state::project::ProjectHistoryBlockReason view_selector_history_block_ =
+        core::state::project::ProjectHistoryBlockReason::NONE;
 };
 
 }  // namespace core::context

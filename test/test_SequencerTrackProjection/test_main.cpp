@@ -57,7 +57,7 @@ core::ui::sequencer::SequencerViewModelSource sourceFor(
     };
 }
 
-void testClipQuickPropertySessionEndsAfterFeedbackExpires() {
+void testClipQuickPropertyStaysVisibleUntilExplicitExit() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings);
     auto& launcher = state.sequencer.clipWorkspace;
@@ -65,18 +65,32 @@ void testClipQuickPropertySessionEndsAfterFeedbackExpires() {
     launcher.focus(0U, 0U);
     launcher.showQuickSelector();
     launcher.moveQuickAction(1);
-    launcher.armQuickProperty(100U);
-    launcher.updateQuickFeedback(
-        100U + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+    launcher.armQuickProperty();
+    assert(state.sequencerClips.setClipBehavior({0U, 0U}, {.length = 8U}));
+    const auto armedHeader = core::ui::sequencer::buildSequencerHeaderBarProps(
+        sourceFor(state, false)
     );
-
+    assert(armedHeader.contextIcon[0] != '\0');
+    assert(std::strcmp(armedHeader.badgeText.data(), "8 loops") == 0);
+    launcher.clearQuickControl();
     assert(!launcher.quickPropertyArmed);
-    assert(!launcher.quickFeedbackVisible);
     const auto header = core::ui::sequencer::buildSequencerHeaderBarProps(
         sourceFor(state, false)
     );
     assert(header.contextIcon[0] == '\0');
     assert(header.contextIconColor == 0U);
+
+    launcher.focusScene(0U);
+    launcher.showQuickSelector();
+    launcher.moveQuickAction(2);
+    launcher.armQuickProperty();
+    assert(state.sequencerClips.setSceneBehavior(0U, {
+        .follow = core::state::sequencer::SequencerLauncherFollowChoice::TARGET_2,
+    }));
+    const auto sceneHeader = core::ui::sequencer::buildSequencerHeaderBarProps(
+        sourceFor(state, false)
+    );
+    assert(std::strcmp(sceneHeader.badgeText.data(), "Scene 2") == 0);
 }
 
 void testEmptyTrackPreviewProjectsNoMusicalState() {
@@ -208,7 +222,7 @@ int main() {
     testDrumTrackAndPatternProjectTheSameMusicalHeader();
     testPitchFeedbackProjectsTonalValueWithoutChangingContext();
     testPatternPlayheadBelongsOnlyToItsActiveParentClip();
-    testClipQuickPropertySessionEndsAfterFeedbackExpires();
+    testClipQuickPropertyStaysVisibleUntilExplicitExit();
     std::cout << "Sequencer Track projection tests passed\n";
     return 0;
 }

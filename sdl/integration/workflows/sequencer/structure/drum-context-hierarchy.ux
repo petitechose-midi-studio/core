@@ -19,13 +19,13 @@
 0 scenario clip-launcher
 
 # T2/C1 is a General MIDI Drum Clip. Move horizontally from the Scene rail to
-# it, open its Pattern editor, then close that editor onto the Pattern root.
+# it, then enter its Pattern root directly with LEFT_BOTTOM.
 150 button NAV down
 230 encoder NAV 0.01
 270 encoder NAV 0.01
 310 button NAV up
-400 tap LEFT_CENTER 60
-700 tap LEFT_TOP 60
+400 tap LEFT_BOTTOM 60
+700 tick
 4100 capture screen pattern_context
 
 # Pattern -> Lane. A short NAV opens Lane edit; Back returns to Lane.

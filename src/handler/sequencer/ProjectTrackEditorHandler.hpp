@@ -61,7 +61,7 @@ private:
     void moveNameKey(float delta);
     void moveNameRow(float rawPosition);
     void activateFocusedProperty();
-    void cancelNameEditing();
+    void closeNameEditing();
     void applyNameEditing();
     void setFocusedValue(float normalized);
     void toggleMute();

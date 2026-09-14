@@ -828,11 +828,9 @@ struct ClipWorkspaceUiState {
     ClipWorkspaceQuickAction quickAction = ClipWorkspaceQuickAction::EDIT;
     bool quickSelectorVisible = false;
     bool quickPropertyArmed = false;
-    bool quickFeedbackVisible = false;
     ClipWorkspaceFocus quickTargetFocus = ClipWorkspaceFocus::CLIP;
     uint8_t quickTargetTrack = 0U;
     uint8_t quickTargetSlot = 0U;
-    uint32_t quickFeedbackHideAtMs = 0U;
     uint32_t feedbackHideAtMs = 0U;
     ClipWorkspaceEditor editor = ClipWorkspaceEditor::NONE;
     ClipWorkspaceBehaviorField editorField =
@@ -897,10 +895,8 @@ struct ClipWorkspaceUiState {
     void focusTrackHeader(uint8_t track);
     void showQuickSelector();
     void moveQuickAction(int direction);
-    void armQuickProperty(uint32_t nowMs);
-    void showQuickFeedback(uint32_t nowMs);
+    void armQuickProperty();
     void clearQuickControl();
-    void updateQuickFeedback(uint32_t nowMs);
     void moveVertical(int direction, uint8_t lastSlot = SLOT_COUNT - 1U);
     void moveHorizontal(int direction, uint16_t enabledTrackMask);
     void moveViewport(int direction);
@@ -981,6 +977,12 @@ struct SequencerTrackPasteUiState {
                    core::state::contextual::GuardedActionPhase::ARMED;
     }
     [[nodiscard]] bool inspectable() const { return plan.hasEntries(); }
+    [[nodiscard]] bool detailsAvailable() const {
+        return inspectable() && plan.canCommit() && feedback.active;
+    }
+    [[nodiscard]] bool navigationBlocked() const {
+        return buttonOwned || gestureActive() || detailVisible;
+    }
     void bump();
     void reset();
 };
@@ -1067,8 +1069,7 @@ struct DrumLaneEditorState {
     uint8_t targetLane = 0U;
     uint8_t textKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    float textOptRawPosition = 0.0f;
-    float textOptRowAccumulator = 0.0f;
+    core::state::interaction::TextKeyboardRowInput textRows;
     uint8_t overrideMaskBeforeTextEditing = 0U;
     std::array<char, DRUM_LANE_NAME_MAX_LENGTH + 1U> nameBeforeTextEditing{};
     DrumLaneDescriptor draft{};

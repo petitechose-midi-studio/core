@@ -32,11 +32,11 @@
 4280 tap LEFT_TOP 60
 4500 capture screen pattern_selection_exited
 
-# Back returns to the exact matrix Clip; one reverse turn reaches its Track
+# Back returns to the exact matrix Clip; OPT moves up to its Track
 # header. Repeat the same lifecycle there with a Project-wide payload.
 4600 tap LEFT_TOP 60
 4820 capture screen launcher_returned
-4920 encoder NAV -0.01
+4920 encoder OPT -0.01
 5120 capture screen track_header_ready
 5220 button NAV down
 6300 tick

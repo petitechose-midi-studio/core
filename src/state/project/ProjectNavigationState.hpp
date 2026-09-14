@@ -159,8 +159,7 @@ struct ProjectNavigationState {
     std::array<char, ProjectMetadata::ID_SIZE> editingProjectSlug{};
     uint8_t projectNameKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    float projectNameOptRawPosition = 0.0f;
-    float projectNameOptRowAccumulator = 0.0f;
+    core::state::interaction::TextKeyboardRowInput projectNameRows;
     bool projectNameShiftActive = false;
     bool pendingLoadCanSaveCurrent = false;
     ProjectBrowserState loadProjects;

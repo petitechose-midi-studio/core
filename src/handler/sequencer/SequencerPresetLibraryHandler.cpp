@@ -40,7 +40,7 @@ FLASHMEM void SequencerStepEditHandler::openPatternPresetLibrary() {
     }
     preset_library_auto_close_pending_ = false;
     preset_library_auto_close_at_ms_ = 0U;
-    preset_open_release_latch_.arm(Config::ButtonID::NAV);
+    preset_release_latch_.arm(Config::ButtonID::NAV);
     (void)preset_library_.open(
         pattern_preset_library_adapter_.operations()
     );
@@ -87,7 +87,7 @@ FLASHMEM void SequencerStepEditHandler::enterPresetLibraryDetail() {
 FLASHMEM void SequencerStepEditHandler::openPresetLibraryManagement() {
     if (preset_library_auto_close_pending_) return;
     if (preset_library_.openFocusedManagement()) {
-        preset_open_release_latch_.arm(Config::ButtonID::NAV);
+        preset_release_latch_.arm(Config::ButtonID::NAV);
     }
 }
 

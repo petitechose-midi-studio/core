@@ -49,7 +49,8 @@ public:
         uint8_t historyTrack
     );
     [[nodiscard]] bool setSoloed(uint8_t track, bool soloed);
-    [[nodiscard]] bool setName(uint8_t track, const char* name);
+    /** One-shot edit: never joins another caller's gesture, including Name. */
+    [[nodiscard]] ProjectTrackMutationResult setName(uint8_t track, const char* name);
 
     [[nodiscard]] bool beginGesture(
         ProjectTrackHistoryActionKind kind,

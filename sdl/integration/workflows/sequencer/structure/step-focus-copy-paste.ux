@@ -16,10 +16,9 @@
 270 button NAV up
 350 capture screen step_focus
 750 tap MACRO_2 60
-# The fixture already enables step 2: the first tap focuses and disables it.
-850 tap MACRO_2 60
 950 capture screen step_2_enabled
-1050 encoder OPT 0.58
+# Five semitones at the current physical pitch resolution (350 SDL ticks).
+1050 encoder OPT 3.50
 1250 capture screen step_2_pitch_edited
 
 # Copy focused step 2 directly.

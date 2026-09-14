@@ -357,16 +357,23 @@ FLASHMEM ProjectModulationResult setProjectModulatorName(
     if (source == nullptr) {
         return result(ProjectModulationStatus::INVALID_ID, sourceId);
     }
+    return setProjectModulatorName(*source, name);
+}
+
+FLASHMEM ProjectModulationResult setProjectModulatorName(
+    ModulatorSourceState& source,
+    const char* name
+) {
     if (name == nullptr || name[0] == '\0') {
-        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
+        return result(ProjectModulationStatus::INVALID_ARGUMENT, source.id);
     }
     std::array<char, PROJECT_MODULATOR_NAME_CAPACITY> next{};
     copyName(next, name, nullptr);
-    if (source->name == next) {
-        return result(ProjectModulationStatus::NO_CHANGE, sourceId);
+    if (source.name == next) {
+        return result(ProjectModulationStatus::NO_CHANGE, source.id);
     }
-    source->name = next;
-    return result(ProjectModulationStatus::OK, sourceId);
+    source.name = next;
+    return result(ProjectModulationStatus::OK, source.id);
 }
 
 FLASHMEM ProjectModulationResult setProjectLfoParameters(

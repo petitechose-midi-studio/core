@@ -31,9 +31,6 @@ constexpr float PROJECT_OPT_NORMALIZED_TURNS =
     encoder_defaults::DEFAULT_NORMALIZED_TURNS;
 constexpr float PROJECT_OPT_TEMPO_STEPS_PER_TURN = 24.0f;
 constexpr float PROJECT_OPT_PERCENT_STEPS_PER_TURN = 18.0f;
-constexpr float PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW =
-    (600.0f * 4.0f) /
-    static_cast<float>(core::state::interaction::TEXT_KEYBOARD_ROW_COUNT);
 inline constexpr std::array<uint32_t, 13> PROJECT_MODULATOR_FREE_PERIODS_MS{{
     8U, 16U, 32U, 64U, 125U, 250U, 500U,
     1000U, 2000U, 4000U, 8000U, 16000U, 32000U,

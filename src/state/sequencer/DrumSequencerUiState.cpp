@@ -1,7 +1,6 @@
 #include "state/sequencer/SequencerUiState.hpp"
 
 #include <algorithm>
-#include <cmath>
 
 #include <config/PlatformCompat.hpp>
 
@@ -545,35 +544,13 @@ FLASHMEM void DrumSequencerState::toggleLaneNameEditing() {
     laneEditor.textShiftActive = false;
     laneEditor.textKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    laneEditor.textOptRawPosition = 0.0f;
-    laneEditor.textOptRowAccumulator = 0.0f;
+    laneEditor.textRows = {};
     bump();
 }
 
 FLASHMEM void DrumSequencerState::moveLaneNameRow(float rawPosition) {
     if (!laneEditor.active || !laneEditor.textEditing) return;
-    const float delta = rawPosition - laneEditor.textOptRawPosition;
-    laneEditor.textOptRawPosition = rawPosition;
-    if (delta == 0.0f) return;
-    constexpr float ticksPerRow = (600.0f * 4.0f) /
-        static_cast<float>(
-            core::state::interaction::TEXT_KEYBOARD_ROW_COUNT
-        );
-    laneEditor.textOptRowAccumulator += delta / ticksPerRow;
-    const float absolute = std::fabs(laneEditor.textOptRowAccumulator);
-    if (absolute < 1.0f) return;
-    const int steps = static_cast<int>(absolute);
-    const bool increasing = laneEditor.textOptRowAccumulator > 0.0f;
-    laneEditor.textOptRowAccumulator += increasing
-        ? -static_cast<float>(steps)
-        : static_cast<float>(steps);
-    const uint8_t next = core::state::interaction::textKeyboardMoveRow(
-        laneEditor.textKeyIndex,
-        increasing ? -steps : steps
-    );
-    if (next == laneEditor.textKeyIndex) return;
-    laneEditor.textKeyIndex = next;
-    bump();
+    if (laneEditor.textRows.move(laneEditor.textKeyIndex, rawPosition)) bump();
 }
 
 FLASHMEM void DrumSequencerState::insertLaneNameKey() {
@@ -619,6 +596,11 @@ FLASHMEM void DrumSequencerState::acceptLaneNameEditing() {
         laneEditor.draft,
         laneEditor.draft.name.data()
     );
+    // Compare the canonical result, not keystrokes: reverting the text must
+    // restore a clean child without clearing changes already made by its parent.
+    laneEditor.dirty = laneEditor.dirtyBeforeTextEditing ||
+        laneEditor.draft.name != laneEditor.nameBeforeTextEditing ||
+        laneEditor.draft.overrideMask != laneEditor.overrideMaskBeforeTextEditing;
     laneEditor.textEditing = false;
     laneEditor.textShiftActive = false;
     bump();

@@ -1097,6 +1097,9 @@ void prepareStepPresetCaptureBase(
 ) {
     using namespace core::state::sequencer;
     state.activeView.set(core::ui::ViewType::CLIPS);
+    // Static picker comparisons must not inherit the previous activation's beat.
+    state.statusBar.playing.set(false);
+    state.statusBar.beatPulse.set(false);
     state.overlays.hideAll();
     state.sequencer.stepEdit.visible.set(true);
     state.sequencer.stepEdit.stepIndex.set(5);

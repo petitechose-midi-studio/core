@@ -49,8 +49,6 @@ private:
     void navigate(float delta);
     void confirmSelection();
     void closeSelector();
-    void undoProjectHistory();
-    void redoProjectHistory();
 
     core::state::CoreState& core_state_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;

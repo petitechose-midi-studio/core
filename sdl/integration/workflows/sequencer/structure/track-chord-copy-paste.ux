@@ -65,13 +65,11 @@
 # header, copy it, then move horizontally to the empty T2 header.
 3800 tap LEFT_TOP 60
 4200 tap LEFT_TOP 60
-4500 encoder NAV -0.01
+4500 encoder OPT -0.01
 5000 capture screen track_focus_source
 5050 tap BOTTOM_RIGHT 60
 5200 capture screen track_1_chord_copied
-5250 button LEFT_CENTER down
 5300 encoder NAV 0.01
-5350 button LEFT_CENTER up
 5400 capture screen track_2_paste_preview
 5450 button BOTTOM_RIGHT down
 5550 capture screen track_2_paste_pressed
@@ -94,9 +92,7 @@
 # Copy T1, then use horizontal Track navigation to slide to T5's header.
 7350 tap BOTTOM_RIGHT 60
 7550 capture screen track_paste_track_copied
-7650 button LEFT_CENTER down
 7730 encoder NAV 0.01
-8050 button LEFT_CENTER up
 8500 capture screen track_paste_summary
 
 # Details exposes the exact direct mapping while keeping the paste anchor fixed.

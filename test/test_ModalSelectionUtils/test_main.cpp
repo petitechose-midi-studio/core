@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "../../src/handler/common/ModalSelectionUtils.hpp"
+#include "../../src/handler/common/ValueSelectorInput.hpp"
 #include "../../src/state/DeviceSettingsState.hpp"
 
 namespace {
@@ -40,73 +41,6 @@ private:
     std::vector<DummyOverlay> stack_{};
 };
 
-void test_selector_navigation_uses_selector_state_contract() {
-    core::state::DeviceSettingsValueSelectorState selector;
-    selector.visible.set(true);
-    selector.selectedIndex.set(1);
-
-    int next = selector.selectedIndex.get();
-    const bool changed = core::handler::modal::advanceWrappedSelection(1.0f, selector, 3, next);
-
-    assert(changed);
-    assert(next == 2);
-
-    next = selector.selectedIndex.get();
-    const bool hiddenChanged =
-        core::handler::modal::advanceWrappedSelection(1.0f, selector, 0, next);
-    assert(!hiddenChanged);
-
-    selector.visible.set(false);
-    next = selector.selectedIndex.get();
-    const bool invisibleChanged =
-        core::handler::modal::advanceWrappedSelection(1.0f, selector, 3, next);
-    assert(!invisibleChanged);
-
-    std::cout << "[PASS] test_selector_navigation_uses_selector_state_contract\n";
-}
-
-void test_open_selector_overlay_resets_then_initializes_state() {
-    DummyOverlayManager overlays;
-    core::state::DeviceSettingsValueSelectorState selector;
-    selector.visible.set(true);
-    selector.editingRow.set(3);
-    selector.selectedIndex.set(9);
-
-    core::handler::modal::openSelectorOverlay(
-        overlays,
-        DummyOverlay::SELECTOR,
-        selector,
-        2,
-        [](auto& valueSelector) { valueSelector.editingRow.set(1); }
-    );
-
-    assert(overlays.current() == DummyOverlay::SELECTOR);
-    assert(selector.selectedIndex.get() == 2);
-    assert(selector.editingRow.get() == 1);
-    assert(!selector.visible.get());
-
-    std::cout << "[PASS] test_open_selector_overlay_resets_then_initializes_state\n";
-}
-
-void test_hide_overlay_and_reset_selector_clears_state() {
-    DummyOverlayManager overlays;
-    core::state::DeviceSettingsValueSelectorState selector;
-
-    overlays.show(DummyOverlay::SELECTOR, true);
-    selector.visible.set(true);
-    selector.editingRow.set(2);
-    selector.selectedIndex.set(4);
-
-    core::handler::modal::hideOverlayAndResetSelector(overlays, selector);
-
-    assert(overlays.current() == DummyOverlay::NONE);
-    assert(!selector.visible.get());
-    assert(selector.editingRow.get() == 0);
-    assert(selector.selectedIndex.get() == 0);
-
-    std::cout << "[PASS] test_hide_overlay_and_reset_selector_clears_state\n";
-}
-
 void test_hide_if_current_only_closes_matching_overlay() {
     DummyOverlayManager overlays;
     overlays.show(DummyOverlay::ROOT, false);
@@ -123,30 +57,98 @@ void test_hide_if_current_only_closes_matching_overlay() {
     std::cout << "[PASS] test_hide_if_current_only_closes_matching_overlay\n";
 }
 
-void test_hide_while_current_in_unwinds_overlay_stack() {
+void test_value_selector_publication_and_stack_boundaries() {
+    // Independent publication/stack assertions for the shared lifecycle.
+    using Input = core::handler::modal::ValueSelectorInput;
     DummyOverlayManager overlays;
-    overlays.show(DummyOverlay::ROOT, false);
-    overlays.show(DummyOverlay::SELECTOR, true);
-    overlays.show(DummyOverlay::DIALOG, true);
+    core::state::DeviceSettingsValueSelectorState selector;
+    int count = 3;
+    int applied = 0;
+    int closed = 0;
+    bool accept = false;
+    bool ownerActive = true;
+    auto dispatch = [&](Input input) {
+        input.handle(overlays, DummyOverlay::SELECTOR, selector, ownerActive, count,
+            [&](uint8_t row, int choice) {
+                assert(row == 2U && choice == 1);
+                ++applied;
+                return accept;
+            },
+            [&]() {
+                assert(overlays.current() == DummyOverlay::ROOT);
+                selector.reset();
+                ++closed;
+            });
+    };
+    overlays.show(DummyOverlay::ROOT);
+    overlays.show(DummyOverlay::SELECTOR);
+    selector.visible.set(true);
+    selector.editingRow.set(2U);
+    selector.selectedIndex.set(1);
+    dispatch({Input::Kind::ACCEPT});
+    assert(applied == 1 && closed == 0);
+    assert(selector.selectedIndex.get() == 1 && selector.visible.get());
+    assert(overlays.current() == DummyOverlay::SELECTOR);
 
-    core::handler::modal::hideWhileCurrentIn(
-        overlays,
-        std::array{DummyOverlay::SELECTOR, DummyOverlay::DIALOG}
-    );
+    // Dynamic choice range is rechecked before reaching the domain.
+    count = 1;
+    dispatch({Input::Kind::ACCEPT});
+    selector.selectedIndex.set(-1);
+    dispatch({Input::Kind::ACCEPT});
+    assert(applied == 1 && closed == 0);
+    count = 3;
+    selector.selectedIndex.set(1);
 
+    ownerActive = false;
+    for (auto kind : {Input::Kind::MOVE, Input::Kind::ACCEPT, Input::Kind::CANCEL}) {
+        dispatch({kind, 1.0f});
+        assert(selector.selectedIndex.get() == 1 && applied == 1 && closed == 0);
+        assert(overlays.current() == DummyOverlay::SELECTOR);
+    }
+    ownerActive = true;
+
+    overlays.show(DummyOverlay::DIALOG);
+    for (auto kind : {Input::Kind::MOVE, Input::Kind::ACCEPT, Input::Kind::CANCEL}) {
+        dispatch({kind, 1.0f});
+        assert(selector.selectedIndex.get() == 1);
+        assert(applied == 1 && closed == 0);
+        assert(overlays.current() == DummyOverlay::DIALOG);
+    }
+    overlays.hide();
+    accept = true;
+    dispatch({Input::Kind::ACCEPT});
+    assert(applied == 2 && closed == 1);
     assert(overlays.current() == DummyOverlay::ROOT);
+    dispatch({Input::Kind::ACCEPT});
+    dispatch({Input::Kind::CANCEL});
+    assert(applied == 2 && closed == 1);
 
-    std::cout << "[PASS] test_hide_while_current_in_unwinds_overlay_stack\n";
+    overlays.show(DummyOverlay::SELECTOR);
+    // Lost visibility must fail closed even if an input was already routed.
+    dispatch({Input::Kind::ACCEPT});
+    assert(applied == 2 && closed == 1);
+    selector.visible.set(true);
+    selector.selectedIndex.set(0);
+    dispatch({Input::Kind::MOVE, -1.0f});
+    assert(selector.selectedIndex.get() == 2);
+    dispatch({Input::Kind::MOVE, 1.0f});
+    dispatch({Input::Kind::MOVE, 0.0f});
+    assert(selector.selectedIndex.get() == 0);
+    count = 0;
+    dispatch({Input::Kind::MOVE, 1.0f});
+    dispatch({Input::Kind::ACCEPT});
+    assert(selector.selectedIndex.get() == 0 && applied == 2);
+    dispatch({Input::Kind::CANCEL});
+    assert(applied == 2 && closed == 2);
+    assert(overlays.current() == DummyOverlay::ROOT);
+    std::cout << "[PASS] Value selector publication and stack boundaries\n";
 }
 
 }  // namespace
 
 int main() {
-    test_selector_navigation_uses_selector_state_contract();
-    test_open_selector_overlay_resets_then_initializes_state();
-    test_hide_overlay_and_reset_selector_clears_state();
+    test_value_selector_publication_and_stack_boundaries();
     test_hide_if_current_only_closes_matching_overlay();
-    test_hide_while_current_in_unwinds_overlay_stack();
 
     std::cout << "\nAll ModalSelectionUtils tests passed.\n";
     return 0;

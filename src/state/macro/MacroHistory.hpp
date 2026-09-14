@@ -330,7 +330,7 @@ public:
         core::state::modulation::ModulatorId sourceId,
         bool enabled
     );
-    [[nodiscard]] bool setProjectModulatorName(
+    [[nodiscard]] core::state::modulation::ProjectModulationResult setProjectModulatorName(
         MacroPagesState& pages,
         core::state::modulation::ModulatorId sourceId,
         const char* name

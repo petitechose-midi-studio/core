@@ -2,7 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
-#include "handler/common/ModalSelectionUtils.hpp"
+#include "handler/common/ValueSelectorInput.hpp"
 #include "handler/common/NavigationUtils.hpp"
 
 namespace core::handler {
@@ -37,20 +37,15 @@ FLASHMEM void DeviceSettingsHandler::setupBindings() {
         .scope(settings_view_scope_)
         .then([this]() { openValueSelector(); });
 
-    encoders_.encoder(EncoderID::NAV)
-        .turn()
-        .scope(selector_overlay_scope_)
-        .then([this](float delta) { navigateSelector(delta); });
-
-    buttons_.button(ButtonID::NAV)
-        .release()
-        .scope(selector_overlay_scope_)
-        .then([this]() { applySelectorAndClose(); });
-
-    buttons_.button(ButtonID::LEFT_TOP)
-        .release()
-        .scope(selector_overlay_scope_)
-        .then([this]() { closeSelectorCancel(); });
+    modal::bindValueSelectorInputs(encoders_, buttons_, selector_overlay_scope_,
+        [this](modal::ValueSelectorInput input) {
+            input.handle(overlays_, core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
+                device_settings_.selector,
+                device_settings_.flowPhase.get() == core::state::DeviceSettingsFlowPhase::VALUE_SELECTOR,
+                services_.choiceCount(device_settings_.selector.editingRow.get()),
+                [this](uint8_t row, int choice) { return services_.applyChoice(row, choice).success(); },
+                [this]() { device_settings_.closeSelector(); });
+        });
 }
 
 FLASHMEM void DeviceSettingsHandler::moveFocus(float delta) {
@@ -72,39 +67,6 @@ FLASHMEM void DeviceSettingsHandler::openValueSelector() {
     const int current = services_.currentChoiceIndex(row);
     s.openSelector(row, current);
     overlays_.show(core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR, true);
-}
-
-FLASHMEM void DeviceSettingsHandler::navigateSelector(float delta) {
-    if (device_settings_.flowPhase.get() != core::state::DeviceSettingsFlowPhase::VALUE_SELECTOR) {
-        return;
-    }
-
-    const uint8_t row = device_settings_.selector.editingRow.get();
-    const int count = services_.choiceCount(row);
-    if (count <= 0) return;
-
-    int next = device_settings_.selector.selectedIndex.get();
-    if (!modal::advanceWrappedSelection(delta, device_settings_.selector, count, next)) {
-        return;
-    }
-    device_settings_.selector.selectedIndex.set(next);
-}
-
-FLASHMEM void DeviceSettingsHandler::applySelectorAndClose() {
-    auto& selector = device_settings_.selector;
-    const uint8_t row = selector.editingRow.get();
-    const int choice = selector.selectedIndex.get();
-
-    const auto result = services_.applyChoice(row, choice);
-    if (!result.success()) return;
-
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
-    device_settings_.closeSelector();
-}
-
-FLASHMEM void DeviceSettingsHandler::closeSelectorCancel() {
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
-    device_settings_.closeSelector();
 }
 
 }  // namespace core::handler

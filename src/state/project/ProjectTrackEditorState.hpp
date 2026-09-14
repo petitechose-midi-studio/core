@@ -40,8 +40,7 @@ struct ProjectTrackEditorState {
     ProjectTrackName nameDraft{};
     uint8_t textKeyIndex =
         core::state::interaction::TEXT_KEYBOARD_DEFAULT_INDEX;
-    float textOptRawPosition = 0.0f;
-    float textOptRowAccumulator = 0.0f;
+    core::state::interaction::TextKeyboardRowInput textRows;
     bool textEditing = false;
     bool textShiftActive = false;
     bool typeChangeBlocked = false;
@@ -76,8 +75,7 @@ struct ProjectTrackEditorState {
                lhs.draftKind == rhs.draftKind &&
                lhs.nameDraft == rhs.nameDraft &&
                lhs.textKeyIndex == rhs.textKeyIndex &&
-               lhs.textOptRawPosition == rhs.textOptRawPosition &&
-               lhs.textOptRowAccumulator == rhs.textOptRowAccumulator &&
+               lhs.textRows == rhs.textRows &&
                lhs.textEditing == rhs.textEditing &&
                lhs.textShiftActive == rhs.textShiftActive &&
                lhs.typeChangeBlocked == rhs.typeChangeBlocked &&

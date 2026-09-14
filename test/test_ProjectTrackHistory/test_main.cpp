@@ -209,9 +209,34 @@ void test_history_is_fail_closed_after_external_divergence() {
     std::cout << "[PASS] history refuses to overwrite externally diverged state\n";
 }
 
+void test_name_results_distinguish_no_change_invalid_and_history_rejection() {
+    project::ProjectTrackState state;
+    project::ProjectTrackHistoryService history;
+    PublicationProbe probe;
+    auto services = makeServices(state, history, probe);
+    using Status = project::ProjectTrackMutationStatus;
+    assert(services.setName(0U, "Track 1").status == Status::NO_CHANGE);
+    assert(services.setName(0U, "").accepted());
+    assert(services.setName(0U, nullptr).status == Status::INVALID_NAME);
+    assert(services.setName(0U, "too long name").status == Status::INVALID_NAME);
+    assert(services.setName(16U, "Name").status == Status::INVALID_TRACK);
+    assert(!services.hasActiveGesture());
+    assert(history.undoCount() == 0U && probe.publishCount == 0U);
+    assert(services.beginGesture(project::ProjectTrackHistoryActionKind::Name, 0U));
+    assert(services.setName(0U, "Name").status == Status::HISTORY_UNAVAILABLE);
+    assert(services.hasActiveGesture());
+    (void)services.cancelGesture();
+    assert(services.setName(0U, "Name").changed());
+    assert(services.setName(0U, "Name").status == Status::NO_CHANGE);
+    assert(history.undoCount() == 1U && probe.publishCount == 1U);
+    assert(services.undo());
+    assert(state.authored.names[0U][0] == '\0');
+}
+
 }  // namespace
 
 int main() {
+    test_name_results_distinguish_no_change_invalid_and_history_rejection();
     test_one_gesture_is_one_atomic_history_command();
     test_all_actions_are_bounded_and_no_op_safe();
     test_multi_track_mute_mask_is_one_atomic_history_command();

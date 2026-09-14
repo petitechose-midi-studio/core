@@ -164,6 +164,18 @@ struct MacroAutomationHarness {
         drainNotifications();
         state.flush();
     }
+
+    void leaveMacroForHistory() {
+        assert(!state.undoProjectHistory());
+        press(Config::ButtonID::LEFT_TOP);
+        release(Config::ButtonID::LEFT_TOP);
+        assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
+        assert(!state.undoProjectHistory());
+        // This fixture hosts only the detail handler. End its synthetic parent
+        // (no CC edit was made) before testing global chronological traversal.
+        overlays.hideAll();
+        state.macroEdit.closeEditor();
+    }
 };
 
 void test_assignment_tap_opens_exact_source_workspace() {
@@ -366,11 +378,14 @@ void test_all_row_edits_global_depth_without_rewriting_assignment() {
     assert(binding != nullptr && binding->amountQ15 == bindingBefore.amountQ15);
     assert(binding->flags == bindingBefore.flags);
 
+    h.leaveMacroForHistory();
     assert(h.state.undoProjectHistory());
     assert(projectModulationDestinationScaleQ15(
         h.state.pages.control.authored().modulation,
         destination
     ) == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
+    h.openModulationEditor();
+    h.turn(Config::EncoderID::NAV, -1.0f);
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     binding = findProjectModulationBinding(
@@ -745,6 +760,7 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
     assert(core::state::macro::macroAutomationBeatsFromTicks(slot.automation.spec.windowOffsetTicks) == 1.0f);
 
     assert(h.state.macroHistory.undoCount() == 2U);
+    h.leaveMacroForHistory();
     assert(h.state.undoProjectHistory());
     slot = test_support::project_control::readSlot(
         h.state.pages.control,

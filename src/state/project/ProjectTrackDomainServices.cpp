@@ -161,28 +161,26 @@ FLASHMEM bool ProjectTrackDomainServices::setSoloed(
     );
 }
 
-FLASHMEM bool ProjectTrackDomainServices::setName(
+FLASHMEM ProjectTrackMutationResult ProjectTrackDomainServices::setName(
     uint8_t track,
     const char* name
 ) {
-    if (tracks_ == nullptr || history_ == nullptr || name == nullptr ||
-        !validProjectTrackIndex(track)) {
-        return false;
+    if (!validProjectTrackIndex(track)) {
+        return {ProjectTrackMutationStatus::INVALID_TRACK, track};
     }
-    const bool ownsGesture = !history_->hasPendingGesture();
-    if (ownsGesture &&
-        !beginGesture(ProjectTrackHistoryActionKind::Name, track)) {
-        return false;
+    if (!validProjectTrackName(name)) {
+        return {ProjectTrackMutationStatus::INVALID_NAME, track};
     }
-    if (!history_->gestureMatches(ProjectTrackHistoryActionKind::Name, track)) {
-        return false;
+    if (!beginGesture(ProjectTrackHistoryActionKind::Name, track)) {
+        return {ProjectTrackMutationStatus::HISTORY_UNAVAILABLE, track};
     }
     const auto result = setProjectTrackName(*tracks_, track, name);
     if (!result.changed()) {
-        if (ownsGesture) (void)history_->cancelGesture(*tracks_);
-        return false;
+        (void)history_->cancelGesture(*tracks_);
+        return result;
     }
-    return ownsGesture ? endGesture() : true;
+    return endGesture() ? result
+        : ProjectTrackMutationResult{ProjectTrackMutationStatus::HISTORY_UNAVAILABLE, track};
 }
 
 FLASHMEM bool ProjectTrackDomainServices::beginGesture(

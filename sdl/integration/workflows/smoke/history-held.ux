@@ -1,0 +1,25 @@
+# Purpose: held Back exposes the same project Undo/Redo without leaving Clips.
+# Expect: capture_match:original_pattern=undone_pattern
+# Expect: capture_match:changed_pattern=redone_pattern
+# Expect: semantic:held_undo:mode=view_selector, semantic:held_redo:mode=view_selector
+# Expect: semantic:held_undo:effect=undo_project_action, semantic:held_redo:effect=redo_project_action
+# Expect: semantic:undone_pattern:mode=sequencer.pattern, semantic:redone_pattern:mode=sequencer.pattern
+
+0 scenario sequencer
+1000 capture screen original_pattern
+1150 tap MACRO_1 60
+1350 capture screen changed_pattern
+1450 tap LEFT_TOP 60
+1650 button LEFT_TOP down
+2250 tap LEFT_CENTER 60
+2400 capture screen held_undo
+2450 button LEFT_TOP up
+3200 tap LEFT_BOTTOM 60
+4400 capture screen undone_pattern
+4500 tap LEFT_TOP 60
+4700 button LEFT_TOP down
+5300 tap LEFT_BOTTOM 60
+5450 capture screen held_redo
+5500 button LEFT_TOP up
+6200 tap LEFT_BOTTOM 60
+7400 capture screen redone_pattern

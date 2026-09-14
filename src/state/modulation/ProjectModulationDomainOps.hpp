@@ -25,6 +25,7 @@ enum class ProjectModulationStatus : uint8_t {
     DUPLICATE_TRIGGER,
     INVARIANT_VIOLATION,
     HISTORY_CAPACITY_EXCEEDED,
+    HISTORY_UNAVAILABLE,
 };
 
 struct ProjectModulationResult {
@@ -35,6 +36,10 @@ struct ProjectModulationResult {
 
     [[nodiscard]] bool changed() const {
         return status == ProjectModulationStatus::OK;
+    }
+
+    [[nodiscard]] bool accepted() const {
+        return changed() || status == ProjectModulationStatus::NO_CHANGE;
     }
 };
 
@@ -243,6 +248,11 @@ ProjectModulationResult setProjectModulatorEnabled(
     ProjectModulationState& state,
     ModulatorId sourceId,
     bool enabled
+);
+/** Also operates on a prepared source so history can validate before allocating. */
+ProjectModulationResult setProjectModulatorName(
+    ModulatorSourceState& source,
+    const char* name
 );
 ProjectModulationResult setProjectModulatorName(
     ProjectModulationState& state,

@@ -75,8 +75,6 @@ FLASHMEM void clearQuickControlWithoutPublishing(ClipWorkspaceUiState& state) {
     state.quickAction = ClipWorkspaceQuickAction::EDIT;
     state.quickSelectorVisible = false;
     state.quickPropertyArmed = false;
-    state.quickFeedbackVisible = false;
-    state.quickFeedbackHideAtMs = 0U;
 }
 
 }  // namespace
@@ -645,11 +643,9 @@ FLASHMEM void ClipWorkspaceUiState::reset(uint8_t activeTrack) {
     quickAction = ClipWorkspaceQuickAction::EDIT;
     quickSelectorVisible = false;
     quickPropertyArmed = false;
-    quickFeedbackVisible = false;
     quickTargetFocus = ClipWorkspaceFocus::CLIP;
     quickTargetTrack = std::min<uint8_t>(activeTrack, TRACK_COUNT - 1U);
     quickTargetSlot = 0U;
-    quickFeedbackHideAtMs = 0U;
     feedbackHideAtMs = 0U;
     editor = ClipWorkspaceEditor::NONE;
     editorField = ClipWorkspaceBehaviorField::LENGTH;
@@ -719,8 +715,6 @@ FLASHMEM void ClipWorkspaceUiState::showQuickSelector() {
     quickTargetTrack = focusedTrack;
     quickTargetSlot = focusedSlot;
     quickPropertyArmed = false;
-    quickFeedbackVisible = false;
-    quickFeedbackHideAtMs = 0U;
     if (quickSelectorVisible) return;
     quickSelectorVisible = true;
     bump();
@@ -736,38 +730,14 @@ FLASHMEM void ClipWorkspaceUiState::moveQuickAction(int direction) {
     bump();
 }
 
-FLASHMEM void ClipWorkspaceUiState::armQuickProperty(uint32_t nowMs) {
+FLASHMEM void ClipWorkspaceUiState::armQuickProperty() {
     quickSelectorVisible = false;
     quickPropertyArmed = quickAction != ClipWorkspaceQuickAction::EDIT;
-    quickFeedbackVisible = quickPropertyArmed;
-    quickFeedbackHideAtMs = quickPropertyArmed
-        ? nowMs + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
-        : 0U;
-    bump();
-}
-
-FLASHMEM void ClipWorkspaceUiState::showQuickFeedback(uint32_t nowMs) {
-    if (!quickPropertyArmed) return;
-    quickFeedbackVisible = true;
-    quickFeedbackHideAtMs =
-        nowMs + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS;
     bump();
 }
 
 FLASHMEM void ClipWorkspaceUiState::clearQuickControl() {
-    if (!quickSelectorVisible && !quickPropertyArmed &&
-        !quickFeedbackVisible) {
-        return;
-    }
-    clearQuickControlWithoutPublishing(*this);
-    bump();
-}
-
-FLASHMEM void ClipWorkspaceUiState::updateQuickFeedback(uint32_t nowMs) {
-    if (!quickFeedbackVisible || quickSelectorVisible ||
-        static_cast<int32_t>(nowMs - quickFeedbackHideAtMs) < 0) {
-        return;
-    }
+    if (!quickSelectorVisible && !quickPropertyArmed) return;
     clearQuickControlWithoutPublishing(*this);
     bump();
 }

@@ -4,7 +4,7 @@
 # Expect: capture_changed:quick_edit=clip_focused
 # Expect: capture_changed:quick_length=quick_edit
 # Releasing the chord closes the selector; the selected property stays armed
-# as a compact header icon until the shared feedback timeout returns OPT to
+# with its header icon and value until Back or a context change returns OPT to
 # vertical matrix navigation.
 # Expect: capture_changed:length_armed=quick_length
 # Expect: capture_changed:length_changed=length_armed

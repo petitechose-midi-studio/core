@@ -520,12 +520,19 @@ FLASHMEM oc::type::Result<void> PatternPresetFileStore::renameFolder(
         ) ||
         !formatChildDirectory(
             directory_, newFolderName, destination, sizeof(destination)
-        ) ||
-        std::strcmp(source, destination) == 0) {
+        )) {
         return oc::type::Result<void>::err({
             oc::type::ErrorCode::INVALID_ARGUMENT,
             "invalid pattern folder rename",
         });
+    }
+    if (std::strcmp(source, destination) == 0) {
+        const auto current = files_.stat(source);
+        if (!current) return oc::type::Result<void>::err(current.error());
+        return current.value().type == oc::interface::FileType::DIRECTORY
+            ? oc::type::Result<void>::ok()
+            : oc::type::Result<void>::err({
+                oc::type::ErrorCode::INVALID_ARGUMENT, "not a pattern folder"});
     }
     auto acquired = files_.acquireMutation(ProductMutationOwner::ASSET);
     if (!acquired) return oc::type::Result<void>::err(acquired.error());

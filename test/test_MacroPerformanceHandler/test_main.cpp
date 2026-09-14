@@ -1659,18 +1659,8 @@ void test_macro_slot_selection_pastes_sparse_footprint_atomically() {
     assert(h.state.macroUi.slotSelection.placing.get());
     assert(h.state.macroUi.slotSelection.overwriteCount == 2U);
 
-    assert(h.state.undoProjectHistory());
-    assert(h.state.pages.currentEnabledPageMask() == 0x0001U);
-    assert(!test_support::project_control::readSlot(
-        h.state.pages.control,
-        {.track = 0U, .page = 1U, .macro = 2U}
-    ).present());
-    assert(h.state.redoProjectHistory());
-    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
-    assert(h.state.pages.pageData(0U, 1U).isMacroActive(2U));
-    assert(h.state.pages.pageData(0U, 1U).isMacroActive(5U));
-    assert(h.state.pages.pageData(0U, 1U).cc[2U] == 10U);
-    assert(h.state.pages.pageData(0U, 1U).cc[5U] == 13U);
+    assert(!h.state.undoProjectHistory());
+    assert(h.state.projectHistory.undoCount() == static_cast<uint8_t>(undoBefore + 1U));
 
     h.press(Config::ButtonID::LEFT_TOP);
     h.release(Config::ButtonID::LEFT_TOP);
@@ -1691,6 +1681,19 @@ void test_macro_slot_selection_pastes_sparse_footprint_atomically() {
     h.press(Config::ButtonID::LEFT_TOP);
     h.release(Config::ButtonID::LEFT_TOP);
     assert(!h.state.macroUi.slotSelection.active.get());
+
+    assert(h.state.undoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0001U);
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 2U}
+    ).present());
+    assert(h.state.redoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(h.state.pages.pageData(0U, 1U).isMacroActive(2U));
+    assert(h.state.pages.pageData(0U, 1U).isMacroActive(5U));
+    assert(h.state.pages.pageData(0U, 1U).cc[2U] == 10U);
+    assert(h.state.pages.pageData(0U, 1U).cc[5U] == 13U);
 
     drainNotifications();
     std::cout
@@ -1852,6 +1855,12 @@ void test_macro_track_selection_copies_the_complete_global_track() {
     );
     assert(modulationBindingCountAt(h.state, 1U, 0U, 2U) == 1U);
 
+    assert(!h.state.undoProjectHistory());
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.trackNavigation.selection.active.get());
     assert(h.state.undoProjectHistory());
     assert(h.state.currentSharedTrackEnabledMask() == 0x0001U);
     assert(!h.state.pages.pageData(1U, 0U).isMacroActive(2U));
@@ -1910,7 +1919,36 @@ void test_nav_routing_preserves_overlap_precedence_and_fallback() {
 
 }  // namespace
 
+void test_capture_owns_history_until_its_release() {
+    MacroPerformanceHarness h;
+    const core::state::macro::MacroAutomationSlotAddress address{.track=0, .page=0, .macro=1};
+    auto change = h.state.macroHistory.prepare(
+        h.state.pages, address, core::state::macro::MacroHistoryActionKind::PASTE_DESTINATION);
+    assert(change);
+    auto& page = h.state.pages.pageData(0U, 0U);
+    page.setMacroActive(1U, true);
+    page.cc[1] = 74U;
+    h.state.pages.updateActiveConfigs();
+    assert(h.state.macroHistory.commitPrepared(h.state.pages, std::move(change)));
+    const auto revision = h.state.projectHistory.revision.get();
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.macroUi.automationTake.phase == core::state::macro::MacroAutomationTakePhase::ARMED);
+    assert(!h.state.undoProjectHistory());
+    assert(!h.state.redoProjectHistory());
+    assert(h.state.projectHistory.revision.get() == revision);
+    assert(page.cc[1] == 74U);
+    assert(h.state.macroUi.automationTake.phase == core::state::macro::MacroAutomationTakePhase::ARMED);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.tick(2U);
+    assert(h.state.macroUi.automationTake.phase == core::state::macro::MacroAutomationTakePhase::IDLE);
+    assert(h.state.undoProjectHistory());
+    assert(h.state.redoProjectHistory());
+    assert(page.cc[1] == 74U);
+    drainNotifications();
+}
+
 int main() {
+    test_capture_owns_history_until_its_release();
     test_nav_routing_preserves_overlap_precedence_and_fallback();
     test_nav_turn_switches_enabled_macro_page_directly();
     test_nav_focus_track_turn_switches_context_to_highlighted_macro_track();

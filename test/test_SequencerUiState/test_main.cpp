@@ -327,7 +327,7 @@ void test_clip_launcher_navigation_is_spatial_and_scrolls_one_item() {
     assert(state.focusedSlot == 0U);
 }
 
-void test_clip_launcher_quick_control_is_bounded_and_expires() {
+void test_clip_launcher_quick_control_has_an_explicit_exit() {
     namespace seq = core::state::sequencer;
     seq::ClipWorkspaceUiState state;
     state.reset(0U);
@@ -342,17 +342,10 @@ void test_clip_launcher_quick_control_is_bounded_and_expires() {
     assert(state.quickAction == seq::ClipWorkspaceQuickAction::FOLLOW);
     state.moveQuickAction(-1);
     assert(state.quickAction == seq::ClipWorkspaceQuickAction::LENGTH);
-    state.armQuickProperty(100U);
+    state.armQuickProperty();
     assert(!state.quickSelectorVisible);
     assert(state.quickPropertyArmed);
-    assert(state.quickFeedbackVisible);
-
-    const uint32_t deadline =
-        100U + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS;
-    state.updateQuickFeedback(deadline - 1U);
-    assert(state.quickFeedbackVisible);
-    state.updateQuickFeedback(deadline);
-    assert(!state.quickFeedbackVisible);
+    state.clearQuickControl();
     assert(!state.quickPropertyArmed);
     assert(state.quickAction == seq::ClipWorkspaceQuickAction::EDIT);
 }
@@ -612,7 +605,7 @@ int main() {
     test_history_rejection_feedback_is_typed_exact_and_expires();
     test_track_paste_has_one_bounded_revision_subscription_surface();
     test_clip_launcher_navigation_is_spatial_and_scrolls_one_item();
-    test_clip_launcher_quick_control_is_bounded_and_expires();
+    test_clip_launcher_quick_control_has_an_explicit_exit();
     test_clip_launcher_operation_feedback_expires();
     test_clip_launcher_returns_to_the_exact_clip_address();
     test_clip_launcher_placement_navigation_moves_across_tracks();

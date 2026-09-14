@@ -1,0 +1,25 @@
+# Purpose: elapsed time cannot silently change OPT from value edit to navigation.
+# Back ends the live property mode; the following Back reaches the global root.
+# Expect: capture_match:edited=persisted
+# Expect: capture_changed:edited=later_edit, capture_changed:later_edit=back
+# Expect: semantic:later_edit:effect=edit_clip_quick_property, semantic:later_edit:property=length
+# Expect: semantic:back:mode=sequencer.clip_launcher, semantic:back:effect=cancel_clip_operation
+# Expect: semantic:navigated:effect=focus_launcher_row, semantic:navigated:property=vertical_focus
+# Expect: semantic:selector:mode=view_selector
+
+0 scenario clip-launcher-v3
+180 encoder NAV 0.01
+500 button LEFT_CENTER down
+700 encoder NAV 0.01
+900 button LEFT_CENTER up
+1100 encoder OPT 0.20
+1500 capture screen edited
+5000 capture screen persisted
+5100 encoder OPT 0.40
+5300 capture screen later_edit
+5500 tap LEFT_TOP 60
+5800 capture screen back
+6000 encoder OPT 0.01
+6300 capture screen navigated
+6500 tap LEFT_TOP 60
+6800 capture screen selector

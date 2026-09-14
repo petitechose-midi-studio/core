@@ -37,7 +37,8 @@ class MacroMidiCcRuntimeAdapter;
  * - Long press on macro button opens MacroEdit for that macro
  * - Main overlay: NAV turn (focus row), OPT turn (overlay-local value edit), NAV press (open value selector)
  * - Value selector: NAV turn (navigate), NAV release (apply and close)
- * - LEFT_TOP closes overlay and commits the buffered edit
+ * - LEFT_TOP in the selector cancels only that choice and returns to the editor
+ * - LEFT_TOP in the main editor closes it and commits the buffered edit
  */
 class MacroEditHandler {
 public:
@@ -95,8 +96,6 @@ private:
     void moveFocus(float delta);
     void setFocusedValue(float normalized);
     void openValueSelector();
-    void navigateValueSelector(float delta);
-    void applyValueSelectorAndClose();
 
     void beginContextSelector();
     void endContextSelector();

@@ -871,6 +871,121 @@ void test_active_step_draft_blocks_local_and_global_history_before_boundaries() 
         << "[PASS] active Step Draft blocks local/global History before boundaries\n";
 }
 
+void test_history_admission_is_pure_and_independent_of_view() {
+    using State = core::state::CoreState;
+    using Reason = project::ProjectHistoryBlockReason;
+    using Phase = core::state::MacroEditFlowPhase;
+    using Node = project::ProjectNodeId;
+    struct Case {
+        const char* name;
+        Reason reason;
+        void (*toggle)(State&, bool);
+    };
+    const Case cases[] = {
+        {"CC settings", Reason::DRAFT, [](State& s, bool on) {
+            s.sequencer.ccLaneUi.mode = on ? seq::SequencerCcLaneUiMode::LANE_SETTINGS : seq::SequencerCcLaneUiMode::CLOSED;
+        }},
+        {"CC transition", Reason::DRAFT, [](State& s, bool on) {
+            s.sequencer.ccLaneUi.mode = on ? seq::SequencerCcLaneUiMode::TRANSITION_PICKER : seq::SequencerCcLaneUiMode::CLOSED;
+        }},
+        {"Drum draft", Reason::DRAFT, [](State& s, bool on) { s.sequencer.drumSequencer.laneEditor.active = on; }},
+        {"Track type", Reason::DRAFT, [](State& s, bool on) {
+            s.projectTrackEditor.active = on;
+            s.projectTrackEditor.draftKind = on ? project::ProjectTrackEditorKind::DRUM : s.projectTrackEditor.currentKind;
+        }},
+        {"Track keyboard", Reason::DRAFT, [](State& s, bool on) { s.projectTrackEditor.textEditing = on; }},
+        {"Macro capture", Reason::CAPTURE, [](State& s, bool on) {
+            s.macroUi.automationTake.phase = on ? macro::MacroAutomationTakePhase::ARMED : macro::MacroAutomationTakePhase::IDLE;
+        }},
+        {"Track selection", Reason::SELECTION, [](State& s, bool on) { s.trackNavigation.selection.active.set(on); }},
+        {"Macro page selection", Reason::SELECTION, [](State& s, bool on) { s.macroUi.pageSelection.active.set(on); }},
+        {"Macro slot selection", Reason::SELECTION, [](State& s, bool on) { s.macroUi.slotSelection.active.set(on); }},
+        {"Pattern selection", Reason::SELECTION, [](State& s, bool on) { s.sequencer.structureUi.pageSelection.active.set(on); }},
+        {"Step selection", Reason::SELECTION, [](State& s, bool on) { s.sequencer.structureUi.stepSelection.active.set(on); }},
+        {"Drum selection", Reason::SELECTION, [](State& s, bool on) { s.sequencer.drumSequencer.laneSelection.active = on; }},
+        {"Clip placement", Reason::SELECTION, [](State& s, bool on) {
+            s.sequencer.clipWorkspace.operation = on ? seq::ClipWorkspaceOperation::MOVE_DESTINATION : seq::ClipWorkspaceOperation::BROWSE;
+        }},
+        {"Paste button", Reason::GESTURE, [](State& s, bool on) { s.sequencer.structureUi.trackPaste.buttonOwned = on; }},
+        {"Paste details", Reason::GESTURE, [](State& s, bool on) { s.sequencer.structureUi.trackPaste.detailVisible = on; }},
+        {"Project hold", Reason::GESTURE, [](State& s, bool on) { s.projectNavigation.physicalHoldActive.set(on); }},
+        {"Macro context", Reason::GESTURE, [](State& s, bool on) { s.macroUi.contextSelector.visible = on; }},
+        {"Pattern context", Reason::GESTURE, [](State& s, bool on) { s.sequencer.contextSelector.visible = on; }},
+        {"Pattern quick selector", Reason::GESTURE, [](State& s, bool on) { s.sequencer.patternQuickControls.selecting.set(on); }},
+        {"Step content selector", Reason::GESTURE, [](State& s, bool on) { s.sequencer.stepContentSelector.selecting.set(on); }},
+        {"Step property selector", Reason::GESTURE, [](State& s, bool on) { s.sequencer.stepPropertyInlineSelector.selecting.set(on); }},
+        {"Clip quick selector", Reason::GESTURE, [](State& s, bool on) { s.sequencer.clipWorkspace.quickSelectorVisible = on; }},
+        {"Clip stop", Reason::GESTURE, [](State& s, bool on) { s.sequencer.clipWorkspace.stopLayerActive = on; }},
+        {"Project guard", Reason::GESTURE, [](State& s, bool on) {
+            core::state::contextual::GuardedActionState guard{};
+            if (on) guard.phase = core::state::contextual::GuardedActionPhase::ARMED;
+            s.projectNavigation.modulatorGuard.set(guard);
+        }},
+        {"Macro destination", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.macroEdit.flowPhase.set(on ? Phase::EDIT : Phase::CLOSED); }},
+        {"Macro conversion", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.macroEdit.flowPhase.set(on ? Phase::CONVERT_PREVIEW : Phase::CLOSED); }},
+        {"Pattern owner", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.sequencer.patternEditor.active.set(on); }},
+        {"Preset browser", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.sequencer.presetLibrary.visible.set(on); }},
+        {"Device child", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.deviceSettings.selector.visible.set(on); }},
+        {"Pitch child", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.patternPitchSettings.selector.visible.set(on); }},
+        {"Project keyboard", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.projectNavigation.currentNode.set(on ? Node::SAVE_AS_PROJECT_NAME : Node::OVERVIEW_ROOT); }},
+        {"Modulator keyboard", Reason::LOCAL_EDITOR, [](State& s, bool on) { s.projectNavigation.currentNode.set(on ? Node::MODULATOR_SOURCE_RENAME : Node::OVERVIEW_ROOT); }},
+        {"Project replacement", Reason::PROJECT_CHANGE, [](State& s, bool on) { s.projectNavigation.currentNode.set(on ? Node::NEW_PROJECT_CONFIRM : Node::OVERVIEW_ROOT); }},
+        {"Project load", Reason::PROJECT_CHANGE, [](State& s, bool on) { s.projectNavigation.currentNode.set(on ? Node::LOAD_PROJECT : Node::OVERVIEW_ROOT); }},
+        {"Queued preset", Reason::PRESET_PREVIEW, [](State& s, bool on) {
+            s.sequencer.patternPresetPreview.phase = on ? seq::SequencerPatternPresetPreviewPhase::NEXT_LOOP : seq::SequencerPatternPresetPreviewPhase::INACTIVE;
+        }},
+    };
+    unsigned checked = 0U;
+    for (const auto& item : cases) {
+        for (const auto view : {core::ui::ViewType::MACRO, core::ui::ViewType::CLIPS,
+                               core::ui::ViewType::PROJECT, core::ui::ViewType::MODULATORS,
+                               core::ui::ViewType::DEVICE_SETTINGS}) {
+            Harness h;
+            recordMacroDestination(h.state, 74U);
+            recordMacroDestination(h.state, 75U);
+            assert(h.state.undoProjectHistory());
+            preparePendingPatternEdit(h.state);
+            h.state.activeView.set(view);
+            item.toggle(h.state, true);
+            const auto before = tx::captureStateInvariant(h.state);
+            const auto undo = h.state.projectHistory.peekUndo()->identity;
+            const auto redo = h.state.projectHistory.peekRedo()->identity;
+            const auto revision = h.state.projectHistory.revision.get();
+            const auto counter = h.state.project.metadata.modifiedCounter;
+            const auto note = h.state.sequencer.pattern().note[0];
+            char label[64]{};
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+#endif
+            if (h.state.projectHistoryBlockReason() != item.reason) {
+                std::cerr << item.name << " view=" << int(view)
+                          << " expected=" << int(item.reason)
+                          << " actual=" << int(h.state.projectHistoryBlockReason()) << '\n';
+            }
+            assert(h.state.projectHistoryBlockReason() == item.reason);
+            h.state.formatProjectHistoryLabel(project::ProjectHistoryDirection::Undo, label, sizeof(label));
+            assert(std::strstr(label, project::projectHistoryBlockLabel(item.reason)));
+            assert(!h.state.prepareProjectHistoryInteraction());
+            assert(!h.state.undoProjectHistory());
+            assert(!h.state.redoProjectHistory());
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+#endif
+            tx::assertStateInvariant(h.state, before);
+            assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+            assert(h.state.projectHistory.peekUndo()->identity == undo);
+            assert(h.state.projectHistory.peekRedo()->identity == redo);
+            assert(h.state.projectHistory.revision.get() == revision);
+            assert(h.state.project.metadata.modifiedCounter == counter);
+            assert(h.state.sequencer.pattern().note[0] == note);
+            item.toggle(h.state, false);
+            assert(h.state.projectHistoryBlockReason() == Reason::NONE);
+            ++checked;
+        }
+    }
+    std::cout << "[PASS] " << checked << " admission cases preserve drafts, pending edits and both history identities\n";
+}
+
 }  // namespace
 
 int main() {
@@ -891,6 +1006,7 @@ int main() {
     test_empty_and_typed_labels_follow_history_revision();
     test_remaining_project_settings_labels_survive_sync_cleanup();
     test_active_step_draft_blocks_local_and_global_history_before_boundaries();
+    test_history_admission_is_pure_and_independent_of_view();
 
     std::cout << "\nAll ProjectHistoryCoordinator tests passed.\n";
     return 0;

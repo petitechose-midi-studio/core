@@ -88,7 +88,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
                 canOpenStepPresets(sequencer_);
         })
         .then([this]() {
-            preset_open_release_latch_.arm(Config::ButtonID::NAV);
+            preset_release_latch_.arm(Config::ButtonID::NAV);
             openStepPresetLibrary();
         });
 
@@ -105,7 +105,7 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         })
         .then([this]() {
             if (chord_presets_.captureTarget().valid) {
-                preset_open_release_latch_.arm(Config::ButtonID::NAV);
+                preset_release_latch_.arm(Config::ButtonID::NAV);
                 openChordPresetLibrary();
             }
         });
@@ -313,14 +313,14 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
             // during the scope transition. In that case the next deliberate
             // press proves the old gesture ended and clears the stale latch
             // before its matching release is handled.
-            (void)preset_open_release_latch_.consume(Config::ButtonID::NAV);
+            (void)preset_release_latch_.consume(Config::ButtonID::NAV);
         });
 
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(preset_library_overlay_scope_)
         .then([this]() {
-            if (preset_open_release_latch_.consume(Config::ButtonID::NAV)) {
+            if (preset_release_latch_.consume(Config::ButtonID::NAV)) {
                 return;
             }
             enterPresetLibraryDetail();
@@ -339,15 +339,23 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .press()
         .scope(preset_library_overlay_scope_)
-        .then([this]() { preset_library_.setTextShift(true); });
+        .then([this]() {
+            (void)preset_release_latch_.consume(Config::ButtonID::LEFT_CENTER);
+            if (preset_library_.textEditing()) {
+                preset_release_latch_.arm(Config::ButtonID::LEFT_CENTER);
+            }
+            preset_library_.setTextShift(true);
+        });
 
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .release()
         .scope(preset_library_overlay_scope_)
         .then([this]() {
-            const bool wasEditing = preset_library_.textEditing();
+            const bool ownedByKeyboard =
+                preset_release_latch_.consume(Config::ButtonID::LEFT_CENTER) ||
+                preset_library_.textEditing();
             preset_library_.setTextShift(false);
-            if (!wasEditing) cyclePatternPresetLibrarySource();
+            if (!ownedByKeyboard) cyclePatternPresetLibrarySource();
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)

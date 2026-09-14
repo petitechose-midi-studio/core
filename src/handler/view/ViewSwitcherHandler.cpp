@@ -102,14 +102,22 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
     buttons_.button(ButtonID::LEFT_CENTER)
         .release()
         .scope(view_selector_scope_)
-        .when([this]() { return core_state_.projectHistory.canUndo(); })
-        .then([this]() { undoProjectHistory(); });
+        .when([this]() {
+            return core_state_.projectHistory.canUndo() &&
+                core_state_.projectHistoryBlockReason() ==
+                    core::state::project::ProjectHistoryBlockReason::NONE;
+        })
+        .then([this]() { (void)core_state_.undoProjectHistory(); });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .release()
         .scope(view_selector_scope_)
-        .when([this]() { return core_state_.projectHistory.canRedo(); })
-        .then([this]() { redoProjectHistory(); });
+        .when([this]() {
+            return core_state_.projectHistory.canRedo() &&
+                core_state_.projectHistoryBlockReason() ==
+                    core::state::project::ProjectHistoryBlockReason::NONE;
+        })
+        .then([this]() { (void)core_state_.redoProjectHistory(); });
 }
 
 FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
@@ -123,54 +131,13 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
         if (button != leftTop && buttons_.isPressed(button)) return false;
     }
 
-    // Local structure-selection state owns LEFT_TOP before the global view
-    // selector, independently of which performance view is visible.
-    if (core_state_.trackNavigation.selection.active.get() ||
-        core_state_.macroUi.pageSelection.active.get() ||
-        core_state_.macroUi.slotSelection.active.get() ||
-        core_state_.sequencer.structureUi.pageSelection.active.get() ||
-        core_state_.sequencer.structureUi.stepSelection.active.get()) {
-        return false;
-    }
-    const auto activeView = core_state_.activeView.get();
-    if (activeView != core::ui::ViewType::CLIPS) {
-        if (activeView == core::ui::ViewType::MACRO) {
-            return core_state_.macroUi.performanceOverlayMode.get() ==
-                       core::state::macro::MacroPerformanceOverlayMode::NONE &&
-                   core_state_.macroUi.automationTake.phase ==
-                       core::state::macro::MacroAutomationTakePhase::IDLE &&
-                   !core_state_.macroUi.contextSelector.visible &&
-                   !core_state_.trackNavigation.hold.active() &&
-                   !core_state_.macroUi.pageHold.active();
-        }
-        if (core::ui::isProjectWorkspaceView(activeView)) {
-            const auto& navigation = core_state_.projectNavigation;
-            const auto node = navigation.currentNode.get();
-            return !navigation.physicalHoldActive.get() &&
-                   !core_state_.pages.control.audition.active() &&
-                   !navigation.creatingModulatorSource &&
-                   !navigation.modulatorReturn.active() &&
-                   !core::state::project::projectNavigationInProjectConfirmation(
-                       navigation
-                   ) &&
-                   node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME;
-        }
-        return true;
-    }
+    if (core_state_.projectHistoryBlockReason() !=
+        core::state::project::ProjectHistoryBlockReason::NONE) return false;
 
-    // Clips is the first-rank workspace. Its matrix is the root that owns the
-    // global selector; every Pattern route must unwind locally back to that
-    // matrix first.
-    const auto& clipWorkspace = core_state_.sequencer.clipWorkspace;
-    if (!clipWorkspace.matrixVisible() || clipWorkspace.selectionActive() ||
-        clipWorkspace.editorActive() ||
-        core_state_.sequencer.drumSequencer.pickerVisible()) {
-        return false;
-    }
-    const auto& paste = core_state_.sequencer.structureUi.trackPaste;
-    return !core_state_.trackNavigation.hold.active() &&
-           !core_state_.sequencer.structureUi.pageHold.active() &&
-           !paste.buttonOwned && !paste.gestureActive() && !paste.detailVisible;
+    // Back in a Pattern or armed Clips property belongs to that local route.
+    return core_state_.activeView.get() != core::ui::ViewType::CLIPS ||
+           (core_state_.sequencer.clipWorkspace.matrixVisible() &&
+            !core_state_.sequencer.clipWorkspace.quickPropertyArmed);
 }
 
 FLASHMEM bool ViewSwitcherHandler::beginSelectorPress() {
@@ -261,14 +228,6 @@ FLASHMEM void ViewSwitcherHandler::confirmSelection() {
 FLASHMEM void ViewSwitcherHandler::closeSelector() {
     overlays_.hide();
     confirmSelection();
-}
-
-FLASHMEM void ViewSwitcherHandler::undoProjectHistory() {
-    (void)core_state_.undoProjectHistory();
-}
-
-FLASHMEM void ViewSwitcherHandler::redoProjectHistory() {
-    (void)core_state_.redoProjectHistory();
 }
 
 }  // namespace core::handler

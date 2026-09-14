@@ -31,4 +31,21 @@ bool textKeyboardAppend(
 bool textKeyboardBackspace(char* buffer);
 bool textKeyboardClear(char* buffer);
 
+/** RAW OPT positions shared by Project, Track and Drum Lane name editors.
+ * Positive motion moves up; fractional rows survive until a full row is reached.
+ * Reset together with the encoder position. The owner notifies only on movement
+ * and retains responsibility for text, validation, publication and closing.
+ */
+struct TextKeyboardRowInput {
+    float position = 0.0f;
+    float remainder = 0.0f;
+
+    bool move(uint8_t& keyIndex, float rawPosition);
+    bool operator==(const TextKeyboardRowInput& other) const {
+        return position == other.position && remainder == other.remainder;
+    }
+};
+
+static_assert(sizeof(TextKeyboardRowInput) == 2U * sizeof(float));
+
 }  // namespace core::state::interaction
