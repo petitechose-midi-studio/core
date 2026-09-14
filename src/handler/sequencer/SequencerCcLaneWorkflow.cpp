@@ -399,22 +399,15 @@ FLASHMEM SequencerCcLaneWorkflow::PatternChangePtr SequencerCcLaneWorkflow::prep
     return change;
 }
 
-FLASHMEM bool SequencerCcLaneWorkflow::captureAfterFromBank_(
-    seq::SequencerHistoryPatternChange& change, const seq::SequencerCcLaneBank* bank) {
-    if (!seq::captureHistorySnapshotUsingReservedGraph(editor_, change.after) ||
-        !seq::captureSequencerCcLaneBankUsingReservedStorage(bank, change.after.ccLanes)) {
-        return false;
-    }
-    change.after.ccLanesCaptured = true;
-    return true;
-}
-
 FLASHMEM bool SequencerCcLaneWorkflow::installPreparedChange_(PatternChangePtr change,
                                                               LaneBankPtr bank) {
-    if (!change || !captureAfterFromBank_(*change, bank.get()) ||
-        !history_.canRecordPattern(*change)) {
+    // Finish the detached after-image and admit its history before publishing.
+    if (!change || !seq::captureHistorySnapshotUsingReservedGraph(editor_, change->after) ||
+        !seq::captureSequencerCcLaneBankUsingReservedStorage(bank.get(), change->after.ccLanes)) {
         return false;
     }
+    change->after.ccLanesCaptured = true;
+    if (!history_.canRecordPattern(*change)) return false;
     seq::installSequencerCcLaneBank(editor_.pattern(), std::move(bank));
     history_.recordPreparedPattern(std::move(change));
     return true;
@@ -624,27 +617,21 @@ FLASHMEM bool SequencerCcLaneWorkflow::applyTransition(uint32_t nowMs) {
         seq::sequencerCcLaneTransition(staged->lanes[ui.focusedLane], ui.transitionStep);
     const auto mutation = seq::setSequencerCcLaneTransition(
         *staged, ui.focusedLane, ui.transitionStep, ui.selectedTransition);
-    if (mutation.status == seq::SequencerCcLaneMutationStatus::NO_CHANGE) {
-        ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
-        ui.compactTransitionPicker = false;
-        ui.transitionAppliedFeedback = true;
-        publishFeedback_(ActionId::EDIT, contextual::OperationFeedbackStatus::APPLIED, Reason::NONE,
-                         contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION, nowMs, 650);
-        refreshProjection();
-        return true;
-    }
-    if (!mutation.changed()) return false;
-    auto change = prepareChange_(seq::SequencerHistoryActionKind::CcLaneTransitionEdit,
-                                 ui.focusedLane, ui.transitionStep);
-    if (!change) {
-        block_(ActionId::EDIT, Reason::ALLOCATION_UNAVAILABLE, nowMs);
-        return false;
-    }
-    change->descriptor.hasValue = true;
-    change->descriptor.beforeValue = static_cast<int32_t>(before);
-    change->descriptor.afterValue = static_cast<int32_t>(ui.selectedTransition);
-    if (!installPreparedChange_(std::move(change), std::move(staged))) {
-        block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
+    if (mutation.changed()) {
+        auto change = prepareChange_(seq::SequencerHistoryActionKind::CcLaneTransitionEdit,
+                                     ui.focusedLane, ui.transitionStep);
+        if (!change) {
+            block_(ActionId::EDIT, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+            return false;
+        }
+        change->descriptor.hasValue = true;
+        change->descriptor.beforeValue = static_cast<int32_t>(before);
+        change->descriptor.afterValue = static_cast<int32_t>(ui.selectedTransition);
+        if (!installPreparedChange_(std::move(change), std::move(staged))) {
+            block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
+            return false;
+        }
+    } else if (mutation.status != seq::SequencerCcLaneMutationStatus::NO_CHANGE) {
         return false;
     }
     ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;

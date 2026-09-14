@@ -12,8 +12,7 @@ namespace seq = core::state::sequencer;
 namespace shared = core::state::shared;
 
 FLASHMEM SequencerCcLaneDomainServices::SequencerCcLaneDomainServices(StateRefs state)
-    : editor_(state.editor)
-    , tracks_(state.tracks)
+    : tracks_(state.tracks)
     , project_tracks_(state.projectTracks)
     , macro_pages_(state.macroPages) {}
 

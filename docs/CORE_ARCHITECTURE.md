@@ -26,7 +26,6 @@ not call handlers or depend on LVGL.
 
 | Folder | Owns | Must not own |
 | --- | --- | --- |
-| `src/api` | small product facades over OpenControl input APIs | domain workflow or mutable state |
 | `src/app` | allocation helpers and application-level types | product workflows |
 | `src/config` | platform-independent constants and input IDs | mutable domain state |
 | `src/context` | feature assembly, scopes, overlays, presenters, service wiring | duplicated domain rules |
@@ -189,6 +188,9 @@ comparison against the configured FLASH/RAM/PSRAM gates, and focused hardware
 evidence when timing or physical interaction is involved.
 
 ## New-developer path
+
+For a concrete walkthrough, follow [one CC Lane edit](CC_LANE_FEATURE.md) from
+its physical input through history, runtime publication and UI projection.
 
 1. Read this map and [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md).
 2. Read [INPUT_BINDINGS.md](INPUT_BINDINGS.md) before touching a physical

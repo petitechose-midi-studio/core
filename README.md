@@ -133,7 +133,6 @@ The main source tree is:
 
 ```text
 src/
-  api/          product facades over OpenControl input APIs
   app/          application allocation and shared app-level types
   config/       constants, timing and physical input IDs
   context/      composition, scopes, overlays, presenters and wiring
@@ -179,6 +178,7 @@ For code-local contracts and review rules, start with:
 - [docs/README.md](docs/README.md)
 - [docs/DEVELOPER_ONBOARDING.md](docs/DEVELOPER_ONBOARDING.md)
 - [docs/CORE_ARCHITECTURE.md](docs/CORE_ARCHITECTURE.md)
+- [docs/CC_LANE_FEATURE.md](docs/CC_LANE_FEATURE.md)
 - [docs/ARCHITECTURE_REVIEW_RULES.md](docs/ARCHITECTURE_REVIEW_RULES.md)
 
 Cross-repository roadmaps, ADRs, and audit evidence live in the canonical
