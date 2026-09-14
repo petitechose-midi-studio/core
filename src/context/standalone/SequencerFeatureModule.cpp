@@ -581,7 +581,6 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         },
         core::handler::SequencerCcLaneDomainServices{
             core::handler::SequencerCcLaneDomainServices::StateRefs{
-                stateRefs.sequencer,
                 stateRefs.sequencerTracks,
                 stateRefs.projectTracks,
                 stateRefs.macroPages,

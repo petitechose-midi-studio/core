@@ -13,6 +13,9 @@ Read these first, in order:
 5. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
 6. [CODE_STYLE.md](CODE_STYLE.md)
 
+Then follow [one CC Lane edit through Core](CC_LANE_FEATURE.md) for a concrete
+example of input ownership, mutation, history, playback and rendering.
+
 Architecture contracts should live as close as possible to the code they
 constrain. Put durable "why" comments in `.hpp` files when a reader needs the
 contract before editing an API. Keep `.cpp` comments short and local to
@@ -28,7 +31,6 @@ Main code areas in this repo:
 
 ```text
 src/
-  api/          small product facades over OpenControl input APIs
   app/          application allocation and shared app-level types
   config/       configuration, timing and physical input IDs
   context/      composition roots, scopes, overlays, presenters and wiring

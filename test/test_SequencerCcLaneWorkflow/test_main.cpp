@@ -64,7 +64,7 @@ struct Harness {
         storages.settings,
     };
     core::handler::SequencerCcLaneDomainServices services{
-        {state.sequencer, state.sequencerTracks, state.projectTracks, nullptr}
+        {state.sequencerTracks, state.projectTracks, nullptr}
     };
     core::handler::SequencerCcLaneWorkflow workflow{
         {state.sequencer,
@@ -827,8 +827,7 @@ void test_slot_defaults_conflicts_and_macro_arbitration_are_direct() {
     // Both the inherited Lane and active Macro route resolve through
     // ProjectTrackState.
     core::handler::SequencerCcLaneDomainServices macroServices{
-        {macroHarness.state.sequencer,
-         macroHarness.state.sequencerTracks,
+        {macroHarness.state.sequencerTracks,
          macroHarness.state.projectTracks,
          &macroHarness.state.pages}
     };
@@ -1084,6 +1083,27 @@ void test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar() {
     std::cout << "[PASS] CC NAV tap/hold/hold-turn grammar is unambiguous\n";
 }
 
+void test_reselecting_transition_closes_picker_without_a_musical_edit() {
+    for (const bool compact : {false, true}) {
+        Harness h;
+        createDefaultLane(h);
+        assert(h.workflow.toggleFocusedEvent(100U));
+        const auto undoBefore = h.state.sequencerHistory.undoCount();
+        const auto revisionBefore = h.state.sequencer.pattern().ccLaneRevision;
+        const auto* bankBefore = seq::sequencerCcLaneView(h.state.sequencer.pattern());
+        assert(compact ? h.workflow.openFocusedTransitionPicker(110U)
+                       : h.workflow.openTransitionPicker(0U, 110U));
+        assert(h.workflow.applyTransition(120U));
+        const auto& ui = h.state.sequencer.ccLaneUi;
+        assert(ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
+        assert(!ui.compactTransitionPicker && ui.transitionAppliedFeedback);
+        assert(h.state.sequencerHistory.undoCount() == undoBefore);
+        assert(h.state.sequencer.pattern().ccLaneRevision == revisionBefore);
+        assert(seq::sequencerCcLaneView(h.state.sequencer.pattern()) == bankBefore);
+        test_support::drainNotifications();
+    }
+}
+
 void test_handler_registers_only_guard_capable_action_presses() {
     Harness h;
 
@@ -1172,6 +1192,7 @@ int main() {
     test_handler_owns_a_centered_directional_opt_contract();
     test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape();
     test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar();
+    test_reselecting_transition_closes_picker_without_a_musical_edit();
     test_handler_registers_only_guard_capable_action_presses();
     test_cc_encoder_routes_preserve_scope_and_mode_gates();
     test_semantic_gesture_classifier_never_claims_early_hold_mutation();

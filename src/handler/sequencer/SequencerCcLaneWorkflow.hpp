@@ -14,6 +14,13 @@ class MidiCcGlobalFrameCoordinator;
 
 namespace core::handler {
 
+/** CC authoring shared by the main grid and overlay input scopes.
+ * Mutate a detached bank, obtain history admission, then publish to the Pattern.
+ * Immediate actions record once; encoder edits share a pending history entry
+ * while each accepted value is already live. CoreState owns its commit boundary.
+ * refreshProjection() derives editor feedback; it neither renders nor sends MIDI.
+ * See docs/CC_LANE_FEATURE.md for the input, ownership and playback path.
+ */
 class SequencerCcLaneWorkflow {
 public:
     struct StateRefs {
@@ -81,10 +88,6 @@ private:
         core::state::sequencer::SequencerHistoryActionKind kind,
         uint8_t lane,
         uint8_t step = core::state::sequencer::SequencerHistoryDescriptor::INVALID_INDEX
-    );
-    bool captureAfterFromBank_(
-        core::state::sequencer::SequencerHistoryPatternChange& change,
-        const core::state::sequencer::SequencerCcLaneBank* bank
     );
     bool installPreparedChange_(PatternChangePtr change, LaneBankPtr bank);
     bool stageCurrentBank_(LaneBankPtr& out, bool materializeEmpty) const;

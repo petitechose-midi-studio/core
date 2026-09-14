@@ -45,6 +45,8 @@ test runner.
 
 ## 2. Use the ownership model
 
+For a source-linked example, follow [one CC Lane edit](CC_LANE_FEATURE.md).
+
 Read a feature in this order:
 
 ```text
@@ -77,7 +79,6 @@ dependencies.
 
 ```text
 src/
-  api/          small product facades over OpenControl input APIs
   app/          application allocation and shared app-level types
   config/       constants, timing and physical input IDs
   context/      composition, scopes, overlays, presenters and wiring
