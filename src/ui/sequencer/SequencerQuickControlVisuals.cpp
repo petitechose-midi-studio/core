@@ -60,6 +60,68 @@ const char* launcherQuickActionIconGlyph(
     }
 }
 
+void formatLauncherQuickActionValue(
+    char* buffer,
+    size_t size,
+    const core::state::sequencer::ClipWorkspaceUiState& ui,
+    const core::state::sequencer::SequencerClipGridState& clips
+) {
+    if (buffer == nullptr || size == 0U) return;
+    const core::state::sequencer::SequencerClipAddress address{
+        ui.quickTargetTrack,
+        ui.quickTargetSlot,
+    };
+    const auto behavior = ui.quickTargetFocus ==
+            core::state::sequencer::ClipWorkspaceFocus::SCENE
+        ? clips.sceneBehavior(ui.quickTargetSlot)
+        : clips.clipBehavior(address);
+    using Action = core::state::sequencer::ClipWorkspaceQuickAction;
+    switch (ui.quickAction) {
+        case Action::LENGTH:
+            if (behavior.length == 0U) {
+                std::snprintf(buffer, size, "Off");
+            } else {
+                std::snprintf(
+                    buffer,
+                    size,
+                    "%u loop%s",
+                    static_cast<unsigned>(behavior.length), behavior.length == 1U ? "" : "s"
+                );
+            }
+            return;
+        case Action::FOLLOW:
+            formatLauncherFollowChoice(
+                buffer,
+                size,
+                behavior.follow,
+                ui.quickTargetFocus == core::state::sequencer::ClipWorkspaceFocus::SCENE
+            );
+            return;
+        case Action::QUANTIZE:
+            switch (behavior.quantization) {
+                case core::state::sequencer::
+                        SequencerLauncherFollowQuantization::BEAT:
+                    std::snprintf(buffer, size, "1 beat");
+                    break;
+                case core::state::sequencer::
+                        SequencerLauncherFollowQuantization::BAR:
+                    std::snprintf(buffer, size, "1 bar");
+                    break;
+                case core::state::sequencer::
+                        SequencerLauncherFollowQuantization::GLOBAL:
+                default:
+                    std::snprintf(buffer, size, "Global");
+                    break;
+            }
+            return;
+        case Action::EDIT:
+        case Action::COUNT:
+        default:
+            std::snprintf(buffer, size, "Release to open");
+            return;
+    }
+}
+
 void formatLauncherFollowChoice(
     char* buffer,
     size_t size,

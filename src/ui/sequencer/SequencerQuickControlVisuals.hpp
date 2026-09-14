@@ -20,6 +20,12 @@ const char* launcherQuickActionIconGlyph(
     core::state::sequencer::ClipWorkspaceQuickAction action
 );
 
+void formatLauncherQuickActionValue(
+    char* buffer, size_t size,
+    const core::state::sequencer::ClipWorkspaceUiState& ui,
+    const core::state::sequencer::SequencerClipGridState& clips
+);
+
 void formatLauncherFollowChoice(
     char* buffer,
     size_t size,

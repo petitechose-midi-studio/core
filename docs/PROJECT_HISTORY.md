@@ -52,6 +52,9 @@ provides momentary Undo/Redo. Releasing `LEFT_TOP` returns to the same view if
 NAV has not selected another one. The opposite press order keeps the first
 local action's ownership.
 
+In Clips, an armed quick property owns the first Back. That exits its live edit
+mode without reverting the value; the next Back reaches the View Selector.
+
 Labels use `CoreState::formatProjectHistoryLabel()` and the same admission as
 execution. `StandaloneContext` checks for an admission change only while the
 selector is visible. Its small presentation cache avoids a subscriber for each

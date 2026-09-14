@@ -876,6 +876,21 @@ void test_selector_is_not_a_chord_and_recovers_after_release() {
     std::cout << "[PASS] selector is a standalone gesture and recovers cleanly\n";
 }
 
+void test_clip_quick_property_owns_back_before_the_global_selector() {
+    ViewSwitcherHarness h;
+    h.state.activeView.set(core::ui::ViewType::CLIPS);
+    auto& ui = h.state.sequencer.clipWorkspace;
+    ui.focus(0U, 0U);
+    ui.showQuickSelector();
+    ui.moveQuickAction(1);
+    ui.armQuickProperty();
+    assertSelectorStaysClosed(h);
+    // This fixture only hosts the global handler. The Clips handler's Back
+    // path is exercised in test_SequencerStepHandler and the SDL workflow.
+    ui.clearQuickControl();
+    openSelector(h);
+}
+
 }  // namespace
 
 int main() {
@@ -906,6 +921,7 @@ int main() {
     test_selector_waits_until_cc_lane_has_backed_to_root();
     test_selector_defers_to_local_transient_owners();
     test_selector_is_not_a_chord_and_recovers_after_release();
+    test_clip_quick_property_owns_back_before_the_global_selector();
 
     std::cout << "\nAll ViewSwitcherHandler tests passed.\n";
     return 0;

@@ -103,6 +103,11 @@ The Track Editor follows the same rule: Channel and Delay are live/coalesced,
 while Type is an explicit draft. A dirty Type draft retains its opening Track
 until Apply or Cancel; target navigation cannot silently discard it.
 
+Clips and Scene quick properties are live. Their value and Back action stay
+visible for the entire mode; elapsed time never changes OPT from editing to
+navigation. Back keeps the authored edits and ends the mode. NAV, entering a
+Pattern, changing view or losing the target also releases that local owner.
+
 ## Accepted scoped exceptions
 
 | Surface | Exception | Reason |

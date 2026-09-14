@@ -134,9 +134,10 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     if (core_state_.projectHistoryBlockReason() !=
         core::state::project::ProjectHistoryBlockReason::NONE) return false;
 
-    // Back in a Pattern still belongs to its local route, even without a draft.
+    // Back in a Pattern or armed Clips property belongs to that local route.
     return core_state_.activeView.get() != core::ui::ViewType::CLIPS ||
-           core_state_.sequencer.clipWorkspace.matrixVisible();
+           (core_state_.sequencer.clipWorkspace.matrixVisible() &&
+            !core_state_.sequencer.clipWorkspace.quickPropertyArmed);
 }
 
 FLASHMEM bool ViewSwitcherHandler::beginSelectorPress() {

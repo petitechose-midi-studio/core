@@ -1,0 +1,38 @@
+# RAM-only: held global history, persistent Clip property, local Back, global root.
+# Native tests assert exact history/value identities; this checks physical routing
+# and musical/render timing with the same input path on the controller.
+0 scenario bench-macro-v1
+100 transport start
+200 button LEFT_TOP down
+400 encoder_value NAV 0.01
+600 button LEFT_TOP up
+1000 assert_view CLIPS
+1200 encoder_value NAV 0.01
+1500 tap LEFT_BOTTOM 60
+1900 assert_mode sequencer.pattern
+2200 tap MACRO_1 60
+2800 tap LEFT_TOP 60
+3000 button LEFT_TOP down
+3700 tap LEFT_CENTER 60
+4000 assert_mode view_selector
+4200 button LEFT_TOP up
+4500 assert_mode sequencer.clip_launcher
+4700 button LEFT_TOP down
+5400 tap LEFT_BOTTOM 60
+5700 assert_mode view_selector
+5800 button LEFT_TOP up
+6100 assert_mode sequencer.clip_launcher
+6500 button LEFT_CENTER down
+6800 encoder_value NAV 0.01
+7100 button LEFT_CENTER up
+7500 encoder_value OPT 0.50
+8000 marker quick_armed
+10500 encoder_value OPT 0.75
+10800 marker delayed_quick_edit
+11000 tap LEFT_TOP 60
+11400 assert_mode sequencer.clip_launcher
+12000 tap LEFT_TOP 60
+12500 assert_mode view_selector
+12700 tap LEFT_TOP 60
+13100 assert_mode sequencer.clip_launcher
+13300 transport stop

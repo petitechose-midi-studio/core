@@ -72,6 +72,7 @@ remain valid.
 | Surface | Bindings |
 |---|---|
 | View Selector | `NAV` select/confirm, `LEFT_CENTER` Undo, `LEFT_BOTTOM` Redo, `LEFT_TOP` apply/close |
+| Clips / Scene quick property | hold `LEFT_CENTER`, turn `NAV`, release; `OPT` edits the visible property until `LEFT_TOP` or a context change; a second `LEFT_TOP` opens the View Selector |
 | Track Editor | `NAV` field, `OPT` value/type draft, `LEFT_CENTER + NAV` changes Track only with a clean type draft, `LEFT_TOP` Back/Cancel, `BOTTOM_LEFT` Mute, `BOTTOM_RIGHT` Solo or Apply type |
 | Track Paste preflight | `LEFT_CENTER` Summary/Details, `BOTTOM_RIGHT` Copy/Paste and guard |
 | Step Editor | short `NAV` focused-row action; long `NAV` opens the Step Preset library |

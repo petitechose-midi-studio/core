@@ -99,7 +99,6 @@ FLASHMEM void ClipWorkspaceHandler::update() {
     // matrix must never overwrite the context owned by the visible view.
     auto& workspace = core_.sequencer.clipWorkspace;
     const uint32_t nowMs = core::time_compat::millis();
-    workspace.updateQuickFeedback(nowMs);
     workspace.updateFeedback(nowMs);
     if (workspace.removePending()) finishPendingRemove();
     if (core_.activeView.get() != core::ui::ViewType::CLIPS) {
@@ -364,7 +363,8 @@ FLASHMEM void ClipWorkspaceHandler::setupBindings() {
         .scope(scope_id_)
         .priority(120)
         .when([this]() {
-            return operationBackAvailable() || editorAvailable();
+            return operationBackAvailable() || editorAvailable() ||
+                (matrixAvailable() && core_.sequencer.clipWorkspace.quickPropertyArmed);
         })
         .then([this]() {
             if (editorAvailable()) {
@@ -489,7 +489,7 @@ FLASHMEM void ClipWorkspaceHandler::releaseQuickSelector() {
         openFocusedEditor();
         return;
     }
-    ui.armQuickProperty(core::time_compat::millis());
+    ui.armQuickProperty();
 }
 
 FLASHMEM void ClipWorkspaceHandler::openFocusedPattern() {
@@ -557,9 +557,8 @@ FLASHMEM void ClipWorkspaceHandler::editQuickProperty(float normalized) {
         : behavior == core_.sequencerClips.clipBehavior(address) ||
             core_.setSequencerClipBehavior(address, behavior);
     if (accepted) {
-        const uint32_t nowMs = core::time_compat::millis();
         showFeedback(seq::ClipWorkspaceFeedback::NONE);
-        ui.showQuickFeedback(nowMs);
+        ui.bump();
     } else {
         showFeedback(seq::ClipWorkspaceFeedback::FAILED);
         ui.clearQuickControl();
@@ -1122,6 +1121,10 @@ FLASHMEM void ClipWorkspaceHandler::finishPendingRemove() {
 }
 
 FLASHMEM void ClipWorkspaceHandler::back() {
+    if (core_.sequencer.clipWorkspace.quickPropertyArmed) {
+        core_.sequencer.clipWorkspace.clearQuickControl();
+        return;
+    }
     if (operationBackAvailable()) {
         (void)core_.sequencer.clipWorkspace.backOperation();
         syncNavigationFocus();

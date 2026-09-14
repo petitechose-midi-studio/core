@@ -237,6 +237,8 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
             props.contextIconColor =
                 standalone::theme::color::trackColor(focusedTrack);
         } else if (launcher.quickPropertyArmed) {
+            visual::formatLauncherQuickActionValue(
+                props.badgeText.data(), props.badgeText.size(), launcher, source.clips);
             props.contextIcon = visual::launcherQuickActionIconGlyph(
                 launcher.quickAction
             );

@@ -649,7 +649,11 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
 
     h.turn(Config::EncoderID::OPT, 0.5f);
     assert(h.state.sequencerClips.clipBehavior(address).length == 8U);
-    assert(launcher.quickFeedbackVisible);
+    h.tick(g_now_ms + 10000U);
+    assert(launcher.quickPropertyArmed);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencerClips.clipBehavior(address).length == 16U);
+    assert(launcher.focusedSlot == address.slot);
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.tick(g_now_ms + 1U);
@@ -676,15 +680,48 @@ void test_clip_launcher_left_center_arms_quick_property_for_opt() {
     h.turn(Config::EncoderID::OPT, 0.5f);
     assert(h.state.sequencerClips.sceneBehavior(0U).length == 8U);
 
-    h.tick(g_now_ms + Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS);
+    h.tick(g_now_ms + 10000U);
+    assert(launcher.quickPropertyArmed);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencerClips.sceneBehavior(0U).length == 16U);
+    assert(launcher.focusedSlot == 0U);
+    const auto revision = h.state.projectHistory.revision.get();
+    h.tap(Config::ButtonID::LEFT_TOP);
     assert(!launcher.quickPropertyArmed);
-    assert(!launcher.quickFeedbackVisible);
+    assert(h.state.projectHistory.revision.get() == revision);
+    assert(h.state.sequencerClips.sceneBehavior(0U).length == 16U);
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(launcher.sceneFocused());
     assert(launcher.focusedSlot == 1U);
 
     std::cout
         << "[PASS] Clip and Scene LEFT_CENTER arm quick OPT editing\n";
+}
+
+void test_clip_quick_property_ends_when_its_context_changes() {
+    for (int exit = 0; exit < 5; ++exit) {
+        SequencerStepHarness h(true);
+        auto& ui = h.state.sequencer.clipWorkspace;
+        ui.focus(0U, 0U);
+        h.press(Config::ButtonID::LEFT_CENTER);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.release(Config::ButtonID::LEFT_CENTER);
+        assert(ui.quickPropertyArmed);
+        switch (exit) {
+            case 0: h.turn(Config::EncoderID::NAV, 1.0f); break;
+            case 1: ui.focusScene(0U); break;
+            case 2: h.state.activeView.set(core::ui::ViewType::MACRO); break;
+            case 3: h.tap(Config::ButtonID::LEFT_BOTTOM); break;
+            case 4:
+                assert(h.state.duplicateSequencerClip({0U, 0U}, {0U, 1U}));
+                assert(h.state.deleteSequencerClip({0U, 0U}));
+                break;
+        }
+        h.tick(g_now_ms + 1U);
+        assert(!ui.quickPropertyArmed);
+        assert(!ui.quickSelectorVisible);
+    }
+    std::cout << "[PASS] Clip quick property releases changed or removed targets\n";
 }
 
 void test_clip_launcher_behavior_editor_applies_opt_edits_live() {
@@ -9601,6 +9638,7 @@ int main() {
     test_clip_launcher_gestures_separate_selection_properties_and_pattern();
     test_clip_launcher_encoders_navigate_cartesian_axes();
     test_clip_launcher_left_center_arms_quick_property_for_opt();
+    test_clip_quick_property_ends_when_its_context_changes();
     test_clip_launcher_behavior_editor_applies_opt_edits_live();
     test_clip_launcher_direct_pattern_and_short_create_actions();
     test_clip_launcher_performance_actions_fire_on_press();
