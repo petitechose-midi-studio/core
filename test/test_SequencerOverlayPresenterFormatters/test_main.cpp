@@ -206,7 +206,7 @@ void test_picker_action_strip_projects_guard_and_temporary_outcome() {
     const auto data = presenter::buildSequencerPresetLibraryPresentation(
         sequencer
     );
-    assert(std::strcmp(data.meta.data(), "Loaded") == 0);
+    assert(std::strcmp(data.meta.data(), "Loaded into editor") == 0);
 
     std::cout << "[PASS] test_picker_action_strip_projects_guard_and_temporary_outcome\n";
 }
@@ -237,7 +237,7 @@ void test_picker_explains_capacity_storage_and_queued_states() {
     feedback.reason = core::state::contextual::ContextActionReason::STORAGE_UNAVAILABLE;
     picker.operationFeedback.set(feedback);
     data = presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(data.meta.data(), "Failed") == 0);
+    assert(std::strcmp(data.meta.data(), "Storage unavailable") == 0);
 
     feedback.status = core::state::contextual::OperationFeedbackStatus::QUEUED;
     feedback.action = core::state::contextual::ContextActionId::LOAD;
@@ -245,7 +245,7 @@ void test_picker_explains_capacity_storage_and_queued_states() {
     picker.step().descriptor.compatibility = SequencerStepPresetCompatibility::READY;
     picker.operationFeedback.set(feedback);
     data = presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(data.meta.data(), "Next loop") == 0);
+    assert(std::strcmp(data.meta.data(), "Queued for loop boundary") == 0);
     const auto action = presenter::buildSequencerPresetLibraryActionPresentation(
         picker
     );
@@ -308,14 +308,14 @@ void test_picker_revision_tracks_rendered_feedback_identity() {
     picker.operationFeedback.set(feedback);
     const auto storage =
         presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(storage.meta.data(), "Failed") == 0);
+    assert(std::strcmp(storage.meta.data(), "Storage unavailable") == 0);
     assert(storage.dataRevision != idle.dataRevision);
 
     feedback.reason = contextual::ContextActionReason::CORRUPT_ASSET;
     picker.operationFeedback.set(feedback);
     const auto corrupt =
         presenter::buildSequencerPresetLibraryPresentation(sequencer);
-    assert(std::strcmp(corrupt.meta.data(), "Failed") == 0);
+    assert(std::strcmp(corrupt.meta.data(), "Unreadable content") == 0);
     assert(corrupt.dataRevision != storage.dataRevision);
 
     feedback.action = contextual::ContextActionId::SAVE;

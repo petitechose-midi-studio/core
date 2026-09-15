@@ -5,6 +5,7 @@
 #include <ms/ui/font/CoreFonts.hpp>
 #include <oc/time/Time.hpp>
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/strip/ContextActionVisualProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 CoreFonts fonts;
@@ -153,6 +154,36 @@ int main() {
         assert(pixels != wrapped);
         props.slots[0].holdActive = false;
         strip.render(props);
+        if (orientation == ContextActionStripOrientation::HORIZONTAL) {
+            props.slots[1] = makeStructureSelectionCountStripSlot(2);
+            props.hintRight = "OPT: value";
+            const auto before_feedback = props;
+            core::state::contextual::OperationFeedbackState feedback{
+                .active = true,
+                .action = core::state::contextual::ContextActionId::PASTE,
+                .status = core::state::contextual::OperationFeedbackStatus::BLOCKED,
+                .reason = core::state::contextual::ContextActionReason::EMPTY_CLIPBOARD,
+            };
+            describeContextFeedback(props, feedback);
+            assert(props.slots[0].label == before_feedback.slots[0].label);
+            assert(props.slots[2].visualState == before_feedback.slots[2].visualState);
+            assert(props.slots[1].visualState == ContextActionStripVisualState::HIDDEN);
+            assert(props.hintRight == nullptr);
+            strip.render(props);
+            lv_refr_now(display);
+            const auto explained = pixels;
+            draws = 0;
+            strip.render(props);
+            lv_refr_now(display);
+            assert(draws == 0);
+            props = before_feedback;
+            feedback.active = false;
+            describeContextFeedback(props, feedback);
+            assert(props.slots[1].visualState == before_feedback.slots[1].visualState);
+            strip.render(props);
+            lv_refr_now(display);
+            assert(pixels != explained);
+        }
         lv_obj_set_width(parent, 260);
         lv_refr_now(display);
         const auto resized = pixels;

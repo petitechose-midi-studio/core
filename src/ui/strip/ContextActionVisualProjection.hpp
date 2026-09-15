@@ -5,6 +5,7 @@
 #include "state/contextual/OperationFeedbackState.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
+#include "ui/strip/ContextFeedbackPresentation.hpp"
 
 namespace core::ui::context_action_visual_projection {
 
@@ -259,20 +260,16 @@ inline void describeAction(ContextActionStripSlotProps& slot,
     slot.holdOnly = holdOnly;
 }
 
-inline const char* contextActionFeedbackLabel(
+/** Use the explanation row without replacing either physical command. */
+inline void describeContextFeedback(
+    ContextActionStripProps& props,
     const core::state::contextual::OperationFeedbackState& feedback
 ) {
-    using Status = core::state::contextual::OperationFeedbackStatus;
-    if (!feedback.active) return nullptr;
-    switch (feedback.status) {
-        case Status::QUEUED: return "Queued";
-        case Status::APPLIED: return "Applied";
-        case Status::CANCELLED: return "Cancelled";
-        case Status::BLOCKED: return "Blocked";
-        case Status::CONFLICT: return "Conflict";
-        case Status::FAILED: return "Failed";
-        default: return nullptr;
-    }
+    const char* text = contextActionFeedbackText(feedback);
+    if (!props.visible || !text[0]) return;
+    props.slots[1] = {};
+    props.hintLeft = text;
+    props.hintRight = nullptr;
 }
 
 inline void describeAction(ContextActionStripSlotProps& slot,

@@ -109,10 +109,10 @@ FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
         source.clipboard->hasMacroModulationAssignment();
     props.slots[2] = clipboardSlot(canCopy, canPasteAssignment);
     projectGuardedAction(
-        props.slots[0], source, core::state::MacroContextButton::BOTTOM_LEFT
+        props, source, core::state::MacroContextButton::BOTTOM_LEFT
     );
     projectGuardedAction(
-        props.slots[2], source, core::state::MacroContextButton::BOTTOM_RIGHT
+        props, source, core::state::MacroContextButton::BOTTOM_RIGHT
     );
     return props;
 }
@@ -154,7 +154,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             status == Status::OVERWRITE_REQUIRED ? Id::OVERWRITE : Id::APPLY,
             status == Status::OVERWRITE_REQUIRED);
         projectGuardedAction(
-            props.slots[2], source, core::state::MacroContextButton::BOTTOM_RIGHT
+            props, source, core::state::MacroContextButton::BOTTOM_RIGHT
         );
         return props;
     }
@@ -205,7 +205,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             props.slots[1] = scopeLabel("All");
             props.slots[2].visualState = Visual::DISABLED;
             projectGuardedAction(
-                props.slots[0],
+                props,
                 source,
                 core::state::MacroContextButton::BOTTOM_LEFT
             );
@@ -231,12 +231,12 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             Tone::NEUTRAL
         );
         projectGuardedAction(
-            props.slots[0],
+            props,
             source,
             core::state::MacroContextButton::BOTTOM_LEFT
         );
         projectGuardedAction(
-            props.slots[2],
+            props,
             source,
             core::state::MacroContextButton::BOTTOM_RIGHT
         );
@@ -262,10 +262,10 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
     const bool canCopy = stored;
     props.slots[2] = clipboardSlot(canCopy, canPasteAssignment);
     projectGuardedAction(
-        props.slots[0], source, core::state::MacroContextButton::BOTTOM_LEFT
+        props, source, core::state::MacroContextButton::BOTTOM_LEFT
     );
     projectGuardedAction(
-        props.slots[2], source, core::state::MacroContextButton::BOTTOM_RIGHT
+        props, source, core::state::MacroContextButton::BOTTOM_RIGHT
     );
     return props;
 }

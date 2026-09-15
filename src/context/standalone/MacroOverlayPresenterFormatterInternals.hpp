@@ -100,7 +100,7 @@ core::state::macro::MacroAutomationSlotAddress currentAddress(
 );
 core::ui::ContextActionStripSlotProps scopeLabel(const char* label);
 void projectGuardedAction(
-    core::ui::ContextActionStripSlotProps& slot,
+    core::ui::ContextActionStripProps& props,
     const Source& source,
     core::state::MacroContextButton button
 );

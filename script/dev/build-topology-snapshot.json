@@ -1505,7 +1505,7 @@
       "sha256": "5085ea2889d7652e4c363bb10ca1342f129959d24251ea50d43f9cbb3057af30"
     },
     "coreTotalHeaders": {
-      "count": 493,
+      "count": 494,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1971,6 +1971,7 @@
         "src/ui/sequencer/StepVisualUtils.hpp",
         "src/ui/strip/ContextActionStrip.hpp",
         "src/ui/strip/ContextActionVisualProjection.hpp",
+        "src/ui/strip/ContextFeedbackPresentation.hpp",
         "src/ui/theme/StandaloneListVisuals.hpp",
         "src/ui/theme/StandaloneTheme.hpp",
         "src/ui/transportbar/TransportBar.hpp",
@@ -2001,7 +2002,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "1e24b03cba06504b823c97756980702974bfa420f038e3879ac1a299b7a2baf6"
+      "sha256": "ee91f585311953de56290cb99a546f7bf4e800fcf8f735f5a42a5b8ee1557a35"
     },
     "coreTotalImplementations": {
       "count": 421,
