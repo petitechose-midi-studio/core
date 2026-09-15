@@ -349,7 +349,9 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/ui/common/AddSlotIcon.cpp
     src/ui/common/CoalescedLvglRenderScheduler.cpp
     src/ui/common/CompactMetricRow.cpp
+    src/ui/common/ContextHeader.cpp
     src/ui/common/GlobalTrackNavigationStripModel.cpp
+    src/ui/common/ParameterCard.cpp
     src/ui/common/TrackHeaderRow.cpp
     src/ui/common/TrackNavigationStrip.cpp
     src/ui/font/StandaloneFonts.cpp

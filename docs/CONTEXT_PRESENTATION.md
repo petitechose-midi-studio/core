@@ -18,6 +18,8 @@ domain policy.
 | Transport indicators and their subscriptions | `src/ui/transportbar/TransportBar.cpp` |
 | Ownership, overlay priority or visibility | `src/context/standalone/StandaloneUiAssembly.cpp`, `StandaloneOverlayAssembly.cpp` and the existing presentation registry |
 | Drawing a bounded label or rectangle | `src/ui/common/ContextSurfaceDraw.hpp` |
+| Compact parameter cards in Macro and Modulator | `src/ui/common/ParameterCard.hpp` |
+| Title and status in Macro, Modulator and Track Editor | `src/ui/common/ContextHeader.hpp` |
 
 For example, Macro's bottom-right release copies when copying is possible.
 Holding can paste. `MacroViewModelBuilder` asks `MacroInteractionPolicy` for
@@ -65,6 +67,18 @@ Keep specialized retained renderers for grids, curves and editors. Share the
 bounded drawing primitives where their geometry really matches; do not rebuild
 these surfaces into per-cell widget trees to obtain a common appearance.
 
+`ParameterCard` owns one drawing object and bounded icon/label/value text. Its
+caller owns the number, position and visibility of cards. The caller projects
+focus, availability and activity from its domain policy into `ParameterCardVisual`;
+the card cannot change a parameter. Macro's three domains and Modulator's changing
+parameter layout use this same renderer. Their curve providers remain independent.
+
+`ContextHeader` similarly retains a title, status and optional icons. The same
+`drawContextHeader` function can draw into an existing surface, as Track Editor
+does, without adding a widget. Both components copy temporary presenter text and
+avoid invalidation for identical properties. Destroy these owners before deleting
+their parent LVGL tree. Their text is bounded and clipped inside each field.
+
 Draft state is also local to its owner. In Track Editor, Type can be pending
 while Channel and Delay remain direct edits. A global Draft flag would erase
 that distinction. Feedback text cannot close a transaction or alter encoder
@@ -92,5 +106,5 @@ static RAM, application PSRAM allocations, musical timing and display time.
 Native object sizes are not measurements of Teensy heap consumption.
 
 The shared footer is the implemented presentation base. A dedicated help
-panel and further header/body changes remain separate work: a help entry must
+panel and further body changes remain separate work: a help entry must
 first be checked against the existing physical gesture grammar.

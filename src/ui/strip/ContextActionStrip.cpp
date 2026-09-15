@@ -39,14 +39,7 @@ bool sameText(const char* left, const char* right) {
     return left == right || std::strcmp(left ? left : "", right ? right : "") == 0;
 }
 
-template <size_t N>
-bool copyText(std::array<char, N>& target, const char* source) {
-    std::array<char, N> next{};
-    ms::ui::text::formatEllipsized(next.data(), next.size(), source, nullptr, 0);
-    if (target == next) return false;
-    target = next;
-    return true;
-}
+using surface::copyText;
 
 bool sameSlot(const ContextActionStripSlotProps& a, const ContextActionStripSlotProps& b) {
     return a.visualState == b.visualState && a.tone == b.tone &&

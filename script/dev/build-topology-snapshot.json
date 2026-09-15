@@ -77,9 +77,9 @@
     "core/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "8a502bab673e592edb6c40a430b53006cf5966eda8f3832d1f2ca1d7f0157ae8",
+    "core/.github/workflows/ci.yml": "46552c773ea5898f19d83fd3357fee758caefbd31058eaabe6759f2dc50fe2fd",
     "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
-    "core/cmake/MsCoreProductSources.cmake": "8553ff32aa2c227e95c576d9855e20c2a360bde4eec0680615f3daaa5ae4e0fc",
+    "core/cmake/MsCoreProductSources.cmake": "8f9df9b66a1af67c5cc3a331093b8ee9cedaee9c29a1388a74eb528f450fe9ee",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
     "core/cmake/MsCoreSources.cmake": "c96fd895088255ac8e06900976bf26f8cebbd99f92a4277b0b144cae48c5c32f",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
@@ -667,7 +667,7 @@
       "sha256": "8b7c6421b0c04846538a6000f3cf728beccd210e677b3f4b82639b03f54d5e80"
     },
     "coreSdlWasmImplementations": {
-      "count": 421,
+      "count": 423,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -1017,7 +1017,9 @@
         "src/ui/common/AddSlotIcon.cpp",
         "src/ui/common/CoalescedLvglRenderScheduler.cpp",
         "src/ui/common/CompactMetricRow.cpp",
+        "src/ui/common/ContextHeader.cpp",
         "src/ui/common/GlobalTrackNavigationStripModel.cpp",
+        "src/ui/common/ParameterCard.cpp",
         "src/ui/common/TrackHeaderRow.cpp",
         "src/ui/common/TrackNavigationStrip.cpp",
         "src/ui/font/StandaloneFonts.cpp",
@@ -1091,10 +1093,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "dd674099c875404407b0a54fee0eced94a5723785010fc5341894e58acef7eb1"
+      "sha256": "dbdf636db7133e7a48e900e7bf1680a054add4c4449bcb3f0a83ac2e485bcb35"
     },
     "coreTeensyImplementations": {
-      "count": 405,
+      "count": 407,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -1439,7 +1441,9 @@
         "src/ui/common/AddSlotIcon.cpp",
         "src/ui/common/CoalescedLvglRenderScheduler.cpp",
         "src/ui/common/CompactMetricRow.cpp",
+        "src/ui/common/ContextHeader.cpp",
         "src/ui/common/GlobalTrackNavigationStripModel.cpp",
+        "src/ui/common/ParameterCard.cpp",
         "src/ui/common/TrackHeaderRow.cpp",
         "src/ui/common/TrackNavigationStrip.cpp",
         "src/ui/font/StandaloneFonts.cpp",
@@ -1502,10 +1506,10 @@
         "src/ui/view/SequencerView.cpp",
         "src/ui/widget/MacroKnobWidget.cpp"
       ],
-      "sha256": "5085ea2889d7652e4c363bb10ca1342f129959d24251ea50d43f9cbb3057af30"
+      "sha256": "5bab7de292977da84c4a579ff77c35f170605fb2020c212c4570f27c01e2c6cc"
     },
     "coreTotalHeaders": {
-      "count": 494,
+      "count": 496,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1887,8 +1891,10 @@
         "src/ui/common/AddSlotIcon.hpp",
         "src/ui/common/CoalescedLvglRenderScheduler.hpp",
         "src/ui/common/CompactMetricRow.hpp",
+        "src/ui/common/ContextHeader.hpp",
         "src/ui/common/ContextSurfaceDraw.hpp",
         "src/ui/common/GlobalTrackNavigationStripModel.hpp",
+        "src/ui/common/ParameterCard.hpp",
         "src/ui/common/StructureSelectionInvalidation.hpp",
         "src/ui/common/TrackHeaderRow.hpp",
         "src/ui/common/TrackNavigationStrip.hpp",
@@ -2002,10 +2008,10 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "ee91f585311953de56290cb99a546f7bf4e800fcf8f735f5a42a5b8ee1557a35"
+      "sha256": "77acf7dce333fdf626f68f832544fa3bfd65fba76e5de58cecfd210237b6e56b"
     },
     "coreTotalImplementations": {
-      "count": 421,
+      "count": 423,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -2355,7 +2361,9 @@
         "src/ui/common/AddSlotIcon.cpp",
         "src/ui/common/CoalescedLvglRenderScheduler.cpp",
         "src/ui/common/CompactMetricRow.cpp",
+        "src/ui/common/ContextHeader.cpp",
         "src/ui/common/GlobalTrackNavigationStripModel.cpp",
+        "src/ui/common/ParameterCard.cpp",
         "src/ui/common/TrackHeaderRow.cpp",
         "src/ui/common/TrackNavigationStrip.cpp",
         "src/ui/font/StandaloneFonts.cpp",
@@ -2429,7 +2437,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "dd674099c875404407b0a54fee0eced94a5723785010fc5341894e58acef7eb1"
+      "sha256": "dbdf636db7133e7a48e900e7bf1680a054add4c4449bcb3f0a83ac2e485bcb35"
     },
     "deviceSupportHeaders": {
       "count": 10,

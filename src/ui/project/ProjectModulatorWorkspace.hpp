@@ -9,6 +9,8 @@
 #include <oc/ui/lvgl/PausableTimer.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "ui/common/ContextHeader.hpp"
+#include "ui/common/ParameterCard.hpp"
 #include "state/modulation/ProjectControlState.hpp"
 #include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/modulation/ProjectRecordedShapeCaptureState.hpp"
@@ -57,16 +59,6 @@ private:
     static constexpr uint32_t EDIT_FEEDBACK_MS = 900U;
     static constexpr uint32_t EDIT_FEEDBACK_POLL_MS = 50U;
 
-    struct CardWidgets {
-        lv_obj_t* root = nullptr;
-        lv_obj_t* icon = nullptr;
-        lv_obj_t* label = nullptr;
-        lv_obj_t* value = nullptr;
-        std::array<char, 8> iconText{};
-        std::array<char, 32> labelText{};
-        std::array<char, 32> valueText{};
-    };
-
     struct CurveSampleContext {
         const core::state::modulation::ProjectControlState* control = nullptr;
         const core::state::modulation::ModulatorSourceState* source = nullptr;
@@ -86,7 +78,6 @@ private:
     };
 
     void createUi(lv_obj_t* parent);
-    void createCard(uint8_t index);
     void renderHeader(
         const ProjectModulatorWorkspaceProps& props
     );
@@ -114,12 +105,9 @@ private:
     );
 
     lv_obj_t* root_ = nullptr;
-    lv_obj_t* source_icon_ = nullptr;
-    lv_obj_t* title_ = nullptr;
-    lv_obj_t* state_icon_ = nullptr;
-    lv_obj_t* state_text_ = nullptr;
+    std::optional<ContextHeader> header_;
     core::app::ExtmemUniquePtr<ms::ui::CurvePreviewWidget> curve_preview_;
-    std::array<CardWidgets, CARD_CAPACITY> cards_{};
+    std::array<std::optional<ParameterCard>, CARD_CAPACITY> cards_{};
     lv_obj_t* edit_feedback_ = nullptr;
     lv_obj_t* edit_feedback_key_ = nullptr;
     lv_obj_t* edit_feedback_value_ = nullptr;
@@ -127,8 +115,6 @@ private:
 
     CurveSampleContext curve_sample_context_{};
     core::state::modulation::ModulatorSourceState rendered_source_{};
-    std::array<char, 24> titleText_{};
-    std::array<char, 40> stateText_{};
     std::array<char, 32> editFeedbackKeyText_{};
     std::array<char, 32> editFeedbackValueText_{};
     core::state::modulation::ModulatorId rendered_source_id_{};

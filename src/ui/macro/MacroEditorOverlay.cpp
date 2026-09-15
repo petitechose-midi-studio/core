@@ -52,6 +52,8 @@ FLASHMEM MacroEditorOverlay::MacroEditorOverlay(lv_obj_t* parent) {
 
 FLASHMEM MacroEditorOverlay::~MacroEditorOverlay() {
     curve_preview_.reset();
+    header_.reset();
+    for (auto& tab : tabs_) tab.reset();
     if (root_) {
         lv_obj_delete(root_);
         root_ = nullptr;
@@ -71,19 +73,15 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     lv_obj_clear_flag(root_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
 
-    title_ = createLabel(root_, fonts.context_title(), theme::color::TEXT_PRIMARY);
-    lv_obj_set_pos(title_, 10, 7);
-    lv_obj_set_size(title_, 150, 18);
-    meta_ = createLabel(
-        root_, fonts.meta_label(), theme::color::TEXT_SECONDARY,
-        LV_TEXT_ALIGN_RIGHT
-    );
-    lv_obj_set_pos(meta_, 160, 8);
-    lv_obj_set_size(meta_, 150, 16);
-
-    createTab(0, standalone::icons::MIDI_CC, "Destination", theme::color::MACRO_CC_COLOR);
-    createTab(1, standalone::icons::AUTOMATION, "Automation", theme::color::MACRO_AUTOMATION);
-    createTab(2, standalone::icons::MODULATION, "Modulation", theme::color::MACRO_MODULATION);
+    header_.emplace(root_);
+    lv_obj_set_pos(header_->getElement(), 10, 6);
+    lv_obj_set_size(header_->getElement(), 300, 22);
+    for (size_t index = 0; index < tabs_.size(); ++index) {
+        tabs_[index].emplace(root_);
+        lv_obj_set_pos(tabs_[index]->getElement(),
+            TAB_X + static_cast<lv_coord_t>(index) * (TAB_WIDTH + TAB_GAP), TAB_Y);
+        lv_obj_set_size(tabs_[index]->getElement(), TAB_WIDTH, TAB_HEIGHT);
+    }
 
     curve_preview_ = core::app::makeExtmemUnique<ms::ui::CurvePreviewWidget>(
         root_
@@ -166,53 +164,6 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     lv_obj_set_size(interaction_value_, 176, 20);
 }
 
-FLASHMEM void MacroEditorOverlay::createTab(
-    size_t index,
-    const char* icon,
-    const char* label,
-    uint32_t color
-) {
-    if (index >= tabs_.size() || !root_) return;
-    auto& tab = tabs_[index];
-    tab.root = lv_obj_create(root_);
-    lv_obj_remove_style_all(tab.root);
-    lv_obj_set_pos(
-        tab.root,
-        TAB_X + static_cast<lv_coord_t>(index) * (TAB_WIDTH + TAB_GAP),
-        TAB_Y
-    );
-    lv_obj_set_size(tab.root, TAB_WIDTH, TAB_HEIGHT);
-    lv_obj_set_style_radius(
-        tab.root, theme::layout::INTERACTIVE_SURFACE_RADIUS, 0
-    );
-    lv_obj_set_style_border_width(
-        tab.root, theme::layout::INTERACTIVE_SURFACE_BORDER_WIDTH, 0
-    );
-    core::ui::interaction::applyInteractiveSurfaceChrome(
-        tab.root,
-        core::ui::interaction::InteractiveSurfaceState::IDLE
-    );
-    lv_obj_clear_flag(tab.root, LV_OBJ_FLAG_SCROLLABLE);
-    tab.icon = createLabel(tab.root, standalone_fonts.icons_12, color);
-    lv_label_set_text(tab.icon, icon);
-    lv_obj_set_pos(tab.icon, 5, 5);
-    lv_obj_set_size(tab.icon, 15, 14);
-    tab.label = createLabel(tab.root, fonts.meta_label(), theme::color::TEXT_PRIMARY);
-    lv_label_set_text(tab.label, label);
-    lv_obj_set_pos(tab.label, 22, 3);
-    lv_obj_set_size(tab.label, 72, 14);
-    tab.value = createLabel(tab.root, fonts.meta_label(), theme::color::TEXT_SECONDARY);
-    lv_obj_set_pos(tab.value, 22, 17);
-    lv_obj_set_size(tab.value, 70, 14);
-    tab.state = lv_obj_create(tab.root);
-    lv_obj_remove_style_all(tab.state);
-    lv_obj_set_pos(tab.state, 5, 24);
-    lv_obj_set_size(tab.state, 10, 3);
-    lv_obj_set_style_radius(tab.state, 2, 0);
-    lv_obj_set_style_bg_color(tab.state, lv_color_hex(color), 0);
-    tab.color = color;
-}
-
 FLASHMEM void MacroEditorOverlay::renderTab(
     size_t index,
     const char* value,
@@ -221,55 +172,24 @@ FLASHMEM void MacroEditorOverlay::renderTab(
     bool playback,
     uint32_t color
 ) {
-    if (index >= tabs_.size()) return;
-    auto& tab = tabs_[index];
-    if (copyTruncatedIfChanged(tab.valueText, value)) {
-        lv_label_set_text_static(tab.value, tab.valueText.data());
-    }
-    if (!tab.rendered || tab.color != color) {
-        lv_obj_set_style_text_color(tab.icon, lv_color_hex(color), 0);
-        lv_obj_set_style_bg_color(tab.state, lv_color_hex(color), 0);
-        tab.color = color;
-    }
-    if (!tab.rendered || tab.selected != selected) {
-        const auto surfaceState = selected
-            ? core::ui::interaction::InteractiveSurfaceState::FOCUSED
-            : core::ui::interaction::InteractiveSurfaceState::IDLE;
-        const auto visual = core::ui::interaction::interactiveSurfaceVisual(
-            surfaceState
-        );
-        core::ui::interaction::applyInteractiveSurfaceChrome(
-            tab.root, visual
-        );
-        lv_obj_set_style_text_color(
-            tab.label, lv_color_hex(visual.textColor), 0
-        );
-        lv_obj_set_style_text_opa(
-            tab.label, visual.textOpacity, 0
-        );
-        lv_obj_set_style_text_color(
-            tab.value, lv_color_hex(theme::color::TEXT_SECONDARY), 0
-        );
-        lv_obj_set_style_text_opa(
-            tab.value,
-            selected ? LV_OPA_80 : LV_OPA_60,
-            0
-        );
-        tab.selected = selected;
-    }
-    if (!tab.rendered || tab.stored != stored ||
-        tab.playback != playback) {
-        lv_obj_set_style_bg_opa(
-            tab.state,
-            playback
-                ? LV_OPA_COVER
-                : (stored ? LV_OPA_30 : LV_OPA_TRANSP),
-            0
-        );
-        tab.stored = stored;
-        tab.playback = playback;
-    }
-    tab.rendered = true;
+    if (index >= tabs_.size() || !tabs_[index]) return;
+    static constexpr std::array<const char*, 3> labels = {"Destination", "Automation", "Modulation"};
+    static const std::array<const char*, 3> icons = {
+        standalone::icons::MIDI_CC, standalone::icons::AUTOMATION, standalone::icons::MODULATION};
+    tabs_[index]->render({
+        .icon = icons[index], .label = labels[index], .value = value,
+        .visual = {
+            .accent = color,
+            .state = selected ? interaction::InteractiveSurfaceState::FOCUSED
+                              : interaction::InteractiveSurfaceState::IDLE,
+            .iconOpacity = LV_OPA_COVER,
+            .labelOpacity = static_cast<lv_opa_t>(selected ? LV_OPA_COVER : LV_OPA_80),
+            .valueOpacity = static_cast<lv_opa_t>(selected ? LV_OPA_80 : LV_OPA_60),
+            .activityOpacity = static_cast<lv_opa_t>(playback ? LV_OPA_COVER
+                : (stored ? LV_OPA_30 : LV_OPA_TRANSP)),
+            .emphasizeValue = false,
+        },
+    });
 }
 
 FLASHMEM bool MacroEditorOverlay::sampleCurve(
@@ -538,12 +458,7 @@ FLASHMEM void MacroEditorOverlay::render(
     if (props.preview == nullptr) return;
     latest_live_ = props.live;
     renderedRevision_ = props.dataRevision;
-    if (copyTruncatedIfChanged(titleText_, props.title)) {
-        lv_label_set_text_static(title_, titleText_.data());
-    }
-    if (copyTruncatedIfChanged(metaText_, props.meta)) {
-        lv_label_set_text_static(meta_, metaText_.data());
-    }
+    header_->render({.title = props.title, .status = props.meta});
     const int selected = std::clamp(props.selectedDomain, 0, 2);
     renderTab(0, props.destination, selected == 0, true, true, theme::color::MACRO_CC_COLOR);
     renderTab(

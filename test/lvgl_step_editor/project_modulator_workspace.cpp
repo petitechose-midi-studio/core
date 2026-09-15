@@ -78,6 +78,14 @@ int main() {
             lv_refr_now(display);
         };
         render();
+        // The workspace may share the screen with the left control rail.
+        // Its header must fit that viewport instead of assuming all 320 pixels.
+        lv_obj_set_width(workspace.getElement(), 284);
+        lv_obj_update_layout(workspace.getElement());
+        render();
+        auto* header = lv_obj_get_child(workspace.getElement(), 0);
+        assert(lv_obj_get_width(header) == 276);
+        assert(lv_obj_get_x(header) + lv_obj_get_width(header) <= 284);
         auto* widget = ms::ui::ObservedCurvePreviewWidget::current;
         const auto resize = [&](int width) {
             const auto callsBefore = widget->markerCalls;
