@@ -443,10 +443,11 @@ buildSequencerPresetLibraryActionPresentation(const Picker& picker) {
     );
     data.tone = action_visual::stripTone(visualPolicy.tone);
     data.primaryIcon = action_visual::iconGlyph(visualPolicy.icon);
-    data.primaryLabel = variant.action == feedback.action
-        ? core::ui::contextActionFeedbackLabel(feedback) : nullptr;
-    if (!data.primaryLabel) data.primaryLabel = core::ui::contextActionPresentation(variant.action).label;
-    data.holdOnly = !contextual::hasTapAction(action) && contextual::hasHoldAction(action);
+    core::ui::ContextActionStripSlotProps command{};
+    core::ui::describeAction(command, variant, feedback,
+        !contextual::hasTapAction(action) && contextual::hasHoldAction(action));
+    data.primaryLabel = command.label;
+    data.holdOnly = command.holdOnly;
 
     using Guard = contextual::GuardedActionPhase;
     const bool holdFeedbackMatches =
