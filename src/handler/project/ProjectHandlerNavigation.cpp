@@ -47,7 +47,7 @@ FLASHMEM bool ProjectHandler::modulatorAuditionAddress(
     }
     const auto& destination = audition.destination;
     out = {destination.track, destination.page, destination.macro};
-    return macro_history_.modulatorAuditionPending(out);
+    return macro_history_.modulatorAuditionMatches(pages_, out);
 }
 
 FLASHMEM void ProjectHandler::navigate(float delta) {
@@ -440,6 +440,7 @@ FLASHMEM void ProjectHandler::setFocusedValue(float normalized) {
     if (setFocusedProjectValue(normalized)) {
         if (!auditioning) navigation_.clearLifecycleFeedback();
     }
+    (void)syncModulatorEncoders();
 }
 
 }  // namespace core::handler

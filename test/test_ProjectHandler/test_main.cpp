@@ -37,6 +37,7 @@
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
+#include "ProjectEncoderTestHardware.hpp"
 #include "../support/ProductFileTestMutation.hpp"
 
 namespace {
@@ -79,7 +80,7 @@ struct ProjectHandlerHarness {
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
     TestButtonHardware buttonHw;
-    TestEncoderHardware encoderHw;
+    ProjectEncoderTestHardware encoderHw;
     oc::api::ButtonAPI buttons;
     oc::api::EncoderAPI encoders;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
@@ -3070,7 +3071,10 @@ void test_modulator_name_acceptance_and_rejection_keep_the_right_owner() {
 
 }  // namespace
 
+#include "modulator_direct_edit_tests.hpp"
+
 int main() {
+    direct_edit_tests::run();
     test_modulator_name_acceptance_and_rejection_keep_the_right_owner();
     test_nav_turn_on_overview_summary();
     test_left_top_backs_out_of_nested_project_folder();

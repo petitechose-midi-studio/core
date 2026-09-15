@@ -72,6 +72,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/handler/project/ProjectHandlerLifecycle.cpp
     src/handler/project/ProjectHandlerModulatorActions.cpp
     src/handler/project/ProjectHandlerModulatorAudition.cpp
+    src/handler/project/ProjectHandlerModulatorEncoders.cpp
     src/handler/project/ProjectHandlerModulatorValueEditing.cpp
     src/handler/project/ProjectHandlerNavigation.cpp
     src/handler/project/ProjectHandlerValueEditing.cpp

@@ -285,6 +285,8 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
             );
         }
         navigation_.setLifecycleFeedback(feedback);
+    } else if (creating) {
+        navigation_.clearLifecycleFeedback();
     } else {
         const auto* binding = findProjectModulationBinding(
             pages_.control.authored().modulation,

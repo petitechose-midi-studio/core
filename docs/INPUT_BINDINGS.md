@@ -81,6 +81,7 @@ remain valid.
 | Preset Library | `NAV` selects then enters Detail, `OPT` adjusts an explicit detail row only, `BOTTOM_LEFT` Load/Save, `BOTTOM_RIGHT` primary action/guard, `LEFT_TOP` backs out one level, `LEFT_CENTER` is consumed without action |
 | Project name keyboard | `NAV` key/insert including `SPC`, `OPT` row, held `LEFT_CENTER` Shift, `BOTTOM_LEFT` Backspace, `LEFT_BOTTOM` Clear, `LEFT_TOP` Cancel, `BOTTOM_RIGHT` Validate |
 | CC Lane | contextual settings use `BOTTOM_RIGHT`; Transport remains `BOTTOM_CENTER` |
+| LFO/DAHDSR source main | card markers identify direct E1..E4 and audition E8; OPT continues the last edited field; Options/Trigger/other screens keep NAV/OPT; no Macro button reassignment |
 
 `BOTTOM_LEFT` and `BOTTOM_RIGHT` are contextual action slots. Their icon, tone,
 availability, and hold guard must be projected by the visible action strip.

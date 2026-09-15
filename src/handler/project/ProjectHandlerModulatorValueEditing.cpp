@@ -235,7 +235,6 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     );
     if (pages_.control.audition.active() && !session.valid()) return true;
     const bool sourceAudition = session.audition();
-    const bool provisional = session.newAudition();
     Item item = Item::RATE;
     if (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
@@ -250,6 +249,36 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         return false;
     }
 
+    const bool accepted = setModulatorItemValue(item, normalized);
+    if (valid(direct_source_) && directModulatorInputActive()) {
+        // OPT updates its peer, not the rest of the bank. Timing alone changes
+        // dependent scales; Options will reconfigure on return to the main screen.
+        const uint8_t number = core::state::project::modulators::sourceMainEncoderNumber(source->kind, item);
+        if (number != 0U && core::state::project::modulators::sourceMainEncoderTarget(
+                source->kind, session, number - 1U).editable) {
+            syncModulatorItemEncoder(Config::MACRO_ENCODERS[number - 1U], item);
+        }
+        if (item == Item::TIMING) syncModulatorItemEncoder(EncoderID::MACRO_2, Item::RATE);
+        direct_revision_ = pages_.control.authoredRevision;
+    }
+    return accepted;
+}
+
+FLASHMEM bool ProjectHandler::setModulatorItemValue(
+    core::state::project::modulators::SourceDetailItem item,
+    float normalized
+) {
+    using namespace core::state::modulation;
+    using Item = core::state::project::modulators::SourceDetailItem;
+    auto* source = focusedModulator();
+    if (!source) return false;
+    const auto session = resolveProjectModulatorSourceSession(pages_.control, source->id);
+    core::state::macro::MacroAutomationSlotAddress address{};
+    if (!session.valid() || (session.audition() && !modulatorAuditionAddress(address))) {
+        return false;
+    }
+    const bool sourceAudition = session.audition();
+    const bool provisional = session.newAudition();
     const float value = normalized::clampNormalized(normalized);
     if (item == Item::DEPTH) {
         auto* binding = findProjectModulationBinding(
@@ -412,18 +441,15 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             default:
                 return false;
         }
-        if (provisional && std::memcmp(
-                &source->parameters.adsr,
-                &parameters,
-                sizeof(parameters)
-            ) != 0) {
+        if (std::memcmp(&source->parameters.adsr, &parameters, sizeof(parameters)) == 0) {
+            return true;
+        }
+        if (provisional) {
             source->parameters.adsr = parameters;
             pages_.control.markAuthoredMutation();
             refreshModulatorPreview(false);
-        } else if (!provisional &&
-                   macro_history_.setProjectAdsrParametersCoalesced(
-                       pages_, source->id, parameters
-                   )) {
+        } else {
+            if (!macro_history_.setProjectAdsrParametersCoalesced(pages_, source->id, parameters)) return false;
             publishModulatorMutation(false);
         }
         return true;
@@ -483,18 +509,15 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         default:
             return false;
     }
-    if (provisional && std::memcmp(
-            &source->parameters.lfo,
-            &parameters,
-            sizeof(parameters)
-        ) != 0) {
+    if (std::memcmp(&source->parameters.lfo, &parameters, sizeof(parameters)) == 0) {
+        return true;
+    }
+    if (provisional) {
         source->parameters.lfo = parameters;
         pages_.control.markAuthoredMutation();
         refreshModulatorPreview(false);
-    } else if (!provisional &&
-               macro_history_.setProjectLfoParametersCoalesced(
-                   pages_, source->id, parameters
-               )) {
+    } else {
+        if (!macro_history_.setProjectLfoParametersCoalesced(pages_, source->id, parameters)) return false;
         publishModulatorMutation(false);
     }
     return true;

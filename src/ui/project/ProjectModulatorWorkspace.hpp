@@ -27,7 +27,6 @@ struct ProjectModulatorWorkspaceProps {
     core::state::modulation::ProjectModulatorSourceSessionDescriptor session{};
     const core::state::modulation::ProjectRecordedShapeCaptureState* capture =
         nullptr;
-    const char* transientFeedback = nullptr;
     bool options = false;
     bool trigger = false;
     uint8_t selectedIndex = 0U;

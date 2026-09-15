@@ -179,12 +179,24 @@ FLASHMEM void formatProjectLifecycleFeedback(
     oc::type::text::terminate(out, outSize, pos);
 }
 
+FLASHMEM void configureProjectEncoder(
+    oc::api::EncoderAPI& encoders,
+    EncoderID id,
+    int stepCount,
+    float position,
+    float normalizedTurns
+) {
+    encoders.setMode(id, oc::interface::EncoderMode::NORMALIZED);
+    encoders.setBounds(id, 0.0f, 1.0f);
+    encoders.configureResolution(id, static_cast<uint8_t>(clampInt(stepCount, 0, 255)),
+        PROJECT_OPT_TICKS_PER_STEP, normalizedTurns);
+    encoders.setPosition(id, normalized::clampNormalized(position));
+}
+
 FLASHMEM void configureOptContinuous(oc::api::EncoderAPI& encoders,
                                      float position,
                                      float normalizedTurns) {
-    encoders.setMode(EncoderID::OPT, oc::interface::EncoderMode::NORMALIZED);
-    encoders.configureResolution(EncoderID::OPT, 0, PROJECT_OPT_TICKS_PER_STEP, normalizedTurns);
-    encoders.setPosition(EncoderID::OPT, normalized::clampNormalized(position));
+    configureProjectEncoder(encoders, EncoderID::OPT, 0, position, normalizedTurns);
 }
 
 FLASHMEM void configureOptRaw(oc::api::EncoderAPI& encoders) {
@@ -196,10 +208,8 @@ FLASHMEM void configureOptDiscrete(oc::api::EncoderAPI& encoders,
                                    int stepCount,
                                    float position,
                                    float normalizedTurns) {
-    encoders.setMode(EncoderID::OPT, oc::interface::EncoderMode::NORMALIZED);
-    encoders.configureResolution(EncoderID::OPT, static_cast<uint8_t>(clampInt(stepCount, 1, 255)),
-        PROJECT_OPT_TICKS_PER_STEP, normalizedTurns);
-    encoders.setPosition(EncoderID::OPT, normalized::clampNormalized(position));
+    configureProjectEncoder(encoders, EncoderID::OPT, clampInt(stepCount, 1, 255),
+        position, normalizedTurns);
 }
 
 }  // namespace core::handler::project_handler_internal

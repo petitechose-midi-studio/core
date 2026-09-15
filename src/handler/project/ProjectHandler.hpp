@@ -2,6 +2,7 @@
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
+#include <config/InputIDs.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
@@ -16,6 +17,7 @@
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectModulatorMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectSettingsHistory.hpp"
 #include "state/macro/MacroHistory.hpp"
@@ -62,7 +64,7 @@ public:
     ProjectHandler(const ProjectHandler&) = delete;
     ProjectHandler& operator=(const ProjectHandler&) = delete;
 
-    void syncFocusedEncoder();
+    void syncFocusedEncoder(bool syncDirectBank = true);
     void update(uint32_t nowMs);
 
 private:
@@ -113,6 +115,20 @@ private:
     void cancelPendingRoutingGesture();
     bool setFocusedNameEditorValue(float normalized);
     bool setFocusedModulatorValue(float normalized);
+    bool setModulatorItemValue(
+        core::state::project::modulators::SourceDetailItem item,
+        float normalized
+    );
+    void syncModulatorItemEncoder(
+        Config::EncoderID id,
+        core::state::project::modulators::SourceDetailItem item
+    );
+    [[nodiscard]] bool directModulatorInputActive() const;
+    /** Resync on ownership/session/revision changes, never through another view.
+     * Returns true if a pending normalized event was computed against old state.
+     */
+    bool syncModulatorEncoders(bool force = false);
+    void setDirectModulatorValue(uint8_t encoderIndex, float normalized);
     void enterFocusedModulator();
     void openFocusedModulationDestination();
     void startDestinationPickerAudition();
@@ -204,6 +220,12 @@ private:
     bool modulator_bottom_left_was_pressed_ = false;
     bool modulator_bottom_right_was_pressed_ = false;
     bool recorded_shape_capture_button_active_ = false;
+    // Bounded configuration cache only; values and transactions stay in their
+    // existing domain owners. A cleared source means no ownership of this bank.
+    core::state::modulation::ModulatorId direct_source_{};
+    core::state::modulation::ModulationBindingId direct_binding_{};
+    uint32_t direct_generation_ = 0U;
+    uint32_t direct_revision_ = 0U;
     PendingProjectCatalogAction pending_project_catalog_action_ =
         PendingProjectCatalogAction::NONE;
 };

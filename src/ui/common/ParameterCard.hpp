@@ -29,6 +29,7 @@ struct ParameterCardProps {
     const char* label = nullptr;
     const char* value = nullptr;
     ParameterCardVisual visual{};
+    uint8_t encoderNumber = 0U; // 1..8 replaces the icon with E1..E8; zero keeps it.
 };
 
 /** One retained drawing object. The caller owns layout and parameter semantics. */
@@ -51,6 +52,7 @@ private:
     std::array<char, 32> label_{};
     std::array<char, 32> value_{};
     ParameterCardVisual visual_{};
+    uint8_t encoder_number_ = 0U;
     bool rendered_ = false;
 };
 

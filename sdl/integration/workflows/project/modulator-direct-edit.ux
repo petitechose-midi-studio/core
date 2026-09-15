@@ -1,0 +1,36 @@
+# UX workflow: semantic direct LFO roles, local Options and excluded Motion.
+# Purpose: verify stable live-source assignments and deactivation in other contexts.
+# Expect: semantic:lfo_rate:property=rate, semantic:lfo_rate:effect=edit_modulator_property
+# Expect: semantic:lfo_timing:property=timing, semantic:lfo_no_depth:effect=ignore_unavailable_source_encoder
+# Expect: semantic:options:mode=project.modulator_options, semantic:options_return:mode=project.modulator_detail
+# Expect: semantic:motion_after:effect=ignore_unavailable_source_encoder, semantic:motion_after:source=recorded_shape
+# Expect: capture_changed:lfo=lfo_rate
+
+0 scenario project-modulator-workspace
+100 button LEFT_TOP down
+700 encoder NAV -0.01
+1100 button LEFT_TOP up
+1440 tap NAV 60
+1660 capture screen lfo
+1780 encoder_value MACRO_2 0.75
+2000 capture screen lfo_rate
+2120 encoder_value MACRO_3 1.00
+2340 capture screen lfo_timing
+2460 encoder_value MACRO_8 1.00
+2680 capture screen lfo_no_depth
+# Timing left the focus on row 1; Options is row 3.
+2800 encoder NAV 0.01
+2880 encoder NAV 0.01
+3000 tap NAV 60
+3220 capture screen options
+3340 encoder_value MACRO_1 1.00
+3460 tap LEFT_TOP 60
+3680 capture screen options_return
+3800 tap LEFT_TOP 60
+3920 encoder NAV 0.01
+3960 encoder NAV 0.01
+4040 tap NAV 60
+4260 capture screen motion_before
+4380 encoder_value MACRO_2 0.65
+4720 encoder_value MACRO_4 0.90
+4940 capture screen motion_after

@@ -244,11 +244,9 @@ FLASHMEM bool openAuditionSourceFromMacro(StateRefs state, uint8_t macroIndex) {
                 : 0U
         ),
     };
-    state.projectNavigation.setLifecycleFeedback(
-        validNewOrigin
-            ? "Preview - Apply or Back"
-            : "Shared source - Depth preview"
-    );
+    // The source header identifies Preview/Shared and its exact destination;
+    // leave the context hint available until there is an operation result.
+    state.projectNavigation.clearLifecycleFeedback();
     state.overlays.hideAll();
     state.activeView.set(core::ui::ViewType::MODULATORS);
     return true;

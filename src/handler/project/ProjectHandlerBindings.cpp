@@ -72,6 +72,19 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .when([this]() { return regularProjectInputActive(); })
         .then([this](float normalized) { setFocusedValue(normalized); });
 
+    for (uint8_t index = 0U; index < Config::MACRO_COUNT; ++index) {
+        encoders_.encoder(Config::MACRO_ENCODERS[index])
+            .turn()
+            .scope(project_view_scope_)
+            .when([this]() {
+                return active_view_.get() == core::ui::ViewType::MODULATORS &&
+                    navigation_.currentNode.get() ==
+                        core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+                    canHandleProjectInput();
+            })
+            .then([this, index](float value) { setDirectModulatorValue(index, value); });
+    }
+
     buttons_.button(ButtonID::BOTTOM_LEFT)
         .press()
         .scope(project_view_scope_)

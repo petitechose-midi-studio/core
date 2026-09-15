@@ -68,6 +68,21 @@ int main() {
         lv_refr_now(display);
         assert(pixels == changed); // Incremental repaint equals a complete repaint.
 
+        focused.encoderNumber = 8U;
+        draws = 0;
+        card.render(focused);
+        lv_refr_now(display);
+        assert(draws == 1 && pixels != changed);
+        const auto encoderBadge = pixels;
+        draws = 0;
+        card.render(focused);
+        lv_refr_now(display);
+        assert(draws == 0 && pixels == encoderBadge);
+        lv_obj_invalidate(screen);
+        lv_refr_now(display);
+        assert(pixels == encoderBadge);
+        assert(lv_obj_get_child_count(card.getElement()) == 0);
+
         // Long UTF-8, a disappearing status icon and narrow cards cannot escape
         // their bounds; resizing uses current geometry without rebuilding children.
         header.render({.title = "Séquence très longue au-delà du titre", .status = "Preview +100%", .statusIcon = "!"});

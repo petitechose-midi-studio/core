@@ -126,10 +126,6 @@ void ProjectView::renderModulators() {
                     : nullptr,
                 .session = sourceSession,
                 .capture = &state_refs_.macroUi.recordedShapeCapture,
-                .transientFeedback = sourceSession.existingAudition() &&
-                    !state_refs_.navigation.lifecycleFeedback.empty()
-                    ? state_refs_.navigation.lifecycleFeedback.get()
-                    : nullptr,
                 .options = node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS,
                 .trigger = node == ProjectNodeId::MODULATOR_TRIGGER,
                 .selectedIndex = state_refs_.navigation.focusedRow.get(),
@@ -543,6 +539,18 @@ void ProjectView::renderModulatorActionStrips(
     bottom.visible = true;
     bottom.hintLeft = auditioning ? "Preview: not applied" : "NAV: focus";
     bottom.hintRight = auditioning ? "Back: cancel" : backAvailable ? "Back: return" : "Back: views";
+    if (source && session.valid() &&
+        state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+        (source->kind == core::state::modulation::ModulatorKind::LFO ||
+         source->kind == core::state::modulation::ModulatorKind::ADSR)) {
+        bottom.hintLeft = session.existingAudition() ? "E8: Depth" : "Encoders: edit";
+    }
+    if (detail && !state_refs_.navigation.lifecycleFeedback.empty()) {
+        bottom.slots[1].showLabel = true;
+        bottom.slots[1].label = state_refs_.navigation.lifecycleFeedback.get();
+        bottom.slots[1].visualState = ContextActionStripVisualState::ACTIVE;
+    }
     if (left_action_strip_) left_action_strip_->render(left);
     if (bottom_action_strip_) bottom_action_strip_->render(bottom);
 }

@@ -1,0 +1,34 @@
+# UX workflow: LFO E1/E2/E8, local Options and exact Macro return.
+# Purpose: verify direct source/edge edits and the existing Apply route.
+# Expect: semantic:rate:property=rate, semantic:rate:effect=edit_modulator_property
+# Expect: semantic:depth:property=depth, semantic:depth:effect=edit_modulator_depth
+# Expect: semantic:options:mode=project.modulator_options, semantic:applied:effect=apply_destination_audition
+# Expect: capture_changed:source=rate, capture_changed:rate=depth, capture_changed:depth=shape
+
+0 scenario macro
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
+1690 tap NAV 60
+2020 tap NAV 60
+2240 capture screen source
+2360 encoder_value MACRO_2 0.75
+2580 capture screen rate
+2700 encoder_value MACRO_8 0.75
+2920 capture screen depth
+3040 encoder_value MACRO_1 1.00
+3260 capture screen shape
+3380 encoder NAV 0.01
+3460 encoder NAV 0.01
+3540 encoder NAV 0.01
+3660 tap NAV 60
+3880 capture screen options
+4000 encoder_value OPT 1.00
+4220 tap LEFT_TOP 60
+4440 encoder_value MACRO_2 0.00
+4660 capture screen free_period
+4780 tap BOTTOM_RIGHT 60
+5000 capture screen applied

@@ -72,6 +72,9 @@ caller owns the number, position and visibility of cards. The caller projects
 focus, availability and activity from its domain policy into `ParameterCardVisual`;
 the card cannot change a parameter. Macro's three domains and Modulator's changing
 parameter layout use this same renderer. Their curve providers remain independent.
+An optional `encoderNumber` draws E1..E8 in the existing icon area, with the same
+availability opacity. It adds no LVGL child. Source workspaces derive these roles
+from `sourceMainEncoderNumber`, while navigation cards retain a NAV indication.
 
 `ContextHeader` similarly retains a title, status and optional icons. The same
 `drawContextHeader` function can draw into an existing surface, as Track Editor

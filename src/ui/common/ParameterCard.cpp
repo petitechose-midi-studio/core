@@ -26,7 +26,8 @@ FLASHMEM ParameterCard::~ParameterCard() {
 
 FLASHMEM void ParameterCard::render(const ParameterCardProps& props) {
     if (!root_) return;
-    bool changed = !rendered_ || !(visual_ == props.visual);
+    const uint8_t encoderNumber = props.encoderNumber <= 8U ? props.encoderNumber : 0U;
+    bool changed = !rendered_ || !(visual_ == props.visual) || encoder_number_ != encoderNumber;
     if (!rendered_ || visual_.state != props.visual.state) {
         interaction::applyInteractiveSurfaceChrome(root_, props.visual.state);
     }
@@ -34,6 +35,7 @@ FLASHMEM void ParameterCard::render(const ParameterCardProps& props) {
     changed = surface::copyText(label_, props.label) || changed;
     changed = surface::copyText(value_, props.value) || changed;
     visual_ = props.visual;
+    encoder_number_ = encoderNumber;
     rendered_ = true;
     if (changed) lv_obj_invalidate(root_);
 }
@@ -44,8 +46,12 @@ void ParameterCard::draw(lv_layer_t* layer) const {
     lv_obj_get_coords(root_, &bounds);
     const int width = lv_area_get_width(&bounds);
     const auto chrome = interaction::interactiveSurfaceVisual(visual_.state);
-    surface::text(layer, surface::area(bounds, 4, 5, 15, 14), icon_.data(),
-        standalone_fonts.icons_12, visual_.accent, visual_.iconOpacity, LV_TEXT_ALIGN_CENTER);
+    const char encoderLabel[]{'E', static_cast<char>('0' + encoder_number_), '\0'};
+    surface::text(layer, surface::area(bounds, encoder_number_ ? 3 : 4, 5,
+        encoder_number_ ? 17 : 15, 14),
+        encoder_number_ ? encoderLabel : icon_.data(),
+        encoder_number_ ? fonts.meta_label() : standalone_fonts.icons_12,
+        visual_.accent, visual_.iconOpacity, LV_TEXT_ALIGN_CENTER);
     surface::text(layer, surface::area(bounds, 21, 2, width - 25, 14), label_.data(),
         fonts.meta_label(), chrome.textColor, visual_.labelOpacity);
     surface::text(layer, surface::area(bounds, 21, 16, width - 25, 16), value_.data(),

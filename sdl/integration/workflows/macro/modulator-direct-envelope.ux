@@ -1,0 +1,40 @@
+# UX workflow: DAHDSR has stable E1/E2/E3/E4 and explicit E8 Depth.
+# Purpose: verify envelope role transfer, exact Cancel and durable source editing.
+# Expect: semantic:attack:property=attack, semantic:decay:property=decay, semantic:sustain:property=sustain
+# Expect: semantic:release:property=release, semantic:depth:property=depth, semantic:depth:effect=edit_modulator_depth
+# Expect: semantic:cancelled:effect=cancel_destination_audition
+# Expect: semantic:durable_tail:property=release, semantic:durable_unused:effect=ignore_unavailable_source_encoder
+# Expect: capture_changed:source=attack, capture_changed:attack=decay, capture_changed:decay=sustain, capture_changed:sustain=release, capture_changed:release=depth
+
+0 scenario macro
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
+1690 tap NAV 60
+2030 encoder NAV 0.01
+2370 tap NAV 60
+2590 capture screen source
+2710 encoder_value MACRO_1 0.70
+2930 capture screen attack
+3050 encoder_value MACRO_2 0.60
+3270 capture screen decay
+3390 encoder_value MACRO_3 0.50
+3610 capture screen sustain
+3730 encoder_value MACRO_4 0.80
+3950 capture screen release
+4070 encoder_value MACRO_8 0.25
+4290 capture screen depth
+5410 capture screen stable
+5530 tap LEFT_TOP 60
+5750 capture screen cancelled
+5870 tap NAV 60
+6090 tap BOTTOM_RIGHT 60
+6310 tap NAV 60
+6530 capture screen durable_entry
+6650 encoder_value MACRO_4 1.00
+6870 capture screen durable_tail
+6990 encoder_value MACRO_8 1.00
+7210 capture screen durable_unused

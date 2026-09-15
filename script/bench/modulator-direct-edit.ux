@@ -1,0 +1,32 @@
+# RAM-only direct edit workload, same source/transport/parent route as
+# modulator-edit-focus.ux. Tests E1/E2/E3, unused E8, then normal Macro return.
+0 scenario bench-macro-v1
+20 assert_view MACRO
+100 transport start
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1300 button LEFT_BOTTOM up
+1450 encoder_value NAV 0.010
+1570 encoder_value NAV 0.010
+1690 tap NAV 60
+1930 assert_mode macro.modulation_editor
+2030 tap NAV 60
+2350 assert_mode project.modulator_detail
+2400 marker direct_source_edit
+2450 encoder_value MACRO_1 0.750
+2750 encoder_value MACRO_2 0.250
+3050 encoder_value MACRO_1 0.250
+3350 encoder_value MACRO_2 0.750
+3650 encoder_value MACRO_3 1.000
+3950 encoder_value MACRO_2 0.500
+4250 encoder_value MACRO_3 0.000
+4550 encoder_value MACRO_8 0.750
+4850 encoder_value MACRO_2 0.500
+6500 marker feedback_expired
+6520 assert_mode project.modulator_detail
+6700 tap LEFT_TOP 60
+7000 assert_mode macro.modulation_editor
+7200 tap LEFT_TOP 60
+7500 assert_mode macro.edit
+8000 transport stop
+8200 marker done
