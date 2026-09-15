@@ -639,6 +639,13 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         return true;
     }
 
+    uint8_t directIndex = 0U;
+    const bool directTurn = node == ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+        event.domain == oc::core::input::InputBindingTraceDomain::Encoder &&
+        Config::macroEncoderIndex(event.encoderId, directIndex);
+    const auto directTarget = directTurn
+        ? core::state::project::modulators::sourceMainEncoderTarget(source->kind, sourceSession, directIndex)
+        : core::state::project::modulators::SourceMainEncoderTarget{};
     const uint16_t destinationCount =
         core::state::project::modulators::sourceDestinationCount(
             graph,
@@ -738,7 +745,8 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         out.targetIndex = navigation_.focusedRow.get();
         const auto layout = core::state::project::modulators::
             sourceWorkspaceLayout(source->kind, options, sourceAudition);
-        const auto item = layout.at(navigation_.focusedRow.get());
+        const auto item = directTurn ? directTarget.item : layout.at(navigation_.focusedRow.get());
+        if (directTurn) out.targetIndex = directTarget.row;
         out.property = rename ? "name" : detailProperty(item);
         if (sourceSession.existingAudition() &&
             item != SourceDetailItem::DEPTH) {
@@ -848,7 +856,10 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         } else {
             out.effect = "focus_modulator_item";
         }
-    } else if (isEncoder(event, Config::EncoderID::OPT)) {
+    } else if (directTurn && !directTarget.editable) {
+        out.effect = "ignore_unavailable_source_encoder";
+        out.outcome = "blocked";
+    } else if (directTurn || isEncoder(event, Config::EncoderID::OPT)) {
         if (sourceSession.audition() &&
             ((node == ProjectNodeId::MODULATOR_TRIGGER &&
               !sourceSession.allows(core::state::modulation::

@@ -221,6 +221,12 @@ public:
         const MacroAutomationSlotAddress& address
     ) const;
 
+    /** Admission for live edits: match the reserved audition transaction. */
+    [[nodiscard]] bool modulatorAuditionMatches(
+        const MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address
+    ) const;
+
     /** Fail-closed transaction predicate, including inconsistent transient state. */
     [[nodiscard]] bool hasPendingModulatorAuditionTransaction(
         const MacroPagesState& pages

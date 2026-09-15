@@ -4,6 +4,7 @@
 
 #include "state/macro/MacroPagesState.hpp"
 #include "state/modulation/ProjectModulationState.hpp"
+#include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 
 namespace core::state::project::modulators {
@@ -135,6 +136,27 @@ SourceDetailLayout sourceWorkspaceLayout(
     core::state::modulation::ModulatorKind kind,
     bool options,
     bool audition
+);
+
+/** Main-screen encoder roles are semantic, never positions in a changing layout.
+ * Zero means no direct control. Depth belongs only to the audition's explicit
+ * edge; a durable source (including a Macro deep link) never implies an edge.
+ */
+uint8_t sourceMainEncoderNumber(
+    core::state::modulation::ModulatorKind kind,
+    SourceDetailItem item
+);
+
+struct SourceMainEncoderTarget {
+    SourceDetailItem item = SourceDetailItem::INVALID;
+    uint8_t row = 0U;
+    bool editable = false;
+};
+
+SourceMainEncoderTarget sourceMainEncoderTarget(
+    core::state::modulation::ModulatorKind kind,
+    const core::state::modulation::ProjectModulatorSourceSessionDescriptor& session,
+    uint8_t encoderIndex
 );
 
 uint16_t sourceDestinationCount(

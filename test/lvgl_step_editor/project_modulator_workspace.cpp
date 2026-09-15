@@ -122,6 +122,31 @@ int main() {
         render();
         resize(280);
         assert(resize(270) == expected);
+        // A direct turn selects and edits in the same frame. Feedback must use
+        // the semantic item from the audition layout (Rate is row 1 there).
+        auto* live = findProjectModulator(control.authored().modulation, created.sourceId);
+        ModulationBindingDraft binding{};
+        binding.sourceId = created.sourceId;
+        binding.destination.kind = ModulationDestinationKind::MACRO_SLOT;
+        const auto assigned = addProjectModulationBinding(control.authored().modulation, binding);
+        assert(assigned.changed());
+        control.audition = {.sourceId = created.sourceId, .bindingId = assigned.bindingId,
+            .destination = binding.destination, .generation = 42U,
+            .mode = ProjectModulatorSourceSessionMode::AUDITION_NEW};
+        core::ui::project::ProjectModulatorWorkspaceProps directProps{
+            .visible = true, .control = &control, .source = live,
+            .auditionBinding = findProjectModulationBinding(control.authored().modulation, assigned.bindingId),
+            .session = resolveProjectModulatorSourceSession(control, created.sourceId)};
+        workspace.render(directProps);
+        live->parameters.lfo.periodTicks = 24U;
+        control.markAuthoredMutation();
+        directProps.selectedIndex = 1U;
+        workspace.render(directProps);
+        lv_refr_now(display);
+        auto* feedback = lv_obj_get_child(workspace.getElement(), -1);
+        assert(!lv_obj_has_flag(feedback, LV_OBJ_FLAG_HIDDEN));
+        assert(std::strcmp(lv_label_get_text(lv_obj_get_child(feedback, 0)), "Rate") == 0);
+        assert(sizeof(workspace) <= 1280U);
         std::printf("PASS: 20 publications, retired-source poisoning, release, deferred resize/timers and reopen; %u marker calls\n", widget->markerCalls);
     }
     lv_deinit();

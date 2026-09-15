@@ -527,6 +527,25 @@ FLASHMEM bool MacroHistoryService::hasPendingModulatorAuditionTransaction(
                    DURABLE_PROJECT;
 }
 
+FLASHMEM bool MacroHistoryService::modulatorAuditionMatches(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) const {
+    const auto* slot = pendingModulatorSlot_();
+    if (!slot || !*slot) return false;
+    const auto& change = **slot;
+    const auto& payload = change.modulator;
+    const auto& audition = pages.control.audition;
+    return payload.pending && sameAddress(change.address, address) &&
+        audition.active() && audition.generation == payload.generation &&
+        audition.sourceId == payload.source.id &&
+        audition.bindingId == payload.binding.id &&
+        audition.mode == (payload.sourceCreated
+            ? core::state::modulation::ProjectModulatorSourceSessionMode::AUDITION_NEW
+            : core::state::modulation::ProjectModulatorSourceSessionMode::AUDITION_EXISTING) &&
+        creationIdentityMatches(pages, address, payload, false);
+}
+
 FLASHMEM bool MacroHistoryService::abortPendingModulatorAudition(
     MacroPagesState& pages
 ) {

@@ -63,6 +63,13 @@ FLASHMEM void formatProjectLifecycleFeedback(
     const char* verb,
     const char* projectId
 );
+FLASHMEM void configureProjectEncoder(
+    oc::api::EncoderAPI& encoders,
+    EncoderID id,
+    int stepCount,
+    float position,
+    float normalizedTurns = PROJECT_OPT_NORMALIZED_TURNS
+);
 FLASHMEM void configureOptContinuous(
     oc::api::EncoderAPI& encoders,
     float position,

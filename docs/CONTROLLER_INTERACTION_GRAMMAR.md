@@ -80,6 +80,21 @@ Direct Macro and Step controls prioritize immediate musical authoring. Their
 special gestures remain visible and must not leak into retained editors or
 hierarchical navigation.
 
+The main LFO/DAHDSR source screen also accepts direct Macro encoder rotations.
+Visible E1..E8 markers identify fixed semantic roles: LFO Shape/Rate/Timing use
+E1/E2/E3; envelope Attack/Decay/Sustain/Release use E1/E2/E3/E4. Timing is only
+direct when it is present on the main screen. E8 controls the explicit audition
+edge's Depth, never an implicit destination of a live source. In an existing
+source audition, E8 alone is writable. The header identifies Preview/Shared and
+the destination; a shared live source shows its destination count.
+
+A direct turn focuses its field so OPT can continue it. Changing fields ends
+history coalescing just as NAV does. Options, Trigger, Destinations, Motion,
+overlays and held/guarded actions disable this bank. Macro and the step/CC
+grids keep their existing eight-slot controls. The shared authority for source
+roles and permissions is `ProjectModulatorMenuModel` plus the source session;
+encoder configuration and edits share the existing Project source path.
+
 ### Browser and text entry
 
 Browsers use `NAV` for browse/enter and `LEFT_TOP` for hierarchical Back. Text

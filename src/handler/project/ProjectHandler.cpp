@@ -206,6 +206,7 @@ void ProjectHandler::update(uint32_t nowMs) {
         );
         navigation_.modulatorClipboardGuard.set(clipboardGuard);
     }
+    (void)syncModulatorEncoders();
 }
 
 FLASHMEM bool ProjectHandler::resetProject() {

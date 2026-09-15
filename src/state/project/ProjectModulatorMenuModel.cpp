@@ -6,6 +6,53 @@
 
 namespace core::state::project::modulators {
 
+FLASHMEM uint8_t sourceMainEncoderNumber(
+    core::state::modulation::ModulatorKind kind,
+    SourceDetailItem item
+) {
+    using core::state::modulation::ModulatorKind;
+    using Item = SourceDetailItem;
+    if (kind == ModulatorKind::LFO) {
+        switch (item) {
+            case Item::SHAPE: return 1U;
+            case Item::RATE: return 2U;
+            case Item::TIMING: return 3U;
+            case Item::DEPTH: return 8U;
+            default: return 0U;
+        }
+    }
+    if (kind == ModulatorKind::ADSR) {
+        switch (item) {
+            case Item::ATTACK: return 1U;
+            case Item::DECAY: return 2U;
+            case Item::SUSTAIN: return 3U;
+            case Item::RELEASE: return 4U;
+            case Item::DEPTH: return 8U;
+            default: return 0U;
+        }
+    }
+    return 0U;
+}
+
+FLASHMEM SourceMainEncoderTarget sourceMainEncoderTarget(
+    core::state::modulation::ModulatorKind kind,
+    const core::state::modulation::ProjectModulatorSourceSessionDescriptor& session,
+    uint8_t encoderIndex
+) {
+    using core::state::modulation::ProjectModulatorSourceSessionCapability;
+    if (!session.valid() || encoderIndex >= 8U) return {};
+    const auto layout = sourceWorkspaceLayout(kind, false, session.audition());
+    for (uint8_t row = 0U; row < layout.count; ++row) {
+        const auto item = layout.at(row);
+        if (sourceMainEncoderNumber(kind, item) == encoderIndex + 1U) {
+            return {item, row, session.allows(item == SourceDetailItem::DEPTH
+                ? ProjectModulatorSourceSessionCapability::EDIT_DEPTH
+                : ProjectModulatorSourceSessionCapability::EDIT_SOURCE)};
+        }
+    }
+    return {};
+}
+
 using namespace core::state::modulation;
 
 namespace {

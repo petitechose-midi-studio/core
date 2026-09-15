@@ -26,6 +26,7 @@ namespace {
 
 FLASHMEM void configureModulationDepthEncoder(
     oc::api::EncoderAPI& encoders,
+    EncoderID id,
     const core::state::modulation::ProjectControlState& control,
     const core::state::modulation::ModulationBindingState* binding
 ) {
@@ -40,10 +41,10 @@ FLASHMEM void configureModulationDepthEncoder(
         ? depth_parameter::normalizedPosition(binding->amountQ15)
         : 0.5f;
     if (depth_parameter::stepCount(scale) > 255) {
-        configureOptContinuous(encoders, position);
+        configureProjectEncoder(encoders, id, 0, position);
     } else {
-        configureOptDiscrete(
-            encoders,
+        configureProjectEncoder(
+            encoders, id,
             depth_parameter::stepCount(scale),
             position
         );
@@ -52,9 +53,10 @@ FLASHMEM void configureModulationDepthEncoder(
 
 }  // namespace
 
-FLASHMEM void ProjectHandler::syncFocusedEncoder() {
+FLASHMEM void ProjectHandler::syncFocusedEncoder(bool syncDirectBank) {
     using core::state::project::ProjectNodeId;
 
+    (void)syncModulatorEncoders(syncDirectBank);
     const auto node = navigation_.currentNode.get();
     const uint8_t row = navigation_.focusedRow.get();
 
@@ -66,7 +68,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 pages_.control.authored().modulation,
                 pages_.control.audition.bindingId
             );
-        configureModulationDepthEncoder(encoders_, pages_.control, binding);
+        configureModulationDepthEncoder(encoders_, EncoderID::OPT, pages_.control, binding);
         return;
     }
 
@@ -77,29 +79,8 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(encoders_, 1, 0.0f);
             return;
         }
-        const auto& lfo = source->parameters.lfo;
-        if (lfo.timing == core::state::modulation::ModulatorTimingMode::FREE) {
-            const int count = static_cast<int>(
-                PROJECT_MODULATOR_FREE_PERIODS_MS.size()
-            );
-            configureOptDiscrete(
-                encoders_,
-                count,
-                normalized::indexToNormalized(
-                    projectModulatorFreePeriodIndex(lfo.freePeriodMs),
-                    count
-                )
-            );
-        } else {
-            configureOptDiscrete(
-                encoders_,
-                lfo_parameter::RATE_COUNT,
-                normalized::indexToNormalized(
-                    lfo_parameter::rateIndex(lfo.periodTicks),
-                    lfo_parameter::RATE_COUNT
-                )
-            );
-        }
+        syncModulatorItemEncoder(EncoderID::OPT,
+            core::state::project::modulators::SourceDetailItem::RATE);
         return;
     }
 
@@ -179,216 +160,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         const auto layout = core::state::project::modulators::
             sourceWorkspaceLayout(source->kind, options, session.audition());
         const auto item = layout.at(row);
-        using Item = core::state::project::modulators::SourceDetailItem;
-        using namespace core::state::modulation;
-        switch (item) {
-            case Item::RECORD:
-                configureOptDiscrete(encoders_, 1, 0.0f);
-                return;
-            case Item::LENGTH: {
-                const auto* curve = findProjectCurve(
-                    pages_.control.authored().curves,
-                    source->parameters.recordedCurveId
-                );
-                const uint16_t duration = curve != nullptr
-                    ? curve->durationTicks
-                    : PROJECT_CONTROL_TICKS_PER_BEAT;
-                const int beats = std::clamp<int>(
-                    (duration + PROJECT_CONTROL_TICKS_PER_BEAT / 2U) /
-                        PROJECT_CONTROL_TICKS_PER_BEAT,
-                    1,
-                    64
-                );
-                configureOptDiscrete(
-                    encoders_, 64, normalized::indexToNormalized(beats - 1, 64)
-                );
-                return;
-            }
-            case Item::ENABLED:
-                configureOptDiscrete(
-                    encoders_,
-                    2,
-                    (source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U
-                        ? 1.0f : 0.0f
-                );
-                return;
-            case Item::SHAPE:
-                configureOptDiscrete(
-                    encoders_,
-                    lfo_parameter::SHAPE_COUNT,
-                    normalized::indexToNormalized(
-                        static_cast<int>(source->parameters.lfo.shape),
-                        lfo_parameter::SHAPE_COUNT
-                    )
-                );
-                return;
-            case Item::RATE: {
-                const auto& lfo = source->parameters.lfo;
-                if (lfo.timing == ModulatorTimingMode::FREE) {
-                    const int count = static_cast<int>(
-                        PROJECT_MODULATOR_FREE_PERIODS_MS.size()
-                    );
-                    configureOptDiscrete(
-                        encoders_,
-                        count,
-                        normalized::indexToNormalized(
-                            projectModulatorFreePeriodIndex(lfo.freePeriodMs),
-                            count
-                        )
-                    );
-                } else {
-                    configureOptDiscrete(
-                        encoders_,
-                        lfo_parameter::RATE_COUNT,
-                        normalized::indexToNormalized(
-                            lfo_parameter::rateIndex(
-                                lfo.periodTicks
-                            ),
-                            lfo_parameter::RATE_COUNT
-                        )
-                    );
-                }
-                return;
-            }
-            case Item::TIMING:
-                configureOptDiscrete(
-                    encoders_,
-                    2,
-                    (source->kind == ModulatorKind::ADSR
-                         ? modulatorAdsrTiming(
-                               source->parameters.adsr.traits
-                           )
-                         : source->parameters.lfo.timing) ==
-                            ModulatorTimingMode::FREE
-                        ? 1.0f : 0.0f
-                );
-                return;
-            case Item::PHASE:
-                configureOptDiscrete(
-                    encoders_,
-                    101,
-                    std::clamp(
-                        (static_cast<float>(source->parameters.lfo.phaseQ15) +
-                         32767.0f) /
-                            65534.0f,
-                        0.0f,
-                        1.0f
-                    )
-                );
-                return;
-            case Item::RETRIGGER:
-                if (source->kind == ModulatorKind::ADSR) {
-                    configureOptDiscrete(
-                        encoders_,
-                        2,
-                        normalized::indexToNormalized(
-                            static_cast<int>(
-                                modulatorAdsrRetrigger(
-                                    source->parameters.adsr.traits
-                                )
-                            ),
-                            2
-                        )
-                    );
-                    return;
-                }
-                if (source->parameters.lfo.retrigger ==
-                    ModulatorRetriggerPolicy::EXPLICIT_TRIGGER) {
-                    configureOptDiscrete(encoders_, 1, 0.0f);
-                    return;
-                }
-                configureOptDiscrete(
-                    encoders_,
-                    2,
-                    normalized::indexToNormalized(
-                        static_cast<int>(source->parameters.lfo.retrigger),
-                        2
-                    )
-                );
-                return;
-            case Item::DEPTH: {
-                const auto* binding = findProjectModulationBinding(
-                    pages_.control.authored().modulation,
-                    pages_.control.audition.bindingId
-                );
-                configureModulationDepthEncoder(
-                    encoders_,
-                    pages_.control,
-                    binding
-                );
-                return;
-            }
-            case Item::DELAY:
-            case Item::ATTACK:
-            case Item::HOLD:
-            case Item::DECAY:
-            case Item::RELEASE:
-            case Item::SMOOTH: {
-                const auto parameter = item == Item::DELAY
-                    ? ModulatorEnvelopeTimeParameter::DELAY
-                    : (item == Item::ATTACK
-                        ? ModulatorEnvelopeTimeParameter::ATTACK
-                        : (item == Item::HOLD
-                            ? ModulatorEnvelopeTimeParameter::HOLD
-                            : (item == Item::DECAY
-                                ? ModulatorEnvelopeTimeParameter::DECAY
-                                : (item == Item::RELEASE
-                                    ? ModulatorEnvelopeTimeParameter::RELEASE
-                                    : ModulatorEnvelopeTimeParameter::SMOOTH))));
-                const auto timing = modulatorAdsrTiming(
-                    source->parameters.adsr.traits
-                );
-                const int count = envelope_parameter::durationCount(
-                    timing,
-                    parameter
-                );
-                configureOptDiscrete(
-                    encoders_,
-                    count,
-                    normalized::indexToNormalized(
-                        envelope_parameter::durationIndex(
-                            modulatorEnvelopeDuration(
-                                source->parameters.adsr,
-                                parameter
-                            ),
-                            timing,
-                            parameter
-                        ),
-                        count
-                    )
-                );
-                return;
-            }
-            case Item::SUSTAIN:
-                configureOptDiscrete(
-                    encoders_,
-                    101,
-                    std::clamp(
-                        static_cast<float>(source->parameters.adsr.sustainQ15) /
-                            static_cast<float>(
-                                PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15
-                            ),
-                        0.0f,
-                        1.0f
-                    )
-                );
-                return;
-            case Item::RESPONSE:
-                configureOptDiscrete(
-                    encoders_,
-                    3,
-                    normalized::indexToNormalized(
-                        static_cast<int>(modulatorAdsrCurve(
-                            source->parameters.adsr.traits
-                        )),
-                        3
-                    )
-                );
-                return;
-            default:
-                configureOptDiscrete(encoders_, 1, 0.0f);
-                return;
-        }
+        syncModulatorItemEncoder(EncoderID::OPT, item);
     }
 
     if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {
@@ -397,7 +169,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(encoders_, 1, 0.0f);
             return;
         }
-        configureModulationDepthEncoder(encoders_, pages_.control, binding);
+        configureModulationDepthEncoder(encoders_, EncoderID::OPT, pages_.control, binding);
         return;
     }
 
@@ -507,6 +279,213 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         navigation_.projectNameRows = {};
         configureOptRaw(encoders_);
         return;
+    }
+}
+
+FLASHMEM void ProjectHandler::syncModulatorItemEncoder(
+    Config::EncoderID id,
+    core::state::project::modulators::SourceDetailItem item
+) {
+    const auto* source = focusedModulator();
+    if (!source) return;
+    using Item = core::state::project::modulators::SourceDetailItem;
+    using namespace core::state::modulation;
+    switch (item) {
+        case Item::RECORD:
+            configureProjectEncoder(encoders_, id, 1, 0.0f);
+            return;
+        case Item::LENGTH: {
+            const auto* curve = findProjectCurve(
+                pages_.control.authored().curves,
+                source->parameters.recordedCurveId
+            );
+            const uint16_t duration = curve != nullptr
+                ? curve->durationTicks
+                : PROJECT_CONTROL_TICKS_PER_BEAT;
+            const int beats = std::clamp<int>(
+                (duration + PROJECT_CONTROL_TICKS_PER_BEAT / 2U) /
+                    PROJECT_CONTROL_TICKS_PER_BEAT,
+                1,
+                64
+            );
+            configureProjectEncoder(encoders_, id, 64, normalized::indexToNormalized(beats - 1, 64)
+            );
+            return;
+        }
+        case Item::ENABLED:
+            configureProjectEncoder(encoders_, id,
+                2,
+                (source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U
+                    ? 1.0f : 0.0f
+            );
+            return;
+        case Item::SHAPE:
+            configureProjectEncoder(encoders_, id,
+                lfo_parameter::SHAPE_COUNT,
+                normalized::indexToNormalized(
+                    static_cast<int>(source->parameters.lfo.shape),
+                    lfo_parameter::SHAPE_COUNT
+                )
+            );
+            return;
+        case Item::RATE: {
+            const auto& lfo = source->parameters.lfo;
+            if (lfo.timing == ModulatorTimingMode::FREE) {
+                const int count = static_cast<int>(
+                    PROJECT_MODULATOR_FREE_PERIODS_MS.size()
+                );
+                configureProjectEncoder(encoders_, id,
+                    count,
+                    normalized::indexToNormalized(
+                        projectModulatorFreePeriodIndex(lfo.freePeriodMs),
+                        count
+                    )
+                );
+            } else {
+                configureProjectEncoder(encoders_, id,
+                    lfo_parameter::RATE_COUNT,
+                    normalized::indexToNormalized(
+                        lfo_parameter::rateIndex(
+                            lfo.periodTicks
+                        ),
+                        lfo_parameter::RATE_COUNT
+                    )
+                );
+            }
+            return;
+        }
+        case Item::TIMING:
+            configureProjectEncoder(encoders_, id,
+                2,
+                (source->kind == ModulatorKind::ADSR
+                     ? modulatorAdsrTiming(
+                           source->parameters.adsr.traits
+                       )
+                     : source->parameters.lfo.timing) ==
+                        ModulatorTimingMode::FREE
+                    ? 1.0f : 0.0f
+            );
+            return;
+        case Item::PHASE:
+            configureProjectEncoder(encoders_, id,
+                101,
+                std::clamp(
+                    (static_cast<float>(source->parameters.lfo.phaseQ15) +
+                     32767.0f) /
+                        65534.0f,
+                    0.0f,
+                    1.0f
+                )
+            );
+            return;
+        case Item::RETRIGGER:
+            if (source->kind == ModulatorKind::ADSR) {
+                configureProjectEncoder(encoders_, id,
+                    2,
+                    normalized::indexToNormalized(
+                        static_cast<int>(
+                            modulatorAdsrRetrigger(
+                                source->parameters.adsr.traits
+                            )
+                        ),
+                        2
+                    )
+                );
+                return;
+            }
+            if (source->parameters.lfo.retrigger ==
+                ModulatorRetriggerPolicy::EXPLICIT_TRIGGER) {
+                configureProjectEncoder(encoders_, id, 1, 0.0f);
+                return;
+            }
+            configureProjectEncoder(encoders_, id,
+                2,
+                normalized::indexToNormalized(
+                    static_cast<int>(source->parameters.lfo.retrigger),
+                    2
+                )
+            );
+            return;
+        case Item::DEPTH: {
+            const auto* binding = findProjectModulationBinding(
+                pages_.control.authored().modulation,
+                pages_.control.audition.bindingId
+            );
+            configureModulationDepthEncoder(
+                encoders_,
+                id,
+                pages_.control,
+                binding
+            );
+            return;
+        }
+        case Item::DELAY:
+        case Item::ATTACK:
+        case Item::HOLD:
+        case Item::DECAY:
+        case Item::RELEASE:
+        case Item::SMOOTH: {
+            const auto parameter = item == Item::DELAY
+                ? ModulatorEnvelopeTimeParameter::DELAY
+                : (item == Item::ATTACK
+                    ? ModulatorEnvelopeTimeParameter::ATTACK
+                    : (item == Item::HOLD
+                        ? ModulatorEnvelopeTimeParameter::HOLD
+                        : (item == Item::DECAY
+                            ? ModulatorEnvelopeTimeParameter::DECAY
+                            : (item == Item::RELEASE
+                                ? ModulatorEnvelopeTimeParameter::RELEASE
+                                : ModulatorEnvelopeTimeParameter::SMOOTH))));
+            const auto timing = modulatorAdsrTiming(
+                source->parameters.adsr.traits
+            );
+            const int count = envelope_parameter::durationCount(
+                timing,
+                parameter
+            );
+            configureProjectEncoder(encoders_, id,
+                count,
+                normalized::indexToNormalized(
+                    envelope_parameter::durationIndex(
+                        modulatorEnvelopeDuration(
+                            source->parameters.adsr,
+                            parameter
+                        ),
+                        timing,
+                        parameter
+                    ),
+                    count
+                )
+            );
+            return;
+        }
+        case Item::SUSTAIN:
+            configureProjectEncoder(encoders_, id,
+                101,
+                std::clamp(
+                    static_cast<float>(source->parameters.adsr.sustainQ15) /
+                        static_cast<float>(
+                            PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15
+                        ),
+                    0.0f,
+                    1.0f
+                )
+            );
+            return;
+        case Item::RESPONSE:
+            configureProjectEncoder(encoders_, id,
+                3,
+                normalized::indexToNormalized(
+                    static_cast<int>(modulatorAdsrCurve(
+                        source->parameters.adsr.traits
+                    )),
+                    3
+                )
+            );
+            return;
+        default:
+            configureProjectEncoder(encoders_, id, 1, 0.0f);
+            return;
     }
 }
 

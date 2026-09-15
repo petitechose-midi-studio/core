@@ -1,0 +1,27 @@
+# UX workflow: existing-source audition only permits direct E8 Depth.
+# Purpose: verify shared source protection and exact destination-edge cancellation.
+# Expect: semantic:locked:effect=ignore_unavailable_source_encoder, semantic:locked:outcome=blocked
+# Expect: semantic:depth:property=depth, semantic:depth:effect=edit_modulator_depth
+# Expect: semantic:cancelled:effect=cancel_destination_audition
+# Expect: capture_changed:locked=depth, capture_changed:depth=cancelled
+
+0 scenario macro-reusable-modulators
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1450 encoder NAV 0.01
+1570 encoder NAV 0.01
+1690 tap NAV 60
+1810 encoder NAV 0.01
+1870 encoder NAV 0.01
+1930 tap NAV 60
+2270 encoder NAV 0.01
+2610 tap NAV 60
+2830 capture screen source
+2950 encoder_value MACRO_1 1.00
+3170 capture screen locked
+3290 encoder_value MACRO_8 0.75
+3510 capture screen depth
+3630 tap LEFT_TOP 60
+3850 capture screen cancelled

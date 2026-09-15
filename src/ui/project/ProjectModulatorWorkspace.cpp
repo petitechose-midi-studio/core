@@ -44,9 +44,7 @@ constexpr lv_coord_t CARD_BOTTOM_HEIGHT = 37;
 constexpr lv_coord_t CARD_GAP = 3;
 constexpr lv_coord_t HORIZONTAL_PAD = 4;
 
-const char SOURCE_KIND_LFO[] PROGMEM = "LFO";
 const char SOURCE_KIND_MOTION[] PROGMEM = "Motion";
-const char SOURCE_KIND_ADSR[] PROGMEM = "DAHDSR";
 const char SOURCE_STATE_ON[] PROGMEM = "On";
 const char SOURCE_STATE_OFF[] PROGMEM = "Off";
 const char SOURCE_STATE_FORMAT[] PROGMEM = "%s · %s";
@@ -352,71 +350,25 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
             "%s",
             captureStatusLabel(props.capture->status)
         );
-    } else if (existing && props.transientFeedback &&
-        props.transientFeedback[0] != '\0') {
-        std::snprintf(
-            stateText.data(),
-            stateText.size(),
-            "%s",
-            props.transientFeedback
-        );
     } else if (audition && props.auditionBinding) {
-        const int depth = depth_parameter::amountQ15ToPercent(
-            props.auditionBinding->amountQ15,
-            depth_parameter::scaleFor(
-                props.control->authored().modulation,
-                props.control->authored().curves,
-                *props.auditionBinding
-            )
-        );
-        if (existing) {
-            std::snprintf(
-                stateText.data(),
-                stateText.size(),
-                "%s · %s · Shared %+d%%",
-                source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
-                    : (source.kind == ModulatorKind::LFO
-                        ? SOURCE_KIND_LFO : SOURCE_KIND_MOTION),
-                sourceTimingLabel(source) != nullptr
-                    ? sourceTimingLabel(source) : "Motion",
-                depth
-            );
-        } else {
-            std::snprintf(
-                stateText.data(),
-                stateText.size(),
-                "%s · %s · Preview %+d%%",
-                source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
-                    : (source.kind == ModulatorKind::LFO
-                        ? SOURCE_KIND_LFO : SOURCE_KIND_MOTION),
-                sourceTimingLabel(source) != nullptr
-                    ? sourceTimingLabel(source) : "Motion",
-                depth
-            );
-        }
+        const auto& destination = props.auditionBinding->destination;
+        std::snprintf(stateText.data(), stateText.size(), "%s T%u P%u M%u",
+            existing ? "Shared" : "Preview",
+            static_cast<unsigned>(destination.track + 1U),
+            static_cast<unsigned>(destination.page + 1U),
+            static_cast<unsigned>(destination.macro + 1U));
     } else {
-        const char* kind = source.kind == ModulatorKind::LFO
-            ? SOURCE_KIND_LFO
-            : (source.kind == ModulatorKind::ADSR
-                ? SOURCE_KIND_ADSR : SOURCE_KIND_MOTION);
+        const auto count = core::state::project::modulators::sourceDestinationCount(
+            props.control->authored().modulation, source.id);
         const char* timing = sourceTimingLabel(source);
-        if (timing != nullptr) {
-            std::snprintf(
-                stateText.data(),
-                stateText.size(),
-                "%s · %s · %s",
-                kind,
-                timing,
-                enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
-            );
+        if (count > 1U) {
+            std::snprintf(stateText.data(), stateText.size(), "%s · %u dest",
+                enabled ? (timing ? timing : SOURCE_KIND_MOTION) : SOURCE_STATE_OFF,
+                static_cast<unsigned>(count));
         } else {
-            std::snprintf(
-                stateText.data(),
-                stateText.size(),
-                SOURCE_STATE_FORMAT,
-                kind,
-                enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
-            );
+            std::snprintf(stateText.data(), stateText.size(), SOURCE_STATE_FORMAT,
+                timing ? timing : SOURCE_KIND_MOTION,
+                enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF);
         }
     }
     header_->render({
@@ -546,6 +498,10 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
              (item == Item::RENAME && props.session.allows(
                   ProjectModulatorSourceSessionCapability::MANAGE_SOURCE
               )));
+        if (!props.options && !props.trigger && action &&
+            (item == Item::OPTIONS || item == Item::TRIGGER || item == Item::DESTINATIONS)) {
+            std::snprintf(row.value.data(), row.value.size(), "NAV");
+        }
         const uint32_t accent = mutableValue || action
             ? theme::color::MACRO_MODULATION
             : theme::color::TEXT_SECONDARY;
@@ -563,6 +519,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
                 .labelOpacity = static_cast<lv_opa_t>(selected ? LV_OPA_COVER : LV_OPA_60),
                 .valueOpacity = static_cast<lv_opa_t>(mutableValue || action ? LV_OPA_COVER : LV_OPA_50),
             },
+            .encoderNumber = props.options || props.trigger ? uint8_t{0U}
+                : core::state::project::modulators::sourceMainEncoderNumber(props.source->kind, item),
         });
     }
     rendered_layout_width_ = availableWidth;
@@ -917,18 +875,11 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
             props.auditionBinding,
             row
         );
-    } else if (props.options) {
-        core::ui::project::modulators::populateSourceOptionsRow(
-            *props.control,
-            *props.source,
-            props.selectedIndex,
-            row
-        );
     } else {
-        core::ui::project::modulators::populateSourceDetailRow(
+        populateSourceItemRow(
             *props.control,
             *props.source,
-            props.selectedIndex,
+            item,
             row
         );
     }
@@ -1101,8 +1052,10 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     renderCurve(props);
     showEditFeedback(
         props,
-        (sourceChanged || (props.trigger && authoredChanged)) &&
-            !selectionChanged
+        sourceChanged || (props.trigger && authoredChanged && !selectionChanged) ||
+            (props.session.audition() && authoredChanged &&
+             core::state::project::modulators::sourceWorkspaceLayout(
+                 props.source->kind, props.options, true).at(props.selectedIndex) == Item::DEPTH)
     );
     showCaptureFeedback(props, captureActive);
 
