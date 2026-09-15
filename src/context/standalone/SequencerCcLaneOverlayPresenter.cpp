@@ -67,25 +67,6 @@ const char* fieldLabel(seq::SequencerCcLaneDraftField field) {
     return "";
 }
 
-const char* feedbackLabel(const contextual::OperationFeedbackState& feedback) {
-    if (!feedback.active) return "";
-    using Status = contextual::OperationFeedbackStatus;
-    switch (feedback.status) {
-        case Status::PREVIEW: return "Preview";
-        case Status::PRESSED: return "Hold";
-        case Status::ARMED: return "Armed";
-        case Status::QUEUED: return "Queued";
-        case Status::APPLIED: return "Applied";
-        case Status::CANCELLED: return "Cancelled";
-        case Status::BLOCKED: return "Blocked";
-        case Status::WARNING: return "Warning";
-        case Status::CONFLICT: return "Conflict";
-        case Status::FAILED: return "Failed";
-        case Status::NONE: return "";
-    }
-    return "";
-}
-
 const char* winnerLabel(core::state::shared::MidiCcCandidateClass winner) {
     using Winner = core::state::shared::MidiCcCandidateClass;
     switch (winner) {
@@ -181,7 +162,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
             activeTrack
         );
     const auto feedback = ui.operationFeedback.get();
-    const char* feedbackText = feedbackLabel(feedback);
+    const char* feedbackText = core::ui::contextActionFeedbackText(feedback);
 
     if (ui.mode != Mode::LANE_GRID &&
         ui.mode != Mode::TRANSITION_PICKER) {
@@ -575,6 +556,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderActionStrip() {
     }
     props.hintLeft = "NAV: property";
     props.hintRight = "OPT: value";
+    core::ui::describeContextFeedback(props, feedback);
     action_strip_.render(props);
     if (auto* strip = action_strip_.getElement()) {
         lv_obj_move_foreground(strip);

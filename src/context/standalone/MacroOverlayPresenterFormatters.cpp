@@ -669,7 +669,7 @@ FLASHMEM core::ui::ContextActionStripSlotProps scopeLabel(const char* label) {
 }
 
 FLASHMEM void projectGuardedAction(
-    core::ui::ContextActionStripSlotProps& slot,
+    core::ui::ContextActionStripProps& props,
     const Source& source,
     core::state::MacroContextButton button
 ) {
@@ -678,6 +678,9 @@ FLASHMEM void projectGuardedAction(
     if (source.macroEdit.contextButton.get() != button) return;
     const auto feedback = source.macroEdit.contextFeedback.get();
     if (!feedback.active) return;
+    auto& slot = props.slots[
+        button == core::state::MacroContextButton::BOTTOM_LEFT ? 0 : 2];
+    core::ui::describeContextFeedback(props, feedback);
     slot.showLabel = true;
     slot.label = core::ui::contextActionFeedbackLabel(feedback);
     if (!slot.label) slot.label = core::ui::contextActionPresentation(feedback.action).label;

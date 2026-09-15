@@ -45,38 +45,6 @@ FLASHMEM const char* feedbackLabel(
     }
 }
 
-FLASHMEM const char* shortOperationLabel(
-    const contextual::OperationFeedbackState& feedback
-) {
-    using Status = contextual::OperationFeedbackStatus;
-    switch (feedback.status) {
-        case Status::PRESSED: return "Hold";
-        case Status::ARMED: return "Armed";
-        case Status::QUEUED:
-            return feedback.action == contextual::ContextActionId::LOAD
-                ? "Next loop"
-                : "Queued";
-        case Status::APPLIED:
-            switch (feedback.action) {
-                case contextual::ContextActionId::SAVE: return "Saved";
-                case contextual::ContextActionId::CREATE: return "Created";
-                case contextual::ContextActionId::RENAME: return "Renamed";
-                case contextual::ContextActionId::MOVE: return "Moved";
-                case contextual::ContextActionId::DELETE_ASSET:
-                    return "Deleted";
-                default: return "Loaded";
-            }
-        case Status::CANCELLED: return "Cancelled";
-        case Status::BLOCKED: return "Blocked";
-        case Status::WARNING: return "Warning";
-        case Status::CONFLICT: return "Conflict";
-        case Status::FAILED: return "Failed";
-        case Status::PREVIEW: return "Preview";
-        case Status::NONE:
-        default: return "";
-    }
-}
-
 FLASHMEM bool duplicateName(const Picker& picker, uint8_t candidate) {
     if (!picker.entryHasReadableMetadata(candidate)) return false;
     const char* name = picker.entryName(candidate);
@@ -193,9 +161,15 @@ FLASHMEM void formatList(
     );
 
     const auto operation = picker.operationFeedback.get();
-    const char* operationText = operation.active
-        ? shortOperationLabel(operation)
-        : "";
+    const char* operationText = core::ui::contextActionFeedbackText(operation);
+    if (operation.active && operation.action == contextual::ContextActionId::LOAD) {
+        if (operation.status == contextual::OperationFeedbackStatus::QUEUED) {
+            operationText = config.queuedFeedback;
+        } else if (operation.status == contextual::OperationFeedbackStatus::APPLIED &&
+                   operation.reason == contextual::ContextActionReason::NONE) {
+            operationText = config.loadedFeedback;
+        }
+    }
     const char* currentFeedback = feedbackLabel(
         picker.feedback.get(),
         config

@@ -4,6 +4,7 @@
 
 #include "config/PlatformCompat.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/strip/ContextActionVisualProjection.hpp"
 
 namespace core::context::standalone::sequencer_overlay_presenter {
 
@@ -96,6 +97,7 @@ FLASHMEM core::ui::ContextActionStripProps buildPresetLibraryActionStripProps(
         : action.saveMode ? "Load mode" : "Save mode";
     props.slots[2].label = action.primaryLabel;
     props.slots[2].holdOnly = action.holdOnly;
+    core::ui::describeContextFeedback(props, picker.operationFeedback.get());
     return props;
 }
 

@@ -23,10 +23,6 @@ struct ListConfig {
 
 uint32_t mixRevision(uint32_t seed, uint32_t value);
 
-const char* shortOperationLabel(
-    const core::state::contextual::OperationFeedbackState& feedback
-);
-
 void formatList(
     SequencerPresetLibraryPresentation& data,
     const core::state::sequencer::SequencerPresetLibrarySessionState& picker,

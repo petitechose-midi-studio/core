@@ -11,6 +11,7 @@ domain policy.
 |---|---|
 | Which tap/hold is available, its target or admission | The feature's policy in `src/state`, used by its handler |
 | Action words, glyphs and operation feedback | `src/ui/strip/ContextActionVisualProjection.hpp` |
+| Shared outcome words and precise refusal causes | `src/ui/strip/ContextFeedbackPresentation.hpp` |
 | Sequencer action vocabulary adapter | `src/ui/sequencer/SequencerActionStripVisuals.hpp` |
 | Context-specific hint or action projection | The feature's presenter or view-model builder |
 | Footer geometry, colors and text style | `src/ui/theme/StandaloneTheme.hpp` and `src/ui/strip/ContextActionStrip.cpp` |
@@ -68,6 +69,14 @@ Draft state is also local to its owner. In Track Editor, Type can be pending
 while Channel and Delay remain direct edits. A global Draft flag would erase
 that distinction. Feedback text cannot close a transaction or alter encoder
 ownership when it expires.
+
+Operation results have two levels: the command keeps a short outcome, while
+`describeContextFeedback` uses the full explanation row for its recorded cause.
+The owner still controls visibility and expiry. A queued operation remains
+visible until resolved; drawing it cannot acknowledge a refusal or cancel a
+draft. Press/hold progress keeps precedence. Recovery gestures and details such
+as loading into an editor or waiting for a loop boundary stay with the domain
+that can establish those facts. Do not guess a cause from a generic failure.
 
 ## Verification
 
