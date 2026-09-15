@@ -477,6 +477,10 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
                 captureStatusLabel(props.capture->status)
             );
         }
+        if (item == Item::TIMING && sourceTimingLabel(*props.source)) {
+            // Main-screen cards can be only 90 px wide beside the left rail.
+            std::snprintf(row.value.data(), row.value.size(), "%s", sourceTimingLabel(*props.source));
+        }
         const bool selected = index == props.selectedIndex;
         const bool sourceValue = props.trigger ||
             editableItem(item, props.source->kind);
