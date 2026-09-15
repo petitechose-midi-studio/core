@@ -6,6 +6,7 @@
 #include <ms/ui/font/CoreFonts.hpp>
 
 #include "ui/common/ContextSurfaceDraw.hpp"
+#include "ui/common/ContextHeader.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/interaction/InteractiveSurfaceVisual.hpp"
@@ -24,12 +25,7 @@ constexpr lv_coord_t SURFACE_HEIGHT = 196;
 
 constexpr lv_opa_t OPACITY_55 = static_cast<lv_opa_t>(140);
 
-template <std::size_t N>
-FLASHMEM void copyText(std::array<char, N>& destination, const char* source) {
-    const char* text = source ? source : "";
-    std::strncpy(destination.data(), text, N - 1U);
-    destination[N - 1U] = '\0';
-}
+using surface::copyText;
 
 FLASHMEM void drawInteractiveSurface(
     lv_layer_t* layer,
@@ -211,22 +207,12 @@ FLASHMEM void ProjectTrackEditorOverlay::draw(lv_layer_t* layer) const {
         2
     );
 
-    surface::text(
-        layer,
-        surface::area(origin, 10, 2, 174, 24),
-        cache_.title.data(),
-        fonts.context_title(),
-        cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE
-    );
-    surface::text(
-        layer,
-        surface::area(origin, 184, 4, 120, 18),
-        cache_.status.data(),
-        fonts.meta_label(),
-        cache_.trackEnabled ? cache_.statusColor : theme::color::INACTIVE,
-        cache_.trackEnabled ? LV_OPA_80 : OPACITY_55,
-        LV_TEXT_ALIGN_RIGHT
-    );
+    drawContextHeader(layer, surface::area(origin, 10, 1, 294, 24), {
+        .title = cache_.title.data(), .status = cache_.status.data(),
+        .titleColor = cache_.trackEnabled ? theme::color::TEXT_PRIMARY : theme::color::INACTIVE,
+        .statusColor = cache_.trackEnabled ? cache_.statusColor : theme::color::INACTIVE,
+        .statusOpacity = static_cast<lv_opa_t>(cache_.trackEnabled ? LV_OPA_80 : OPACITY_55),
+    });
 
     drawPropertyCard(
         layer,

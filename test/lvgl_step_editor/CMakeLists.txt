@@ -24,6 +24,9 @@ add_executable(context_action_strip context_action_strip.cpp ../../src/ui/strip/
     ../../../ui/src/ms/ui/widget/TextOverflow.cpp
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/PausableTimer.cpp"
     "${OC_ROOT}/framework/src/oc/time/Time.cpp")
+add_executable(editor_surfaces editor_surfaces.cpp
+    ../../src/ui/common/ContextHeader.cpp ../../src/ui/common/ParameterCard.cpp
+    ../../../ui/src/ms/ui/widget/TextOverflow.cpp)
 add_executable(overlay_occlusion overlay_occlusion.cpp ../../../ui/src/ms/ui/ViewContainer.cpp)
 add_executable(context_footer context_footer.cpp
     ../../../ui/src/ms/ui/widget/TextOverflow.cpp
@@ -63,7 +66,7 @@ add_executable(drum_surface drum_surface.cpp ../../src/ui/sequencer/DrumOverview
     "${OC_ROOT}/ui-lvgl/src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp")
 # Discard unused editing services while retaining the real projection/model.
 set_property(TARGET drum_surface PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip context_footer overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text property_selection_overlay macro_knob font_registry drum_surface)
+foreach(target step_editor track_navigation_strip step_grid_widgets main_view_frame context_action_strip context_footer editor_surfaces overlay_occlusion pattern_preset_preview cc_lane_grid cached_header_text property_selection_overlay macro_knob font_registry drum_surface)
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_include_directories(${target} PRIVATE ../../src ../../../ui/src ../../../device-support/src
         "${OC_ROOT}/ui-lvgl/src" "${OC_ROOT}/framework/src"
@@ -79,6 +82,7 @@ enable_testing()
 set(MS_CORE_NATIVE_BUILD "" CACHE PATH "Built Core native libraries for the Control workspace regression")
 if(MS_CORE_NATIVE_BUILD)
     add_executable(project_modulator_workspace project_modulator_workspace.cpp
+        ../../src/ui/common/ContextHeader.cpp ../../src/ui/common/ParameterCard.cpp
         ../../src/ui/project/ProjectModulatorUiModel.cpp
         ../../src/ui/modulation/ModulatorSparklineModel.cpp
         ../../../ui/src/ms/ui/widget/CurvePreviewWidget.cpp
@@ -112,6 +116,7 @@ add_test(NAME step_grid_widgets COMMAND step_grid_widgets)
 add_test(NAME main_view_frame COMMAND main_view_frame)
 add_test(NAME context_action_strip COMMAND context_action_strip)
 add_test(NAME context_footer COMMAND context_footer)
+add_test(NAME editor_surfaces COMMAND editor_surfaces)
 add_test(NAME overlay_occlusion COMMAND overlay_occlusion)
 add_test(NAME pattern_preset_preview COMMAND pattern_preset_preview)
 add_test(NAME cc_lane_grid COMMAND cc_lane_grid)

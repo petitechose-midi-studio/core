@@ -227,29 +227,26 @@ FLASHMEM ProjectModulatorWorkspace::ProjectModulatorWorkspace(lv_obj_t* parent) 
 FLASHMEM ProjectModulatorWorkspace::~ProjectModulatorWorkspace() {
     edit_feedback_timer_.reset();
     curve_preview_.reset();
+    header_.reset();
+    for (auto& card : cards_) card.reset();
     if (root_) {
         lv_obj_delete(root_);
         root_ = nullptr;
     }
-    source_icon_ = nullptr;
-    title_ = nullptr;
-    state_icon_ = nullptr;
-    state_text_ = nullptr;
-    cards_ = {};
     edit_feedback_ = nullptr;
     edit_feedback_key_ = nullptr;
     edit_feedback_value_ = nullptr;
 }
 
 FLASHMEM bool ProjectModulatorWorkspace::valid() const {
-    if (!root_ || !source_icon_ || !title_ || !state_icon_ || !state_text_ ||
+    if (!root_ || !header_ || !header_->getElement() ||
         !curve_preview_ || !curve_preview_->getElement() || !edit_feedback_ ||
         !edit_feedback_key_ || !edit_feedback_value_ || !edit_feedback_timer_ ||
         !edit_feedback_timer_->valid()) {
         return false;
     }
     for (const auto& card : cards_) {
-        if (!card.root || !card.icon || !card.label || !card.value) return false;
+        if (!card || !card->getElement()) return false;
     }
     return true;
 }
@@ -265,41 +262,9 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
     lv_obj_clear_flag(root_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
 
-    source_icon_ = createLabel(
-        root_,
-        standalone_fonts.icons_16,
-        theme::color::MACRO_MODULATION,
-        LV_TEXT_ALIGN_CENTER
-    );
-    if (source_icon_) {
-        lv_obj_set_pos(source_icon_, 5, 2);
-        lv_obj_set_size(source_icon_, 18, 17);
-    }
-    title_ = createLabel(root_, fonts.context_title(), theme::color::TEXT_PRIMARY);
-    if (title_) {
-        lv_obj_set_pos(title_, 27, 1);
-        lv_obj_set_size(title_, 110, HEADER_HEIGHT);
-    }
-    state_icon_ = createLabel(
-        root_,
-        standalone_fonts.icons_12,
-        theme::color::MACRO_MODULATION,
-        LV_TEXT_ALIGN_RIGHT
-    );
-    if (state_icon_) {
-        lv_obj_set_pos(state_icon_, 140, 3);
-        lv_obj_set_size(state_icon_, 14, 15);
-    }
-    state_text_ = createLabel(
-        root_,
-        fonts.meta_label(),
-        theme::color::TEXT_SECONDARY,
-        LV_TEXT_ALIGN_RIGHT
-    );
-    if (state_text_) {
-        lv_obj_set_pos(state_text_, 156, 3);
-        lv_obj_set_size(state_text_, 156, 15);
-    }
+    header_.emplace(root_);
+    lv_obj_set_pos(header_->getElement(), HORIZONTAL_PAD, 0);
+    lv_obj_set_size(header_->getElement(), 312, HEADER_HEIGHT);
 
     curve_preview_ = core::app::makeExtmemUnique<ms::ui::CurvePreviewWidget>(root_);
     if (curve_preview_ && curve_preview_->getElement()) {
@@ -319,7 +284,7 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
     }
 
     for (uint8_t index = 0U; index < cards_.size(); ++index) {
-        createCard(index);
+        cards_[index].emplace(root_);
     }
 
     edit_feedback_ = lv_obj_create(root_);
@@ -369,46 +334,6 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
     );
 }
 
-FLASHMEM void ProjectModulatorWorkspace::createCard(uint8_t index) {
-    if (!root_ || index >= cards_.size()) return;
-    auto& card = cards_[index];
-    card.root = lv_obj_create(root_);
-    if (!card.root) return;
-    lv_obj_remove_style_all(card.root);
-    lv_obj_set_style_radius(card.root, 3, 0);
-    lv_obj_set_style_border_width(card.root, 1, 0);
-    lv_obj_clear_flag(card.root, LV_OBJ_FLAG_SCROLLABLE);
-
-    card.icon = createLabel(
-        card.root,
-        standalone_fonts.icons_12,
-        theme::color::TEXT_SECONDARY,
-        LV_TEXT_ALIGN_CENTER
-    );
-    if (card.icon) {
-        lv_obj_set_pos(card.icon, 4, 5);
-        lv_obj_set_size(card.icon, 15, 14);
-    }
-    card.label = createLabel(
-        card.root,
-        fonts.meta_label(),
-        theme::color::TEXT_SECONDARY
-    );
-    if (card.label) {
-        lv_obj_set_pos(card.label, 21, 2);
-        lv_obj_set_size(card.label, 110, 14);
-    }
-    card.value = createLabel(
-        card.root,
-        fonts.compact_selected(),
-        theme::color::TEXT_PRIMARY
-    );
-    if (card.value) {
-        lv_obj_set_pos(card.value, 21, 16);
-        lv_obj_set_size(card.value, 110, 16);
-    }
-}
-
 FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     const ProjectModulatorWorkspaceProps& props
 ) {
@@ -419,56 +344,19 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     const bool enabled =
         (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     const bool recording = captureMatches(props);
-    if (copyTruncatedIfChanged(titleText_, source.name.data())) {
-        lv_label_set_text_static(title_, titleText_.data());
-    }
-    standalone::icons::set(
-        source_icon_,
-        source.kind == ModulatorKind::LFO
-            ? standalone::icons::MODULATION
-            : (source.kind == ModulatorKind::ADSR
-                ? standalone::icons::NOTE_PROP_GATE
-                : standalone::icons::AUTOMATION),
-        standalone::icons::Size::L
-    );
-    lv_obj_set_style_text_color(
-        source_icon_,
-        lv_color_hex(
-            enabled ? theme::color::MACRO_MODULATION : theme::color::INACTIVE
-        ),
-        0
-    );
-    standalone::icons::set(
-        state_icon_,
-        recording ? standalone::icons::AUTOMATION
-        : existing ? standalone::icons::LOCK
-                       : (audition ? standalone::icons::STATUS_PREVIEW
-                       : (enabled ? standalone::icons::STATUS_RESUME
-                                  : standalone::icons::STATUS_PAUSED)),
-        standalone::icons::Size::S
-    );
-    lv_obj_set_style_text_color(
-        state_icon_,
-        lv_color_hex(
-            recording || audition
-                ? theme::color::LIVE_TIME
-                : (enabled ? theme::color::CONTENT_ACTIVE
-                           : theme::color::INACTIVE)
-        ),
-        0
-    );
+    std::array<char, 40> stateText{};
     if (recording) {
         std::snprintf(
-            stateText_.data(),
-            stateText_.size(),
+            stateText.data(),
+            stateText.size(),
             "%s",
             captureStatusLabel(props.capture->status)
         );
     } else if (existing && props.transientFeedback &&
         props.transientFeedback[0] != '\0') {
         std::snprintf(
-            stateText_.data(),
-            stateText_.size(),
+            stateText.data(),
+            stateText.size(),
             "%s",
             props.transientFeedback
         );
@@ -483,8 +371,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
         );
         if (existing) {
             std::snprintf(
-                stateText_.data(),
-                stateText_.size(),
+                stateText.data(),
+                stateText.size(),
                 "%s · %s · Shared %+d%%",
                 source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
                     : (source.kind == ModulatorKind::LFO
@@ -495,8 +383,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
             );
         } else {
             std::snprintf(
-                stateText_.data(),
-                stateText_.size(),
+                stateText.data(),
+                stateText.size(),
                 "%s · %s · Preview %+d%%",
                 source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
                     : (source.kind == ModulatorKind::LFO
@@ -514,8 +402,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
         const char* timing = sourceTimingLabel(source);
         if (timing != nullptr) {
             std::snprintf(
-                stateText_.data(),
-                stateText_.size(),
+                stateText.data(),
+                stateText.size(),
                 "%s · %s · %s",
                 kind,
                 timing,
@@ -523,25 +411,28 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
             );
         } else {
             std::snprintf(
-                stateText_.data(),
-                stateText_.size(),
+                stateText.data(),
+                stateText.size(),
                 SOURCE_STATE_FORMAT,
                 kind,
                 enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
             );
         }
     }
-    lv_label_set_text_static(state_text_, stateText_.data());
-    lv_obj_set_style_text_color(
-        state_text_,
-        lv_color_hex(
-            recording || audition
-                ? theme::color::LIVE_TIME
-                : (enabled ? theme::color::CONTENT_ACTIVE
-                           : theme::color::INACTIVE)
-        ),
-        0
-    );
+    header_->render({
+        .title = source.name.data(), .status = stateText.data(),
+        .icon = source.kind == ModulatorKind::LFO ? standalone::icons::MODULATION
+            : (source.kind == ModulatorKind::ADSR ? standalone::icons::NOTE_PROP_GATE
+                                                 : standalone::icons::AUTOMATION),
+        .statusIcon = recording ? standalone::icons::AUTOMATION
+            : existing ? standalone::icons::LOCK
+            : audition ? standalone::icons::STATUS_PREVIEW
+            : enabled ? standalone::icons::STATUS_RESUME : standalone::icons::STATUS_PAUSED,
+        .titleColor = theme::color::TEXT_PRIMARY,
+        .statusColor = recording || audition ? theme::color::LIVE_TIME
+            : (enabled ? theme::color::CONTENT_ACTIVE : theme::color::INACTIVE),
+        .iconColor = enabled ? theme::color::MACRO_MODULATION : theme::color::INACTIVE,
+    });
 }
 
 FLASHMEM void ProjectModulatorWorkspace::renderCards(
@@ -567,17 +458,18 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
     const bool layoutChanged = availableWidth != rendered_layout_width_ ||
         itemCount != rendered_layout_item_count_ ||
         bottomCount != rendered_layout_bottom_count_;
+    if (layoutChanged) lv_obj_set_width(header_->getElement(), availableWidth);
 
     for (uint8_t index = 0U; index < cards_.size(); ++index) {
         auto& card = cards_[index];
         if (index >= itemCount) {
             if (layoutChanged) {
-                lv_obj_add_flag(card.root, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(card->getElement(), LV_OBJ_FLAG_HIDDEN);
             }
             continue;
         }
         if (layoutChanged) {
-            lv_obj_clear_flag(card.root, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(card->getElement(), LV_OBJ_FLAG_HIDDEN);
         }
         const bool bottom = index >= topCount;
         const uint8_t ordinal = bottom
@@ -589,19 +481,17 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
         );
         if (layoutChanged) {
             lv_obj_set_pos(
-                card.root,
+                card->getElement(),
                 static_cast<lv_coord_t>(
                     HORIZONTAL_PAD + ordinal * (width + CARD_GAP)
                 ),
                 bottom ? CARD_BOTTOM_Y : CARD_TOP_Y
             );
             lv_obj_set_size(
-                card.root,
+                card->getElement(),
                 width,
                 bottom ? CARD_BOTTOM_HEIGHT : CARD_TOP_HEIGHT
             );
-            lv_obj_set_width(card.label, std::max<lv_coord_t>(1, width - 25));
-            lv_obj_set_width(card.value, std::max<lv_coord_t>(1, width - 25));
         }
 
         ms::ui::KeyValueRowBuffer row{};
@@ -635,16 +525,6 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
                 captureStatusLabel(props.capture->status)
             );
         }
-        if (copyTruncatedIfChanged(card.iconText, row.icon.data())) {
-            lv_label_set_text_static(card.icon, card.iconText.data());
-        }
-        if (copyTruncatedIfChanged(card.labelText, row.key.data())) {
-            lv_label_set_text_static(card.label, card.labelText.data());
-        }
-        if (copyTruncatedIfChanged(card.valueText, row.value.data())) {
-            lv_label_set_text_static(card.value, card.valueText.data());
-        }
-
         const bool selected = index == props.selectedIndex;
         const bool sourceValue = props.trigger ||
             editableItem(item, props.source->kind);
@@ -674,26 +554,16 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
             : (mutableValue || action
                 ? core::ui::interaction::InteractiveSurfaceState::ACTIVE
                 : core::ui::interaction::InteractiveSurfaceState::IDLE);
-        core::ui::interaction::applyInteractiveSurfaceChrome(
-            card.root,
-            surfaceState
-        );
-        lv_obj_set_style_text_color(card.icon, lv_color_hex(accent), 0);
-        lv_obj_set_style_text_opa(
-            card.icon,
-            selected ? LV_OPA_COVER : (mutableValue || action ? LV_OPA_70 : LV_OPA_40),
-            0
-        );
-        lv_obj_set_style_text_opa(
-            card.label,
-            selected ? LV_OPA_COVER : LV_OPA_60,
-            0
-        );
-        lv_obj_set_style_text_opa(
-            card.value,
-            mutableValue || action ? LV_OPA_COVER : LV_OPA_50,
-            0
-        );
+        card->render({
+            .icon = row.icon.data(), .label = row.key.data(), .value = row.value.data(),
+            .visual = {
+                .accent = accent, .state = surfaceState,
+                .iconOpacity = static_cast<lv_opa_t>(selected ? LV_OPA_COVER
+                    : (mutableValue || action ? LV_OPA_70 : LV_OPA_40)),
+                .labelOpacity = static_cast<lv_opa_t>(selected ? LV_OPA_COVER : LV_OPA_60),
+                .valueOpacity = static_cast<lv_opa_t>(mutableValue || action ? LV_OPA_COVER : LV_OPA_50),
+            },
+        });
     }
     rendered_layout_width_ = availableWidth;
     rendered_layout_item_count_ = itemCount;

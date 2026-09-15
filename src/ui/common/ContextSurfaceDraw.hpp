@@ -1,9 +1,21 @@
 #pragma once
 
+#include <array>
 #include <lvgl.h>
 #include <src/misc/lv_area_private.h>
+#include <ms/ui/widget/TextOverflow.hpp>
 
 namespace core::ui::surface {
+
+/** Retain caller-owned text without splitting UTF-8 or allocating. */
+template <size_t N>
+bool copyText(std::array<char, N>& target, const char* source) {
+    std::array<char, N> next{};
+    ms::ui::text::formatEllipsized(next.data(), next.size(), source, nullptr, 0);
+    if (target == next) return false;
+    target = next;
+    return true;
+}
 
 /** Shared drawing primitives; geometry and appearance never decide an action. */
 inline lv_area_t area(const lv_area_t& origin, int x, int y, int width, int height) {

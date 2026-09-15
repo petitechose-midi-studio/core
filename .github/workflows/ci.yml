@@ -375,8 +375,8 @@ jobs:
             -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
             -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
-          cmake --build workspace/.build/core-lvgl-contract --target overlay_occlusion context_action_strip context_footer --parallel
-          ctest --test-dir workspace/.build/core-lvgl-contract -R '^(overlay_occlusion|context_action_strip|context_footer)$' --output-on-failure
+          cmake --build workspace/.build/core-lvgl-contract --target overlay_occlusion context_action_strip context_footer editor_surfaces --parallel
+          ctest --test-dir workspace/.build/core-lvgl-contract -R '^(overlay_occlusion|context_action_strip|context_footer|editor_surfaces)$' --output-on-failure
 
       - name: Exercise UI lifetime through complete UX workflows
         shell: bash
@@ -391,6 +391,8 @@ jobs:
           core="${GITHUB_WORKSPACE}/workspace/midi-studio/core"
           binary="${GITHUB_WORKSPACE}/workspace/bin/core/native/midi_studio_core"
           for workflow in \
+            macro/modulator-source-deep-link \
+            project/modulator-visual-workspace \
             sequencer/editing/drum-lane-keyboard-return \
             smoke/view-selector-roundtrip \
             sequencer/editing/drum-track-pattern-parity \

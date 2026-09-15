@@ -2,12 +2,15 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 
 #include <lvgl.h>
 #include <oc/ui/lvgl/IWidget.hpp>
 #include <ms/ui/widget/CurvePreviewWidget.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "ui/common/ContextHeader.hpp"
+#include "ui/common/ParameterCard.hpp"
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
 namespace core::ui {
@@ -46,25 +49,7 @@ public:
     lv_obj_t* getElement() const override { return root_; }
 
 private:
-    struct TabWidgets {
-        lv_obj_t* root = nullptr;
-        lv_obj_t* icon = nullptr;
-        lv_obj_t* label = nullptr;
-        lv_obj_t* value = nullptr;
-        lv_obj_t* state = nullptr;
-        std::array<char, 24> valueText{};
-        uint32_t color = 0U;
-        bool selected = false;
-        bool stored = false;
-        bool playback = false;
-        bool rendered = false;
-    };
-
     void createUi(lv_obj_t* parent);
-    void createTab(size_t index,
-                   const char* icon,
-                   const char* label,
-                   uint32_t color);
     void renderTab(size_t index,
                    const char* value,
                    bool selected,
@@ -98,9 +83,8 @@ private:
     };
 
     lv_obj_t* root_ = nullptr;
-    lv_obj_t* title_ = nullptr;
-    lv_obj_t* meta_ = nullptr;
-    std::array<TabWidgets, 3> tabs_{};
+    std::optional<ContextHeader> header_;
+    std::array<std::optional<ParameterCard>, 3> tabs_{};
     core::app::ExtmemUniquePtr<ms::ui::CurvePreviewWidget> curve_preview_;
     CurveSampleContext curve_sample_context_{};
     ms::ui::CurvePreviewWidgetProps curve_props_{};
@@ -110,8 +94,6 @@ private:
     lv_obj_t* interaction_icon_ = nullptr;
     lv_obj_t* interaction_label_ = nullptr;
     lv_obj_t* interaction_value_ = nullptr;
-    std::array<char, 24> titleText_{};
-    std::array<char, 24> metaText_{};
     std::array<char, 16> interactionIconText_{};
     std::array<char, 24> interactionLabelText_{};
     std::array<char, 32> interactionValueText_{};
