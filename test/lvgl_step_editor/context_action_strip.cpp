@@ -29,6 +29,34 @@ int main() {
     lv_obj_remove_style_all(parent);
     lv_obj_set_size(parent, 320, 240);
     {
+        namespace contextual = core::state::contextual;
+        using Status = contextual::OperationFeedbackStatus;
+        using Action = contextual::ContextActionId;
+        contextual::ContextActionVariant action{.action = Action::REMOVE};
+        contextual::OperationFeedbackState feedback{.active = true, .action = Action::REMOVE};
+        ContextActionStripSlotProps slot{};
+        for (auto status : {Status::QUEUED, Status::APPLIED, Status::CANCELLED,
+                            Status::BLOCKED, Status::CONFLICT, Status::FAILED}) {
+            feedback.status = status;
+            describeAction(slot, action, feedback, true);
+            assert(!slot.holdOnly); // Never display "Hold Cancelled" or "Hold Failed".
+            assert(std::strcmp(slot.label, contextActionFeedbackLabel(feedback)) == 0);
+        }
+        for (auto status : {Status::PRESSED, Status::ARMED, Status::NONE}) {
+            feedback.status = status;
+            describeAction(slot, action, feedback, true);
+            assert(slot.holdOnly && std::strcmp(slot.label, "Remove") == 0);
+        }
+        feedback.status = Status::FAILED;
+        feedback.action = Action::SAVE;
+        describeAction(slot, action, feedback, true);
+        assert(slot.holdOnly && std::strcmp(slot.label, "Remove") == 0);
+        feedback.action = Action::REMOVE;
+        feedback.active = false;
+        describeAction(slot, action, feedback, true);
+        assert(slot.holdOnly && std::strcmp(slot.label, "Remove") == 0);
+    }
+    {
         auto* icon = lv_label_create(parent);
         lv_font_t alternate = *font;
         unsigned styleChanges = 0;

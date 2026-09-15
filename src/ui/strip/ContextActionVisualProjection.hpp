@@ -279,8 +279,9 @@ inline void describeAction(ContextActionStripSlotProps& slot,
     // Keep the owner's projected icon/tone (including errors and previews).
     slot.showLabel = true;
     slot.label = action.action == feedback.action ? contextActionFeedbackLabel(feedback) : nullptr;
+    // A result describes what happened, not another gesture to perform.
+    slot.holdOnly = holdOnly && slot.label == nullptr;
     if (!slot.label) slot.label = contextActionPresentation(action.action).label;
-    slot.holdOnly = holdOnly;
 }
 
 inline ContextActionStripSlotProps makeContextActionStripSlot(
