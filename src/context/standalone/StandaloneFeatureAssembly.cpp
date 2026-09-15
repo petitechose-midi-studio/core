@@ -26,8 +26,6 @@
 #include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "state/CoreState.hpp"
-#include "ui/transportbar/ContextSoftkeyBar.hpp"
-#include "ui/transportbar/TransportBar.hpp"
 
 namespace core::context::standalone {
 
@@ -44,8 +42,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     lv_obj_t* macroViewElement,
     lv_obj_t* sequencerViewElement,
     lv_obj_t* projectViewElement,
-    core::ui::ContextSoftkeyBar& contextSoftkeyBar,
-    core::ui::TransportBar& transportBar,
     oc::type::ScopeID macroViewScope,
     oc::type::ScopeID sequencerViewScope,
     oc::type::ScopeID deviceSettingsViewScope

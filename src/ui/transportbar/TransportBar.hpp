@@ -5,17 +5,20 @@
  * @brief Transport controls bar component
  */
 
-#include <memory>
+#include <array>
 
 #include <lvgl.h>
 #include <oc/ui/lvgl/IComponent.hpp>
-#include <oc/ui/lvgl/widget/StateIndicator.hpp>
 #include <oc/state/FixedSubscriptionList.hpp>
 
 #include "state/StatusBarState.hpp"
 
 namespace core::ui {
 
+/** One persistent central footer surface, independent of the active context.
+ * Local action strips flank it without publishing another copy of transport
+ * state. Updates only invalidate this bounded area; no per-frame text allocation.
+ */
 class TransportBar : public oc::ui::lvgl::IComponent {
 public:
     TransportBar(lv_obj_t* parent, const core::state::StatusBarState& state);
@@ -30,37 +33,17 @@ public:
     lv_obj_t* getElement() const override { return container_; }
 
 private:
-    using StateIndicator = oc::ui::lvgl::StateIndicator;
-
     const core::state::StatusBarState& state_;
-
     lv_obj_t* container_ = nullptr;
-    lv_obj_t* tempo_indicator_container_ = nullptr;
-    lv_obj_t* tempo_lock_icon_ = nullptr;
-    lv_obj_t* tempo_label_ = nullptr;
-    lv_obj_t* cc_activity_icon_ = nullptr;
-    lv_obj_t* play_icon_ = nullptr;
-    lv_obj_t* transport_lock_icon_ = nullptr;
-
-    std::unique_ptr<StateIndicator> beat_indicator_;
     oc::state::FixedSubscriptionList<7> subs_;
-    bool cc_in_active_ = false;
-    bool cc_out_active_ = false;
-
-    void createLayout(lv_obj_t* parent);
-    void createTempoWithBeat(lv_obj_t* parent);
-    void createTransportCenter(lv_obj_t* parent);
+    std::array<char, 12> tempo_text_{};
+    float tempo_ = 0;
+    uint8_t flags_ = 0;
+    bool initialized_ = false;
     void setupBindings();
-    void render();
-
-    void setPlaying(bool playing);
-    void setTempo(float bpm);
-    void setCcIn(bool active);
-    void setCcOut(bool active);
-    void updateCcActivityIcon();
-    void setTempoLocked(bool locked);
-    void setTransportLocked(bool locked);
-    void setBeatPulse(bool pulse);
+    void refresh();
+    void draw(lv_layer_t* layer) const;
+    static void onDraw(lv_event_t* event);
 };
 
 }  // namespace core::ui

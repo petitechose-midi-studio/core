@@ -261,7 +261,7 @@ FLASHMEM void SequencerOverlayPresenter::renderPresetLibraryActionStrip() {
             core::state::sequencer::SequencerPatternPresetTextEdit::NONE) {
         preset_library_action_strip_.render(
             core::ui::interaction::TextKeyboardView::
-                bottomActionStripProps(true, false)
+                bottomActionStripProps(true)
         );
         return;
     }

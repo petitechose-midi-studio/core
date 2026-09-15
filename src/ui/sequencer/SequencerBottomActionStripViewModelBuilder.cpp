@@ -35,6 +35,7 @@ using StripProps = core::ui::ContextActionStripProps;
 using SlotProps = core::ui::ContextActionStripSlotProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
+using ActionId = core::state::contextual::ContextActionId;
 using InteractionAction = core::state::sequencer::SequencerInteractionAction;
 using InteractionVisibility =
     core::state::sequencer::SequencerInteractionVisibility;
@@ -89,8 +90,7 @@ FLASHMEM bool showPastePending(
 ) {
     const auto model = buildSequencerTrackPastePendingViewModel(projection.plan);
     if (!model.visible) return false;
-    slot = core::ui::makeStandaloneIconStripSlot(
-        interactionActionIcon(InteractionAction::PASTE_CURRENT_STRUCTURE),
+    slot = makeInteractionActionStripSlot(InteractionAction::PASTE_CURRENT_STRUCTURE,
         Visual::DISABLED,
         Tone::NEUTRAL
     );
@@ -126,6 +126,7 @@ FLASHMEM void applyPastePlacementSlots(
                 ? Tone::WARNING
                 : Tone::POSITIVE
     );
+    core::ui::describeAction(props.slots[2], ActionId::PASTE, true);
 }
 
 FLASHMEM void applyHoldProgress(SlotProps& slot,
@@ -440,16 +441,14 @@ FLASHMEM bool projectDrumBottomActionStrip(
             applyHoldProgress(props.slots[2], hold, holdActive);
             return true;
         }
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(InteractionAction::CLEAR_SELECTION),
+        props.slots[0] = makeInteractionActionStripSlot(InteractionAction::CLEAR_SELECTION,
             selectedCount > 0U ? Visual::ACTIVE : Visual::DISABLED,
             Tone::WARNING
         );
         props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
             selectedCount
         );
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(InteractionAction::COPY_STRUCTURE_SELECTION),
+        props.slots[2] = makeInteractionActionStripSlot(InteractionAction::COPY_STRUCTURE_SELECTION,
             interactionVisual(interaction.bottomRightVisibility),
             Tone::NEUTRAL
         );
@@ -470,23 +469,19 @@ FLASHMEM bool projectDrumBottomActionStrip(
         const bool pasteHold = pasteAvailable &&
             hold.action.get() == core::state::StructureHoldAction::PASTE;
 
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(
+        props.slots[0] = makeInteractionActionStripSlot(
                 resetHold
                     ? InteractionAction::RESET_CURRENT_STEP_DEEP
-                    : InteractionAction::RESET_CURRENT_STEP_SHALLOW
-            ),
+                    : InteractionAction::RESET_CURRENT_STEP_SHALLOW,
             resetHold ? Visual::ARMED : Visual::ACTIVE,
             resetHold ? Tone::DESTRUCTIVE : Tone::WARNING
         );
         applyHoldProgress(props.slots[0], hold, resetHold);
         props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(
+        props.slots[2] = makeInteractionActionStripSlot(
                 pasteHold
                     ? InteractionAction::PASTE_CURRENT_STEP
-                    : InteractionAction::COPY_CURRENT_STEP
-            ),
+                    : InteractionAction::COPY_CURRENT_STEP,
             pasteHold ? Visual::ARMED : Visual::ACTIVE,
             pasteHold ? Tone::POSITIVE : Tone::NEUTRAL
         );
@@ -517,7 +512,10 @@ FLASHMEM bool projectDrumBottomActionStrip(
         pagingVisual,
         Tone::NEUTRAL
     );
-    props.slots[2].iconRotated180 = true;
+    props.slots[0].showLabel = true;
+    props.slots[0].label = "Previous";
+    props.slots[2].showLabel = true;
+    props.slots[2].label = "Next";
     return true;
 }
 
@@ -626,8 +624,7 @@ FLASHMEM bool projectSelectionBottomActionStrip(
         const auto displayedAction = holdActive
             ? interaction.bottomLeftHold
             : interaction.bottomLeftTap;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(displayedAction),
+        props.slots[0] = makeInteractionActionStripSlot(displayedAction,
             holdActive
                 ? Visual::ARMED
                 : (canTap ? Visual::ACTIVE : Visual::DISABLED),
@@ -639,10 +636,8 @@ FLASHMEM bool projectSelectionBottomActionStrip(
         props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
             selectedCount
         );
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(
-                InteractionAction::COPY_STRUCTURE_SELECTION
-            ),
+        props.slots[2] = makeInteractionActionStripSlot(
+            InteractionAction::COPY_STRUCTURE_SELECTION,
             interactionVisual(interaction.bottomRightVisibility),
             Tone::NEUTRAL
         );
@@ -699,9 +694,8 @@ FLASHMEM bool projectSelectionBottomActionStrip(
     const auto rightAction = pasteHoldActive || (!canCopy && canPaste)
         ? interaction.bottomRightHold
         : interaction.bottomRightTap;
-    const auto leftAction = interaction.bottomLeftHold;
-    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        interactionActionIcon(leftAction),
+    const auto leftAction = removeHoldActive ? interaction.bottomLeftHold : interaction.bottomLeftTap;
+    props.slots[0] = makeInteractionActionStripSlot(leftAction,
         removeHoldActive ? Visual::ARMED : (canClear ? Visual::ACTIVE : Visual::DISABLED),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
@@ -709,8 +703,7 @@ FLASHMEM bool projectSelectionBottomActionStrip(
     props.slots[1] = core::ui::makeStructureSelectionCountStripSlot(
         selectedCount
     );
-    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        interactionActionIcon(rightAction),
+    props.slots[2] = makeInteractionActionStripSlot(rightAction,
         pasteHoldActive
             ? Visual::ARMED
             : interactionVisual(interaction.bottomRightVisibility),
@@ -736,8 +729,12 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         for (auto& slot : props.slots) slot.visualState = Visual::HIDDEN;
         if (!launcher.selectionActive()) {
             if (launcher.editorActive()) {
+                props.hintLeft = "NAV: property";
+                props.hintRight = "OPT: value";
                 return props;
             }
+            props.hintLeft = launcher.stopLayerActive ? "Macro key: stop track" : "NAV: track / open";
+            props.hintRight = launcher.quickPropertyArmed ? "OPT: value" : "OPT: scene";
             return props;
         }
 
@@ -771,6 +768,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             Tone::DESTRUCTIVE
         );
         props.slots[0].holdActive = launcher.removeHoldActive;
+        core::ui::describeAction(props.slots[0], ActionId::REMOVE, true);
         props.slots[0].holdStartedAtMs = launcher.removeHoldStartedAtMs;
         props.slots[0].holdDurationMs =
             Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
@@ -827,6 +825,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 : hasDuplicateDestination ? Visual::ACTIVE : Visual::DISABLED,
             placement ? Tone::POSITIVE : Tone::NEUTRAL
         );
+        props.slots[2].showLabel = true;
+        props.slots[2].label = placement ? (moving ? "Move" : "Duplicate") : "Duplicate";
         return props;
     }
     if (source.sequencer.patternPresetPreview.active()) {
@@ -835,6 +835,9 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             Visual::ACTIVE,
             Tone::POSITIVE
         );
+        core::ui::describeAction(props.slots[2], ActionId::APPLY);
+        props.hintLeft = "Preview: not saved";
+        props.hintRight = "Back: cancel";
         return props;
     }
     if (projectDrumBottomActionStrip(source, props)) return props;
@@ -853,8 +856,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             // Reset is a draft-local edit and remains safe: it mutates only the
             // unpublished authoring state. Structural Clear/Remove stays
             // hidden, while Discard remains the exact transaction rollback.
-            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                interactionActionIcon(InteractionAction::RESET_STEP_EDITOR_ROW),
+            props.slots[0] = makeInteractionActionStripSlot(InteractionAction::RESET_STEP_EDITOR_ROW,
                 Visual::ACTIVE,
                 Tone::NEUTRAL
             );
@@ -938,17 +940,18 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         const auto rightAction = hasChildContent || !canPaste
             ? interaction.bottomRightTap
             : interaction.bottomRightHold;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(interaction.bottomLeftTap),
+        props.slots[0] = makeInteractionActionStripSlot(interaction.bottomLeftTap,
             hasChildContent ? Visual::ACTIVE : Visual::DISABLED,
             Tone::DESTRUCTIVE
         );
         props.slots[1].visualState = Visual::HIDDEN;
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            interactionActionIcon(rightAction),
+        props.slots[2] = makeInteractionActionStripSlot(rightAction,
             (hasChildContent || canPaste) ? Visual::ACTIVE : Visual::DISABLED,
             (!hasChildContent && canPaste) ? Tone::POSITIVE : Tone::NEUTRAL
         );
+        props.slots[2].holdOnly = !hasChildContent && canPaste;
+        props.hintLeft = "NAV: focus";
+        props.hintRight = canPaste ? "Hold BR: paste" : "OPT: value";
         return props;
     }
 
@@ -988,8 +991,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         ? interaction.bottomRightHold
         : interaction.bottomRightTap;
 
-    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        interactionActionIcon(leftAction),
+    props.slots[0] = makeInteractionActionStripSlot(leftAction,
         leftAction == InteractionAction::NONE
             ? Visual::HIDDEN
             : (removeHoldActive
@@ -999,8 +1001,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     );
     applyHoldProgress(props.slots[0], holdState, removeHoldActive);
     props.slots[1].visualState = Visual::HIDDEN;
-    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        interactionActionIcon(rightAction),
+    props.slots[2] = makeInteractionActionStripSlot(rightAction,
         rightAction == InteractionAction::NONE
             ? Visual::HIDDEN
             : (pasteHoldActive
@@ -1021,6 +1022,9 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     } else {
         applyHoldProgress(props.slots[2], holdState, pasteHoldActive);
     }
+    props.slots[2].holdOnly = !canCopy && canPaste;
+    props.hintLeft = canRemove ? "Hold BL: remove" : "NAV: focus";
+    props.hintRight = canPaste ? "Hold BR: paste" : "OPT: value";
     return props;
 }
 

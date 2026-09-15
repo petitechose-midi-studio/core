@@ -303,7 +303,7 @@ TextKeyboardView::leftActionStripProps(
 }
 
 FLASHMEM ContextActionStripProps
-TextKeyboardView::bottomActionStripProps(bool visible, bool playing) {
+TextKeyboardView::bottomActionStripProps(bool visible) {
     ContextActionStripProps props;
     props.visible = visible;
     if (!visible) return props;
@@ -312,19 +312,16 @@ TextKeyboardView::bottomActionStripProps(bool visible, bool playing) {
         ContextActionStripVisualState::ACTIVE,
         ContextActionStripTone::WARNING
     );
-    props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-        standalone::icons::TRANSPORT_PLAY,
-        ContextActionStripVisualState::ACTIVE,
-        playing
-            ? ContextActionStripTone::WARNING
-            : ContextActionStripTone::POSITIVE,
-        standalone::icons::Size::M
-    );
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         standalone::icons::ACTION_VALIDATE,
         ContextActionStripVisualState::ACTIVE,
         ContextActionStripTone::POSITIVE
     );
+    props.slots[0].showLabel = props.slots[2].showLabel = true;
+    props.slots[0].label = "Erase";
+    props.slots[2].label = "Apply";
+    props.hintLeft = "NAV: key";
+    props.hintRight = "OPT: row";
     return props;
 }
 

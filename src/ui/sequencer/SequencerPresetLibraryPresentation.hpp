@@ -112,6 +112,8 @@ struct SequencerPresetLibraryActionPresentation {
     bool overwriteIcon = false;
     const char* primaryIcon = nullptr;
     const char* statusIcon = nullptr;
+    const char* primaryLabel = nullptr;
+    bool holdOnly = false;
     bool holdActive = false;
     uint32_t holdStartedAtMs = 0;
     uint16_t holdDurationMs = 0;

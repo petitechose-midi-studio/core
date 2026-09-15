@@ -27,7 +27,6 @@
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneFonts.hpp"
-#include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
 #if defined(MS_HARDWARE_BENCHMARK)
 #include "validation/benchmark/HardwareBenchmarkEndpoint.hpp"
@@ -249,8 +248,6 @@ FLASHMEM bool StandaloneContext::createFeatureAssembly() {
         ui_assembly_->macroViewElement(),
         ui_assembly_->sequencerViewElement(),
         ui_assembly_->projectViewElement(),
-        ui_assembly_->contextSoftkeyBar(),
-        ui_assembly_->transportBar(),
         ui_assembly_->macroViewScope(),
         ui_assembly_->sequencerViewScope(),
         ui_assembly_->deviceSettingsViewScope()
@@ -423,7 +420,7 @@ FLASHMEM void StandaloneContext::renderViewSelectorProjection() {
 }
 
 FLASHMEM void StandaloneContext::syncViewSelectorChrome() {
-    if (!ui_assembly_) return;
+    if (!overlay_assembly_) return;
 
     if (core_state_.viewSelector.visible.get()) {
         char undoLabel[40]{};
@@ -433,16 +430,7 @@ FLASHMEM void StandaloneContext::syncViewSelectorChrome() {
             core::state::project::ProjectHistoryDirection::Undo, undoLabel, sizeof(undoLabel));
         core_state_.formatProjectHistoryLabel(
             core::state::project::ProjectHistoryDirection::Redo, redoLabel, sizeof(redoLabel));
-        ui_assembly_->contextSoftkeyBar().setLabels(
-            undoLabel,
-            redoLabel,
-            "Nav Select"
-        );
-        ui_assembly_->contextSoftkeyBar().show();
-        ui_assembly_->transportBar().hide();
-    } else {
-        ui_assembly_->contextSoftkeyBar().hide();
-        ui_assembly_->transportBar().show();
+        overlay_assembly_->renderViewSelectorHistory(undoLabel, redoLabel);
     }
 }
 

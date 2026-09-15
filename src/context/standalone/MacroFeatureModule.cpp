@@ -97,7 +97,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
     if (!edit_action_strip_ || !edit_action_strip_->getElement()) return;
-    edit_action_strip_->alignAboveTransport();
+    edit_action_strip_->alignToFooter();
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,
@@ -114,7 +114,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
             core::ui::ContextActionStripOrientation::HORIZONTAL
         );
     if (!automation_action_strip_ || !automation_action_strip_->getElement()) return;
-    automation_action_strip_->alignAboveTransport();
+    automation_action_strip_->alignToFooter();
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,

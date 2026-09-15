@@ -11,6 +11,7 @@
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/strip/ContextActionVisualProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
@@ -188,6 +189,20 @@ ContextActionStripVisualState macroVisual(
         case core::state::macro::MacroInteractionVisibility::HIDDEN:
         default:
             return ContextActionStripVisualState::HIDDEN;
+    }
+}
+
+core::state::contextual::ContextActionId macroStructureAction(
+    core::state::macro::MacroInteractionAction action
+) {
+    using Action = core::state::macro::MacroInteractionAction;
+    using Id = core::state::contextual::ContextActionId;
+    switch (action) {
+        case Action::CLEAR_STRUCTURE: return Id::CLEAR;
+        case Action::REMOVE_STRUCTURE: return Id::REMOVE;
+        case Action::COPY_STRUCTURE: return Id::COPY;
+        case Action::PASTE_STRUCTURE: return Id::PASTE;
+        default: return Id::NONE;
     }
 }
 
@@ -432,45 +447,45 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
             source.macroUi.pageHold.startedAtMs.get();
         action.holdDurationMs =
             Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+        describeAction(action, placing ? core::state::contextual::ContextActionId::PASTE
+                                       : core::state::contextual::ContextActionId::COPY,
+                       placing);
         return props;
     }
 
+    using Policy = core::state::macro::MacroInteractionPolicy;
+    using Action = core::state::macro::MacroInteractionAction;
     const auto context = macroInteractionContext(source);
+    const auto policy = Policy::actionStrip(context);
+    const auto tap_left = Policy::bottomLeftRelease(context);
+    const auto hold_left = Policy::bottomLeftLongPress(context);
+    const auto tap_right = Policy::bottomRightRelease(context);
+    const auto hold_right = Policy::bottomRightLongPress(context);
     const bool trackFocus =
         context.navigationFocus == core::state::StructureNavigationFocus::TRACK;
-    const auto policy = core::state::macro::MacroInteractionPolicy::actionStrip(context);
-    const bool canPaste = context.compatibleClipboardAvailable;
-    const auto& holdState = trackFocus ? source.trackNavigation.hold : source.macroUi.pageHold;
-    const auto holdAction = holdState.action.get();
-    const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
-    const bool pasteHoldActive = holdAction == core::state::StructureHoldAction::PASTE;
+    const auto& hold = trackFocus ? source.trackNavigation.hold : source.macroUi.pageHold;
+    const bool removeHeld = hold.action.get() == core::state::StructureHoldAction::REMOVE;
+    const bool pasteHeld = hold.action.get() == core::state::StructureHoldAction::PASTE;
 
-    props.slots[0] = {
-        .visualState = removeHoldActive
-            ? ContextActionStripVisualState::ARMED
-            : macroVisual(policy.bottomLeft),
-        .tone = ContextActionStripTone::DESTRUCTIVE,
-        .showIcon = true,
-        .icon = removeHoldActive ? standalone::icons::ACTION_CANCEL
-                                 : standalone::icons::ACTION_REMOVE,
-        .holdActive = removeHoldActive,
-        .holdStartedAtMs = holdState.startedAtMs.get(),
-        .holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS,
-    };
-    props.slots[1].visualState = ContextActionStripVisualState::HIDDEN;
-    props.slots[2] = {
-        .visualState = pasteHoldActive
-            ? ContextActionStripVisualState::ARMED
-            : (canPaste
-            ? ContextActionStripVisualState::ARMED
-            : macroVisual(policy.bottomRight)),
-        .tone = canPaste ? ContextActionStripTone::CONSTRUCTIVE : ContextActionStripTone::NEUTRAL,
-        .showIcon = true,
-        .icon = canPaste ? standalone::icons::ACTION_PASTE : standalone::icons::ACTION_COPY,
-        .holdActive = pasteHoldActive,
-        .holdStartedAtMs = holdState.startedAtMs.get(),
-        .holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS,
-    };
+    props.slots[0] = makeContextActionStripSlot(
+        macroStructureAction(removeHeld ? hold_left : tap_left),
+        removeHeld ? ContextActionStripVisualState::ARMED : macroVisual(policy.bottomLeft),
+        removeHeld ? ContextActionStripTone::DESTRUCTIVE : ContextActionStripTone::WARNING);
+    props.slots[0].holdActive = removeHeld;
+    props.slots[0].holdStartedAtMs = hold.startedAtMs.get();
+    props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    props.slots[2] = makeContextActionStripSlot(
+        macroStructureAction(pasteHeld || tap_right == Action::NONE ? hold_right : tap_right),
+        pasteHeld ? ContextActionStripVisualState::ARMED : macroVisual(policy.bottomRight),
+        pasteHeld ? ContextActionStripTone::CONSTRUCTIVE : ContextActionStripTone::NEUTRAL,
+        tap_right == Action::NONE && hold_right != Action::NONE);
+    props.slots[2].holdActive = pasteHeld;
+    props.slots[2].holdStartedAtMs = hold.startedAtMs.get();
+    props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
+    props.hintLeft = hold_left != Action::NONE ? "Hold BL: remove"
+        : Policy::navRelease(context) == Action::CREATE_PREVIEWED_STRUCTURE
+            ? "NAV: create" : "NAV: focus";
+    props.hintRight = hold_right != Action::NONE ? "Hold BR: paste" : "LB: properties";
     return props;
 }
 

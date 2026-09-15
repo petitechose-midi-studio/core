@@ -202,3 +202,99 @@ inline const char* feedbackIconGlyph(
 }
 
 }  // namespace core::ui::context_action_visual_projection
+
+namespace core::ui {
+
+struct ContextActionPresentation {
+    const char* label;
+    const char* icon;
+};
+
+/** Vocabulary only. The owner supplies the action and its availability. */
+inline ContextActionPresentation contextActionPresentation(
+    core::state::contextual::ContextActionId action
+) {
+    using Action = core::state::contextual::ContextActionId;
+    namespace icons = ::standalone::icons;
+    switch (action) {
+        case Action::NONE: return {"", nullptr};
+        case Action::OPEN: return {"Open", icons::ACTION_LOAD};
+        case Action::ENTER: return {"Enter", icons::ACTION_VALIDATE};
+        case Action::CREATE: return {"Create", icons::ACTION_CREATE};
+        case Action::EDIT: return {"Edit", icons::ACTION_RENAME};
+        case Action::SELECT: return {"Select", icons::ACTION_VALIDATE};
+        case Action::MUTE: return {"Mute", icons::TRACK_MUTE};
+        case Action::UNMUTE: return {"Unmute", icons::TRACK_MUTE};
+        case Action::CLEAR: return {"Clear", icons::ACTION_CLEAR};
+        case Action::RESET: return {"Reset", icons::ACTION_RESET};
+        case Action::REMOVE: return {"Remove", icons::ACTION_REMOVE};
+        case Action::COPY: return {"Copy", icons::ACTION_COPY};
+        case Action::PASTE: return {"Paste", icons::ACTION_PASTE};
+        case Action::LOAD: return {"Load", icons::ACTION_LOAD};
+        case Action::APPLY: return {"Apply", icons::ACTION_VALIDATE};
+        case Action::SAVE: return {"Save", icons::ACTION_SAVE};
+        case Action::RENAME: return {"Rename", icons::ACTION_RENAME};
+        case Action::MOVE: return {"Move", icons::ACTION_PLACE_TARGET};
+        case Action::DELETE_ASSET: return {"Delete", icons::ACTION_REMOVE};
+        case Action::UNDO: return {"Undo", icons::ACTION_BACKWARD};
+        case Action::REDO: return {"Redo", icons::ACTION_BACKWARD};
+        case Action::PREVIEW: return {"Preview", icons::STATUS_PREVIEW};
+        case Action::CANCEL: return {"Cancel", icons::ACTION_CANCEL};
+        case Action::RESUME: return {"Resume", icons::STATUS_RESUME};
+        case Action::OVERWRITE: return {"Overwrite", icons::ACTION_OVERWRITE};
+        case Action::TOGGLE_MODE: return {"Mode", icons::SETTINGS_GEAR};
+        case Action::OPEN_SETTINGS: return {"Settings", icons::SETTINGS_GEAR};
+    }
+    return {"", nullptr};
+}
+
+inline void describeAction(ContextActionStripSlotProps& slot,
+                           core::state::contextual::ContextActionId action,
+                           bool holdOnly = false) {
+    const auto text = contextActionPresentation(action);
+    slot.showLabel = true;
+    slot.label = text.label;
+    slot.showIcon = text.icon != nullptr;
+    slot.icon = text.icon;
+    slot.holdOnly = holdOnly;
+}
+
+inline const char* contextActionFeedbackLabel(
+    const core::state::contextual::OperationFeedbackState& feedback
+) {
+    using Status = core::state::contextual::OperationFeedbackStatus;
+    if (!feedback.active) return nullptr;
+    switch (feedback.status) {
+        case Status::QUEUED: return "Queued";
+        case Status::APPLIED: return "Applied";
+        case Status::CANCELLED: return "Cancelled";
+        case Status::BLOCKED: return "Blocked";
+        case Status::CONFLICT: return "Conflict";
+        case Status::FAILED: return "Failed";
+        default: return nullptr;
+    }
+}
+
+inline void describeAction(ContextActionStripSlotProps& slot,
+                           const core::state::contextual::ContextActionVariant& action,
+                           const core::state::contextual::OperationFeedbackState& feedback,
+                           bool holdOnly) {
+    // Keep the owner's projected icon/tone (including errors and previews).
+    slot.showLabel = true;
+    slot.label = action.action == feedback.action ? contextActionFeedbackLabel(feedback) : nullptr;
+    if (!slot.label) slot.label = contextActionPresentation(action.action).label;
+    slot.holdOnly = holdOnly;
+}
+
+inline ContextActionStripSlotProps makeContextActionStripSlot(
+    core::state::contextual::ContextActionId action,
+    ContextActionStripVisualState visual,
+    ContextActionStripTone tone = ContextActionStripTone::NEUTRAL,
+    bool holdOnly = false
+) {
+    ContextActionStripSlotProps slot{.visualState = visual, .tone = tone};
+    describeAction(slot, action, holdOnly);
+    return slot;
+}
+
+}  // namespace core::ui

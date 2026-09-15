@@ -1,4 +1,5 @@
 #include "context/standalone/ProjectTrackEditorPresenter.hpp"
+#include "ui/strip/ContextActionVisualProjection.hpp"
 
 #include <cstdio>
 
@@ -117,7 +118,7 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
         });
         action_strip_.render(
             core::ui::interaction::TextKeyboardView::
-                bottomActionStripProps(true, false)
+                bottomActionStripProps(true)
         );
         return;
     }
@@ -173,6 +174,17 @@ FLASHMEM void ProjectTrackEditorPresenter::render() {
             ::standalone::icons::Size::L
         );
     }
+    using Action = core::state::contextual::ContextActionId;
+    if (!viewModel.typeChangePending) {
+        core::ui::describeAction(actions.slots[0], viewModel.muted ? Action::UNMUTE : Action::MUTE);
+        actions.slots[2].showLabel = true;
+        actions.slots[2].label = viewModel.soloed ? "Unsolo" : "Solo";
+    }
+    actions.hintLeft = viewModel.typeChangeBlocked ? "Type: other clips exist"
+        : viewModel.typeChangePending ? "Type: pending apply" : "NAV: property";
+    actions.hintRight = viewModel.typeChangePending ? nullptr
+        : viewModel.selectedProperty == core::state::project::ProjectTrackEditorProperty::NAME
+            ? "NAV: rename" : "OPT: value";
     action_strip_.render(actions);
 }
 

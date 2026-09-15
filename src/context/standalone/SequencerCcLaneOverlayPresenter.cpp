@@ -570,7 +570,11 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderActionStrip() {
             ? guard.pressedAtMs
             : guard.armedAtMs;
         out.holdDurationMs = guard.guardDurationMs;
+        core::ui::describeAction(out, action, feedback,
+            !contextual::hasTapAction(spec) && contextual::hasHoldAction(spec));
     }
+    props.hintLeft = "NAV: property";
+    props.hintRight = "OPT: value";
     action_strip_.render(props);
     if (auto* strip = action_strip_.getElement()) {
         lv_obj_move_foreground(strip);

@@ -4,17 +4,18 @@
 # Expect: capture_match:selector_ready=selector_after_unrelated_input
 
 0 scenario view-selector
-100 capture screen selector_ready
+# Let the initial MIDI CC pulse expire before comparing the persistent transport.
+350 capture screen selector_ready
 
 # While the selector is open, send unrelated performance-style input.
-200 encoder MACRO_1 0.25
-300 capture screen selector_after_unrelated_input
+450 encoder MACRO_1 0.25
+550 capture screen selector_after_unrelated_input
 
 # Navigate and confirm the overlay.
-400 encoder NAV 0.01
-500 tap NAV 60
-700 capture screen selector_confirmed
+650 encoder NAV 0.01
+750 tap NAV 60
+950 capture screen selector_confirmed
 
 # After overlay close, verify global input routing works again.
-800 encoder NAV 0.01
-950 capture screen post_overlay_navigation
+1050 encoder NAV 0.01
+1200 capture screen post_overlay_navigation

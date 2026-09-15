@@ -10,6 +10,7 @@
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
 #include "app/OverlayTypes.hpp"
+#include "ui/strip/ContextActionStrip.hpp"
 
 namespace core::state {
 struct CoreState;
@@ -53,6 +54,7 @@ public:
     lv_obj_t* viewSelectorElement() const;
     oc::type::ScopeID viewSelectorScope() const;
     void renderViewSelector(int selectedIndex, bool visible);
+    void renderViewSelectorHistory(const char* undo, const char* redo);
 
 private:
     bool createOverlayController(oc::api::ButtonAPI& buttons,
@@ -64,6 +66,7 @@ private:
     core::app::ExtmemUniquePtr<OverlayPresentationRegistry> presentation_registry_;
     core::app::ExtmemUniquePtr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> view_selector_;
+    core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> history_strip_;
     oc::type::ScopeID view_selector_scope_ = 0;
     bool valid_ = false;
 };

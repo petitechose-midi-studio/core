@@ -72,8 +72,9 @@ void test_macro_slot_focus_shows_guarded_slot_actions() {
     const auto props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(props.visible);
     assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
-    assert(props.slots[0].tone == ContextActionStripTone::DESTRUCTIVE);
-    assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
+    assert(props.slots[0].tone == ContextActionStripTone::WARNING);
+    assert(props.slots[0].icon == standalone::icons::ACTION_CLEAR);
+    assert(std::strcmp(props.slots[0].label, "Clear") == 0);
     assert(!props.slots[0].holdActive);
     assert(props.slots[0].holdDurationMs ==
            Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
@@ -115,9 +116,19 @@ void test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard() {
     props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(props.visible);
     assert(props.slots[0].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(props.slots[2].tone == ContextActionStripTone::NEUTRAL);
+    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(std::strcmp(props.slots[2].label, "Copy") == 0);
+    assert(std::strcmp(props.hintRight, "Hold BR: paste") == 0);
+    assert(!props.slots[2].holdOnly);
+
+    state.macroUi.pageHold.action.set(core::state::StructureHoldAction::PASTE);
+    props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
+    assert(props.slots[2].holdActive);
     assert(props.slots[2].visualState == ContextActionStripVisualState::ARMED);
-    assert(props.slots[2].tone == ContextActionStripTone::CONSTRUCTIVE);
     assert(props.slots[2].icon == standalone::icons::ACTION_PASTE);
+    assert(std::strcmp(props.slots[2].label, "Paste") == 0);
 
     std::cout << "[PASS] test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard\n";
 }
@@ -135,7 +146,8 @@ void test_macro_add_slot_focus_dims_structure_actions() {
     assert(props.visible);
     assert(props.slots[0].visualState == ContextActionStripVisualState::DIM);
     assert(props.slots[2].visualState == ContextActionStripVisualState::DIM);
-    assert(props.slots[2].icon == standalone::icons::ACTION_COPY);
+    assert(props.slots[2].icon == nullptr);
+    assert(std::strcmp(props.hintLeft, "NAV: create") == 0);
 
     std::cout << "[PASS] test_macro_add_slot_focus_dims_structure_actions\n";
 }
@@ -386,7 +398,9 @@ void test_macro_selection_projection_exposes_copy_collision_and_blocked_states()
     ) == 0);
     assert(strip.slots[2].showIcon);
     assert(strip.slots[2].icon == standalone::icons::ACTION_COPY);
-    assert(!strip.slots[2].showLabel);
+    assert(strip.slots[2].showLabel);
+    assert(std::strcmp(strip.slots[2].label, "Copy") == 0);
+    assert(!strip.slots[2].holdOnly);
     auto sourceSlot =
         core::ui::buildMacroWidgetProps(sourceFor(state), 0U);
     assert(sourceSlot.selected);
@@ -414,7 +428,9 @@ void test_macro_selection_projection_exposes_copy_collision_and_blocked_states()
         core::ui::buildMacroBottomActionStripProps(sourceFor(state));
     assert(strip.slots[2].tone == ContextActionStripTone::WARNING);
     assert(strip.slots[2].icon == standalone::icons::ACTION_PASTE);
-    assert(!strip.slots[2].showLabel);
+    assert(strip.slots[2].showLabel);
+    assert(std::strcmp(strip.slots[2].label, "Paste") == 0);
+    assert(strip.slots[2].holdOnly);
     const auto freeTarget =
         core::ui::buildMacroWidgetProps(sourceFor(state), 2U);
     const auto overwriteTarget =

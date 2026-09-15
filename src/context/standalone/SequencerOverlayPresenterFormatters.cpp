@@ -1168,8 +1168,7 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     const bool valueRowFocused = focusedRowIsValueRow(sequencer);
     if (valueRowFocused) {
         constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            core::ui::sequencer::interactionActionIcon(resetAction),
+        props.slots[0] = core::ui::sequencer::makeInteractionActionStripSlot(resetAction,
             Visual::ACTIVE,
             Tone::WARNING
         );
@@ -1235,27 +1234,29 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     const bool removeHoldActive = holdAction == core::state::StructureHoldAction::REMOVE;
     const bool pasteHoldActive = holdAction == core::state::StructureHoldAction::PASTE;
     constexpr auto removeAction = Action::REMOVE_STEP_EDITOR_CONTEXT;
-    const auto rightAction =
-        canPaste ? Action::PASTE_STEP_EDITOR_CONTEXT : Action::COPY_STEP_EDITOR_CONTEXT;
+    const auto rightAction = pasteHoldActive || (!hasChild && canPaste)
+        ? Action::PASTE_STEP_EDITOR_CONTEXT : Action::COPY_STEP_EDITOR_CONTEXT;
 
     props.visible = true;
-    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        core::ui::sequencer::interactionActionIcon(removeAction),
+    props.slots[0] = core::ui::sequencer::makeInteractionActionStripSlot(removeAction,
         removeHoldActive ? Visual::ARMED : (hasChild ? Visual::ACTIVE : Visual::DISABLED),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
     props.slots[1].visualState = Visual::HIDDEN;
-    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        core::ui::sequencer::interactionActionIcon(rightAction),
+    props.slots[2] = core::ui::sequencer::makeInteractionActionStripSlot(rightAction,
         pasteHoldActive && canPaste
             ? Visual::ARMED
             : ((hasChild || canPaste) ? Visual::ACTIVE : Visual::DISABLED),
         pasteHoldActive && canPaste ? Tone::POSITIVE : (canPaste ? Tone::POSITIVE : contextTone)
     );
     props.slots[0].holdActive = removeHoldActive;
+    props.slots[0].holdOnly = true;
     props.slots[0].holdStartedAtMs = holdStartedAtMs;
     props.slots[0].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     props.slots[2].holdActive = pasteHoldActive && canPaste;
+    props.slots[2].holdOnly = !hasChild && canPaste;
+    props.hintLeft = hasChild ? "Hold BL: remove" : "NAV: open";
+    props.hintRight = canPaste ? "Hold BR: paste" : "OPT: value";
     props.slots[2].holdStartedAtMs = holdStartedAtMs;
     props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
     return props;

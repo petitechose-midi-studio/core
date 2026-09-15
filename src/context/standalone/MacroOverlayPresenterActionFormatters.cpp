@@ -15,6 +15,7 @@
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/strip/ContextActionVisualProjection.hpp"
 #include "state/macro/MacroSourceDetailPolicy.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -23,6 +24,28 @@ namespace core::context::standalone::macro_overlay_presenter {
 
 using namespace internal;
 namespace menu = core::state::macro;
+namespace {
+using Id = core::state::contextual::ContextActionId;
+using Visual = core::ui::ContextActionStripVisualState;
+using Tone = core::ui::ContextActionStripTone;
+
+core::ui::ContextActionStripSlotProps clipboardSlot(bool canCopy, bool canPaste) {
+    return core::ui::makeContextActionStripSlot(canPaste ? Id::PASTE : Id::COPY,
+        canCopy || canPaste ? Visual::ACTIVE : Visual::DISABLED,
+        canPaste ? Tone::CONSTRUCTIVE : Tone::NEUTRAL, canPaste && !canCopy);
+}
+
+core::ui::ContextActionStripSlotProps playbackSlot(
+    bool playing, bool available, const char* icon
+) {
+    auto slot = core::ui::makeStandaloneIconStripSlot(
+        playing ? icon : ::standalone::icons::STATUS_PAUSED,
+        available ? Visual::ACTIVE : Visual::DISABLED);
+    slot.showLabel = true;
+    slot.label = playing ? "Pause" : "Resume";
+    return slot;
+}
+}  // namespace
 
 FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
     const Source& source
@@ -63,20 +86,15 @@ FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
             Tone::DESTRUCTIVE
         );
         props.slots[1] = scopeLabel("Destination");
+        core::ui::describeAction(props.slots[0], core::state::contextual::ContextActionId::REMOVE, true);
     } else {
         const bool automation = item == menu::MacroRootItem::AUTOMATION;
         const bool stored = automation ? automationStored : modulationStored;
         const bool playback = automation
             ? automationPlayback
             : modulationPlayback;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            playback
-                ? (automation ? ::standalone::icons::AUTOMATION
-                              : ::standalone::icons::MODULATION)
-                : ::standalone::icons::STATUS_PAUSED,
-            stored ? Visual::ACTIVE : Visual::DISABLED,
-            Tone::NEUTRAL
-        );
+        props.slots[0] = playbackSlot(playback, stored,
+            automation ? ::standalone::icons::AUTOMATION : ::standalone::icons::MODULATION);
         props.slots[1] = scopeLabel(
             automation ? "Automation" : "Modulation"
         );
@@ -89,12 +107,7 @@ FLASHMEM core::ui::ContextActionStripProps buildEditActionStripProps(
         item == menu::MacroRootItem::MODULATION && !modulationStored &&
         source.clipboard != nullptr &&
         source.clipboard->hasMacroModulationAssignment();
-    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        canPasteAssignment ? ::standalone::icons::ACTION_PASTE
-                           : ::standalone::icons::ACTION_COPY,
-        (canCopy || canPasteAssignment) ? Visual::ACTIVE : Visual::DISABLED,
-        canPasteAssignment ? Tone::CONSTRUCTIVE : Tone::NEUTRAL
-    );
+    props.slots[2] = clipboardSlot(canCopy, canPasteAssignment);
     projectGuardedAction(
         props.slots[0], source, core::state::MacroContextButton::BOTTOM_LEFT
     );
@@ -137,6 +150,9 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             status == Status::OVERWRITE_REQUIRED ? Tone::WARNING
                                                  : Tone::CONSTRUCTIVE
         );
+        core::ui::describeAction(props.slots[2],
+            status == Status::OVERWRITE_REQUIRED ? Id::OVERWRITE : Id::APPLY,
+            status == Status::OVERWRITE_REQUIRED);
         projectGuardedAction(
             props.slots[2], source, core::state::MacroContextButton::BOTTOM_RIGHT
         );
@@ -185,12 +201,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         }
         if (descriptor.kind == menu::MacroModulationRowKind::ALL) {
             const bool anyEnabled = slot.activeModulationCount > 0U;
-            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-                anyEnabled ? ::standalone::icons::MODULATION
-                           : ::standalone::icons::STATUS_PAUSED,
-                Visual::ACTIVE,
-                Tone::NEUTRAL
-            );
+            props.slots[0] = playbackSlot(anyEnabled, true, ::standalone::icons::MODULATION);
             props.slots[1] = scopeLabel("All");
             props.slots[2].visualState = Visual::DISABLED;
             projectGuardedAction(
@@ -212,15 +223,10 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         const bool enabled =
             (binding->flags & core::state::modulation::
                 PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            enabled ? ::standalone::icons::MODULATION
-                    : ::standalone::icons::STATUS_PAUSED,
-            Visual::ACTIVE,
-            Tone::NEUTRAL
-        );
+        props.slots[0] = playbackSlot(enabled, true, ::standalone::icons::MODULATION);
         props.slots[1] = scopeLabel(modulator->name.data());
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            ::standalone::icons::ACTION_COPY,
+        props.slots[2] = core::ui::makeContextActionStripSlot(
+            Id::COPY,
             Visual::ACTIVE,
             Tone::NEUTRAL
         );
@@ -247,25 +253,14 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
     const bool playback = stored && (modulation
         ? slot.activeModulationCount > 0U
         : slot.automation.enabled);
-    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        playback
-            ? (modulation ? ::standalone::icons::MODULATION
-                          : ::standalone::icons::AUTOMATION)
-            : ::standalone::icons::STATUS_PAUSED,
-        stored ? Visual::ACTIVE : Visual::DISABLED,
-        Tone::NEUTRAL
-    );
+    props.slots[0] = playbackSlot(playback, stored,
+        modulation ? ::standalone::icons::MODULATION : ::standalone::icons::AUTOMATION);
     props.slots[1] = scopeLabel(modulation ? "Modulation" : "Automation");
     const bool canPasteAssignment = modulation && !stored &&
         source.clipboard != nullptr &&
         source.clipboard->hasMacroModulationAssignment();
     const bool canCopy = stored;
-    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        canPasteAssignment ? ::standalone::icons::ACTION_PASTE
-                           : ::standalone::icons::ACTION_COPY,
-        (canCopy || canPasteAssignment) ? Visual::ACTIVE : Visual::DISABLED,
-        canPasteAssignment ? Tone::CONSTRUCTIVE : Tone::NEUTRAL
-    );
+    props.slots[2] = clipboardSlot(canCopy, canPasteAssignment);
     projectGuardedAction(
         props.slots[0], source, core::state::MacroContextButton::BOTTOM_LEFT
     );

@@ -1,4 +1,5 @@
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
+#include "ui/strip/ContextActionVisualProjection.hpp"
 #include "context/standalone/MacroOverlayPresenterFormatterInternals.hpp"
 
 #include <algorithm>
@@ -677,6 +678,10 @@ FLASHMEM void projectGuardedAction(
     if (source.macroEdit.contextButton.get() != button) return;
     const auto feedback = source.macroEdit.contextFeedback.get();
     if (!feedback.active) return;
+    slot.showLabel = true;
+    slot.label = core::ui::contextActionFeedbackLabel(feedback);
+    if (!slot.label) slot.label = core::ui::contextActionPresentation(feedback.action).label;
+    slot.holdOnly = feedback.status == Feedback::PRESSED;
 
     if (feedback.action == core::state::contextual::ContextActionId::PASTE) {
         slot.icon = ::standalone::icons::ACTION_PASTE;

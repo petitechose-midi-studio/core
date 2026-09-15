@@ -14,8 +14,8 @@
 #include "ui/common/GlobalTrackNavigationStripModel.hpp"
 #include "ui/common/TrackNavigationStrip.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
-#include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/DeviceSettingsView.hpp"
 #include "ui/view/MacroView.hpp"
 #include "ui/view/ProjectView.hpp"
@@ -130,10 +130,6 @@ FLASHMEM core::ui::TransportBar& StandaloneUiAssembly::transportBar() const {
     return *transport_bar_;
 }
 
-FLASHMEM core::ui::ContextSoftkeyBar& StandaloneUiAssembly::contextSoftkeyBar() const {
-    return *context_softkey_bar_;
-}
-
 FLASHMEM void StandaloneUiAssembly::activateMacroView() const {
     preparePerformanceViewport();
     core::ui::RetainedViewRenderPolicy::attach(macro_view_->getElement(), views_host_);
@@ -220,6 +216,14 @@ FLASHMEM bool StandaloneUiAssembly::createViewContainer() {
         OC_LOG_ERROR("StandaloneUiAssembly: ViewContainer main zone unavailable");
         return false;
     }
+    // Context-owned footer commands use the full screen. The global transport
+    // is an independent central island above them, not another reserved row.
+    auto* bottom = view_container_->getBottomZone();
+    lv_obj_set_size(bottom, ::standalone::theme::layout::TRANSPORT_CENTER_WIDTH,
+                    ::standalone::theme::layout::TRANSPORT_BAR_HEIGHT);
+    lv_obj_add_flag(bottom, LV_OBJ_FLAG_FLOATING);
+    lv_obj_add_flag(bottom, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_align(bottom, LV_ALIGN_BOTTOM_MID, 0, 0);
     views_host_ = lv_obj_create(mainZone);
     if (!views_host_) {
         OC_LOG_ERROR("StandaloneUiAssembly: performance view host allocation failed");
@@ -400,8 +404,7 @@ FLASHMEM bool StandaloneUiAssembly::createBottomBar() {
         bottomZone,
         core_state_.statusBar
     );
-    context_softkey_bar_ = core::app::makeExtmemUnique<core::ui::ContextSoftkeyBar>(bottomZone);
-    if (!transport_bar_ || !context_softkey_bar_) {
+    if (!transport_bar_ || !transport_bar_->getElement()) {
         OC_LOG_ERROR("StandaloneUiAssembly: bottom bar PSRAM allocation failed");
         return false;
     }

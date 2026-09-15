@@ -285,7 +285,7 @@ FLASHMEM void SequencerView::bindHeaderState() {
 }
 
 FLASHMEM void SequencerView::bindHeaderStripState() {
-    header_strip_watcher_.bind<&SequencerView::requestHeaderStripAndLeftRender>(
+    header_strip_watcher_.bind<&SequencerView::requestStructureStripsRender>(
         *this, 1, "SequencerView.headerStrip"
     );
     header_strip_watcher_.watchAll(
@@ -621,8 +621,11 @@ void SequencerView::requestHeaderAndLeftRender() {
     );
 }
 
-void SequencerView::requestHeaderStripAndLeftRender() {
-    requestRender(RENDER_HEADER_STRIP | RENDER_LEFT_ACTION_STRIP);
+void SequencerView::requestStructureStripsRender() {
+    // Length and page changes also affect which structural commands are legal.
+    // Keep their footer projection current while an editor covers this view.
+    requestRender(RENDER_HEADER_STRIP | RENDER_LEFT_ACTION_STRIP |
+                  RENDER_BOTTOM_ACTION_STRIP);
 }
 
 void SequencerView::requestStructureSelectionRender() {
