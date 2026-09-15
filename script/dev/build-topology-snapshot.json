@@ -79,7 +79,7 @@
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
     "core/.github/workflows/ci.yml": "46552c773ea5898f19d83fd3357fee758caefbd31058eaabe6759f2dc50fe2fd",
     "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
-    "core/cmake/MsCoreProductSources.cmake": "8f9df9b66a1af67c5cc3a331093b8ee9cedaee9c29a1388a74eb528f450fe9ee",
+    "core/cmake/MsCoreProductSources.cmake": "bb89b34f3867f44670e37148c25c24e3cca1728948c97c4a540895fb205e88c9",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
     "core/cmake/MsCoreSources.cmake": "c96fd895088255ac8e06900976bf26f8cebbd99f92a4277b0b144cae48c5c32f",
     "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
@@ -332,7 +332,7 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "coreNativeCmakeImplementations": {
-      "count": 329,
+      "count": 330,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/standalone/MacroOverlayInvalidationBindings.cpp",
@@ -372,6 +372,7 @@
         "src/handler/project/ProjectHandlerLifecycle.cpp",
         "src/handler/project/ProjectHandlerModulatorActions.cpp",
         "src/handler/project/ProjectHandlerModulatorAudition.cpp",
+        "src/handler/project/ProjectHandlerModulatorEncoders.cpp",
         "src/handler/project/ProjectHandlerModulatorValueEditing.cpp",
         "src/handler/project/ProjectHandlerNavigation.cpp",
         "src/handler/project/ProjectHandlerValueEditing.cpp",
@@ -664,10 +665,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "8b7c6421b0c04846538a6000f3cf728beccd210e677b3f4b82639b03f54d5e80"
+      "sha256": "c83e9ef10a546375aef3c5695912742cea62dd3da8135b1a82c7550cf4ac5d53"
     },
     "coreSdlWasmImplementations": {
-      "count": 423,
+      "count": 424,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -740,6 +741,7 @@
         "src/handler/project/ProjectHandlerLifecycle.cpp",
         "src/handler/project/ProjectHandlerModulatorActions.cpp",
         "src/handler/project/ProjectHandlerModulatorAudition.cpp",
+        "src/handler/project/ProjectHandlerModulatorEncoders.cpp",
         "src/handler/project/ProjectHandlerModulatorValueEditing.cpp",
         "src/handler/project/ProjectHandlerNavigation.cpp",
         "src/handler/project/ProjectHandlerValueEditing.cpp",
@@ -1093,10 +1095,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "dbdf636db7133e7a48e900e7bf1680a054add4c4449bcb3f0a83ac2e485bcb35"
+      "sha256": "318cdcc05e7a3585ef12d1ef79bcaf7f9ff407a2a4f43b9ae7616691434743e0"
     },
     "coreTeensyImplementations": {
-      "count": 407,
+      "count": 408,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -1164,6 +1166,7 @@
         "src/handler/project/ProjectHandlerLifecycle.cpp",
         "src/handler/project/ProjectHandlerModulatorActions.cpp",
         "src/handler/project/ProjectHandlerModulatorAudition.cpp",
+        "src/handler/project/ProjectHandlerModulatorEncoders.cpp",
         "src/handler/project/ProjectHandlerModulatorValueEditing.cpp",
         "src/handler/project/ProjectHandlerNavigation.cpp",
         "src/handler/project/ProjectHandlerValueEditing.cpp",
@@ -1506,7 +1509,7 @@
         "src/ui/view/SequencerView.cpp",
         "src/ui/widget/MacroKnobWidget.cpp"
       ],
-      "sha256": "5bab7de292977da84c4a579ff77c35f170605fb2020c212c4570f27c01e2c6cc"
+      "sha256": "55436e9af6e36e8d919a9f2a0489d687764fbdcea3d0cba6a75cbdeb82bf7457"
     },
     "coreTotalHeaders": {
       "count": 496,
@@ -2011,7 +2014,7 @@
       "sha256": "77acf7dce333fdf626f68f832544fa3bfd65fba76e5de58cecfd210237b6e56b"
     },
     "coreTotalImplementations": {
-      "count": 423,
+      "count": 424,
       "paths": [
         "src/app/RpcLifetime.cpp",
         "src/context/StandaloneContext.cpp",
@@ -2084,6 +2087,7 @@
         "src/handler/project/ProjectHandlerLifecycle.cpp",
         "src/handler/project/ProjectHandlerModulatorActions.cpp",
         "src/handler/project/ProjectHandlerModulatorAudition.cpp",
+        "src/handler/project/ProjectHandlerModulatorEncoders.cpp",
         "src/handler/project/ProjectHandlerModulatorValueEditing.cpp",
         "src/handler/project/ProjectHandlerNavigation.cpp",
         "src/handler/project/ProjectHandlerValueEditing.cpp",
@@ -2437,7 +2441,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "dbdf636db7133e7a48e900e7bf1680a054add4c4449bcb3f0a83ac2e485bcb35"
+      "sha256": "318cdcc05e7a3585ef12d1ef79bcaf7f9ff407a2a4f43b9ae7616691434743e0"
     },
     "deviceSupportHeaders": {
       "count": 10,
