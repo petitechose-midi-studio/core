@@ -24,6 +24,7 @@
 #include "../../src/handler/sequencer/DrumLaneEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/ClipWorkspaceHandler.hpp"
+#include "../../src/handler/sequencer/ProjectTrackEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepContentHandler.hpp"
@@ -6956,8 +6957,90 @@ void test_clip_stop_layer_owns_bottom_left_and_nav() {
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(!workspace.stopLayerActive);
 
+    // Selection owns BOTTOM_LEFT as Remove, never as the momentary Stop layer.
+    workspace.beginSelection(0U, 0U);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(!workspace.stopLayerActive);
+    assert(workspace.removeHoldActive);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(!workspace.removeHoldActive);
+
     std::cout
         << "[PASS] Clip Stop layer owns BOTTOM_LEFT and focused NAV Stop\n";
+}
+
+void test_clip_track_header_physical_selection_and_editor_routes() {
+    {
+        SequencerStepHarness h(true);
+        assert(h.state.setSharedTrackState(0x0003U, 0U));
+        test_support::drainNotifications();
+        auto& workspace = h.state.sequencer.clipWorkspace;
+        workspace.focusTrackHeader(1U);
+        const auto mutedBefore = h.state.projectTracks.authored.mutedMask;
+        const auto historyBefore = h.state.projectTrackHistory.undoCount();
+
+        h.press(Config::ButtonID::NAV);
+        assert(!h.state.trackNavigation.selection.active.get());
+        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        const auto& selection = h.state.trackNavigation.selection;
+        assert(selection.active.get());
+        assert(selection.scope.get() == core::state::StructureSelectionScope::TRACK);
+        assert(selection.cursorIndex.get() == 1U);
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+        assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+        assert(!h.state.trackNavigation.previewAddSlot.get());
+        h.release(Config::ButtonID::NAV);
+        test_support::drainNotifications();
+        assert(selection.active.get());
+        assert(selection.cursorIndex.get() == 1U);
+        assert(h.state.sequencerTracks.activeTrackIndex() == 0U);
+        assert(h.state.projectTracks.authored.mutedMask == mutedBefore);
+        assert(h.state.projectTrackHistory.undoCount() == historyBefore);
+        assert(!h.state.sequencer.drumSequencer.pickerVisible());
+    }
+    {
+        SequencerStepHarness h(true);
+        h.state.sequencer.clipWorkspace.focusTrackHeader(1U);
+        assert(!h.state.sequencerTracks.isTrackEnabled(1U));
+        h.press(Config::ButtonID::NAV);
+        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::NAV);
+        assert(!h.state.trackNavigation.selection.active.get());
+        assert(!h.state.sequencer.drumSequencer.pickerVisible());
+    }
+    {
+        SequencerStepHarness h(true);
+        constexpr oc::type::ScopeID editorScope = 506;
+        core::handler::ProjectTrackEditorHandler editor({
+            h.state.projectTrackEditor, h.state.projectTracks,
+            h.state.sequencerTracks, h.state.sequencerClips,
+            core::handler::SharedTrackDomainServices::fromCoreState(h.state),
+            core::state::project::ProjectTrackDomainServices::fromCoreState(h.state),
+            HistoryServices::fromCoreState(h.state),
+        }, h.overlays, h.encoders, h.buttons, editorScope);
+        h.overlays.registerCleanup(core::ui::OverlayType::SEQ_TRACK_EDIT, editorScope);
+        h.clipWorkspaceHandler.attachTrackEditorHandler(editor);
+        assert(h.state.setSharedTrackState(0x0003U, 0U));
+        auto& workspace = h.state.sequencer.clipWorkspace;
+
+        // The sequential Add header must not open an editor for the old track.
+        workspace.focusTrackHeader(2U);
+        h.tap(Config::ButtonID::LEFT_CENTER);
+        assert(!h.state.projectTrackEditor.active);
+        assert(h.state.sequencerTracks.activeTrackIndex() == 0U);
+
+        workspace.focusTrackHeader(1U);
+        h.press(Config::ButtonID::LEFT_CENTER);
+        assert(!h.state.projectTrackEditor.active);
+        h.release(Config::ButtonID::LEFT_CENTER);
+        assert(h.state.projectTrackEditor.active);
+        assert(h.state.projectTrackEditor.trackIndex == 1U);
+        assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
+        assert(h.overlays.current() == core::ui::OverlayType::SEQ_TRACK_EDIT);
+        assert(!h.state.sequencer.drumSequencer.pickerVisible());
+        editor.close();
+    }
+    std::cout << "[PASS] Clip header physical selection and editor routes\n";
 }
 
 void test_track_hold_boundary_drift_cannot_retarget_mutation() {
@@ -9846,6 +9929,7 @@ int main() {
     test_track_remove_hold_latches_target_and_rejects_external_drift();
     test_track_header_nav_never_opens_pattern_context_selector();
     test_clip_stop_layer_owns_bottom_left_and_nav();
+    test_clip_track_header_physical_selection_and_editor_routes();
     test_track_hold_boundary_drift_cannot_retarget_mutation();
     test_track_structure_replay_preserves_runtime_when_active_is_unchanged();
     test_created_track_is_undoable_and_redoable();

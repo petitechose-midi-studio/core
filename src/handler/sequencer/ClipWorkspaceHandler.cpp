@@ -635,12 +635,7 @@ FLASHMEM void ClipWorkspaceHandler::selectFocused() {
 
 FLASHMEM void ClipWorkspaceHandler::beginTrackSelection() {
     if (!trackHeaderAvailable() || navigation_workflow_ == nullptr) return;
-    const uint8_t track = refs_.clipWorkspace.focusedTrack;
-    if (!refs_.sequencerTracks.isTrackEnabled(track)) return;
-    refs_.trackNavigation.previewAddSlot.set(false);
-    refs_.trackNavigation.syncPreviewTrack(track);
-    refs_.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    navigation_workflow_->enterSelectionModeForCurrentFocus();
+    navigation_workflow_->enterTrackSelection(refs_.clipWorkspace.focusedTrack);
 }
 
 FLASHMEM void ClipWorkspaceHandler::launchVisible(uint8_t macroIndex) {

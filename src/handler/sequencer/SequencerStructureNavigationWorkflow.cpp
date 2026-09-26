@@ -152,6 +152,16 @@ FLASHMEM void SequencerStructureNavigationWorkflow::setNavigationFocus(
     navigation_focus_.set(focus);
 }
 
+FLASHMEM void SequencerStructureNavigationWorkflow::enterTrackSelection(uint8_t track) {
+    if (selectionActive() || !tracks_.isTrackEnabled(track)) return;
+    track_ui_.previewAddSlot.set(false);
+    track_ui_.syncPreviewTrack(track);
+    navigation_focus_.set(core::state::StructureNavigationFocus::TRACK);
+    auto& selection = track_ui_.selection;
+    selection.reset(core::state::StructureSelectionScope::TRACK, track);
+    selection.active.set(true);
+}
+
 FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrentFocus() {
     if (selectionActive()) return;
 
@@ -159,10 +169,7 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
 
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK: {
-            auto& selection = track_ui_.selection;
-            const uint8_t cursor = currentActiveTrack();
-            selection.reset(core::state::StructureSelectionScope::TRACK, cursor);
-            selection.active.set(true);
+            enterTrackSelection(currentActiveTrack());
             return;
         }
         case core::state::StructureNavigationFocus::LANE: {

@@ -46,6 +46,7 @@ public:
     void moveByFocus(float delta);
     void setNavigationFocus(core::state::StructureNavigationFocus focus);
     void enterSelectionModeForCurrentFocus();
+    void enterTrackSelection(uint8_t track);
     /** Handles one local Back tier; returns true when a selection owned it. */
     bool backSelectionMode();
     void toggleSelectionAtCursor();
