@@ -75,8 +75,12 @@ target_compile_definitions(
         # Tests must exercise the product registry, not OpenControl's small
         # library defaults. Otherwise enabling a real feature can silently
         # drop later bindings and manufacture false navigation failures.
+        # The complete controller grammar registers 268 routes; 272 keeps the
+        # same four-slot headroom as firmware (platformio.ini), and
+        # script/dev/check-build-topology.py enforces the equality across the
+        # native, Teensy and SDL profiles.
         OC_MAX_BUTTONS=48
-        OC_MAX_BUTTON_BINDINGS=256
+        OC_MAX_BUTTON_BINDINGS=272
         OC_MAX_ENCODER_BINDINGS=96)
 
 if(NOT TARGET oc_note_native)

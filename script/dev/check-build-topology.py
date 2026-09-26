@@ -195,6 +195,10 @@ def extract_cmake_command_bodies(
         start_pattern = re.compile(
             rf"\blist\s*\(\s*APPEND\s+{re.escape(variable)}\b"
         )
+    elif command == "target_compile_definitions":
+        start_pattern = re.compile(
+            rf"\btarget_compile_definitions\s*\(\s*{re.escape(variable)}\b"
+        )
     else:
         raise ValueError("unsupported CMake command")
 
@@ -418,6 +422,36 @@ def cmake_scalar(text: str, variable: str) -> str | None:
     return match.group(1) if match else None
 
 
+def cmake_target_compile_definitions(
+    text: str, target: str
+) -> dict[str, str | bool]:
+    definitions: dict[str, str | bool] = {}
+    for body in extract_cmake_command_bodies(
+        text, "target_compile_definitions", target
+    ):
+        for raw_line in body.splitlines():
+            line = raw_line.split("#", 1)[0]
+            for token in line.split():
+                if token in ("PUBLIC", "PRIVATE", "INTERFACE") or token.startswith("$<"):
+                    continue
+                match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(?:=(\S+))?", token)
+                if match is None:
+                    continue
+                definitions[match.group(1)] = match.group(2) or True
+    return definitions
+
+
+def resolve_cmake_define(text: str, value: str | bool) -> str | bool:
+    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+        scalar = cmake_scalar(text, value[2:-1])
+        if scalar is None:
+            raise InventoryError(
+                f"unresolved CMake variable in compile definition: {value}"
+            )
+        return scalar
+    return value
+
+
 def cmake_target_cxx_standard(text: str, target: str) -> int:
     match = re.search(
         rf"\btarget_compile_features\s*\(\s*{re.escape(target)}\s+"
@@ -459,6 +493,36 @@ def effective_capacity(
 ) -> int:
     value = definitions.get(name)
     return int(value) if isinstance(value, str) else defaults[name]
+
+
+CORE_CAPACITY_FIELDS = (
+    "pendingNotifications",
+    "buttons",
+    "buttonBindings",
+    "encoderBindings",
+)
+CORE_CAPACITY_PROFILES = (
+    "coreNativeCmake",
+    "corePioNative",
+    "coreTeensy",
+    "sdlWasm",
+)
+
+
+def core_capacity_divergences(profiles: dict[str, dict[str, Any]]) -> list[str]:
+    """Core build profiles must expose one identical controller layout."""
+    divergences: list[str] = []
+    for field in CORE_CAPACITY_FIELDS:
+        values = {
+            profile: profiles[profile].get(field)
+            for profile in CORE_CAPACITY_PROFILES
+        }
+        if len(set(values.values())) > 1:
+            rendered = ", ".join(
+                f"{profile}={value}" for profile, value in values.items()
+            )
+            divergences.append(f"{field}: {rendered}")
+    return divergences
 
 
 def pin_map(ini_text: str) -> dict[str, str]:
@@ -787,6 +851,12 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
 
     defaults = macro_defaults(framework)
     core_cmake_text = (core / "CMakeLists.txt").read_text(encoding="utf-8")
+    core_cmake_defines = {
+        name: resolve_cmake_define(core_cmake_text, value)
+        for name, value in cmake_target_compile_definitions(
+            core_cmake_text, "oc_framework_native"
+        ).items()
+    }
     project_file_tool_cmake_text = (
         core / "cmake" / "MsCoreProjectFileTool.cmake"
     ).read_text(encoding="utf-8")
@@ -958,12 +1028,18 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
             "frameworkDefaults": defaults,
             "coreNativeCmake": {
                 "cxxStandard": int(cmake_scalar(core_cmake_text, "CMAKE_CXX_STANDARD") or 0),
-                "pendingNotifications": int(
-                    cmake_scalar(core_cmake_text, "MS_CORE_NOTIFICATION_QUEUE_CAPACITY") or 0
+                "pendingNotifications": effective_capacity(
+                    defaults, core_cmake_defines, "OC_MAX_PENDING_NOTIFICATIONS"
                 ),
-                "buttons": defaults["OC_MAX_BUTTONS"],
-                "buttonBindings": defaults["OC_MAX_BUTTON_BINDINGS"],
-                "encoderBindings": defaults["OC_MAX_ENCODER_BINDINGS"],
+                "buttons": effective_capacity(
+                    defaults, core_cmake_defines, "OC_MAX_BUTTONS"
+                ),
+                "buttonBindings": effective_capacity(
+                    defaults, core_cmake_defines, "OC_MAX_BUTTON_BINDINGS"
+                ),
+                "encoderBindings": effective_capacity(
+                    defaults, core_cmake_defines, "OC_MAX_ENCODER_BINDINGS"
+                ),
                 "cobsFrame": defaults["OC_COBS_MAX_FRAME_SIZE"],
             },
             "coreProjectFileTool": {
@@ -1105,6 +1181,11 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
         "suppliers": supplier_metadata,
         "conditionalSupplierLots": classify_supplier_lots(supplier_metadata),
     }
+    capacity_divergences = core_capacity_divergences(inventory["profiles"])
+    if capacity_divergences:
+        raise InventoryError(
+            "Core capacity profiles diverge: " + "; ".join(capacity_divergences)
+        )
     serialized = json.dumps(inventory, sort_keys=True)
     if str(workspace_root.resolve()).replace("\\", "/") in serialized.replace("\\", "/"):
         raise InventoryError("inventory contains an absolute workspace path")
@@ -1208,6 +1289,45 @@ build_flags =
     assert quoted_cmake_values(set_bodies[0]) == ["${ROOT}/a.cpp", "${ROOT}/b.cpp"]
     assert quoted_cmake_values(append_bodies[0]) == ["${ROOT}/c.cpp"]
 
+    compile_definitions = cmake_target_compile_definitions(
+        "target_compile_definitions(oc_framework_native PUBLIC\n"
+        "    # comment tokens must be ignored\n"
+        "    OC_MAX_BUTTONS=48 OC_MAX_BUTTON_BINDINGS=272\n"
+        "    OC_MAX_PENDING_NOTIFICATIONS=${MS_CORE_NOTIFICATION_QUEUE_CAPACITY})",
+        "oc_framework_native",
+    )
+    assert compile_definitions == {
+        "OC_MAX_BUTTONS": "48",
+        "OC_MAX_BUTTON_BINDINGS": "272",
+        "OC_MAX_PENDING_NOTIFICATIONS": "${MS_CORE_NOTIFICATION_QUEUE_CAPACITY}",
+    }
+    assert (
+        resolve_cmake_define(
+            "set(MS_CORE_NOTIFICATION_QUEUE_CAPACITY 96)",
+            compile_definitions["OC_MAX_PENDING_NOTIFICATIONS"],
+        )
+        == "96"
+    )
+
+    aligned_profiles = {
+        profile: {
+            "pendingNotifications": 96,
+            "buttons": 48,
+            "buttonBindings": 272,
+            "encoderBindings": 96,
+        }
+        for profile in CORE_CAPACITY_PROFILES
+    }
+    assert core_capacity_divergences(aligned_profiles) == []
+    divergent_profiles = {
+        profile: dict(values) for profile, values in aligned_profiles.items()
+    }
+    divergent_profiles["coreNativeCmake"]["buttonBindings"] = 256
+    assert core_capacity_divergences(divergent_profiles) == [
+        "buttonBindings: coreNativeCmake=256, corePioNative=272, "
+        "coreTeensy=272, sdlWasm=272"
+    ]
+
     differences = structural_diff(
         {"source": {"count": 1, "paths": ["a.cpp"]}},
         {"source": {"count": 2, "paths": ["a.cpp", "b.cpp"]}},
@@ -1231,7 +1351,7 @@ env:
         path.write_bytes(b"topology\n")
         assert sha256_file(path) == sha256_bytes(b"topology\n")
 
-    print("PASS build-topology self-test (10 contracts)")
+    print("PASS build-topology self-test (13 contracts)")
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
