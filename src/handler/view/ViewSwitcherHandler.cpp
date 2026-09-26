@@ -3,9 +3,12 @@
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
-#include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
+#include "state/ViewSelectorState.hpp"
+#include "state/project/ProjectHistoryCoordinator.hpp"
 #include "state/project/ProjectMenuModel.hpp"
+#include "state/sequencer/SequencerStepContentDraftSession.hpp"
+#include "state/sequencer/SequencerUiState.hpp"
 
 namespace core::handler {
 
@@ -13,14 +16,14 @@ using ButtonID = Config::ButtonID;
 using EncoderID = Config::EncoderID;
 
 FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(
-    core::state::CoreState& state,
+    Refs refs,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
     ViewSwitcherHandler::ViewScopes viewScopes,
     oc::type::ScopeID viewSelectorScope
 )
-    : core_state_(state)
+    : refs_(refs)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -55,7 +58,7 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
                 .when([this]() {
                     return canOpenSelector() &&
                            core::state::project::projectNavigationAtRoot(
-                               core_state_.projectNavigation
+                               refs_.projectNavigation
                            );
                 })
                 .then([this]() { (void)beginSelectorPress(); });
@@ -103,25 +106,25 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
         .release()
         .scope(view_selector_scope_)
         .when([this]() {
-            return core_state_.projectHistory.canUndo() &&
-                core_state_.projectHistoryBlockReason() ==
+            return refs_.projectHistory.canUndo() &&
+                refs_.historyOps.blockReason(refs_.historyOps.context) ==
                     core::state::project::ProjectHistoryBlockReason::NONE;
         })
-        .then([this]() { (void)core_state_.undoProjectHistory(); });
+        .then([this]() { (void)refs_.historyOps.undo(refs_.historyOps.context); });
 
     buttons_.button(ButtonID::LEFT_BOTTOM)
         .release()
         .scope(view_selector_scope_)
         .when([this]() {
-            return core_state_.projectHistory.canRedo() &&
-                core_state_.projectHistoryBlockReason() ==
+            return refs_.projectHistory.canRedo() &&
+                refs_.historyOps.blockReason(refs_.historyOps.context) ==
                     core::state::project::ProjectHistoryBlockReason::NONE;
         })
-        .then([this]() { (void)core_state_.redoProjectHistory(); });
+        .then([this]() { (void)refs_.historyOps.redo(refs_.historyOps.context); });
 }
 
 FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
-    if (core_state_.overlays.hasVisible()) return false;
+    if (refs_.overlays.hasVisible()) return false;
 
     // The global selector is a standalone gesture, never a chord. Opening an
     // overlay while another press-owned action is active would quarantine its
@@ -131,13 +134,13 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
         if (button != leftTop && buttons_.isPressed(button)) return false;
     }
 
-    if (core_state_.projectHistoryBlockReason() !=
+    if (refs_.historyOps.blockReason(refs_.historyOps.context) !=
         core::state::project::ProjectHistoryBlockReason::NONE) return false;
 
     // Back in a Pattern or armed Clips property belongs to that local route.
-    return core_state_.activeView.get() != core::ui::ViewType::CLIPS ||
-           (core_state_.sequencer.clipWorkspace.matrixVisible() &&
-            !core_state_.sequencer.clipWorkspace.quickPropertyArmed);
+    return refs_.activeView.get() != core::ui::ViewType::CLIPS ||
+           (refs_.clipWorkspace.matrixVisible() &&
+            !refs_.clipWorkspace.quickPropertyArmed);
 }
 
 FLASHMEM bool ViewSwitcherHandler::beginSelectorPress() {
@@ -147,20 +150,20 @@ FLASHMEM bool ViewSwitcherHandler::beginSelectorPress() {
 }
 
 FLASHMEM bool ViewSwitcherHandler::openSelector() {
-    if (core_state_.sequencer.stepContentDraft.active.get()) {
-        core_state_.sequencer.stepContentDraft.noteBlockedTransition(
+    if (refs_.stepContentDraft.active.get()) {
+        refs_.stepContentDraft.noteBlockedTransition(
             core::state::sequencer::
                 SequencerStepContentDraftBlockedTransition::VIEW
         );
         return false;
     }
-    if (!core_state_.prepareProjectHistoryInteraction()) return false;
+    if (!refs_.historyOps.prepareInteraction(refs_.historyOps.context)) return false;
     const auto selected = core::state::viewSelectorItemForView(
-        core_state_.activeView.get()
+        refs_.activeView.get()
     );
-    core_state_.viewSelector.selectedIndex.set(static_cast<int>(selected));
+    refs_.viewSelector.selectedIndex.set(static_cast<int>(selected));
 
-    if (!core_state_.viewSelector.visible.get()) {
+    if (!refs_.viewSelector.visible.get()) {
         overlays_.show(core::ui::OverlayType::VIEW_SELECTOR, false);
     }
     encoders_.setMode(EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
@@ -170,24 +173,24 @@ FLASHMEM bool ViewSwitcherHandler::openSelector() {
 FLASHMEM void ViewSwitcherHandler::navigate(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
-    const int current = core_state_.viewSelector.selectedIndex.get();
+    const int current = refs_.viewSelector.selectedIndex.get();
     const int next = nav::nextWrappedIndex(
         delta,
         current,
         core::state::VIEW_SELECTOR_ITEM_COUNT
     );
-    core_state_.viewSelector.selectedIndex.set(next);
+    refs_.viewSelector.selectedIndex.set(next);
 }
 
 FLASHMEM void ViewSwitcherHandler::confirmSelection() {
-    if (core_state_.sequencer.stepContentDraft.active.get()) {
-        core_state_.sequencer.stepContentDraft.noteBlockedTransition(
+    if (refs_.stepContentDraft.active.get()) {
+        refs_.stepContentDraft.noteBlockedTransition(
             core::state::sequencer::
                 SequencerStepContentDraftBlockedTransition::VIEW
         );
         return;
     }
-    const int index = core_state_.viewSelector.selectedIndex.get();
+    const int index = refs_.viewSelector.selectedIndex.get();
     if (index < 0 || index >= core::state::VIEW_SELECTOR_ITEM_COUNT) return;
 
     const auto item = core::state::viewSelectorItemAt(index);
@@ -195,11 +198,11 @@ FLASHMEM void ViewSwitcherHandler::confirmSelection() {
 
     const auto type = core::state::viewForSelectorItem(item);
     if (item == core::state::ViewSelectorItem::MODULATORS) {
-        if (core_state_.activeView.get() != core::ui::ViewType::MODULATORS ||
-            core_state_.projectNavigation.activeTab.get() !=
+        if (refs_.activeView.get() != core::ui::ViewType::MODULATORS ||
+            refs_.projectNavigation.activeTab.get() !=
                 core::state::project::ProjectTab::MODULATORS) {
             core::state::project::openProjectRootTab(
-                core_state_.projectNavigation,
+                refs_.projectNavigation,
                 core::state::project::ProjectTab::MODULATORS
             );
             encoders_.setMode(
@@ -208,11 +211,11 @@ FLASHMEM void ViewSwitcherHandler::confirmSelection() {
             );
         }
     } else if (item == core::state::ViewSelectorItem::PROJECT_SETTINGS) {
-        if (core_state_.activeView.get() != core::ui::ViewType::PROJECT ||
-            core_state_.projectNavigation.activeTab.get() ==
+        if (refs_.activeView.get() != core::ui::ViewType::PROJECT ||
+            refs_.projectNavigation.activeTab.get() ==
             core::state::project::ProjectTab::MODULATORS) {
             core::state::project::openProjectRootTab(
-                core_state_.projectNavigation,
+                refs_.projectNavigation,
                 core::state::project::ProjectTab::OVERVIEW
             );
             encoders_.setMode(
@@ -221,8 +224,8 @@ FLASHMEM void ViewSwitcherHandler::confirmSelection() {
             );
         }
     }
-    if (core_state_.activeView.get() == type) return;
-    core_state_.activeView.set(type);
+    if (refs_.activeView.get() == type) return;
+    refs_.activeView.set(type);
 }
 
 FLASHMEM void ViewSwitcherHandler::closeSelector() {

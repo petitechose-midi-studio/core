@@ -18,6 +18,27 @@
 
 namespace core::context::standalone {
 
+namespace {
+
+core::state::project::ProjectHistoryBlockReason
+viewSwitcherHistoryBlockReason(void* context) {
+    return static_cast<core::state::CoreState*>(context)->projectHistoryBlockReason();
+}
+
+bool viewSwitcherPrepareHistoryInteraction(void* context) {
+    return static_cast<core::state::CoreState*>(context)->prepareProjectHistoryInteraction();
+}
+
+bool viewSwitcherUndoProjectHistory(void* context) {
+    return static_cast<core::state::CoreState*>(context)->undoProjectHistory();
+}
+
+bool viewSwitcherRedoProjectHistory(void* context) {
+    return static_cast<core::state::CoreState*>(context)->redoProjectHistory();
+}
+
+}  // namespace
+
 class StandaloneGlobalHandlerAssembly::Impl {
 public:
     Impl(core::state::CoreState& state,
@@ -64,8 +85,24 @@ public:
 
         const auto viewSelectorScope = oc::ui::lvgl::scopeID(viewSelectorElement);
         if (viewSelectorScope == 0) return;
+        core::handler::ViewSwitcherHandler::Refs viewSwitcherRefs{
+            state.activeView,
+            state.projectNavigation,
+            state.projectHistory,
+            state.sequencer.stepContentDraft,
+            state.sequencer.clipWorkspace,
+            state.overlays,
+            state.viewSelector,
+            core::handler::ViewSwitcherHandler::Refs::HistoryOps{
+                &state,
+                viewSwitcherHistoryBlockReason,
+                viewSwitcherPrepareHistoryInteraction,
+                viewSwitcherUndoProjectHistory,
+                viewSwitcherRedoProjectHistory,
+            },
+        };
         view_switcher_handler_ = core::app::makeExtmemUnique<core::handler::ViewSwitcherHandler>(
-            state,
+            viewSwitcherRefs,
             overlays,
             encoders,
             buttons,
