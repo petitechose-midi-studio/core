@@ -891,10 +891,7 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     core_teensy_defines = extract_defines(core_teensy_flags)
     core_native_defines = extract_defines(core_native_flags)
     bitwig_defines = extract_defines(bitwig_flags)
-    # CMake definitions are written without -D, so normalize them separately.
-    sdl_defines = {}
-    for name, value in re.findall(r"\b(OC_[A-Z0-9_]+)=(\d+)\b", sdl_cmake_text):
-        sdl_defines[name] = value
+    sdl_defines = sdl_capacity_definitions(sdl_cmake_text)
 
     external_identities: dict[str, Any] = {}
     external_repositories = {
@@ -1239,6 +1236,57 @@ def validate_worktrees(
     return errors
 
 
+def sdl_capacity_definitions(text: str) -> dict[str, str]:
+    """Read only literal capacities in the supported SDL target scopes.
+
+    This is deliberately not a CMake interpreter: ambiguous scopes/values fail
+    closed rather than letting snapshot regeneration bless inactive definitions.
+    """
+    text = re.sub(r"#[^\n]*", "", text)
+    scopes: list[str] = []
+    definitions: dict[str, str] = {}
+    consumed = 0
+    for match in re.finditer(
+        r"\b(if|elseif|else|endif|foreach|endforeach|function|endfunction|macro|endmacro|while|endwhile|target_compile_definitions)\s*\(([^()]*)\)",
+        text,
+        re.IGNORECASE,
+    ):
+        command, body = match.group(1).lower(), match.group(2).strip()
+        if command in ("if", "foreach", "function", "macro", "while"):
+            scopes.append(" ".join(body.split()) if command == "if" else command)
+        elif command.startswith("end"):
+            if not scopes:
+                raise InventoryError("unbalanced SDL CMake scope")
+            scopes.pop()
+        elif command in ("else", "elseif"):
+            if not scopes:
+                raise InventoryError("unbalanced SDL CMake branch")
+            scopes[-1] = command
+        else:
+            tokens = body.split()
+            capacities = [
+                token for token in tokens
+                if "OC_MAX_" in token or "OC_COBS_MAX_FRAME_SIZE" in token
+            ]
+            if not capacities:
+                continue
+            if (
+                tokens[:2] != ["${APP_EXE_NAME}", "PRIVATE"]
+                or scopes not in ([], ['APP_ID STREQUAL "core"'])
+            ):
+                raise InventoryError(f"unsupported SDL capacity target/scope: {scopes}: {body}")
+            for token in capacities:
+                capacity = re.fullmatch(r"(OC_MAX_[A-Z_]+|OC_COBS_MAX_FRAME_SIZE)=(\d+)", token)
+                if capacity is None or capacity[1] in definitions:
+                    raise InventoryError(f"unsupported or duplicate SDL capacity: {token}")
+                definitions[capacity[1]] = capacity[2]
+                consumed += 1
+    occurrences = re.findall(r"\b(?:OC_MAX_[A-Z_]+|OC_COBS_MAX_FRAME_SIZE)\b", text)
+    if scopes or consumed != len(occurrences):
+        raise InventoryError("SDL capacities outside supported literal target definitions")
+    return definitions
+
+
 def run_self_test() -> None:
     assert path_set_record(["b.cpp", "a.cpp", "a.cpp"])["paths"] == [
         "a.cpp",
@@ -1351,7 +1399,29 @@ env:
         path.write_bytes(b"topology\n")
         assert sha256_file(path) == sha256_bytes(b"topology\n")
 
-    print("PASS build-topology self-test (13 contracts)")
+    sdl = (
+        'target_compile_definitions(${APP_EXE_NAME} PRIVATE OC_MAX_BUTTON_BINDINGS=272)\n'
+        'if(APP_ID STREQUAL "core")\n'
+        'target_compile_definitions(${APP_EXE_NAME} PRIVATE OC_MAX_BUTTONS=48)\nendif()'
+    )
+    assert sdl_capacity_definitions(sdl) == {
+        "OC_MAX_BUTTON_BINDINGS": "272", "OC_MAX_BUTTONS": "48"
+    }
+    for unsupported in (
+        sdl.replace('APP_ID STREQUAL "core"', "FALSE"),
+        sdl.replace('APP_ID STREQUAL "core"', 'APP_ID STREQUAL "bitwig"'),
+        "if(FALSE)\n" + sdl + "\nendif()",
+        sdl.replace("=48", "=${BUTTONS}"),
+        sdl.replace("PRIVATE OC_MAX_BUTTONS", "PUBLIC OC_MAX_BUTTONS"),
+        sdl + '\ntarget_compile_definitions(${APP_EXE_NAME} PRIVATE OC_MAX_BUTTONS=32)',
+    ):
+        try:
+            sdl_capacity_definitions(unsupported)
+        except InventoryError:
+            pass
+        else:
+            raise AssertionError(f"accepted ambiguous SDL capacities: {unsupported}")
+    print("PASS build-topology self-test (14 contracts)")
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
