@@ -86,7 +86,7 @@
     "core/oc-native-sdk.ini": "18f63442eeb2ac1e442a466c9fa63e3dc2b191b81c1022c3829665ab923c21e6",
     "core/oc-sdk.ini": "8282e6bb7fa3bbbb236dc271a40f24d90ddc076a377732bda7eb6b47f697e83f",
     "core/platformio.ini": "9cd5eddeec0bede71d3160acf37165d088c8244927011b061cb66d82f08b2342",
-    "core/script/dev/check-build-topology.py": "42e657c00e2e7237f601e5336a2a6a247f247cdb8608494577c028bda97a10b6",
+    "core/script/dev/check-build-topology.py": "7ff66e4da6d467fdabd1e723502a63f2841d331622b97bb8e6f1c665eaf9fd4a",
     "core/sdl/CMakeLists.txt": "4e3956d4fe797045b627c1089f46a6fed25bc3d346a7ac110725d77d91ac4660",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
