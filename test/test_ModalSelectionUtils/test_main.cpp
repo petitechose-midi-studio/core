@@ -71,6 +71,10 @@ void test_value_selector_publication_and_stack_boundaries() {
         input.handle(overlays, DummyOverlay::SELECTOR, selector, ownerActive, count,
             [&](uint8_t row, int choice) {
                 assert(row == 2U && choice == 1);
+                // Detect a transient close even if rejection restores the stack.
+                assert(overlays.current() == DummyOverlay::SELECTOR);
+                assert(selector.visible.get());
+                assert(closed == 0);
                 ++applied;
                 return accept;
             },
