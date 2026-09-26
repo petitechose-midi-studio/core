@@ -288,6 +288,14 @@ target_compile_definitions(${APP_EXE_NAME} PRIVATE
     OC_MAX_BUTTON_BINDINGS=272
     OC_MAX_ENCODER_BINDINGS=96)
 
+# Mirror the firmware button-namespace bound for the Core app only: product
+# button IDs end at NAV=40 (device-support InputIds.hpp). The shared SDL build
+# also serves the Bitwig plugin app, whose bound stays governed by its own
+# firmware configuration.
+if(APP_ID STREQUAL "core")
+    target_compile_definitions(${APP_EXE_NAME} PRIVATE OC_MAX_BUTTONS=48)
+endif()
+
 # Native Core workflows persist semantic facts beside real LVGL captures.
 # Firmware keeps the recorder opt-in through the dedicated PlatformIO target.
 if(BUILD_NATIVE AND APP_ID STREQUAL "core")
