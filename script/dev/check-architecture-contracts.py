@@ -4484,9 +4484,9 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         CLIP_WORKSPACE_HANDLER,
         "ClipWorkspaceHandler::openFocused",
         r"if\s*\(\s*ui\.trackHeaderFocused\s*\(\s*\)\s*\).*?"
-        r"!\s*core_\.sequencerTracks\.isTrackEnabled\s*\(\s*"
+        r"!\s*refs_\.sequencerTracks\.isTrackEnabled\s*\(\s*"
         r"ui\.focusedTrack\s*\).*?"
-        r"core_\.sequencer\.drumSequencer\.openTypePicker\s*\(\s*"
+        r"refs_\.drumSequencer\.openTypePicker\s*\(\s*"
         r"ui\.focusedTrack\s*\).*?return\s*;.*?"
         r"toggleTrackMute\s*\(\s*\)",
         "Clip Track header short action must own typed creation and Mute",
@@ -4496,7 +4496,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "ClipWorkspaceHandler::setupBindings",
         r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
         r"\.press\s*\(\s*\).*?"
-        r"!\s*core_\.sequencer\.clipWorkspace\.selectionActive\s*\(\s*\).*?"
+        r"!\s*refs_\.clipWorkspace\.selectionActive\s*\(\s*\).*?"
         r"beginStopLayer\s*\(\s*\).*?"
         r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
         r"\.release\s*\(\s*\).*?"
@@ -4507,7 +4507,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         CLIP_WORKSPACE_HANDLER,
         "ClipWorkspaceHandler::openFocusedEditor",
         r"if\s*\(\s*ui\.trackHeaderFocused\s*\(\s*\)\s*\).*?"
-        r"core_\.sequencerTracks\.isTrackEnabled\s*\(\s*ui\.focusedTrack\s*\).*?"
+        r"refs_\.sequencerTracks\.isTrackEnabled\s*\(\s*ui\.focusedTrack\s*\).*?"
         r"track_editor_handler_\s*!=\s*nullptr.*?"
         r"track_editor_handler_->openActiveTrack\s*\(\s*\)",
         "Clip Track header long action must own Track editing",
@@ -4516,8 +4516,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         CLIP_WORKSPACE_HANDLER,
         "ClipWorkspaceHandler::beginTrackSelection",
         r"trackHeaderAvailable\s*\(\s*\).*?"
-        r"core_\.trackNavigation\.syncPreviewTrack\s*\(\s*track\s*\).*?"
-        r"navigation_focus_\.set\s*\(\s*"
+        r"refs_\.trackNavigation\.syncPreviewTrack\s*\(\s*track\s*\).*?"
+        r"refs_\.navigationFocus\.set\s*\(\s*"
         r"core::state::StructureNavigationFocus::TRACK\s*\).*?"
         r"navigation_workflow_->enterSelectionModeForCurrentFocus\s*\(\s*\)",
         "Clip Track header hold must own Track selection",

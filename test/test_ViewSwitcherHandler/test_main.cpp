@@ -35,6 +35,23 @@ uint32_t mockTimeMs() {
 using test_support::TestButtonHardware;
 using test_support::TestEncoderHardware;
 
+core::state::project::ProjectHistoryBlockReason
+viewSwitcherHistoryBlockReason(void* context) {
+    return static_cast<core::state::CoreState*>(context)->projectHistoryBlockReason();
+}
+
+bool viewSwitcherPrepareHistoryInteraction(void* context) {
+    return static_cast<core::state::CoreState*>(context)->prepareProjectHistoryInteraction();
+}
+
+bool viewSwitcherUndoProjectHistory(void* context) {
+    return static_cast<core::state::CoreState*>(context)->undoProjectHistory();
+}
+
+bool viewSwitcherRedoProjectHistory(void* context) {
+    return static_cast<core::state::CoreState*>(context)->redoProjectHistory();
+}
+
 struct ViewSwitcherHarness {
     static constexpr oc::type::ScopeID MACRO_VIEW_SCOPE = 801;
     static constexpr oc::type::ScopeID CLIPS_VIEW_SCOPE = 802;
@@ -60,18 +77,34 @@ struct ViewSwitcherHarness {
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
-        , handler(state,
-                  overlays,
-                  encoders,
-                  buttons,
-                   core::handler::ViewSwitcherHandler::ViewScopes{
-                       MACRO_VIEW_SCOPE,
-                       CLIPS_VIEW_SCOPE,
-                       PROJECT_VIEW_SCOPE,
-                       DEVICE_SETTINGS_VIEW_SCOPE,
-                       PROJECT_VIEW_SCOPE,
-                   },
-                  VIEW_SELECTOR_SCOPE) {
+        , handler(
+              core::handler::ViewSwitcherHandler::Refs{
+                  state.activeView,
+                  state.projectNavigation,
+                  state.projectHistory,
+                  state.sequencer.stepContentDraft,
+                  state.sequencer.clipWorkspace,
+                  state.overlays,
+                  state.viewSelector,
+                  core::handler::ViewSwitcherHandler::Refs::HistoryOps{
+                      &state,
+                      viewSwitcherHistoryBlockReason,
+                      viewSwitcherPrepareHistoryInteraction,
+                      viewSwitcherUndoProjectHistory,
+                      viewSwitcherRedoProjectHistory,
+                  },
+              },
+              overlays,
+              encoders,
+              buttons,
+              core::handler::ViewSwitcherHandler::ViewScopes{
+                  MACRO_VIEW_SCOPE,
+                  CLIPS_VIEW_SCOPE,
+                  PROJECT_VIEW_SCOPE,
+                  DEVICE_SETTINGS_VIEW_SCOPE,
+                  PROJECT_VIEW_SCOPE,
+              },
+              VIEW_SELECTOR_SCOPE) {
         overlays.registerCleanup(core::ui::OverlayType::VIEW_SELECTOR, VIEW_SELECTOR_SCOPE);
         overlays.setActiveViewProvider([this]() {
             switch (state.activeView.get()) {

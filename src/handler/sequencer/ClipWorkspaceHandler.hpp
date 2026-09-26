@@ -5,31 +5,106 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 #include "handler/common/ButtonReleaseLatch.hpp"
 #include "handler/common/PressHoldTurnReleaseGesture.hpp"
-#include "state/CoreState.hpp"
+#include "state/StructureNavigationState.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/sequencer/SequencerClipGridState.hpp"
+#include "state/sequencer/SequencerClipLaunchQueue.hpp"
+#include "state/sequencer/SequencerUiState.hpp"
+
+namespace core::state {
+struct StatusBarState;
+struct TrackNavigationState;
+}
+
+namespace core::state::project {
+struct ProjectTrackState;
+}
+
+namespace core::state::sequencer {
+struct ClipWorkspaceUiState;
+struct DrumSequencerState;
+struct SequencerState;
+struct SequencerTrackPasteUiState;
+}
 
 namespace core::handler {
 
 class ProjectTrackEditorHandler;
 class SequencerStructureNavigationWorkflow;
 
-/** Owns the first-rank Clips matrix bindings and structural actions. */
+/**
+ * Owns the first-rank Clips matrix bindings and structural actions.
+ *
+ * The handler reads targeted state slices and routes every state-changing Clip
+ * operation through composition-supplied thunks, so it never sees the full
+ * CoreState aggregate.
+ */
 class ClipWorkspaceHandler {
 public:
-    struct StateRefs {
-        core::state::CoreState& core;
+    struct Refs {
+        struct Ops {
+            void* context = nullptr;
+            bool (*createClip)(void*, core::state::sequencer::SequencerClipAddress) = nullptr;
+            bool (*switchClipForEditing)(void*, core::state::sequencer::SequencerClipAddress) = nullptr;
+            bool (*deleteClip)(void*, core::state::sequencer::SequencerClipAddress) = nullptr;
+            bool (*duplicateClip)(void*,
+                                  core::state::sequencer::SequencerClipAddress,
+                                  core::state::sequencer::SequencerClipAddress) = nullptr;
+            bool (*moveClips)(void*,
+                              const core::state::sequencer::SequencerClipSelectionMask&,
+                              int8_t,
+                              int8_t) = nullptr;
+            bool (*setStopSlot)(void*,
+                                core::state::sequencer::SequencerClipAddress,
+                                bool) = nullptr;
+            bool (*setClipBehavior)(void*,
+                                    core::state::sequencer::SequencerClipAddress,
+                                    core::state::sequencer::SequencerLauncherBehavior) = nullptr;
+            bool (*setSceneBehavior)(void*,
+                                     uint8_t,
+                                     core::state::sequencer::SequencerLauncherBehavior) = nullptr;
+            bool (*requestClipLaunch)(void*,
+                                      core::state::sequencer::SequencerClipAddress,
+                                      core::state::sequencer::SequencerClipLaunchQuantization) = nullptr;
+            bool (*requestTrackStop)(void*,
+                                     uint8_t,
+                                     core::state::sequencer::SequencerClipLaunchQuantization) = nullptr;
+            bool (*requestSceneLaunch)(void*,
+                                       uint8_t,
+                                       core::state::sequencer::SequencerClipLaunchQuantization) = nullptr;
+            bool (*setSharedTrackState)(void*, uint16_t, uint8_t) = nullptr;
+        };
+
+        core::state::sequencer::ClipWorkspaceUiState& clipWorkspace;
+        core::state::sequencer::SequencerTrackPasteUiState& trackPaste;
+        core::state::sequencer::DrumSequencerState& drumSequencer;
+        core::state::sequencer::SequencerState& sequencer;
+        core::state::sequencer::SequencerClipGridState& sequencerClips;
+        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        core::state::sequencer::SequencerClipLaunchQueue& sequencerClipLaunches;
+        core::state::TrackNavigationState& trackNavigation;
+        core::state::StatusBarState& statusBar;
+        oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+        oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
+        core::state::project::ProjectTrackState& projectTracks;
+        core::state::project::ProjectTrackDomainServices projectTrackDomain;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
         oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>&
             navigationFocus;
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        Ops ops;
     };
 
     ClipWorkspaceHandler(
-        StateRefs state,
+        Refs refs,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
         oc::type::ScopeID scopeId
@@ -98,12 +173,7 @@ private:
     void beginTrackSelection();
     void syncNavigationFocus();
 
-    core::state::CoreState& core_;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>&
-        navigation_focus_;
-    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
+    Refs refs_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;

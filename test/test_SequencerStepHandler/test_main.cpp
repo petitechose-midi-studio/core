@@ -52,6 +52,109 @@ uint32_t g_now_ms = 0;
 
 uint32_t mockTimeMs() { return g_now_ms; }
 
+bool clipWorkspaceCreateClip(
+    void* context,
+    core::state::sequencer::SequencerClipAddress address
+) {
+    return static_cast<core::state::CoreState*>(context)->createSequencerClip(address);
+}
+
+bool clipWorkspaceSwitchClipForEditing(
+    void* context,
+    core::state::sequencer::SequencerClipAddress address
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->switchSequencerClipForEditing(address);
+}
+
+bool clipWorkspaceDeleteClip(
+    void* context,
+    core::state::sequencer::SequencerClipAddress address
+) {
+    return static_cast<core::state::CoreState*>(context)->deleteSequencerClip(address);
+}
+
+bool clipWorkspaceDuplicateClip(
+    void* context,
+    core::state::sequencer::SequencerClipAddress source,
+    core::state::sequencer::SequencerClipAddress destination
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->duplicateSequencerClip(source, destination);
+}
+
+bool clipWorkspaceMoveClips(
+    void* context,
+    const core::state::sequencer::SequencerClipSelectionMask& selection,
+    int8_t trackOffset,
+    int8_t slotOffset
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->moveSequencerClips(selection, trackOffset, slotOffset);
+}
+
+bool clipWorkspaceSetStopSlot(
+    void* context,
+    core::state::sequencer::SequencerClipAddress target,
+    bool stop
+) {
+    return static_cast<core::state::CoreState*>(context)->setSequencerStopSlot(target, stop);
+}
+
+bool clipWorkspaceSetClipBehavior(
+    void* context,
+    core::state::sequencer::SequencerClipAddress target,
+    core::state::sequencer::SequencerLauncherBehavior behavior
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->setSequencerClipBehavior(target, behavior);
+}
+
+bool clipWorkspaceSetSceneBehavior(
+    void* context,
+    uint8_t slot,
+    core::state::sequencer::SequencerLauncherBehavior behavior
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->setSequencerSceneBehavior(slot, behavior);
+}
+
+bool clipWorkspaceRequestClipLaunch(
+    void* context,
+    core::state::sequencer::SequencerClipAddress target,
+    core::state::sequencer::SequencerClipLaunchQuantization quantization
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->requestSequencerClipLaunch(target, quantization);
+}
+
+bool clipWorkspaceRequestTrackStop(
+    void* context,
+    uint8_t track,
+    core::state::sequencer::SequencerClipLaunchQuantization quantization
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->requestSequencerTrackStop(track, quantization);
+}
+
+bool clipWorkspaceRequestSceneLaunch(
+    void* context,
+    uint8_t slot,
+    core::state::sequencer::SequencerClipLaunchQuantization quantization
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->requestSequencerSceneLaunch(slot, quantization);
+}
+
+bool clipWorkspaceSetSharedTrackState(
+    void* context,
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) {
+    return static_cast<core::state::CoreState*>(context)
+        ->setSharedTrackState(enabledMask, activeTrack);
+}
+
 uint64_t byteHash(const void* data, std::size_t size) noexcept {
     const auto* bytes = static_cast<const uint8_t*>(data);
     uint64_t hash = 1469598103934665603ULL;
@@ -402,7 +505,39 @@ struct SequencerStepHarness {
               },
               overlays, encoders, buttons, PATTERN_EDITOR_SCOPE),
           clipWorkspaceHandler(
-              {state, navigationFocus, state.overlays},
+              core::handler::ClipWorkspaceHandler::Refs{
+                  state.sequencer.clipWorkspace,
+                  state.sequencer.structureUi.trackPaste,
+                  state.sequencer.drumSequencer,
+                  state.sequencer,
+                  state.sequencerClips,
+                  state.sequencerTracks,
+                  state.sequencerClipLaunches,
+                  state.trackNavigation,
+                  state.statusBar,
+                  state.sharedTrackActive,
+                  state.sharedTrackEnabledMask,
+                  state.projectTracks,
+                  core::state::project::ProjectTrackDomainServices::fromCoreState(state),
+                  state.activeView,
+                  navigationFocus,
+                  state.overlays,
+                  core::handler::ClipWorkspaceHandler::Refs::Ops{
+                      &state,
+                      clipWorkspaceCreateClip,
+                      clipWorkspaceSwitchClipForEditing,
+                      clipWorkspaceDeleteClip,
+                      clipWorkspaceDuplicateClip,
+                      clipWorkspaceMoveClips,
+                      clipWorkspaceSetStopSlot,
+                      clipWorkspaceSetClipBehavior,
+                      clipWorkspaceSetSceneBehavior,
+                      clipWorkspaceRequestClipLaunch,
+                      clipWorkspaceRequestTrackStop,
+                      clipWorkspaceRequestSceneLaunch,
+                      clipWorkspaceSetSharedTrackState,
+                  },
+              },
               encoders,
               buttons,
               SEQUENCER_SCOPE
