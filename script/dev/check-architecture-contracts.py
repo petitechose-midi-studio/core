@@ -162,11 +162,6 @@ PROJECT_SETTINGS_HISTORY_HEADER = (
 )
 PROJECT_HANDLER_HEADER = "src/handler/project/ProjectHandler.hpp"
 PROJECT_HANDLER_SOURCE = "src/handler/project/ProjectHandler.cpp"
-PROJECT_HANDLER_TEST = "test/test_ProjectHandler/test_main.cpp"
-PROJECT_HISTORY_COORDINATOR_TEST = (
-    "test/test_ProjectHistoryCoordinator/test_main.cpp"
-)
-VIEW_SWITCHER_HANDLER_TEST = "test/test_ViewSwitcherHandler/test_main.cpp"
 SDL_PROJECT_SESSION_RUNTIME = "sdl/entry/SdlProjectSessionRuntime.hpp"
 DEVICE_SETTINGS_DOMAIN_HEADER = (
     "src/handler/settings/DeviceSettingsDomainServices.hpp"
@@ -1382,8 +1377,13 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
 
     The typed midi-sync command semantics (validation, persist-before-publish,
     structured persistence failures, stale-free publication) are covered
-    executably by test_DeviceSettingsDomainServices; only the shared consumer
-    lifecycle remains a textual contract here.
+    executably by test_DeviceSettingsDomainServices. Project input, feedback,
+    menu projection and undo/redo isolation run in test_ProjectHandler,
+    test_ProjectMenuModel, test_ProjectHistoryCoordinator and
+    test_ViewSwitcherHandler. test_ModalSelectionUtils observes the selector
+    stack during acceptance as well as after rejection. Keep only the remaining
+    composition/ownership checks here, not spellings of those implementations
+    or assertions inside the test sources.
     """
     errors: list[str] = []
 
@@ -1402,13 +1402,6 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
     device_body = cpp_code_mask(files.get(DEVICE_SETTINGS_HANDLER_SOURCE, ""))
     if "return services_.applyChoice(row, choice).success();" not in device_body:
         errors.append(f"{DEVICE_SETTINGS_HANDLER_SOURCE}: persistence success must decide acceptance")
-    selector_source = "src/handler/common/ValueSelectorInput.hpp"
-    selector_body = cpp_code_mask(files.get(selector_source, ""))
-    guard_pos = selector_body.find("!apply(")
-    close_pos = selector_body.find("hideIfCurrent(")
-    if not (0 <= guard_pos < close_pos):
-        errors.append(f"{selector_source}: failed acceptance must not close the selector")
-
     project_header = files.get(PROJECT_HANDLER_HEADER, "")
     for marker in (
         "DeviceSettingsDomainServices deviceSettings,",
@@ -1424,20 +1417,9 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
                 f"{PROJECT_HANDLER_HEADER}: duplicate Project MIDI Sync state {duplicate}"
             )
 
-    project_source = files.get(PROJECT_HANDLER_SOURCE, "")
-    if ", device_settings_(deviceSettings)" not in project_source:
-        errors.append(
-            f"{PROJECT_HANDLER_SOURCE}: Device command value must be retained by Project"
-        )
-
     project_edits = cpp_code_mask(
         files.get(PROJECT_HANDLER_VALUE_EDITING, "")
     )
-    if project_edits.count("device_settings_.applyMidiSyncMode(") != 2:
-        errors.append(
-            f"{PROJECT_HANDLER_VALUE_EDITING}: NAV and OPT must each use the "
-            "typed Device MIDI Sync command exactly once"
-        )
     for retired in (
         "ProjectSettingsHistoryActionKind::SyncMode",
         "midi_sync_",
@@ -1446,12 +1428,6 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
             errors.append(
                 f"{PROJECT_HANDLER_VALUE_EDITING}: retired Project Sync owner {retired}"
             )
-    if "Sync save failed - unchanged" not in files.get(
-        PROJECT_HANDLER_VALUE_EDITING, ""
-    ):
-        errors.append(
-            f"{PROJECT_HANDLER_VALUE_EDITING}: persistence failure must remain visible"
-        )
     focused_encoder = cpp_code_mask(
         files.get(PROJECT_HANDLER_FOCUSED_ENCODER, "")
     )
@@ -1522,24 +1498,6 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
         errors.append(
             f"{PROJECT_HISTORY_COORDINATOR_SOURCE}: retired Sync Mode history label"
         )
-    coordinator_test = files.get(PROJECT_HISTORY_COORDINATOR_TEST, "")
-    if "test_remaining_project_settings_labels_survive_sync_cleanup" not in \
-            coordinator_test:
-        errors.append(
-            f"{PROJECT_HISTORY_COORDINATOR_TEST}: remaining Settings labels need proof"
-        )
-
-    menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
-    clock_rows = re.findall(
-        r'row\s*\(\s*"Clock"\s*,\s*clockModeValue\s*\(\s*context\.clockMode\s*\)\s*,'
-        r"\s*ProjectMenuRowKind::Value\s*,\s*ProjectNodeId::TRANSPORT_ROOT",
-        menu,
-    )
-    if len(clock_rows) != 1:
-        errors.append(
-            f"{PROJECT_MENU_MODEL_SOURCE}: Transport Clock Device control must remain visible"
-        )
-
     expected_writers = {
         DEVICE_SETTINGS_DOMAIN_SOURCE: (r"midi_sync_->mode\.set\s*\(", 1),
         DEVICE_SETTINGS_CODEC_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
@@ -1555,24 +1513,6 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
                 f"{rel}: final R-07 mode-writer inventory must remain {expected} "
                 f"(found {actual})"
             )
-
-    handler_test = files.get(PROJECT_HANDLER_TEST, "")
-    for marker in (
-        "test_transport_sync_is_device_persisted_and_project_neutral",
-        "test_transport_sync_failure_is_visible_retryable_and_project_neutral",
-        "projectSessionSaveToken() == saveTokenBefore",
-    ):
-        if marker not in handler_test:
-            errors.append(
-                f"{PROJECT_HANDLER_TEST}: missing Project-neutral Sync proof {marker}"
-            )
-    view_test = files.get(VIEW_SWITCHER_HANDLER_TEST, "")
-    if view_test.count(
-        "h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE"
-    ) < 2:
-        errors.append(
-            f"{VIEW_SWITCHER_HANDLER_TEST}: Undo/Redo must both preserve Device Sync"
-        )
 
     return errors
 
