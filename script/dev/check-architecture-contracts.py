@@ -2986,6 +2986,13 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
             "buildSequencerPageSelectionDeleteOrDeepResetMutationPlan",
         ),
     )
+    # pasteStepClipboardAfterBoundary delegates to the shared settlement helper,
+    # which is the single owner of the prepared-plan execution. Every other
+    # helper still executes its own plan directly.
+    settlement_routed_helpers = {
+        "SequencerStructureEditWorkflow::pasteStepClipboardAfterBoundary":
+            "applyPreparedPageStructurePlan",
+    }
     for rel, function, builder in prepared_structure_helpers:
         require_in_function(
             rel,
@@ -2993,12 +3000,27 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
             rf"\b{builder}\s*\(",
             f"{function} must use {builder}",
         )
+        settlement_helper = settlement_routed_helpers.get(function)
+        if settlement_helper is not None:
+            require_in_function(
+                rel,
+                function,
+                rf"\b{settlement_helper}\s*\(",
+                f"{function} must route its prepared plan through {settlement_helper}",
+            )
+            continue
         require_in_function(
             rel,
             function,
             r"\bexecuteSequencerPreparedPageStructureMutationPlan\s*\(",
             f"{function} must execute exactly one prepared plan",
         )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "applyPreparedPageStructurePlan",
+        r"\bexecuteSequencerPreparedPageStructureMutationPlan\s*\(",
+        "shared settlement helper must execute exactly one prepared plan",
+    )
 
     require(
         TRACK_TRANSFER_TRANSACTION_HEADER,
