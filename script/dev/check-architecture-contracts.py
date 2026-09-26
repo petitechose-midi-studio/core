@@ -1378,67 +1378,14 @@ def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
 
 
 def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
-    """Freeze final R-07 Device ownership and persist-first publication."""
+    """Keep value consumers on the shared selector lifecycle.
+
+    The typed midi-sync command semantics (validation, persist-before-publish,
+    structured persistence failures, stale-free publication) are covered
+    executably by test_DeviceSettingsDomainServices; only the shared consumer
+    lifecycle remains a textual contract here.
+    """
     errors: list[str] = []
-
-    header = files.get(DEVICE_SETTINGS_DOMAIN_HEADER, "")
-    for marker in (
-        "enum class ApplyStatus",
-        "struct ApplyResult",
-        "PersistenceWriteStatus persistenceStatus",
-        "[[nodiscard]] ApplyResult applyMidiSyncMode(",
-        "[[nodiscard]] ApplyResult applyChoice(",
-    ):
-        if marker not in header:
-            errors.append(
-                f"{DEVICE_SETTINGS_DOMAIN_HEADER}: missing typed command marker {marker}"
-            )
-
-    source = files.get(DEVICE_SETTINGS_DOMAIN_SOURCE, "")
-    mode_bodies = cpp_function_bodies(
-        source,
-        "DeviceSettingsDomainServices::applyMidiSyncMode",
-    )
-    if len(mode_bodies) != 1:
-        errors.append(
-            f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: applyMidiSyncMode must have one "
-            f"balanced definition (found {len(mode_bodies)})"
-        )
-    else:
-        mode_body = cpp_code_mask(mode_bodies[0])
-        if "policy::validMode(mode)" not in mode_body or \
-                "return applyChoice(0U," not in mode_body:
-            errors.append(
-                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: typed mode command must "
-                "validate then delegate to row-zero persistence"
-            )
-
-    choice_bodies = cpp_function_bodies(
-        source,
-        "DeviceSettingsDomainServices::applyChoice",
-    )
-    if len(choice_bodies) != 1:
-        errors.append(
-            f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: applyChoice must have one "
-            f"balanced definition (found {len(choice_bodies)})"
-        )
-    else:
-        choice_body = cpp_code_mask(choice_bodies[0])
-        reconcile = choice_body.find("reconcileAllStatus")
-        no_change = choice_body.find("ApplyStatus::NO_CHANGE")
-        stage = choice_body.find("saveMidiSyncModeStatus")
-        commit = choice_body.find("commitStatus")
-        publish = choice_body.find("midi_sync_->mode.set")
-        if not (0 <= reconcile < no_change < stage < commit < publish):
-            errors.append(
-                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: mode command order must be "
-                "reconcile, no-change, stage, commit, live publication"
-            )
-        if choice_body.count("ApplyStatus::PERSISTENCE_FAILED") != 3:
-            errors.append(
-                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: reconciliation, stage and "
-                "commit failures must return structured persistence failure"
-            )
 
     # Device persistence rejection now feeds the shared selector lifecycle.
     # Keep every equivalent consumer on that lifecycle, including Back routing.

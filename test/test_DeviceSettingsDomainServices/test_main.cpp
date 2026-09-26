@@ -7,6 +7,11 @@
 #include "../../src/handler/settings/DeviceSettingsDomainServices.hpp"
 #include "../support/MemoryStorage.hpp"
 
+// Executable replacement for the former text-frozen midi-sync command contract
+// (architecture gate L6): mode validation, no-change without writes,
+// persist-before-publish ordering, structured persistence failures and
+// stale-free publication after a failed stage/commit are all asserted here.
+
 namespace {
 using test_support::MemoryStorage;
 
