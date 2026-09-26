@@ -683,7 +683,7 @@ FLASHMEM void ClipWorkspaceHandler::launchVisible(uint8_t macroIndex) {
     if (kind == seq::SequencerLauncherSlotKind::CLIP) {
         accepted = refs_.ops.requestClipLaunch(refs_.ops.context, address, seq::SequencerClipLaunchQuantization::BAR);
     } else if (kind == seq::SequencerLauncherSlotKind::STOP) {
-        accepted = refs_.ops.requestTrackStop(refs_.ops.context, 
+        accepted = refs_.ops.requestTrackStop(refs_.ops.context,
             address.track,
             seq::SequencerClipLaunchQuantization::BAR
         );
@@ -862,7 +862,7 @@ FLASHMEM void ClipWorkspaceHandler::stopTrack(
     bool immediate
 ) {
     showFeedback(
-        refs_.ops.requestTrackStop(refs_.ops.context, 
+        refs_.ops.requestTrackStop(refs_.ops.context,
             track,
             immediate
                 ? seq::SequencerClipLaunchQuantization::IMMEDIATE
@@ -1014,7 +1014,7 @@ FLASHMEM void ClipWorkspaceHandler::applyOrBeginDuplicate() {
     const auto operation = ui.operation;
     const bool changed = operation ==
             seq::ClipWorkspaceOperation::MOVE_DESTINATION
-        ? refs_.ops.moveClips(refs_.ops.context, 
+        ? refs_.ops.moveClips(refs_.ops.context,
             ui.selectedClipMasks,
             static_cast<int8_t>(
                 static_cast<int>(destination.track) - source.track),
@@ -1083,7 +1083,7 @@ FLASHMEM void ClipWorkspaceHandler::applyRemove() {
             refs_.sequencerClipLaunches,
             source,
             playing) ||
-        !refs_.ops.requestTrackStop(refs_.ops.context, 
+        !refs_.ops.requestTrackStop(refs_.ops.context,
             source.track,
             seq::SequencerClipLaunchQuantization::IMMEDIATE)) {
         ui.clearRemoveHold();

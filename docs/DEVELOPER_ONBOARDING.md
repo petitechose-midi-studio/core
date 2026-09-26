@@ -43,6 +43,11 @@ ms build core --target teensy --env dev_diagnostics
 Native unit tests always use `ms test core`. Do not use PlatformIO's native
 test runner.
 
+For an isolated branch workspace, put the global option before the command:
+`ms --workspace <workspace-root> test core`. Verify that the workspace's
+`midi-studio/core` path resolves to the intended worktree before interpreting
+the result.
+
 ## 2. Use the ownership model
 
 For a source-linked example, follow [one CC Lane edit](CC_LANE_FEATURE.md).
@@ -74,6 +79,21 @@ Start from the owner, not from the largest caller:
 root of canonical state. Its explicit `DeviceSettingsStore` member is a
 documented exception; it does not authorize general State-to-Persistence
 dependencies.
+
+### Recent ownership boundaries
+
+| Behavior to change | Owner and assembly | Executable proof |
+| --- | --- | --- |
+| Result/focus after prepared structure paste | `handler/sequencer/SequencerStructureEditWorkflow.*`: `PreparedStructureSettlement` and `applyPreparedPageStructurePlan` | `test/test_SequencerStepHandler` (rejection, no-op, history and undo/redo) |
+| View switching and history actions | `handler/view/ViewSwitcherHandler::Refs`; wiring in `context/standalone/StandaloneGlobalHandlerAssembly.cpp` | `test/test_ViewSwitcherHandler` |
+| Clip workspace actions | `handler/sequencer/ClipWorkspaceHandler::Refs` / `ClipWorkspaceOps`; wiring in `context/standalone/SequencerFeatureModule.cpp` | `test/test_SequencerStepHandler` |
+| MIDI-sync settings persistence | `handler/settings/DeviceSettingsDomainServices` and `persistence/DeviceSettingsStore` | `test/test_DeviceSettingsDomainServices`: old live mode observed during storage I/O, no-op write/commit counts, failure/reboot recovery |
+
+Keep targeted references and operation adapters explicit. Adding another
+callback is a dependency change to review at the assembly site; do not
+automatically copy the broad Clip Workspace adapter into smaller handlers.
+Replace a text-based architecture rule only after a behavioral test detects
+the corresponding fault, including transient ordering violations.
 
 ## 3. Know the repository
 
@@ -158,12 +178,23 @@ Add gates according to scope:
 | firmware, realtime, placement or memory | `ms build core --target teensy --env dev` |
 | diagnostics or footprint | build both `dev` and `dev_diagnostics`, compare exact ELF output |
 | exported Core headers | `pwsh ./script/dev/check-downstream-compat.ps1` |
+| build capacities or dependency topology | `python script/dev/check-build-topology.py --self-test`, then `--workspace-root <workspace-root> --check` on clean worktrees |
 | release readiness | `ms release dependencies --dry-run` after intended repositories are clean |
 
 PlatformIO-generated directories, CMake output, captures, binaries, maps and
 local logs are ignored and must not enter a commit. The committed icon font
 and generated C++ font data are deliberate product assets and must move with
 their source SVG changes.
+
+The SDL capacity reader intentionally accepts only literal definitions on the
+application target, either unconditional or under the Core application guard.
+An unsupported conditional/value is an error, not a reason to regenerate the
+snapshot blindly. If a checked input changes, commit that input, regenerate the
+snapshot from the exact clean dependency revisions, then rerun `--check`.
+
+Shared UI components live in `midi-studio/ui`; its README owns the headless
+CTest command and dependency configuration. Core's native suite does not imply
+that the separate UI render tests ran.
 
 ## 7. Keep implementation and documentation atomic
 
