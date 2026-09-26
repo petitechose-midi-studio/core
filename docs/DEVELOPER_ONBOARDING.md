@@ -86,7 +86,7 @@ dependencies.
 | --- | --- | --- |
 | Result/focus after prepared structure paste | `handler/sequencer/SequencerStructureEditWorkflow.*`: `PreparedStructureSettlement` and `applyPreparedPageStructurePlan` | `test/test_SequencerStepHandler` (rejection, no-op, history and undo/redo) |
 | View switching and history actions | `handler/view/ViewSwitcherHandler::Refs`; wiring in `context/standalone/StandaloneGlobalHandlerAssembly.cpp` | `test/test_ViewSwitcherHandler` |
-| Clip workspace actions | `handler/sequencer/ClipWorkspaceHandler::Refs` / `ClipWorkspaceOps`; wiring in `context/standalone/SequencerFeatureModule.cpp` | `test/test_SequencerStepHandler` |
+| Clip workspace actions | `handler/sequencer/ClipWorkspaceHandler::Refs` / `ClipWorkspaceOps`; wiring in `context/standalone/SequencerFeatureModule.cpp` | `test/test_SequencerStepHandler`: physical header creation/mute, focused-track selection/editor, momentary Stop and selection/Remove exclusion |
 | MIDI-sync settings persistence | `handler/settings/DeviceSettingsDomainServices` and `persistence/DeviceSettingsStore` | `test/test_DeviceSettingsDomainServices`: old live mode observed during storage I/O, no-op write/commit counts, failure/reboot recovery |
 
 Keep targeted references and operation adapters explicit. Adding another
@@ -94,6 +94,11 @@ callback is a dependency change to review at the assembly site; do not
 automatically copy the broad Clip Workspace adapter into smaller handlers.
 Replace a text-based architecture rule only after a behavioral test detects
 the corresponding fault, including transient ordering violations.
+
+Track selection has one implementation in
+`SequencerStructureNavigationWorkflow::enterTrackSelection(track)`. The Clips
+matrix passes its focused track explicitly; the current-focus route passes the
+active track. Starting a selection must not activate or mute its target.
 
 ## 3. Know the repository
 
