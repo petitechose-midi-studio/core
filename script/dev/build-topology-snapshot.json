@@ -78,7 +78,7 @@
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
     "core/.github/workflows/ci.yml": "46552c773ea5898f19d83fd3357fee758caefbd31058eaabe6759f2dc50fe2fd",
-    "core/CMakeLists.txt": "441b3bd4cdbf802c5c6c2107fa9da5b1fc855951d5310f22af77ff423a211162",
+    "core/CMakeLists.txt": "d8092485273ee97be71841509985069dbbec5dc23b58e4126b3ad42e011586fe",
     "core/cmake/MsCoreProductSources.cmake": "bb89b34f3867f44670e37148c25c24e3cca1728948c97c4a540895fb205e88c9",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
     "core/cmake/MsCoreSources.cmake": "c96fd895088255ac8e06900976bf26f8cebbd99f92a4277b0b144cae48c5c32f",
@@ -86,8 +86,8 @@
     "core/oc-native-sdk.ini": "18f63442eeb2ac1e442a466c9fa63e3dc2b191b81c1022c3829665ab923c21e6",
     "core/oc-sdk.ini": "8282e6bb7fa3bbbb236dc271a40f24d90ddc076a377732bda7eb6b47f697e83f",
     "core/platformio.ini": "9cd5eddeec0bede71d3160acf37165d088c8244927011b061cb66d82f08b2342",
-    "core/script/dev/check-build-topology.py": "3a8693e5b3c3b267e0dfea6da2fdff81ed50cf84fa3c9e2ffe64d204bb736b55",
-    "core/sdl/CMakeLists.txt": "3035159be113b55bcce4c7383c6d98bf10cac27a74679d066b58a170d00b4901",
+    "core/script/dev/check-build-topology.py": "42e657c00e2e7237f601e5336a2a6a247f247cdb8608494577c028bda97a10b6",
+    "core/sdl/CMakeLists.txt": "4e3956d4fe797045b627c1089f46a6fed25bc3d346a7ac110725d77d91ac4660",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
@@ -120,11 +120,11 @@
       "postLinkMemoryGate": false
     },
     "coreNativeCmake": {
-      "buttonBindings": 64,
-      "buttons": 64,
+      "buttonBindings": 272,
+      "buttons": 48,
       "cobsFrame": 4096,
       "cxxStandard": 17,
-      "encoderBindings": 32,
+      "encoderBindings": 96,
       "pendingNotifications": 96
     },
     "corePioNative": {
@@ -171,7 +171,7 @@
     },
     "sdlWasm": {
       "buttonBindings": 272,
-      "buttons": 64,
+      "buttons": 48,
       "cobsFrame": 4096,
       "cxxStandard": 20,
       "encoderBindings": 96,
