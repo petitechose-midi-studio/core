@@ -77,7 +77,7 @@
     "core/.github/release-tooling.json": "24f1f879443eda82981df478fa573d695f011b4c8b5dfa4931016dd018cdd3de",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
-    "core/.github/workflows/ci.yml": "c16c76148bf675c4f4df7ba0b20f1c52a931f33805b92aa9815201ef838b9678",
+    "core/.github/workflows/ci.yml": "2b2ad508eff4afae52efb559ff3e384e25a1f8a8cc8d1ac262bbd9bc1e96fd92",
     "core/CMakeLists.txt": "d8092485273ee97be71841509985069dbbec5dc23b58e4126b3ad42e011586fe",
     "core/cmake/MsCoreProductSources.cmake": "bb89b34f3867f44670e37148c25c24e3cca1728948c97c4a540895fb205e88c9",
     "core/cmake/MsCoreProjectFileTool.cmake": "e51e418cd5ab0a57ed7d0adb8e408ce0a1f9acc40b75fae7e5f397748e0de5b9",
@@ -181,8 +181,8 @@
   "repositories": {
     "bitwig": {
       "cleanExpected": true,
-      "commit": "8bc9a7f3fafb7746372349339effb24efe9c1c18",
-      "tree": "d7c7b13fd78ad52ab28a6a512ff0320db2c803c1"
+      "commit": "ced775e8d4c4467bdffdcf556ad689fe9efeaaf1",
+      "tree": "7041869d24000725c4391873a486823b2de5076b"
     },
     "core": {
       "cleanExpected": true,
@@ -2994,7 +2994,7 @@
       "declaredRepositoryPins": {
         "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
-        "MIDI_STUDIO_BITWIG_SHA": "8bc9a7f3fafb7746372349339effb24efe9c1c18",
+        "MIDI_STUDIO_BITWIG_SHA": "ced775e8d4c4467bdffdcf556ad689fe9efeaaf1",
         "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "20c328431f55ef86546947b74efd66865d2ad2d9",
         "MIDI_STUDIO_UI_SHA": "fc0fe91ad7aab1510c3e9a8ee475f91e41e64918",
         "MS_DEV_ENV_SHA": "75ec6ebf9789cdec145ed8e7d47f6d337539535e",
