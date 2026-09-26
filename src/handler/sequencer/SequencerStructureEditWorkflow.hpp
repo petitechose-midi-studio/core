@@ -24,6 +24,26 @@ enum class SequencerPreparedPageStructureResult : uint8_t;
 class SequencerPreparedPageStructureTransaction;
 
 /**
+ * @brief Read-only settlement of one prepared Page/Step structure command.
+ *
+ * `finalFocus` is meaningful for NoChange (every paste caller) and for a
+ * committed Step paste (cursor placement). It replaces the former packed
+ * uint16 outcome/focus encoding owned by this workflow.
+ */
+struct PreparedStructureSettlement {
+    enum class Outcome : uint8_t {
+        Failed = 0U,
+        NoChange,
+        Committed,
+    };
+
+    Outcome outcome = Outcome::Failed;
+    uint8_t finalFocus = 0U;
+};
+
+static_assert(sizeof(PreparedStructureSettlement) == 2U);
+
+/**
  * Owns sequencer page/track structure edit actions.
  *
  * It applies erase/remove/copy/paste/delete intent using snapshot ops,
@@ -171,14 +191,14 @@ private:
     void deleteCurrentPageAfterBoundary(
         SequencerPreparedPageStructureTransaction& transaction
     );
-    uint16_t pastePageSelectionAfterBoundary(
+    PreparedStructureSettlement pastePageSelectionAfterBoundary(
         SequencerPreparedPageStructureTransaction& transaction
     );
-    uint16_t pasteCurrentPageAfterBoundary(
+    PreparedStructureSettlement pasteCurrentPageAfterBoundary(
         SequencerPreparedPageStructureTransaction& transaction
     );
     void pasteStepClipboardAt(uint8_t cursorStep, bool selectionPaste);
-    uint16_t pasteStepClipboardAfterBoundary(
+    PreparedStructureSettlement pasteStepClipboardAfterBoundary(
         SequencerPreparedPageStructureTransaction& transaction
     );
     SequencerPreparedPageStructureResult resetFocusedStepAfterBoundary(

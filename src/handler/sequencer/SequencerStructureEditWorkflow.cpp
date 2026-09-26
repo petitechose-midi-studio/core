@@ -139,30 +139,50 @@ constexpr uint8_t packTrackSelectionHoldFlags(
     );
 }
 
-enum class PreparedStructureSettlement : uint8_t {
-    Failed = 0U,
-    NoChange,
-    Committed,
-};
-
-constexpr uint16_t packPreparedStructureSettlement(
-    PreparedStructureSettlement outcome,
-    uint8_t finalFocus = 0U
-) noexcept {
-    return static_cast<uint16_t>(
-        (static_cast<uint16_t>(outcome) << 8U) | finalFocus);
+constexpr PreparedStructureSettlement preparedStructureSettlementFailed() noexcept {
+    return {PreparedStructureSettlement::Outcome::Failed, 0U};
 }
 
-constexpr PreparedStructureSettlement preparedStructureSettlementOutcome(
-    uint16_t settlement
+constexpr PreparedStructureSettlement preparedStructureSettlementNoChange(
+    uint8_t finalFocus
 ) noexcept {
-    return static_cast<PreparedStructureSettlement>(settlement >> 8U);
+    return {PreparedStructureSettlement::Outcome::NoChange, finalFocus};
 }
 
-constexpr uint8_t preparedStructureSettlementFocus(
-    uint16_t settlement
+constexpr PreparedStructureSettlement preparedStructureSettlementCommitted(
+    uint8_t finalFocus
 ) noexcept {
-    return static_cast<uint8_t>(settlement & 0xFFU);
+    return {PreparedStructureSettlement::Outcome::Committed, finalFocus};
+}
+
+// Single owner of the preflight/result mapping shared by every prepared paste
+// path: a non-Ready preflight never reaches the transaction, and only the Step
+// paste caller keeps the committed focus for cursor placement.
+FLASHMEM PreparedStructureSettlement applyPreparedPageStructurePlan(
+    SequencerPreparedPageStructureTransaction& transaction,
+    SequencerPreparedPageStructureMutationPlan& plan,
+    SequencerPreparedPageStructurePreflightOutcome preflight,
+    bool committedFocusIsFinal
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    if (preflight != Preflight::Ready) {
+        return preflight == Preflight::NoChange
+            ? preparedStructureSettlementNoChange(plan.finalFocus)
+            : preparedStructureSettlementFailed();
+    }
+
+    switch (executeSequencerPreparedPageStructureMutationPlan(transaction, plan)) {
+        case Result::Committed:
+            return preparedStructureSettlementCommitted(
+                committedFocusIsFinal ? plan.finalFocus : 0U);
+        case Result::NoChange:
+            return preparedStructureSettlementNoChange(plan.finalFocus);
+        case Result::Failed:
+        default:
+            return preparedStructureSettlementFailed();
+    }
 }
 
 }  // namespace
@@ -1335,16 +1355,15 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStructureSelection() {
     constexpr auto action = Action::PageSelectionPaste;
     SequencerPreparedPageStructureTransaction transaction(sequencer_, history_, action);
     if (!transaction.openBoundary()) return;
-    const uint16_t settlement = pastePageSelectionAfterBoundary(transaction);
-    switch (preparedStructureSettlementOutcome(settlement)) {
-        case PreparedStructureSettlement::Committed:
+    const auto settlement = pastePageSelectionAfterBoundary(transaction);
+    switch (settlement.outcome) {
+        case PreparedStructureSettlement::Outcome::Committed:
             sequencer_.structureUi.pageHold.clear();
             sequencer_.structureUi.syncPreviewPage(sequencer_.page.get());
             refreshStructureSelectionPastePreview();
             return;
-        case PreparedStructureSettlement::NoChange: {
-            const uint8_t finalFocus =
-                preparedStructureSettlementFocus(settlement);
+        case PreparedStructureSettlement::Outcome::NoChange: {
+            const uint8_t finalFocus = settlement.finalFocus;
             sequencer_.page.set(sequencer_.pageForStep(finalFocus));
             sequencer_.focusedStep.set(finalFocus);
             sequencer_.structureUi.pageHold.clear();
@@ -1352,7 +1371,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStructureSelection() {
             refreshStructureSelectionPastePreview();
             return;
         }
-        case PreparedStructureSettlement::Failed:
+        case PreparedStructureSettlement::Outcome::Failed:
         default:
             return;
     }
@@ -1363,45 +1382,18 @@ __attribute__((noinline))
 #elif defined(_MSC_VER)
 __declspec(noinline)
 #endif
-FLASHMEM uint16_t SequencerStructureEditWorkflow::pastePageSelectionAfterBoundary(
+FLASHMEM PreparedStructureSettlement
+SequencerStructureEditWorkflow::pastePageSelectionAfterBoundary(
     SequencerPreparedPageStructureTransaction& transaction
 ) {
-    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
-    using Result = SequencerPreparedPageStructureResult;
-
     SequencerPreparedPageStructureMutationPlan plan;
-    switch (buildSequencerPageSelectionPasteMutationPlan(
+    const auto preflight = buildSequencerPageSelectionPasteMutationPlan(
         sequencer_, structure_clipboard_,
         makeSequencerPreparedPageStructureTarget(
             currentActiveTrack(),
             sequencer_.structureUi.pageSelection.cursorIndex.get()),
-        plan)) {
-        case Preflight::Rejected:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-        case Preflight::NoChange:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::NoChange, plan.finalFocus);
-        case Preflight::Ready:
-            break;
-        default:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-    }
-
-    switch (executeSequencerPreparedPageStructureMutationPlan(
-        transaction, plan)) {
-        case Result::Committed:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Committed);
-        case Result::NoChange:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::NoChange, plan.finalFocus);
-        case Result::Failed:
-        default:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-    }
+        plan);
+    return applyPreparedPageStructurePlan(transaction, plan, preflight, false);
 }
 
 FLASHMEM contextual::GuardedActionRelease SequencerStructureEditWorkflow::releaseTrackPasteAction(
@@ -1810,22 +1802,21 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     constexpr auto action = Action::PagePaste;
     SequencerPreparedPageStructureTransaction transaction(sequencer_, history_, action);
     if (!transaction.openBoundary()) return;
-    const uint16_t settlement = pasteCurrentPageAfterBoundary(transaction);
-    switch (preparedStructureSettlementOutcome(settlement)) {
-        case PreparedStructureSettlement::Committed:
+    const auto settlement = pasteCurrentPageAfterBoundary(transaction);
+    switch (settlement.outcome) {
+        case PreparedStructureSettlement::Outcome::Committed:
             sequencer_.structureUi.pageHold.clear();
             syncSequencerPagePreviewToVisible(sequencer_, false);
             return;
-        case PreparedStructureSettlement::NoChange: {
-            const uint8_t finalFocus =
-                preparedStructureSettlementFocus(settlement);
+        case PreparedStructureSettlement::Outcome::NoChange: {
+            const uint8_t finalFocus = settlement.finalFocus;
             sequencer_.page.set(sequencer_.pageForStep(finalFocus));
             sequencer_.focusedStep.set(finalFocus);
             sequencer_.structureUi.pageHold.clear();
             syncSequencerPagePreviewToVisible(sequencer_, false);
             return;
         }
-        case PreparedStructureSettlement::Failed:
+        case PreparedStructureSettlement::Outcome::Failed:
         default:
             return;
     }
@@ -1836,45 +1827,18 @@ __attribute__((noinline))
 #elif defined(_MSC_VER)
 __declspec(noinline)
 #endif
-FLASHMEM uint16_t SequencerStructureEditWorkflow::pasteCurrentPageAfterBoundary(
+FLASHMEM PreparedStructureSettlement
+SequencerStructureEditWorkflow::pasteCurrentPageAfterBoundary(
     SequencerPreparedPageStructureTransaction& transaction
 ) {
-    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
-    using Result = SequencerPreparedPageStructureResult;
-
     SequencerPreparedPageStructureMutationPlan plan;
-    switch (buildSequencerPagePasteMutationPlan(
+    const auto preflight = buildSequencerPagePasteMutationPlan(
         sequencer_, structure_clipboard_,
         makeSequencerPreparedPageStructureTarget(
             currentActiveTrack(),
             sequencer_.visiblePage()),
-        plan)) {
-        case Preflight::Rejected:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-        case Preflight::NoChange:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::NoChange, plan.finalFocus);
-        case Preflight::Ready:
-            break;
-        default:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-    }
-
-    switch (executeSequencerPreparedPageStructureMutationPlan(
-        transaction, plan)) {
-        case Result::Committed:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Committed);
-        case Result::NoChange:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::NoChange, plan.finalFocus);
-        case Result::Failed:
-        default:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-    }
+        plan);
+    return applyPreparedPageStructurePlan(transaction, plan, preflight, false);
 }
 
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteFocusedStep() const {
@@ -1969,13 +1933,11 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(uint8_t curso
     SequencerPreparedPageStructureTransaction transaction(
         sequencer_, history_, action);
     if (!transaction.openBoundary()) return;
-    const uint16_t settlement = pasteStepClipboardAfterBoundary(transaction);
-    const auto outcome = preparedStructureSettlementOutcome(settlement);
-    if (outcome == PreparedStructureSettlement::Failed) return;
+    const auto settlement = pasteStepClipboardAfterBoundary(transaction);
+    if (settlement.outcome == PreparedStructureSettlement::Outcome::Failed) return;
 
-    const uint8_t finalFocus =
-        preparedStructureSettlementFocus(settlement);
-    if (outcome == PreparedStructureSettlement::NoChange) {
+    const uint8_t finalFocus = settlement.finalFocus;
+    if (settlement.outcome == PreparedStructureSettlement::Outcome::NoChange) {
         sequencer_.page.set(
             core::state::sequencer::activeContentPageForStep(finalFocus));
         sequencer_.focusedStep.set(finalFocus);
@@ -1994,15 +1956,12 @@ __attribute__((noinline))
 #elif defined(_MSC_VER)
 __declspec(noinline)
 #endif
-FLASHMEM uint16_t
+FLASHMEM PreparedStructureSettlement
 SequencerStructureEditWorkflow::pasteStepClipboardAfterBoundary(
     SequencerPreparedPageStructureTransaction& transaction
 ) {
-    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
-    using Result = SequencerPreparedPageStructureResult;
-
     SequencerPreparedPageStructureMutationPlan plan;
-    switch (buildSequencerStepPasteMutationPlan(
+    const auto preflight = buildSequencerStepPasteMutationPlan(
         sequencer_,
         structure_clipboard_,
         makeSequencerPreparedStepPasteTarget(
@@ -2011,33 +1970,8 @@ SequencerStructureEditWorkflow::pasteStepClipboardAfterBoundary(
             sequencer_.structureUi.stepSelection.placementActive()
                 ? sequencer_.structureUi.stepSelection.cursorStep.get()
                 : sequencer_.focusedStep.get()),
-        plan)) {
-        case Preflight::Rejected:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-        case Preflight::NoChange:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::NoChange, plan.finalFocus);
-        case Preflight::Ready:
-            break;
-        default:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-    }
-
-    switch (executeSequencerPreparedPageStructureMutationPlan(
-        transaction, plan)) {
-        case Result::Committed:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Committed, plan.finalFocus);
-        case Result::NoChange:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::NoChange, plan.finalFocus);
-        case Result::Failed:
-        default:
-            return packPreparedStructureSettlement(
-                PreparedStructureSettlement::Failed);
-    }
+        plan);
+    return applyPreparedPageStructurePlan(transaction, plan, preflight, true);
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
