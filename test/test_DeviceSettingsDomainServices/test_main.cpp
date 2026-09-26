@@ -52,6 +52,8 @@ public:
         const uint8_t* buffer,
         size_t size
     ) override {
+        assertModeNotPublished();
+        ++writeCount;
         if (!initialized_ || buffer == nullptr || address >= staged_.size()) {
             return 0U;
         }
@@ -68,6 +70,8 @@ public:
     }
 
     bool commit() override {
+        assertModeNotPublished();
+        ++commitCount;
         if (!initialized_ || faultMode_ == FaultMode::COMMIT_FAIL) return false;
         durable_ = staged_;
         dirty_ = false;
@@ -89,6 +93,13 @@ public:
     bool isDirty() const override { return dirty_; }
 
     void setFaultMode(FaultMode mode) { faultMode_ = mode; }
+    void expectModeDuringIo(const core::state::MidiSyncState& sync) {
+        observedSync_ = &sync;
+        expectedMode_ = sync.mode.get();
+    }
+
+    unsigned writeCount = 0;
+    unsigned commitCount = 0;
     void reboot() {
         faultMode_ = FaultMode::NONE;
         staged_ = durable_;
@@ -96,6 +107,15 @@ public:
     }
 
 private:
+    void assertModeNotPublished() const {
+        if (observedSync_ != nullptr) {
+            assert(observedSync_->mode.get() == expectedMode_ &&
+                   "live MIDI sync mode must not change before persistence succeeds");
+        }
+    }
+
+    const core::state::MidiSyncState* observedSync_ = nullptr;
+    core::state::MidiSyncMode expectedMode_ = core::state::MidiSyncMode::AUTO;
     std::vector<uint8_t> durable_;
     std::vector<uint8_t> staged_;
     FaultMode faultMode_ = FaultMode::NONE;
@@ -194,11 +214,22 @@ int main() {
         }
     );
 
+    bufferedStorage.expectModeDuringIo(bufferedSync);
     const auto applied = bufferedServices.applyMidiSyncMode(
         core::state::MidiSyncMode::SLAVE
     );
     assert(applied.success() && applied.changed());
     assert(bufferedSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    bufferedStorage.expectModeDuringIo(bufferedSync);
+
+    const auto writesBeforeNoChange = bufferedStorage.writeCount;
+    const auto bufferedCommitsBeforeNoChange = bufferedStorage.commitCount;
+    const auto bufferedNoChange = bufferedServices.applyMidiSyncMode(
+        core::state::MidiSyncMode::SLAVE
+    );
+    assert(bufferedNoChange.success() && !bufferedNoChange.changed());
+    assert(bufferedStorage.writeCount == writesBeforeNoChange);
+    assert(bufferedStorage.commitCount == bufferedCommitsBeforeNoChange);
     bufferedStorage.reboot();
     core::state::MidiSyncState rebootedAfterSuccess;
     core::state::MidiNoteDisplayState rebootedNoteDisplayAfterSuccess;
