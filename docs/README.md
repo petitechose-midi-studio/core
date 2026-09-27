@@ -79,9 +79,6 @@ Run the fast repository contract before the native suite:
 python script/dev/check-architecture-contracts.py
 ```
 
-Use `--inventory` for the complete advisory list of files over 800 physical
-lines.
-
 ## Downstream Check
 
 Before changing exported headers or moving files consumed by other repos, run:

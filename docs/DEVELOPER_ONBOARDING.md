@@ -21,8 +21,7 @@ ms test core
 
 The static gate is intentionally separate from native tests. It checks layer
 directions, retired pre-V1 paths, mutation vocabulary, input ownership,
-diagnostics placement, memory gates and retained-view policies. It also prints
-an advisory count of files over 800 physical lines.
+diagnostics placement, memory gates and retained-view policies.
 
 Useful execution paths:
 

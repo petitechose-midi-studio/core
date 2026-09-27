@@ -159,8 +159,7 @@ python script/dev/check-architecture-contracts.py
 
 It enforces dependency directions, retired pre-V1 paths, mutation vocabulary,
 input-routing ownership, diagnostics placement, memory gates, and retained-view
-policies. Its >800-line inventory is advisory and is derived only from tracked
-or nonignored source candidates.
+policies.
 
 Do not use PlatformIO's native test runner. PlatformIO remains the firmware
 build and upload backend through the workspace commands:

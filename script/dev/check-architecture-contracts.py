@@ -5,7 +5,6 @@ import functools
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 
 
@@ -20,8 +19,6 @@ UX_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_ux_recorder.ld"
 DIAGNOSTICS_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_diagnostics.ld"
 COLD_PLACEMENT = ROOT / "script" / "pio" / "imxrt1062_t41_cold_placement.ld"
 MEMORY_GATE = ROOT / "script" / "pio" / "check_memory_budget.py"
-ATTENTION_LINE_THRESHOLD = 800
-ATTENTION_SUFFIXES = frozenset((".c", ".cc", ".cpp", ".h", ".hpp", ".ux"))
 
 COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)",
@@ -161,11 +158,7 @@ PROJECT_SETTINGS_HISTORY_HEADER = (
     "src/state/project/ProjectSettingsHistory.hpp"
 )
 PROJECT_HANDLER_HEADER = "src/handler/project/ProjectHandler.hpp"
-PROJECT_HANDLER_SOURCE = "src/handler/project/ProjectHandler.cpp"
 SDL_PROJECT_SESSION_RUNTIME = "sdl/entry/SdlProjectSessionRuntime.hpp"
-DEVICE_SETTINGS_DOMAIN_HEADER = (
-    "src/handler/settings/DeviceSettingsDomainServices.hpp"
-)
 DEVICE_SETTINGS_DOMAIN_SOURCE = (
     "src/handler/settings/DeviceSettingsDomainServices.cpp"
 )
@@ -2163,66 +2156,6 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         )
 
     return errors
-
-
-def attention_category(rel: str) -> str | None:
-    if rel.startswith("test/"):
-        return "tests"
-    if rel.startswith("sdl/"):
-        return "sdl"
-    if rel.startswith(
-        ("src/validation/", "src/context/standalone/ux/")
-    ):
-        return "validation"
-    if rel.startswith("src/"):
-        return "product"
-    return None
-
-
-def version_control_source_candidates() -> list[Path]:
-    result = subprocess.run(
-        (
-            "git",
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "-z",
-            "--",
-            "src",
-            "test",
-            "sdl",
-        ),
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"git ls-files failed: {detail}")
-
-    paths: list[Path] = []
-    for raw_path in result.stdout.split(b"\0"):
-        if not raw_path:
-            continue
-        rel = raw_path.decode("utf-8", errors="strict").replace("\\", "/")
-        path = ROOT / rel
-        if path.is_file() and path.suffix.lower() in ATTENTION_SUFFIXES:
-            paths.append(path)
-    return paths
-
-
-def attention_inventory(paths: list[Path]) -> list[tuple[str, int, str]]:
-    inventory: list[tuple[str, int, str]] = []
-    for path in paths:
-        rel = path.relative_to(ROOT).as_posix()
-        category = attention_category(rel)
-        if category is None:
-            continue
-        line_count = len(path.read_text(encoding="utf-8").splitlines())
-        if line_count > ATTENTION_LINE_THRESHOLD:
-            inventory.append((category, line_count, rel))
-    return sorted(inventory, key=lambda row: (-row[1], row[2]))
 
 
 def local_markdown_target(raw_target: str) -> str | None:
@@ -5064,7 +4997,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     return errors
 
 
-def main(show_inventory: bool = False) -> int:
+def main() -> int:
     errors: list[str] = []
 
     errors.extend(documentation_contract_errors())
@@ -5376,35 +5309,11 @@ def main(show_inventory: bool = False) -> int:
         if 'extern "C" lv_result_t lv_inv_area' in content:
             errors.append(f"{rel}: direct LVGL invalidation belongs in oc-ui-lvgl")
 
-    try:
-        inventory = attention_inventory(version_control_source_candidates())
-    except RuntimeError as error:
-        errors.append(f"attention inventory unavailable: {error}")
-        inventory = []
-
-    category_order = ("product", "validation", "tests", "sdl")
-    category_counts = {
-        category: sum(1 for row in inventory if row[0] == category)
-        for category in category_order
-    }
-
     if errors:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
 
-    print(
-        "Attention inventory "
-        f"(>{ATTENTION_LINE_THRESHOLD} physical lines; advisory): "
-        + ", ".join(
-            f"{category}={category_counts[category]}"
-            for category in category_order
-        )
-        + f", total={len(inventory)}"
-    )
-    if show_inventory:
-        for category, line_count, rel in inventory:
-            print(f"{category:10} {line_count:5} {rel}")
     print("Core architecture contracts: OK")
     return 0
 
@@ -5413,10 +5322,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Check executable Core architecture contracts."
     )
-    parser.add_argument(
-        "--inventory",
-        action="store_true",
-        help="print the full advisory >800-line inventory",
-    )
-    args = parser.parse_args()
-    sys.exit(main(args.inventory))
+    parser.parse_args()
+    sys.exit(main())

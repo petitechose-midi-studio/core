@@ -9,7 +9,7 @@ Utility scripts for development workflow.
 | `format.sh` | Format all C/C++ files in `src/` with clang-format |
 | `restart-clangd.sh` | Regenerate `compile_commands.json` and prompt to restart clangd |
 | `check-downstream-compat.ps1` | Build a downstream repo such as `plugin-bitwig` against the current `ms-core` export surface |
-| `check-architecture-contracts.py` | Enforce layer, legacy, input, mutation, placement, memory, retained-view, and UX intent/expectation contracts; report the advisory >800-line inventory |
+| `check-architecture-contracts.py` | Enforce layer, legacy, input, mutation, placement, memory, retained-view, and UX intent/expectation contracts |
 | `ux_recording_to_script.py` | Convert raw logical inputs from a Core/MS Manager UX recording into a replayable `.ux` script |
 
 ## Usage
@@ -31,9 +31,8 @@ pwsh ./script/dev/check-downstream-compat.ps1
 # Check another downstream project or another PlatformIO environment
 pwsh ./script/dev/check-downstream-compat.ps1 -DownstreamProjectPath ..\plugin-bitwig -Environment release
 
-# Check repository contracts and print the complete attention inventory
+# Check repository contracts
 python ./script/dev/check-architecture-contracts.py
-python ./script/dev/check-architecture-contracts.py --inventory
 
 # Convert a dev_ux_recorder session, then replay the same logical inputs natively
 python ./script/dev/ux_recording_to_script.py <recording.ndjson> .captures/replay.ux

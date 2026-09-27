@@ -46,7 +46,6 @@ These rules exist to keep `core` readable and maintainable as the codebase grows
 - keep codebase-scale status and evidence current in `petitechose-audio-docs`
 - avoid adding historical plans or audits back to the standard docs entry path
 
-The >800-line inventory printed by the architecture gate is advisory. Review a
-large file for mixed authority, lifecycle, dependency direction, duplication,
-hot-path work, or unclear memory ownership; do not split it only to reduce its
-line count.
+Review modules for mixed authority, lifecycle, dependency direction, duplication,
+hot-path work, or unclear memory ownership. Judge maintainability by the
+responsibilities and locations needed to change behavior, not file or line counts.
