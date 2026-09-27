@@ -100,6 +100,13 @@ Track selection has one implementation in
 matrix passes its focused track explicitly; the current-focus route passes the
 active track. Starting a selection must not activate or mute its target.
 
+Prepared paste settlement is covered in `test_SequencerStepHandler`: Page and
+Step commit/replay, allocation and History rejection, and identical-payload
+completion without a new History entry. The Step rejection probe observes the
+hold during History commit as well as after rollback; a rejected paste must not
+complete its gesture. These executable checks replace inspection of the shared
+settlement helper's call spelling.
+
 ## 3. Know the repository
 
 ```text

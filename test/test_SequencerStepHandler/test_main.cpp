@@ -189,6 +189,7 @@ struct FailingPageCommitHistory {
     core::state::CoreState* state = nullptr;
     std::size_t commitCount = 0U;
     std::size_t abortCount = 0U;
+    bool observePasteHold = false;
 
     static seq::SequencerPatternHistoryCommitOutcome boundary(void* context) {
         auto& self = *static_cast<FailingPageCommitHistory*>(context);
@@ -236,6 +237,10 @@ struct FailingPageCommitHistory {
     ) {
         auto& self = *static_cast<FailingPageCommitHistory*>(context);
         ++self.commitCount;
+        if (self.observePasteHold) {
+            assert(self.state->sequencer.structureUi.pageHold.action.get() ==
+                   core::state::StructureHoldAction::PASTE);
+        }
         return seq::SequencerPreparedPatternEditCommitOutcome::Failed;
     }
 
@@ -7665,6 +7670,61 @@ void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     std::cout << "[PASS] test_step_focus_copy_paste_copies_complete_step_without_selection\n";
 }
 
+void test_step_paste_rejection_preserves_hold_and_no_change_settles_it() {
+    SequencerStepHarness h;
+    auto& sequencer = h.state.sequencer;
+    sequencer.pattern().setContentLength(8U);
+    sequencer.pattern().note[1U] = 76U;
+    sequencer.pattern().setEnabled(1U, true);
+    sequencer.focusedStep.set(1U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    auto workflow = makeStructureEditWorkflow(
+        h, HistoryServices::fromCoreState(h.state));
+    workflow.copyCurrentStructure();
+    assert(h.state.structureClipboard.hasSequencerSteps());
+    const auto clipboardRevision = h.state.structureClipboard.revision.get();
+    sequencer.focusedStep.set(2U);
+
+    FailingPageCommitHistory failing{.state = &h.state};
+    failing.observePasteHold = true;
+    auto rejected = makeStructureEditWorkflow(
+        h, HistoryServices::fromStaticOperations<
+            kFailingPageCommitHistoryOperations>(&failing));
+    rejected.beginHoldAction(core::state::StructureHoldAction::PASTE);
+    const auto startedAt = sequencer.structureUi.pageHold.startedAtMs.get();
+    rejected.pasteCurrentStructure();
+    test_support::drainNotifications();
+    assert(failing.commitCount == 1U);
+    assert(failing.abortCount == 1U);
+    assert(!sequencer.pattern().isEnabled(2U));
+    assert(sequencer.focusedStep.get() == 2U);
+    assert(sequencer.structureUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::PASTE);
+    assert(sequencer.structureUi.pageHold.startedAtMs.get() == startedAt);
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+
+    workflow.pasteCurrentStructure();
+    test_support::drainNotifications();
+    assert(sequencer.pattern().note[2U] == 76U);
+    assert(sequencer.pattern().isEnabled(2U));
+    assert(!sequencer.structureUi.pageHold.active());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+
+    // Identical payload: settle the gesture without entering History again.
+    rejected.beginHoldAction(core::state::StructureHoldAction::PASTE);
+    rejected.pasteCurrentStructure();
+    test_support::drainNotifications();
+    assert(failing.commitCount == 1U);
+    assert(failing.abortCount == 1U);
+    assert(!sequencer.structureUi.pageHold.active());
+    assert(sequencer.focusedStep.get() == 2U);
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.structureClipboard.revision.get() == clipboardRevision);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    std::cout << "[PASS] Step paste rejection and no-change settlement\n";
+}
+
 void test_step_selection_clear_is_undoable_and_keeps_selection_active() {
     SequencerStepHarness h;
     h.state.sequencer.pattern().setContentLength(8);
@@ -9938,6 +9998,7 @@ int main() {
     test_step_focus_bottom_left_resets_focused_step_only();
     test_step_focus_empty_reset_release_clears_hold();
     test_step_focus_copy_paste_copies_complete_step_without_selection();
+    test_step_paste_rejection_preserves_hold_and_no_change_settles_it();
     test_step_selection_copy_paste_extends_sparse_root_steps();
     test_step_selection_macro_long_press_consumes_release_without_toggling();
     test_step_selection_clear_is_undoable_and_keeps_selection_active();
