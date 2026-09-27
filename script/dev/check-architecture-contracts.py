@@ -169,9 +169,6 @@ DEVICE_SETTINGS_DOMAIN_HEADER = (
 DEVICE_SETTINGS_DOMAIN_SOURCE = (
     "src/handler/settings/DeviceSettingsDomainServices.cpp"
 )
-DEVICE_SETTINGS_HANDLER_SOURCE = (
-    "src/handler/settings/DeviceSettingsHandler.cpp"
-)
 DEVICE_SETTINGS_CODEC_SOURCE = "src/persistence/DeviceSettingsCodec.cpp"
 DEVICE_SETTINGS_STORE_SOURCE = "src/persistence/DeviceSettingsStore.cpp"
 MIDI_SYNC_STATE_SOURCE = "src/state/MidiSyncState.cpp"
@@ -1372,7 +1369,7 @@ def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
 
 
 def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
-    """Keep value consumers on the shared selector lifecycle.
+    """Keep Project MIDI Sync ownership unambiguous.
 
     The typed midi-sync command semantics (validation, persist-before-publish,
     structured persistence failures, stale-free publication) are covered
@@ -1380,27 +1377,13 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
     menu projection and undo/redo isolation run in test_ProjectHandler,
     test_ProjectMenuModel, test_ProjectHistoryCoordinator and
     test_ViewSwitcherHandler. test_ModalSelectionUtils observes the selector
-    stack during acceptance as well as after rejection. Keep only the remaining
-    composition/ownership checks here, not spellings of those implementations
-    or assertions inside the test sources.
+    stack during acceptance as well as after rejection. Physical consumer wiring
+    and Back/accept/reject behavior run in test_DeviceSettingsHandler,
+    test_MacroEditHandler and test_SequencerInlineHandlers. Keep only the remaining
+    Project ownership checks here.
     """
     errors: list[str] = []
 
-    # Device persistence rejection now feeds the shared selector lifecycle.
-    # Keep every equivalent consumer on that lifecycle, including Back routing.
-    for source in (
-        DEVICE_SETTINGS_HANDLER_SOURCE,
-        "src/handler/macro/MacroEditHandler.cpp",
-        "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
-    ):
-        body = cpp_code_mask(files.get(source, ""))
-        if body.count("modal::bindValueSelectorInputs(") != 1 or "input.handle(" not in body:
-            errors.append(f"{source}: value selector must use the shared input lifecycle")
-        if "applySelectorAndClose" in body or "navigateValueSelector" in body:
-            errors.append(f"{source}: replaced selector routes must not return")
-    device_body = cpp_code_mask(files.get(DEVICE_SETTINGS_HANDLER_SOURCE, ""))
-    if "return services_.applyChoice(row, choice).success();" not in device_body:
-        errors.append(f"{DEVICE_SETTINGS_HANDLER_SOURCE}: persistence success must decide acceptance")
     project_header = files.get(PROJECT_HANDLER_HEADER, "")
     for marker in (
         "DeviceSettingsDomainServices deviceSettings,",

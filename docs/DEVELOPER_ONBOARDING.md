@@ -107,6 +107,12 @@ hold during History commit as well as after rollback; a rejected paste must not
 complete its gesture. These executable checks replace inspection of the shared
 settlement helper's call spelling.
 
+Value-selector consumers are exercised through physical input in
+`test_DeviceSettingsHandler`, `test_MacroEditHandler` and
+`test_SequencerInlineHandlers`: navigation, Back preserving the parent,
+acceptance and persistence rejection. Their wiring is no longer checked by
+counting shared-helper calls in source text.
+
 ## 3. Know the repository
 
 ```text
