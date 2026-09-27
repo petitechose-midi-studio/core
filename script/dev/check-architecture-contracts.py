@@ -5,7 +5,6 @@ import functools
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 
 
@@ -20,8 +19,6 @@ UX_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_ux_recorder.ld"
 DIAGNOSTICS_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_diagnostics.ld"
 COLD_PLACEMENT = ROOT / "script" / "pio" / "imxrt1062_t41_cold_placement.ld"
 MEMORY_GATE = ROOT / "script" / "pio" / "check_memory_budget.py"
-ATTENTION_LINE_THRESHOLD = 800
-ATTENTION_SUFFIXES = frozenset((".c", ".cc", ".cpp", ".h", ".hpp", ".ux"))
 
 COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)",
@@ -161,16 +158,9 @@ PROJECT_SETTINGS_HISTORY_HEADER = (
     "src/state/project/ProjectSettingsHistory.hpp"
 )
 PROJECT_HANDLER_HEADER = "src/handler/project/ProjectHandler.hpp"
-PROJECT_HANDLER_SOURCE = "src/handler/project/ProjectHandler.cpp"
 SDL_PROJECT_SESSION_RUNTIME = "sdl/entry/SdlProjectSessionRuntime.hpp"
-DEVICE_SETTINGS_DOMAIN_HEADER = (
-    "src/handler/settings/DeviceSettingsDomainServices.hpp"
-)
 DEVICE_SETTINGS_DOMAIN_SOURCE = (
     "src/handler/settings/DeviceSettingsDomainServices.cpp"
-)
-DEVICE_SETTINGS_HANDLER_SOURCE = (
-    "src/handler/settings/DeviceSettingsHandler.cpp"
 )
 DEVICE_SETTINGS_CODEC_SOURCE = "src/persistence/DeviceSettingsCodec.cpp"
 DEVICE_SETTINGS_STORE_SOURCE = "src/persistence/DeviceSettingsStore.cpp"
@@ -1372,7 +1362,7 @@ def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
 
 
 def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
-    """Keep value consumers on the shared selector lifecycle.
+    """Keep Project MIDI Sync ownership unambiguous.
 
     The typed midi-sync command semantics (validation, persist-before-publish,
     structured persistence failures, stale-free publication) are covered
@@ -1380,27 +1370,13 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
     menu projection and undo/redo isolation run in test_ProjectHandler,
     test_ProjectMenuModel, test_ProjectHistoryCoordinator and
     test_ViewSwitcherHandler. test_ModalSelectionUtils observes the selector
-    stack during acceptance as well as after rejection. Keep only the remaining
-    composition/ownership checks here, not spellings of those implementations
-    or assertions inside the test sources.
+    stack during acceptance as well as after rejection. Physical consumer wiring
+    and Back/accept/reject behavior run in test_DeviceSettingsHandler,
+    test_MacroEditHandler and test_SequencerInlineHandlers. Keep only the remaining
+    Project ownership checks here.
     """
     errors: list[str] = []
 
-    # Device persistence rejection now feeds the shared selector lifecycle.
-    # Keep every equivalent consumer on that lifecycle, including Back routing.
-    for source in (
-        DEVICE_SETTINGS_HANDLER_SOURCE,
-        "src/handler/macro/MacroEditHandler.cpp",
-        "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
-    ):
-        body = cpp_code_mask(files.get(source, ""))
-        if body.count("modal::bindValueSelectorInputs(") != 1 or "input.handle(" not in body:
-            errors.append(f"{source}: value selector must use the shared input lifecycle")
-        if "applySelectorAndClose" in body or "navigateValueSelector" in body:
-            errors.append(f"{source}: replaced selector routes must not return")
-    device_body = cpp_code_mask(files.get(DEVICE_SETTINGS_HANDLER_SOURCE, ""))
-    if "return services_.applyChoice(row, choice).success();" not in device_body:
-        errors.append(f"{DEVICE_SETTINGS_HANDLER_SOURCE}: persistence success must decide acceptance")
     project_header = files.get(PROJECT_HANDLER_HEADER, "")
     for marker in (
         "DeviceSettingsDomainServices deviceSettings,",
@@ -2180,66 +2156,6 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         )
 
     return errors
-
-
-def attention_category(rel: str) -> str | None:
-    if rel.startswith("test/"):
-        return "tests"
-    if rel.startswith("sdl/"):
-        return "sdl"
-    if rel.startswith(
-        ("src/validation/", "src/context/standalone/ux/")
-    ):
-        return "validation"
-    if rel.startswith("src/"):
-        return "product"
-    return None
-
-
-def version_control_source_candidates() -> list[Path]:
-    result = subprocess.run(
-        (
-            "git",
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "-z",
-            "--",
-            "src",
-            "test",
-            "sdl",
-        ),
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"git ls-files failed: {detail}")
-
-    paths: list[Path] = []
-    for raw_path in result.stdout.split(b"\0"):
-        if not raw_path:
-            continue
-        rel = raw_path.decode("utf-8", errors="strict").replace("\\", "/")
-        path = ROOT / rel
-        if path.is_file() and path.suffix.lower() in ATTENTION_SUFFIXES:
-            paths.append(path)
-    return paths
-
-
-def attention_inventory(paths: list[Path]) -> list[tuple[str, int, str]]:
-    inventory: list[tuple[str, int, str]] = []
-    for path in paths:
-        rel = path.relative_to(ROOT).as_posix()
-        category = attention_category(rel)
-        if category is None:
-            continue
-        line_count = len(path.read_text(encoding="utf-8").splitlines())
-        if line_count > ATTENTION_LINE_THRESHOLD:
-            inventory.append((category, line_count, rel))
-    return sorted(inventory, key=lambda row: (-row[1], row[2]))
 
 
 def local_markdown_target(raw_target: str) -> str | None:
@@ -5081,7 +4997,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     return errors
 
 
-def main(show_inventory: bool = False) -> int:
+def main() -> int:
     errors: list[str] = []
 
     errors.extend(documentation_contract_errors())
@@ -5393,35 +5309,11 @@ def main(show_inventory: bool = False) -> int:
         if 'extern "C" lv_result_t lv_inv_area' in content:
             errors.append(f"{rel}: direct LVGL invalidation belongs in oc-ui-lvgl")
 
-    try:
-        inventory = attention_inventory(version_control_source_candidates())
-    except RuntimeError as error:
-        errors.append(f"attention inventory unavailable: {error}")
-        inventory = []
-
-    category_order = ("product", "validation", "tests", "sdl")
-    category_counts = {
-        category: sum(1 for row in inventory if row[0] == category)
-        for category in category_order
-    }
-
     if errors:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
 
-    print(
-        "Attention inventory "
-        f"(>{ATTENTION_LINE_THRESHOLD} physical lines; advisory): "
-        + ", ".join(
-            f"{category}={category_counts[category]}"
-            for category in category_order
-        )
-        + f", total={len(inventory)}"
-    )
-    if show_inventory:
-        for category, line_count, rel in inventory:
-            print(f"{category:10} {line_count:5} {rel}")
     print("Core architecture contracts: OK")
     return 0
 
@@ -5430,10 +5322,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Check executable Core architecture contracts."
     )
-    parser.add_argument(
-        "--inventory",
-        action="store_true",
-        help="print the full advisory >800-line inventory",
-    )
-    args = parser.parse_args()
-    sys.exit(main(args.inventory))
+    parser.parse_args()
+    sys.exit(main())
