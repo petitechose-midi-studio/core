@@ -354,6 +354,15 @@ void test_storage_has_six_rows_and_read_only_project_identity() {
     );
     assert(page.rowCount == 6);
     assert(std::string(page.meta) == "Storage  p002*");
+    const char* expectedLabels[] = {
+        "Save project", "Save as", "Rename", "New project", "Load project", "Project"
+    };
+    for (uint8_t row = 0; row < page.rowCount; ++row) {
+        assert(std::string(page.rows[row].label) == expectedLabels[row]);
+        assert(page.rows[row].kind == (row < 5U
+            ? core::state::project::ProjectMenuRowKind::Action
+            : core::state::project::ProjectMenuRowKind::Disabled));
+    }
     for (uint8_t row = 0; row < 5U; ++row) {
         assert(page.rows[row].tone == ProjectMenuRowTone::Neutral);
     }
