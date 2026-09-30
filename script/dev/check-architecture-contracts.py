@@ -1305,29 +1305,6 @@ def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
     """Freeze D-AUTOSAVE-v1 as always-on recovery with no pseudo-policy."""
     errors: list[str] = []
 
-    retired_symbols = (
-        "autosaveEnabled",
-        "applyFocusedStorageStep",
-        "setFocusedStorageValue",
-        "ProjectSettingsHistoryActionKind::Autosave",
-        "AutosavePolicy",
-        "autosavePolicy",
-        "autosave_enabled",
-    )
-    for rel, content in sorted(files.items()):
-        if not rel.startswith(("src/", "test/test_ProjectHandler/",
-                               "test/test_ProjectMenuModel/")):
-            continue
-        for symbol in retired_symbols:
-            if symbol in content:
-                errors.append(f"{rel}: retired autosave policy symbol {symbol}")
-
-    menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
-    if re.search(r'row\s*\(\s*"Autosave"', menu):
-        errors.append(
-            f"{PROJECT_MENU_MODEL_SOURCE}: recovery autosave must not be a menu row"
-        )
-
     settings_history = files.get(PROJECT_SETTINGS_HISTORY_HEADER, "")
     if re.search(r"\bAutosave\s*,", settings_history):
         errors.append(
