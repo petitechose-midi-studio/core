@@ -671,6 +671,57 @@ void test_transport_sync_failure_is_visible_retryable_and_project_neutral() {
     std::cout << "[PASS] Project Transport Sync failure is visible and retryable\n";
 }
 
+void test_sync_preserves_nonempty_project_undo_and_redo() {
+    for (const bool changeWithRedo : {true, false}) {
+        ProjectHandlerHarness h;
+        h.press(Config::ButtonID::LEFT_CENTER);
+        h.turn(Config::EncoderID::NAV, 2.0f);
+        h.release(Config::ButtonID::LEFT_CENTER);
+        h.turn(Config::EncoderID::OPT, 0.0f);
+        assert(h.state.statusBar.tempo.get() == 20.0f);
+        h.advance(core::handler::ProjectHandler::ROUTING_GESTURE_IDLE_COMMIT_MS + 1U);
+        h.handler.update(g_now_ms);
+        assert(h.state.projectHistory.undoCount() == 1U);
+        if (changeWithRedo) {
+            assert(h.state.undoProjectHistory());
+            assert(h.state.statusBar.tempo.get() == 120.0f);
+        }
+        h.turn(Config::EncoderID::NAV, 2.0f);
+        assert(h.state.projectNavigation.focusedRow.get() == 2U);
+        const auto undoBefore = h.state.projectHistory.undoCount();
+        const auto redoBefore = h.state.projectHistory.redoCount();
+        const auto saveTokenBefore = h.state.projectSessionSaveToken();
+        const int commitsBefore = h.storages.settings.commitCount;
+        h.tap(Config::ButtonID::NAV);
+        assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+        assert(h.state.projectHistory.undoCount() == undoBefore);
+        assert(h.state.projectHistory.redoCount() == redoBefore);
+        assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+        assert(h.storages.settings.commitCount == commitsBefore + 1);
+
+        const auto assertDeviceUnchanged = [&]() {
+            assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+            assert(h.storages.settings.commitCount == commitsBefore + 1);
+            core::state::MidiSyncState restored{};
+            core::state::MidiNoteDisplayState noteDisplay;
+            assert(h.state.deviceSettingsStore.load(restored, noteDisplay));
+            assert(restored.mode.get() == core::state::MidiSyncMode::MASTER);
+        };
+        if (changeWithRedo) {
+            assert(h.state.redoProjectHistory());
+            assert(h.state.statusBar.tempo.get() == 20.0f);
+            assertDeviceUnchanged();
+        }
+        assert(h.state.undoProjectHistory());
+        assert(h.state.statusBar.tempo.get() == 120.0f);
+        assertDeviceUnchanged();
+        assert(h.state.redoProjectHistory());
+        assert(h.state.statusBar.tempo.get() == 20.0f);
+        assertDeviceUnchanged();
+    }
+    std::cout << "[PASS] Sync preserves nonempty Project undo/redo and Device persistence\n";
+}
+
 void test_project_setting_values_coalesce_and_use_global_history() {
     ProjectHandlerHarness h;
 
@@ -3088,6 +3139,7 @@ int main() {
     test_transport_values_are_editable_from_project();
     test_transport_sync_is_device_persisted_and_project_neutral();
     test_transport_sync_failure_is_visible_retryable_and_project_neutral();
+    test_sync_preserves_nonempty_project_undo_and_redo();
     test_project_setting_values_coalesce_and_use_global_history();
     test_storage_project_identity_ignores_opt();
     test_project_name_editor_uses_physical_action_buttons();

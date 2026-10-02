@@ -1432,18 +1432,9 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
                 f"{PROJECT_SETTINGS_HISTORY_HEADER}: missing compact history marker {marker}"
             )
 
-    core_history = cpp_code_mask(
-        files.get(CORE_STATE_PROJECT_HISTORY_SOURCE, "")
-    )
-    for marker in (
-        "projectSettingsHistory.undo(statusBar, projectNavigation)",
-        "projectSettingsHistory.redo(statusBar, projectNavigation)",
-    ):
-        if marker not in core_history:
-            errors.append(
-                f"{CORE_STATE_PROJECT_HISTORY_SOURCE}: Settings traversal must "
-                f"remain Device-independent ({marker})"
-            )
+    # ProjectHandler exercises nonempty Settings undo/redo across physical Sync
+    # changes, including an existing redo branch and Device store readback.
+    # Do not freeze the spelling of the traversal calls here.
 
     coordinator = files.get(PROJECT_HISTORY_COORDINATOR_SOURCE, "")
     if 'return "Sync Mode";' in coordinator:
