@@ -3,6 +3,7 @@
 #endif
 
 #include <cassert>
+#include <cstring>
 #include <iostream>
 #include <memory>
 
@@ -171,7 +172,37 @@ void proveBudgetContractIncludesWorkload() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "--benchmark") == 0) {
+        // Host wall-clock baseline only: MCU budgets do not apply to this run.
+        std::cout << "case,trial,frames,average_us,max_us,checksum,trigger_tests_per_frame\n";
+        for (const auto benchmarkCase : {
+                 validation::ProjectModulationBenchmarkCase::LFO,
+                 validation::ProjectModulationBenchmarkCase::RECORDED_SHAPE,
+                 validation::ProjectModulationBenchmarkCase::ADSR,
+                 validation::ProjectModulationBenchmarkCase::DAHDSR_SHARED_TRACK}) {
+            for (unsigned trial = 1; trial <= 5; ++trial) {
+                auto workspace =
+                    std::make_unique<validation::ProjectModulationBenchmarkWorkspace>();
+                assert(validation::prepareProjectModulationBenchmark(*workspace, benchmarkCase));
+                const auto result = validation::runProjectModulationBenchmark(
+                    *workspace, benchmarkCase,
+                    validation::PROJECT_MODULATION_BENCHMARK_WARMUP_FRAMES,
+                    validation::PROJECT_MODULATION_BENCHMARK_MEASURED_FRAMES);
+                assert(result.prepared && result.evaluated && result.workloadMatchesCase());
+                assert(result.checksum != 0U);
+                std::cout << validation::projectModulationBenchmarkCaseLabel(benchmarkCase)
+                          << ',' << trial << ',' << result.iterations
+                          << ',' << result.averageUs << ',' << result.maximumUs
+                          << ',' << result.checksum << ',' << result.triggerTestsPerFrame << '\n';
+            }
+        }
+        return 0;
+    }
+    if (argc != 1) {
+        std::cerr << "Usage: test_ProjectModulationBenchmark [--benchmark]\n";
+        return 2;
+    }
     static_assert(
         sizeof(validation::ProjectModulationBenchmarkWorkspace) == 187384U
     );
